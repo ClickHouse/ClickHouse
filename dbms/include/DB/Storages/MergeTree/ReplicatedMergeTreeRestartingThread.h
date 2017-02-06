@@ -71,9 +71,6 @@ private:
 	void updateQuorumIfWeHavePart();
 
 	void partialShutdown();
-
-	/// Запретить запись в таблицу и завершить все фоновые потоки.
-	void goReadOnlyPermanently();
 };
 
 

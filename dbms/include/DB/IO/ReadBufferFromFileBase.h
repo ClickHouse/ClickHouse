@@ -1,10 +1,15 @@
 #pragma once
 
 #include <string>
+#include <ctime>
 #include <fcntl.h>
 
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
+
+#ifdef __APPLE__
+#include <common/apple_rt.h>
+#endif
 
 namespace DB
 {

@@ -42,7 +42,7 @@ BlockInputStreamPtr DescribeQueryConstructor::createLocal(ASTPtr query_ast, cons
 	return std::make_shared<BlockExtraInfoInputStream>(materialized_stream, toBlockExtraInfo(address));
 }
 
-BlockInputStreamPtr DescribeQueryConstructor::createRemote(IConnectionPool * pool, const std::string & query,
+BlockInputStreamPtr DescribeQueryConstructor::createRemote(ConnectionPoolPtr & pool, const std::string & query,
 	const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
 	auto stream = std::make_shared<RemoteBlockInputStream>(pool, query, &settings, throttler);

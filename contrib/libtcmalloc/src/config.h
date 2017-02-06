@@ -73,7 +73,9 @@
 #define HAVE_FCNTL_H 1
 
 /* Define to 1 if you have the <features.h> header file. */
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #define HAVE_FEATURES_H 1
+#endif
 
 /* Define to 1 if you have the `fork' function. */
 #define HAVE_FORK 1
@@ -97,13 +99,17 @@
 //#define HAVE_LIBUNWIND_H 1
 
 /* Define to 1 if you have the <linux/ptrace.h> header file. */
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #define HAVE_LINUX_PTRACE_H 1
+#endif
 
 /* Define if this is Linux that has SIGEV_THREAD_ID */
 #define HAVE_LINUX_SIGEV_THREAD_ID 1
 
 /* Define to 1 if you have the <malloc.h> header file. */
+#if !defined(__FreeBSD__)
 #define HAVE_MALLOC_H 1
+#endif
 
 /* Define to 1 if you have the <memory.h> header file. */
 #define HAVE_MEMORY_H 1
@@ -118,7 +124,9 @@
 #define HAVE_POLL_H 1
 
 /* define if libc has program_invocation_name */
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #define HAVE_PROGRAM_INVOCATION_NAME 1
+#endif
 
 /* Define if you have POSIX threads libraries and header files. */
 #define HAVE_PTHREAD 1
@@ -149,7 +157,10 @@
 #define HAVE_STRING_H 1
 
 /* Define to 1 if the system has the type `struct mallinfo'. */
+//#if !defined(__APPLE__) && !defined(__FreeBSD__)
+#if !defined(__APPLE__)
 #define HAVE_STRUCT_MALLINFO 1
+#endif
 
 /* Define to 1 if you have the <sys/cdefs.h> header file. */
 #define HAVE_SYS_CDEFS_H 1
@@ -203,7 +214,9 @@
 #define HAVE___ATTRIBUTE__ 1
 
 /* Define to 1 if compiler supports __environ */
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #define HAVE___ENVIRON 1
+#endif
 
 /* Define to 1 if the system has the type `__int64'. */
 /* #undef HAVE___INT64 */
@@ -217,9 +230,6 @@
 /* Define to the sub-directory in which libtool stores uninstalled libraries.
    */
 #define LT_OBJDIR ".libs/"
-
-/* Define to 'volatile' if __malloc_hook is declared volatile */
-#define MALLOC_HOOK_MAYBE_VOLATILE volatile
 
 /* Name of package */
 #define PACKAGE "gperftools"

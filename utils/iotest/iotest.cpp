@@ -6,6 +6,7 @@
 #include <iostream>
 #include <iomanip>
 #include <vector>
+#include <random>
 
 #include <Poco/NumberParser.h>
 #include <Poco/NumberFormatter.h>
@@ -16,9 +17,11 @@
 #include <DB/Common/ThreadPool.h>
 #include <DB/Common/Stopwatch.h>
 
-#include <stdlib.h>
-#include <malloc.h>
+#include <cstdlib>
 
+#ifdef __APPLE__
+#include <common/apple_rt.h>
+#endif
 
 using DB::throwFromErrno;
 
@@ -43,8 +46,8 @@ struct AlignedBuffer
 	{
 		size_t page = sysconf(_SC_PAGESIZE);
 		size = size_;
-		data = static_cast<char*>(memalign(page, (size + page - 1) / page * page));
-		if (!data)
+		int rc = posix_memalign(reinterpret_cast<void **>(&data), page, (size + page - 1) / page * page);
+		if (data == nullptr || rc != 0)
 			throwFromErrno("memalign failed");
 	}
 
@@ -65,20 +68,17 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 	else
 		buf = &simple_buf[0];
 
-	drand48_data rand_data;
+	std::mt19937 rng;
 
 	timespec times;
 	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times);
-	srand48_r(times.tv_nsec, &rand_data);
+	rng.seed(times.tv_nsec);
 
 	for (size_t i = 0; i < count; ++i)
 	{
-		long rand_result1 = 0;
-		long rand_result2 = 0;
-		long rand_result3 = 0;
-		lrand48_r(&rand_data, &rand_result1);
-		lrand48_r(&rand_data, &rand_result2);
-		lrand48_r(&rand_data, &rand_result3);
+		long rand_result1 = rng();
+		long rand_result2 = rng();
+		long rand_result3 = rng();
 
 		size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
 		size_t offset;
@@ -152,10 +152,18 @@ int mainImpl(int argc, char ** argv)
 
 	ThreadPool pool(threads);
 
+	#ifndef __APPLE__
 	int fd = open(file_name, ((mode & MODE_READ) ? O_RDONLY : O_WRONLY) | ((mode & MODE_DIRECT) ? O_DIRECT : 0) | ((mode & MODE_SYNC) ? O_SYNC : 0));
+	#else
+	int fd = open(file_name, ((mode & MODE_READ) ? O_RDONLY : O_WRONLY) | ((mode & MODE_SYNC) ? O_SYNC : 0));
+	#endif
 	if (-1 == fd)
 		throwFromErrno("Cannot open file");
-
+	#ifdef __APPLE__
+	if (mode & MODE_DIRECT)
+		if (fcntl(fd, F_NOCACHE, 1) == -1)
+			throwFromErrno("Cannot open file");
+	#endif
 	Stopwatch watch;
 
 	for (size_t i = 0; i < threads; ++i)

@@ -5,6 +5,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <iostream>
 
+
 class App : public Poco::Util::Application
 {
 public:
@@ -17,8 +18,8 @@ int main()
 	app.loadConfiguration("failover.xml");
 
 	Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
-	Logger::root().setChannel(channel);
-	Logger::root().setLevel("trace");
+	Poco::Logger::root().setChannel(channel);
+	Poco::Logger::root().setLevel("trace");
 
 	mysqlxx::PoolWithFailover pool("mysql_goals");
 

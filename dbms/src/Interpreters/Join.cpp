@@ -1,3 +1,5 @@
+#include <common/logger_useful.h>
+
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 
@@ -16,6 +18,19 @@ namespace ErrorCodes
 	extern const int SET_SIZE_LIMIT_EXCEEDED;
 	extern const int TYPE_MISMATCH;
 	extern const int ILLEGAL_COLUMN;
+}
+
+
+Join::Join(const Names & key_names_left_, const Names & key_names_right_,
+	const Limits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
+	: kind(kind_), strictness(strictness_),
+	key_names_left(key_names_left_),
+	key_names_right(key_names_right_),
+	log(&Logger::get("Join")),
+	max_rows(limits.max_rows_in_join),
+	max_bytes(limits.max_bytes_in_join),
+	overflow_mode(limits.join_overflow_mode)
+{
 }
 
 
@@ -45,7 +60,7 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & k
 		keys_fit_128_bits = false;
 
 	/// Если есть один числовой ключ, который помещается в 64 бита
-	if (keys_size == 1 && key_columns[0]->isNumeric())
+	if (keys_size == 1 && key_columns[0]->isNumericNotNullable())
 		return Type::KEY_64;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
@@ -140,7 +155,7 @@ size_t Join::getTotalRowCount() const
 	if (type == Type::CROSS)
 	{
 		for (const auto & block : blocks)
-			res += block.rowsInFirstColumn();
+			res += block.rows();
 	}
 	else
 	{
@@ -385,10 +400,10 @@ void Join::setSampleBlock(const Block & block)
 	size_t pos = 0;
 	while (pos < sample_block_with_columns_to_add.columns())
 	{
-		const auto & name = sample_block_with_columns_to_add.unsafeGetByPosition(pos).name;
+		const auto & name = sample_block_with_columns_to_add.getByPosition(pos).name;
 		if (key_names_right.end() != std::find(key_names_right.begin(), key_names_right.end(), name))
 		{
-			sample_block_with_keys.insert(sample_block_with_columns_to_add.unsafeGetByPosition(pos));
+			sample_block_with_keys.insert(sample_block_with_columns_to_add.getByPosition(pos));
 			sample_block_with_columns_to_add.erase(pos);
 		}
 		else
@@ -397,7 +412,7 @@ void Join::setSampleBlock(const Block & block)
 
 	for (size_t i = 0, size = sample_block_with_columns_to_add.columns(); i < size; ++i)
 	{
-		auto & column = sample_block_with_columns_to_add.unsafeGetByPosition(i);
+		auto & column = sample_block_with_columns_to_add.getByPosition(i);
 		if (!column.column)
 			column.column = column.type->createColumn();
 	}
@@ -444,7 +459,7 @@ bool Join::insertFromBlock(const Block & block)
 		for (const auto & name : key_names_right)
 		{
 			size_t pos = stored_block->getPositionByName(name);
-			ColumnWithTypeAndName col = stored_block->getByPosition(pos);
+			ColumnWithTypeAndName col = stored_block->safeGetByPosition(pos);
 			stored_block->erase(pos);
 			stored_block->insert(key_num, std::move(col));
 			++key_num;
@@ -460,9 +475,9 @@ bool Join::insertFromBlock(const Block & block)
 	/// Редкий случай, когда соединяемые столбцы являются константами. Чтобы не поддерживать отдельный код, материализуем их.
 	for (size_t i = 0, size = stored_block->columns(); i < size; ++i)
 	{
-		ColumnPtr col = stored_block->getByPosition(i).column;
+		ColumnPtr col = stored_block->safeGetByPosition(i).column;
 		if (auto converted = col->convertToFullColumnIfConst())
-			stored_block->getByPosition(i).column = converted;
+			stored_block->safeGetByPosition(i).column = converted;
 	}
 
 	if (kind != ASTTableJoin::Kind::Cross)
@@ -520,7 +535,7 @@ struct Adder<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any, Map>
 		{
 			it->second.setUsed();
 			for (size_t j = 0; j < num_columns_to_add; ++j)
-				added_columns[j]->insertFrom(*it->second.block->unsafeGetByPosition(num_columns_to_skip + j).column.get(), it->second.row_num);
+				added_columns[j]->insertFrom(*it->second.block->getByPosition(num_columns_to_skip + j).column.get(), it->second.row_num);
 		}
 		else
 		{
@@ -545,7 +560,7 @@ struct Adder<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Any, Map>
 
 			it->second.setUsed();
 			for (size_t j = 0; j < num_columns_to_add; ++j)
-				added_columns[j]->insertFrom(*it->second.block->unsafeGetByPosition(num_columns_to_skip + j).column.get(), it->second.row_num);
+				added_columns[j]->insertFrom(*it->second.block->getByPosition(num_columns_to_skip + j).column.get(), it->second.row_num);
 		}
 		else
 			(*filter)[i] = 0;
@@ -568,7 +583,7 @@ struct Adder<KIND, ASTTableJoin::Strictness::All, Map>
 			for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(it->second); current != nullptr; current = current->next)
 			{
 				for (size_t j = 0; j < num_columns_to_add; ++j)
-					added_columns[j]->insertFrom(*current->block->unsafeGetByPosition(num_columns_to_skip + j).column.get(), current->row_num);
+					added_columns[j]->insertFrom(*current->block->getByPosition(num_columns_to_skip + j).column.get(), current->row_num);
 
 				++rows_joined;
 			}
@@ -626,7 +641,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	{
 		for (size_t i = 0; i < existing_columns; ++i)
 		{
-			auto & col = block.getByPosition(i).column;
+			auto & col = block.safeGetByPosition(i).column;
 
 			if (auto converted = col->convertToFullColumnIfConst())
 				col = converted;
@@ -639,14 +654,14 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 
 	for (size_t i = 0; i < num_columns_to_add; ++i)
 	{
-		const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.getByPosition(i);
+		const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.safeGetByPosition(i);
 		ColumnWithTypeAndName new_column = src_column.cloneEmpty();
 		added_columns[i] = new_column.column.get();
 		added_columns[i]->reserve(src_column.column->size());
 		block.insert(std::move(new_column));
 	}
 
-	size_t rows = block.rowsInFirstColumn();
+	size_t rows = block.rows();
 
 	/// Используется при ANY INNER JOIN
 	std::unique_ptr<IColumn::Filter> filter;
@@ -745,12 +760,12 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	/// Если ANY INNER|RIGHT JOIN - фильтруем все столбцы кроме новых.
 	if (filter)
 		for (size_t i = 0; i < existing_columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->filter(*filter, -1);
+			block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(*filter, -1);
 
 	/// Если ALL ... JOIN - размножаем все столбцы кроме новых.
 	if (offsets_to_replicate)
 		for (size_t i = 0; i < existing_columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->replicate(*offsets_to_replicate);
+			block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->replicate(*offsets_to_replicate);
 }
 
 
@@ -768,19 +783,19 @@ void Join::joinBlockImplCross(Block & block) const
 
 	for (size_t i = 0; i < num_existing_columns; ++i)
 	{
-		src_left_columns[i] = block.unsafeGetByPosition(i).column.get();
-		dst_left_columns[i] = res.unsafeGetByPosition(i).column.get();
+		src_left_columns[i] = block.getByPosition(i).column.get();
+		dst_left_columns[i] = res.getByPosition(i).column.get();
 	}
 
 	for (size_t i = 0; i < num_columns_to_add; ++i)
 	{
-		const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.unsafeGetByPosition(i);
+		const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.getByPosition(i);
 		ColumnWithTypeAndName new_column = src_column.cloneEmpty();
 		dst_right_columns[i] = new_column.column.get();
 		res.insert(std::move(new_column));
 	}
 
-	size_t rows_left = block.rowsInFirstColumn();
+	size_t rows_left = block.rows();
 
 	/// NOTE Было бы оптимальнее использовать reserve, а также методы replicate для размножения значений левого блока.
 
@@ -788,7 +803,7 @@ void Join::joinBlockImplCross(Block & block) const
 	{
 		for (const Block & block_right : blocks)
 		{
-			size_t rows_right = block_right.rowsInFirstColumn();
+			size_t rows_right = block_right.rows();
 
 			for (size_t col_num = 0; col_num < num_existing_columns; ++col_num)
 				for (size_t j = 0; j < rows_right; ++j)
@@ -796,7 +811,7 @@ void Join::joinBlockImplCross(Block & block) const
 
 			for (size_t col_num = 0; col_num < num_columns_to_add; ++col_num)
 			{
-				const IColumn * column_right = block_right.unsafeGetByPosition(col_num).column.get();
+				const IColumn * column_right = block_right.getByPosition(col_num).column.get();
 
 				for (size_t j = 0; j < rows_right; ++j)
 					dst_right_columns[col_num]->insertFrom(*column_right, j);
@@ -862,7 +877,7 @@ void Join::joinTotals(Block & block) const
 			totals_without_keys.erase(totals_without_keys.getPositionByName(name));
 
 		for (size_t i = 0; i < totals_without_keys.columns(); ++i)
-			block.insert(totals_without_keys.getByPosition(i));
+			block.insert(totals_without_keys.safeGetByPosition(i));
 	}
 	else
 	{
@@ -871,8 +886,8 @@ void Join::joinTotals(Block & block) const
 
 		for (size_t i = 0; i < totals_without_keys.columns(); ++i)
 		{
-			totals_without_keys.getByPosition(i).column->insertDefault();
-			block.insert(totals_without_keys.getByPosition(i));
+			totals_without_keys.safeGetByPosition(i).column->insertDefault();
+			block.insert(totals_without_keys.safeGetByPosition(i));
 		}
 	}
 }
@@ -892,7 +907,7 @@ struct AdderNonJoined<ASTTableJoin::Strictness::Any, Mapped>
 			columns_left[j]->insertDefault();
 
 		for (size_t j = 0; j < num_columns_right; ++j)
-			columns_right[j]->insertFrom(*mapped.block->unsafeGetByPosition(j).column.get(), mapped.row_num);
+			columns_right[j]->insertFrom(*mapped.block->getByPosition(j).column.get(), mapped.row_num);
 	}
 };
 
@@ -909,7 +924,7 @@ struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 				columns_left[j]->insertDefault();
 
 			for (size_t j = 0; j < num_columns_right; ++j)
-				columns_right[j]->insertFrom(*current->block->unsafeGetByPosition(j).column.get(), current->row_num);
+				columns_right[j]->insertFrom(*current->block->getByPosition(j).column.get(), current->row_num);
 		}
 	}
 };
@@ -937,7 +952,7 @@ public:
 		/// Добавляем в блок новые столбцы.
 		for (size_t i = 0; i < num_columns_right; ++i)
 		{
-			const ColumnWithTypeAndName & src_column = parent.sample_block_with_columns_to_add.getByPosition(i);
+			const ColumnWithTypeAndName & src_column = parent.sample_block_with_columns_to_add.safeGetByPosition(i);
 			ColumnWithTypeAndName new_column = src_column.cloneEmpty();
 			result_sample_block.insert(std::move(new_column));
 		}
@@ -947,7 +962,7 @@ public:
 
 		for (size_t i = 0; i < num_keys + num_columns_left; ++i)
 		{
-			const String & name = left_sample_block.getByPosition(i).name;
+			const String & name = left_sample_block.safeGetByPosition(i).name;
 
 			auto found_key_column = std::find(parent.key_names_left.begin(), parent.key_names_left.end(), name);
 			if (parent.key_names_left.end() == found_key_column)
@@ -1010,14 +1025,14 @@ private:
 
 		for (size_t i = 0; i < num_columns_left; ++i)
 		{
-			auto & column_with_type_and_name = block.getByPosition(column_numbers_left[i]);
+			auto & column_with_type_and_name = block.safeGetByPosition(column_numbers_left[i]);
 			column_with_type_and_name.column = column_with_type_and_name.type->createColumn();
 			columns_left[i] = column_with_type_and_name.column.get();
 		}
 
 		for (size_t i = 0; i < num_columns_right; ++i)
 		{
-			auto & column_with_type_and_name = block.getByPosition(column_numbers_keys_and_right[i]);
+			auto & column_with_type_and_name = block.safeGetByPosition(column_numbers_keys_and_right[i]);
 			column_with_type_and_name.column = column_with_type_and_name.type->createColumn();
 			columns_keys_and_right[i] = column_with_type_and_name.column.get();
 			columns_keys_and_right[i]->reserve(column_with_type_and_name.column->size());

@@ -10,6 +10,12 @@
 #include <DB/Common/formatReadable.h>
 #include <DB/Common/CurrentMetrics.h>
 
+
+namespace CurrentMetrics
+{
+	extern const Metric DiskSpaceReservedForMerge;
+}
+
 namespace DB
 {
 
@@ -20,10 +26,10 @@ namespace ErrorCodes
 }
 
 
-/** Узнает количество свободного места в файловой системе.
-  * Можно "резервировать" место, чтобы разные операции могли согласованно планировать использование диска.
-  * Резервирования не разделяются по файловым системам.
-  * Вместо этого при запросе свободного места считается, что все резервирования сделаны в той же файловой системе.
+/** Determines amount of free space in filesystem.
+  * Could "reserve" space, for different operations to plan disk space usage.
+  * Reservations are not separated for different filesystems,
+  *  instead it is assumed, that all reservations are done within same filesystem.
   */
 class DiskSpaceMonitor
 {
@@ -61,7 +67,7 @@ public:
 			}
 		}
 
-		/// Изменить количество зарезервированного места. При увеличении не делается проверка, что места достаточно.
+		/// Change amount of reserved space. When new_size is greater than before, availability of free space is not checked.
 		void update(size_t new_size)
 		{
 			std::lock_guard<std::mutex> lock(DiskSpaceMonitor::mutex);
@@ -99,7 +105,7 @@ public:
 
 		size_t res = fs.f_bfree * fs.f_bsize;
 
-		/// Зарезервируем дополнительно 30 МБ. Когда я тестировал, statvfs показывал на несколько мегабайт больше свободного места, чем df.
+		/// Heuristic by Michael Kolupaev: reserve 30 MB more, because statvfs shows few megabytes more space than df.
 		res -= std::min(res, 30 * (1ul << 20));
 
 		std::lock_guard<std::mutex> lock(mutex);
@@ -124,7 +130,7 @@ public:
 		return reservation_count;
 	}
 
-	/// Если места (приблизительно) недостаточно, бросает исключение.
+	/// If not enough (approximately) space, throw an exception.
 	static ReservationPtr reserve(const std::string & path, size_t size)
 	{
 		size_t free_bytes = getUnreservedFreeSpace(path);

@@ -1,7 +1,12 @@
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Parsers/ASTSetQuery.h>
+#include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTAsterisk.h>
+#include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTSubquery.h>
 #include <DB/Parsers/ASTTablesInSelectQuery.h>
+#include <DB/Common/typeid_cast.h>
 
 
 namespace DB
@@ -149,31 +154,33 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_n
 
 ASTPtr ASTSelectQuery::clone() const
 {
-	ASTPtr ptr = cloneImpl(true);
+	auto ptr = cloneImpl(true);
 
 	/// Установить указатели на предыдущие запросы SELECT.
 	ASTPtr current = ptr;
-	static_cast<ASTSelectQuery *>(&*current)->prev_union_all = nullptr;
-	ASTPtr next = static_cast<ASTSelectQuery *>(&*current)->next_union_all;
+	static_cast<ASTSelectQuery *>(current.get())->prev_union_all = nullptr;
+	ASTPtr next = static_cast<ASTSelectQuery *>(current.get())->next_union_all;
 	while (next != nullptr)
 	{
-		ASTSelectQuery * next_select_query = static_cast<ASTSelectQuery *>(&*next);
+		ASTSelectQuery * next_select_query = static_cast<ASTSelectQuery *>(next.get());
 		next_select_query->prev_union_all = current.get();
 		current = next;
 		next = next_select_query->next_union_all;
 	}
+
+	cloneOutputOptions(*ptr);
 
 	return ptr;
 }
 
 ASTPtr ASTSelectQuery::cloneFirstSelect() const
 {
-	ASTPtr res = cloneImpl(false);
-	static_cast<ASTSelectQuery *>(&*res)->prev_union_all = nullptr;
+	auto res = cloneImpl(false);
+	res->prev_union_all = nullptr;
 	return res;
 }
 
-ASTPtr ASTSelectQuery::cloneImpl(bool traverse_union_all) const
+std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneImpl(bool traverse_union_all) const
 {
 	auto res = std::make_shared<ASTSelectQuery>(*this);
 	res->children.clear();
@@ -197,10 +204,11 @@ ASTPtr ASTSelectQuery::cloneImpl(bool traverse_union_all) const
 	CLONE(group_expression_list)
 	CLONE(having_expression)
 	CLONE(order_expression_list)
+	CLONE(limit_by_value)
+	CLONE(limit_by_expression_list)
 	CLONE(limit_offset)
 	CLONE(limit_length)
 	CLONE(settings)
-	CLONE(format)
 
 #undef CLONE
 
@@ -218,16 +226,7 @@ ASTPtr ASTSelectQuery::cloneImpl(bool traverse_union_all) const
 	return res;
 }
 
-const IAST * ASTSelectQuery::getFormat() const
-{
-	const ASTSelectQuery * query = this;
-	while (query->next_union_all != nullptr)
-		query = static_cast<const ASTSelectQuery *>(query->next_union_all.get());
-	return query->format.get();
-}
-
-
-void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
 	frame.current_select = this;
 	frame.need_parens = false;
@@ -282,6 +281,16 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 			: typeid_cast<const ASTExpressionList &>(*order_expression_list).formatImplMultiline(s, state, frame);
 	}
 
+	if (limit_by_value)
+	{
+		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT " << (s.hilite ? hilite_none : "");
+		limit_by_value->formatImpl(s, state, frame);
+		s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "");
+		s.one_line
+			? limit_by_expression_list->formatImpl(s, state, frame)
+			: typeid_cast<const ASTExpressionList &>(*limit_by_expression_list).formatImplMultiline(s, state, frame);
+	}
+
 	if (limit_length)
 	{
 		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT " << (s.hilite ? hilite_none : "");
@@ -303,14 +312,8 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 			if (it != ast_set.changes.begin())
 				s.ostr << ", ";
 
-			s.ostr << it->name << " = " << apply_visitor(FieldVisitorToString(), it->value);
+			s.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
 		}
-	}
-
-	if (format)
-	{
-		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FORMAT " << (s.hilite ? hilite_none : "");
-		format->formatImpl(s, state, frame);
 	}
 
 	if (next_union_all)

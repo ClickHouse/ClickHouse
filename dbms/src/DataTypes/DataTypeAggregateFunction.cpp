@@ -24,7 +24,7 @@ std::string DataTypeAggregateFunction::getName() const
 		{
 			if (i)
 				stream << ", ";
-			stream << apply_visitor(DB::FieldVisitorToString(), parameters[i]);
+			stream << applyVisitor(DB::FieldVisitorToString(), parameters[i]);
 		}
 		stream << ")";
 	}
@@ -62,13 +62,14 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 {
 	ColumnAggregateFunction & column_concrete = static_cast<ColumnAggregateFunction &>(column);
 
+	Arena & arena = column_concrete.createOrGetArena();
 	size_t size_of_state = function->sizeOfData();
-	AggregateDataPtr place = column_concrete.createOrGetArena().alloc(size_of_state);
+	AggregateDataPtr place = arena.alloc(size_of_state);
 
 	function->create(place);
 	try
 	{
-		function->deserialize(place, istr);
+		function->deserialize(place, istr, &arena);
 	}
 	catch (...)
 	{
@@ -79,7 +80,7 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 	column_concrete.getData().push_back(place);
 }
 
-void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnAggregateFunction & real_column = typeid_cast<const ColumnAggregateFunction &>(column);
 	const ColumnAggregateFunction::Container_t & vec = real_column.getData();
@@ -94,7 +95,7 @@ void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuf
 		function->serialize(*it, ostr);
 }
 
-void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
 	ColumnAggregateFunction::Container_t & vec = real_column.getData();
@@ -116,7 +117,7 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 
 		try
 		{
-			function->deserialize(place, istr);
+			function->deserialize(place, istr, &arena);
 		}
 		catch (...)
 		{
@@ -140,15 +141,16 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
 {
 	ColumnAggregateFunction & column_concrete = static_cast<ColumnAggregateFunction &>(column);
 
+	Arena & arena = column_concrete.createOrGetArena();
 	size_t size_of_state = function->sizeOfData();
-	AggregateDataPtr place = column_concrete.createOrGetArena().alloc(size_of_state);
+	AggregateDataPtr place = arena.alloc(size_of_state);
 
 	function->create(place);
 
 	try
 	{
 		ReadBufferFromString istr(s);
-		function->deserialize(place, istr);
+		function->deserialize(place, istr, &arena);
 	}
 	catch (...)
 	{
@@ -193,7 +195,7 @@ void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuff
 }
 
 
-void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
 {
 	writeJSONString(serializeToString(function, column, row_num), ostr);
 }

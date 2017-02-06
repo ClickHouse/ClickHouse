@@ -1,5 +1,7 @@
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
+#include <DB/DataStreams/LazyBlockInputStream.h>
+#include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
@@ -17,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int ILLEGAL_PREWHERE;
+	extern const int INCOMPATIBLE_SOURCE_TABLES;
 }
 
 
@@ -109,9 +112,7 @@ BlockInputStreams StorageMerge::read(
 
 	StorageVector selected_tables;
 
-	/// Среди всех стадий, до которых обрабатывается запрос в таблицах-источниках, выберем минимальную.
-	processed_stage = QueryProcessingStage::Complete;
-	QueryProcessingStage::Enum tmp_processed_stage = QueryProcessingStage::Complete;
+	std::experimental::optional<QueryProcessingStage::Enum> processed_stage_in_source_tables;
 
 	/** Сначала составим список выбранных таблиц, чтобы узнать его размер.
 	  * Это нужно, чтобы правильно передать в каждую таблицу рекомендацию по количеству потоков.
@@ -124,7 +125,7 @@ BlockInputStreams StorageMerge::read(
 			if (!table->supportsPrewhere())
 				throw Exception("Storage " + table->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
 
-	TableLocks table_locks;
+	TableStructureReadLocks table_locks;
 
 	/// Нельзя, чтобы эти таблицы кто-нибудь удалил, пока мы их читаем.
 	for (auto & table : selected_tables)
@@ -160,14 +161,51 @@ BlockInputStreams StorageMerge::read(
 		ASTPtr modified_query_ast = query->clone();
 		VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_table", table->getTableName());
 
-		BlockInputStreams source_streams = table->read(
-			real_column_names,
-			modified_query_ast,
-			context,
-			modified_settings,
-			tmp_processed_stage,
-			max_block_size,
-			size > threads ? 1 : (threads / size));
+		BlockInputStreams source_streams;
+
+		if (i < threads)
+		{
+			QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
+			source_streams = table->read(
+				real_column_names,
+				modified_query_ast,
+				context,
+				modified_settings,
+				processed_stage_in_source_table,
+				max_block_size,
+				size >= threads ? 1 : (threads / size));
+
+			if (!processed_stage_in_source_tables)
+				processed_stage_in_source_tables.emplace(processed_stage_in_source_table);
+			else if (processed_stage_in_source_table != processed_stage_in_source_tables.value())
+				throw Exception("Source tables for Merge table are processing data up to different stages",
+					ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
+		}
+		else
+		{
+			/// If many streams, initialize it lazily, to avoid long delay before start of query processing.
+			source_streams.emplace_back(std::make_shared<LazyBlockInputStream>([=]
+			{
+				QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
+				BlockInputStreams streams = table->read(
+					real_column_names,
+					modified_query_ast,
+					context,
+					modified_settings,
+					processed_stage_in_source_table,
+					max_block_size,
+					1);
+
+				if (!processed_stage_in_source_tables)
+					throw Exception("Logical error: unknown processed stage in source tables",
+						ErrorCodes::LOGICAL_ERROR);
+				else if (processed_stage_in_source_table != processed_stage_in_source_tables.value())
+					throw Exception("Source tables for Merge table are processing data up to different stages",
+						ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
+
+				return streams.empty() ? std::make_shared<NullBlockInputStream>() : streams.front();
+			}));
+		}
 
 		for (auto & stream : source_streams)
 			stream->addTableLock(table_lock);
@@ -183,10 +221,10 @@ BlockInputStreams StorageMerge::read(
 		}
 
 		res.insert(res.end(), source_streams.begin(), source_streams.end());
-
-		if (tmp_processed_stage < processed_stage)
-			processed_stage = tmp_processed_stage;
 	}
+
+	if (processed_stage_in_source_tables)
+		processed_stage = processed_stage_in_source_tables.value();
 
 	return narrowBlockInputStreams(res, threads);
 }

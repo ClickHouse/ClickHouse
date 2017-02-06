@@ -32,6 +32,8 @@ else()
 add_definitions(-DXML_NS -DXML_DTD -DHAVE_EXPAT_CONFIG_H)
 endif()
 
+include_directories (BEFORE include)
+
 add_library( "${LIBNAME}" ${LIB_MODE} ${SRCS} )
 set_target_properties( "${LIBNAME}"
     PROPERTIES
@@ -42,7 +44,7 @@ set_target_properties( "${LIBNAME}"
 
 target_link_libraries( "${LIBNAME}" ${SYSLIBS} PocoFoundation)
 
-if (ENABLE_TESTS)
+if (POCO_ENABLE_TESTS)
     add_subdirectory(samples)
     add_subdirectory(testsuite)
 endif ()

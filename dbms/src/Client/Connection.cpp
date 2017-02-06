@@ -23,6 +23,13 @@
 #include <DB/Common/NetException.h>
 #include <DB/Common/CurrentMetrics.h>
 
+#include <DB/Interpreters/ClientInfo.h>
+
+
+namespace CurrentMetrics
+{
+	extern const Metric SendExternalTables;
+}
 
 namespace DB
 {
@@ -124,6 +131,10 @@ void Connection::receiveHello()
 		readVarUInt(server_version_major, *in);
 		readVarUInt(server_version_minor, *in);
 		readVarUInt(server_revision, *in);
+		if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
+		{
+			readStringBinary(server_timezone, *in);
+		}
 	}
 	else if (packet_type == Protocol::Server::Exception)
 		receiveException()->rethrow();
@@ -173,6 +184,13 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
 	revision = server_revision;
 }
 
+const String & Connection::getServerTimezone()
+{
+	if (!connected)
+		connect();
+
+	return server_timezone;
+}
 
 void Connection::forceConnected()
 {
@@ -257,7 +275,13 @@ bool Connection::ping()
 }
 
 
-void Connection::sendQuery(const String & query, const String & query_id_, UInt64 stage, const Settings * settings, bool with_pending_data)
+void Connection::sendQuery(
+	const String & query,
+	const String & query_id_,
+	UInt64 stage,
+	const Settings * settings,
+	const ClientInfo * client_info,
+	bool with_pending_data)
 {
 	network_compression_method = settings ? settings->network_compression_method.value : CompressionMethod::LZ4;
 
@@ -269,6 +293,28 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 
 	writeVarUInt(Protocol::Client::Query, *out);
 	writeStringBinary(query_id, *out);
+
+	/// Client info.
+	if (server_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+	{
+		ClientInfo client_info_to_send;
+
+		if (!client_info)
+		{
+			/// No client info passed - means this query initiated by me.
+			client_info_to_send.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+			client_info_to_send.fillOSUserHostNameAndVersionInfo();
+			client_info_to_send.client_name = (DBMS_NAME " ") + client_name;
+		}
+		else
+		{
+			/// This query is initiated by another query.
+			client_info_to_send = *client_info;
+			client_info_to_send.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+		}
+
+		client_info_to_send.write(*out, server_revision);
+	}
 
 	/// Per query settings.
 	if (settings)
@@ -286,7 +332,7 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 	block_in.reset();
 	block_out.reset();
 
-	/// Если версия сервера достаточно новая и стоит флаг, отправляем пустой блок, символизируя конец передачи данных.
+	/// If server version is new enough, send empty block which meand end of data.
 	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES && !with_pending_data)
 	{
 		sendData(Block());
@@ -380,7 +426,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 		elem.first->readPrefix();
 		while (Block block = elem.first->read())
 		{
-			rows += block.rowsInFirstColumn();
+			rows += block.rows();
 			sendData(block, elem.second);
 		}
 		elem.first->readSuffix();

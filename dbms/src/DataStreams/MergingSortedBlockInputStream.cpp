@@ -15,6 +15,36 @@ namespace ErrorCodes
 }
 
 
+MergingSortedBlockInputStream::MergingSortedBlockInputStream(BlockInputStreams & inputs_, const SortDescription & description_,
+	size_t max_block_size_, size_t limit_, MergedRowSources * out_row_sources_, bool quiet_)
+	: description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_),
+	source_blocks(inputs_.size()), cursors(inputs_.size()), out_row_sources(out_row_sources_)
+{
+	children.insert(children.end(), inputs_.begin(), inputs_.end());
+}
+
+String MergingSortedBlockInputStream::getID() const
+{
+	std::stringstream res;
+	res << "MergingSorted(";
+
+	Strings children_ids(children.size());
+	for (size_t i = 0; i < children.size(); ++i)
+		children_ids[i] = children[i]->getID();
+
+	/// Порядок не имеет значения.
+	std::sort(children_ids.begin(), children_ids.end());
+
+	for (size_t i = 0; i < children_ids.size(); ++i)
+		res << (i == 0 ? "" : ", ") << children_ids[i];
+
+	for (size_t i = 0; i < description.size(); ++i)
+		res << ", " << description[i].getID();
+
+	res << ")";
+	return res.str();
+}
+
 void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs & merged_columns)
 {
 	/// Читаем первые блоки, инициализируем очередь.
@@ -32,7 +62,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 
 			shared_block_ptr = new detail::SharedBlock(children[i]->read());
 
-			const size_t rows = shared_block_ptr->rowsInFirstColumn();
+			const size_t rows = shared_block_ptr->rows();
 
 			if (rows == 0)
 				continue;
@@ -92,9 +122,9 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 
 		for (size_t i = 0; i < src_columns; ++i)
 		{
-			if (shared_block_ptr->getByPosition(i).name != merged_block.getByPosition(i).name
-				|| shared_block_ptr->getByPosition(i).type->getName() != merged_block.getByPosition(i).type->getName()
-				|| shared_block_ptr->getByPosition(i).column->getName() != merged_block.getByPosition(i).column->getName())
+			if (shared_block_ptr->safeGetByPosition(i).name != merged_block.safeGetByPosition(i).name
+				|| shared_block_ptr->safeGetByPosition(i).type->getName() != merged_block.safeGetByPosition(i).type->getName()
+				|| shared_block_ptr->safeGetByPosition(i).column->getName() != merged_block.safeGetByPosition(i).column->getName())
 			{
 				throw Exception("Merging blocks has different names or types of columns:\n"
 					+ shared_block_ptr->dumpStructure() + "\nand\n" + merged_block.dumpStructure(),
@@ -105,7 +135,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 
 	for (size_t i = 0; i < num_columns; ++i)
 	{
-		merged_columns.emplace_back(merged_block.getByPosition(i).column.get());
+		merged_columns.emplace_back(merged_block.safeGetByPosition(i).column.get());
 		merged_columns.back()->reserve(expected_block_size);
 	}
 }
@@ -195,17 +225,14 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 					return;
 				}
 
-				size_t source_num = 0;
-				size_t size = cursors.size();
-				for (; source_num < size; ++source_num)
-					if (&cursors[source_num] == current.impl)
-						break;
+				/// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
+				size_t source_num = current.impl->order;
 
-				if (source_num == size)
+				if (source_num >= cursors.size())
 					throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
 
 				for (size_t i = 0; i < num_columns; ++i)
-					merged_block.unsafeGetByPosition(i).column = source_blocks[source_num]->unsafeGetByPosition(i).column;
+					merged_block.getByPosition(i).column = source_blocks[source_num]->getByPosition(i).column;
 
 	//			std::cerr << "copied columns\n";
 
@@ -216,13 +243,16 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 					merged_rows = limit - total_merged_rows;
 					for (size_t i = 0; i < num_columns; ++i)
 					{
-						auto & column = merged_block.unsafeGetByPosition(i).column;
+						auto & column = merged_block.getByPosition(i).column;
 						column = column->cut(0, merged_rows);
 					}
 
 					cancel();
 					finished = true;
 				}
+
+				if (out_row_sources)
+					out_row_sources->resize_fill(out_row_sources->size() + merged_rows, RowSourcePart(source_num));
 
 	//			std::cerr << "fetching next block\n";
 
@@ -235,6 +265,12 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 	//		std::cerr << "Inserting row\n";
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
+
+			if (out_row_sources)
+			{
+				/// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
+				out_row_sources->emplace_back(current.impl->order);
+			}
 
 			if (!current->isLast())
 			{
@@ -306,13 +342,16 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
 
 void MergingSortedBlockInputStream::readSuffixImpl()
 {
+ 	if (quiet)
+ 		return;
+
 	const BlockStreamProfileInfo & profile_info = getProfileInfo();
 	double seconds = profile_info.total_stopwatch.elapsedSeconds();
 	LOG_DEBUG(log, std::fixed << std::setprecision(2)
 		<< "Merge sorted " << profile_info.blocks << " blocks, " << profile_info.rows << " rows"
 		<< " in " << seconds << " sec., "
 		<< profile_info.rows / seconds << " rows/sec., "
-		<< profile_info.bytes / 1000000.0 / seconds << " MiB/sec.");
+		<< profile_info.bytes / 1000000.0 / seconds << " MB/sec.");
 }
 
 }

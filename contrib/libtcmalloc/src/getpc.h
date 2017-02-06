@@ -179,7 +179,12 @@ inline void* GetPC(const struct ucontext_t& signal_ucontext) {
 // configure.ac (or set it manually in your config.h).
 #else
 inline void* GetPC(const ucontext_t& signal_ucontext) {
+#if defined(__s390__) && !defined(__s390x__)
+  // Mask out the AMODE31 bit from the PC recorded in the context.
+  return (void*)((unsigned long)signal_ucontext.PC_FROM_UCONTEXT & 0x7fffffffUL);
+#else
   return (void*)signal_ucontext.PC_FROM_UCONTEXT;   // defined in config.h
+#endif
 }
 
 #endif

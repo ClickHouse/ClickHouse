@@ -69,7 +69,7 @@ void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr)
 }
 
 
-void DataTypeFixedString::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnFixedString::Chars_t & data = typeid_cast<const ColumnFixedString &>(column).getChars();
 
@@ -82,7 +82,7 @@ void DataTypeFixedString::serializeBinary(const IColumn & column, WriteBuffer & 
 }
 
 
-void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnFixedString::Chars_t & data = typeid_cast<ColumnFixedString &>(column).getChars();
 
@@ -158,7 +158,7 @@ void DataTypeFixedString::deserializeTextQuoted(IColumn & column, ReadBuffer & i
 }
 
 
-void DataTypeFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
 {
 	const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
 	writeJSONString(pos, pos + n, ostr);

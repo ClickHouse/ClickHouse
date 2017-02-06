@@ -156,7 +156,10 @@ public:
 
 	bool supportsIndexForIn() const override { return true; }
 
+	bool checkTableCanBeDropped() const override;
+
 	MergeTreeData & getData() { return data; }
+	const MergeTreeData & getData() const { return data; }
 	MergeTreeData * getUnreplicatedData() { return unreplicated_data.get(); }
 
 
@@ -200,6 +203,7 @@ private:
 	friend class ReplicatedMergeTreePartCheckThread;
 	friend class ReplicatedMergeTreeCleanupThread;
 	friend class ReplicatedMergeTreeAlterThread;
+	friend class ReplicatedMergeTreeRestartingThread;
 	friend struct ReplicatedMergeTreeLogEntry;
 	friend class ScopedPartitionMergeLock;
 
@@ -247,6 +251,7 @@ private:
 	/** Является ли эта реплика "ведущей". Ведущая реплика выбирает куски для слияния.
 	  */
 	bool is_leader_node = false;
+	std::mutex leader_node_mutex;
 
 	InterserverIOEndpointHolderPtr endpoint_holder;
 	InterserverIOEndpointHolderPtr disk_space_monitor_endpoint_holder;
@@ -382,7 +387,7 @@ private:
 	/** Выполнить действие из очереди. Бросает исключение, если что-то не так.
 	  * Возвращает, получилось ли выполнить. Если не получилось, запись нужно положить в конец очереди.
 	  */
-	bool executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context);
+	bool executeLogEntry(const LogEntry & entry);
 
 	void executeDropRange(const LogEntry & entry);
 	bool executeAttachPart(const LogEntry & entry); /// Возвращает false, если куска нет, и его нужно забрать с другой реплики.
@@ -393,7 +398,7 @@ private:
 
 	/** Выполняет действия из очереди.
 	  */
-	bool queueTask(BackgroundProcessingPool::Context & context);
+	bool queueTask();
 
 	/// Выбор кусков для слияния.
 
@@ -486,19 +491,6 @@ private:
 
 	using ReplicaToSpaceInfo = std::map<std::string, ReplicaSpaceInfo>;
 
-	struct PartitionMergeLockInfo
-	{
-		PartitionMergeLockInfo(const std::string & fake_part_name_)
-			: fake_part_name(fake_part_name_), ref_count(1)
-		{
-		}
-
-		std::string fake_part_name;
-		unsigned int ref_count;
-	};
-
-	using PartitionToMergeLock = std::map<std::string, PartitionMergeLockInfo>;
-
 	/** Проверяет, что структуры локальной и реплицируемых таблиц совпадают.
 	  */
 	void enforceShardsConsistency(const WeightedZooKeeperPaths & weighted_zookeeper_paths);
@@ -511,9 +503,6 @@ private:
 	/** Проверяет, что имеется достаточно свободного места локально и на всех репликах.
 	  */
 	bool checkSpaceForResharding(const ReplicaToSpaceInfo & replica_to_space_info, size_t partition_size) const;
-
-	std::mutex mutex_partition_to_merge_lock;
-	PartitionToMergeLock partition_to_merge_lock;
 };
 
 

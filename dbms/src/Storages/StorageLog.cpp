@@ -1,8 +1,7 @@
-#include <Poco/Path.h>
-
-#include <DB/Common/escapeForFileName.h>
+#include <DB/Storages/StorageLog.h>
 
 #include <DB/Common/Exception.h>
+#include <DB/Common/StringUtils.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromFile.h>
@@ -12,21 +11,28 @@
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnNullable.h>
 
-#include <DB/Storages/StorageLog.h>
+#include <DB/Interpreters/Settings.h>
 
-#include <DB/DataTypes/DataTypeString.h>
+#include <Poco/Path.h>
+#include <Poco/DirectoryIterator.h>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION 	".bin"
 #define DBMS_STORAGE_LOG_MARKS_FILE_EXTENSION	".mrk"
 #define DBMS_STORAGE_LOG_MARKS_FILE_NAME 		"__marks.mrk"
+#define DBMS_STORAGE_LOG_NULL_MARKS_FILE_NAME 	"__null_marks.mrk"
+#define DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION ".null.bin"
 
 
 namespace DB
@@ -47,12 +53,34 @@ public:
 	LogBlockInputStream(
 		size_t block_size_, const Names & column_names_, StorageLog & storage_,
 		size_t mark_number_, size_t rows_limit_, size_t max_read_buffer_size_)
-		: block_size(block_size_), column_names(column_names_), column_types(column_names.size()), storage(storage_),
-		mark_number(mark_number_), rows_limit(rows_limit_), current_mark(mark_number_), max_read_buffer_size(max_read_buffer_size_) {}
+		: block_size(block_size_),
+		column_names(column_names_),
+		column_types(column_names.size()),
+		storage(storage_),
+		mark_number(mark_number_),
+		null_mark_number(0),
+		rows_limit(rows_limit_),
+		max_read_buffer_size(max_read_buffer_size_)
+	{
+	}
 
-	String getName() const { return "Log"; }
+	LogBlockInputStream(
+		size_t block_size_, const Names & column_names_, StorageLog & storage_,
+		size_t mark_number_, size_t null_mark_number_, size_t rows_limit_, size_t max_read_buffer_size_)
+		: block_size(block_size_),
+		column_names(column_names_),
+		column_types(column_names.size()),
+		storage(storage_),
+		mark_number(mark_number_),
+		null_mark_number(null_mark_number_),
+		rows_limit(rows_limit_),
+		max_read_buffer_size(max_read_buffer_size_)
+	{
+	}
 
-	String getID() const
+	String getName() const override { return "Log"; }
+
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "Log(" << storage.getTableName() << ", " << &storage << ", " << mark_number << ", " << rows_limit;
@@ -65,16 +93,17 @@ public:
 	}
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
+
 private:
 	size_t block_size;
 	Names column_names;
 	DataTypes column_types;
 	StorageLog & storage;
 	size_t mark_number;		/// С какой засечки читать данные
+	size_t null_mark_number;
 	size_t rows_limit;		/// Максимальное количество строк, которых можно прочитать
 	size_t rows_read = 0;
-	size_t current_mark;
 	size_t max_read_buffer_size;
 
 	struct Stream
@@ -104,13 +133,16 @@ class LogBlockOutputStream : public IBlockOutputStream
 public:
 	LogBlockOutputStream(StorageLog & storage_)
 		: storage(storage_),
-		lock(storage.rwlock), marks_stream(storage.marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY)
+		lock(storage.rwlock),
+		marks_stream(storage.marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY),
+		null_marks_stream(storage.has_nullable_columns ?
+			std::make_unique<WriteBufferFromFile>(storage.null_marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY) : nullptr)
 	{
 		for (const auto & column : storage.getColumnsList())
 			addStream(column.name, *column.type);
 	}
 
-	~LogBlockOutputStream()
+	~LogBlockOutputStream() override
 	{
 		try
 		{
@@ -122,8 +154,8 @@ public:
 		}
 	}
 
-	void write(const Block & block);
-	void writeSuffix();
+	void write(const Block & block) override;
+	void writeSuffix() override;
 
 private:
 	StorageLog & storage;
@@ -159,10 +191,14 @@ private:
 	using OffsetColumns = std::set<std::string>;
 
 	WriteBufferFromFile marks_stream; /// Объявлен ниже lock, чтобы файл открывался при захваченном rwlock.
+	std::unique_ptr<WriteBufferFromFile> null_marks_stream;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
-	void writeData(const String & name, const IDataType & type, const IColumn & column, MarksForColumns & out_marks, OffsetColumns & offset_columns, size_t level = 0);
-	void writeMarks(MarksForColumns marks);
+	void addNullStream(const String & name);
+	void writeData(const String & name, const IDataType & type, const IColumn & column,
+		MarksForColumns & out_marks, MarksForColumns & out_null_marks,
+		OffsetColumns & offset_columns, size_t level = 0);
+	void writeMarks(MarksForColumns marks, bool write_null_marks);
 };
 
 
@@ -171,6 +207,10 @@ Block LogBlockInputStream::readImpl()
 	Block res;
 
 	if (rows_read == rows_limit)
+		return res;
+
+	/// If there are no files in the folder, the table is empty.
+	if (Poco::DirectoryIterator(storage.getFullPath()) == Poco::DirectoryIterator())
 		return res;
 
 	/// Если файлы не открыты, то открываем их.
@@ -182,34 +222,12 @@ Block LogBlockInputStream::readImpl()
 		{
 			const auto & name = column_names[i];
 			column_types[i] = storage.getDataTypeByName(name);
-			if (name != storage._table_column_name) /// Для виртуального столбца не надо ничего открывать
-				addStream(name, *column_types[i]);
+			addStream(name, *column_types[i]);
 		}
 	}
 
-	bool has_virtual_column_table = false;
-	for (const auto & name : column_names)
-		if (name == storage._table_column_name)
-			has_virtual_column_table = true;
-
 	/// Сколько строк читать для следующего блока.
 	size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
-	const Marks & marks = storage.getMarksWithRealRowCount();
-	std::pair<String, size_t> current_table;
-
-	/// Отдельно обрабатываем виртуальный столбец
-	if (has_virtual_column_table)
-	{
-		size_t current_row = rows_read;
-		if (mark_number > 0)
-			current_row += marks[mark_number-1].rows;
-		while (current_mark < marks.size() && marks[current_mark].rows <= current_row)
-			++current_mark;
-
-		current_table = storage.getTableFromMark(current_mark);
-		current_table.second = std::min(current_table.second, marks.size() - 1);
-		max_rows_to_read = std::min(max_rows_to_read, marks[current_table.second].rows - current_row);
-	}
 
 	/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
 	using OffsetColumns = std::map<std::string, ColumnPtr>;
@@ -219,18 +237,29 @@ Block LogBlockInputStream::readImpl()
 	{
 		const auto & name = column_names[i];
 
-		/// Виртуальный столбец не надо считывать с жесткого диска
-		if (name == storage._table_column_name)
-			continue;
-
 		ColumnWithTypeAndName column;
 		column.name = name;
 		column.type = column_types[i];
 
 		bool read_offsets = true;
 
+		const IDataType * observed_type;
+		bool is_nullable;
+
+		if (column.type->isNullable())
+		{
+			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
+			observed_type = nullable_type.getNestedType().get();
+			is_nullable = true;
+		}
+		else
+		{
+			observed_type = column.type.get();
+			is_nullable = false;
+		}
+
 		/// Для вложенных структур запоминаем указатели на столбцы со смещениями
-		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&*column.type))
+		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type))
 		{
 			String name = DataTypeNested::extractNestedTableName(column.name);
 
@@ -240,6 +269,8 @@ Block LogBlockInputStream::readImpl()
 				read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
 
 			column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+			if (is_nullable)
+				column.column = std::make_shared<ColumnNullable>(column.column, std::make_shared<ColumnUInt8>());
 		}
 		else
 			column.column = column.type->createColumn();
@@ -256,19 +287,6 @@ Block LogBlockInputStream::readImpl()
 
 		if (column.column->size())
 			res.insert(std::move(column));
-	}
-
-	/// Отдельно обрабатываем виртуальный столбец
-	if (has_virtual_column_table)
-	{
-		size_t rows = max_rows_to_read;
-		if (res.columns() > 0)
-			rows = res.rows();
-		if (rows > 0)
-		{
-			ColumnPtr column_ptr = ColumnConst<String>(rows, current_table.first, std::make_shared<DataTypeString>()).convertToFullColumn();
-			res.insert({column_ptr, std::make_shared<DataTypeString>(), storage._table_column_name});
-		}
 	}
 
 	if (res)
@@ -289,9 +307,27 @@ Block LogBlockInputStream::readImpl()
 
 void LogBlockInputStream::addStream(const String & name, const IDataType & type, size_t level)
 {
-	/// Для массивов используются отдельные потоки для размеров.
-	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	if (type.isNullable())
 	{
+		/// First create the stream that handles the null map of the given column.
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const IDataType & nested_type = *nullable_type.getNestedType();
+
+		std::string filename = name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION;
+
+		streams.emplace(filename, std::make_unique<Stream>(
+			storage.files[filename].data_file.path(),
+			null_mark_number
+				? storage.files[filename].marks[null_mark_number].offset
+				: 0,
+			max_read_buffer_size));
+
+		/// Then create the stream that handles the data of the given column.
+		addStream(name, nested_type, level);
+	}
+	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	{
+		/// Для массивов используются отдельные потоки для размеров.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
 			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
@@ -316,9 +352,23 @@ void LogBlockInputStream::addStream(const String & name, const IDataType & type,
 void LogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read,
 									size_t level, bool read_offsets)
 {
-	/// Для массивов требуется сначала десериализовать размеры, а потом значения.
-	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	if (type.isNullable())
 	{
+		/// First read from the null map.
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const IDataType & nested_type = *nullable_type.getNestedType();
+
+		ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
+		IColumn & nested_col = *nullable_col.getNestedColumn();
+
+		DataTypeUInt8{}.deserializeBinaryBulk(nullable_col.getNullMapConcreteColumn(),
+			streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed, max_rows_to_read, 0);
+		/// Then read data.
+		readData(name, nested_type, nested_col, max_rows_to_read, level, read_offsets);
+	}
+	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	{
+		/// Для массивов требуется сначала десериализовать размеры, а потом значения.
 		if (read_offsets)
 		{
 			type_arr->deserializeOffsets(
@@ -336,7 +386,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 				level + 1);
 	}
 	else
-		type.deserializeBinary(column, streams[name]->compressed, max_rows_to_read, 0);	/// TODO Использовать avg_value_size_hint.
+		type.deserializeBinaryBulk(column, streams[name]->compressed, max_rows_to_read, 0);	/// TODO Использовать avg_value_size_hint.
 }
 
 
@@ -348,13 +398,21 @@ void LogBlockOutputStream::write(const Block & block)
 	OffsetColumns offset_columns;
 
 	MarksForColumns marks;
-	marks.reserve(storage.files.size());
+	marks.reserve(storage.file_count);
+
+	MarksForColumns null_marks;
+	if (null_marks_stream)
+		null_marks.reserve(storage.null_file_count);
+
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		const ColumnWithTypeAndName & column = block.getByPosition(i);
-		writeData(column.name, *column.type, *column.column, marks, offset_columns);
+		const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
+		writeData(column.name, *column.type, *column.column, marks, null_marks, offset_columns);
 	}
-	writeMarks(marks);
+
+	writeMarks(marks, false);
+	if (null_marks_stream)
+		writeMarks(null_marks, true);
 }
 
 
@@ -366,6 +424,8 @@ void LogBlockOutputStream::writeSuffix()
 
 	/// Заканчиваем запись.
 	marks_stream.next();
+	if (null_marks_stream)
+		null_marks_stream->next();
 
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		it->second->finalize();
@@ -383,9 +443,22 @@ void LogBlockOutputStream::writeSuffix()
 
 void LogBlockOutputStream::addStream(const String & name, const IDataType & type, size_t level)
 {
-	/// Для массивов используются отдельные потоки для размеров.
-	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	if (type.isNullable())
 	{
+		/// First create the stream that handles the null map of the given column.
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const IDataType & nested_type = *nullable_type.getNestedType();
+
+		std::string filename = name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION;
+		streams.emplace(filename, std::make_unique<Stream>(storage.files[filename].data_file.path(),
+			storage.max_compress_block_size));
+
+		/// Then create the stream that handles the data of the given column.
+		addStream(name, nested_type, level);
+	}
+	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	{
+		/// Для массивов используются отдельные потоки для размеров.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
 			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
@@ -398,12 +471,36 @@ void LogBlockOutputStream::addStream(const String & name, const IDataType & type
 }
 
 
-void LogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column, MarksForColumns & out_marks,
-										OffsetColumns & offset_columns, size_t level)
+void LogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column,
+	MarksForColumns & out_marks, MarksForColumns & out_null_marks,
+	OffsetColumns & offset_columns, size_t level)
 {
-	/// Для массивов требуется сначала сериализовать размеры, а потом значения.
-	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	if (type.isNullable())
 	{
+		/// First write to the null map.
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const IDataType & nested_type = *nullable_type.getNestedType();
+
+		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(column);
+		const IColumn & nested_col = *nullable_col.getNestedColumn();
+
+		std::string filename = name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION;
+
+		Mark mark;
+		mark.rows = (storage.files[filename].marks.empty() ? 0 : storage.files[filename].marks.back().rows) + column.size();
+		mark.offset = streams[filename]->plain_offset + streams[filename]->plain.count();
+
+		out_null_marks.emplace_back(storage.files[filename].column_index, mark);
+
+		DataTypeUInt8{}.serializeBinaryBulk(nullable_col.getNullMapConcreteColumn(), streams[filename]->compressed, 0, 0);
+		streams[filename]->compressed.next();
+
+		/// Then write data.
+		writeData(name, nested_type, nested_col, out_marks, out_null_marks, offset_columns, level);
+	}
+	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	{
+		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
 		if (offset_columns.count(size_name) == 0)
@@ -416,11 +513,12 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
 			out_marks.push_back(std::make_pair(storage.files[size_name].column_index, mark));
 
-			type_arr->serializeOffsets(column, streams[size_name]->compressed);
+			type_arr->serializeOffsets(column, streams[size_name]->compressed, 0, 0);
 			streams[size_name]->compressed.next();
 		}
 
-		writeData(name, *type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(), out_marks, offset_columns, level + 1);
+		writeData(name, *type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(),
+			out_marks, out_null_marks, offset_columns, level + 1);
 	}
 	else
 	{
@@ -430,7 +528,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
 		out_marks.push_back(std::make_pair(storage.files[name].column_index, mark));
 
-		type.serializeBinary(column, streams[name]->compressed);
+		type.serializeBinaryBulk(column, streams[name]->compressed, 0, 0);
 		streams[name]->compressed.next();
 	}
 }
@@ -440,27 +538,28 @@ static bool ColumnIndexLess(const std::pair<size_t, Mark> & a, const std::pair<s
 	return a.first < b.first;
 }
 
-void LogBlockOutputStream::writeMarks(MarksForColumns marks)
+void LogBlockOutputStream::writeMarks(MarksForColumns marks, bool write_null_marks)
 {
-	if (marks.size() != storage.files.size())
+	size_t count = write_null_marks ? storage.null_file_count : storage.file_count;
+	WriteBufferFromFile & stream = write_null_marks ? *null_marks_stream : marks_stream;
+	const Names & names = write_null_marks ? storage.null_map_filenames : storage.column_names;
+
+	if (marks.size() != count)
 		throw Exception("Wrong number of marks generated from block. Makes no sense.", ErrorCodes::LOGICAL_ERROR);
 
 	sort(marks.begin(), marks.end(), ColumnIndexLess);
 
 	for (size_t i = 0; i < marks.size(); ++i)
 	{
-		if (marks[i].first != i)
-			throw Exception("Invalid marks generated from block. Makes no sense.", ErrorCodes::LOGICAL_ERROR);
-
 		Mark mark = marks[i].second;
 
-		writeIntBinary(mark.rows, marks_stream);
-		writeIntBinary(mark.offset, marks_stream);
+		writeIntBinary(mark.rows, stream);
+		writeIntBinary(mark.offset, stream);
 
-		storage.files[storage.column_names[i]].marks.push_back(mark);
+		size_t column_index = marks[i].first;
+		storage.files[names[column_index]].marks.push_back(mark);
 	}
 }
-
 
 StorageLog::StorageLog(
 	const std::string & path_,
@@ -485,6 +584,9 @@ StorageLog::StorageLog(
 		addFile(column.name, *column.type);
 
 	marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+
+	if (has_nullable_columns)
+		null_marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_NULL_MARKS_FILE_NAME);
 }
 
 StoragePtr StorageLog::create(
@@ -523,7 +625,28 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 		throw Exception("Duplicate column with name " + column_name + " in constructor of StorageLog.",
 			ErrorCodes::DUPLICATE_COLUMN);
 
-	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
+	if (type.isNullable())
+	{
+		/// First add the file describing the null map of the column.
+		has_nullable_columns = true;
+
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const IDataType & actual_type = *nullable_type.getNestedType();
+
+		std::string filename = column_name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION;
+		ColumnData & column_data = files.emplace(filename, ColumnData{}).first->second;
+		++null_file_count;
+		column_data.column_index = null_map_filenames.size();
+		column_data.data_file = Poco::File{
+			path + escapeForFileName(name) + '/' + escapeForFileName(column_name)
+			+ DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION};
+
+		null_map_filenames.push_back(filename);
+
+		/// Then add the file describing the column data.
+		addFile(column_name, actual_type, level);
+	}
+	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
 		String size_column_suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		String size_name = DataTypeNested::extractNestedTableName(column_name) + size_column_suffix;
@@ -531,9 +654,12 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 		if (files.end() == files.find(size_name))
 		{
 			ColumnData & column_data = files.insert(std::make_pair(size_name, ColumnData())).first->second;
+			++file_count;
 			column_data.column_index = column_names.size();
-			column_data.data_file = Poco::File(
-				path + escapeForFileName(name) + '/' + escapeForFileName(DataTypeNested::extractNestedTableName(column_name)) + size_column_suffix + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+			column_data.data_file = Poco::File{
+				path + escapeForFileName(name) + '/'
+				+ escapeForFileName(DataTypeNested::extractNestedTableName(column_name))
+				+ size_column_suffix + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION};
 
 			column_names.push_back(size_name);
 		}
@@ -543,9 +669,11 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 	else
 	{
 		ColumnData & column_data = files.insert(std::make_pair(column_name, ColumnData())).first->second;
+		++file_count;
 		column_data.column_index = column_names.size();
-		column_data.data_file = Poco::File(
-			path + escapeForFileName(name) + '/' + escapeForFileName(column_name) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+		column_data.data_file = Poco::File{
+			path + escapeForFileName(name) + '/'
+			+ escapeForFileName(column_name) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION};
 
 		column_names.push_back(column_name);
 	}
@@ -559,27 +687,45 @@ void StorageLog::loadMarks()
 	if (loaded_marks)
 		return;
 
+	loadMarksImpl(false);
+	if (has_nullable_columns)
+		loadMarksImpl(true);
+
+	loaded_marks = true;
+}
+
+
+void StorageLog::loadMarksImpl(bool load_null_marks)
+{
 	using FilesByIndex = std::vector<Files_t::iterator>;
-	FilesByIndex files_by_index(files.size());
+
+	size_t count = load_null_marks ? null_file_count : file_count;
+	Poco::File & marks_file_handle = load_null_marks ? null_marks_file : marks_file;
+
+	FilesByIndex files_by_index(count);
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 	{
+		bool has_null_extension = endsWith(it->first, DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION);
+		if (!load_null_marks && has_null_extension)
+			continue;
+		if (load_null_marks && !has_null_extension)
+			continue;
+
 		files_by_index[it->second.column_index] = it;
 	}
 
-	if (marks_file.exists())
+	if (marks_file_handle.exists())
 	{
-		size_t file_size = marks_file.getSize();
-		if (file_size % (files.size() * sizeof(Mark)) != 0)
+		size_t file_size = marks_file_handle.getSize();
+		if (file_size % (count * sizeof(Mark)) != 0)
 			throw Exception("Size of marks file is inconsistent", ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT);
 
-		int marks_count = file_size / (files.size() * sizeof(Mark));
+		int marks_count = file_size / (count * sizeof(Mark));
 
 		for (size_t i = 0; i < files_by_index.size(); ++i)
-		{
 			files_by_index[i]->second.marks.reserve(marks_count);
-		}
 
-		ReadBufferFromFile marks_rb(marks_file.path(), 32768);
+		ReadBufferFromFile marks_rb(marks_file_handle.path(), 32768);
 		while (!marks_rb.eof())
 		{
 			for (size_t i = 0; i < files_by_index.size(); ++i)
@@ -591,8 +737,6 @@ void StorageLog::loadMarks()
 			}
 		}
 	}
-
-	loaded_marks = true;
 }
 
 
@@ -614,36 +758,43 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_databa
 	file_checker.setPath(path + escapeForFileName(name) + '/' + "sizes.json");
 
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
-	{
 		it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
-	}
 
 	marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+	if (has_nullable_columns)
+		null_marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_NULL_MARKS_FILE_NAME);
 }
 
 
 const Marks & StorageLog::getMarksWithRealRowCount() const
 {
+	auto init_column_type = [&]()
+	{
+		const IDataType * type = columns->front().type.get();
+		if (type->isNullable())
+		{
+			const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*type);
+			type = nullable_type.getNestedType().get();
+		}
+		return type;
+	};
+
 	const String & column_name = columns->front().name;
-	const IDataType & column_type = *columns->front().type;
-	String file_name;
+	const IDataType & column_type = *init_column_type();
+	String filename;
 
 	/** Засечки достаём из первого столбца.
 	  * Если это - массив, то берём засечки, соответствующие размерам, а не внутренностям массивов.
 	  */
 
 	if (typeid_cast<const DataTypeArray *>(&column_type))
-	{
-		file_name = DataTypeNested::extractNestedTableName(column_name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX "0";
-	}
+		filename = DataTypeNested::extractNestedTableName(column_name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX "0";
 	else
-	{
-		file_name = column_name;
-	}
+		filename = column_name;
 
-	Files_t::const_iterator it = files.find(file_name);
+	Files_t::const_iterator it = files.find(filename);
 	if (files.end() == it)
-		throw Exception("Cannot find file " + file_name, ErrorCodes::LOGICAL_ERROR);
+		throw Exception("Cannot find file " + filename, ErrorCodes::LOGICAL_ERROR);
 
 	return it->second.marks;
 }
@@ -652,6 +803,7 @@ const Marks & StorageLog::getMarksWithRealRowCount() const
 BlockInputStreams StorageLog::read(
 	size_t from_mark,
 	size_t to_mark,
+	size_t from_null_mark,
 	const Names & column_names,
 	ASTPtr query,
 	const Context & context,
@@ -667,17 +819,7 @@ BlockInputStreams StorageLog::read(
 	if (!read_all_data_in_one_thread)
 		loadMarks();
 
-	bool has_virtual_column = false;
-	Names real_column_names;
-	for (const auto & column : column_names)
-		if (column != _table_column_name)
-			real_column_names.push_back(column);
-		else
-			has_virtual_column = true;
-
-	/// Если есть виртуальный столбец и нет остальных, то ничего проверять не надо
-	if (!(has_virtual_column && real_column_names.size() == 0))
-		check(real_column_names);
+	check(column_names);
 
 	processed_stage = QueryProcessingStage::FetchColumns;
 
@@ -691,13 +833,38 @@ BlockInputStreams StorageLog::read(
 			max_block_size,
 			column_names,
 			*this,
-			0, std::numeric_limits<size_t>::max(),
+			0, marksCount() ? std::numeric_limits<size_t>::max() : 0,
 			settings.max_read_buffer_size));
 	}
 	else
 	{
 		const Marks & marks = getMarksWithRealRowCount();
 		size_t marks_size = marks.size();
+
+		/// Given a thread, return the start of the area from which
+		/// it can read data, i.e. a mark number.
+		auto mark_from_thread = [&](size_t thread)
+		{
+			/// The computation below reflects the fact that marks
+			/// are uniformly distributed among threads.
+			return from_mark + thread * (to_mark - from_mark) / threads;
+		};
+
+		/// Given a thread, get the parameters that specify the area
+		/// from which it can read data, i.e. a mark number and a
+		/// maximum number of rows.
+		auto get_reader_parameters = [&](size_t thread)
+		{
+			size_t mark_number = mark_from_thread(thread);
+
+			size_t cur_total_row_count = ((thread == 0 && from_mark == 0)
+						? 0
+						: marks[mark_number - 1].rows);
+			size_t next_total_row_count = marks[mark_from_thread(thread + 1) - 1].rows;
+			size_t rows_limit = next_total_row_count - cur_total_row_count;
+
+			return std::make_pair(mark_number, rows_limit);
+		};
 
 		if (to_mark == std::numeric_limits<size_t>::max())
 			to_mark = marks_size;
@@ -708,18 +875,43 @@ BlockInputStreams StorageLog::read(
 		if (threads > to_mark - from_mark)
 			threads = to_mark - from_mark;
 
-		for (size_t thread = 0; thread < threads; ++thread)
+		if (has_nullable_columns)
 		{
-			res.push_back(std::make_shared<LogBlockInputStream>(
-				max_block_size,
-				column_names,
-				*this,
-				from_mark + thread * (to_mark - from_mark) / threads,
-				marks[from_mark + (thread + 1) * (to_mark - from_mark) / threads - 1].rows -
-					((thread == 0 && from_mark == 0)
-						? 0
-						: marks[from_mark + thread * (to_mark - from_mark) / threads - 1].rows),
-				settings.max_read_buffer_size));
+			for (size_t thread = 0; thread < threads; ++thread)
+			{
+				size_t mark_number;
+				size_t rows_limit;
+				std::tie(mark_number, rows_limit) = get_reader_parameters(thread);
+
+				/// This works since we have the same number of marks and null marks.
+				size_t null_mark_number = from_null_mark + (mark_number - from_mark);
+
+				res.push_back(std::make_shared<LogBlockInputStream>(
+					max_block_size,
+					column_names,
+					*this,
+					mark_number,
+					null_mark_number,
+					rows_limit,
+					settings.max_read_buffer_size));
+			}
+		}
+		else
+		{
+			for (size_t thread = 0; thread < threads; ++thread)
+			{
+				size_t mark_number;
+				size_t rows_limit;
+				std::tie(mark_number, rows_limit) = get_reader_parameters(thread);
+
+				res.push_back(std::make_shared<LogBlockInputStream>(
+					max_block_size,
+					column_names,
+					*this,
+					mark_number,
+					rows_limit,
+					settings.max_read_buffer_size));
+			}
 		}
 	}
 
@@ -736,9 +928,12 @@ BlockInputStreams StorageLog::read(
 	const size_t max_block_size,
 	const unsigned threads)
 {
-	return read(0, std::numeric_limits<size_t>::max(), column_names,
-				query, context, settings, processed_stage,
-				max_block_size, threads);
+	return read(
+		0, std::numeric_limits<size_t>::max(),
+		0,
+		column_names,
+		query, context, settings, processed_stage,
+		max_block_size, threads);
 }
 
 

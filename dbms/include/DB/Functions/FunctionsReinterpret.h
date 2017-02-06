@@ -32,14 +32,11 @@ public:
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+	size_t getNumberOfArguments() const override { return 1; }
 
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		const IDataType * type = &*arguments[0];
 		if (!type->isNumeric() &&
 			!typeid_cast<const DataTypeDate *>(type) &&
@@ -52,10 +49,10 @@ public:
 	template<typename T>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get()))
+		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = col_to;
+			block.safeGetByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
 			ColumnString::Chars_t & data_to = col_to->getChars();
@@ -80,13 +77,13 @@ public:
 			}
 			data_to.resize(pos);
 		}
-		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get()))
+		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			std::string res(reinterpret_cast<const char *>(&col_from->getData()), sizeof(T));
 			while (!res.empty() && res[res.length() - 1] == '\0')
 				res.erase(res.end() - 1);
 
-			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), res);
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), res);
 		}
 		else
 		{
@@ -97,7 +94,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!(	executeType<UInt8>(block, arguments, result)
 			||	executeType<UInt16>(block, arguments, result)
@@ -109,7 +106,7 @@ public:
 			||	executeType<Int64>(block, arguments, result)
 			||	executeType<Float32>(block, arguments, result)
 			||	executeType<Float64>(block, arguments, result)))
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 			+ " of argument of function " + getName(),
 							ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -130,14 +127,11 @@ public:
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+	size_t getNumberOfArguments() const override { return 1; }
 
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		const IDataType * type = &*arguments[0];
 		if (!typeid_cast<const DataTypeString *>(type) &&
 			!typeid_cast<const DataTypeFixedString *>(type))
@@ -147,12 +141,12 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		if (ColumnString * col_from = typeid_cast<ColumnString *>(block.getByPosition(arguments[0]).column.get()))
+		if (ColumnString * col_from = typeid_cast<ColumnString *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			auto col_res = std::make_shared<ColumnVector<ToFieldType>>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & data_from = col_from->getChars();
 			ColumnString::Offsets_t & offsets_from = col_from->getOffsets();
@@ -170,10 +164,10 @@ public:
 				offset = offsets_from[i];
 			}
 		}
-		else if (ColumnFixedString * col_from = typeid_cast<ColumnFixedString *>(block.getByPosition(arguments[0]).column.get()))
+		else if (ColumnFixedString * col_from = typeid_cast<ColumnFixedString *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			auto col_res = std::make_shared<ColumnVector<ToFieldType>>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & data_from = col_from->getChars();
 			size_t step = col_from->getN();
@@ -191,17 +185,17 @@ public:
 				offset += step;
 			}
 		}
-		else if (ColumnConst<String> * col = typeid_cast<ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get()))
+		else if (ColumnConst<String> * col = typeid_cast<ColumnConst<String> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			ToFieldType value = 0;
 			const String & str = col->getData();
 			memcpy(&value, str.data(), std::min(sizeof(ToFieldType), str.length()));
 			auto col_res = std::make_shared<ColumnConst<ToFieldType>>(col->size(), value);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 		}
 		else
 		{
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 			+ " of argument of function " + getName(),
 							ErrorCodes::ILLEGAL_COLUMN);
 		}

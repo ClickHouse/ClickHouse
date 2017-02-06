@@ -14,6 +14,12 @@
 #include <DB/Interpreters/Compiler.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event CompileAttempt;
+	extern const Event CompileSuccess;
+}
+
 namespace DB
 {
 
@@ -180,9 +186,15 @@ void Compiler::compile(
 		" /usr/share/clickhouse/bin/clang"
 		" -B /usr/share/clickhouse/bin/"
 		" -x c++ -std=gnu++1y -O3 -g -Wall -Werror -Wnon-virtual-dtor -march=native -msse4 -mpopcnt -D NDEBUG"
+	#if _GLIBCXX_USE_CXX11_ABI == 0
+		" -D_GLIBCXX_USE_CXX11_ABI=0"
+	#elif _GLIBCXX_USE_CXX11_ABI == 1
+		" -D_GLIBCXX_USE_CXX11_ABI=1"
+	#endif
 		" -shared -fPIC -fvisibility=hidden -fno-implement-inlines"
 		" -isystem /usr/share/clickhouse/headers/usr/local/include/"
 		" -isystem /usr/share/clickhouse/headers/usr/include/"
+		" -isystem /usr/share/clickhouse/headers/usr/include/mysql/"
 		" -isystem /usr/share/clickhouse/headers/usr/include/c++/*/"
 		" -isystem /usr/share/clickhouse/headers/usr/include/x86_64-linux-gnu/"
 		" -isystem /usr/share/clickhouse/headers/usr/include/x86_64-linux-gnu/c++/*/"
@@ -192,7 +204,7 @@ void Compiler::compile(
 		" -I /usr/share/clickhouse/headers/contrib/libdouble-conversion/"
 		" -I /usr/share/clickhouse/headers/contrib/libpoco/Foundation/include/"
 		" -I /usr/share/clickhouse/headers/contrib/libpoco/Util/include/"
-		" -I /usr/share/clickhouse/headers/contrib/libboost-threadpool/"
+		" -I /usr/share/clickhouse/headers/contrib/libboost/boost_1_62_0/"
 		" -I /usr/share/clickhouse/headers/libs/libcommon/include/"
 		" -I /usr/share/clickhouse/headers/libs/libmysqlxx/include/"
 		" " << additional_compiler_flags <<

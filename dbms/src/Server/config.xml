@@ -32,6 +32,10 @@
 	<!-- Maximum number of concurrent queries. -->
 	<max_concurrent_queries>100</max_concurrent_queries>
 
+	<!-- Set limit on number of open files (default: maximum). This setting makes sense on Mac OS X because getrlimit() fails to retrieve
+		 correct maximum value. -->
+	<!-- <max_open_files>262144</max_open_files> -->
+
 	<!-- Size of cache of uncompressed blocks of data, used in tables of MergeTree family.
 		 In bytes. Cache is single for server. Memory is allocated only on demand.
 		 Cache is used when 'use_uncompressed_cache' user setting turned on (off by default).
@@ -47,10 +51,10 @@
 
 
 	<!-- Path to data directory, with trailing slash. -->
-	<path>/opt/clickhouse/</path>
+	<path>/var/lib/clickhouse/</path>
 
 	<!-- Path to temporary data for processing hard queries. -->
-	<tmp_path>/opt/clickhouse/tmp/</tmp_path>
+	<tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 
 	<!-- Path to configuration file with users, access rights, profiles of settings, quotas. -->
 	<users_config>users.xml</users_config>
@@ -60,6 +64,17 @@
 
 	<!-- Default database. -->
 	<default_database>default</default_database>
+
+	<!-- Server time zone could be set here.
+
+	     Time zone is used when converting between String and DateTime types,
+		  when printing DateTime in text formats and parsing DateTime from text,
+		  it is used in date and time related functions, if specific time zone was not passed as an argument.
+
+		 Time zone is specified as identifier from IANA time zone database, like UTC or Africa/Abidjan.
+		 If not specified, system time zone at server startup is used.
+	-->
+	<!-- <timezone>Europe/Moscow</timezone> -->
 
 	<!-- Configuration of clusters that could be used in Distributed tables.
 		 https://clickhouse.yandex/reference_en.html#Distributed
@@ -96,7 +111,7 @@
 
 	<!-- Uncomment if use_graphite.
 	<graphite>
-		<host>127.0.0.1</host>
+		<host>localhost</host>
 		<port>42000</port>
 		<root_path>one_min</root_path>
 		<timeout>0.1</timeout>
@@ -147,11 +162,15 @@
 			<min_part_size>10000000000</min_part_size>		<!- - Min part size in bytes. - ->
 			<min_part_size_ratio>0.01</min_part_size_ratio>	<!- - Min size of part relative to whole table size. - ->
 
-			<!- - Какой метод сжатия выбрать. - ->
+			<!- - What compression method to use. - ->
 			<method>zstd</method>	<!- - Keep in mind that zstd compression library is highly experimental. - ->
 		</case>
 	-->
 	</compression>
+
+	<resharding>
+		<task_queue_path>/clickhouse/task_queue</task_queue_path>
+	</resharding>
 
 	<!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
 	<!--
@@ -159,6 +178,14 @@
 		<max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 	</merge_tree>
 	-->
+
+	<!-- Protection from accidental DROP.
+		 If size of a MergeTree table is greater than max_table_size_to_drop (in bytes) than table could not be dropped with any DROP query.
+		 If you want do delete one table and don't want to restart clickhouse-server, you could create special file <clickhouse-path>/flags/force_drop_table and make DROP once.
+		 By default max_table_size_to_drop is 50GB, max_table_size_to_drop=0 allows to DROP any tables.
+		 Uncomment to disable protection.
+	-->
+	<!-- <max_table_size_to_drop>0</max_table_size_to_drop> -->
 
 	<!-- Example of parameters for GraphiteMergeTree table engine -->
 	<graphite_rollup_example>

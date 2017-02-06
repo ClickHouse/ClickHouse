@@ -16,7 +16,7 @@ XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample
 	bool have_non_numeric_columns = false;
 	for (size_t i = 0; i < sample_.columns(); ++i)
 	{
-		if (!sample_.unsafeGetByPosition(i).type->isNumeric())
+		if (!sample_.getByPosition(i).type->isNumeric())
 			have_non_numeric_columns = true;
 
 		/// В качестве имён элементов будем использовать имя столбца, если оно имеет допустимый вид, или "field", иначе.
@@ -146,7 +146,7 @@ void XMLRowOutputStream::writeTotals()
 		size_t totals_columns = totals.columns();
 		for (size_t i = 0; i < totals_columns; ++i)
 		{
-			const ColumnWithTypeAndName & column = totals.getByPosition(i);
+			const ColumnWithTypeAndName & column = totals.safeGetByPosition(i);
 
 			writeCString("\t\t<", *ostr);
 			writeString(field_tag_names[i], *ostr);
@@ -171,7 +171,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
 	size_t extremes_columns = extremes.columns();
 	for (size_t i = 0; i < extremes_columns; ++i)
 	{
-		const ColumnWithTypeAndName & column = extremes.getByPosition(i);
+		const ColumnWithTypeAndName & column = extremes.safeGetByPosition(i);
 
 		writeCString("\t\t\t<", ostr);
 		writeString(field_tag_names[i], ostr);

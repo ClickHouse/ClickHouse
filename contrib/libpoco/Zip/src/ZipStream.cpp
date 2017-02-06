@@ -23,11 +23,7 @@
 #include "Poco/Exception.h"
 #include "Poco/InflatingStream.h"
 #include "Poco/DeflatingStream.h"
-#if defined(POCO_UNBUNDLED)
 #include <zlib.h>
-#else
-#include "Poco/zlib.h"
-#endif
 
 
 namespace Poco {

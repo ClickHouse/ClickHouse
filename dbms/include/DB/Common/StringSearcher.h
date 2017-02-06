@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 	#include <smmintrin.h>
 #endif
 
@@ -60,7 +60,7 @@ private:
 	UInt8 l{};
 	UInt8 u{};
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 	/// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
 	__m128i patl, patu;
 	/// lower and uppercase vectors of first 16 characters of `needle`
@@ -99,7 +99,7 @@ public:
 			u = u_seq[0];
 		}
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 		/// for detecting leftmost position of the first symbol
 		patl = _mm_set1_epi8(l);
 		patu = _mm_set1_epi8(u);
@@ -160,7 +160,7 @@ public:
 	{
 		static const Poco::UTF8Encoding utf8;
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 		if (page_safe(pos))
 		{
 			const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
@@ -225,7 +225,7 @@ public:
 
 		while (haystack < haystack_end)
 		{
-#if defined(__x86_64__)
+#if __SSE4_1__
 			if (haystack + n <= haystack_end && page_safe(haystack))
 			{
 				const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
@@ -330,7 +330,7 @@ private:
 	UInt8 l{};
 	UInt8 u{};
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 	/// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
 	__m128i patl, patu;
 	/// lower and uppercase vectors of first 16 characters of `needle`
@@ -348,7 +348,7 @@ public:
 		l = static_cast<UInt8>(std::tolower(*needle));
 		u = static_cast<UInt8>(std::toupper(*needle));
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 		patl = _mm_set1_epi8(l);
 		patu = _mm_set1_epi8(u);
 
@@ -372,7 +372,7 @@ public:
 
 	bool compare(const UInt8 * pos) const
 	{
-#if defined(__x86_64__)
+#if __SSE4_1__
 		if (page_safe(pos))
 		{
 			const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
@@ -424,7 +424,7 @@ public:
 
 		while (haystack < haystack_end)
 		{
-#if defined(__x86_64__)
+#if __SSE4_1__
 			if (haystack + n <= haystack_end && page_safe(haystack))
 			{
 				const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
@@ -516,7 +516,7 @@ private:
 	/// first character in `needle`
 	UInt8 first{};
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 	/// vector filled `first` for determining leftmost position of the first symbol
 	__m128i pattern;
 	/// vector of first 16 characters of `needle`
@@ -533,7 +533,7 @@ public:
 
 		first = *needle;
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 		pattern = _mm_set1_epi8(first);
 
 		auto needle_pos = needle;
@@ -554,7 +554,7 @@ public:
 
 	bool compare(const UInt8 * pos) const
 	{
-#if defined(__x86_64__)
+#if __SSE4_1__
 		if (page_safe(pos))
 		{
 			const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
@@ -604,7 +604,7 @@ public:
 
 		while (haystack < haystack_end)
 		{
-#if defined(__x86_64__)
+#if __SSE4_1__
 			if (haystack + n <= haystack_end && page_safe(haystack))
 			{
 				/// find first character

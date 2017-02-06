@@ -278,8 +278,8 @@ class MallocBlock {
   // We use either do_malloc or mmap to make the actual allocation. In
   // order to remember which one of the two was used for any block, we store an
   // appropriate magic word next to the block.
-  static const int kMagicMalloc = 0xDEADBEEF;
-  static const int kMagicMMap = 0xABCDEFAB;
+  static const size_t kMagicMalloc = 0xDEADBEEF;
+  static const size_t kMagicMMap = 0xABCDEFAB;
 
   // This array will be filled with 0xCD, for use with memcmp.
   static unsigned char kMagicDeletedBuffer[1024];
@@ -305,7 +305,7 @@ class MallocBlock {
   // then come the size2_ and magic2_, or a full page of mprotect-ed memory
   // if the malloc_page_fence feature is enabled.
   size_t size2_;
-  int magic2_;
+  size_t magic2_;
 
  private:  // static data and helpers
 
@@ -348,7 +348,7 @@ class MallocBlock {
 
   bool IsMMapped() const { return kMagicMMap == magic1_; }
 
-  bool IsValidMagicValue(int value) const {
+  bool IsValidMagicValue(size_t value) const {
     return kMagicMMap == value  ||  kMagicMalloc == value;
   }
 
@@ -381,8 +381,8 @@ class MallocBlock {
     return (const size_t*)((char*)&size2_ + size1_);
   }
 
-  int* magic2_addr() { return (int*)(size2_addr() + 1); }
-  const int* magic2_addr() const { return (const int*)(size2_addr() + 1); }
+  size_t* magic2_addr() { return (size_t*)(size2_addr() + 1); }
+  const size_t* magic2_addr() const { return (const size_t*)(size2_addr() + 1); }
 
  private:  // other helpers
 
@@ -400,14 +400,14 @@ class MallocBlock {
     offset_ = 0;
     alloc_type_ = type;
     if (!IsMMapped()) {
-      *magic2_addr() = magic1_;
-      *size2_addr() = size;
+      bit_store(magic2_addr(), &magic1_);
+      bit_store(size2_addr(), &size);
     }
     alloc_map_lock_.Unlock();
     memset(data_addr(), kMagicUninitializedByte, size);
     if (!IsMMapped()) {
-      RAW_CHECK(size1_ == *size2_addr(), "should hold");
-      RAW_CHECK(magic1_ == *magic2_addr(), "should hold");
+      RAW_CHECK(memcmp(&size1_, size2_addr(), sizeof(size1_)) == 0, "should hold");
+      RAW_CHECK(memcmp(&magic1_, magic2_addr(), sizeof(magic1_)) == 0, "should hold");
     }
   }
 
@@ -415,7 +415,7 @@ class MallocBlock {
     alloc_map_lock_.Lock();
     CheckLocked(type);
     if (!IsMMapped()) {
-      RAW_CHECK(size1_ == *size2_addr(), "should hold");
+      RAW_CHECK(memcmp(&size1_, size2_addr(), sizeof(size1_)) == 0, "should hold");
     }
     // record us as deallocated in the map
     alloc_map_->Insert(data_addr(), type | kDeallocatedTypeBit);
@@ -457,11 +457,13 @@ class MallocBlock {
                      data_addr());
     }
     if (!IsMMapped()) {
-      if (size1_ != *size2_addr()) {
+      if (memcmp(&size1_, size2_addr(), sizeof(size1_))) {
         RAW_LOG(FATAL, "memory stomping bug: a word after object at %p "
                        "has been corrupted", data_addr());
       }
-      if (!IsValidMagicValue(*magic2_addr())) {
+      size_t addr;
+      bit_store(&addr, magic2_addr());
+      if (!IsValidMagicValue(addr)) {
         RAW_LOG(FATAL, "memory stomping bug: a word after object at %p "
                 "has been corrupted", data_addr());
       }
@@ -845,8 +847,8 @@ void DanglingWriteChecker() {
 
 // ========================================================================= //
 
-const int MallocBlock::kMagicMalloc;
-const int MallocBlock::kMagicMMap;
+const size_t MallocBlock::kMagicMalloc;
+const size_t MallocBlock::kMagicMMap;
 
 MallocBlock::AllocMap* MallocBlock::alloc_map_ = NULL;
 SpinLock MallocBlock::alloc_map_lock_(SpinLock::LINKER_INITIALIZED);

@@ -25,6 +25,7 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnAggregateFunction.h>
 #include <DB/Columns/ColumnVector.h>
+#include <DB/Columns/ColumnNullable.h>
 
 
 namespace DB
@@ -34,6 +35,8 @@ namespace ErrorCodes
 {
 	extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
 }
+
+class IBlockOutputStream;
 
 
 /** Разные структуры данных, которые могут использоваться для агрегации
@@ -129,8 +132,8 @@ struct AggregationMethodOneNumber
 	};
 
 	/// Из значения в хэш-таблице получить AggregateDataPtr.
-	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
-	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
+	static AggregateDataPtr & getAggregateData(Mapped & value)				{ return value; }
+	static const AggregateDataPtr & getAggregateData(const Mapped & value)	{ return value; }
 
 	/** Разместить дополнительные данные, если это необходимо, в случае, когда в хэш-таблицу был вставлен новый ключ.
 	  */
@@ -199,8 +202,8 @@ struct AggregationMethodString
 		}
 	};
 
-	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
-	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
+	static AggregateDataPtr & getAggregateData(Mapped & value)				{ return value; }
+	static const AggregateDataPtr & getAggregateData(const Mapped & value)	{ return value; }
 
 	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
@@ -260,8 +263,8 @@ struct AggregationMethodFixedString
 		}
 	};
 
-	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
-	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
+	static AggregateDataPtr & getAggregateData(Mapped & value)				{ return value; }
+	static const AggregateDataPtr & getAggregateData(const Mapped & value)	{ return value; }
 
 	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
@@ -278,9 +281,105 @@ struct AggregationMethodFixedString
 	}
 };
 
+namespace aggregator_impl
+{
+
+/// This class is designed to provide the functionality that is required for
+/// supporting nullable keys in AggregationMethodKeysFixed. If there are
+/// no nullable keys, this class is merely implemented as an empty shell.
+template <typename Key, bool has_nullable_keys>
+class BaseStateKeysFixed;
+
+/// Case where nullable keys are supported.
+template <typename Key>
+class BaseStateKeysFixed<Key, true>
+{
+protected:
+	void init(const ConstColumnPlainPtrs & key_columns)
+	{
+		null_maps.reserve(key_columns.size());
+		actual_columns.reserve(key_columns.size());
+
+		for (const auto & col : key_columns)
+		{
+			if (col->isNullable())
+			{
+				const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
+				actual_columns.push_back(nullable_col.getNestedColumn().get());
+				null_maps.push_back(nullable_col.getNullMapColumn().get());
+			}
+			else
+			{
+				actual_columns.push_back(col);
+				null_maps.push_back(nullptr);
+			}
+		}
+	}
+
+	/// Return the columns which actually contain the values of the keys.
+	/// For a given key column, if it is nullable, we return its nested
+	/// column. Otherwise we return the key column itself.
+	inline const ConstColumnPlainPtrs & getActualColumns() const
+	{
+		return actual_columns;
+	}
+
+	/// Create a bitmap that indicates whether, for a particular row,
+	/// a key column bears a null value or not.
+	KeysNullMap<Key> createBitmap(size_t row) const
+	{
+		KeysNullMap<Key> bitmap{};
+
+		for (size_t k = 0; k < null_maps.size(); ++k)
+		{
+			if (null_maps[k] != nullptr)
+			{
+				const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
+				if (null_map[row] == 1)
+				{
+					size_t bucket = k / 8;
+					size_t offset = k % 8;
+					bitmap[bucket] |= UInt8(1) << offset;
+				}
+			}
+		}
+
+		return bitmap;
+	}
+
+private:
+	ConstColumnPlainPtrs actual_columns;
+	ConstColumnPlainPtrs null_maps;
+};
+
+/// Case where nullable keys are not supported.
+template <typename Key>
+class BaseStateKeysFixed<Key, false>
+{
+protected:
+	void init(const ConstColumnPlainPtrs & key_columns)
+	{
+		throw Exception{"Internal error: calling init() for non-nullable"
+			" keys is forbidden", ErrorCodes::LOGICAL_ERROR};
+	}
+
+	const ConstColumnPlainPtrs & getActualColumns() const
+	{
+		throw Exception{"Internal error: calling getActualColumns() for non-nullable"
+			" keys is forbidden", ErrorCodes::LOGICAL_ERROR};
+	}
+
+	KeysNullMap<Key> createBitmap(size_t row) const
+	{
+		throw Exception{"Internal error: calling createBitmap() for non-nullable keys"
+			" is forbidden", ErrorCodes::LOGICAL_ERROR};
+	}
+};
+
+}
 
 /// Для случая, когда все ключи фиксированной длины, и они помещаются в N (например, 128) бит.
-template <typename TData>
+template <typename TData, bool has_nullable_keys_ = false>
 struct AggregationMethodKeysFixed
 {
 	using Data = TData;
@@ -288,6 +387,7 @@ struct AggregationMethodKeysFixed
 	using Mapped = typename Data::mapped_type;
 	using iterator = typename Data::iterator;
 	using const_iterator = typename Data::const_iterator;
+	static constexpr bool has_nullable_keys = has_nullable_keys_;
 
 	Data data;
 
@@ -296,10 +396,15 @@ struct AggregationMethodKeysFixed
 	template <typename Other>
 	AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
 
-	struct State
+	class State final : private aggregator_impl::BaseStateKeysFixed<Key, has_nullable_keys>
 	{
+	public:
+		using Base = aggregator_impl::BaseStateKeysFixed<Key, has_nullable_keys>;
+
 		void init(ConstColumnPlainPtrs & key_columns)
 		{
+			if (has_nullable_keys)
+				Base::init(key_columns);
 		}
 
 		Key getKey(
@@ -310,12 +415,18 @@ struct AggregationMethodKeysFixed
 			StringRefs & keys,
 			Arena & pool) const
 		{
-			return packFixed<Key>(i, keys_size, key_columns, key_sizes);
+			if (has_nullable_keys)
+			{
+				auto bitmap = Base::createBitmap(i);
+				return packFixed<Key>(i, keys_size, Base::getActualColumns(), key_sizes, bitmap);
+			}
+			else
+				return packFixed<Key>(i, keys_size, key_columns, key_sizes);
 		}
 	};
 
-	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
-	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
+	static AggregateDataPtr & getAggregateData(Mapped & value)				{ return value; }
+	static const AggregateDataPtr & getAggregateData(const Mapped & value)	{ return value; }
 
 	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
@@ -327,12 +438,50 @@ struct AggregationMethodKeysFixed
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
-		size_t offset = 0;
+		static constexpr auto bitmap_size = has_nullable_keys ? std::tuple_size<KeysNullMap<Key>>::value : 0;
+		/// In any hash key value, column values to be read start just after the bitmap, if it exists.
+		size_t pos = bitmap_size;
+
 		for (size_t i = 0; i < keys_size; ++i)
 		{
-			size_t size = key_sizes[i];
-			key_columns[i]->insertData(reinterpret_cast<const char *>(&value.first) + offset, size);
-			offset += size;
+			IColumn * observed_column;
+			ColumnUInt8 * null_map;
+
+			/// If we have a nullable column, get its nested column and its null map.
+			if (has_nullable_keys && key_columns[i]->isNullable())
+			{
+				ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
+				observed_column = nullable_col.getNestedColumn().get();
+				null_map = static_cast<ColumnUInt8 *>(nullable_col.getNullMapColumn().get());
+			}
+			else
+			{
+				observed_column = key_columns[i];
+				null_map = nullptr;
+			}
+
+			bool is_null;
+			if (has_nullable_keys && key_columns[i]->isNullable())
+			{
+				/// The current column is nullable. Check if the value of the
+				/// corresponding key is nullable. Update the null map accordingly.
+				size_t bucket = i / 8;
+				size_t offset = i % 8;
+				UInt8 val = (reinterpret_cast<const UInt8 *>(&value.first)[bucket] >> offset) & 1;
+				null_map->insert(val);
+				is_null = val == 1;
+			}
+			else
+				is_null = false;
+
+			if (has_nullable_keys && is_null)
+				observed_column->insertDefault();
+			else
+			{
+				size_t size = key_sizes[i];
+				observed_column->insertData(reinterpret_cast<const char *>(&value.first) + pos, size);
+				pos += size;
+			}
 		}
 	}
 };
@@ -373,8 +522,8 @@ struct AggregationMethodConcat
 		}
 	};
 
-	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
-	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
+	static AggregateDataPtr & getAggregateData(Mapped & value)				{ return value; }
+	static const AggregateDataPtr & getAggregateData(const Mapped & value)	{ return value; }
 
 	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
@@ -390,15 +539,22 @@ struct AggregationMethodConcat
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
+		insertKeyIntoColumnsImpl(value, key_columns, keys_size, key_sizes);
+	}
+
+private:
+	/// Insert the values of the specified keys into the corresponding columns.
+	static void insertKeyIntoColumnsImpl(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+	{
 		/// См. функцию extractKeysAndPlaceInPoolContiguous.
 		const StringRef * key_refs = reinterpret_cast<const StringRef *>(value.first.data + value.first.size);
 
 		if (unlikely(0 == value.first.size))
 		{
 			/** Исправление, если все ключи - пустые массивы. Для них в хэш-таблицу записывается StringRef нулевой длины, но с ненулевым указателем.
-			  * Но при вставке в хэш-таблицу, такой StringRef оказывается равен другому ключу нулевой длины,
-			  *  у которого указатель на данные может быть любым мусором и использовать его нельзя.
-			  */
+				* Но при вставке в хэш-таблицу, такой StringRef оказывается равен другому ключу нулевой длины,
+				*  у которого указатель на данные может быть любым мусором и использовать его нельзя.
+				*/
 			for (size_t i = 0; i < keys_size; ++i)
 				key_columns[i]->insertDefault();
 		}
@@ -451,8 +607,8 @@ struct AggregationMethodSerialized
 		}
 	};
 
-	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
-	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
+	static AggregateDataPtr & getAggregateData(Mapped & value)				{ return value; }
+	static const AggregateDataPtr & getAggregateData(const Mapped & value)	{ return value; }
 
 	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
@@ -510,8 +666,8 @@ struct AggregationMethodHashed
 		}
 	};
 
-	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value.second; }
-	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value.second; }
+	static AggregateDataPtr & getAggregateData(Mapped & value)				{ return value.second; }
+	static const AggregateDataPtr & getAggregateData(const Mapped & value)	{ return value.second; }
 
 	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
@@ -569,23 +725,23 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 	std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key>>		key32;
 	std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>>		key64;
-	std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKey>> 					key_string;
-	std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKey>> 				key_fixed_string;
-	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>> 					keys128;
-	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>> 					keys256;
-	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashed>> 							hashed;
-	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKey>> 					concat;
-	std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>> 				serialized;
+	std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKey>>					key_string;
+	std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKey>>				key_fixed_string;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>>					keys128;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>>					keys256;
+	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashed>>							hashed;
+	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKey>>					concat;
+	std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>>				serialized;
 
 	std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>>	key32_two_level;
 	std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>>	key64_two_level;
 	std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyTwoLevel>>				key_string_two_level;
-	std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKeyTwoLevel>> 			key_fixed_string_two_level;
-	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>> 				keys128_two_level;
-	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>> 				keys256_two_level;
-	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashedTwoLevel>> 						hashed_two_level;
-	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKeyTwoLevel>> 				concat_two_level;
-	std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>> 			serialized_two_level;
+	std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKeyTwoLevel>>			key_fixed_string_two_level;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>>				keys128_two_level;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>>				keys256_two_level;
+	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashedTwoLevel>>						hashed_two_level;
+	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKeyTwoLevel>>				concat_two_level;
+	std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>>			serialized_two_level;
 
 	std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>>	key64_hash64;
 	std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyHash64>> 			key_string_hash64;
@@ -594,6 +750,12 @@ struct AggregatedDataVariants : private boost::noncopyable
 	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64>> 			keys256_hash64;
 	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKeyHash64>> 			concat_hash64;
 	std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyHash64>> 		serialized_hash64;
+
+	/// Support for nullable keys.
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128, true>>				nullable_keys128;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256, true>>				nullable_keys256;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, true>>		nullable_keys128_two_level;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, true>>		nullable_keys256_two_level;
 
 	/// В этом и подобных макросах, вариант without_key не учитывается.
 	#define APPLY_FOR_AGGREGATED_VARIANTS(M) \
@@ -624,6 +786,10 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(keys256_hash64,			false) \
 		M(concat_hash64,			false) \
 		M(serialized_hash64,		false) \
+		M(nullable_keys128,			false) \
+		M(nullable_keys256,			false) \
+		M(nullable_keys128_two_level,	true) \
+		M(nullable_keys256_two_level,	true) \
 
 	enum class Type
 	{
@@ -741,6 +907,8 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(hashed)			\
 		M(concat)			\
 		M(serialized)		\
+		M(nullable_keys128)	\
+		M(nullable_keys256)	\
 
 	#define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
 		M(key8)				\
@@ -783,7 +951,9 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(keys256_two_level)			\
 		M(hashed_two_level)				\
 		M(concat_two_level)				\
-		M(serialized_two_level)
+		M(serialized_two_level)			\
+		M(nullable_keys128_two_level)	\
+		M(nullable_keys256_two_level)
 };
 
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
@@ -1059,7 +1229,8 @@ protected:
 	void executeWithoutKeyImpl(
 		AggregatedDataWithoutKey & res,
 		size_t rows,
-		AggregateFunctionInstruction * aggregate_instructions) const;
+		AggregateFunctionInstruction * aggregate_instructions,
+		Arena * arena) const;
 
 	template <typename Method>
 	void writeToTemporaryFileImpl(
@@ -1099,27 +1270,31 @@ public:
 	void executeSpecializedWithoutKey(
 		AggregatedDataWithoutKey & res,
 		size_t rows,
-		AggregateColumns & aggregate_columns) const;
+		AggregateColumns & aggregate_columns,
+		Arena * arena) const;
 
 protected:
 	/// Слить данные из хэш-таблицы src в dst.
 	template <typename Method, typename Table>
 	void mergeDataImpl(
 		Table & table_dst,
-		Table & table_src) const;
+		Table & table_src,
+		Arena * arena) const;
 
 	/// Слить данные из хэш-таблицы src в dst, но только для ключей, которые уже есть в dst. В остальных случаях, слить данные в overflows.
 	template <typename Method, typename Table>
 	void mergeDataNoMoreKeysImpl(
 		Table & table_dst,
 		AggregatedDataWithoutKey & overflows,
-		Table & table_src) const;
+		Table & table_src,
+		Arena * arena) const;
 
 	/// То же самое, но игнорирует остальные ключи.
 	template <typename Method, typename Table>
 	void mergeDataOnlyExistingKeysImpl(
 		Table & table_dst,
-		Table & table_src) const;
+		Table & table_src,
+		Arena * arena) const;
 
 	void mergeWithoutKeyDataImpl(
 		ManyAggregatedDataVariants & non_empty_data) const;
@@ -1204,7 +1379,7 @@ protected:
 
 	template <typename Method>
 	void mergeBucketImpl(
-		ManyAggregatedDataVariants & data, Int32 bucket) const;
+		ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena) const;
 
 	template <typename Method>
 	void convertBlockToTwoLevelImpl(

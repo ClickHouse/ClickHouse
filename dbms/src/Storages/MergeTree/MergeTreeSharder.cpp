@@ -45,22 +45,22 @@ ShardedBlocksWithDateIntervals MergeTreeSharder::shardBlock(const Block & block)
 	/// cache column pointers for later reuse
 	std::vector<const IColumn *> columns(num_cols);
 	for (size_t i = 0; i < columns.size(); ++i)
-		columns[i] = block.getByPosition(i).column.get();
+		columns[i] = block.safeGetByPosition(i).column.get();
 
 	auto filters = createFilters(block);
 
 	const auto num_shards = job.paths.size();
 
-	ssize_t size_hint = ((block.rowsInFirstColumn() + num_shards - 1) / num_shards) * 1.1;	/// Число 1.1 выбрано наугад.
+	ssize_t size_hint = ((block.rows() + num_shards - 1) / num_shards) * 1.1;	/// Число 1.1 выбрано наугад.
 
 	for (size_t shard_no = 0; shard_no < num_shards; ++shard_no)
 	{
 		auto target_block = block.cloneEmpty();
 
 		for (size_t col = 0; col < num_cols; ++col)
-			target_block.getByPosition(col).column = columns[col]->filter(filters[shard_no], size_hint);
+			target_block.safeGetByPosition(col).column = columns[col]->filter(filters[shard_no], size_hint);
 
-		if (target_block.rowsInFirstColumn())
+		if (target_block.rows())
 		{
 			/// Достаём столбец с датой.
 			const ColumnUInt16::Container_t & dates =
@@ -107,7 +107,7 @@ std::vector<IColumn::Filter> MergeTreeSharder::createFilters(Block block)
 	const auto it = creators.find(key_column.type->getName());
 
 	return it != std::end(creators)
-		? (*it->second)(block.rowsInFirstColumn(), key_column.column.get(), job.paths.size(), slots)
+		? (*it->second)(block.rows(), key_column.column.get(), job.paths.size(), slots)
 		: throw Exception{
 			"Sharding key expression does not evaluate to an integer type",
 			ErrorCodes::TYPE_MISMATCH

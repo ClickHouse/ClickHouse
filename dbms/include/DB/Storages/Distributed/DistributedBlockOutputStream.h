@@ -3,6 +3,7 @@
 #include <DB/Parsers/formatAST.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/Core/Block.h>
+#include <DB/Interpreters/Cluster.h>
 
 namespace DB
 {
@@ -20,7 +21,7 @@ class StorageDistributed;
 class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
-	DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast);
+	DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_);
 
 	void write(const Block & block) override;
 
@@ -38,6 +39,7 @@ private:
 private:
 	StorageDistributed & storage;
 	ASTPtr query_ast;
+	ClusterPtr cluster;
 };
 
 }

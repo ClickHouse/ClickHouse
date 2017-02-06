@@ -27,11 +27,20 @@ public:
 	/// Основное имя типа (например, UInt64).
 	virtual std::string getName() const = 0;
 
-	/// Является ли тип числовым. Дата и дата-с-временем тоже считаются такими.
+	/// Is this type the null type?
+	virtual bool isNull() const { return false; }
+
+	/// Is this type nullable?
+	virtual bool isNullable() const { return false; }
+
+	/// Is this type numeric? Date and DateTime types are considered as such.
 	virtual bool isNumeric() const { return false; }
 
-	/// Если тип числовой, уместны ли с ним все арифметические операции и приведение типов.
-	/// true для чисел, false для даты и даты-с-временем.
+	/// Is this type numeric and not nullable?
+	virtual bool isNumericNotNullable() const { return isNumeric(); }
+
+	/// If this type is numeric, are all the arithmetic operations and type casting
+	/// relevant for it? True for numbers. False for Date and DateTime types.
 	virtual bool behavesAsNumber() const { return false; }
 
 	/// Клонировать
@@ -44,14 +53,23 @@ public:
 	  * offset + limit может быть больше размера столбца
 	  *  - в этом случае, столбец сериализуется до конца.
 	  */
-	virtual void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const = 0;
+	virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const = 0;
 
 	/** Считать не более limit значений и дописать их в конец столбца.
 	  * avg_value_size_hint - если не 0, то может использоваться, чтобы избежать реаллокаций при чтении строкового столбца.
 	  */
-	virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const = 0;
+	virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const = 0;
 
-	/// Сериализация единичных значений.
+	/** Serialization/deserialization of individual values.
+	  *
+	  * These are helper methods for implementation of various formats to input/output for user (like CSV, JSON, etc.).
+	  * There is no one-to-one correspondence between formats and these methods.
+	  * For example, TabSeparated and Pretty formats could use same helper method serializeTextEscaped.
+	  *
+	  * For complex data types (like arrays) binary serde for individual values may differ from bulk serde.
+	  * For example, if you serialize single array, it will be represented as its size and elements in single contiguous stream,
+	  *  but if you bulk serialize column with arrays, then sizes and elements will be written to separate streams.
+	  */
 
 	/// Для бинарной сериализации есть два варианта. Один вариант работает с Field.
 	virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;
@@ -66,33 +84,39 @@ public:
 	/// Если функция кидает исключение при чтении, то столбец будет находиться в таком же состоянии, как до вызова функции.
 	virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
 
-	/** Текстовая сериализация с эскейпингом, но без квотирования.
+	/** Text serialization with escaping but without quoting.
 	  */
 	virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+
 	virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const = 0;
 
-	/** Текстовая сериализация в виде литерала, который может быть вставлен в запрос.
+	/** Text serialization as a literal that may be inserted into a query.
 	  */
 	virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+
 	virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const = 0;
 
-	/** Текстовая сериализация для формата CSV.
-	  * delimiter - какого разделителя ожидать при чтении, если строковое значение не в кавычках (сам разделитель не съедается).
+	/** Text serialization for the CSV format.
 	  */
 	virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+
+	/** delimiter - the delimiter we expect when reading a string value that is not double-quoted
+	  * (the delimiter is not consumed).
+	  */
 	virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const = 0;
 
-	/** Текстовая сериализация - для вывода на экран / сохранения в текстовый файл и т. п.
-	  * Без эскейпинга и квотирования.
+	/** Text serialization for displaying on a terminal or saving into a text file, and the like.
+	  * Without escaping or quoting.
 	  */
 	virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
 
-	/** Текстовая сериализация в виде литерала для использования в формате JSON.
+	/** Text serialization intended for using in JSON format.
+	  * force_quoting_64bit_integers parameter forces to brace UInt64 and Int64 types into quotes.
 	  */
-	virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+	virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const = 0;
 	virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const = 0;
 
-	/** Текстовая сериализация для подстановки в формат XML.
+	/** Text serialization for putting into the XML format.
 	  */
 	virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 	{

@@ -7,7 +7,7 @@ namespace DB
 /** Запрос вида
  * CHECK [TABLE] [database.]table
  */
-class ParserCheckQuery : public ParserQueryWithOutput
+class ParserCheckQuery : public IParserBase
 {
 protected:
 	const char * getName() const { return "ALTER query"; }

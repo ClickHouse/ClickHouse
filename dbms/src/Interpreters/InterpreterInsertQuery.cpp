@@ -6,6 +6,8 @@
 #include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DB/DataStreams/SquashingBlockOutputStream.h>
+#include <DB/DataStreams/CountingBlockOutputStream.h>
+#include <DB/DataStreams/NullableAdapterBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
@@ -14,6 +16,12 @@
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterInsertQuery.h>
+
+
+namespace ProfileEvents
+{
+	extern const Event InsertQuery;
+}
 
 namespace DB
 {
@@ -95,6 +103,10 @@ BlockIO InterpreterInsertQuery::execute()
 		context.getSettingsRef().min_insert_block_size_rows,
 		context.getSettingsRef().min_insert_block_size_bytes);
 
+	auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
+	out_wrapper->setProcessListElement(context.getProcessListElement());
+	out = std::move(out_wrapper);
+
 	BlockIO res;
 	res.out_sample = getSampleBlock();
 
@@ -106,10 +118,11 @@ BlockIO InterpreterInsertQuery::execute()
 	else
 	{
 		InterpreterSelectQuery interpreter_select{query.select, context};
-		BlockInputStreamPtr in = interpreter_select.execute().in;
-
-		res.in = std::make_shared<NullAndDoCopyBlockInputStream>(in, out);
 		res.in_sample = interpreter_select.getSampleBlock();
+
+		BlockInputStreamPtr in = interpreter_select.execute().in;
+		res.in = std::make_shared<NullableAdapterBlockInputStream>(in, res.in_sample, res.out_sample, required_columns);
+		res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out);
 	}
 
 	return res;

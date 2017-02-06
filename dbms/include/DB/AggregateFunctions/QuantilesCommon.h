@@ -40,7 +40,7 @@ struct QuantileLevels
 
 		for (size_t i = 0; i < size; ++i)
 		{
-			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
+			levels[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
 			permutation[i] = i;
 		}
 

@@ -57,7 +57,7 @@ namespace DB
   * 		<function>any</function>
   * 		<retention>
   * 			<age>0</age>
-  * 			<precision>3600</precision>
+  * 			<precision>5</precision>
   * 		</retention>
   * 		<retention>
   * 			<age>86400</age>

@@ -3,12 +3,16 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stdlib.h>
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
+#endif
 #include <poll.h>
 
 #include <iostream>
 #include <iomanip>
 #include <vector>
+
+#include <random>
 
 #include <Poco/NumberParser.h>
 #include <Poco/NumberFormatter.h>
@@ -19,6 +23,9 @@
 #include <DB/Common/ThreadPool.h>
 #include <DB/Common/Stopwatch.h>
 
+#ifdef __APPLE__
+#include <common/apple_rt.h>
+#endif
 
 using DB::throwFromErrno;
 
@@ -70,11 +77,11 @@ int mainImpl(int argc, char ** argv)
 
 	std::vector<char> buf(block_size);
 
-	drand48_data rand_data;
+	std::mt19937 rng;
 
 	timespec times;
 	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times);
-	srand48_r(times.tv_nsec, &rand_data);
+	rng.seed(times.tv_nsec);
 
 	Stopwatch watch;
 
@@ -102,12 +109,9 @@ int mainImpl(int argc, char ** argv)
 			polls[i].revents = 0;
 			++ops;
 
-			long rand_result1 = 0;
-			long rand_result2 = 0;
-			long rand_result3 = 0;
-			lrand48_r(&rand_data, &rand_result1);
-			lrand48_r(&rand_data, &rand_result2);
-			lrand48_r(&rand_data, &rand_result3);
+			long rand_result1 = rng();
+			long rand_result2 = rng();
+			long rand_result3 = rng();
 
 			size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
 			size_t offset;

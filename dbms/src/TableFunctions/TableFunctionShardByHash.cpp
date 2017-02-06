@@ -2,8 +2,10 @@
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Interpreters/evaluateConstantExpression.h>
 #include <DB/Interpreters/Cluster.h>
+#include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/getClusterName.h>
 #include <DB/Common/SipHash.h>
 #include <DB/TableFunctions/TableFunctionShardByHash.h>
@@ -64,10 +66,10 @@ StoragePtr TableFunctionShardByHash::execute(ASTPtr ast_function, Context & cont
 		if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(arg.get()))
 			id->kind = ASTIdentifier::Table;
 
-	const Cluster & cluster = context.getCluster(cluster_name);
-	size_t shard_index = sipHash64(key) % cluster.getShardCount();
+	auto cluster = context.getCluster(cluster_name);
+	size_t shard_index = sipHash64(key) % cluster->getShardCount();
 
-	std::shared_ptr<Cluster> shard(cluster.getClusterWithSingleShard(shard_index).release());
+	std::shared_ptr<Cluster> shard(cluster->getClusterWithSingleShard(shard_index).release());
 
 	return StorageDistributed::create(
 		getName(),

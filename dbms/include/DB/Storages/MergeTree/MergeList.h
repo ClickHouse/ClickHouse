@@ -2,51 +2,82 @@
 
 #include <DB/Common/Stopwatch.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <DB/Common/MemoryTracker.h>
+#include <DB/Interpreters/Context.h>
+#include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <memory>
 #include <list>
 #include <mutex>
 #include <atomic>
 
+
+/** Maintains a list of currently running merges.
+  * For implementation of system.merges table.
+  */
+
+namespace CurrentMetrics
+{
+	extern const Metric Merge;
+}
+
 namespace DB
 {
 
-
 struct MergeInfo
+{
+	std::string database;
+	std::string table;
+	std::string result_part_name;
+	Array source_part_names;
+	Float64 elapsed;
+	Float64 progress;
+	UInt64 num_parts;
+	UInt64 total_size_bytes_compressed;
+	UInt64 total_size_marks;
+	UInt64 bytes_read_uncompressed;
+	UInt64 bytes_written_uncompressed;
+	UInt64 rows_read;
+	UInt64 rows_written;
+	UInt64 columns_written;
+	UInt64 memory_usage;
+	UInt64 thread_number;
+};
+
+
+struct MergeListElement : boost::noncopyable
 {
 	const std::string database;
 	const std::string table;
 	const std::string result_part_name;
 	Stopwatch watch;
 	Float64 progress{};
-	uint64_t num_parts{};
-	uint64_t total_size_bytes_compressed{};
-	uint64_t total_size_marks{};
-	std::atomic<uint64_t> bytes_read_uncompressed{};
-	std::atomic<uint64_t> rows_read{};
-	std::atomic<uint64_t> bytes_written_uncompressed{};
-	std::atomic<uint64_t> rows_written{};
+	UInt64 num_parts{};
+	Names source_part_names;
+	UInt64 total_size_bytes_compressed{};
+	UInt64 total_size_marks{};
+	std::atomic<UInt64> bytes_read_uncompressed{};
+	std::atomic<UInt64> bytes_written_uncompressed{};
+
+	/// In case of Vertical algorithm they are actual only for primary key columns
+	std::atomic<UInt64> rows_read{};
+	std::atomic<UInt64> rows_written{};
+
+	/// Updated only for Vertical algorithm
+	std::atomic<UInt64> columns_written{};
+
+	MemoryTracker memory_tracker;
+	MemoryTracker * background_pool_task_memory_tracker;
+
+	/// Poco thread number used in logs
+	UInt32 thread_number;
 
 
-	MergeInfo(const std::string & database, const std::string & table, const std::string & result_part_name)
-		: database{database}, table{table}, result_part_name{result_part_name}
-	{
-	}
+	MergeListElement(const std::string & database, const std::string & table, const std::string & result_part_name,
+					 const MergeTreeData::DataPartsVector & source_parts);
 
-	MergeInfo(const MergeInfo & other)
-		: database(other.database),
-		table(other.table),
-		result_part_name(other.result_part_name),
-		watch(other.watch),
-		progress(other.progress),
-		num_parts(other.num_parts),
-		total_size_bytes_compressed(other.total_size_bytes_compressed),
-		total_size_marks(other.total_size_marks),
-		bytes_read_uncompressed(other.bytes_read_uncompressed.load(std::memory_order_relaxed)),
-		rows_read(other.rows_read.load(std::memory_order_relaxed)),
-		bytes_written_uncompressed(other.bytes_written_uncompressed.load(std::memory_order_relaxed)),
-		rows_written(other.rows_written.load(std::memory_order_relaxed))
-	{
-	}
+	MergeInfo getInfo() const;
+
+	~MergeListElement();
 };
 
 
@@ -56,7 +87,7 @@ class MergeListEntry
 {
 	MergeList & list;
 
-	using container_t = std::list<MergeInfo>;
+	using container_t = std::list<MergeListElement>;
 	container_t::iterator it;
 
 	CurrentMetrics::Increment num_merges {CurrentMetrics::Merge};
@@ -68,7 +99,7 @@ public:
 	MergeListEntry(MergeList & list, const container_t::iterator it) : list(list), it{it} {}
 	~MergeListEntry();
 
-	MergeInfo * operator->() { return &*it; }
+	MergeListElement * operator->() { return &*it; }
 };
 
 
@@ -76,7 +107,8 @@ class MergeList
 {
 	friend class MergeListEntry;
 
-	using container_t = std::list<MergeInfo>;
+	using container_t = std::list<MergeListElement>;
+	using info_container_t = std::list<MergeInfo>;
 
 	mutable std::mutex mutex;
 	container_t merges;
@@ -92,10 +124,13 @@ public:
 		return std::make_unique<Entry>(*this, merges.emplace(merges.end(), std::forward<Args>(args)...));
 	}
 
-	container_t get() const
+	info_container_t get() const
 	{
 		std::lock_guard<std::mutex> lock{mutex};
-		return merges;
+		info_container_t res;
+		for (const auto & merge_element : merges)
+			res.emplace_back(merge_element.getInfo());
+		return res;
 	}
 };
 

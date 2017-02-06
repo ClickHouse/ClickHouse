@@ -33,8 +33,8 @@ int main(int argc, char ** argv)
 		{
 			{
 				zkutil::Ops ops;
-				ops.push_back(new zkutil::Op::Create("/test/zk_expiration_test", "hello", zk.getDefaultACL(), zkutil::CreateMode::Persistent));
-				ops.push_back(new zkutil::Op::Remove("/test/zk_expiration_test", -1));
+				ops.emplace_back(std::make_unique<zkutil::Op::Create>("/test/zk_expiration_test", "hello", zk.getDefaultACL(), zkutil::CreateMode::Persistent));
+				ops.emplace_back(std::make_unique<zkutil::Op::Remove>("/test/zk_expiration_test", -1));
 
 				int code;
 				try

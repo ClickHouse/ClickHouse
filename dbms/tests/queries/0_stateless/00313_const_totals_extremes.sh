@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 curl -sS 'http://localhost:8123/?extremes=1&output_format_write_statistics=0' -d "SELECT 1 AS k, count() GROUP BY k WITH TOTALS";
 curl -sS 'http://localhost:8123/?extremes=1&output_format_write_statistics=0' -d "SELECT 1234567890123 AS k, count() GROUP BY k WITH TOTALS FORMAT JSON";

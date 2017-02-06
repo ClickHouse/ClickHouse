@@ -2,16 +2,14 @@
 
 #include <ext/shared_ptr_helper.hpp>
 
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/DataStreams/NativeBlockOutputStream.h>
-
 #include <DB/Storages/IStorage.h>
-#include <DB/Interpreters/Set.h>
 
 
 namespace DB
 {
+
+class Set;
+using SetPtr = std::shared_ptr<Set>;
 
 
 /** Общая часть StorageSet и StorageJoin.
@@ -56,26 +54,6 @@ private:
 };
 
 
-class SetOrJoinBlockOutputStream : public IBlockOutputStream
-{
-public:
-	SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
-		const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_);
-
-	void write(const Block & block) override;
-	void writeSuffix() override;
-
-private:
-	StorageSetOrJoinBase & table;
-	String backup_path;
-	String backup_tmp_path;
-	String backup_file_name;
-	WriteBufferFromFile backup_buf;
-	CompressedWriteBuffer compressed_backup_buf;
-	NativeBlockOutputStream backup_stream;
-};
-
-
 /** Позволяет сохранить множество для последующего использования в правой части оператора IN.
   * При вставке в таблицу, данные будут вставлены в множество,
   *  а также записаны в файл-бэкап, для восстановления после перезапуска.
@@ -103,7 +81,7 @@ public:
 	SetPtr & getSet() { return set; }
 
 private:
-	SetPtr set { new Set{Limits{}} };
+	SetPtr set;
 
 	StorageSet(
 		const String & path_,
@@ -113,8 +91,8 @@ private:
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_);
 
-	void insertBlock(const Block & block) override { set->insertFromBlock(block); }
-	size_t getSize() const override { return set->getTotalRowCount(); };
+	void insertBlock(const Block & block) override;
+	size_t getSize() const override;
 };
 
 }

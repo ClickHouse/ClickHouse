@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <Poco/NumberParser.h>
+#include <Poco/Types.h>
 #include <sqltypes.h>
 
 #include "ReadHelpers.h"
@@ -14,8 +15,8 @@ class Field
 public:
 	std::string data;
 
-	uint64_t getUInt() const 	{ return Poco::NumberParser::parseUnsigned64(data); }
-	int64_t getInt() const		{ return Poco::NumberParser::parse64(data); }
+	Poco::UInt64 getUInt() const{ return Poco::NumberParser::parseUnsigned64(data); }
+	Poco::Int64 getInt() const	{ return Poco::NumberParser::parse64(data); }
 	float getFloat() const		{ return Poco::NumberParser::parseFloat(data); }
 	double getDouble() const	{ return Poco::NumberParser::parseFloat(data); }
 
@@ -101,7 +102,7 @@ public:
 		++rows;
 		const Row & row = *iterator;
 		++iterator;
-		return std::move(row);
+		return row;
 	}
 
 private:

@@ -46,6 +46,8 @@ struct MergeTreeDataPartChecksums
 
 	void addFile(const String & file_name, size_t file_size, uint128 file_hash);
 
+	void add(MergeTreeDataPartChecksums && rhs_checksums);
+
 	/// Проверяет, что множество столбцов и их контрольные суммы совпадают. Если нет - бросает исключение.
 	/// Если have_uncompressed, для сжатых файлов сравнивает чексуммы разжатых данных. Иначе сравнивает только чексуммы файлов.
 	void checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed) const;
@@ -105,11 +107,11 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
 	bool is_sharded = false;
 	size_t shard_no = 0;
 
-	/// Первичный ключ. Всегда загружается в оперативку. Содержит каждое index_granularity значение первичного ключа.
+	/// Primary key (correspond to primary.idx file).
+	/// Always loaded in RAM. Contains each index_granularity-th value of primary key tuple.
+	/// Note that marks (also correspond to primary key) is not always in RAM, but cached. See MarkCache.h.
 	using Index = Columns;
 	Index index;
-
-	/// NOTE Засечки кэшируются в оперативке. См. MarkCache.h.
 
 	Checksums checksums;
 
@@ -157,6 +159,10 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
 	void checkNotBroken(bool require_part_metadata);
 
 	bool hasColumnFiles(const String & column) const;
+
+	/// For data in RAM ('index').
+	size_t getIndexSizeInBytes() const;
+	size_t getIndexSizeInAllocatedBytes() const;
 };
 
 }

@@ -1,4 +1,4 @@
-#if defined(__x86_64__)
+#if __SSE2__
 	#include <emmintrin.h>
 #endif
 
@@ -20,7 +20,7 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
 	const Int8 * pos = reinterpret_cast<const Int8 *>(&filt[0]);
 	const Int8 * end = pos + filt.size();
 
-#if defined(__x86_64__)
+#if __SSE2__ && __POPCNT__
 	const __m128i zero16 = _mm_setzero_si128();
 	const Int8 * end64 = pos + filt.size() / 64 * 64;
 
@@ -95,7 +95,7 @@ void filterArraysImpl(
 		memcpy(&res_elems[elems_size_old], &src_elems[offset], size * sizeof(T));
 	};
 
-#if defined(__x86_64__)
+#if __SSE2__
 	const __m128i zero_vec = _mm_setzero_si128();
 	static constexpr size_t SIMD_BYTES = 16;
 	const auto filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;

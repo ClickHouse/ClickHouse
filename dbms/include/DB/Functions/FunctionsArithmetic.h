@@ -5,6 +5,7 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
+#include <DB/Functions/AccurateComparison.h>
 #include <DB/Core/FieldVisitors.h>
 
 
@@ -271,9 +272,9 @@ struct BitShiftRightImpl
 
 
 template<typename A, typename B>
-struct LeastImpl
+struct LeastBaseImpl
 {
-	using ResultType = typename NumberTraits::ResultOfIf<A, B>::Type;
+	using ResultType = NumberTraits::ResultOfLeast<A, B>;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -284,9 +285,26 @@ struct LeastImpl
 };
 
 template<typename A, typename B>
-struct GreatestImpl
+struct LeastSpecialImpl
 {
-	using ResultType = typename NumberTraits::ResultOfIf<A, B>::Type;
+	using ResultType = std::make_signed_t<A>;
+
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
+	{
+		static_assert(std::is_same<Result, ResultType>::value, "ResultType != Result");
+		return accurate::lessOp(a, b) ? static_cast<Result>(a) : static_cast<Result>(b);
+	}
+};
+
+template<typename A, typename B>
+using LeastImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<A, B>::value, LeastBaseImpl<A, B>, LeastSpecialImpl<A, B>>;
+
+
+template<typename A, typename B>
+struct GreatestBaseImpl
+{
+	using ResultType = NumberTraits::ResultOfGreatest<A, B>;
 
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
@@ -294,6 +312,23 @@ struct GreatestImpl
 		return static_cast<Result>(a) > static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
 	}
 };
+
+template<typename A, typename B>
+struct GreatestSpecialImpl
+{
+	using ResultType = std::make_unsigned_t<A>;
+
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
+	{
+		static_assert(std::is_same<Result, ResultType>::value, "ResultType != Result");
+		return accurate::greaterOp(a, b) ? static_cast<Result>(a) : static_cast<Result>(b);
+	}
+};
+
+template<typename A, typename B>
+using GreatestImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<A, B>::value, GreatestBaseImpl<A, B>, GreatestSpecialImpl<A, B>>;
+
 
 template<typename A>
 struct NegateImpl
@@ -529,7 +564,7 @@ private:
 	template <typename LeftDataType, typename RightDataType, typename ColumnType>
 	bool executeRightType(Block & block, const ColumnNumbers & arguments, const size_t result, const ColumnType * col_left)
 	{
-		if (!typeid_cast<const RightDataType *>(block.getByPosition(arguments[1]).type.get()))
+		if (!typeid_cast<const RightDataType *>(block.safeGetByPosition(arguments[1]).type.get()))
 			return false;
 
 		using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
@@ -566,10 +601,10 @@ private:
 	template <typename T0, typename T1, typename ResultType = typename Op<T0, T1>::ResultType>
 	bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<T0> * col_left)
 	{
-		if (auto col_right = typeid_cast<const ColumnVector<T1> *>(block.getByPosition(arguments[1]).column.get()))
+		if (auto col_right = typeid_cast<const ColumnVector<T1> *>(block.safeGetByPosition(arguments[1]).column.get()))
 		{
 			auto col_res = std::make_shared<ColumnVector<ResultType>>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			auto & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
@@ -577,10 +612,10 @@ private:
 
 			return true;
 		}
-		else if (auto col_right = typeid_cast<const ColumnConst<T1> *>(block.getByPosition(arguments[1]).column.get()))
+		else if (auto col_right = typeid_cast<const ColumnConst<T1> *>(block.safeGetByPosition(arguments[1]).column.get()))
 		{
 			auto col_res = std::make_shared<ColumnVector<ResultType>>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			auto & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
@@ -596,10 +631,10 @@ private:
 	template <typename T0, typename T1, typename ResultType = typename Op<T0, T1>::ResultType>
 	bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst<T0> * col_left)
 	{
-		if (auto col_right = typeid_cast<const ColumnVector<T1> *>(block.getByPosition(arguments[1]).column.get()))
+		if (auto col_right = typeid_cast<const ColumnVector<T1> *>(block.safeGetByPosition(arguments[1]).column.get()))
 		{
 			auto col_res = std::make_shared<ColumnVector<ResultType>>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			auto & vec_res = col_res->getData();
 			vec_res.resize(col_left->size());
@@ -607,13 +642,13 @@ private:
 
 			return true;
 		}
-		else if (auto col_right = typeid_cast<const ColumnConst<T1> *>(block.getByPosition(arguments[1]).column.get()))
+		else if (auto col_right = typeid_cast<const ColumnConst<T1> *>(block.safeGetByPosition(arguments[1]).column.get()))
 		{
 			ResultType res = 0;
 			BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->getData(), col_right->getData(), res);
 
 			auto col_res = std::make_shared<ColumnConst<ResultType>>(col_left->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			return true;
 		}
@@ -624,7 +659,7 @@ private:
 	template <typename LeftDataType>
 	bool executeLeftType(Block & block, const ColumnNumbers & arguments, const size_t result)
 	{
-		if (!typeid_cast<const LeftDataType *>(block.getByPosition(arguments[0]).type.get()))
+		if (!typeid_cast<const LeftDataType *>(block.safeGetByPosition(arguments[0]).type.get()))
 			return false;
 
 		using T0 = typename LeftDataType::FieldType;
@@ -639,7 +674,7 @@ private:
 	template <typename LeftDataType, typename ColumnType>
 	bool executeLeftTypeImpl(Block & block, const ColumnNumbers & arguments, const size_t result)
 	{
-		if (auto col_left = typeid_cast<const ColumnType *>(block.getByPosition(arguments[0]).column.get()))
+		if (auto col_left = typeid_cast<const ColumnType *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			if (	executeRightType<LeftDataType, DataTypeDate>(block, arguments, result, col_left)
 				||  executeRightType<LeftDataType, DataTypeDateTime>(block, arguments, result, col_left)
@@ -655,7 +690,7 @@ private:
 				||	executeRightType<LeftDataType, DataTypeFloat64>(block, arguments, result, col_left))
 				return true;
 			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
 					+ " of second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
@@ -670,14 +705,11 @@ public:
 		return name;
 	}
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+	size_t getNumberOfArguments() const override { return 2; }
 
+	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		DataTypePtr type_res;
 
 		if (!(	checkLeftType<DataTypeDate>(arguments, type_res)
@@ -699,7 +731,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!(  executeLeftType<DataTypeDate>(block, arguments, result)
 			||  executeLeftType<DataTypeDateTime>(block, arguments, result)
@@ -713,7 +745,7 @@ public:
 			||	executeLeftType<DataTypeInt64>(block, arguments, result)
 			||	executeLeftType<DataTypeFloat32>(block, arguments, result)
 			||	executeLeftType<DataTypeFloat64>(block, arguments, result)))
-		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+		   throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 				+ " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -724,7 +756,7 @@ template <typename FunctionName>
 struct FunctionUnaryArithmeticMonotonicity;
 
 
-template <template <typename> class Op, typename Name>
+template <template <typename> class Op, typename Name, bool is_injective>
 class FunctionUnaryArithmetic : public IFunction
 {
 public:
@@ -747,12 +779,12 @@ private:
 	template <typename T0>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<T0> * col = typeid_cast<const ColumnVector<T0> *>(block.getByPosition(arguments[0]).column.get()))
+		if (const ColumnVector<T0> * col = typeid_cast<const ColumnVector<T0> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			using ResultType = typename Op<T0>::ResultType;
 
 			std::shared_ptr<ColumnVector<ResultType>> col_res = std::make_shared<ColumnVector<ResultType>>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col->getData().size());
@@ -760,7 +792,7 @@ private:
 
 			return true;
 		}
-		else if (const ColumnConst<T0> * col = typeid_cast<const ColumnConst<T0> *>(block.getByPosition(arguments[0]).column.get()))
+		else if (const ColumnConst<T0> * col = typeid_cast<const ColumnConst<T0> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			using ResultType = typename Op<T0>::ResultType;
 
@@ -768,7 +800,7 @@ private:
 			UnaryOperationImpl<T0, Op<T0> >::constant(col->getData(), res);
 
 			std::shared_ptr<ColumnConst<ResultType>> col_res = std::make_shared<ColumnConst<ResultType>>(col->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			return true;
 		}
@@ -783,14 +815,12 @@ public:
 		return name;
 	}
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return is_injective; }
 
+	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		DataTypePtr result;
 
 		if (!(	checkType<DataTypeUInt8>(arguments, result)
@@ -810,7 +840,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!(	executeType<UInt8>(block, arguments, result)
 			||	executeType<UInt16>(block, arguments, result)
@@ -822,7 +852,7 @@ public:
 			||	executeType<Int64>(block, arguments, result)
 			||	executeType<Float32>(block, arguments, result)
 			||	executeType<Float64>(block, arguments, result)))
-		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+		   throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 				+ " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -857,23 +887,23 @@ struct NameBitShiftRight	{ static constexpr auto name = "bitShiftRight"; };
 struct NameLeast			{ static constexpr auto name = "least"; };
 struct NameGreatest			{ static constexpr auto name = "greatest"; };
 
-using FunctionPlus = FunctionBinaryArithmetic<PlusImpl,				NamePlus> 			;
-using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 			;
-using FunctionMultiply = FunctionBinaryArithmetic<MultiplyImpl,			NameMultiply> 		;
-using FunctionDivideFloating = FunctionBinaryArithmetic<DivideFloatingImpl, 	NameDivideFloating>	 ;
-using FunctionDivideIntegral = FunctionBinaryArithmetic<DivideIntegralImpl, 	NameDivideIntegral> ;
+using FunctionPlus = FunctionBinaryArithmetic<PlusImpl, NamePlus>;
+using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, NameMinus>;
+using FunctionMultiply = FunctionBinaryArithmetic<MultiplyImpl, NameMultiply>;
+using FunctionDivideFloating = FunctionBinaryArithmetic<DivideFloatingImpl, NameDivideFloating>;
+using FunctionDivideIntegral = FunctionBinaryArithmetic<DivideIntegralImpl, NameDivideIntegral>;
 using FunctionDivideIntegralOrZero = FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, NameDivideIntegralOrZero>;
-using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, 			NameModulo> 		;
-using FunctionNegate = FunctionUnaryArithmetic<NegateImpl, 			NameNegate> 		;
-using FunctionAbs = FunctionUnaryArithmetic<AbsImpl,	 			NameAbs>	 		;
-using FunctionBitAnd = FunctionBinaryArithmetic<BitAndImpl,			NameBitAnd> 		;
-using FunctionBitOr = FunctionBinaryArithmetic<BitOrImpl,				NameBitOr> 			;
-using FunctionBitXor = FunctionBinaryArithmetic<BitXorImpl,			NameBitXor> 		;
-using FunctionBitNot = FunctionUnaryArithmetic<BitNotImpl,				NameBitNot> 		;
-using FunctionBitShiftLeft = FunctionBinaryArithmetic<BitShiftLeftImpl,		NameBitShiftLeft> 	;
-using FunctionBitShiftRight = FunctionBinaryArithmetic<BitShiftRightImpl,		NameBitShiftRight> 	;
-using FunctionLeast = FunctionBinaryArithmetic<LeastImpl,				NameLeast> 			;
-using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl,			NameGreatest> 		;
+using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, NameModulo>;
+using FunctionNegate = FunctionUnaryArithmetic<NegateImpl, NameNegate, true>;
+using FunctionAbs = FunctionUnaryArithmetic<AbsImpl, NameAbs, false>;
+using FunctionBitAnd = FunctionBinaryArithmetic<BitAndImpl,	NameBitAnd>;
+using FunctionBitOr = FunctionBinaryArithmetic<BitOrImpl, NameBitOr>;
+using FunctionBitXor = FunctionBinaryArithmetic<BitXorImpl, NameBitXor>;
+using FunctionBitNot = FunctionUnaryArithmetic<BitNotImpl, NameBitNot, true>;
+using FunctionBitShiftLeft = FunctionBinaryArithmetic<BitShiftLeftImpl,	NameBitShiftLeft>;
+using FunctionBitShiftRight = FunctionBinaryArithmetic<BitShiftRightImpl, NameBitShiftRight>;
+using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
+using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 
 /// Свойства монотонности для некоторых функций.
 
@@ -891,8 +921,8 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
 	static bool has() { return true; }
 	static IFunction::Monotonicity get(const Field & left, const Field & right)
 	{
-		Float64 left_float = left.isNull() ? -std::numeric_limits<Float64>::infinity() : apply_visitor(FieldVisitorConvertToNumber<Float64>(), left);
-		Float64 right_float = right.isNull() ? std::numeric_limits<Float64>::infinity() : apply_visitor(FieldVisitorConvertToNumber<Float64>(), right);
+		Float64 left_float = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
+		Float64 right_float = right.isNull() ? std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);
 
 		if ((left_float < 0 && right_float > 0) || (left_float > 0 && right_float < 0))
 			return {};
@@ -913,7 +943,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 
 /// Оптимизации для целочисленного деления на константу.
 
-#if defined(__x86_64__)
+#if __SSE2__
 	#define LIBDIVIDE_USE_SSE2 1
 #endif
 
@@ -951,7 +981,7 @@ struct DivideIntegralByConstantImpl
 		const A * a_end = a_pos + size;
 		ResultType * c_pos = &c[0];
 
-#if defined(__x86_64__)
+#if __SSE2__
 		static constexpr size_t values_per_sse_register = 16 / sizeof(A);
 		const A * a_end_sse = a_pos + size / values_per_sse_register * values_per_sse_register;
 

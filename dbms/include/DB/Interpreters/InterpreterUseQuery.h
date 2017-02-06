@@ -1,12 +1,14 @@
 #pragma once
 
-#include <DB/Parsers/ASTUseQuery.h>
-#include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/IInterpreter.h>
 
 
 namespace DB
 {
+
+class Context;
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
 
 /** Выбрать БД по-умолчанию для сессии.
@@ -17,12 +19,7 @@ public:
 	InterpreterUseQuery(ASTPtr query_ptr_, Context & context_)
 		: query_ptr(query_ptr_), context(context_) {}
 
-	BlockIO execute() override
-	{
-		const String & new_database = typeid_cast<const ASTUseQuery &>(*query_ptr).database;
-		context.getSessionContext().setCurrentDatabase(new_database);
-		return {};
-	}
+	BlockIO execute() override;
 
 private:
 	ASTPtr query_ptr;

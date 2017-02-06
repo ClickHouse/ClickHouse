@@ -308,12 +308,12 @@ namespace detail
 			memset(this, 0, sizeof(*this));
 		}
 
-		void insert(UInt64 x)
+		void insert(UInt64 x) noexcept
 		{
 			insertWeighted(x, 1);
 		}
 
-		void insertWeighted(UInt64 x, size_t weight)
+		void insertWeighted(UInt64 x, size_t weight) noexcept
 		{
 			count += weight;
 
@@ -323,7 +323,7 @@ namespace detail
 				count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION] += weight;
 		}
 
-		void merge(const QuantileTimingLarge & rhs)
+		void merge(const QuantileTimingLarge & rhs) noexcept
 		{
 			count += rhs.count;
 
@@ -523,11 +523,11 @@ private:
 		detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
 
 		for (const auto & elem : medium.elems)
-			tmp_large->insert(elem);
+			tmp_large->insert(elem);	/// Cannot throw, so don't worry about new.
 
 		medium.~QuantileTimingMedium();
 		large = tmp_large;
-		tiny.count = TINY_MAX_ELEMS + 2;
+		tiny.count = TINY_MAX_ELEMS + 2;	/// large will be deleted in destructor.
 	}
 
 	void tinyToLarge()
@@ -539,10 +539,10 @@ private:
 		detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
 
 		for (size_t i = 0; i < tiny.count; ++i)
-			tmp_large->insert(tiny.elems[i]);
+			tmp_large->insert(tiny.elems[i]);	/// Cannot throw, so don't worry about new.
 
 		large = tmp_large;
-		tiny.count = TINY_MAX_ELEMS + 2;
+		tiny.count = TINY_MAX_ELEMS + 2;	/// large will be deleted in destructor.
 	}
 
 	bool mediumIsWorthToConvertToLarge() const
@@ -811,16 +811,16 @@ public:
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+		level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
 	}
 
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
@@ -830,7 +830,7 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).deserialize(buf);
 	}
@@ -870,17 +870,17 @@ public:
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+		level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
 	{
 		this->data(place).insertWeighted(
 			static_cast<const ColumnVector<ArgumentFieldType> &>(column_value).getData()[row_num],
 			static_cast<const ColumnVector<WeightFieldType> &>(column_weight).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
@@ -890,7 +890,7 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).deserialize(buf);
 	}
@@ -930,12 +930,12 @@ public:
 	}
 
 
-	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
 	{
 		this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
@@ -945,7 +945,7 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).deserialize(buf);
 	}
@@ -957,6 +957,9 @@ public:
 
 		size_t size = levels.size();
 		offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+
+		if (!size)
+			return;
 
 		typename ColumnFloat32::Container_t & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
 		size_t old_size = data_to.size();
@@ -991,14 +994,14 @@ public:
 		levels.set(params);
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
 	{
 		this->data(place).insertWeighted(
 			static_cast<const ColumnVector<ArgumentFieldType> &>(column_value).getData()[row_num],
 			static_cast<const ColumnVector<WeightFieldType> &>(column_weight).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
@@ -1008,7 +1011,7 @@ public:
 		this->data(place).serialize(buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		this->data(place).deserialize(buf);
 	}
@@ -1020,6 +1023,9 @@ public:
 
 		size_t size = levels.size();
 		offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+
+		if (!size)
+			return;
 
 		typename ColumnFloat32::Container_t & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
 		size_t old_size = data_to.size();

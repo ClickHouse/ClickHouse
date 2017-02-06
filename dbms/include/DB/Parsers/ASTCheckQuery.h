@@ -14,14 +14,17 @@ struct ASTCheckQuery : public ASTQueryWithOutput
 
 	ASTPtr clone() const override
 	{
-		return std::make_shared<ASTCheckQuery>(*this);
+		auto res = std::make_shared<ASTCheckQuery>(*this);
+		res->children.clear();
+		cloneOutputOptions(*res);
+		return res;
 	}
 
 	std::string database;
 	std::string table;
 
 protected:
-	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
 	{
 		std::string nl_or_nothing = settings.one_line ? "" : "\n";
 
@@ -34,12 +37,11 @@ protected:
 		{
 			if (!database.empty())
 			{
-				settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << database << (settings.hilite ? hilite_none : "");
+				settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(database) << (settings.hilite ? hilite_none : "");
 				settings.ostr << ".";
 			}
-			settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << table << (settings.hilite ? hilite_none : "");
+			settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(table) << (settings.hilite ? hilite_none : "");
 		}
-		settings.ostr << nl_or_ws;
 	}
 };
 

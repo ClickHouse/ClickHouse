@@ -1,8 +1,8 @@
 include_directories (${CMAKE_CURRENT_BINARY_DIR})
 
-IF (NOT AARCH64)	# Не используется. Портировать не сложно.
-	SET(SOURCES_ONLY_ON_X86_64 src/metrohash128crc.cpp)
-ENDIF()
+if (NOT AARCH64) # Not used. Pretty easy to port.
+	set (SOURCES_ONLY_ON_X86_64 src/metrohash128crc.cpp)
+endif ()
 
 add_library(metrohash
 	src/metrohash.h

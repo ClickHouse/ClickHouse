@@ -12,6 +12,24 @@ namespace ErrorCodes
 
 using ColumnsWithSortDescriptions = std::vector<std::pair<const IColumn *, SortColumnDescription>>;
 
+static ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, const SortDescription & description)
+{
+	size_t size = description.size();
+	ColumnsWithSortDescriptions res;
+	res.reserve(size);
+
+	for (size_t i = 0; i < size; ++i)
+	{
+		const IColumn * column = !description[i].column_name.empty()
+			? block.getByName(description[i].column_name).column.get()
+			: block.safeGetByPosition(description[i].column_number).column.get();
+
+		res.emplace_back(column, description[i]);
+	}
+
+	return res;
+}
+
 
 static inline bool needCollation(const IColumn * column, const SortColumnDescription & description)
 {
@@ -87,7 +105,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 
 		const IColumn * column = !description[0].column_name.empty()
 			? block.getByName(description[0].column_name).column.get()
-			: block.getByPosition(description[0].column_number).column.get();
+			: block.safeGetByPosition(description[0].column_number).column.get();
 
 		IColumn::Permutation perm;
 		if (needCollation(column, description[0]))
@@ -100,7 +118,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 
 		size_t columns = block.columns();
 		for (size_t i = 0; i < columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
+			block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->permute(perm, limit);
 	}
 	else
 	{
@@ -113,18 +131,15 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 			limit = 0;
 
 		bool need_collation = false;
-		ColumnsWithSortDescriptions columns_with_sort_desc;
+		ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
 
 		for (size_t i = 0, size = description.size(); i < size; ++i)
 		{
-			const IColumn * column = !description[i].column_name.empty()
-				? block.getByName(description[i].column_name).column.get()
-				: block.getByPosition(description[i].column_number).column.get();
-
-			columns_with_sort_desc.push_back(std::make_pair(column, description[i]));
-
-			if (needCollation(column, description[i]))
+			if (needCollation(columns_with_sort_desc[i].first, description[i]))
+			{
 				need_collation = true;
+				break;
+			}
 		}
 
 		if (need_collation)
@@ -148,7 +163,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 
 		size_t columns = block.columns();
 		for (size_t i = 0; i < columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
+			block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->permute(perm, limit);
 	}
 }
 
@@ -163,16 +178,7 @@ void stableGetPermutation(const Block & block, const SortDescription & descripti
 	for (size_t i = 0; i < size; ++i)
 		out_permutation[i] = i;
 
-	ColumnsWithSortDescriptions columns_with_sort_desc;
-
-	for (size_t i = 0, size = description.size(); i < size; ++i)
-	{
-		const IColumn * column = !description[i].column_name.empty()
-			? block.getByName(description[i].column_name).column.get()
-			: block.getByPosition(description[i].column_number).column.get();
-
-		columns_with_sort_desc.push_back(std::make_pair(column, description[i]));
-	}
+	ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
 
 	std::stable_sort(out_permutation.begin(), out_permutation.end(), PartialSortingLess(columns_with_sort_desc));
 }
@@ -185,16 +191,7 @@ bool isAlreadySorted(const Block & block, const SortDescription & description)
 
 	size_t rows = block.rows();
 
-	ColumnsWithSortDescriptions columns_with_sort_desc;
-
-	for (size_t i = 0, size = description.size(); i < size; ++i)
-	{
-		const IColumn * column = !description[i].column_name.empty()
-			? block.getByName(description[i].column_name).column.get()
-			: block.getByPosition(description[i].column_number).column.get();
-
-		columns_with_sort_desc.push_back(std::make_pair(column, description[i]));
-	}
+	ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
 
 	PartialSortingLess less(columns_with_sort_desc);
 
@@ -232,7 +229,7 @@ void stableSortBlock(Block & block, const SortDescription & description)
 
 	size_t columns = block.columns();
 	for (size_t i = 0; i < columns; ++i)
-		block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, 0);
+		block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->permute(perm, 0);
 }
 
 }

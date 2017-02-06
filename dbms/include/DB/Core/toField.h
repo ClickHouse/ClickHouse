@@ -1,8 +1,10 @@
 #pragma once
 
 #include <common/Common.h>		/// VisitID_t
-
+#include <common/LocalDate.h>
+#include <common/LocalDateTime.h>
 #include <DB/Core/Field.h>
+#include <mysqlxx/Null.h>
 
 
 namespace DB

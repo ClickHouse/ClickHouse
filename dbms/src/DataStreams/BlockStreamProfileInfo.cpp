@@ -31,11 +31,14 @@ void BlockStreamProfileInfo::write(WriteBuffer & out) const
 }
 
 
-void BlockStreamProfileInfo::setFrom(const BlockStreamProfileInfo & rhs)
+void BlockStreamProfileInfo::setFrom(const BlockStreamProfileInfo & rhs, bool skip_block_size_info)
 {
-	rows = rhs.rows;
-	blocks = rhs.blocks;
-	bytes = rhs.bytes;
+	if (!skip_block_size_info)
+	{
+		rows = rhs.rows;
+		blocks = rhs.blocks;
+		bytes = rhs.bytes;
+	}
 	applied_limit = rhs.applied_limit;
 	rows_before_limit = rhs.rows_before_limit;
 	calculated_rows_before_limit = rhs.calculated_rows_before_limit;
@@ -61,7 +64,7 @@ bool BlockStreamProfileInfo::hasAppliedLimit() const
 void BlockStreamProfileInfo::update(Block & block)
 {
 	++blocks;
-	rows += block.rowsInFirstColumn();
+	rows += block.rows();
 	bytes += block.bytes();
 }
 

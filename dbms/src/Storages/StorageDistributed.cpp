@@ -20,6 +20,8 @@
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ASTWeightedZooKeeperPath.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/queryToString.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
@@ -32,7 +34,10 @@
 
 #include <DB/Core/Field.h>
 
+#include <Poco/DirectoryIterator.h>
+
 #include <memory>
+
 
 namespace DB
 {
@@ -79,16 +84,15 @@ StorageDistributed::StorageDistributed(
 	NamesAndTypesListPtr columns_,
 	const String & remote_database_,
 	const String & remote_table_,
-	const Cluster & cluster_,
+	const String & cluster_name_,
 	Context & context_,
 	const ASTPtr & sharding_key_,
 	const String & data_path_)
 	: name(name_), columns(columns_),
 	remote_database(remote_database_), remote_table(remote_table_),
-	context(context_), cluster(cluster_),
+	context(context_), cluster_name(cluster_name_), has_sharding_key(sharding_key_),
 	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
 	sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
-	write_enabled(!data_path_.empty() && (((cluster.getLocalShardCount() + cluster.getRemoteShardCount()) < 2) || sharding_key_)),
 	path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
 	createDirectoryMonitors();
@@ -102,17 +106,16 @@ StorageDistributed::StorageDistributed(
 	const ColumnDefaults & column_defaults_,
 	const String & remote_database_,
 	const String & remote_table_,
-	const Cluster & cluster_,
+	const String & cluster_name_,
 	Context & context_,
 	const ASTPtr & sharding_key_,
 	const String & data_path_)
 	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	name(name_), columns(columns_),
 	remote_database(remote_database_), remote_table(remote_table_),
-	context(context_), cluster(cluster_),
+	context(context_), cluster_name(cluster_name_), has_sharding_key(sharding_key_),
 	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
 	sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
-	write_enabled(!data_path_.empty() && (((cluster.getLocalShardCount() + cluster.getRemoteShardCount()) < 2) || sharding_key_)),
 	path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
 	createDirectoryMonitors();
@@ -126,7 +129,7 @@ StoragePtr StorageDistributed::create(
 	const ColumnDefaults & column_defaults_,
 	const String & remote_database_,
 	const String & remote_table_,
-	const String & cluster_name,
+	const String & cluster_name_,
 	Context & context_,
 	const ASTPtr & sharding_key_,
 	const String & data_path_)
@@ -135,7 +138,7 @@ StoragePtr StorageDistributed::create(
 		name_, columns_,
 		materialized_columns_, alias_columns_, column_defaults_,
 		remote_database_, remote_table_,
-		context_.getCluster(cluster_name), context_,
+		cluster_name_, context_,
 		sharding_key_, data_path_
 	);
 }
@@ -146,15 +149,14 @@ StoragePtr StorageDistributed::create(
 	NamesAndTypesListPtr columns_,
 	const String & remote_database_,
 	const String & remote_table_,
-	std::shared_ptr<Cluster> & owned_cluster_,
+	ClusterPtr & owned_cluster_,
 	Context & context_)
 {
 	auto res = make_shared(
 		name_, columns_, remote_database_,
-		remote_table_, *owned_cluster_, context_
+		remote_table_, String{}, context_
 	);
 
-	/// Захватываем владение объектом-кластером.
 	res->owned_cluster = owned_cluster_;
 
 	return res;
@@ -169,7 +171,9 @@ BlockInputStreams StorageDistributed::read(
 	const size_t max_block_size,
 	const unsigned threads)
 {
-	size_t result_size = (cluster.getRemoteShardCount() * settings.max_parallel_replicas) + cluster.getLocalShardCount();
+	auto cluster = getCluster();
+
+	size_t result_size = (cluster->getRemoteShardCount() * settings.max_parallel_replicas) + cluster->getLocalShardCount();
 
 	processed_stage = result_size == 1 || settings.distributed_group_by_no_merge
 		? QueryProcessingStage::Complete
@@ -201,6 +205,11 @@ BlockInputStreams StorageDistributed::read(
 
 BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & settings)
 {
+	auto cluster = context.getCluster(cluster_name);
+
+	/// TODO: !path.empty() can be replaced by !owned_cluster or !cluster_name.empty() ?
+	bool write_enabled = !path.empty() && (((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2) || has_sharding_key);
+
 	if (!write_enabled)
 		throw Exception{
 			"Method write is not supported by storage " + getName() +
@@ -208,9 +217,9 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & se
 			ErrorCodes::STORAGE_REQUIRES_PARAMETER
 		};
 
+	/// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
 	return std::make_shared<DistributedBlockOutputStream>(
-		*this,
-		rewriteInsertQuery(query, remote_database, remote_table));
+		*this, rewriteInsertQuery(query, remote_database, remote_table), cluster);
 }
 
 void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
@@ -247,7 +256,10 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 			" queries for distributed tables",
 			ErrorCodes::RESHARDING_INVALID_PARAMETERS};
 
-	std::string coordinator_id = resharding_worker.createCoordinator(cluster);
+	auto cluster = getCluster();
+
+	/// resharding_worker doesn't need to own cluster, here only meta-information of cluster is used
+	std::string coordinator_id = resharding_worker.createCoordinator(*cluster);
 
 	std::atomic<bool> has_notified_error{false};
 
@@ -374,6 +386,7 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)
 {
 	/// Создать запрос DESCRIBE TABLE.
+	auto cluster = getCluster();
 
 	ASTPtr describe_query_ptr = std::make_shared<ASTDescribeQuery>();
 	auto & describe_query = static_cast<ASTDescribeQuery &>(*describe_query_ptr);
@@ -408,7 +421,7 @@ bool StorageDistributed::hasColumn(const String & column_name) const
 
 void StorageDistributed::createDirectoryMonitor(const std::string & name)
 {
-	directory_monitors.emplace(name, std::make_unique<DirectoryMonitor>(*this, name));
+	directory_monitors.emplace(name, std::make_unique<StorageDistributedDirectoryMonitor>(*this, name));
 }
 
 void StorageDistributed::createDirectoryMonitors()
@@ -432,7 +445,12 @@ void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 
 size_t StorageDistributed::getShardCount() const
 {
-	return cluster.getRemoteShardCount();
+	return getCluster()->getRemoteShardCount();
+}
+
+ClusterPtr StorageDistributed::getCluster() const
+{
+	return (owned_cluster) ? owned_cluster : context.getCluster(cluster_name);
 }
 
 }

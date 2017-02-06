@@ -1,8 +1,9 @@
 #include <Poco/UTF8Encoding.h>
 #include <DB/IO/WriteBufferValidUTF8.h>
+#include <DB/Core/Types.h>
 
-#ifdef __x86_64__
-#include <emmintrin.h>
+#if __SSE2__
+	#include <emmintrin.h>
 #endif
 
 
@@ -11,28 +12,31 @@ namespace DB
 
 const size_t WriteBufferValidUTF8::DEFAULT_SIZE = 4096;
 
-/** Index into the table below with the first byte of a UTF-8 sequence to
-  * get the number of trailing bytes that are supposed to follow it.
-  * Note that *legal* UTF-8 values can't have 4 or 5-bytes. The table is
-  * left as-is for anyone who may want to do such conversion, which was
-  * allowed in earlier algorithms.
-  */
-const char WriteBufferValidUTF8::trailingBytesForUTF8[256] =
+namespace
 {
-	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-	1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-	2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 3,3,3,3,3,3,3,3,4,4,4,4,5,5,5,5
-};
+	/** Index into the table below with the first byte of a UTF-8 sequence to
+	  * get the number of trailing bytes that are supposed to follow it.
+	  * Note that *legal* UTF-8 values can't have 4 or 5-bytes. The table is
+	  * left as-is for anyone who may want to do such conversion, which was
+	  * allowed in earlier algorithms.
+	  */
+	const UInt8 length_of_utf8_sequence[256] =
+	{
+		1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+		1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+		1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+		1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+		1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+		1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+		2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+		3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3, 4,4,4,4,4,4,4,4,5,5,5,5,6,6,6,6
+	};
+}
 
 
 WriteBufferValidUTF8::WriteBufferValidUTF8(
 	WriteBuffer & output_buffer, bool group_replacements, const char * replacement, size_t size)
-	: BufferWithOwnMemory<WriteBuffer>(std::max(4LU, size)), output_buffer(output_buffer),
+	: BufferWithOwnMemory<WriteBuffer>(std::max(32LU, size)), output_buffer(output_buffer),
 	group_replacements(group_replacements), replacement(replacement)
 {
 }
@@ -60,13 +64,13 @@ inline void WriteBufferValidUTF8::putValid(char *data, size_t len)
 
 void WriteBufferValidUTF8::nextImpl()
 {
-	char *p = memory.data();
-	char *valid_start = p;
+	char * p = memory.data();
+	char * valid_start = p;
 
 	while (p < pos)
 	{
-#ifdef __x86_64__
-		/// Быстрый пропуск ASCII
+#if __SSE2__
+		/// Fast skip of ASCII
 		static constexpr size_t SIMD_BYTES = 16;
 		const char * simd_end = p + (pos - p) / SIMD_BYTES * SIMD_BYTES;
 
@@ -77,11 +81,11 @@ void WriteBufferValidUTF8::nextImpl()
 			break;
 #endif
 
-		size_t len = 1 + static_cast<size_t>(trailingBytesForUTF8[static_cast<unsigned char>(*p)]);
+		size_t len = length_of_utf8_sequence[static_cast<unsigned char>(*p)];
 
 		if (len > 4)
 		{
-			/// Невалидное начало последовательности. Пропустим один байт.
+			/// Invalid start of sequence. Skip one byte.
 			putValid(valid_start, p - valid_start);
 			putReplacement();
 			++p;
@@ -89,17 +93,17 @@ void WriteBufferValidUTF8::nextImpl()
 		}
 		else if (p + len > pos)
 		{
-			/// Еще не вся последовательность записана.
+			/// Sequence was not fully written to this buffer.
 			break;
 		}
-		else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<unsigned char*>(p), len))
+		else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<unsigned char *>(p), len))
 		{
-			/// Валидная последовательность.
+			/// Valid sequence.
 			p += len;
 		}
 		else
 		{
-			/// Невалидная последовательность. Пропустим только первый байт.
+			/// Invalid sequence. Skip just first byte.
 			putValid(valid_start, p - valid_start);
 			putReplacement();
 			++p;
@@ -110,7 +114,8 @@ void WriteBufferValidUTF8::nextImpl()
 	putValid(valid_start, p - valid_start);
 
 	size_t cnt = pos - p;
-	/// Сдвинем незаконченную последовательность в начало буфера.
+
+	/// Shift unfinished sequence to start of buffer.
 	for (size_t i = 0; i < cnt; ++i)
 		memory[i] = p[i];
 
@@ -120,10 +125,10 @@ void WriteBufferValidUTF8::nextImpl()
 
 void WriteBufferValidUTF8::finish()
 {
-	/// Выпишем все полные последовательности из буфера.
+	/// Write all complete sequences from buffer.
 	nextImpl();
 
-	/// Если осталась незаконченная последовательность, запишем replacement.
+	/// If unfinished sequence at end, then write replacement.
 	if (working_buffer.begin() != memory.data())
 		putReplacement();
 }

@@ -1,14 +1,38 @@
 #include <DB/Storages/StorageSet.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/CompressedReadBuffer.h>
+#include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/CompressedWriteBuffer.h>
+#include <DB/DataStreams/NativeBlockOutputStream.h>
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/Interpreters/Set.h>
 #include <Poco/DirectoryIterator.h>
 
 
 namespace DB
 {
+
+
+class SetOrJoinBlockOutputStream : public IBlockOutputStream
+{
+public:
+	SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
+		const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_);
+
+	void write(const Block & block) override;
+	void writeSuffix() override;
+
+private:
+	StorageSetOrJoinBase & table;
+	String backup_path;
+	String backup_tmp_path;
+	String backup_file_name;
+	WriteBufferFromFile backup_buf;
+	CompressedWriteBuffer compressed_backup_buf;
+	NativeBlockOutputStream backup_stream;
+};
 
 
 SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
@@ -70,10 +94,15 @@ StorageSet::StorageSet(
 	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_)
-	: StorageSetOrJoinBase{path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_}
+	: StorageSetOrJoinBase{path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_},
+	set(std::make_shared<Set>(Limits{}))
 {
 	restore();
 }
+
+
+void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block); }
+size_t StorageSet::getSize() const { return set->getTotalRowCount(); };
 
 
 void StorageSetOrJoinBase::restore()

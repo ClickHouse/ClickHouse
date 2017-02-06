@@ -27,7 +27,7 @@ int main(int argc, char ** argv)
 	WriteBufferFromOStream out_buf(ostr);
 
 	stopwatch.restart();
-	data_type.serializeBinary(*column, out_buf);
+	data_type.serializeBinaryBulk(*column, out_buf, 0, 0);
 	stopwatch.stop();
 
 	std::cout << "Elapsed: " << stopwatch.elapsedSeconds() << std::endl;

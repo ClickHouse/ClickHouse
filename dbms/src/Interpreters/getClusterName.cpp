@@ -2,12 +2,19 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTFunction.h>
+#include <DB/Common/typeid_cast.h>
 
 #include <DB/Interpreters/getClusterName.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int BAD_ARGUMENTS;
+}
+
 
 std::string getClusterName(const IAST & node)
 {

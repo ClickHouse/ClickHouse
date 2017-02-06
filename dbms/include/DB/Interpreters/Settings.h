@@ -12,19 +12,19 @@
 namespace DB
 {
 
-/** Настройки выполнения запроса.
+/** Settings of query execution.
   */
 struct Settings
 {
-	/// Для того, чтобы инициализация из пустого initializer-list была value initialization, а не aggregate initialization в С++14.
+	/// For initialization from empty initializer-list to be "value initialization", not "aggregate initialization" in С++14.
 	/// http://en.cppreference.com/w/cpp/language/aggregate_initialization
 	Settings() {}
 
-	/** Перечисление настроек: тип, имя, значение по-умолчанию.
+	/** List of settings: type, name, default value.
 	  *
-	  * Это сделано несколько неудобно, чтобы не перечислять настройки во многих разных местах.
-	  * Замечание: можно было бы сделать полностью динамические настройки вида map: String -> Field,
-	  *  но пока рано, так как в коде они используются как статический struct.
+	  * This looks rather unconvenient. It is done that way to avoid repeating settings in different places.
+	  * Note: as an alternative, we could implement settings to be completely dynamic in form of map: String -> Field,
+	  *  but we are not going to do it, because settings is used everywhere as static struct fields.
 	  */
 
 #define APPLY_FOR_SETTINGS(M) \
@@ -223,8 +223,44 @@ struct Settings
 	\
 	/** Write add http CORS header */ \
 	M(SettingBool, add_http_cors_header, false) \
+	\
+	/** Skip columns with unknown names from input data (it works for JSONEachRow and TSKV formats). */ \
+	M(SettingBool, input_format_skip_unknown_fields, false) \
+	\
+	/** For Values format: if field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression. */ \
+	M(SettingBool, input_format_values_interpret_expressions, true) \
+	\
+	/** Controls quoting of 64-bit integers in JSON output format. */ \
+	M(SettingBool, output_format_json_quote_64bit_integers, true) \
+	\
+	/** Rows limit for Pretty formats. */ \
+	M(SettingUInt64, output_format_pretty_max_rows, 10000) \
+	\
+	/** Use client timezone for interpreting DateTime string values, instead of adopting server timezone. */ \
+	M(SettingBool, use_client_time_zone, false) \
+	\
+	/** Send progress notifications using X-ClickHouse-Progress headers. \
+	  * Some clients do not support high amount of HTTP headers (Python requests in particular), so it is disabled by default. \
+	  */ \
+	M(SettingBool, send_progress_in_http_headers, false) \
+	\
+	/** Do not send HTTP headers X-ClickHouse-Progress more frequently than at each specified interval. */ \
+	M(SettingUInt64, http_headers_progress_interval_ms, 100) \
+	\
+	/** Do fsync after changing metadata for tables and databases (.sql files). \
+	  * Could be disabled in case of poor latency on server with high load of DDL queries and high load of disk subsystem. \
+	  */ \
+	M(SettingBool, fsync_metadata, 1) \
+	\
+	/** Maximum amount of errors while reading text formats (like CSV, TSV). \
+	  * In case of error, if both values are non-zero, \
+	  *  and at least absolute or relative amount of errors is lower than corresponding value, \
+	  *  will skip until next line and continue. \
+	  */ \
+	M(SettingUInt64, input_format_allow_errors_num, 0) \
+	M(SettingFloat, input_format_allow_errors_ratio, 0) \
 
-	/// Всевозможные ограничения на выполнение запроса.
+	/// Possible limits for query execution.
 	Limits limits;
 
 #define DECLARE(TYPE, NAME, DEFAULT) \
@@ -234,32 +270,31 @@ struct Settings
 
 #undef DECLARE
 
-	/// Установить настройку по имени.
+	/// Set setting by name.
 	void set(const String & name, const Field & value);
 
-	/// Установить настройку по имени. Прочитать сериализованное в бинарном виде значение из буфера (для межсерверного взаимодействия).
+	/// Set setting by name. Read value, serialized in binary form from buffer (for inter-server communication).
 	void set(const String & name, ReadBuffer & buf);
 
-	/// Пропустить сериализованное в бинарном виде значение из буфера.
+	/// Skip value, serialized in binary form in buffer.
 	void ignore(const String & name, ReadBuffer & buf);
 
-	/** Установить настройку по имени. Прочитать значение в текстовом виде из строки (например, из конфига, или из параметра URL).
-	  */
+	/// Set setting by name. Read value in text form from string (for example, from configuration file or from URL parameter).
 	void set(const String & name, const String & value);
 
-	/** Установить настройки из профиля (в конфиге сервера, в одном профиле может быть перечислено много настроек).
+	/** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
 	  * Профиль также может быть установлен с помощью функций set, как настройка profile.
 	  */
 	void setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config);
 
-	/// Загрузить настройки по пути из конфига
+	/// Load settings from configuration file, at "path" prefix in configuration.
 	void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
-	/// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
-	/// Если в настройках выставлено readonly=1, то игнорировать настройки.
+	/// Read settings from buffer. They are serialized as list of contiguous name-value pairs, finished with empty name.
+	/// If readonly=1 is set, ignore read settings.
 	void deserialize(ReadBuffer & buf);
 
-	/// Записать изменённые настройки в буфер. (Например, для отправки на удалённый сервер.)
+	/// Write changed settings to buffer. (For example, to be sent to remote server.)
 	void serialize(WriteBuffer & buf) const;
 };
 

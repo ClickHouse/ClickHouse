@@ -159,6 +159,7 @@ public:
 	}
 
 	size_t byteSize() const override { return sizeof(data) + sizeof(s); }
+	size_t allocatedSize() const override { return byteSize(); }
 
 	ColumnPtr permute(const Permutation & perm, size_t limit) const override
 	{
@@ -213,6 +214,7 @@ public:
 	ColumnConst(size_t s_, const T & data_, DataTypePtr data_type_ = DataTypePtr())
 		: ColumnConstBase<T, T, ColumnConst<T>>(s_, data_, data_type_) {}
 
+	bool isNull() const override { return false; };
 	StringRef getDataAt(size_t n) const override;
 	StringRef getDataAtWithTerminatingZero(size_t n) const override;
 	UInt64 get64(size_t n) const override;
@@ -301,10 +303,22 @@ public:
 };
 
 
+using ColumnNull = ColumnConst<Null>;
 using ColumnConstString = ColumnConst<String>;
 using ColumnConstArray = ColumnConst<Array>;
 using ColumnConstTuple = ColumnConst<Tuple>;
 
+template <>
+inline bool ColumnConst<Null>::isNull() const
+{
+	return true;
+}
+
+template <>
+inline StringRef ColumnConst<Null>::getDataAt(size_t n) const
+{
+	return {};
+}
 
 template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
 {
@@ -313,6 +327,7 @@ template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
 	return res;
 }
 
+template <> ColumnPtr ColumnConst<Null>::convertToFullColumn() const;
 
 template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const;
 

@@ -2,6 +2,8 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/DataTypes/DataTypeFactory.h>
+#include <DB/Storages/IStorage.h>
+#include <DB/Parsers/IAST.h>
 
 #include <DB/TableFunctions/getStructureOfRemoteTable.h>
 
@@ -36,7 +38,7 @@ NamesAndTypesList getStructureOfRemoteTable(
 
 	BlockInputStreamPtr input =
 		std::make_shared<RemoteBlockInputStream>(
-			pool.get(), query, &settings, nullptr,
+			pool, query, &settings, nullptr,
 			Tables(), QueryProcessingStage::Complete, context);
 	input->readPrefix();
 

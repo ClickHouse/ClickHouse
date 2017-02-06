@@ -10,22 +10,28 @@
 #include <DB/Common/Allocator.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ArenaAllocChunks;
+	extern const Event ArenaAllocBytes;
+}
+
 namespace DB
 {
 
 
-/** Пул, в который можно складывать что-нибудь. Например, короткие строки.
-  * Сценарий использования:
-  * - складываем много строк и запоминаем их адреса;
-  * - адреса остаются валидными в течение жизни пула;
-  * - при уничтожении пула, вся память освобождается;
-  * - память выделяется и освобождается большими кусками;
-  * - удаление части данных не предусмотрено;
+/** Memory pool to append something. For example, short strings.
+  * Usage scenario:
+  * - put lot of strings inside pool, keep their addresses;
+  * - addresses remain valid during lifetime of pool;
+  * - at destruction of pool, all memory is freed;
+  * - memory is allocated and freed by large chunks;
+  * - freeing parts of data is not possible (but look at ArenaWithFreeLists if you need);
   */
 class Arena : private boost::noncopyable
 {
 private:
-	/// Непрерывный кусок памяти и указатель на свободное место в нём. Односвязный список.
+	/// Contiguous chunk of memory and pointer to free space inside it. Member of single-linked list.
 	struct Chunk : private Allocator<false>	/// empty base optimization
 	{
 		char * begin;
@@ -59,7 +65,7 @@ private:
 	size_t growth_factor;
 	size_t linear_growth_threshold;
 
-	/// Последний непрерывный кусок памяти.
+	/// Last contiguous chunk of memory.
 	Chunk * head;
 	size_t size_in_bytes;
 
@@ -68,7 +74,8 @@ private:
 		return (s + 4096 - 1) / 4096 * 4096;
 	}
 
-	/// Если размер чанка меньше linear_growth_threshold, то рост экспоненциальный, иначе - линейный, для уменьшения потребления памяти.
+	/// If chunks size is less than 'linear_growth_threshold', then use exponential growth, otherwise - linear growth
+	///  (to not allocate too much excessive memory).
 	size_t nextSize(size_t min_next_size) const
 	{
 		size_t size_after_grow = 0;
@@ -84,7 +91,7 @@ private:
 		return roundUpToPageSize(size_after_grow);
 	}
 
-	/// Добавить следующий непрерывный кусок памяти размера не меньше заданного.
+	/// Add next contiguous chunk of memory with size not less than specified.
 	void NO_INLINE addChunk(size_t min_size)
 	{
 		head = new Chunk(nextSize(min_size), head);
@@ -103,7 +110,7 @@ public:
 		delete head;
 	}
 
-	/// Получить кусок памяти, без выравнивания.
+	/// Get piece of memory, without alignment.
 	char * alloc(size_t size)
 	{
 		if (unlikely(head->pos + size > head->end))
@@ -114,17 +121,17 @@ public:
 		return res;
 	}
 
-	/** Отменить только что сделанное выделение памяти.
-	  * Нужно передать размер не больше того, который был только что выделен.
+	/** Rollback just performed allocation.
+	  * Must pass size not more that was just allocated.
 	  */
 	void rollback(size_t size)
 	{
 		head->pos -= size;
 	}
 
-	/** Начать или расширить непрерывный кусок памяти.
-	  * begin - текущее начало куска памяти, если его надо расширить, или nullptr, если его надо начать.
-	  * Если в чанке не хватило места - скопировать существующие данные в новый кусок памяти и изменить значение begin.
+	/** Begin or expand allocation of contiguous piece of memory.
+	  * 'begin' - current begin of piece of memory, if it need to be expanded, or nullptr, if it need to be started.
+	  * If there is no space in chunk to expand current piece of memory - then copy all piece to new chunk and change value of 'begin'.
 	  */
 	char * allocContinue(size_t size, char const *& begin)
 	{
@@ -148,7 +155,7 @@ public:
 		return res;
 	}
 
-	/// Вставить строку без выравнивания.
+	/// Insert string without alignment.
 	const char * insert(const char * data, size_t size)
 	{
 		char * res = alloc(size);
@@ -156,7 +163,7 @@ public:
 		return res;
 	}
 
-	/// Размер выделенного пула в байтах
+	/// Size of chunks in bytes.
 	size_t size() const
 	{
 		return size_in_bytes;

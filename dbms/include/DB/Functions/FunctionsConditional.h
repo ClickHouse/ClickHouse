@@ -15,14 +15,6 @@
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/DataTypeTraits.h>
 
-/// The following includes are needed for the function multiIf.
-#include <DB/Functions/Conditional/CondException.h>
-#include <DB/Functions/Conditional/common.h>
-#include <DB/Functions/Conditional/ArgsInfo.h>
-#include <DB/Functions/Conditional/NumericPerformer.h>
-#include <DB/Functions/Conditional/StringEvaluator.h>
-#include <DB/Functions/Conditional/StringArrayEvaluator.h>
-
 namespace DB
 {
 
@@ -39,7 +31,7 @@ private:
 	static PaddedPODArray<ResultType> & result_vector(Block & block, size_t result, size_t size)
 	{
 		auto col_res = std::make_shared<ColumnVector<ResultType>>();
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 
 		typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 		vec_res.resize(size);
@@ -437,7 +429,7 @@ struct NumArrayIfImpl
 	{
 		auto col_res_vec = std::make_shared<ColumnVector<ResultType>>();
 		auto col_res_array = std::make_shared<ColumnArray>(col_res_vec);
-		block.getByPosition(result).column = col_res_array;
+		block.safeGetByPosition(result).column = col_res_array;
 
 		*c_data = &col_res_vec->getData();
 		*c_offsets = &col_res_array->getOffsets();
@@ -873,8 +865,8 @@ private:
 		size_t result,
 		const ColumnVector<T0> * col_left)
 	{
-		const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(block.getByPosition(arguments[2]).column.get());
-		const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(block.getByPosition(arguments[2]).column.get());
+		const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(block.safeGetByPosition(arguments[2]).column.get());
+		const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(block.safeGetByPosition(arguments[2]).column.get());
 
 		if (!col_right_vec && !col_right_const)
 			return false;
@@ -897,8 +889,8 @@ private:
 		size_t result,
 		const ColumnConst<T0> * col_left)
 	{
-		const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(block.getByPosition(arguments[2]).column.get());
-		const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(block.getByPosition(arguments[2]).column.get());
+		const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(block.safeGetByPosition(arguments[2]).column.get());
+		const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(block.safeGetByPosition(arguments[2]).column.get());
 
 		if (!col_right_vec && !col_right_const)
 			return false;
@@ -922,7 +914,7 @@ private:
 		const ColumnArray * col_left_array,
 		const ColumnVector<T0> * col_left)
 	{
-		const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
+		const IColumn * col_right_untyped = block.safeGetByPosition(arguments[2]).column.get();
 
 		const ColumnArray * col_right_array = typeid_cast<const ColumnArray *>(col_right_untyped);
 		const ColumnConstArray * col_right_const_array = typeid_cast<const ColumnConstArray *>(col_right_untyped);
@@ -969,7 +961,7 @@ private:
 		size_t result,
 		const ColumnConstArray * col_left_const_array)
 	{
-		const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
+		const IColumn * col_right_untyped = block.safeGetByPosition(arguments[2]).column.get();
 
 		const ColumnArray * col_right_array = typeid_cast<const ColumnArray *>(col_right_untyped);
 		const ColumnConstArray * col_right_const_array = typeid_cast<const ColumnConstArray *>(col_right_untyped);
@@ -1011,7 +1003,7 @@ private:
 	template <typename T0>
 	bool executeLeftType(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const IColumn * col_left_untyped = block.getByPosition(arguments[1]).column.get();
+		const IColumn * col_left_untyped = block.safeGetByPosition(arguments[1]).column.get();
 
 		const ColumnVector<T0> * col_left = nullptr;
 		const ColumnConst<T0> * col_const_left = nullptr;
@@ -1048,7 +1040,7 @@ private:
 				||	executeRightType<T0, Float64>(cond_col, block, arguments, result, col_left))
 				return true;
 			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
 					+ " of third argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
@@ -1066,7 +1058,7 @@ private:
 				||	executeConstRightType<T0, Float64>(cond_col, block, arguments, result, col_const_left))
 				return true;
 			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
 					+ " of third argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
@@ -1084,7 +1076,7 @@ private:
 				||	executeRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems))
 				return true;
 			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
 					+ " of third argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
@@ -1104,7 +1096,7 @@ private:
 				||	executeConstRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_const_arr_left))
 				return true;
 			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
 					+ " of third argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
@@ -1114,8 +1106,8 @@ private:
 
 	bool executeString(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const IColumn * col_then_untyped = block.getByPosition(arguments[1]).column.get();
-		const IColumn * col_else_untyped = block.getByPosition(arguments[2]).column.get();
+		const IColumn * col_then_untyped = block.safeGetByPosition(arguments[1]).column.get();
+		const IColumn * col_else_untyped = block.safeGetByPosition(arguments[2]).column.get();
 
 		const ColumnString * col_then = typeid_cast<const ColumnString *>(col_then_untyped);
 		const ColumnString * col_else = typeid_cast<const ColumnString *>(col_else_untyped);
@@ -1136,7 +1128,7 @@ private:
 				size_t N = col_then_fixed->getN();
 
 				auto col_res = std::make_shared<ColumnFixedString>(N);
-				block.getByPosition(result).column = col_res;
+				block.safeGetByPosition(result).column = col_res;
 
 				ColumnFixedString::Chars_t & res_vec = col_res->getChars();
 
@@ -1151,7 +1143,7 @@ private:
 			{
 				/// Результат - String.
 				std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-				block.getByPosition(result).column = col_res;
+				block.safeGetByPosition(result).column = col_res;
 
 				ColumnString::Chars_t & res_vec = col_res->getChars();
 				ColumnString::Offsets_t & res_offsets = col_res->getOffsets();
@@ -1223,7 +1215,7 @@ private:
 		{
 			auto col_res_elements = std::make_shared<ColumnString>();
 			auto col_res = std::make_shared<ColumnArray>(col_res_elements);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & res_chars = col_res_elements->getChars();
 			ColumnString::Offsets_t & res_string_offsets = col_res_elements->getOffsets();
@@ -1266,8 +1258,8 @@ private:
 	{
 		/// Calculate function for each corresponding elements of tuples.
 
-		const ColumnWithTypeAndName & arg1 = block.getByPosition(arguments[1]);
-		const ColumnWithTypeAndName & arg2 = block.getByPosition(arguments[2]);
+		const ColumnWithTypeAndName & arg1 = block.safeGetByPosition(arguments[1]);
+		const ColumnWithTypeAndName & arg2 = block.safeGetByPosition(arguments[2]);
 
 		ColumnPtr col1_holder;
 		ColumnPtr col2_holder;
@@ -1293,7 +1285,7 @@ private:
 		const DataTypeTuple & type2 = static_cast<const DataTypeTuple &>(*arg2.type);
 
 		Block temporary_block;
-		temporary_block.insert(block.getByPosition(arguments[0]));
+		temporary_block.insert(block.safeGetByPosition(arguments[0]));
 
 		size_t tuple_size = type1.getElements().size();
 
@@ -1303,8 +1295,8 @@ private:
 				getReturnType({std::make_shared<DataTypeUInt8>(), type1.getElements()[i], type2.getElements()[i]}),
 				{}});
 
-			temporary_block.insert({col1->getData().getByPosition(i).column, type1.getElements()[i], {}});
-			temporary_block.insert({col2->getData().getByPosition(i).column, type2.getElements()[i], {}});
+			temporary_block.insert({col1->getData().safeGetByPosition(i).column, type1.getElements()[i], {}});
+			temporary_block.insert({col2->getData().safeGetByPosition(i).column, type2.getElements()[i], {}});
 
 			/// temporary_block will be: cond, res_0, ..., res_i, then_i, else_i
 			execute(temporary_block, {0, i + 2, i + 3}, i + 1);
@@ -1315,7 +1307,7 @@ private:
 		/// temporary_block is: cond, res_0, res_1, res_2...
 
 		temporary_block.erase(0);
-		block.getByPosition(result).column = std::make_shared<ColumnTuple>(temporary_block);
+		block.safeGetByPosition(result).column = std::make_shared<ColumnTuple>(temporary_block);
 		return true;
 	}
 
@@ -1326,14 +1318,11 @@ public:
 		return name;
 	}
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 3)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 3.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+	size_t getNumberOfArguments() const override { return 3; }
 
+	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		if (!typeid_cast<const DataTypeUInt8 *>(&*arguments[0]))
 			throw Exception("Illegal type of first argument (condition) of function if. Must be UInt8.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1412,20 +1401,20 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(block.getByPosition(arguments[0]).column.get());
-		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(block.getByPosition(arguments[0]).column.get());
+		const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(block.safeGetByPosition(arguments[0]).column.get());
+		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(block.safeGetByPosition(arguments[0]).column.get());
 		ColumnPtr materialized_cond_col;
 
-		const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
-		const ColumnWithTypeAndName & arg_else = block.getByPosition(arguments[2]);
+		const ColumnWithTypeAndName & arg_then = block.safeGetByPosition(arguments[1]);
+		const ColumnWithTypeAndName & arg_else = block.safeGetByPosition(arguments[2]);
 
 		if (cond_const_col)
 		{
 			if (arg_then.type->getName() == arg_else.type->getName())
 			{
-				block.getByPosition(result).column = cond_const_col->getData()
+				block.safeGetByPosition(result).column = cond_const_col->getData()
 					? arg_then.column
 					: arg_else.column;
 				return;
@@ -1463,6 +1452,13 @@ public:
 	}
 };
 
+namespace Conditional
+{
+
+class NullMapBuilder;
+class CondException;
+
+}
 
 /// Function multiIf, which generalizes the function if.
 ///
@@ -1476,284 +1472,73 @@ public:
 ///    - dates with time;
 ///    - strings;
 ///    - arrays of such types.
+///
+/// Additionally the arguments, conditions or branches, support nullable types
+/// and the NULL value.
 class FunctionMultiIf final : public IFunction
 {
 public:
 	static constexpr auto name = "multiIf";
-	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMultiIf>(); }
+	static FunctionPtr create(const Context & context);
 
 public:
-	String getName() const override
-	{
-		return is_case_mode ? "CASE" : name;
-	}
-
-	void setCaseMode()
-	{
-		is_case_mode = true;
-	}
-
-	DataTypePtr getReturnType(const DataTypes & args) const override
-	{
-		DataTypePtr data_type;
-
-		try
-		{
-			data_type = getReturnTypeImpl(args);
-		}
-		catch (const Conditional::CondException & ex)
-		{
-			rethrowContextually(ex);
-		}
-
-		return data_type;
-	}
-
-	void execute(Block & block, const ColumnNumbers & args, size_t result) override
-	{
-		try
-		{
-			if (performTrivialCase(block, args, result))
-				return;
-
-			if (Conditional::NumericPerformer::perform(block, args, result))
-				return;
-
-			if (Conditional::StringEvaluator::perform(block, args, result))
-				return;
-
-			if (Conditional::StringArrayEvaluator::perform(block, args, result))
-				return;
-
-			if (is_case_mode)
-				throw Exception{"Some THEN/ELSE clauses in CASE construction have "
-					"illegal or incompatible types", ErrorCodes::ILLEGAL_COLUMN};
-			else
-				throw Exception{"One or more branch (then, else) columns of function "
-					+ getName() + " have illegal or incompatible types",
-					ErrorCodes::ILLEGAL_COLUMN};
-		}
-		catch (const Conditional::CondException & ex)
-		{
-			rethrowContextually(ex);
-		}
-	}
+	String getName() const override;
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+	bool hasSpecialSupportForNulls() const override;
+	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
+	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
 
 private:
-	DataTypePtr getReturnTypeImpl(const DataTypes & args) const
-	{
-		if (!Conditional::hasValidArgCount(args))
-		{
-			if (is_case_mode)
-				throw Exception{"Some mandatory parameters are missing in the CASE "
-					"construction", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-			else
-				throw Exception{"Invalid number of arguments for function " + getName(),
-					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-		}
+	DataTypePtr getReturnTypeInternal(const DataTypes & args) const;
 
-		/// Check conditions types.
-		for (size_t i = Conditional::firstCond(); i < Conditional::elseArg(args); i = Conditional::nextCond(i))
-		{
-			if (!typeid_cast<const DataTypeUInt8 *>(&*args[i]))
-			{
-				if (is_case_mode)
-					throw Exception{"In CASE construction, illegal type of WHEN clause "
-					+ toString(i / 2) + ". Must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-				else
-					throw Exception{"Illegal type of argument " + toString(i) + " (condition) "
-						"of function " + getName() + ". Must be UInt8.",
-						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			}
-		}
+	/// Internal version of multiIf.
+	/// The builder parameter is an object that incrementally builds the null map
+	/// of the result column if it is nullable. When no builder is necessary,
+	/// just pass a default parameter.
+	void perform(Block & block, const ColumnNumbers & args, size_t result, Conditional::NullMapBuilder & builder);
 
-		if (Conditional::hasArithmeticBranches(args))
-			return Conditional::getReturnTypeForArithmeticArgs(args);
-		else if (Conditional::hasArrayBranches(args))
-		{
-			/// NOTE Сообщения об ошибках будут относится к типам элементов массивов, что немного некорректно.
-			DataTypes new_args;
-			new_args.reserve(args.size());
+	/// Perform multiIf in the case where all the non-null branches have the same type and all
+	/// the conditions are constant. The same remark as above applies with regards to
+	/// the builder parameter.
+	bool performTrivialCase(Block & block, const ColumnNumbers & args, size_t result, Conditional::NullMapBuilder & builder);
+};
 
-			auto push_branch_arg = [&args, &new_args](size_t i)
-			{
-				const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(args[i].get());
-				if (type_arr == nullptr)
-					throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-				new_args.push_back(type_arr->getNestedType());
-			};
+/// Function caseWithExpr which implements the CASE construction when it is
+/// provided an expression. Users should not call this function.
+class FunctionCaseWithExpr : public IFunction
+{
+public:
+	static constexpr auto name = "caseWithExpr";
+	static FunctionPtr create(const Context & context_);
 
-			for (size_t i = 0; i < Conditional::elseArg(args); ++i)
-			{
-				if (Conditional::isCond(i))
-					new_args.push_back(args[i]);
-				else
-					push_branch_arg(i);
-			}
-
-			push_branch_arg(Conditional::elseArg(args));
-
-			return std::make_shared<DataTypeArray>(getReturnType(new_args));
-		}
-		else if (!Conditional::hasIdenticalTypes(args))
-		{
-			if (Conditional::hasFixedStrings(args))
-			{
-				if (!Conditional::hasFixedStringsOfIdenticalLength(args))
-				{
-					if (is_case_mode)
-						throw Exception{"THEN/ELSE clauses in CASE construction "
-							"have FixedString type and different sizes",
-							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-					else
-						throw Exception{"Branch (then, else) arguments of function " + getName() +
-							" have FixedString type and different sizes",
-							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-				}
-
-				const IDataType * data = args[Conditional::firstThen()].get();
-				const auto * fixed_str = typeid_cast<const DataTypeFixedString *>(data);
-
-				if (fixed_str == nullptr)
-					throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-
-				return std::make_shared<DataTypeFixedString>(fixed_str->getN());
-			}
-			else if (Conditional::hasStrings(args))
-				return std::make_shared<DataTypeString>();
-			else
-			{
-				if (is_case_mode)
-					throw Exception{"THEN/ELSE clauses in CASE construction "
-						"have incompatible arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-				else
-					throw Exception{
-						"Incompatible branch (then, else) arguments for function " + getName(),
-						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-					};
-			}
-		}
-		else
-			return args[Conditional::firstThen()];
-	}
-
-	bool performTrivialCase(Block & block, const ColumnNumbers & args, size_t result)
-	{
-		size_t else_arg = Conditional::elseArg(args);
-		auto first_type_name = block.getByPosition(args[Conditional::firstThen()]).type->getName();
-
-		for (size_t i = Conditional::secondThen(); i < else_arg; i = Conditional::nextThen(i))
-		{
-			if (block.getByPosition(args[i]).type->getName() != first_type_name)
-				return false;
-		}
-
-		if (block.getByPosition(args.back()).type->getName() != first_type_name)
-			return false;
-
-		auto & res_col = block.getByPosition(result).column;
-
-		for (size_t i = Conditional::firstCond(); i < else_arg; i = Conditional::nextCond(i))
-		{
-			auto cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(block.getByPosition(args[i]).column.get());
-			if (!cond_const_col)
-				return false;
-
-			bool has_triggered_cond = cond_const_col->getData();
-			if (has_triggered_cond)
-			{
-				res_col = block.getByPosition(args[Conditional::thenFromCond(i)]).column;
-				return true;
-			}
-		}
-
-		res_col = block.getByPosition(args[else_arg]).column;
-		return true;
-	}
-
-	/// Translate a context-free error into a contextual error.
-	void rethrowContextually(const Conditional::CondException & ex) const
-	{
-		if (is_case_mode)
-		{
-			/// CASE construction context.
-			if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE)
-				throw Exception{"Illegal type of column " + ex.getMsg1() +
-					" in CASE construction", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_UPSCALING_ERROR)
-				throw Exception{"THEN/ELSE clause parameters in CASE construction are not upscalable to a "
-					"common type without loss of precision: " + ex.getMsg1(),
-					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else if (ex.getCode() == Conditional::CondErrorCodes::NUMERIC_PERFORMER_ILLEGAL_COLUMN)
-			{
-				size_t i = std::stoul(ex.getMsg1());
-				if ((i % 2) == 1)
-					throw Exception{"Illegal THEN clause " + toString(1 + (i - 1) / 2)
-						+ " in CASE construction", ErrorCodes::ILLEGAL_COLUMN};
-				else
-					throw Exception{"Illegal ELSE clause in CASE construction",
-						ErrorCodes::ILLEGAL_COLUMN};
-			}
-			else if (ex.getCode() == Conditional::CondErrorCodes::COND_SOURCE_ILLEGAL_COLUMN)
-			{
-				size_t i = std::stoul(ex.getMsg2());
-				if ((i % 2) == 1)
-					throw Exception{"Illegal column " + ex.getMsg1() + " of THEN clause "
-						+ toString(1 + (i - 1) / 2) + " in CASE construction."
-						"Must be ColumnUInt8 or ColumnConstUInt8", ErrorCodes::ILLEGAL_COLUMN};
-				else
-					throw Exception{"Illegal column " + ex.getMsg1() + " of ELSE clause "
-						" in CASE construction. Must be ColumnUInt8 or ColumnConstUInt8",
-						ErrorCodes::ILLEGAL_COLUMN};
-			}
-			else if (ex.getCode() == Conditional::CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT)
-			{
-				size_t i = std::stoul(ex.getMsg1());
-				if ((i % 2) == 1)
-					throw Exception{"Illegal type of THEN clause " + toString(1 + (i - 1) / 2)
-						+ " in CASE construction", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-				else
-					throw Exception{"Illegal type of ELSE clause in CASE construction",
-						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			}
-			else if (ex.getCode() == Conditional::CondErrorCodes::ARRAY_EVALUATOR_INVALID_TYPES)
-				throw Exception{"Internal logic error: one or more THEN/ELSE clauses of "
-					"CASE construction have invalid types", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else
-				throw Exception{"An unexpected error has occurred in CASE construction",
-					ErrorCodes::LOGICAL_ERROR};
-		}
-		else
-		{
-			/// multiIf function context.
-			if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE)
-				throw Exception{"Illegal type of column " + ex.getMsg1() +
-					" of function multiIf", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_UPSCALING_ERROR)
-				throw Exception{"Arguments of function multiIf are not upscalable to a "
-					"common type without loss of precision: " + ex.getMsg1(),
-					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else if (ex.getCode() == Conditional::CondErrorCodes::NUMERIC_PERFORMER_ILLEGAL_COLUMN)
-				throw Exception{"Illegal argument " + ex.getMsg1() + " of function multiIf",
-					ErrorCodes::ILLEGAL_COLUMN};
-			else if (ex.getCode() == Conditional::CondErrorCodes::COND_SOURCE_ILLEGAL_COLUMN)
-				throw Exception{"Illegal column " + ex.getMsg1() + " of argument "
-					+ ex.getMsg2() + " of function multiIf"
-					"Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_COLUMN};
-			else if (ex.getCode() == Conditional::CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT)
-				throw Exception{"Illegal type of argument " + ex.getMsg1() + " of function multiIf",
-					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else if (ex.getCode() == Conditional::CondErrorCodes::ARRAY_EVALUATOR_INVALID_TYPES)
-				throw Exception{"Internal logic error: one or more arguments of function "
-					"multiIf have invalid types", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			else
-				throw Exception{"An unexpected error has occurred while performing multiIf",
-					ErrorCodes::LOGICAL_ERROR};
-		}
-	}
+public:
+	FunctionCaseWithExpr(const Context & context_);
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+	String getName() const override;
+	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
+	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
 
 private:
-	bool is_case_mode = false;
+	const Context & context;
+};
+
+/// Function caseWithoutExpr which implements the CASE construction when it
+/// isn't provided any expression. Users should not call this function.
+class FunctionCaseWithoutExpr : public IFunction
+{
+public:
+	static constexpr auto name = "caseWithoutExpr";
+	static FunctionPtr create(const Context & context_);
+
+public:
+	String getName() const override;
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+	bool hasSpecialSupportForNulls() const override;
+	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
+	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
 };
 
 }

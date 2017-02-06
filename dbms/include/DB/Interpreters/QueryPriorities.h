@@ -8,17 +8,26 @@
 #include <DB/Common/CurrentMetrics.h>
 
 
-/** Реализует приоритеты запросов.
-  * Позволяет приостанавливать выполнение запроса, если выполняется хотя бы один более приоритетный запрос.
+namespace CurrentMetrics
+{
+	extern const Metric QueryPreempted;
+}
+
+
+namespace DB
+{
+
+/** Implements query priorities in very primitive way.
+  * Allows to freeze query execution if at least one query of higher priority is executed.
   *
-  * Величина приоритета - целое число, чем меньше - тем больше приоритет.
+  * Priority value is integer, smaller means higher priority.
   *
-  * Приоритет 0 считается особенным - запросы с таким приоритетом выполняются всегда,
-  *  не зависят от других запросов и не влияют на другие запросы.
-  * То есть 0 означает - не использовать приоритеты.
+  * Priority 0 is special - queries with that priority is always executed,
+  *  not depends on other queries and not affect other queries.
+  * Thus 0 means - don't use priorities.
   *
-  * NOTE Возможности сделать лучше:
-  * - реализовать ограничение на максимальное количество запросов с таким приоритетом.
+  * NOTE Possibilities for improvement:
+  * - implement limit on maximum number of running queries with same priority.
   */
 class QueryPriorities
 {
@@ -30,7 +39,7 @@ private:
 
 	using Count = int;
 
-	/// Количество выполняющихся сейчас запросов с заданным приоритетом.
+	/// Number of currently running queries for each priority.
 	using Container = std::map<Priority, Count>;
 
 	std::mutex mutex;
@@ -38,8 +47,8 @@ private:
 	Container container;
 
 
-	/** Если есть более приоритетные запросы - спать, пока они не перестанут быть или не истечёт таймаут.
-	  * Возвращает true, если более приоритетные запросы исчезли на момент возврата из функции, false, если истёк таймаут.
+	/** If there are higher priority queries - sleep until they are finish or timeout happens.
+	  * Returns true, if higher priority queries has finished at return of function, false, if timout exceeded.
 	  */
 	template <typename Duration>
 	bool waitIfNeed(Priority priority, Duration timeout)
@@ -103,8 +112,8 @@ public:
 
 	using Handle = std::shared_ptr<HandleImpl>;
 
-	/** Зарегистрировать, что запрос с заданным приоритетом выполняется.
-	  * Возвращается объект, в деструкторе которого, запись о запросе удаляется.
+	/** Register query with specified priority.
+	  * Returns an object that remove record in destructor.
 	  */
 	Handle insert(Priority priority)
 	{
@@ -117,3 +126,5 @@ public:
 		return std::make_shared<HandleImpl>(*this, *it);
 	}
 };
+
+}

@@ -1,33 +1,54 @@
-#include <DB/Functions/FunctionsMiscellaneous.h>
+#include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
+#include <DB/Columns/ColumnConst.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/IO/WriteHelpers.h>
-
 #include <DB/DataStreams/VerticalRowOutputStream.h>
 
 
 namespace DB
 {
 
-VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
-	: ostr(ostr_), sample(sample_), field_number(0), row_number(0)
+VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const Context & context)
+	: ostr(ostr_), sample(sample_)
 {
 	size_t columns = sample.columns();
-	names.resize(columns);
 
 	using Widths_t = std::vector<size_t>;
 	Widths_t name_widths(columns);
 	size_t max_name_width = 0;
 
+	FunctionPtr visible_width_func = FunctionFactory::instance().get("visibleWidth", context);
+
 	for (size_t i = 0; i < columns; ++i)
 	{
-		names[i] = sample.getByPosition(i).name;
-		stringWidthConstant(names[i], name_widths[i]);
+		{
+			Block block_with_name
+			{
+				{ std::make_shared<ColumnConstString>(1, sample.getByPosition(i).name), std::make_shared<DataTypeString>(), "name" },
+				{ nullptr, std::make_shared<DataTypeUInt64>(), "width" }
+			};
+
+			visible_width_func->execute(block_with_name, {0}, 1);
+
+			name_widths[i] = (*block_with_name.getByPosition(1).column)[0].get<UInt64>();
+		}
+
 		if (name_widths[i] > max_name_width)
 			max_name_width = name_widths[i];
 	}
 
-	pads.resize(columns);
+	names_and_paddings.resize(columns);
 	for (size_t i = 0; i < columns; ++i)
-		pads[i] = String(max_name_width - name_widths[i], ' ');
+	{
+		WriteBufferFromString out(names_and_paddings[i]);
+		writeEscapedString(sample.getByPosition(i).name, out);
+		writeCString(": ", out);
+	}
+
+	for (size_t i = 0; i < columns; ++i)
+		names_and_paddings[i].resize(max_name_width + strlen(": "), ' ');
 }
 
 
@@ -39,13 +60,10 @@ void VerticalRowOutputStream::flush()
 
 void VerticalRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-	writeEscapedString(names[field_number], ostr);
-	writeCString(": ", ostr);
-	writeString(pads[field_number], ostr);
-
+	writeString(names_and_paddings[field_number], ostr);
 	writeValue(column, type, row_num);
-
 	writeChar('\n', ostr);
+
 	++field_number;
 }
 

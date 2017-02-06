@@ -26,7 +26,7 @@ void TabSeparatedRowOutputStream::writePrefix()
 	{
 		for (size_t i = 0; i < columns; ++i)
 		{
-			writeEscapedString(sample.getByPosition(i).name, ostr);
+			writeEscapedString(sample.safeGetByPosition(i).name, ostr);
 			writeChar(i == columns - 1 ? '\n' : '\t', ostr);
 		}
 	}
@@ -35,7 +35,7 @@ void TabSeparatedRowOutputStream::writePrefix()
 	{
 		for (size_t i = 0; i < columns; ++i)
 		{
-			writeEscapedString(sample.getByPosition(i).type->getName(), ostr);
+			writeEscapedString(sample.safeGetByPosition(i).type->getName(), ostr);
 			writeChar(i == columns - 1 ? '\n' : '\t', ostr);
 		}
 	}
@@ -80,7 +80,7 @@ void TabSeparatedRowOutputStream::writeTotals()
 		{
 			if (j != 0)
 				writeFieldDelimiter();
-			writeField(*totals.unsafeGetByPosition(j).column.get(), *totals.unsafeGetByPosition(j).type.get(), 0);
+			writeField(*totals.getByPosition(j).column.get(), *totals.getByPosition(j).type.get(), 0);
 		}
 
 		writeRowEndDelimiter();
@@ -108,7 +108,7 @@ void TabSeparatedRowOutputStream::writeExtremes()
 			{
 				if (j != 0)
 					writeFieldDelimiter();
-				writeField(*extremes.unsafeGetByPosition(j).column.get(), *extremes.unsafeGetByPosition(j).type.get(), i);
+				writeField(*extremes.getByPosition(j).column.get(), *extremes.getByPosition(j).type.get(), i);
 			}
 
 			writeRowEndDelimiter();

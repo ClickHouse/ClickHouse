@@ -9,6 +9,8 @@
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/ParserInsertQuery.h>
 
+#include <DB/Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -36,7 +38,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	ParserString s_lparen("(");
 	ParserString s_rparen(")");
 	ParserIdentifier name_p;
-	ParserList columns_p(ParserPtr(new ParserCompoundIdentifier), ParserPtr(new ParserString(",")), false);
+	ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserString>(","), false);
 
 	ASTPtr database;
 	ASTPtr table;

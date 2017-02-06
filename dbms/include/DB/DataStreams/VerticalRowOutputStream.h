@@ -9,14 +9,16 @@ namespace DB
 {
 
 class WriteBuffer;
+class Context;
 
 
-/** Поток для вывода данных в формате "каждое значение на своей строке".
+/** Stream to output data in format "each value in separate row".
+  * Usable to show few rows with many columns.
   */
 class VerticalRowOutputStream : public IRowOutputStream
 {
 public:
-	VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
+	VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const Context & context);
 
 	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
 	void writeRowStartDelimiter() override;
@@ -29,22 +31,21 @@ protected:
 
 	WriteBuffer & ostr;
 	const Block sample;
-	Names names;
-	size_t field_number;
-	size_t row_number;
+	size_t field_number = 0;
+	size_t row_number = 0;
 
-	using Pads_t = std::vector<String>;
-	Pads_t pads;
+	using NamesAndPaddings = std::vector<String>;
+	NamesAndPaddings names_and_paddings;
 };
 
 
-/** То же самое, но строки выводятся без экранирования.
+/** Same but values are printed without escaping.
   */
-class VerticalRawRowOutputStream : public VerticalRowOutputStream
+class VerticalRawRowOutputStream final : public VerticalRowOutputStream
 {
 public:
-	VerticalRawRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
-		: VerticalRowOutputStream(ostr_, sample_) {}
+	VerticalRawRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const Context & context)
+		: VerticalRowOutputStream(ostr_, sample_, context) {}
 
 protected:
 	void writeValue(const IColumn & column, const IDataType & type, size_t row_num) const override;

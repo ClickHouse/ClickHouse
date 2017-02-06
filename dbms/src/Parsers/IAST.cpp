@@ -1,16 +1,20 @@
 #include <DB/IO/WriteBufferFromOStream.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/WriteHelpers.h>
+#include <DB/IO/Operators.h>
+#include <DB/Common/SipHash.h>
 #include <DB/Parsers/IAST.h>
 
 
 namespace DB
 {
 
-constexpr IAST::Attributes IAST::IsVisited;
-constexpr IAST::Attributes IAST::IsPreprocessedForInJoinSubqueries;
-constexpr IAST::Attributes IAST::IsIn;
-constexpr IAST::Attributes IAST::IsNotIn;
-constexpr IAST::Attributes IAST::IsJoin;
-constexpr IAST::Attributes IAST::IsGlobal;
+namespace ErrorCodes
+{
+	extern const int TOO_BIG_AST;
+	extern const int TOO_DEEP_AST;
+}
+
 
 const char * IAST::hilite_keyword 		= "\033[1m";
 const char * IAST::hilite_identifier 	= "\033[0;36m";
@@ -41,6 +45,85 @@ void IAST::writeAlias(const String & name, std::ostream & s, bool hilite) const
 	wb.next();
 
 	s << (hilite ? hilite_none : "");
+}
+
+
+size_t IAST::checkSize(size_t max_size) const
+{
+	size_t res = 1;
+	for (const auto & child : children)
+		res += child->checkSize(max_size);
+
+	if (res > max_size)
+		throw Exception("AST is too big. Maximum: " + toString(max_size), ErrorCodes::TOO_BIG_AST);
+
+	return res;
+}
+
+
+String IAST::getTreeID() const
+{
+	String res;
+	{
+		WriteBufferFromString out(res);
+		getTreeIDImpl(out);
+	}
+	return res;
+}
+
+
+void IAST::getTreeIDImpl(WriteBuffer & out) const
+{
+	out << getID();
+
+	if (!children.empty())
+	{
+		out << '(';
+		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+		{
+			if (it != children.begin())
+				out << ", ";
+			(*it)->getTreeIDImpl(out);
+		}
+		out << ')';
+	}
+}
+
+
+IAST::Hash IAST::getTreeHash() const
+{
+	SipHash hash_state;
+	getTreeHashImpl(hash_state);
+	IAST::Hash res;
+	hash_state.get128(res.first, res.second);
+	return res;
+}
+
+
+void IAST::getTreeHashImpl(SipHash & hash_state) const
+{
+	auto id = getID();
+	hash_state.update(id.data(), id.size());
+
+	size_t num_children = children.size();
+	hash_state.update(reinterpret_cast<const char *>(&num_children), sizeof(num_children));
+
+	for (const auto & child : children)
+		child->getTreeHashImpl(hash_state);
+}
+
+
+size_t IAST::checkDepthImpl(size_t max_depth, size_t level) const
+{
+	size_t res = level + 1;
+	for (const auto & child : children)
+	{
+		if (level >= max_depth)
+			throw Exception("AST is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_AST);
+		res = std::max(res, child->checkDepthImpl(max_depth, level + 1));
+	}
+
+	return res;
 }
 
 }

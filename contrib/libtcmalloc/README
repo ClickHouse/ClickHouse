@@ -1,4 +1,4 @@
-https://github.com/gperftools/gperftools/commit/7852eeb75b9375cf52a7da01be044da6e915dd08
+https://github.com/gperftools/gperftools/commit/dde32f8bbc95312379f9f5a651799815bb6327c5
 
 Several modifications:
 1. Disabled TCMALLOC_AGGRESSIVE_DECOMMIT by default. It is important.

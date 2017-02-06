@@ -134,7 +134,6 @@ void TCPHandler::runImpl()
 		{
 			/// Восстанавливаем контекст запроса.
 			query_context = connection_context;
-			query_context.setInterface(Context::Interface::TCP);
 
 			/** Если Query - обрабатываем. Если Ping или Cancel - возвращаемся в начало.
 			  * Могут прийти настройки на отдельный запрос, которые модифицируют query_context.
@@ -423,9 +422,6 @@ void TCPHandler::receiveHello()
 {
 	/// Получить hello пакет.
 	UInt64 packet_type = 0;
-	String client_name;
-	UInt64 client_version_major = 0;
-	UInt64 client_version_minor = 0;
 	String user = "default";
 	String password;
 
@@ -464,7 +460,7 @@ void TCPHandler::receiveHello()
 		<< (!user.empty() ? ", user: " + user : "")
 		<< ".");
 
-	connection_context.setUser(user, password, socket().peerAddress().host(), "");
+	connection_context.setUser(user, password, socket().peerAddress(), "");
 }
 
 
@@ -475,6 +471,10 @@ void TCPHandler::sendHello()
 	writeVarUInt(DBMS_VERSION_MAJOR, *out);
 	writeVarUInt(DBMS_VERSION_MINOR, *out);
 	writeVarUInt(ClickHouseRevision::get(), *out);
+	if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
+	{
+		writeStringBinary(DateLUT::instance().getTimeZone(), *out);
+	}
 	out->next();
 }
 
@@ -526,6 +526,34 @@ void TCPHandler::receiveQuery()
 	readStringBinary(state.query_id, *in);
 
 	query_context.setCurrentQueryId(state.query_id);
+
+	/// Client info
+	{
+		ClientInfo & client_info = query_context.getClientInfo();
+		if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+			client_info.read(*in, client_revision);
+
+		/// For better support of old clients, that does not send ClientInfo.
+		if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
+		{
+			client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+			client_info.client_name = client_name;
+			client_info.client_version_major = client_version_major;
+			client_info.client_version_minor = client_version_minor;
+			client_info.client_revision = client_revision;
+		}
+
+		/// Set fields, that are known apriori.
+		client_info.interface = ClientInfo::Interface::TCP;
+
+		if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+		{
+			/// 'Current' fields was set at receiveHello.
+			client_info.initial_user = client_info.current_user;
+			client_info.initial_query_id = client_info.current_query_id;
+			client_info.initial_address = client_info.current_address;
+		}
+	}
 
 	/// Per query settings.
 	query_context.getSettingsRef().deserialize(*in);

@@ -1,7 +1,6 @@
 #pragma once
 
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/VarInt.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
@@ -36,7 +35,7 @@ public:
 		++data(place).count;
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 		data(place).count += data(rhs).count;
 	}
@@ -46,7 +45,7 @@ public:
 		writeVarUInt(data(place).count, buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		readVarUInt(data(place).count, buf);
 	}

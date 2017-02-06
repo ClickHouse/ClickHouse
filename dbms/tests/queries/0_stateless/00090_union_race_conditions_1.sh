@@ -1,4 +1,7 @@
-#!/bin/bash -e
+#!/usr/bin/env bash
+
+set -o errexit
+set -o pipefail
 
 echo "
     DROP TABLE IF EXISTS test.two_blocks; 

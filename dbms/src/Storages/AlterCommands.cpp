@@ -6,6 +6,9 @@
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTFunction.h>
 
 
 namespace DB
@@ -210,7 +213,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
 			{
 				if (std::end(columns) != column_it)
 					throw Exception{
-						"Cannot add column " + column_name + ": column with this name already exisits",
+						"Cannot add column " + column_name + ": column with this name already exists",
 						DB::ErrorCodes::ILLEGAL_COLUMN
 					};
 			}

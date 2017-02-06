@@ -1,19 +1,42 @@
-SET(REVISIONFILE ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h)
+set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_version.h)
+set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
+set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/src/config_build.cpp)
 
-ADD_CUSTOM_COMMAND(
-    OUTPUT ${REVISIONFILE}
-    COMMAND bash -f -v -x ${CMAKE_CURRENT_SOURCE_DIR}/src/create_revision.sh ${REVISIONFILE} ${USE_DBMS_TCP_PROTOCOL_VERSION_AS_CLICKHOUSE_REVISION}
-)
+include_directories (include)
+include_directories (BEFORE ${CMAKE_SOURCE_DIR}/contrib/libcctz/include)
 
-set_source_files_properties(
-	src/ClickHouseRevision.cpp PROPERTIES OBJECT_DEPENDS ${REVISIONFILE}
-)
+include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
 
-include_directories (${CMAKE_CURRENT_BINARY_DIR}/src/)
+if (APPLE)
+	if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
+		set (APPLE_SIERRA_OR_NEWER 1)
+	else ()
+		set (APPLE_SIERRA_OR_NEWER 0)
+	endif ()
+endif ()
+
+include (cmake/version.cmake)
+message (STATUS "Will build ${VERSION_FULL}")
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${CONFIG_COMMON})
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_version.h.in ${CONFIG_VERSION})
+
+get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
+get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+
+string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/config_build.cpp.in ${CONFIG_BUILD})
+
+if (APPLE)
+	add_library (apple_rt
+		src/apple_rt.cpp
+		include/common/apple_rt.h
+	)
+endif ()
 
 add_library (common
 	src/DateLUT.cpp
 	src/DateLUTImpl.cpp
+	src/exp10.cpp
 	src/ClickHouseRevision.cpp
 	src/JSON.cpp
 
@@ -24,6 +47,7 @@ add_library (common
 	include/common/LocalDate.h
 	include/common/LocalDateTime.h
 	include/common/ErrorHandlers.h
+	include/common/exp10.h
 	include/common/likely.h
 	include/common/logger_useful.h
 	include/common/MultiVersion.h
@@ -31,6 +55,7 @@ add_library (common
 	include/common/singleton.h
 	include/common/strong_typedef.h
 	include/common/JSON.h
+	include/common/config_build.h
 
 	include/ext/bit_cast.hpp
 	include/ext/collection_cast.hpp
@@ -43,31 +68,39 @@ add_library (common
 	include/ext/size.hpp
 	include/ext/unlock_guard.hpp
 
-	${REVISIONFILE}
+	${CONFIG_VERSION}
+	${CONFIG_COMMON}
+	${CONFIG_BUILD}
 )
 
-# TESTIRT-3687 DISABLE_LIBTCMALLOC - when testing for memory leaks, disable libtcmalloc
-IF($ENV{DISABLE_LIBTCMALLOC})
-	message(STATUS "Disabling libtcmalloc for valgrind better analysis")
-ELSE($ENV{DISABLE_LIBTCMALLOC})
-	IF($ENV{DEBUG_LIBTCMALLOC})
-		message(STATUS "Link libtcmalloc_minimal_debug for testing")
-		SET(MALLOC_LIBRARIES libtcmalloc_minimal_debug.a)
-	ELSE($ENV{DEBUG_LIBTCMALLOC})
-		message(STATUS "Link libtcmalloc_minimal")
-		SET(MALLOC_LIBRARIES tcmalloc_minimal_internal)
-	ENDIF($ENV{DEBUG_LIBTCMALLOC})
-ENDIF($ENV{DISABLE_LIBTCMALLOC})
+# When testing for memory leaks, dont link tcmalloc or jemalloc.
+
+if (USE_JEMALLOC)
+		message (STATUS "Link jemalloc : ${JEMALLOC_LIBRARIES}")
+	set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
+elseif (USE_TCMALLOC)
+	if (DEBUG_LIBTCMALLOC)
+		message (STATUS "Link libtcmalloc_minimal_debug for testing")
+		set (MALLOC_LIBRARIES libtcmalloc_minimal_debug.a)
+	else ()
+		message (STATUS "Link libtcmalloc_minimal : ${GPERFTOOLS_TCMALLOC}")
+		set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC})
+	endif ()
+else ()
+	message (STATUS "Disabling libtcmalloc for valgrind better analysis")
+endif ()
+
+find_package (Threads)
 
 target_link_libraries (
 	common
 	pocoext
+	cctz
 	${MALLOC_LIBRARIES}
-	pthread
-	libglib-2.0.a
-	libicui18n.a libicuuc.a libicudata.a
-	librt.a)
+	${CMAKE_THREAD_LIBS_INIT}
+	${ICU_LIBS}
+	${RT_LIBRARIES})
 
-IF(TESTS)
+if (ENABLE_TESTS)
 	add_subdirectory (src/tests)
-ENDIF(TESTS)
+endif (ENABLE_TESTS)

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <random>
+
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
 

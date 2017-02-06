@@ -1,3 +1,6 @@
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include <map>
 #include <experimental/optional>
 
@@ -25,6 +28,8 @@
 #include <DB/DataStreams/NullBlockInputStream.h>
 
 #include <DB/Columns/ColumnArray.h>
+
+#include <DB/Interpreters/Settings.h>
 
 #include <DB/Storages/StorageStripeLog.h>
 #include <Poco/DirectoryIterator.h>

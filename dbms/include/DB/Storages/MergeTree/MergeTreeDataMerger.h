@@ -9,6 +9,7 @@ namespace DB
 {
 
 class MergeListEntry;
+class MergeProgressCallback;
 struct ReshardingJob;
 
 
@@ -21,13 +22,21 @@ public:
 	using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)>;
 
 public:
-	MergeTreeDataMerger(MergeTreeData & data_);
+	MergeTreeDataMerger(MergeTreeData & data_, const BackgroundProcessingPool & pool_);
 
 	void setCancellationHook(CancellationHook cancellation_hook_);
 
+	/** Get maximum total size of parts to do merge, at current moment of time.
+	  * It depends on number of free threads in background_pool and amount of free space in disk.
+	  */
+	size_t getMaxPartsSizeForMerge();
+
+	/** For explicitly passed size of pool and number of used tasks.
+	  * This method could be used to calculate threshold depending on number of tasks in replication queue.
+	  */
+	size_t getMaxPartsSizeForMerge(size_t pool_size, size_t pool_used);
+
 	/** Выбирает, какие куски слить. Использует кучу эвристик.
-	  * Если merge_anything_for_old_months, для кусков за прошедшие месяцы снимается ограничение на соотношение размеров.
-	  * Выбирает куски так, чтобы available_disk_space, скорее всего, хватило с запасом для их слияния.
 	  *
 	  * can_merge - функция, определяющая, можно ли объединить пару соседних кусков.
 	  *  Эта функция должна координировать слияния со вставками и другими слияниями, обеспечивая, что:
@@ -37,10 +46,8 @@ public:
 	bool selectPartsToMerge(
 		MergeTreeData::DataPartsVector & what,
 		String & merged_name,
-		size_t available_disk_space,
-		bool merge_anything_for_old_months,
 		bool aggressive,
-		bool only_small,
+		size_t max_total_size_to_merge,
 		const AllowedMergingPredicate & can_merge);
 
 	/** Выбрать для слияния все куски в заданной партиции, если возможно.
@@ -119,8 +126,22 @@ public:
 
 	bool isCancelled() const { return cancelled > 0; }
 
+public:
+
+	enum class MergeAlgorithm
+	{
+		Horizontal,	/// per-row merge of all columns
+		Vertical	/// per-row merge of PK columns, per-column gather for non-PK columns
+	};
+
+private:
+
+	MergeAlgorithm chooseMergeAlgorithm(const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
+		size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, MergedRowSources & rows_sources_to_alloc) const;
+
 private:
 	MergeTreeData & data;
+	const BackgroundProcessingPool & pool;
 
 	Logger * log;
 

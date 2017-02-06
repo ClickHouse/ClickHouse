@@ -12,7 +12,7 @@
 
 #include <DB/Columns/IColumn.h>
 
-#if defined(__x86_64__)
+#if __SSE2__
 	#include <emmintrin.h>
 #endif
 
@@ -120,6 +120,27 @@ template <> inline UInt64 unionCastToUInt64(Float32 x)
 }
 
 
+/// To be sure, that this function is zero-cost for non-floating point types.
+template <typename T>
+inline bool isNaN(T x)
+{
+	return std::is_floating_point<T>::value ? std::isnan(x) : false;
+}
+
+
+template <typename T>
+typename std::enable_if<std::is_floating_point<T>::value, T>::type NaNOrZero()
+{
+	return std::numeric_limits<T>::quiet_NaN();
+}
+
+template <typename T>
+typename std::enable_if<!std::is_floating_point<T>::value, T>::type NaNOrZero()
+{
+	return 0;
+}
+
+
 /** Шаблон столбцов, которые используют для хранения простой массив.
   */
 template <typename T>
@@ -193,6 +214,11 @@ public:
 		return data.size() * sizeof(data[0]);
 	}
 
+	size_t allocatedSize() const override
+	{
+		return data.allocated_size() * sizeof(data[0]);
+	}
+
 	void insert(const T value)
 	{
 		data.push_back(value);
@@ -250,9 +276,23 @@ public:
 
 	std::string getName() const override { return "ColumnVector<" + TypeName<T>::get() + ">"; }
 
-	ColumnPtr cloneEmpty() const override
+	ColumnPtr cloneResized(size_t size) const override
 	{
-		return std::make_shared<ColumnVector<T>>();
+		ColumnPtr new_col_holder = std::make_shared<Self>();
+
+		if (size > 0)
+		{
+			auto & new_col = static_cast<Self &>(*new_col_holder);
+			new_col.data.resize(size);
+
+			size_t count = std::min(this->size(), size);
+			memcpy(&new_col.data[0], &data[0], count * sizeof(data[0]));
+
+			if (size > count)
+				memset(&new_col.data[count], value_type(), size - count);
+		}
+
+		return new_col_holder;
 	}
 
 	Field operator[](size_t n) const override
@@ -317,7 +357,7 @@ public:
 		const UInt8 * filt_end = filt_pos + size;
 		const T * data_pos = &data[0];
 
-#if defined(__x86_64__)
+#if __SSE2__
 		/** Чуть более оптимизированная версия.
 		 * Исходит из допущения, что часто куски последовательно идущих значений
 		 *  полностью проходят или полностью не проходят фильтр.
@@ -421,21 +461,41 @@ public:
 			return;
 		}
 
-		T cur_min = data[0];
-		T cur_max = data[0];
+		bool has_value = false;
 
-		for (size_t i = 1; i < size; ++i)
+		/** Skip all NaNs in extremes calculation.
+		  * If all values are NaNs, then return NaN.
+		  * NOTE: There exist many different NaNs.
+		  * Different NaN could be returned: not bit-exact value as one of NaNs from column.
+		  */
+
+		T cur_min = NaNOrZero<T>();
+		T cur_max = NaNOrZero<T>();
+
+		for (const T x : data)
 		{
-			if (data[i] < cur_min)
-				cur_min = data[i];
+			if (isNaN(x))
+				continue;
 
-			if (data[i] > cur_max)
-				cur_max = data[i];
+			if (!has_value)
+			{
+				cur_min = x;
+				cur_max = x;
+				has_value = true;
+				continue;
+			}
+
+			if (x < cur_min)
+				cur_min = x;
+
+			if (x > cur_max)
+				cur_max = x;
 		}
 
 		min = typename NearestFieldType<T>::Type(cur_min);
 		max = typename NearestFieldType<T>::Type(cur_max);
 	}
+
 
 	/** Более эффективные методы манипуляции */
 	Container_t & getData()

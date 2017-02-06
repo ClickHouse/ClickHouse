@@ -13,11 +13,16 @@
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 
+#include <common/exp10.h>
+
 #include <DB/Core/Types.h>
+#include <DB/Core/StringRef.h>
 #include <DB/Common/Exception.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/Common/Arena.h>
 
 #include <DB/IO/ReadBuffer.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/IO/VarInt.h>
 #include <city.h>
 
@@ -34,7 +39,7 @@ namespace ErrorCodes
 	extern const int CANNOT_READ_ARRAY_FROM_TEXT;
 }
 
-/// Функции-помошники для форматированного чтения
+/// Helper functions for formatted input.
 
 inline char parseEscapeSequence(char c)
 {
@@ -77,7 +82,7 @@ inline char unhex(char c)
 }
 
 
-/// Эти функции находятся в VarInt.h
+/// These functions are located in VarInt.h
 /// inline void throwReadAfterEOF()
 
 
@@ -93,7 +98,7 @@ inline void readChar(char & x, ReadBuffer & buf)
 }
 
 
-/// Чтение POD-типа в native формате
+/// Read POD-type in native format
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
@@ -123,6 +128,18 @@ inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t MAX_STRIN
 
 	s.resize(size);
 	buf.readStrict(&s[0], size);
+}
+
+
+inline StringRef readStringBinaryInto(Arena & arena, ReadBuffer & buf)
+{
+	size_t size = 0;
+	readVarUInt(size, buf);
+
+	char * data = arena.alloc(size);
+	buf.readStrict(data, size);
+
+	return StringRef(data, size);
 }
 
 
@@ -163,6 +180,36 @@ inline bool checkChar(char c, ReadBuffer & buf)
 	++buf.position();
 	return true;
 }
+
+bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf);
+inline bool checkStringCaseInsensitive(const String & s, ReadBuffer & buf)
+{
+	return checkStringCaseInsensitive(s.c_str(), buf);
+}
+
+void assertStringCaseInsensitive(const char * s, ReadBuffer & buf);
+inline void assertStringCaseInsensitive(const String & s, ReadBuffer & buf)
+{
+	return assertStringCaseInsensitive(s.c_str(), buf);
+}
+
+/** Check that next character in buf matches first character of s.
+  * If true, then check all characters in s and throw exception if it doesn't match.
+  * If false, then return false, and leave position in buffer unchanged.
+  */
+bool checkStringByFirstCharacterAndAssertTheRest(const char * s, ReadBuffer & buf);
+bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, ReadBuffer & buf);
+
+inline bool checkStringByFirstCharacterAndAssertTheRest(const String & s, ReadBuffer & buf)
+{
+	return checkStringByFirstCharacterAndAssertTheRest(s.c_str(), buf);
+}
+
+inline bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const String & s, ReadBuffer & buf)
+{
+	return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(s.c_str(), buf);
+}
+
 
 inline void readBoolText(bool & x, ReadBuffer & buf)
 {
@@ -236,11 +283,11 @@ bool tryReadIntText(T & x, ReadBuffer & buf)
 	return readIntTextImpl<T, bool>(x, buf);
 }
 
-/** Более оптимизированная версия (примерно в 1.5 раза на реальных данных).
-  * Отличается тем, что:
-  * - из чисел, начинающихся на ноль, парсится только ноль;
-  * - не поддерживается символ '+' перед числом;
-  * - символы :;<=>? парсятся, как некоторые цифры.
+/** More efficient variant (about 1.5 times on real dataset).
+  * Differs in following:
+  * - for numbers starting with zero, parsed only zero;
+  * - symbol '+' before number is not supported;
+  * - symbols :;<=>? are parsed as some numbers.
   */
 template <typename T, bool throw_on_error = true>
 void readIntTextUnsafe(T & x, ReadBuffer & buf)
@@ -265,7 +312,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 			return on_error();
 	}
 
-	if (*buf.position() == '0')					/// В реальных данных много нулей.
+	if (*buf.position() == '0')					/// There are many zeros in real datasets.
 	{
 		++buf.position();
 		return;
@@ -273,7 +320,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
 	while (!buf.eof())
 	{
-		if ((*buf.position() & 0xF0) == 0x30)	/// Имеет смысл, что это условие находится внутри цикла.
+		if ((*buf.position() & 0xF0) == 0x30)	/// It makes sense to have this condition inside loop.
 		{
 			x *= 10;
 			x += *buf.position() & 0x0F;
@@ -437,7 +484,7 @@ inline void readFloatText(T & x, ReadBuffer & buf)
 	readFloatTextImpl<T, void>(x, buf);
 }
 
-/// грубо; всё до '\n' или '\t'
+/// rough; all until '\n' or '\t'
 void readString(String & s, ReadBuffer & buf);
 
 void readEscapedString(String & s, ReadBuffer & buf);
@@ -453,21 +500,21 @@ void readBackQuotedString(String & s, ReadBuffer & buf);
 void readStringUntilEOF(String & s, ReadBuffer & buf);
 
 
-/** Прочитать строку в формате CSV.
-  * Правила:
-  * - строка может быть заключена в кавычки; кавычки могут быть одинарными: ' или двойными: ";
-  * - а может быть не заключена в кавычки - это определяется по первому символу;
-  * - если строка не заключена в кавычки, то она читается до следующего разделителя,
-  *   либо до перевода строки (CR или LF),
-  *   либо до конца потока;
-  *   при этом, пробелы и табы на конце строки съедаются, но игнорируются.
-  * - если строка заключена в кавычки, то она читается до закрывающей кавычки,
-  *   но при этом, последовательность двух подряд идущих кавычек, считается одной кавычкой внутри строки;
+/** Read string in CSV format.
+  * Parsing rules:
+  * - string could be placed in quotes; quotes could be single: ' or double: ";
+  * - or string could be unquoted - this is determined by first character;
+  * - if string is unquoted, then it is read until next delimiter,
+  *   either until end of line (CR or LF),
+  *   or until end of stream;
+  *   but spaces and tabs at begin and end of unquoted string are consumed but ignored (note that this behaviour differs from RFC).
+  * - if string is in quotes, then it will be read until closing quote,
+  *   but sequences of two consecutive quotes are parsed as single quote inside string;
   */
 void readCSVString(String & s, ReadBuffer & buf, const char delimiter = ',');
 
 
-/// Добавляют прочитанный результат в массив символов.
+/// Read and append result to array of characters.
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf);
 
@@ -492,7 +539,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter = ',')
 template <typename Vector>
 void readJSONStringInto(Vector & s, ReadBuffer & buf);
 
-/// Это можно использовать в качестве параметра шаблона для функций выше, если данные не надо никуда считывать, но нужно просто пропустить.
+/// This could be used as template parameter for functions above, if you want to just skip data.
 struct NullSink
 {
 	void append(const char *, size_t) {};
@@ -500,7 +547,7 @@ struct NullSink
 };
 
 
-/// в формате YYYY-MM-DD
+/// In YYYY-MM-DD format
 inline void readDateText(DayNum_t & date, ReadBuffer & buf)
 {
 	char s[10];
@@ -538,20 +585,20 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 
-void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf);
+void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
 
-/** В формате YYYY-MM-DD hh:mm:ss, согласно текущему часовому поясу
-  * В качестве исключения, также поддерживается парсинг из десятичного числа - unix timestamp.
+/** In YYYY-MM-DD hh:mm:ss format, according to current time zone.
+  * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
-inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
+inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-	/** Считываем 10 символов, которые могут быть unix timestamp.
-	  * При этом, поддерживается только unix timestamp из 5-10 символов.
-	  * Потом смотрим на пятый символ. Если это число - парсим unix timestamp.
-	  * Если это не число - парсим YYYY-MM-DD hh:mm:ss.
+	/** Read 10 characters, that could represent unix timestamp.
+	  * Only unix timestamp of 5-10 characters is supported.
+	  * Then look at 5th charater. If it is a number - treat whole as unix timestamp.
+	  * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss format.
 	  */
 
-	/// Оптимистичный вариант, когда всё значение точно лежит в буфере.
+	/// Optimistic path, when whole value are in buffer.
 	const char * s = buf.position();
 	if (s + 19 < buf.buffer().end())
 	{
@@ -568,16 +615,16 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 			if (unlikely(year == 0))
 				datetime = 0;
 			else
-				datetime = DateLUT::instance().makeDateTime(year, month, day, hour, minute, second);
+				datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
 			buf.position() += 19;
 		}
 		else
-			/// Почему не readIntTextUnsafe? Дело в том, что для нужд AdFox, поддерживается парсинг unix timestamp с отбивкой нулями: 000...NNNN.
+			/// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
 			readIntText(datetime, buf);
 	}
 	else
-		readDateTimeTextFallback(datetime, buf);
+		readDateTimeTextFallback(datetime, buf, date_lut);
 }
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
@@ -600,11 +647,20 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 }
 
 
-/// Общие методы для чтения значения в бинарном формате.
+/// Generic methods to read value in native binary format.
 inline void readBinary(UInt8 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(UInt16 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(UInt32 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(UInt64 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+#ifdef __APPLE__
+/**
+ * On Linux x86_64 'int64_t' maps to "long", but on Apple x86_64 it maps to 'long long'
+ * But on both platforms Int64 maps to 'long'. This is two different types
+ * with the same size==8, so we need extra functions here
+ */
+inline void readBinary(uint64_t & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(int64_t & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
+#endif
 inline void readBinary(Int8 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Int16 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Int32 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
@@ -620,11 +676,15 @@ inline void readBinary(LocalDate & x, 	ReadBuffer & buf) 	{ readPODBinary(x, buf
 inline void readBinary(LocalDateTime & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 
-/// Общие методы для чтения значения в текстовом виде из tab-separated формата.
+/// Generic methods to read value in text tab-separated format.
 inline void readText(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
 inline void readText(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
 inline void readText(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
 inline void readText(UInt64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+#ifdef __APPLE__
+inline void readText(uint64_t & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+inline void readText(int64_t & x, 	ReadBuffer & buf) { readIntText(x, buf); }
+#endif
 inline void readText(Int8 & x, 		ReadBuffer & buf) { readIntText(x, buf); }
 inline void readText(Int16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
 inline void readText(Int32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
@@ -639,7 +699,8 @@ inline void readText(LocalDate & x, 	ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 
 
-/// Общие методы для чтения значения в текстовом виде, при необходимости, в кавычках.
+/// Generic methods to read value in text format,
+///  possibly in single quotes (only for data types that use quotes in VALUES format of INSERT statement in SQL).
 inline void readQuoted(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
 inline void readQuoted(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
 inline void readQuoted(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
@@ -670,7 +731,7 @@ inline void readQuoted(LocalDateTime & x, ReadBuffer & buf)
 }
 
 
-/// В двойных кавычках
+/// Same as above, but in double quotes.
 inline void readDoubleQuoted(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
 inline void readDoubleQuoted(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
 inline void readDoubleQuoted(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
@@ -701,7 +762,7 @@ inline void readDoubleQuoted(LocalDateTime & x, ReadBuffer & buf)
 }
 
 
-/// CSV, для чисел, дат, дат-с-временем: кавычки не обязательны, специального эскейпинга нет.
+/// CSV, for numbers, dates, datetimes: quotes are optional, no special escaping rules.
 template <typename T>
 inline void readCSVSimple(T & x, ReadBuffer & buf)
 {
@@ -803,25 +864,28 @@ void readText(std::vector<T> & x, ReadBuffer & buf)
 }
 
 
-/// Пропустить пробельные символы.
+/// Skip whitespace characters.
 inline void skipWhitespaceIfAny(ReadBuffer & buf)
 {
 	while (!buf.eof() && isWhitespaceASCII(*buf.position()))
 		++buf.position();
 }
 
+/// Skips json value. If the value contains objects (i.e. {...} sequence), an exception will be thrown.
+void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed);
 
-/** Прочитать сериализованный эксепшен.
-  * При сериализации/десериализации часть информации теряется
-  * (тип обрезается до базового, message заменяется на displayText, и stack trace дописывается в message)
-  * К нему может быть добавлено дополнительное сообщение (например, вы можете указать, откуда оно было прочитано).
+
+/** Read serialized exception.
+  * During serialization/deserialization some information is lost
+  * (type is cut to base class, 'message' replaced by 'displayText', and stack trace is appended to 'message')
+  * Some additional message could be appended to exception (example: you could add information about from where it was received).
   */
 void readException(Exception & e, ReadBuffer & buf, const String & additional_message = "");
 void readAndThrowException(ReadBuffer & buf, const String & additional_message = "");
 
 
-/** Вспомогательная функция
- */
+/** Helper function for implementation.
+  */
 template <typename T>
 static inline const char * tryReadIntText(T & x, const char * pos, const char * end)
 {
@@ -868,12 +932,12 @@ static inline const char * tryReadIntText(T & x, const char * pos, const char * 
 }
 
 
-/// Простые для использования методы чтения чего-либо из строки в текстовом виде.
+/// Convenient methods for reading something from string in text format.
 template <typename T>
 inline T parse(const char * data, size_t size)
 {
 	T res;
-	ReadBuffer buf(const_cast<char *>(data), size, 0);
+	ReadBufferFromMemory buf(data, size);
 	readText(res, buf);
 	return res;
 }
@@ -906,5 +970,12 @@ inline void skipBOMIfExists(ReadBuffer & buf)
 		buf.position() += 3;
 	}
 }
+
+
+/// Skip to next character after next \n. If no \n in stream, skip to end.
+void skipToNextLineOrEOF(ReadBuffer & buf);
+
+/// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
+void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 
 }

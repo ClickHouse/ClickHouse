@@ -4,6 +4,7 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/IInterpreter.h>
+#include <DB/Parsers/queryToString.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 
 
@@ -13,7 +14,7 @@ namespace DB
 namespace ClusterProxy
 {
 
-Query::Query(IQueryConstructor & query_constructor_, const Cluster & cluster_,
+Query::Query(IQueryConstructor & query_constructor_, const ClusterPtr & cluster_,
 	ASTPtr query_ast_, const Context & context_, const Settings & settings_, bool enable_shard_multiplexing_)
 	: query_constructor{query_constructor_}, cluster{cluster_}, query_ast{query_ast_},
 	context{context_}, settings{settings_}, enable_shard_multiplexing{enable_shard_multiplexing_}
@@ -28,10 +29,19 @@ BlockInputStreams Query::execute()
 
 	Settings new_settings = settings;
 	new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
-	/// Не имеет смысла на удалённых серверах, так как запрос отправляется обычно с другим user-ом.
-	new_settings.max_concurrent_queries_for_user = 0;
 
-	/// Ограничение сетевого трафика, если нужно.
+	/// Does not matter on remote servers, because queries are sent under different user.
+	new_settings.max_concurrent_queries_for_user = 0;
+	new_settings.limits.max_memory_usage_for_user = 0;
+	/// This setting is really not for user and should not be sent to remote server.
+	new_settings.limits.max_memory_usage_for_all_queries = 0;
+
+	/// Set as unchanged to avoid sending to remote server.
+	new_settings.max_concurrent_queries_for_user.changed = false;
+	new_settings.limits.max_memory_usage_for_user.changed = false;
+	new_settings.limits.max_memory_usage_for_all_queries.changed = false;
+
+	/// Network bandwidth limit, if needed.
 	ThrottlerPtr throttler;
 	if (settings.limits.max_network_bandwidth || settings.limits.max_network_bytes)
 		throttler = std::make_shared<Throttler>(
@@ -39,20 +49,20 @@ BlockInputStreams Query::execute()
 			settings.limits.max_network_bytes,
 			"Limit for bytes to send or receive over network exceeded.");
 
-	/// Распределить шарды равномерно по потокам.
+	/// Spread shards by threads uniformly.
 
 	size_t remote_count = 0;
 
 	if (query_constructor.getPoolMode() == PoolMode::GET_ALL)
 	{
-		for (const auto & shard_info : cluster.getShardsInfo())
+		for (const auto & shard_info : cluster->getShardsInfo())
 		{
 			if (shard_info.hasRemoteConnections())
 				++remote_count;
 		}
 	}
 	else
-		remote_count = cluster.getRemoteShardCount();
+		remote_count = cluster->getRemoteShardCount();
 
 	size_t thread_count;
 
@@ -71,9 +81,10 @@ BlockInputStreams Query::execute()
 	ConnectionPoolsPtr pools;
 	bool do_init = true;
 
-	/// Цикл по шардам.
+	/// Loop over shards.
+
 	size_t current_thread = 0;
-	for (const auto & shard_info : cluster.getShardsInfo())
+	for (const auto & shard_info : cluster->getShardsInfo())
 	{
 		bool create_local_queries = shard_info.isLocal();
 
@@ -85,7 +96,7 @@ BlockInputStreams Query::execute()
 
 		if (create_local_queries)
 		{
-			/// Добавляем запросы к локальному ClickHouse.
+			/// Add queries to localhost (they are processed in-process, without network communication).
 
 			DB::Context new_context = context;
 			new_context.setSettings(new_settings);
@@ -105,7 +116,7 @@ BlockInputStreams Query::execute()
 
 			if (actual_pools_per_thread == 1)
 			{
-				res.emplace_back(query_constructor.createRemote(shard_info.pool.get(), query, new_settings, throttler, context));
+				res.emplace_back(query_constructor.createRemote(shard_info.pool, query, new_settings, throttler, context));
 				++current_thread;
 			}
 			else

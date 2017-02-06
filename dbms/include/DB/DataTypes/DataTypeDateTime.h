@@ -58,7 +58,7 @@ public:
 		static_cast<ColumnType &>(column).getData().push_back(x);	/// Важно делать это в конце - для exception safety.
 	}
 
-	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
+	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const override
 	{
 		writeChar('"', ostr);
 		serializeText(column, row_num, ostr);

@@ -17,14 +17,18 @@
 #include <DB/Common/Stopwatch.h>
 
 #include <stdlib.h>
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
+#endif
 
 #include <fcntl.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <linux/aio_abi.h>
+#endif
 #include <sys/syscall.h>
 
 using DB::throwFromErrno;
@@ -163,11 +167,11 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
 			iocb & cb = iocbs[i];
 			memset(&cb, 0, sizeof(cb));
-			cb.aio_buf = reinterpret_cast<uint64_t>(buf);
+			cb.aio_buf = reinterpret_cast<UInt64>(buf);
 			cb.aio_fildes = fd;
 			cb.aio_nbytes = block_size;
 			cb.aio_offset = offset;
-			cb.aio_data = static_cast<uint64_t>(i);
+			cb.aio_data = static_cast<UInt64>(i);
 
 			if (mode == MODE_READ)
 			{

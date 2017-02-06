@@ -54,7 +54,7 @@ public:
 	{
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
 	}
 
@@ -63,7 +63,7 @@ public:
 		writeBinary(UInt8(0), buf);
 	}
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf) const override
+	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
 	{
 		UInt8 tmp;
 		readBinary(tmp, buf);

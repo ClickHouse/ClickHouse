@@ -7,6 +7,7 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/Columns/ColumnFixedString.h>
+#include <DB/Columns/ColumnNullable.h>
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <ext/enumerate.hpp>
 
@@ -14,6 +15,14 @@
 namespace DB
 {
 
+template <>
+ColumnPtr ColumnConst<Null>::convertToFullColumn() const
+{
+	/// We basically create a column whose rows have NULL values.
+	ColumnPtr full_col = std::make_shared<ColumnUInt8>(size(), 0);
+	ColumnPtr null_map = std::make_shared<ColumnUInt8>(size(), 1);
+	return std::make_shared<ColumnNullable>(full_col, null_map);
+}
 
 template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 {
@@ -74,7 +83,18 @@ ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 
 	const Array & array = getDataFromHolderImpl();
 	size_t array_size = array.size();
-	ColumnPtr nested_column = type->getNestedType()->createColumn();
+
+	const auto & nested_type = type->getNestedType();
+	ColumnPtr nested_column;
+
+	if (nested_type->isNull())
+	{
+		/// Special case: an array of Null is actually an array of Nullable(UInt8).
+		nested_column = std::make_shared<ColumnNullable>(
+			std::make_shared<ColumnUInt8>(), std::make_shared<ColumnUInt8>());
+	}
+	else
+		nested_column = type->getNestedType()->createColumn();
 
 	auto res = std::make_shared<ColumnArray>(nested_column);
 	ColumnArray::Offsets_t & offsets = res->getOffsets();

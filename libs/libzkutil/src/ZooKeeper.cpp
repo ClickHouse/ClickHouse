@@ -5,6 +5,25 @@
 #include <DB/Common/StringUtils.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ZooKeeperInit;
+	extern const Event ZooKeeperTransactions;
+	extern const Event ZooKeeperCreate;
+	extern const Event ZooKeeperRemove;
+	extern const Event ZooKeeperExists;
+	extern const Event ZooKeeperMulti;
+	extern const Event ZooKeeperGet;
+	extern const Event ZooKeeperSet;
+	extern const Event ZooKeeperGetChildren;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric ZooKeeperWatch;
+}
+
+
 namespace zkutil
 {
 
@@ -29,6 +48,7 @@ struct WatchWithEvent
 	/// существует все время существования WatchWithEvent
 	ZooKeeper & zk;
 	EventPtr event;
+	CurrentMetrics::Increment metric_increment{CurrentMetrics::ZooKeeperWatch};
 
 	WatchWithEvent(ZooKeeper & zk_, EventPtr event_) : zk(zk_), event(event_) {}
 
@@ -473,8 +493,8 @@ int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
 	/// копируем структуру, содержащую указатели, дефолтным конструктором копирования
 	/// это безопасно, т.к. у нее нет деструктора
 	std::vector<zoo_op_t> ops;
-	for (const Op & op : ops_)
-		ops.push_back(*(op.data));
+	for (const auto & op : ops_)
+		ops.push_back(*(op->data));
 
 	int32_t code = zoo_multi(impl, ops.size(), ops.data(), out_results->data());
 	ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
@@ -531,7 +551,7 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path)
 		for (size_t i = 0; i < BATCH_SIZE && !children.empty(); ++i)
 		{
 			removeChildrenRecursive(path + "/" + children.back());
-			ops.push_back(new Op::Remove(path + "/" + children.back(), -1));
+			ops.emplace_back(std::make_unique<Op::Remove>(path + "/" + children.back(), -1));
 			children.pop_back();
 		}
 		multi(ops);
@@ -552,7 +572,7 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path)
 			batch.push_back(path + "/" + children.back());
 			children.pop_back();
 			tryRemoveChildrenRecursive(batch.back());
-			ops.push_back(new Op::Remove(batch.back(), -1));
+			ops.emplace_back(std::make_unique<Op::Remove>(batch.back(), -1));
 		}
 
 		/** Сначала пытаемся удалить детей более быстрым способом - сразу пачкой. Если не получилось,
@@ -648,7 +668,7 @@ bool ZooKeeper::expired()
 	return is_dirty || zoo_state(impl) == ZOO_EXPIRED_SESSION_STATE;
 }
 
-int64_t ZooKeeper::getClientID()
+Int64 ZooKeeper::getClientID()
 {
 	return zoo_client_id(impl)->client_id;
 }

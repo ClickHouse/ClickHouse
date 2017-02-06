@@ -88,7 +88,7 @@ public:
 	  */
 	bool optimize(const String & partition, bool final, const Settings & settings) override
 	{
-		return merge(settings.min_bytes_to_use_direct_io, true, nullptr, partition, final);
+		return merge(settings.min_bytes_to_use_direct_io, true, partition, final);
 	}
 
 	void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
@@ -103,7 +103,10 @@ public:
 
 	bool supportsIndexForIn() const override { return true; }
 
+	bool checkTableCanBeDropped() const override;
+
 	MergeTreeData & getData() { return data; }
+	const MergeTreeData & getData() const { return data; }
 
 private:
 	String path;
@@ -119,8 +122,11 @@ private:
 	MergeTreeDataWriter writer;
 	MergeTreeDataMerger merger;
 
-	/// Для нумерации блоков.
-	SimpleIncrement increment;
+	/// For block numbers.
+	SimpleIncrement increment{0};
+
+	/// For clearOldParts, clearOldTemporaryDirectories.
+	StopwatchWithLock time_after_previous_cleanup;
 
 	MergeTreeData::DataParts currently_merging;
 	std::mutex currently_merging_mutex;
@@ -150,13 +156,13 @@ private:
 		bool has_force_restore_data_flag,
 		const MergeTreeSettings & settings_);
 
-	/** Определяет, какие куски нужно объединять, и объединяет их.
-	  * Если aggressive - выбрать куски, не обращая внимание на соотношение размеров и их новизну (для запроса OPTIMIZE).
-	  * Возвращает, получилось ли что-нибудь объединить.
+	/** Determines what parts should be merged and merges it.
+	  * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
+	  * Returns true if merge is finished successfully.
 	  */
-	bool merge(size_t aio_threshold, bool aggressive, BackgroundProcessingPool::Context * context, const String & partition, bool final);
+	bool merge(size_t aio_threshold, bool aggressive, const String & partition, bool final);
 
-	bool mergeTask(BackgroundProcessingPool::Context & context);
+	bool mergeTask();
 };
 
 }

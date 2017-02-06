@@ -1,7 +1,15 @@
+#include <common/ClickHouseRevision.h>
+
 #include <DB/DataStreams/BlocksListBlockInputStream.h>
 #include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockInputStream.h>
 
+
+namespace ProfileEvents
+{
+	extern const Event ExternalAggregationMerge;
+}
 
 namespace DB
 {
@@ -62,6 +70,10 @@ Block AggregatingBlockInputStream::readImpl()
 
 	return impl->read();
 }
+
+
+AggregatingBlockInputStream::TemporaryFileStream::TemporaryFileStream(const std::string & path)
+	: file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get())) {}
 
 
 }

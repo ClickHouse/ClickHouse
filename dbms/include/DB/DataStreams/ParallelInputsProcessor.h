@@ -13,16 +13,21 @@
 #include <DB/Common/CurrentMetrics.h>
 
 
-/** Позволяет обработать множество источников блоков параллельно, используя указанное количество потоков.
-  * Вынимает из любого доступного источника блок и передаёт его на обработку в предоставленный handler.
+/** Allows to process multiple block input streams (sources) in parallel, using specified number of threads.
+  * Reads (pulls) blocks from any available source and passes it to specified handler.
   *
-  * Устроено так:
-  * - есть набор источников, из которых можно вынимать блоки;
-  * - есть набор потоков, которые могут одновременно вынимать блоки из разных источников;
-  * - "свободные" источники (с которыми сейчас не работает никакой поток) кладутся в очередь источников;
-  * - когда поток берёт источник для обработки, он удаляет его из очереди источников,
-  *    вынимает из него блок, и затем кладёт источник обратно в очередь источников;
+  * Implemented in following way:
+  * - there are multiple input sources to read blocks from;
+  * - there are multiple threads, that could simultaneously read blocks from different sources;
+  * - "available" sources (that are not read in any thread right now) are put in queue of sources;
+  * - when thread take a source to read from, it removes source from queue of sources,
+  *    then read block from source and then put source back to queue of available sources.
   */
+
+namespace CurrentMetrics
+{
+	extern const Metric QueryThread;
+}
 
 namespace DB
 {

@@ -1,12 +1,24 @@
 add_definitions(
-    -DNO_TCMALLOC_SAMPLES -DNO_TCMALLOC_SAMPLES
+    -DNO_TCMALLOC_SAMPLES
     -DNDEBUG -DNO_FRAME_POINTER
     -Wwrite-strings -Wno-sign-compare -Wno-unused-result
+    -Wno-deprecated-declarations -Wno-unused-function
+    -Wno-unused-private-field
     -fno-builtin-malloc -fno-builtin-free -fno-builtin-realloc -fno-builtin-calloc -fno-builtin-cfree
     -fno-builtin-memalign -fno-builtin-posix_memalign -fno-builtin-valloc -fno-builtin-pvalloc
 )
 
+if(CMAKE_SYSTEM MATCHES "FreeBSD" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+	add_definitions(-Wno-unused-but-set-variable)
+endif()
+
+if(CMAKE_SYSTEM MATCHES "FreeBSD")
+	add_definitions(-D_GNU_SOURCE)
+endif()
+
 include_directories (include src)
+
+message(STATUS "Building: tcmalloc_minimal_internal")
 
 add_library (tcmalloc_minimal_internal
 ./src/malloc_hook.cc

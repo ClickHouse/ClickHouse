@@ -34,6 +34,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <ctime>
+#include <random>
 
 namespace DB
 {
@@ -599,7 +600,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
 		throw Exception{"Coordinator has been deleted", ErrorCodes::RESHARDING_COORDINATOR_DELETED};
 
 	StoragePtr generic_storage = context.getTable(current_job.database_name, current_job.table_name);
-	auto & storage = typeid_cast<StorageReplicatedMergeTree &>(*(generic_storage.get()));
+	auto & storage = typeid_cast<StorageReplicatedMergeTree &>(*generic_storage);
 	current_job.storage = &storage;
 
 	std::string dumped_coordinator_state;
@@ -799,7 +800,7 @@ void ReshardingWorker::createShardedPartitions()
 
 	auto & storage = *(current_job.storage);
 
-	MergeTreeDataMerger merger{storage.data};
+	MergeTreeDataMerger merger{storage.data, context.getBackgroundPool()};
 
 	MergeTreeDataMerger::CancellationHook hook = std::bind(&ReshardingWorker::abortJobIfRequested, this);
 	merger.setCancellationHook(hook);
@@ -1416,7 +1417,7 @@ void ReshardingWorker::executeAttach(LogRecord & log_record)
 	{
 		ShardTaskInfo()
 		{
-			(void) srand48_r(randomSeed(), &rand_state);
+			rng = std::mt19937(randomSeed());
 		}
 
 		ShardTaskInfo(const ShardTaskInfo &) = delete;
@@ -1432,7 +1433,7 @@ void ReshardingWorker::executeAttach(LogRecord & log_record)
 		/// result of the operation on the current replica
 		bool is_success = false;
 		/// For pseudo-random number generation.
-		drand48_data rand_state;
+		std::mt19937 rng;
 	};
 
 	const WeightedZooKeeperPath & weighted_path = current_job.paths[log_record.shard_no];
@@ -1456,8 +1457,7 @@ void ReshardingWorker::executeAttach(LogRecord & log_record)
 	while (true)
 	{
 		/// Randomly choose a replica on which to perform the operation.
-		long int rand_res;
-		(void) lrand48_r(&shard_task_info.rand_state, &rand_res);
+		long int rand_res = shard_task_info.rng();
 		size_t current = shard_task_info.next + rand_res % (shard_task_info.shard_tasks.size() - shard_task_info.next);
 		std::swap(shard_task_info.shard_tasks[shard_task_info.next], shard_task_info.shard_tasks[current]);
 		++shard_task_info.next;

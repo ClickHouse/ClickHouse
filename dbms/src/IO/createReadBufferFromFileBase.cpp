@@ -1,10 +1,25 @@
 #include <DB/IO/createReadBufferFromFileBase.h>
 #include <DB/IO/ReadBufferFromFile.h>
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <DB/IO/ReadBufferAIO.h>
+#endif
 #include <DB/Common/ProfileEvents.h>
+
+
+namespace ProfileEvents
+{
+	extern const Event CreatedReadBufferOrdinary;
+	extern const Event CreatedReadBufferAIO;
+}
 
 namespace DB
 {
+#if defined(__APPLE__) || defined(__FreeBSD__)
+namespace ErrorCodes
+{
+        extern const int NOT_IMPLEMENTED;
+}
+#endif
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(const std::string & filename_, size_t estimated_size,
 		size_t aio_threshold, size_t buffer_size_, int flags_, char * existing_memory_, size_t alignment)
@@ -16,8 +31,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(const std::
 	}
 	else
 	{
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 		ProfileEvents::increment(ProfileEvents::CreatedReadBufferAIO);
 		return std::make_unique<ReadBufferAIO>(filename_, buffer_size_, flags_, existing_memory_);
+#else
+		throw Exception("AIO is not implemented yet on MacOS X", ErrorCodes::NOT_IMPLEMENTED);
+#endif
 	}
 }
 

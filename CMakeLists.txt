@@ -1,161 +1,196 @@
 project (ClickHouse)
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required (VERSION 2.6)
 
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-    # require at least gcc 5
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5)
-        message(FATAL_ERROR "GCC version must be at least 5! For example, if GCC 5 is available under gcc-5, g++-5 names, do the following: export CC=gcc-5 CXX=g++-5; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
-    endif()
-elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-    # require at least clang 3.8
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.8)
-        message(FATAL_ERROR "Clang version must be at least 3.8!")
-    endif()
-else()
-    message(WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 3.8+ and GCC 5+.")
-endif()
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
-# отключаем варнинг о том, что в каждой директории должен быть CMakeLists.txt
-cmake_policy(SET CMP0014 OLD)
+message(STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
 
-cmake_policy(SET CMP0012 NEW) # Don't dereference TRUE and FALSE
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+	# Require at least gcc 5
+	if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
+		message (FATAL_ERROR "GCC version must be at least 5! For example, if GCC 5 is available under gcc-5, g++-5 names, do the following: export CC=gcc-5 CXX=g++-5; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
+	endif ()
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+	# Require at least clang 3.8
+	if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.8)
+		message (FATAL_ERROR "Clang version must be at least 3.8!")
+	endif ()
+else ()
+	message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 3.8+ and GCC 5+.")
+endif ()
 
-IF(NOT CMAKE_BUILD_TYPE)
-	message(STATUS "CMAKE_BUILD_TYPE is not set, set to default = RELWITHDEBINFO")
-	SET(CMAKE_BUILD_TYPE            "RELWITHDEBINFO")
-ENDIF()
-MESSAGE( STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE} )
+if (APPLE)
+	set (PLATFORM_EXTRA_CXX_FLAG "-Dexp10=__exp10") # Also needed for libc++
+endif ()
+
+if (CMAKE_SYSTEM MATCHES "FreeBSD")
+	set (PLATFORM_EXTRA_CXX_FLAG "-DCLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST")
+endif ()
+
+cmake_policy (SET CMP0014 OLD) # Ignore warning about CMakeLists.txt in each directory
+cmake_policy (SET CMP0012 NEW) # Don't dereference TRUE and FALSE
+
+if (NOT CMAKE_BUILD_TYPE)
+	message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = RELWITHDEBINFO")
+	set (CMAKE_BUILD_TYPE "RELWITHDEBINFO")
+endif ()
+message (STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE} )
 
 # ASan - build type with address sanitizer
 # UBSan - build type with undefined behaviour sanitizer
 # TSan is not supported due to false positive errors in libstdc++ and necessity to rebuild libstdc++ with TSan
-set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel;ASan;UBSan" CACHE STRING "" FORCE)
+set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel;ASan;UBSan" CACHE STRING "" FORCE)
 
 
-IF (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*)")
-	SET(AARCH64 1)
-ENDIF()
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*)")
+	set (AARCH64 1)
+endif ()
 
-IF (NOT AARCH64)
-	SET(MACHINE_FLAGS "-msse4 -mpopcnt")
-ENDIF()
+set (COMMON_WARNING_FLAGS "-Wall")	# -Werror is also added inside directories with our own code.
+set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor")
 
-SET(COMMON_WARNING_FLAGS "-Wall -Werror")
-SET(CXX_WARNING_FLAGS "-Wnon-virtual-dtor -Wold-style-cast")
+set (CXX11_ABI "ENABLE" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
+option (TEST_COVERAGE "Enables flags for test coverage" OFF)
+option (ENABLE_TESTS "Enables tests" ON)
 
+option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
+if (USE_STATIC_LIBRARIES)
+	list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
+endif ()
 
-set (GLIBC_COMPATIBILITY FALSE CACHE BOOL "Set to TRUE to enable compatibility with older glibc libraries")
+set (USE_INTERNAL_BOOST_LIBRARY TRUE CACHE BOOL "Set to FALSE to use system boost library instead of bundled")
 
-if ($ENV{GLIBC_COMPATIBILITY})
-	set (GLIBC_COMPATIBILITY TRUE)
-endif()
+if (USE_INTERNAL_BOOST_LIBRARY)
+	add_definitions(-DBOOST_SYSTEM_NO_DEPRECATED)
+endif ()
+
+option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ON)
+
+if (CMAKE_SYSTEM MATCHES "FreeBSD")
+	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" OFF)
+else ()
+	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ON)
+endif ()
+
+option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc." ON)
+
+option (DEBUG_LIBTCMALLOC "Set to TRUE to use debug version of libtcmalloc." OFF)
+
+option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
 
 if (GLIBC_COMPATIBILITY)
-	SET(GLIBC_COMPATIBILITY_COMPILE_FLAGS   "-include ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/common/glibc_compatibility.h")
-	SET(GLIBC_COMPATIBILITY_LINK_FLAGS      "-Wl,--wrap=memcpy")
-endif()
+	set (GLIBC_COMPATIBILITY_COMPILE_FLAGS   "-include ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/common/glibc_compatibility.h")
+	set (GLIBC_COMPATIBILITY_LINK_FLAGS      "-Wl,--wrap=memcpy")
+endif ()
 
-if (DISABLE_CXX11_ABI)
-    SET(CXX11_ABI "-D_GLIBCXX_USE_CXX11_ABI=0")
-endif()
+if (CXX11_ABI STREQUAL ENABLE)
+	set (CXX11_ABI_FLAGS "-D_GLIBCXX_USE_CXX11_ABI=1")
+elseif (CXX11_ABI STREQUAL DISABLE)
+	set (CXX11_ABI_FLAGS "-D_GLIBCXX_USE_CXX11_ABI=0")
+else ()
+	set (CXX11_ABI_FLAGS "")
+endif ()
 
-SET(CMAKE_BUILD_COLOR_MAKEFILE          ON)
-SET(CMAKE_CXX_FLAGS                     "-std=gnu++1y -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
-SET(CMAKE_CXX_FLAGS_RELEASE             "-O3 -DNDEBUG")
-SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO      "-O3 -g")
-SET(CMAKE_CXX_FLAGS_DEBUG               "-O0 -g3 -ggdb3 -fno-inline")
+set (COMPILER_FLAGS                       "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
 
-SET(CMAKE_C_FLAGS                       "-fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${MACHINE_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS} ${CXX11_ABI}")
-SET(CMAKE_C_FLAGS_RELEASE               "-O3 -DNDEBUG")
-SET(CMAKE_C_FLAGS_RELWITHDEBINFO        "-O3 -g")
-SET(CMAKE_C_FLAGS_DEBUG                 "-O0 -g3 -ggdb3 -fno-inline")
+option (PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
+if (PIPE)
+	set (COMPILER_FLAGS                   "${COMPILER_FLAGS} -pipe")
+endif ()
 
-SET(CMAKE_EXE_LINKER_FLAGS              "-static-libgcc -static-libstdc++ ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI}")
+include (cmake/test_cpu.cmake)
 
-SET(CMAKE_CXX_FLAGS_ASAN                "-O3 -g -fsanitize=address -fno-omit-frame-pointer ${CXX11_ABI}")
-SET(CMAKE_CXX_FLAGS_UBSAN               "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI}")
-SET(CMAKE_C_FLAGS_ASAN                  "-O3 -g -fsanitize=address -fno-omit-frame-pointer ${CXX11_ABI}")
-SET(CMAKE_C_FLAGS_UBSAN                 "-O3 -g -fsanitize=undefined -fno-omit-frame-pointer ${CXX11_ABI}")
+option (ARCHNATIVE "Enable -march=native compiler flag" OFF)
+if (ARCHNATIVE)
+	set (COMPILER_FLAGS                   "${COMPILER_FLAGS} -march=native")
+endif ()
 
-# Флаги для test coverage
-IF (TEST_COVERAGE)
-    SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fprofile-arcs -ftest-coverage -fPIC -DIS_DEBUG ${CXX11_ABI}")
-ENDIF(TEST_COVERAGE)
 
-# Собирать тесты?
-IF (NOT DEFINED TESTS)
-	MESSAGE(STATUS "Tests are enabled")
-	SET(TESTS YES)
-ENDIF()
+set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
+set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} -std=gnu++1y ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
+#set (CMAKE_CXX_FLAGS_RELEASE             "${CMAKE_CXX_FLAGS_RELEASE}")
+set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3")
+set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline")
 
-# тесты запускать с помощью "make check"
-IF(TESTS)
-	INCLUDE(add.test.cmake)
-ENDIF(TESTS)
+set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
+#set (CMAKE_C_FLAGS_RELEASE               "${CMAKE_C_FLAGS_RELEASE}")
+set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3")
+set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline")
 
-# Префикс для установки
-SET(CMAKE_INSTALL_PREFIX /usr)
+if (NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_SYSTEM MATCHES "FreeBSD"))
+	set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+endif ()
 
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libcityhash/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libdivide/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libdouble-conversion/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libzstd/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libfarmhash/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libsparsehash/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libre2/)
-include_directories (${ClickHouse_BINARY_DIR}/contrib/libre2/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libzookeeper/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Foundation/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Util/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Net/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/NetSSL_OpenSSL/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/MySQL/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/ODBC/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/SQLite/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Crypto/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/XML/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/JSON/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/MongoDB/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/contrib/libpoco/Zip/include/)
+if (NOT APPLE)
+	set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI_FLAGS}")
+endif ()
 
-include_directories (${ClickHouse_SOURCE_DIR}/libs/libcommon/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/libs/libpocoext/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/libs/libmysqlxx/include/)
-include_directories (${ClickHouse_SOURCE_DIR}/libs/libzkutil/include/)
+include (cmake/test_compiler.cmake)
+if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
+	set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} ${FLAG_NO_PIE}")
+	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
+endif ()
 
-include_directories (${ClickHouse_SOURCE_DIR}/dbms/include)
+set (SAN_FLAGS "-O3 -g -fno-omit-frame-pointer")
+set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN}  ${SAN_FLAGS} -fsanitize=address")
+set (CMAKE_C_FLAGS_ASAN                  "${CMAKE_C_FLAGS_ASAN}    ${SAN_FLAGS} -fsanitize=address")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+	# -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1
+	# See more in http://stackoverflow.com/questions/37603238/fsanitize-not-using-gold-linker-in-gcc-6-1
+	set (CMAKE_CXX_FLAGS_ASAN            "${CMAKE_CXX_FLAGS_ASAN} -fuse-ld=gold")
+	set (CMAKE_C_FLAGS_ASAN              "${CMAKE_C_FLAGS_ASAN}   -fuse-ld=gold")
+endif ()
+set (CMAKE_CXX_FLAGS_UBSAN               "${CMAKE_CXX_FLAGS_UBSAN} ${SAN_FLAGS} -fsanitize=undefined")
+set (CMAKE_C_FLAGS_UBSAN                 "${CMAKE_C_FLAGS_UBSAN}   ${SAN_FLAGS} -fsanitize=undefined")
+set (CMAKE_CXX_FLAGS_MSAN                "${CMAKE_CXX_FLAGS_MSAN}  ${SAN_FLAGS} -fsanitize=memory")
+set (CMAKE_C_FLAGS_MSAN                  "${CMAKE_C_FLAGS_MSAN}    ${SAN_FLAGS} -fsanitize=memory")
+set (CMAKE_CXX_FLAGS_TSAN                "${CMAKE_CXX_FLAGS_TSAN}  ${SAN_FLAGS} -fsanitize=thread")
+set (CMAKE_C_FLAGS_TSAN                  "${CMAKE_C_FLAGS_TSAN}    ${SAN_FLAGS} -fsanitize=thread")
 
-include_directories (/usr/local/include/glib-2.0/)
-include_directories (/usr/local/lib/glib-2.0/include/)
-include_directories (/usr/include/glib-2.0/)
-include_directories (/usr/lib64/glib-2.0/include/)
+# Flags for test coverage
+if (TEST_COVERAGE)
+	set (CMAKE_CXX_FLAGS_DEBUG "${COMPILER_FLAGS} -O0 -g -fprofile-arcs -ftest-coverage -fPIC -DIS_DEBUG")
+endif (TEST_COVERAGE)
 
-IF (AARCH64)
-    include_directories (/usr/lib/aarch64-linux-gnu/glib-2.0/include/)
-ELSE()
-    include_directories (/usr/lib/x86_64-linux-gnu/glib-2.0/include/)
-ENDIF()
+# Run tests with "make check"
+if (ENABLE_TESTS)
+	message (STATUS "Tests are enabled")
+	include (cmake/add_check.cmake)
+endif (ENABLE_TESTS)
 
-include_directories (/usr/local/include/)
+# Installation prefix
+if (NOT CMAKE_SYSTEM MATCHES "FreeBSD")
+	set (CMAKE_INSTALL_PREFIX /usr)
+	set (CLICKHOUSE_ETC_DIR /etc)
+else ()
+	set (CLICKHOUSE_ETC_DIR ${CMAKE_INSTALL_PREFIX}/etc)
+endif ()
 
-link_directories (/usr/local/lib)
+include (cmake/find_openssl.cmake)
+include (cmake/find_icu4c.cmake)
+include (cmake/find_boost.cmake)
+include (cmake/find_poco.cmake)
+include (cmake/find_libtool.cmake)
+include (cmake/find_rt.cmake)
+include (cmake/find_readline_edit.cmake)
+include (cmake/find_gperftools.cmake)
+include (cmake/find_jemalloc.cmake)
+
+set(FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")
+set(FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")
+message (STATUS "C_FLAGS    = ${FULL_C_FLAGS}")
+message (STATUS "CXX_FLAGS  = ${FULL_CXX_FLAGS}")
+message (STATUS "LINK_FLAGS = ${CMAKE_EXE_LINKER_FLAGS}")
 
 # Directory for Yandex specific files
-SET(CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
+set (CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
+if (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
+	add_subdirectory (${CLICKHOUSE_PRIVATE_DIR})
+endif ()
 
 add_subdirectory (contrib)
 add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)
 
-IF (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
-	add_subdirectory (private)
-ENDIF()
-
-message(STATUS "C_FLAGS:  =${CMAKE_C_FLAGS}")
-message(STATUS "CXX_FLAGS:=${CMAKE_CXX_FLAGS}")
+include (cmake/print_include_directories.cmake)

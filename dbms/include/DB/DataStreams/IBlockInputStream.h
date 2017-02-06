@@ -1,10 +1,10 @@
 #pragma once
 
+#include <vector>
+#include <memory>
+#include <functional>
 #include <boost/noncopyable.hpp>
-
 #include <DB/Core/Block.h>
-#include <DB/Core/Progress.h>
-#include <DB/Storages/IStorage.h>
 
 
 namespace DB
@@ -15,6 +15,14 @@ class IBlockInputStream;
 
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockInputStreams = std::vector<BlockInputStreamPtr>;
+
+class TableStructureReadLock;
+
+using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
+using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
+
+struct Progress;
+
 
 
 /** Коллбэк для отслеживания прогресса выполнения запроса.
@@ -84,10 +92,10 @@ public:
 
 	/** Не давать изменить таблицу, пока жив поток блоков.
 	  */
-	void addTableLock(const IStorage::TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
+	void addTableLock(const TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
 
 protected:
-	IStorage::TableStructureReadLocks table_locks;
+	TableStructureReadLocks table_locks;
 
 	BlockInputStreams children;
 

@@ -6,11 +6,13 @@
 
 #include <DB/Columns/IColumn.h>
 #include <DB/Columns/ColumnsCommon.h>
-#include <DB/Common/Collator.h>
 #include <DB/Common/PODArray.h>
 #include <DB/Common/Arena.h>
 #include <DB/Common/SipHash.h>
 #include <DB/Common/memcpySmall.h>
+
+
+class Collator;
 
 
 namespace DB
@@ -42,6 +44,9 @@ private:
 	/// Размер, включая завершающий нулевой байт.
 	size_t __attribute__((__always_inline__)) sizeAt(size_t i) const	{ return i == 0 ? offsets[0] : (offsets[i] - offsets[i - 1]); }
 
+	template <bool positive>
+	friend struct lessWithCollation;
+
 public:
 	/** Создать пустой столбец строк */
 	ColumnString() {}
@@ -58,9 +63,47 @@ public:
 		return chars.size() + offsets.size() * sizeof(offsets[0]);
 	}
 
-	ColumnPtr cloneEmpty() const override
+	size_t allocatedSize() const override
 	{
-		return std::make_shared<ColumnString>();
+		return chars.allocated_size() + offsets.allocated_size() * sizeof(offsets[0]);
+	}
+
+	ColumnPtr cloneResized(size_t size) const override
+	{
+		ColumnPtr new_col_holder = std::make_shared<ColumnString>();
+
+		if (size > 0)
+		{
+			auto & new_col = static_cast<ColumnString &>(*new_col_holder);
+			size_t count = std::min(this->size(), size);
+
+			/// First create the offsets.
+			new_col.offsets.resize(size);
+			new_col.offsets.assign(offsets.begin(), offsets.begin() + count);
+
+			size_t byte_count = new_col.offsets.back();
+
+			if (size > count)
+			{
+				/// Create offsets for the (size - count) new empty strings.
+				for (size_t i = count; i < size; ++i)
+					new_col.offsets[i] = new_col.offsets[i - 1] + 1;
+			}
+
+			/// Then store the strings.
+			new_col.chars.resize(new_col.offsets.back());
+			new_col.chars.assign(chars.begin(), chars.begin() + byte_count);
+
+			if (size > count)
+			{
+				/// Create (size - count) empty strings.
+				size_t from = new_col.offsets[count];
+				size_t n = new_col.offsets.back() - from;
+				memset(&new_col.chars[from], '\0', n);
+			}
+		}
+
+		return new_col_holder;
 	}
 
 	Field operator[](size_t n) const override
@@ -314,14 +357,7 @@ public:
 	}
 
 	/// Версия compareAt для locale-sensitive сравнения строк
-	int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const
-	{
-		const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
-
-		return collator.compare(
-			reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n),
-			reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]), rhs.sizeAt(m));
-	}
+	int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const;
 
 	template <bool positive>
 	struct less
@@ -364,50 +400,8 @@ public:
 		}
 	}
 
-	template <bool positive>
-	struct lessWithCollation
-	{
-		const ColumnString & parent;
-		const Collator & collator;
-
-		lessWithCollation(const ColumnString & parent_, const Collator & collator_) : parent(parent_), collator(collator_) {}
-
-		bool operator()(size_t lhs, size_t rhs) const
-		{
-			int res = collator.compare(
-				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
-				reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
-
-			return positive ? (res < 0) : (res > 0);
-		}
-	};
-
 	/// Сортировка с учетом Collation
-	void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const
-	{
-		size_t s = offsets.size();
-		res.resize(s);
-		for (size_t i = 0; i < s; ++i)
-			res[i] = i;
-
-		if (limit >= s)
-			limit = 0;
-
-		if (limit)
-		{
-			if (reverse)
-				std::partial_sort(res.begin(), res.begin() + limit, res.end(), lessWithCollation<false>(*this, collator));
-			else
-				std::partial_sort(res.begin(), res.begin() + limit, res.end(), lessWithCollation<true>(*this, collator));
-		}
-		else
-		{
-			if (reverse)
-				std::sort(res.begin(), res.end(), lessWithCollation<false>(*this, collator));
-			else
-				std::sort(res.begin(), res.end(), lessWithCollation<true>(*this, collator));
-		}
-	}
+	void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const;
 
 	ColumnPtr replicate(const Offsets_t & replicate_offsets) const override
 	{
@@ -457,18 +451,17 @@ public:
 		chars.reserve(n * DBMS_APPROX_STRING_SIZE);
 	}
 
-	void getExtremes(Field & min, Field & max) const override
-	{
-		min = String();
-		max = String();
-	}
-
-
 	Chars_t & getChars() { return chars; }
 	const Chars_t & getChars() const { return chars; }
 
 	Offsets_t & getOffsets() { return offsets; }
 	const Offsets_t & getOffsets() const { return offsets; }
+
+	void getExtremes(Field & min, Field & max) const override
+	{
+		min = String();
+		max = String();
+	}
 };
 
 

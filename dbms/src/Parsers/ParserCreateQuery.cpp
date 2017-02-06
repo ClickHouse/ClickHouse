@@ -102,12 +102,14 @@ bool ParserTypeInCastExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 
 bool ParserNameTypePairList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-	return ParserList(ParserPtr(new ParserNameTypePair), ParserPtr(new ParserString(",")), false).parse(pos, end, node, max_parsed_pos, expected);
+	return ParserList(std::make_unique<ParserNameTypePair>(), std::make_unique<ParserString>(","), false)
+		.parse(pos, end, node, max_parsed_pos, expected);
 }
 
 bool ParserColumnDeclarationList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-	return ParserList{ParserPtr{new ParserColumnDeclaration}, ParserPtr{new ParserString{","}}, false}.parse(pos, end, node, max_parsed_pos, expected);
+	return ParserList(std::make_unique<ParserColumnDeclaration>(), std::make_unique<ParserString>(","), false)
+		.parse(pos, end, node, max_parsed_pos, expected);
 }
 
 

@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <memory>
+#include <functional>
 
 #include <Poco/Process.h>
 #include <Poco/ThreadPool.h>
@@ -15,13 +16,14 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/FileChannel.h>
 #include <Poco/SyslogChannel.h>
+#include <Poco/Version.h>
 
 #include <common/Common.h>
 #include <common/logger_useful.h>
 
 #include <daemon/GraphiteWriter.h>
 
-#include <boost/optional.hpp>
+#include <experimental/optional>
 #include <zkutil/ZooKeeperHolder.h>
 
 
@@ -92,7 +94,7 @@ public:
 	}
 
 	/// return none if daemon doesn't exist, reference to the daemon otherwise
-	static boost::optional<BaseDaemon &> tryGetInstance() { return tryGetInstance<BaseDaemon>(); }
+	static std::experimental::optional<std::reference_wrapper<BaseDaemon>> tryGetInstance() { return tryGetInstance<BaseDaemon>(); }
 
 	/// Спит заданное количество секунд или до события wakeup
 	void sleep(double seconds);
@@ -121,7 +123,7 @@ public:
 
 	GraphiteWriter * getGraphiteWriter() { return graphite_writer.get(); }
 
-	boost::optional<size_t> getLayer() const
+	std::experimental::optional<size_t> getLayer() const
 	{
 		return layer;	/// layer выставляется в классе-наследнике BaseDaemonApplication.
 	}
@@ -141,12 +143,18 @@ protected:
 	virtual void handleSignal(int signal_id);
 
 	/// реализация обработки сигналов завершения через pipe не требует блокировки сигнала с помощью sigprocmask во всех потоках
-	void waitForTerminationRequest() override;
+	void waitForTerminationRequest()
+#if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
+	override
+#endif
+	;
 	/// thread safe
 	virtual void onInterruptSignals(int signal_id);
 
 	template <class Daemon>
-	static boost::optional<Daemon &> tryGetInstance();
+	static std::experimental::optional<std::reference_wrapper<Daemon>> tryGetInstance();
+
+	virtual std::string getDefaultCorePath() const;
 
 	std::unique_ptr<Poco::TaskManager> task_manager;
 
@@ -193,7 +201,7 @@ protected:
 
 	std::unique_ptr<GraphiteWriter> graphite_writer;
 
-	boost::optional<size_t> layer;
+	std::experimental::optional<size_t> layer;
 
 	std::mutex signal_handler_mutex;
 	std::condition_variable signal_event;
@@ -203,7 +211,7 @@ protected:
 
 
 template <class Daemon>
-boost::optional<Daemon &> BaseDaemon::tryGetInstance()
+std::experimental::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
 {
 	Daemon * ptr = nullptr;
 	try
@@ -216,7 +224,7 @@ boost::optional<Daemon &> BaseDaemon::tryGetInstance()
 	}
 
 	if (ptr)
-		return boost::optional<Daemon &>(*ptr);
+		return std::experimental::optional<std::reference_wrapper<Daemon>>(*ptr);
 	else
-		return boost::none;
+		return {};
 }

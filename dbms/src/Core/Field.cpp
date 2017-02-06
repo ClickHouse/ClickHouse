@@ -9,54 +9,6 @@
 #include <DB/Core/FieldVisitors.h>
 
 
-namespace mysqlxx
-{
-	std::ostream & operator<< (mysqlxx::EscapeManipResult res, const DB::Array & value)
-	{
-		return res.ostr << apply_visitor(DB::FieldVisitorToString(), value);
-	}
-
-	std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Array & value)
-	{
-		throw Poco::Exception("Cannot quote Array with mysqlxx::quote.");
-	}
-
-	std::istream & operator>> (mysqlxx::UnEscapeManipResult res, DB::Array & value)
-	{
-		throw Poco::Exception("Cannot unescape Array with mysqlxx::unescape.");
-	}
-
-	std::istream & operator>> (mysqlxx::UnQuoteManipResult res, DB::Array & value)
-	{
-		throw Poco::Exception("Cannot unquote Array with mysqlxx::unquote.");
-	}
-}
-
-
-namespace mysqlxx
-{
-	std::ostream & operator<< (mysqlxx::EscapeManipResult res, const DB::Tuple & value)
-	{
-		return res.ostr << apply_visitor(DB::FieldVisitorToString(), value);
-	}
-
-	std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Tuple & value)
-	{
-		throw Poco::Exception("Cannot quote Tuple with mysqlxx::quote.");
-	}
-
-	std::istream & operator>> (mysqlxx::UnEscapeManipResult res, DB::Tuple & value)
-	{
-		throw Poco::Exception("Cannot unescape Tuple with mysqlxx::unescape.");
-	}
-
-	std::istream & operator>> (mysqlxx::UnQuoteManipResult res, DB::Tuple & value)
-	{
-		throw Poco::Exception("Cannot unquote Tuple with mysqlxx::unquote.");
-	}
-}
-
-
 namespace DB
 {
 	inline void readBinary(Array & x, ReadBuffer & buf)
@@ -171,7 +123,7 @@ namespace DB
 
 	void writeText(const Array & x, WriteBuffer & buf)
 	{
-		DB::String res = apply_visitor(DB::FieldVisitorToString(), DB::Field(x));
+		DB::String res = applyVisitor(DB::FieldVisitorToString(), DB::Field(x));
 		buf.write(res.data(), res.size());
 	}
 }
@@ -293,7 +245,7 @@ namespace DB
 
 	void writeText(const Tuple & x, WriteBuffer & buf)
 	{
-		DB::String res = apply_visitor(DB::FieldVisitorToString(), DB::Field(x));
+		DB::String res = applyVisitor(DB::FieldVisitorToString(), DB::Field(x));
 		buf.write(res.data(), res.size());
 	}
 }

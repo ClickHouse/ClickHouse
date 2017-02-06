@@ -9,6 +9,19 @@
 #include <experimental/optional>
 
 
+namespace ProfileEvents
+{
+	extern const Event FileOpen;
+	extern const Event FileOpenFailed;
+	extern const Event ReadBufferAIORead;
+	extern const Event ReadBufferAIOReadBytes;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric Read;
+}
+
 namespace DB
 {
 
@@ -37,6 +50,7 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 	fd = ::open(filename.c_str(), open_flags);
 	if (fd == -1)
 	{
+		ProfileEvents::increment(ProfileEvents::FileOpenFailed);
 		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
 		throwFromErrno("Cannot open file " + filename, error_code);
 	}

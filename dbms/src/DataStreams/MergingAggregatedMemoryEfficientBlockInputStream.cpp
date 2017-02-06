@@ -4,6 +4,12 @@
 #include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 
 
+namespace CurrentMetrics
+{
+	extern const Metric QueryThread;
+}
+
+
 namespace DB
 {
 

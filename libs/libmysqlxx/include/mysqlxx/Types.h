@@ -1,11 +1,19 @@
 #pragma once
 
 #include <string>
-#include <mysql/mysql.h>
 #include <Poco/Types.h>
 
-#include <common/LocalDate.h>
-#include <common/LocalDateTime.h>
+struct st_mysql;
+using MYSQL = st_mysql;
+
+struct st_mysql_res;
+using MYSQL_RES = st_mysql_res;
+
+using MYSQL_ROW = char**;
+
+struct st_mysql_field;
+using MYSQL_FIELD = st_mysql_field;
+
 
 
 namespace mysqlxx

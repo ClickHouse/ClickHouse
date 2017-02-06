@@ -23,6 +23,15 @@ do
 		TEST='yes'
 		DEBUILD_NOSIGN_OPTIONS="-us -uc"
 		shift
+	elif [[ $1 == '--ignore-deps' ]]
+	then
+		DEBUILD_NODEPS_OPTIONS="-d"
+		shift
+	elif [[ $1 == '--version' ]]
+	then
+		gen_revision_author
+		git push
+		exit 0
 	else
 		echo "Unknown option $1"
 		exit 2
@@ -51,7 +60,7 @@ make_control "$CONTROL" "$DAEMONS"
 gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG" "$DAEMONS"
 
 # Build (only binary packages).
-debuild -e DAEMONS="${DAEMONS}" -e DISABLE_MONGODB -e GLIBC_COMPATIBILITY -e CC -e CXX -b ${DEBUILD_NOSIGN_OPTIONS}
+debuild -e DAEMONS="${DAEMONS}" -e ENABLE_MONGODB -e GLIBC_COMPATIBILITY -e CC -e CXX -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 
 if [[ $STANDALONE != 'yes' ]]
 then

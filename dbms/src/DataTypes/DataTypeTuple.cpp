@@ -27,12 +27,12 @@ std::string DataTypeTuple::getName() const
 
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
-	return *static_cast<ColumnTuple &>(column).getData().unsafeGetByPosition(idx).column.get();
+	return *static_cast<ColumnTuple &>(column).getData().getByPosition(idx).column.get();
 }
 
 static inline const IColumn & extractElementColumn(const IColumn & column, size_t idx)
 {
-	return *static_cast<const ColumnTuple &>(column).getData().unsafeGetByPosition(idx).column.get();
+	return *static_cast<const ColumnTuple &>(column).getData().getByPosition(idx).column.get();
 }
 
 
@@ -144,14 +144,14 @@ void DataTypeTuple::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) c
 	deserializeText(column, istr);
 }
 
-void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const
 {
 	writeChar('[', ostr);
 	for (const auto i : ext::range(0, ext::size(elems)))
 	{
 		if (i != 0)
 			writeChar(',', ostr);
-		elems[i]->serializeTextJSON(extractElementColumn(column, i), row_num, ostr);
+		elems[i]->serializeTextJSON(extractElementColumn(column, i), row_num, ostr, force_quoting_64bit_integers);
 	}
 	writeChar(']', ostr);
 }
@@ -216,18 +216,18 @@ void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 	});
 }
 
-void DataTypeTuple::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeTuple::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnTuple & real_column = static_cast<const ColumnTuple &>(column);
 	for (size_t i = 0, size = elems.size(); i < size; ++i)
-		NativeBlockOutputStream::writeData(*elems[i], real_column.getData().getByPosition(i).column, ostr, offset, limit);
+		NativeBlockOutputStream::writeData(*elems[i], real_column.getData().safeGetByPosition(i).column, ostr, offset, limit);
 }
 
-void DataTypeTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeTuple::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnTuple & real_column = static_cast<ColumnTuple &>(column);
 	for (size_t i = 0, size = elems.size(); i < size; ++i)
-		NativeBlockInputStream::readData(*elems[i], *real_column.getData().getByPosition(i).column, istr, limit);
+		NativeBlockInputStream::readData(*elems[i], *real_column.getData().safeGetByPosition(i).column, istr, limit);
 }
 
 ColumnPtr DataTypeTuple::createColumn() const

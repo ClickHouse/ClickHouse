@@ -18,6 +18,8 @@ if(MSVC AND NOT(MSVC_VERSION LESS 1400))
         PROPERTIES COMPILE_FLAGS "/bigobj")
 endif()
 
+include_directories (BEFORE include)
+
 add_library( "${LIBNAME}" ${LIB_MODE} ${SRCS} )
 set_target_properties( "${LIBNAME}"
     PROPERTIES
@@ -28,12 +30,7 @@ set_target_properties( "${LIBNAME}"
 
 target_link_libraries( "${LIBNAME}" PocoFoundation)
 
-if(ENABLE_DATA_SQLITE)
-    # SQlite3 is built in any case
-    add_subdirectory( SQLite )
-endif(ENABLE_DATA_SQLITE)
-
-if(ENABLE_DATA_MYSQL)
+if(POCO_ENABLE_DATA_MYSQL)
     find_package(MySQL)
     if(MYSQL_FOUND)
         include_directories("${MYSQL_INCLUDE_DIR}")
@@ -42,9 +39,9 @@ if(ENABLE_DATA_MYSQL)
     else()
         message(STATUS "MySQL Support Disabled - no MySQL library")
     endif(MYSQL_FOUND)
-endif(ENABLE_DATA_MYSQL)
+endif(POCO_ENABLE_DATA_MYSQL)
 
-if(ENABLE_DATA_ODBC)
+if(POCO_ENABLE_DATA_ODBC)
     find_package(ODBC)
     if(WIN32 AND NOT WINCE)
         set(ODBC_LIBRARIES "odbc32" "odbccp32")
@@ -59,9 +56,9 @@ if(ENABLE_DATA_ODBC)
             message(STATUS "ODBC Support Disabled - no ODBC runtime")
         endif()
     endif(WIN32 AND NOT WINCE)
-endif(ENABLE_DATA_ODBC)
+endif(POCO_ENABLE_DATA_ODBC)
 
-if (ENABLE_TESTS)
+if (POCO_ENABLE_TESTS)
     add_subdirectory(samples)
     add_subdirectory(testsuite)
 endif ()

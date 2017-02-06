@@ -1,81 +1,45 @@
 #pragma once
 
+#include <stddef.h>
 #include <cstdint>
 #include <utility>
 #include <atomic>
+#include <DB/Core/Types.h>
 
-
-/** Позволяет считать количество одновременно происходящих событий или текущее значение какой-либо метрики.
-  *  - для высокоуровневого профайлинга.
+/** Allows to count number of simultaneously happening processes or current value of some metric.
+  *  - for high-level profiling.
   *
-  * Также смотрите ProfileEvents.h
-  * В ProfileEvents считается общее количество произошедших (точечных) событий - например, сколько раз были выполнены запросы.
-  * В CurrentMetrics считается количество одновременных событий - например, сколько сейчас одновременно выполняется запросов,
-  *  или текущее значение метрики - например, величина отставания реплики в секундах.
+  * See also ProfileEvents.h
+  * ProfileEvents counts number of happened events - for example, how many times queries was executed.
+  * CurrentMetrics counts number of simultaneously happening events - for example, number of currently executing queries, right now,
+  *  or just current value of some metric - for example, replica delay in seconds.
+  *
+  * CurrentMetrics are updated instantly and are correct for any point in time.
+  * For periodically (asynchronously) updated metrics, see AsynchronousMetrics.h
   */
-
-#define APPLY_FOR_METRICS(M) \
-	M(Query) \
-	M(Merge) \
-	M(ReplicatedFetch) \
-	M(ReplicatedSend) \
-	M(ReplicatedChecks) \
-	M(BackgroundPoolTask) \
-	M(DiskSpaceReservedForMerge) \
-	M(DistributedSend) \
-	M(QueryPreempted) \
-	M(TCPConnection) \
-	M(HTTPConnection) \
-	M(InterserverConnection) \
-	M(OpenFileForRead) \
-	M(OpenFileForWrite) \
-	M(Read) \
-	M(Write) \
-	M(SendExternalTables) \
-	M(QueryThread) \
-	M(ReadonlyReplica) \
-	M(MemoryTracking) \
-	\
-	M(END)
 
 namespace CurrentMetrics
 {
-	/// Виды метрик.
-	enum Metric
-	{
-	#define M(NAME) NAME,
-		APPLY_FOR_METRICS(M)
-	#undef M
-	};
+	/// Metric identifier (index in array).
+	using Metric = size_t;
+	using Value = DB::Int64;
 
+	/// Get text description of metric by identifier. Returns statically allocated string.
+	const char * getDescription(Metric event);
 
-	/// Получить текстовое описание метрики по его enum-у.
-	inline const char * getDescription(Metric event)
-	{
-		static const char * descriptions[] =
-		{
-		#define M(NAME) #NAME,
-			APPLY_FOR_METRICS(M)
-		#undef M
-		};
+	/// Metric identifier -> current value of metric.
+	extern std::atomic<Value> values[];
 
-		return descriptions[event];
-	}
+	/// Get index just after last metric identifier.
+	Metric end();
 
-
-	using Value = int64_t;
-
-	/// Счётчики - текущие значения метрик.
-	extern std::atomic<Value> values[END];
-
-
-	/// Выставить значение указанной метрики.
+	/// Set value of specified metric.
 	inline void set(Metric metric, Value value)
 	{
 		values[metric] = value;
 	}
 
-	/// Прибавить величину к значению указанной метрики. Вы затем должны вычесть величину самостоятельно. Или см. ниже class Increment.
+	/// Add value for specified metric. You must subtract value later; or see class Increment below.
 	inline void add(Metric metric, Value value = 1)
 	{
 		values[metric] += value;
@@ -86,7 +50,7 @@ namespace CurrentMetrics
 		add(metric, -value);
 	}
 
-	/// На время жизни объекта, увеличивает указанное значение на указанную величину.
+	/// For lifetime of object, add amout for specified metric. Then subtract.
 	class Increment
 	{
 	private:
@@ -128,7 +92,7 @@ namespace CurrentMetrics
 			amount = new_amount;
 		}
 
-		/// Уменьшить значение раньше вызова деструктора.
+		/// Subtract value before destructor.
 		void destroy()
 		{
 			*what -= amount;
@@ -136,6 +100,3 @@ namespace CurrentMetrics
 		}
 	};
 }
-
-
-#undef APPLY_FOR_METRICS

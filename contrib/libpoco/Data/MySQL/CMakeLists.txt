@@ -21,6 +21,6 @@ set_target_properties( "${LIBNAME}"
 
 target_link_libraries( "${LIBNAME}" PocoFoundation PocoData ${MYSQL_LIB})
 
-if (ENABLE_TESTS)
+if (POCO_ENABLE_TESTS)
     add_subdirectory(testsuite)
 endif ()

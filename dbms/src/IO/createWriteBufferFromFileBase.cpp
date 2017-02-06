@@ -1,10 +1,26 @@
 #include <DB/IO/createWriteBufferFromFileBase.h>
 #include <DB/IO/WriteBufferFromFile.h>
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <DB/IO/WriteBufferAIO.h>
+#endif
 #include <DB/Common/ProfileEvents.h>
+
+
+namespace ProfileEvents
+{
+	extern const Event CreatedWriteBufferOrdinary;
+	extern const Event CreatedWriteBufferAIO;
+}
 
 namespace DB
 {
+
+#if defined(__APPLE__) || defined(__FreeBSD__)
+namespace ErrorCodes
+{
+        extern const int NOT_IMPLEMENTED;
+}
+#endif
 
 WriteBufferFromFileBase * createWriteBufferFromFileBase(const std::string & filename_, size_t estimated_size,
 		size_t aio_threshold, size_t buffer_size_, int flags_, mode_t mode, char * existing_memory_,
@@ -17,8 +33,12 @@ WriteBufferFromFileBase * createWriteBufferFromFileBase(const std::string & file
 	}
 	else
 	{
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 		ProfileEvents::increment(ProfileEvents::CreatedWriteBufferAIO);
 		return new WriteBufferAIO(filename_, buffer_size_, flags_, mode, existing_memory_);
+#else
+		throw Exception("AIO is not implemented yet on MacOS X", ErrorCodes::NOT_IMPLEMENTED);
+#endif
 	}
 }
 

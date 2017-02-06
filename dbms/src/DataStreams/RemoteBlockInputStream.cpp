@@ -2,6 +2,9 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Common/NetException.h>
+#include <DB/Interpreters/Context.h>
+#include <DB/Storages/IStorage.h>
+
 
 namespace DB
 {
@@ -31,7 +34,7 @@ RemoteBlockInputStream::RemoteBlockInputStream(ConnectionPool::Entry & pool_entr
 	init(settings_);
 }
 
-RemoteBlockInputStream::RemoteBlockInputStream(IConnectionPool * pool_, const String & query_,
+RemoteBlockInputStream::RemoteBlockInputStream(ConnectionPoolPtr & pool_, const String & query_,
 	const Settings * settings_, ThrottlerPtr throttler_, const Tables & external_tables_,
 	QueryProcessingStage::Enum stage_, const Context & context_)
 	: pool(pool_), query(query_), throttler(throttler_), external_tables(external_tables_),
@@ -176,7 +179,8 @@ Block RemoteBlockInputStream::readImpl()
 				break;
 
 			case Protocol::Server::ProfileInfo:
-				info.setFrom(packet.profile_info);
+				/// Use own (client-side) info about read bytes, it is more correct info than server-side one.
+				info.setFrom(packet.profile_info, true);
 				break;
 
 			case Protocol::Server::Totals:
@@ -238,7 +242,7 @@ void RemoteBlockInputStream::createMultiplexedConnections()
 	if (connection != nullptr)
 		multiplexed_connections = std::make_unique<MultiplexedConnections>(connection, multiplexed_connections_settings, throttler);
 	else if (pool != nullptr)
-		multiplexed_connections = std::make_unique<MultiplexedConnections>(pool, multiplexed_connections_settings, throttler,
+		multiplexed_connections = std::make_unique<MultiplexedConnections>(pool.get(), multiplexed_connections_settings, throttler,
 			append_extra_info, pool_mode);
 	else if (pools != nullptr)
 		multiplexed_connections = std::make_unique<MultiplexedConnections>(*pools, multiplexed_connections_settings, throttler,
@@ -267,7 +271,7 @@ void RemoteBlockInputStream::sendQuery()
 
 	established = true;
 
-	multiplexed_connections->sendQuery(query, "", stage, true);
+	multiplexed_connections->sendQuery(query, "", stage, &context.getClientInfo(), true);
 
 	established = false;
 	sent_query = true;

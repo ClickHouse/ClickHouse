@@ -13,4 +13,4 @@ EXPOSE 9000 8123 9009
 
 ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
 
-CMD ["sh", "-c", "/usr/bin/clickhouse-server --config=${CLICKHOUSE_CONFIG}"]
+ENTRYPOINT exec /usr/bin/clickhouse-server --config=${CLICKHOUSE_CONFIG}

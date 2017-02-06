@@ -15,7 +15,7 @@ StorageSystemEvents::StorageSystemEvents(const std::string & name_)
 	columns
 	{
 		{"event", 		std::make_shared<DataTypeString>()},
-		{"value",		std::make_shared<DataTypeUInt64>()},
+		{"value",		std::make_shared<DataTypeUInt64>()}
 	}
 {
 }
@@ -38,28 +38,16 @@ BlockInputStreams StorageSystemEvents::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	Block block;
+	Block block = getSampleBlock();
 
-	ColumnWithTypeAndName col_event;
-	col_event.name = "event";
-	col_event.type = std::make_shared<DataTypeString>();
-	col_event.column = std::make_shared<ColumnString>();
-	block.insert(col_event);
-
-	ColumnWithTypeAndName col_value;
-	col_value.name = "value";
-	col_value.type = std::make_shared<DataTypeUInt64>();
-	col_value.column = std::make_shared<ColumnUInt64>();
-	block.insert(col_value);
-
-	for (size_t i = 0; i < ProfileEvents::END; ++i)
+	for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
 	{
 		UInt64 value = ProfileEvents::counters[i];
 
 		if (0 != value)
 		{
-			col_event.column->insert(String(ProfileEvents::getDescription(ProfileEvents::Event(i))));
-			col_value.column->insert(value);
+			block.getByPosition(0).column->insert(String(ProfileEvents::getDescription(ProfileEvents::Event(i))));
+			block.getByPosition(1).column->insert(value);
 		}
 	}
 

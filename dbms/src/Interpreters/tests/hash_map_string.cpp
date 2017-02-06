@@ -93,12 +93,12 @@ struct FastHash64
 		const char * buf = x.data();
 		size_t len = x.size;
 
-		const uint64_t    m = 0x880355f21e6d1965ULL;
-		const uint64_t *pos = reinterpret_cast<const uint64_t *>(buf);
-		const uint64_t *end = pos + (len / 8);
+		const UInt64    m = 0x880355f21e6d1965ULL;
+		const UInt64 *pos = reinterpret_cast<const UInt64 *>(buf);
+		const UInt64 *end = pos + (len / 8);
 		const unsigned char *pos2;
-		uint64_t h = len * m;
-		uint64_t v;
+		UInt64 h = len * m;
+		UInt64 v;
 
 		while (pos != end) {
 			v = *pos++;
@@ -110,13 +110,13 @@ struct FastHash64
 		v = 0;
 
 		switch (len & 7) {
-		case 7: v ^= static_cast<uint64_t>(pos2[6]) << 48;
-		case 6: v ^= static_cast<uint64_t>(pos2[5]) << 40;
-		case 5: v ^= static_cast<uint64_t>(pos2[4]) << 32;
-		case 4: v ^= static_cast<uint64_t>(pos2[3]) << 24;
-		case 3: v ^= static_cast<uint64_t>(pos2[2]) << 16;
-		case 2: v ^= static_cast<uint64_t>(pos2[1]) << 8;
-		case 1: v ^= static_cast<uint64_t>(pos2[0]);
+		case 7: v ^= static_cast<UInt64>(pos2[6]) << 48;
+		case 6: v ^= static_cast<UInt64>(pos2[5]) << 40;
+		case 5: v ^= static_cast<UInt64>(pos2[4]) << 32;
+		case 4: v ^= static_cast<UInt64>(pos2[3]) << 24;
+		case 3: v ^= static_cast<UInt64>(pos2[2]) << 16;
+		case 2: v ^= static_cast<UInt64>(pos2[1]) << 8;
+		case 1: v ^= static_cast<UInt64>(pos2[0]);
 			h ^= mix(v);
 			h *= m;
 		}
@@ -130,11 +130,13 @@ struct CrapWow
 {
 	size_t operator() (CompactStringRef x) const
 	{
+#if __x86_64__
 		const char * key = x.data();
 		size_t len = x.size;
 		size_t seed = 0;
 
 		const UInt64 m = 0x95b47aa3355ba1a1, n = 0x8a970be7488fda55;
+
 	    UInt64 hash;
 	    // 3 = m, 4 = n
 	    // r12 = h, r13 = k, ecx = seed, r12 = key
@@ -192,6 +194,9 @@ struct CrapWow
 	        : "%r12", "%r13", "%r14", "%r15", "cc"
 	    );
 	    return hash;
+#else
+	    return 0;
+#endif
 	}
 };
 

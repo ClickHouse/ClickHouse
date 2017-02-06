@@ -10,6 +10,15 @@
 #include <DB/IO/copyData.h>
 
 
+namespace DB
+{
+	namespace ErrorCodes
+	{
+		extern const int TOO_LARGE_SIZE_COMPRESSED;
+	}
+}
+
+
 /// Выводит размеры разжатых и сжатых блоков для сжатого файла.
 void stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 {
@@ -44,7 +53,7 @@ int main(int argc, char ** argv)
 	boost::program_options::options_description desc("Allowed options");
 	desc.add_options()
 		("help,h", "produce help message")
-		("d,decompress", "decompress")
+		("decompress,d", "decompress")
 		("block-size,b", boost::program_options::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
 		("hc", "use LZ4HC instead of LZ4")
 	#ifdef USE_QUICKLZ
@@ -66,7 +75,7 @@ int main(int argc, char ** argv)
 
 	try
 	{
-		bool decompress = options.count("d");
+		bool decompress = options.count("decompress");
 
 	#ifdef USE_QUICKLZ
 		bool use_qlz = options.count("qlz");

@@ -8,12 +8,15 @@ add_executable (multi_version multi_version.cpp)
 add_executable (json_test json_test.cpp)
 add_executable (strong_typedef strong_typedef.cpp)
 
-target_link_libraries (date_lut_init common libicui18n.a libicuuc.a libicudata.a dl)
-target_link_libraries (date_lut2 common libicui18n.a libicuuc.a libicudata.a dl)
-target_link_libraries (date_lut3 common libicui18n.a libicuuc.a libicudata.a dl)
-target_link_libraries (date_lut4 common libicui18n.a libicuuc.a libicudata.a dl)
-target_link_libraries (multi_version dbms libboost_system.a rt)
-target_link_libraries (json_test dbms libboost_system.a rt)
+
+set(PLATFORM_LIBS ${CMAKE_DL_LIBS})
+
+target_link_libraries (date_lut_init common ${ICU_LIBS} ${PLATFORM_LIBS})
+target_link_libraries (date_lut2 common ${ICU_LIBS} ${PLATFORM_LIBS})
+target_link_libraries (date_lut3 common ${ICU_LIBS} ${PLATFORM_LIBS})
+target_link_libraries (date_lut4 common ${ICU_LIBS} ${PLATFORM_LIBS})
+target_link_libraries (multi_version dbms ${Boost_SYSTEM_LIBRARY} ${RT_LIBRARIES})
+target_link_libraries (json_test dbms ${Boost_SYSTEM_LIBRARY} ${RT_LIBRARIES})
 target_link_libraries (strong_typedef common)
 
 add_check (json_test)

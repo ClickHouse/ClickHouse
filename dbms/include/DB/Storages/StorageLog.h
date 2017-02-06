@@ -9,6 +9,7 @@
 
 #include <DB/Storages/IStorage.h>
 #include <DB/Common/FileChecker.h>
+#include <DB/Common/escapeForFileName.h>
 
 
 namespace DB
@@ -102,17 +103,6 @@ protected:
 
 	Poco::RWLock rwlock;
 
-	/// Название виртуального столбца, отвечающего за имя таблицы, из которой идет чтение. (Например "_table")
-	/// По умолчанию виртуальный столбец не поддерживается, но, например, он поддерживается в StorageChunks
-	String _table_column_name;
-
-	/// По номеру засечки получить имя таблицы, из которой идет чтение и номер последней засечки из этой таблицы.
-	/// По умолчанию виртуальный столбец не поддерживается, а значит при попытке его чтения нужно выбросить исключение.
-	virtual std::pair<String, size_t> getTableFromMark(size_t mark) const
-	{
-		throw Exception("There is no column " + _table_column_name + " in table " + getTableName(), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-	}
-
 	StorageLog(
 		const std::string & path_,
 		const std::string & name_,
@@ -133,6 +123,7 @@ protected:
 	BlockInputStreams read(
 		size_t from_mark,
 		size_t to_mark,
+		size_t from_null_mark,
 		const Names & column_names,
 		ASTPtr query,
 		const Context & context,
@@ -145,15 +136,22 @@ private:
 	Files_t files; /// name -> data
 
 	Names column_names; /// column_index -> name
+	Names null_map_filenames;
 
 	Poco::File marks_file;
+	Poco::File null_marks_file;
+
+	void loadMarksImpl(bool load_null_marks);
 
 	/// Порядок добавления файлов не должен меняться: он соответствует порядку столбцов в файле с засечками.
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 
 	bool loaded_marks;
+	bool has_nullable_columns = false;
 
 	size_t max_compress_block_size;
+	size_t file_count = 0;
+	size_t null_file_count = 0;
 
 protected:
 	FileChecker file_checker;
@@ -167,6 +165,8 @@ private:
 	  * Вернуть первую попавшуюся группу засечек, в которых указано количество строчек, а не внутренностей массивов.
 	  */
 	const Marks & getMarksWithRealRowCount() const;
+
+	std::string getFullPath() const { return path + escapeForFileName(name) + '/';}
 };
 
 }

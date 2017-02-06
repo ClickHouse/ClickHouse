@@ -44,6 +44,12 @@ public:
 	  */
 	ConfigurationPtr loadConfig(const std::string & path);
 
+public:
+
+	using Files = std::list<std::string>;
+
+	static Files getConfigMergeFiles(const std::string & config_path);
+
 private:
 	Logger * log;
 	Poco::AutoPtr<Poco::Channel> channel_ptr;

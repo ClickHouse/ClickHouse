@@ -234,13 +234,13 @@ void FlatDictionary::loadData()
 
 	while (const auto block = stream->read())
 	{
-		const auto & id_column = *block.getByPosition(0).column;
+		const auto & id_column = *block.safeGetByPosition(0).column;
 
 		element_count += id_column.size();
 
 		for (const auto attribute_idx : ext::range(0, attributes.size()))
 		{
-			const auto & attribute_column = *block.getByPosition(attribute_idx + 1).column;
+			const auto & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
 			auto & attribute = attributes[attribute_idx];
 
 			for (const auto row_idx : ext::range(0, id_column.size()))
@@ -377,7 +377,6 @@ void FlatDictionary::getItemsImpl(
 {
 	const auto & attr = *std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
 	const auto rows = ext::size(ids);
-	using null_value_type = std::conditional_t<std::is_same<AttributeType, StringRef>::value, String, AttributeType>;
 
 	for (const auto row : ext::range(0, rows))
 	{

@@ -4,6 +4,8 @@
 #include <DB/IO/ReadBufferFromHTTP.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <Poco/File.h>
+
 
 namespace DB
 {
@@ -71,7 +73,7 @@ Status Client::check(const std::string & part_name, const std::string & hash,
 		{"hash", hash}
 	};
 
-	ReadBufferFromHTTP in{to_location.host, to_location.port, params};
+	ReadBufferFromHTTP in{to_location.host, to_location.port, "", params};
 
 	UInt8 val;
 	readBinary(val, in);

@@ -1,3 +1,5 @@
+include_directories (${CMAKE_SOURCE_DIR}/dbms/include)
+
 add_executable(corrector_utf8 corrector_utf8.cpp)
 
 # Link the executable to the library.

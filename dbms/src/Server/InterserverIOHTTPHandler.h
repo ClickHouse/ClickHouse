@@ -4,6 +4,11 @@
 #include <DB/Common/CurrentMetrics.h>
 
 
+namespace CurrentMetrics
+{
+	extern const Metric InterserverConnection;
+}
+
 namespace DB
 {
 
@@ -16,7 +21,7 @@ public:
 	{
 	}
 
-	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response);
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
 private:
 	Server & server;

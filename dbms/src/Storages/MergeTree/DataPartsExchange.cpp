@@ -1,7 +1,16 @@
 #include <DB/Storages/MergeTree/DataPartsExchange.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <DB/Common/NetException.h>
+#include <DB/IO/ReadBufferFromHTTP.h>
+#include <Poco/File.h>
 
+
+namespace CurrentMetrics
+{
+	extern const Metric ReplicatedSend;
+	extern const Metric ReplicatedFetch;
+}
 
 namespace DB
 {
@@ -104,6 +113,11 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
 		part->checksums.checkEqual(data_checksums, false);
 	}
+	catch (const NetException & e)
+	{
+		/// Network error or error on remote side. No need to enquue part for check.
+		throw;
+	}
 	catch (const Exception & e)
 	{
 		if (e.code() != ErrorCodes::ABORTED)
@@ -167,7 +181,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
 		{"compress", "false"}
 	};
 
-	ReadBufferFromHTTP in(host, port, params);
+	ReadBufferFromHTTP in(host, port, "", params);
 
 	String full_part_name = String(to_detached ? "detached/" : "") + "tmp_" + part_name;
 	String part_path = data.getFullPath() + full_part_name + "/";

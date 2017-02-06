@@ -40,18 +40,18 @@ SingleBarrier::SingleBarrier(GetZooKeeper get_zookeeper_, const std::string & pa
 	Ops ops;
 	auto acl = zookeeper->getDefaultACL();
 
-	ops.push_back(new zkutil::Op::Create{path, "", acl, CreateMode::Persistent});
+	ops.emplace_back(std::make_unique<zkutil::Op::Create>(path, "", acl, CreateMode::Persistent));
 
 	/// List of tokens.
-	ops.push_back(new zkutil::Op::Create{path + "/tokens", "", acl, CreateMode::Persistent});
+	ops.emplace_back(std::make_unique<zkutil::Op::Create>(path + "/tokens", "", acl, CreateMode::Persistent));
 
 	/// Tokens are tagged so that we can differentiate obsolete tokens that may
 	/// be deleted from those that are currently used to cross this barrier.
-	ops.push_back(new zkutil::Op::Create{path + "/tag", "0", acl, CreateMode::Persistent});
+	ops.emplace_back(std::make_unique<zkutil::Op::Create>(path + "/tag", "0", acl, CreateMode::Persistent));
 
 	/// We protect some areas of the code in order to reliably determine which
 	/// token has unblocked this barrier.
-	ops.push_back(new zkutil::Op::Create{path + "/lock", "", acl, CreateMode::Persistent});
+	ops.emplace_back(std::make_unique<zkutil::Op::Create>(path + "/lock", "", acl, CreateMode::Persistent));
 
 	int32_t code = zookeeper->tryMulti(ops);
 	if ((code != ZOK) && (code != ZNODEEXISTS))
@@ -63,7 +63,7 @@ void SingleBarrier::setCancellationHook(CancellationHook cancellation_hook_)
 	cancellation_hook = cancellation_hook_;
 }
 
-void SingleBarrier::enter(uint64_t timeout)
+void SingleBarrier::enter(UInt64 timeout)
 {
 	__sync_synchronize();
 

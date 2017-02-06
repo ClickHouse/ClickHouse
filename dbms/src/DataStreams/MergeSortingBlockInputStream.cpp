@@ -6,6 +6,12 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ExternalSortWritePart;
+	extern const Event ExternalSortMerge;
+}
+
 namespace DB
 {
 
@@ -18,7 +24,7 @@ static void removeConstantsFromBlock(Block & block)
 	size_t i = 0;
 	while (i < columns)
 	{
-		if (block.unsafeGetByPosition(i).column->isConst())
+		if (block.getByPosition(i).column->isConst())
 		{
 			block.erase(i);
 			--columns;
@@ -36,7 +42,7 @@ static void removeConstantsFromSortDescription(const Block & sample_block, SortD
 			if (!elem.column_name.empty())
 				return sample_block.getByName(elem.column_name).column->isConst();
 			else
-				return sample_block.getByPosition(elem.column_number).column->isConst();
+				return sample_block.safeGetByPosition(elem.column_number).column->isConst();
 		}), description.end());
 }
 
@@ -45,12 +51,12 @@ static void removeConstantsFromSortDescription(const Block & sample_block, SortD
   */
 static void enrichBlockWithConstants(Block & block, const Block & sample_block)
 {
-	size_t rows = block.rowsInFirstColumn();
+	size_t rows = block.rows();
 	size_t columns = sample_block.columns();
 
 	for (size_t i = 0; i < columns; ++i)
 	{
-		const auto & col_type_name = sample_block.unsafeGetByPosition(i);
+		const auto & col_type_name = sample_block.getByPosition(i);
 		if (col_type_name.column->isConst())
 			block.insert(i, {col_type_name.column->cloneResized(rows), col_type_name.type, col_type_name.name});
 	}
@@ -149,7 +155,7 @@ MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
 	Blocks nonempty_blocks;
 	for (const auto & block : blocks)
 	{
-		if (block.rowsInFirstColumn() == 0)
+		if (block.rows() == 0)
 			continue;
 
 		nonempty_blocks.push_back(block);
@@ -198,7 +204,7 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCur
 
 	ColumnPlainPtrs merged_columns;
 	for (size_t i = 0; i < num_columns; ++i)	/// TODO: reserve
-		merged_columns.push_back(merged.getByPosition(i).column.get());
+		merged_columns.push_back(merged.safeGetByPosition(i).column.get());
 
 	/// Take rows from queue in right order and push to 'merged'.
 	size_t merged_rows = 0;

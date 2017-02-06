@@ -12,6 +12,11 @@ namespace DB
 	}
 }
 
+namespace ProfileEvents
+{
+	extern const Event ZooKeeperExceptions;
+}
+
 
 namespace zkutil
 {
@@ -54,7 +59,7 @@ public:
 	{
 		return code == ZCONNECTIONLOSS || code == ZOPERATIONTIMEOUT;
 	}
-	
+
 	const int32_t code;
 
 private:

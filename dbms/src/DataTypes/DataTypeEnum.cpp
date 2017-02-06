@@ -1,6 +1,7 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/DataTypes/DataTypeEnum.h>
 
+#include <limits>
 
 namespace DB
 {
@@ -170,7 +171,7 @@ void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & is
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
 {
 	writeJSONString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
@@ -204,7 +205,7 @@ void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeBinary(
+void DataTypeEnum<Type>::serializeBinaryBulk(
 	const IColumn & column, WriteBuffer & ostr, const size_t offset, size_t limit) const
 {
 	const auto & x = typeid_cast<const ColumnType &>(column).getData();
@@ -217,7 +218,7 @@ void DataTypeEnum<Type>::serializeBinary(
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeBinary(
+void DataTypeEnum<Type>::deserializeBinaryBulk(
 	IColumn & column, ReadBuffer & istr, const size_t limit, const double avg_value_size_hint) const
 {
 	auto & x = typeid_cast<ColumnType &>(column).getData();
@@ -237,6 +238,49 @@ template <typename Type>
 Field DataTypeEnum<Type>::getDefault() const
 {
 	return typename NearestFieldType<FieldType>::Type(values.front().second);
+}
+
+template <typename Type>
+static void checkOverflow(Int64 value)
+{
+	if (!(std::numeric_limits<Type>::min() <= value && value <= std::numeric_limits<Type>::max()))
+		throw Exception("DataTypeEnum: Unexpected value " + toString(value), ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <typename Type>
+Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
+{
+	if (value_or_name.getType() == Field::Types::String)
+	{
+		getValue(value_or_name.get<String>()); /// Check correctness
+		return value_or_name.get<String>();
+	}
+	else if (value_or_name.getType() == Field::Types::Int64)
+	{
+		Int64 value = value_or_name.get<Int64>();
+		checkOverflow<Type>(value);
+		return getNameForValue(static_cast<Type>(value)).toString();
+	}
+	else
+		throw Exception(String("DataTypeEnum: Unsupported type of field ") + value_or_name.getTypeName(), ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <typename Type>
+Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
+{
+	if (value_or_name.getType() == Field::Types::String)
+	{
+		return static_cast<Int64>(getValue(value_or_name.get<String>()));
+	}
+	else if (value_or_name.getType() == Field::Types::Int64)
+	{
+		Int64 value = value_or_name.get<Int64>();
+		checkOverflow<Type>(value);
+		getNameForValue(static_cast<Type>(value)); /// Check correctness
+		return value;
+	}
+	else
+		throw Exception(String("DataTypeEnum: Unsupported type of field ") + value_or_name.getTypeName(), ErrorCodes::BAD_TYPE_OF_FIELD);
 }
 
 

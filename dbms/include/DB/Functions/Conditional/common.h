@@ -1,7 +1,12 @@
 #pragma once
 
+#include <DB/Core/Types.h>
+
 namespace DB
 {
+
+class IDataType;
+using DataTypePtr = std::shared_ptr<IDataType>;
 
 namespace Conditional
 {
@@ -15,6 +20,7 @@ struct Branch
 	size_t index;
 	DataTypePtr type;
 	bool is_const;
+	UInt8 category;
 };
 
 using Branches = std::vector<Branch>;

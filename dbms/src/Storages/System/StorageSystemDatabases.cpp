@@ -3,6 +3,7 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Databases/IDatabase.h>
 #include <DB/Storages/System/StorageSystemDatabases.h>
+#include <DB/Interpreters/Context.h>
 
 
 namespace DB

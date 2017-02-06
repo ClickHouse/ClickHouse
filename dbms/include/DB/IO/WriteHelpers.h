@@ -7,10 +7,9 @@
 
 #include <common/Common.h>
 #include <common/DateLUT.h>
+#include <common/LocalDate.h>
+#include <common/LocalDateTime.h>
 #include <common/find_first_symbols.h>
-
-#include <mysqlxx/Row.h>
-#include <mysqlxx/Null.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
@@ -519,7 +518,7 @@ inline void writeDateText(LocalDate date, WriteBuffer & buf)
 
 /// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
 template <char date_delimeter = '-', char time_delimeter = ':'>
-inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
+inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
 	char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 
@@ -529,7 +528,6 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 		return;
 	}
 
-	const auto & date_lut = DateLUT::instance();
 	const auto & values = date_lut.getValues(datetime);
 
 	s[0] += values.year / 1000;
@@ -541,7 +539,7 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 	s[8] += values.day_of_month / 10;
 	s[9] += values.day_of_month % 10;
 
-	UInt8 hour = date_lut.toHourInaccurate(datetime);
+	UInt8 hour = date_lut.toHour(datetime);
 	UInt8 minute = date_lut.toMinuteInaccurate(datetime);
 	UInt8 second = date_lut.toSecondInaccurate(datetime);
 
@@ -580,25 +578,6 @@ inline void writeDateTimeText(LocalDateTime datetime, WriteBuffer & buf)
 }
 
 
-/// Вывести mysqlxx::Row в tab-separated виде
-inline void writeEscapedRow(const mysqlxx::Row & row, WriteBuffer & buf)
-{
-	for (size_t i = 0; i < row.size(); ++i)
-	{
-		if (i != 0)
-			buf.write('\t');
-
-		if (unlikely(row[i].isNull()))
-		{
-			buf.write("\\N", 2);
-			continue;
-		}
-
-		writeAnyEscapedString<'\''>(row[i].data(), row[i].data() + row[i].length(), buf);
-	}
-}
-
-
 /// Методы вывода в бинарном виде
 inline void writeBinary(const UInt8 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt16 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
@@ -608,6 +587,10 @@ inline void writeBinary(const Int8 & x, 	WriteBuffer & buf) { writePODBinary(x, 
 inline void writeBinary(const Int16 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Int32 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Int64 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
+#ifdef __APPLE__
+inline void writeBinary(const int64_t & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const uint64_t & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
+#endif
 inline void writeBinary(const Float32 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Float64 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const String & x,	WriteBuffer & buf) { writeStringBinary(x, buf); }
@@ -628,6 +611,10 @@ inline void writeText(const Int8 & x, 		WriteBuffer & buf) { writeIntText(x, buf
 inline void writeText(const Int16 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
 inline void writeText(const Int32 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
 inline void writeText(const Int64 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
+#ifdef __APPLE__
+inline void writeText(const int64_t & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+inline void writeText(const uint64_t & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
+#endif
 inline void writeText(const Float32 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
 inline void writeText(const Float64 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
 inline void writeText(const String & x,		WriteBuffer & buf) { writeEscapedString(x, buf); }
@@ -640,15 +627,6 @@ inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEsc
 inline void writeText(const VisitID_t & x, 	WriteBuffer & buf) { writeIntText(static_cast<const UInt64 &>(x), buf); }
 inline void writeText(const LocalDate & x,		WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x,	WriteBuffer & buf) { writeDateTimeText(x, buf); }
-
-template<typename T>
-inline void writeText(const mysqlxx::Null<T> & x,	WriteBuffer & buf)
-{
-	if (x.isNull())
-		writeCString("\\N", buf);
-	else
-		writeText(static_cast<const T &>(x), buf);
-}
 
 
 /// Строки, даты, даты-с-временем - в одинарных кавычках с C-style эскейпингом. Числа - без.
@@ -682,15 +660,6 @@ inline void writeQuoted(const LocalDateTime & x,	WriteBuffer & buf)
 	writeChar('\'', buf);
 	writeDateTimeText(x, buf);
 	writeChar('\'', buf);
-}
-
-template <typename T>
-inline void writeQuoted(const mysqlxx::Null<T> & x,		WriteBuffer & buf)
-{
-	if (x.isNull())
-		writeCString("NULL", buf);
-	else
-		writeText(static_cast<const T &>(x), buf);
 }
 
 

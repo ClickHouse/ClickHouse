@@ -13,7 +13,7 @@ struct CallbackState
 	std::string path;
 	std::list<CallbackState>::const_iterator it;
 	std::list<std::list<CallbackState>::const_iterator> children;
-	int64_t dataLength = 0;
+	Int64 dataLength = 0;
 };
 
 using CallbackStates = std::list<CallbackState>;
@@ -67,12 +67,12 @@ void process(CallbackState & state)
 	zoo_awget_children2(zookeeper->getHandle(), state.path.data(), nullptr, nullptr, callback, &state);
 }
 
-typedef std::pair<int64_t, int64_t> NodesBytes;
+typedef std::pair<Int64, Int64> NodesBytes;
 
 NodesBytes printTree(const CallbackState & state)
 {
-	int64_t nodes = 1;
-	int64_t bytes = state.dataLength;
+	Int64 nodes = 1;
+	Int64 bytes = state.dataLength;
 	for (auto child : state.children)
 	{
 		NodesBytes nodesBytes = printTree(*child);

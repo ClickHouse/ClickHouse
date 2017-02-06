@@ -9,6 +9,8 @@
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeNull.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
@@ -18,6 +20,7 @@
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ParserEnumElement.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/DataTypes/DataTypeEnum.h>
@@ -55,6 +58,7 @@ DataTypeFactory::DataTypeFactory()
 		{"Date",				std::make_shared<DataTypeDate>()},
 		{"DateTime",			std::make_shared<DataTypeDateTime>()},
 		{"String",				std::make_shared<DataTypeString>()},
+		{"Null",				std::make_shared<DataTypeNull>()}
 	}
 {
 }
@@ -79,7 +83,7 @@ inline DataTypePtr parseEnum(const String & name, const String & base_name, cons
 
 		if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
 			throw Exception{
-				"Value " + apply_visitor(FieldVisitorToString{}, e.value) + " for element '" + e.name + "' exceeds range of " + base_name,
+				"Value " + applyVisitor(FieldVisitorToString{}, e.value) + " for element '" + e.name + "' exceeds range of " + base_name,
 				ErrorCodes::ARGUMENT_OUT_OF_BOUND
 			};
 
@@ -105,8 +109,21 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 		String base_name(name.data() + matches[1].offset, matches[1].length);
 		String parameters(name.data() + matches[2].offset, matches[2].length);
 
+		if (base_name == "Nullable")
+			return std::make_shared<DataTypeNullable>(get(parameters));
+
 		if (base_name == "Array")
-			return std::make_shared<DataTypeArray>(get(parameters));
+		{
+			if (parameters == "Null")
+			{
+				/// Special case: Array(Null) is actually Array(Nullable(UInt8)).
+				return std::make_shared<DataTypeArray>(
+					std::make_shared<DataTypeNullable>(
+						std::make_shared<DataTypeUInt8>()));
+			}
+			else
+				return std::make_shared<DataTypeArray>(get(parameters));
+		}
 
 		if (base_name == "AggregateFunction")
 		{

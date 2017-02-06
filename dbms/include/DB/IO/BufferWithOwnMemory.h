@@ -9,13 +9,20 @@
 #include <DB/Core/Defines.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event IOBufferAllocs;
+	extern const Event IOBufferAllocBytes;
+}
+
+
 namespace DB
 {
 
 
-/** Замена std::vector<char> для использования в буферах.
-  * Отличается тем, что не делает лишний memset. (И почти ничего не делает.)
-  * Также можно попросить выделять выровненный кусок памяти.
+/** Replacement for std::vector<char> to use in buffers.
+  * Differs in that is doesn't do unneeded memset. (And also tries to do as little as possible.)
+  * Also allows to allocate aligned piece of memory (to use with O_DIRECT, for example).
   */
 struct Memory : boost::noncopyable, Allocator<false>
 {
@@ -26,7 +33,7 @@ struct Memory : boost::noncopyable, Allocator<false>
 
     Memory() {}
 
-	/// Если alignment != 0, то будет выделяться память, выровненная на alignment.
+	/// If alignment != 0, then allocate memory aligned to specified value.
 	Memory(size_t size_, size_t alignment_ = 0) : m_capacity(size_), m_size(m_capacity), alignment(alignment_)
 	{
 		alloc();
@@ -73,8 +80,7 @@ struct Memory : boost::noncopyable, Allocator<false>
 		else
 		{
 			new_size = align(new_size, alignment);
-			/// @todo pointer to void can be converted to pointer to any type with static_cast by ISO C++, reinterpret_cast has no advantages
-			m_data = reinterpret_cast<char *>(Allocator::realloc(m_data, m_capacity, new_size, alignment));
+			m_data = static_cast<char *>(Allocator::realloc(m_data, m_capacity, new_size, alignment));
 			m_capacity = new_size;
 			m_size = m_capacity;
 		}
@@ -101,8 +107,7 @@ private:
 		ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, m_capacity);
 
 		size_t new_capacity = align(m_capacity, alignment);
-		/// @todo pointer to void can be converted to pointer to any type with static_cast by ISO C++, reinterpret_cast has no advantages
-		m_data = reinterpret_cast<char *>(Allocator::alloc(new_capacity, alignment));
+		m_data = static_cast<char *>(Allocator::alloc(new_capacity, alignment));
 		m_capacity = new_capacity;
 		m_size = m_capacity;
 	}
@@ -112,15 +117,14 @@ private:
 		if (!m_data)
 			return;
 
-		/// @todo pointer to any type can be implicitly converted to pointer to void, no cast required
-		Allocator::free(reinterpret_cast<void *>(m_data), m_capacity);
-		m_data = nullptr;	/// Чтобы избежать double free, если последующий вызов alloc кинет исключение.
+		Allocator::free(m_data, m_capacity);
+		m_data = nullptr;	/// To avoid double free if next alloc will throw an exception.
 	}
 };
 
 
-/** Буфер, который может сам владеть своим куском памяти для работы.
-  * Аргумент шаблона - ReadBuffer или WriteBuffer
+/** Buffer that could own its working memory.
+  * Template parameter: ReadBuffer or WriteBuffer
   */
 template <typename Base>
 class BufferWithOwnMemory : public Base
@@ -128,7 +132,7 @@ class BufferWithOwnMemory : public Base
 protected:
 	Memory memory;
 public:
-	/// Если передать не-NULL existing_memory, то буфер не будет создавать свой кусок памяти, а будет использовать существующий (и не будет им владеть).
+	/// If non-nullptr 'existing_memory' is passed, then buffer will not create its own memory and will use existing_memory without ownership.
 	BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
 		: Base(nullptr, 0), memory(existing_memory ? 0 : size, alignment)
 	{

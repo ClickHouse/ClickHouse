@@ -14,7 +14,7 @@
 
 namespace UnicodeBar
 {
-	inline double getWidth(int64_t x, int64_t min, int64_t max, double max_width)
+	inline double getWidth(Int64 x, Int64 min, Int64 max, double max_width)
 	{
 		if (x <= min)
 			return 0;

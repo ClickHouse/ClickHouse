@@ -6,10 +6,25 @@
 #include <DB/Storages/StorageBuffer.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Common/setThreadName.h>
+#include <DB/Common/CurrentMetrics.h>
+#include <common/logger_useful.h>
 #include <Poco/Ext/ThreadNumber.h>
 
 #include <ext/range.hpp>
+
+
+namespace ProfileEvents
+{
+	extern const Event StorageBufferErrorOnFlush;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric StorageBufferRows;
+	extern const Metric StorageBufferBytes;
+}
 
 
 namespace DB
@@ -87,7 +102,7 @@ protected:
 
 		std::lock_guard<std::mutex> lock(buffer.mutex);
 
-		if (!buffer.data.rowsInFirstColumn())
+		if (!buffer.data.rows())
 			return res;
 
 		for (const auto & name : column_names)
@@ -157,17 +172,50 @@ static void appendBlock(const Block & from, Block & to)
 	if (!to)
 		throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
 
+	from.checkNumberOfRows();
+	to.checkNumberOfRows();
+
 	size_t rows = from.rows();
-	for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
+	size_t bytes = from.bytes();
+
+	CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
+	CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, bytes);
+
+	size_t old_rows = to.rows();
+
+	try
 	{
-		const IColumn & col_from = *from.getByPosition(column_no).column.get();
-		IColumn & col_to = *to.getByPosition(column_no).column.get();
+		for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
+		{
+			const IColumn & col_from = *from.safeGetByPosition(column_no).column.get();
+			IColumn & col_to = *to.safeGetByPosition(column_no).column.get();
 
-		if (col_from.getName() != col_to.getName())
-			throw Exception("Cannot append block to another: different type of columns at index " + toString(column_no)
-				+ ". Block 1: " + from.dumpStructure() + ". Block 2: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAS_DIFFERENT_STRUCTURE);
+			if (col_from.getName() != col_to.getName())
+				throw Exception("Cannot append block to another: different type of columns at index " + toString(column_no)
+					+ ". Block 1: " + from.dumpStructure() + ". Block 2: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAS_DIFFERENT_STRUCTURE);
 
-		col_to.insertRangeFrom(col_from, 0, rows);
+			col_to.insertRangeFrom(col_from, 0, rows);
+		}
+	}
+	catch (...)
+	{
+		/// Rollback changes.
+		try
+		{
+			for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
+			{
+				ColumnPtr & col_to = to.safeGetByPosition(column_no).column;
+				if (col_to->size() != old_rows)
+					col_to = col_to->cut(0, old_rows);
+			}
+		}
+		catch (...)
+		{
+			/// In case when we cannot rollback, do not leave incorrect state in memory.
+			std::terminate();
+		}
+
+		throw;
 	}
 }
 
@@ -177,12 +225,12 @@ class BufferBlockOutputStream : public IBlockOutputStream
 public:
 	BufferBlockOutputStream(StorageBuffer & storage_) : storage(storage_) {}
 
-	void write(const Block & block)
+	void write(const Block & block) override
 	{
 		if (!block)
 			return;
 
-		size_t rows = block.rowsInFirstColumn();
+		size_t rows = block.rows();
 		if (!rows)
 			return;
 
@@ -260,7 +308,7 @@ private:
 		{
 			buffer.data = sorted_block.cloneEmpty();
 		}
-		else if (storage.checkThresholds(buffer, current_time, sorted_block.rowsInFirstColumn(), sorted_block.bytes()))
+		else if (storage.checkThresholds(buffer, current_time, sorted_block.rows(), sorted_block.bytes()))
 		{
 			/** Если после вставки в буфер, ограничения будут превышены, то будем сбрасывать буфер.
 			  * Это также защищает от неограниченного потребления оперативки, так как в случае невозможности записать в таблицу,
@@ -268,7 +316,7 @@ private:
 			  */
 
 			lock.unlock();
-			storage.flushBuffer(buffer, false);
+			storage.flushBuffer(buffer, true);
 			lock.lock();
 		}
 
@@ -304,6 +352,16 @@ void StorageBuffer::shutdown()
 }
 
 
+/** NOTE If you do OPTIMIZE after insertion,
+  * it does not guarantee, that all data will be in destination table at the time of next SELECT just after OPTIMIZE.
+  *
+  * Because in case if there was already running flushBuffer method,
+  *  then call to flushBuffer inside OPTIMIZE will see empty buffer and return quickly,
+  *  but at the same time, the already running flushBuffer method possibly is not finished,
+  *  so next SELECT will observe missing data.
+  *
+  * This kind of race condition make very hard to implement proper tests.
+  */
 bool StorageBuffer::optimize(const String & partition, bool final, const Settings & settings)
 {
 	if (!partition.empty())
@@ -323,7 +381,7 @@ bool StorageBuffer::checkThresholds(const Buffer & buffer, time_t current_time, 
 	if (buffer.first_write_time)
 		time_passed = current_time - buffer.first_write_time;
 
-	size_t rows = buffer.data.rowsInFirstColumn() + additional_rows;
+	size_t rows = buffer.data.rows() + additional_rows;
 	size_t bytes = buffer.data.bytes() + additional_bytes;
 
 	return checkThresholdsImpl(rows, bytes, time_passed);
@@ -354,18 +412,12 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 	size_t bytes = 0;
 	time_t time_passed = 0;
 
-	/** Довольно много проблем из-за того, что хотим блокировать буфер лишь на короткое время.
-	  * Под блокировкой, получаем из буфера блок, и заменяем в нём блок на новый пустой.
-	  * Затем пытаемся записать полученный блок в подчинённую таблицу.
-	  * Если этого не получилось - кладём данные обратно в буфер.
-	  * Замечание: может быть, стоит избавиться от такой сложности.
-	  */
 	{
 		std::lock_guard<std::mutex> lock(buffer.mutex);
 
 		block_to_write = buffer.data.cloneEmpty();
 
-		rows = buffer.data.rowsInFirstColumn();
+		rows = buffer.data.rows();
 		bytes = buffer.data.bytes();
 		if (buffer.first_write_time)
 			time_passed = current_time - buffer.first_write_time;
@@ -383,39 +435,42 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 
 		buffer.data.swap(block_to_write);
 		buffer.first_write_time = 0;
-	}
 
-	LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
+		CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_to_write.rows());
+		CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
-	if (no_destination)
-		return;
+		LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
 
-	try
-	{
-		writeBlockToDestination(block_to_write, context.tryGetTable(destination_database, destination_table));
-	}
-	catch (...)
-	{
-		/// Возвращаем блок на место в буфер.
+		if (no_destination)
+			return;
 
-		std::lock_guard<std::mutex> lock(buffer.mutex);
-
-		if (buffer.data)
+		/** For simplicity, buffer is locked during write.
+		  * We could unlock buffer temporary, but it would lead to too much difficulties:
+		  * - data, that is written, will not be visible for SELECTs;
+		  * - new data could be appended to buffer, and in case of exception, we must merge it with old data, that has not been written;
+		  * - this could lead to infinite memory growth.
+		  */
+		try
 		{
-			/** Так как структура таблицы не изменилась, можно склеить два блока.
-			  * Замечание: остаётся проблема - из-за того, что в разных попытках вставляются разные блоки,
-			  *  теряется идемпотентность вставки в ReplicatedMergeTree.
-			  */
-			appendBlock(buffer.data, block_to_write);
+			writeBlockToDestination(block_to_write, context.tryGetTable(destination_database, destination_table));
 		}
+		catch (...)
+		{
+			ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
 
-		buffer.data.swap(block_to_write);
+			/// Возвращаем блок на место в буфер.
 
-		if (!buffer.first_write_time)
-			buffer.first_write_time = current_time;
+			CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
+			CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
-		/// Через некоторое время будет следующая попытка записать.
-		throw;
+			buffer.data.swap(block_to_write);
+
+			if (!buffer.first_write_time)
+				buffer.first_write_time = current_time;
+
+			/// Через некоторое время будет следующая попытка записать.
+			throw;
+		}
 	}
 }
 
@@ -444,7 +499,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 	columns_intersection.reserve(block.columns());
 	for (size_t i : ext::range(0, structure_of_destination_table.columns()))
 	{
-		auto dst_col = structure_of_destination_table.unsafeGetByPosition(i);
+		auto dst_col = structure_of_destination_table.getByPosition(i);
 		if (block.has(dst_col.name))
 		{
 			if (block.getByName(dst_col.name).type->getName() != dst_col.type->getName())

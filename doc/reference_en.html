@@ -101,17 +101,17 @@ ClickHouse is a columnar DBMS for OLAP.
 
 In a &quot;normal&quot; row-oriented DBMS, data is stored in this order:
 
-%%
+<pre class="text-example" style="white-space: pre; overflow-x: scroll">
 5123456789123456789     1       Eurobasket - Greece - Bosnia and Herzegovina - example.com      1       2011-09-01 01:03:02     6274717   1294101174      11409   612345678912345678      0       33      6       http://www.example.com/basketball/team/123/match/456789.html http://www.example.com/basketball/team/123/match/987654.html       0       1366    768     32      10      3183      0       0       13      0\0     1       1       0       0                       2011142 -1      0               0       01321     613     660     2011-09-01 08:01:17     0       0       0       0       utf-8   1466    0       0       0       5678901234567890123               277789954       0       0       0       0       0
 5234985259563631958     0       Consulting, Tax assessment, Accounting, Law       1       2011-09-01 01:03:02     6320881   2111222333      213     6458937489576391093     0       3       2       http://www.example.ru/         0       800     600       16      10      2       153.1   0       0       10      63      1       1       0       0                       2111678 000       0       588     368     240     2011-09-01 01:03:17     4       0       60310   0       windows-1251    1466    0       000               778899001       0       0       0       0       0
 ...
-%%
+</pre>
 
 In other words, all the values related to a row are stored next to each other. Examples of a row-oriented DBMS are MySQL, Postgres, MS SQL Server, and others.
 
 In a column-oriented DBMS, data is stored like this:
 
-<pre class="text-example" style="white-space: pre; overflow-x: hidden">
+<pre class="text-example" style="white-space: pre; overflow-x: scroll">
 <b>WatchID:</b>    5385521489354350662     5385521490329509958     5385521489953706054     5385521490476781638     5385521490583269446     5385521490218868806     5385521491437850694   5385521491090174022      5385521490792669254     5385521490420695110     5385521491532181574     5385521491559694406     5385521491459625030     5385521492275175494   5385521492781318214      5385521492710027334     5385521492955615302     5385521493708759110     5385521494506434630     5385521493104611398
 <b>JavaEnable:</b> 1       0       1       0       0       0       1       0       1       1       1       1       1       1       0       1       0       0       1       1
 <b>Title:</b>      Yandex  Announcements - Investor Relations - Yandex     Yandex — Contact us — Moscow    Yandex — Mission        Ru      Yandex — History — History of Yandex    Yandex Financial Releases - Investor Relations - Yandex Yandex — Locations      Yandex Board of Directors - Corporate Governance - Yandex       Yandex — Technologies
@@ -264,7 +264,7 @@ In ClickHouse, data can reside on different shards. Each shard can be a group of
 If you are familiar with standard SQL, we can&#39;t really talk about SQL support.
 NULLs are not supported. All the functions have different names. However, this is a declarative query language based on SQL that can&#39;t be differentiated from SQL in many instances.
 JOINs are supported. Subqueries are supported in FROM, IN, JOIN clauses; and scalar subqueries.
-Correllated subqueries are not supported.
+Correlated subqueries are not supported.
 
 <h3 class="not-for-contents">7. Vector engine.</h3>
 
@@ -352,17 +352,17 @@ At this time (May 2016), there aren&#39;t any available open-source and free sys
 <h3 class="not-for-contents">1. Why not to use systems like map-reduce?</h3>
 
 Systems like map-reduce are distributed computing systems, where the reduce phase is performed using distributed sorting.
-Regading this aspect, map-reduce is similar to other systems like YAMR, <a href="http://hadoop.apache.org/">Hadoop</a>, <a href="https://yandexdataschool.ru/about/conference/program/babenko">YT</a>.
+Regarding this aspect, map-reduce is similar to other systems like YAMR, <a href="http://hadoop.apache.org/">Hadoop</a>, <a href="https://yandexdataschool.ru/about/conference/program/babenko">YT</a>.
 
 These systems are not suitable for online queries because of latency, So they can't be used in backend-level for web interface.
-Systems like this also are not suitable for realtime updates.
+Systems like this also are not suitable for real-time updates.
 Distributed sorting is not optimal solution for reduce operations, if the result of the operation and all intermediate results, shall they exist, fit in operational memory of a single server, as usually happens in case of online analytical queries.
 In this case the optimal way to perform reduce operations is by using a hash-table. A common optimization method for map-reduce tasks is combine operation (partial reduce) which uses hash-tables in memory. This optimization is done by the user manually.
 Distributed sorting is the main reason for long latencies of simple map-reduce jobs.
 
-Systems similar to map-reduce enable running any code on the cluster. But for OLAP use-cases declerative query languages are better suited as they allow to carry out investigations faster. For example, for Hadoop there are <a href="https://hive.apache.org/">Hive</a> and <a href="https://pig.apache.org/">Pig</a>. There are others: <a href="http://impala.io/">Cloudera Impala</a>, <a href="http://shark.cs.berkeley.edu/">Shark (depricated)</a> and <a href="http://spark.apache.org/sql/">Spark SQL</a> for <a href="http://spark.apache.org/">Spark</a>, <a href="https://prestodb.io/">Presto</a>, <a href="https://drill.apache.org/">Apache Drill</a>.
+Systems similar to map-reduce enable running any code on the cluster. But for OLAP use-cases declarative query languages are better suited as they allow to carry out investigations faster. For example, for Hadoop there are <a href="https://hive.apache.org/">Hive</a> and <a href="https://pig.apache.org/">Pig</a>. There are others: <a href="http://impala.io/">Cloudera Impala</a>, <a href="http://shark.cs.berkeley.edu/">Shark (deprecated)</a> and <a href="http://spark.apache.org/sql/">Spark SQL</a> for <a href="http://spark.apache.org/">Spark</a>, <a href="https://prestodb.io/">Presto</a>, <a href="https://drill.apache.org/">Apache Drill</a>.
 However, performance of such tasks is highly sub-optimal compared to the performance of specialized systems and relatively high latency does not allow the use of these systems as a backend for the web interface.
-YT allows you to store separate groups of columns. But YT is not a truly columnar storage system, as the system has no fixed length data types (so you can efficiently store a number without "garbage"), and there is no vector engine. Tasks in YT are performed by arbitrary code in streaming mode, so can not be suficiently optimized (up to hundreds of millions of lines per second per server). In 2014-2016 YT is to develop "dynamic table sorting" functionality  using Merge Tree, strongly typed values ​​and SQL-like language support. Dynamicly sorted tables are not suited for OLAP tasks, since the data is stored in rows. Query language development in YT is still in incubating phase, which does not allow it to focus on this functionality. YT developers are considering dynamicly sorted tables for use in OLTP and Key-Value scenarios.
+YT allows you to store separate groups of columns. But YT is not a truly columnar storage system, as the system has no fixed length data types (so you can efficiently store a number without "garbage"), and there is no vector engine. Tasks in YT are performed by arbitrary code in streaming mode, so can not be sufficiently optimized (up to hundreds of millions of lines per second per server). In 2014-2016 YT is to develop "dynamic table sorting" functionality  using Merge Tree, strongly typed values ​​and SQL-like language support. Dynamically sorted tables are not suited for OLAP tasks, since the data is stored in rows. Query language development in YT is still in incubating phase, which does not allow it to focus on this functionality. YT developers are considering dynamically sorted tables for use in OLTP and Key-Value scenarios.
 
 ==Performance==
 
@@ -441,7 +441,7 @@ By default, access is allowed from everywhere for the default user without a pas
 
 ===Installing from source===
 
-Build following the instructions in <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md">build.md</a>
+To build, follow the instructions in <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md">build.md</a> (for Linux) or in <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build_osx.md">build_osx.md</a> (for Mac OS X).
 
 You can compile packages and install them. You can also use programs without installing packages.
 
@@ -546,7 +546,7 @@ Otherwise, you could use one of available public datasets, described <a href="ht
 If you are Yandex employee, use internal ClickHouse maillist.
 You can subscribe to this list to get announcements, information on new developments, and questions that other users have.
 
-Otherwise, you could ask questions on <a href="https://stackoverflow.com/">Stackoverflow</a>; discuss in <a href="https://groups.google.com/group/clickhouse">Google Groups</a>; or send private message to developers to address <a href="mailto:clickhouse-feedback@yandex-team.com">clickhouse-feedback@yandex-team.com</a>.
+Otherwise, you could ask questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse">Stack Overflow</a>; discuss in <a href="https://groups.google.com/group/clickhouse">Google Groups</a>; or send private message to developers to address <a href="mailto:clickhouse-feedback@yandex-team.com">clickhouse-feedback@yandex-team.com</a>.
 
 
 
@@ -689,12 +689,12 @@ $ GET &#39;http://localhost:8123/?query=SELECT a FROM t&#39;
 Deleting the table.
 
 <pre class="terminal">
-POST &#39;http://localhost:8123/?query=DROP TABLE t&#39;
+echo &#39;DROP TABLE t&#39; | POST &#39;http://localhost:8123/&#39;
 </pre>
 
 For successful requests that don&#39;t return a data table, an empty response body is returned.
 
-You can use compression when transmitting data. The compressed data has a non-standard format, and you will need to use a special compressor program to work with it (%%sudo apt-get install compressor-metrika-yandex%%).
+You can use compression when transmitting data. The compressed data has a non-standard format, and you will need to use a special compressor program to work with it (%%sudo apt-get install clickhouse-compressor%%).
 
 If you specified &#39;compress=1&#39; in the URL, the server will compress the data it sends you.
 If you specified &#39;decompress=1&#39; in the URL, the server will decompress the same data that you pass in the POST method.
@@ -728,6 +728,10 @@ echo &#39;SELECT 1&#39; | curl &#39;http://user:password@localhost:8123/&#39; -d
 <pre class="terminal">
 echo &#39;SELECT 1&#39; | curl &#39;http://localhost:8123/?user=user&amp;password=password&#39; -d @-
 </pre>
+3. Using &#39;X-ClickHouse-User&#39; and &#39;X-ClickHouse-Key&#39; headers. Example:
+<pre class="terminal">
+echo &#39;SELECT 1&#39; | curl -H "X-ClickHouse-User: user" -H "X-ClickHouse-Key: password"  &#39;http://localhost:8123/&#39; -d @-
+</pre>
 If the user name is not indicated, the username &#39;default&#39; is used. If the password is not indicated, an empty password is used.
 
 
@@ -757,7 +761,7 @@ In contrast to the native interface, the HTTP interface does not support the con
 
 The optional &#39;query_id&#39; parameter can be passed as the query ID (any string). For more information, see the section &quot;Settings, replace_running_query&quot;.
 
-The optional &#39;quota_key&#39; parameter can be passed as the quota key (any string). For more information, see the section &quot;Quotas&quot;.
+The optional &#39;quota_key&#39; parameter can be passed as the quota key (any string). It can also be passed as &#39;X-ClickHouse-Quota&#39; header. For more information, see the section &quot;Quotas&quot;.
 
 The HTTP interface allows passing external data (external temporary tables) for querying. For more information, see the section &quot;External data for query processing&quot;.
 
@@ -769,7 +773,7 @@ There is official JDBC driver for ClickHouse. See <a href="https://github.com/ya
 
 ==Third-party client libraries==
 
-There exist third-party client libraries for <a href="https://github.com/Infinidat/infi.clickhouse_orm">Python</a>, PHP (<a href="https://github.com/8bitov/clickhouse-php-client">1</a>, <a href="https://github.com/SevaCode/PhpClickHouseClient">2</a>, <a href="https://github.com/smi2/phpClickHouse">3</a>), <a href="https://github.com/roistat/go-clickhouse">Go</a>, Node.js (<a href="https://github.com/TimonKK/clickhouse">1</a>, <a href="https://github.com/apla/node-clickhouse">2</a>), <a href="https://github.com/elcamlost/perl-DBD-ClickHouse">Perl</a>.
+There exist third-party client libraries for Python (<a href="https://github.com/Infinidat/infi.clickhouse_orm">1</a>, <a href="https://github.com/cloudflare/sqlalchemy-clickhouse">2</a>), PHP (<a href="https://github.com/8bitov/clickhouse-php-client">1</a>, <a href="https://github.com/SevaCode/PhpClickHouseClient">2</a>, <a href="https://github.com/smi2/phpClickHouse">3</a>), Go (<a href="https://github.com/kshvakov/clickhouse/">1</a>, <a href="https://github.com/roistat/go-clickhouse">2</a>), Node.js (<a href="https://github.com/TimonKK/clickhouse">1</a>, <a href="https://github.com/apla/node-clickhouse">2</a>), Perl (<a href="https://github.com/elcamlost/perl-DBD-ClickHouse">1</a>, <a href="https://metacpan.org/release/HTTP-ClickHouse">2</a>, <a href="https://metacpan.org/release/AnyEvent-ClickHouse">3</a>), Ruby (<a href="https://github.com/archan937/clickhouse">1</a>), R (<a href="https://github.com/hannesmuehleisen/clickhouse-r">1</a>).
 
 Libraries was not tested by us. Ordering is arbitrary.
 
@@ -826,7 +830,7 @@ Only works in non-interactive mode.
 --config-file - Name of the configuration file that has additional settings or changed defaults for the settings listed above.
 By default, files are searched for in this order:
 ./clickhouse-client.xml
-~/./clickhouse-client/config.xml
+~/.clickhouse-client/config.xml
 /etc/clickhouse-client/config.xml
 Settings are only taken from the first file found.
 
@@ -1257,29 +1261,25 @@ On an operating server, you can&#39;t manually change the set of parts or their 
 
 The &#39;detached&#39; directory contains parts that are not used by the server - detached from the table using the ALTER ... DETACH query. Parts that are damaged are also moved to this directory, instead of deleting them. You can add, delete, or modify the data in the &#39;detached&#39; directory at any time - the server won&#39;t know about this until you make the ALTER TABLE ... ATTACH query.
 
-For replicated tables, there is also an &#39;unreplicated&#39; directory. This directory can hold the portion of table data that does not participate in replication. This data is present only if the table was converted from a non-replicated one (see the section &quot;Conversion from MergeTree to ReplicatedMergeTree&quot;).
 
-
-%%ALTER TABLE [db.]table DETACH [UNREPLICATED] PARTITION &#39;name&#39;%%
+%%ALTER TABLE [db.]table DETACH PARTITION &#39;name&#39;%%
 
 Move all data for partitions named &#39;name&#39; to the &#39;detached&#39; directory and forget about them.
 The partition name is specified in YYYYMM format. It can be indicated in single quotes or without them.
 
 After the query is executed, you can do whatever you want with the data in the &#39;detached&#39; directory — delete it from the file system, or just leave it.
 
-If UNREPLICATED is specified (this only works for replicatable tables), the query is run for the unreplicated part of a replicatable table.
-
 The query is replicated - data will be moved to the &#39;detached&#39; directory and forgotten on all replicas. The query can only be sent to a leader replica. To find out if a replica is a leader, perform SELECT to the &#39;system.replicas&#39; system table. Alternatively, it is easier to make a query on all replicas, and all except one will throw an exception.
 
 
-%%ALTER TABLE [db.]table DROP [UNREPLICATED] PARTITION &#39;name&#39;%%
+%%ALTER TABLE [db.]table DROP PARTITION &#39;name&#39;%%
 
 Similar to the DETACH operation. Deletes data from the table. Data parts will be tagged as inactive and will be completely deleted in approximately 10 minutes. The query is replicated - data will be deleted on all replicas.
 
 
-%%ALTER TABLE [db.]table ATTACH [UNREPLICATED] PARTITION|PART &#39;name&#39;%%
+%%ALTER TABLE [db.]table ATTACH PARTITION|PART &#39;name&#39;%%
 
-Adds data to the table from the &#39;detached&#39; directory. Or, if UNREPLICATED is specified, data is moved from an &#39;unreplicated&#39; part to replicated data.
+Adds data to the table from the &#39;detached&#39; directory.
 
 It is possible to add data for an entire partition or a separate part. For a part, specify the full name of the part in single quotes.
 
@@ -1352,29 +1352,29 @@ Possible values: 0 - do not wait, 1 - wait for own completion (default), 2 - wai
 
 ===SHOW DATABASES===
 
-%%SHOW DATABASES [FORMAT format]%%
+%%SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]%%
 
 Prints a list of all databases.
-This query is identical to the query SELECT name FROM system.databases [FORMAT format]
+This query is identical to the query SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]
 See the section &quot;Formats&quot;.
 
 
 ===SHOW TABLES===
 
-%%SHOW TABLES [FROM db] [LIKE &#39;pattern&#39;] [FORMAT format]%%
+%%SHOW TABLES [FROM db] [LIKE &#39;pattern&#39;] [INTO OUTFILE filename] [FORMAT format]%%
 
 Outputs a list of
 - tables from the current database, or from the &#39;db&#39; database if &quot;FROM db&quot; is specified.
 - all tables, or tables whose name matches the pattern, if &quot;LIKE &#39;pattern&#39;&quot; is specified.
 
 The query is identical to the query  SELECT name FROM system.tables
-WHERE database = &#39;db&#39; [AND name LIKE &#39;pattern&#39;] [FORMAT format]
+WHERE database = &#39;db&#39; [AND name LIKE &#39;pattern&#39;] [INTO OUTFILE filename] [FORMAT format]
 See the section &quot;LIKE operator&quot;.
 
 
 ===SHOW PROCESSLIST===
 
-%%SHOW PROCESSLIST [FORMAT format]%%
+%%SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]%%
 
 Outputs a list of queries currently being processed, other than SHOW PROCESSLIST queries.
 
@@ -1394,7 +1394,7 @@ Prints a table containing the columns:
 
 <b>query_id</b> - The query identifier. Non-empty only if it was explicitly defined by the user. For distributed processing, the query ID is not passed to remote servers.
 
-This query is exactly the same as: SELECT * FROM system.processes [FORMAT format].
+This query is exactly the same as: SELECT * FROM system.processes [INTO OUTFILE filename] [FORMAT format].
 
 Tip (execute in the console):
 %%watch -n1 &quot;clickhouse-client --query=&#39;SHOW PROCESSLIST&#39;&quot;%%
@@ -1402,14 +1402,14 @@ Tip (execute in the console):
 
 ===SHOW CREATE TABLE===
 
-%%SHOW CREATE TABLE [db.]table [FORMAT format]%%
+%%SHOW CREATE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]%%
 
 Returns a single String-type &#39;statement&#39; column, which contains a single value - the CREATE query used for creating the specified table.
 
 
 ===DESCRIBE TABLE===
 
-%%DESC|DESCRIBE TABLE [db.]table [FORMAT format]%%
+%%DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]%%
 
 Returns two String-type columns: &#39;name&#39; and &#39;type&#39;, which indicate the names and types of columns in the specified table.
 
@@ -1418,7 +1418,7 @@ Nested data structures are output in &quot;expanded&quot; format. Each column is
 
 ===EXISTS===
 
-%%EXISTS TABLE [db.]name [FORMAT format]%%
+%%EXISTS TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]%%
 
 Returns a single UInt8-type column, which contains the single value 0 if the table or database doesn&#39;t exist, or 1 if the table exists in the specified database.
 
@@ -1447,12 +1447,12 @@ To make settings that persist after a server restart, you can only use the serve
 
 ===OPTIMIZE===
 
-%%OPTIMIZE TABLE [db.]name%%
+%%OPTIMIZE TABLE [db.]name [PARTITION partition] [FINAL]%%
 
 Asks the table engine to do something for optimization.
 Supported only by *MergeTree engines, in which this query initializes a non-scheduled merge of data parts.
-
-For replicated tables, the OPTIMIZE query is only applied to non-replicated data (this data exists only after converting non-replicated tables to replicated ones). If there isn&#39;t any, the query doesn&#39;t do anything.
+If PARTITION is specified, then only specified partition will be optimized.
+If FINAL is specified, then optimization will be performed even if data inside the partition already optimized (i. e. all data is in single part).
 
 
 ===INSERT===
@@ -1513,6 +1513,7 @@ His Highness, the SELECT query.
     [ORDER BY expr_list]
     [LIMIT [n, ]m]
     [UNION ALL ...]
+    [INTO OUTFILE filename]
     [FORMAT format]%%
 
 All the clauses are optional, except for the required list of expressions immediately after SELECT.
@@ -2084,6 +2085,14 @@ The structure of results (the number and type of columns) must match for the que
 Queries that are parts of UNION ALL can&#39;t be enclosed in brackets. ORDER BY and LIMIT are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with UNION ALL in a subquery in the FROM clause.
 
 
+<h4>INTO OUTFILE clause</h4>
+
+Add %%INTO OUTFILE filename%% clause (where filename is a string literal) to redirect query output to a file filename.
+In contrast to MySQL the file is created on a client host. The query will fail if a file with the same filename already exists.
+INTO OUTFILE is available in the command-line client and clickhouse-local (a query sent via HTTP interface will fail).
+
+Default output format is TabSeparated (the same as in the batch mode of command-line client).
+
 <h4>FORMAT clause</h4>
 
 Specify &#39;FORMAT format&#39; to get data in any specified format.
@@ -2472,7 +2481,7 @@ The Distributed engine allows working with a cluster like a local server. Howeve
 
 There is no support for Distributed tables that look at other Distributed tables (except in cases when a Distributed table only has one shard). As an alternative, make the Distributed table look at the &quot;final&quot; tables.
 
-The Distributed engine requires writing clusters to the config file. Adding clusters and servers requires restarting. If you need to send a query to an unknown set of shards and replicas each time, you don&#39;t need to create a Distributed table - use the &#39;remote&#39; table function instead. See the section &quot;Table functions&quot;.
+The Distributed engine requires writing clusters to the config file. Clusters from config are updated on the fly, it does not require server restart. If you need to send a query to an unknown set of shards and replicas each time, you don&#39;t need to create a Distributed table - use the &#39;remote&#39; table function instead. See the section &quot;Table functions&quot;.
 
 There are two methods for writing data to a cluster:
 
@@ -2716,6 +2725,23 @@ You can create a materialized view like this and assign a normal view to it that
 Note that in most cases, using AggregatingMergeTree is not justified, since queries can be run efficiently enough on non-aggregated data.
 
 
+==ReplacingMergeTree==
+
+This engine differs from MergeTree in that it can deduplicate data by primary key while merging.
+
+For ReplacingMergeTree mode, last parameter is optional name of 'version' column. While merging, for all rows with same primary key, only one row is selected: last row, if version column was not specified, or last row with maximum version value, if specified.
+
+Version column must have type of UInt family or Date or DateTime.
+
+%%ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, ver)%%
+
+Please note, that data is deduplicated only while merging process. Merges are processed in background. Exact time of merge is unspecified and you could not rely on it. Some part of data could be not merged at all. While you could trigger extra merge with OPTIMIZE query, it is not recommended, as OPTIMIZE will read and write vast amount of data.
+
+This table engine is suitable for background removal of duplicate data to save space, but not suitable to guarantee of deduplication.
+
+Developed for special purposes of not Yandex.Metrica department.
+
+
 ==Null==
 
 When writing to a Null table, data is ignored. When reading from a Null table, the response is empty.
@@ -2932,7 +2958,9 @@ When the server starts (or establishes a new session with ZooKeeper), it only ch
 
 If the local set of data differs too much from the expected one, a safety mechanism is triggered. The server enters this in the log and refuses to launch. The reason for this is that this case may indicate a configuration error, such as if a replica on a shard was accidentally configured like a replica on a different shard. However, the thresholds for this mechanism are set fairly low, and this situation might occur during normal failure recovery. In this case, data is restored semi-automatically - by &quot;pushing a button&quot;.
 
-To start recovery, create the node <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span>  in ZooKeeper with any content, and launch the server. On start, the server deletes this flag and starts recovery.
+To start recovery, create the node <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> in ZooKeeper with any content or run command to recover all replicated tables:
+%%sudo -u metrika touch /opt/clickhouse/flags/force_restore_data%%
+Then launch the server. On start, the server deletes these flags and starts recovery.
 
 
 ===Recovery after complete data loss===
@@ -2941,11 +2969,13 @@ If all data and metadata disappeared from one of the servers, follow these steps
 
 1. Install ClickHouse on the server. Define substitutions correctly in the config file that contains the shard identifier and replicas, if you use them.
 
-2. If you had unreplicated tables that must be manually duplicated on the servers, copy their data from a replica (in the directory <span class="inline-example">/opt/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>). If replicated tables had unreplicated parts, synchronize them as well. Note that these exist only if you migrated from MergeTree to ReplicatedMergeTree (see &quot;Converting from MergeTree to ReplicatedMergeTree&quot;).
+2. If you had unreplicated tables that must be manually duplicated on the servers, copy their data from a replica (in the directory <span class="inline-example">/opt/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>).
 
 3. Copy table definitions located in %%/opt/clickhouse/metadata/%% from a replica. If a shard or replica identifier is defined explicitly in the table definitions, correct it so that it corresponds to this replica. (Alternatively, launch the server and make all the ATTACH TABLE queries that should have been in the .sql files in %%/opt/clickhouse/metadata/%%.)
 
-4. Create the <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> node in ZooKeeper with any content, and launch the server (restart it if it is already running). Data will be downloaded from replicas.
+4. Create the <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> node in ZooKeeper with any content or run command to recover all replicated tables:
+%%sudo -u metrika touch /opt/clickhouse/flags/force_restore_data%%
+Then launch the server (restart it if it is already running). Data will be downloaded from replicas.
 
 An alternative recovery option is to delete information about the lost replica from ZooKeeper ( <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i></span>), then create the replica again as described in &quot;Creating replicated tables&quot;.
 
@@ -2957,17 +2987,6 @@ There is no restriction on network bandwidth during recovery. Keep this in mind 
 From here on, we use &quot;MergeTree&quot; to refer to all the table engines in the MergeTree family, including ReplicatedMergeTree.
 
 If you had a MergeTree table that was manually replicated, you can convert it to a replicatable table. You might need to do this if you have already collected a large amount of data in a MergeTree table and now you want to enable replication.
-
-There are two ways to do this:
-
-1. Leave the old data &quot;as is&quot; without syncing it.
-
-To do this, rename the existing MergeTree table, then create a ReplicatedMergeTree table with the old name.
-In the directory with data for the new table (<span class="inline-example">/opt/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>), create the &#39;unreplicated&#39; subdirectory and move the data from the old table to it. Then restart the server.
-
-For read requests, the replicated table will also read from the &#39;unreplicated&#39; data set. The integrity of this data is not monitored in any way.
-
-2. Add the old data to the set of replicatable data.
 
 If the data differs on various replicas, first sync it, or delete this data on all the replicas except one.
 
@@ -3144,6 +3163,11 @@ query_id String          - Query ID, if defined.
 Contains information about the number of events that have occurred in the system. This is used for profiling and monitoring purposes.
 Example: The number of processed SELECT queries.
 Columns: &#39;event String&#39; - the event name, and &#39;value UInt64&#39; - the quantity.
+
+==system.metrics==
+==system.asynchronous_metrics==
+Like system.events, but show info about currently executing events or consuming resources.
+Example: The number of currently executing SELECT queries; memory consumption of the system.
 
 ==system.clusters==
 
@@ -3606,11 +3630,16 @@ The TabSeparated format supports outputting total values (when using WITH TOTALS
 2014-03-23      1406958
 %%
 
+It's also available as %%TSV%%.
+
+
 ==TabSeparatedWithNames==
 
 Differs from the TabSeparated format in that the column names are output in the first row.
 For parsing, the first row is completely ignored. You can&#39;t use column names to determine their position or to check their correctness.
 (Support for using header while parsing could be added in future.)
+
+It's also available as %%TSVWithNames%%.
 
 
 ==TabSeparatedWithNamesAndTypes==
@@ -3618,11 +3647,14 @@ For parsing, the first row is completely ignored. You can&#39;t use column names
 Differs from the TabSeparated format in that the column names are output to the first row, while the column types are in the second row.
 For parsing, the first and second rows are completely ignored.
 
+It's also available as %%TSVWithNamesAndTypes%%.
 
 ==TabSeparatedRaw==
 
 Differs from the TabSeparated format in that the rows are formatted without escaping.
 This format is only appropriate for outputting a query result, but not for parsing data to insert into a table.
+
+It's also available as %%TSVRaw%%.
 
 
 ==BlockTabSeparated==
@@ -4064,6 +4096,8 @@ Date with time. Stored in four bytes as a Unix timestamp (unsigned). Allows stor
 
 The date with time is converted from text (divided into component parts) to binary and back, using the system&#39;s time zone at the time the client or server starts. In text format, information about daylight savings is lost.
 
+Note that by default the client adopts the server time zone at the beginning of the session. You can change this behaviour with the --use_client_time_zone command line switch.
+
 Supports only those time zones that never had the time differ from UTC for a partial number of hours (without leap seconds) over the entire time range you will be working with.
 
 So when working with a textual date (for example, when saving text dumps), keep in mind that there may be ambiguity during changes for daylight savings time, and there may be problems matching data if the time zone changed.
@@ -4259,13 +4293,14 @@ All operators are transformed to the corresponding functions at the query parsin
 %%a = b%% - equals(a, b) function
 %%a == b%% - equals(a, b) function
 %%a != b%% - notEquals(a, b) function
-<span class="inline-example">a &lt;> b</span> - notEquals(a, b) function
+%%a &lt;> b%% - notEquals(a, b) function
 %%a &lt;= b%% - lessOrEquals(a, b) function
-<span class="inline-example">a >= b</span> - greaterOrEquals(a, b) function
+%%a &gt;= b%% - greaterOrEquals(a, b) function
 %%a &lt; b%% - less(a, b) function
-<span class="inline-example">a > b</span> - greater(a, b) function
+%%a &gt; b%% - greater(a, b) function
 %%a LIKE s%% - like(a, b) function
 %%a NOT LIKE s%% - notLike(a, b) function
+%%a BETWEEN b AND c%% - equivalent to %%a &gt;= b AND a &lt;= c%%
 
 ==Operators for working with data sets==
 
@@ -4291,6 +4326,21 @@ See the section &quot;IN operators&quot;.
 ==Conditional operator==
 
 %%a ? b : c%% - if(a, b, c) function
+
+==Conditional expression==
+
+%%
+CASE [x]
+    WHEN a THEN b
+    [WHEN ... THEN ...]
+    ELSE c
+END
+%%
+If x is given - transform(x, [a, ...], [b, ...], c).
+Otherwise, multiIf(a, b, ..., c).
+
+==String concatenation operator==
+%%s1 || s2%% - concat(s1, s2) function
 
 ==Lambda creation operator==
 
@@ -4329,7 +4379,7 @@ In this section we discuss regular functions. For aggregate functions, see the s
 
 In contrast to standard SQL, ClickHouse has strong typing. In other words, it doesn&#39;t make implicit conversions between types. Each function works for a specific set of types. This means that sometimes you need to use type conversion functions.
 
-===Сommon subexpression elimination===
+===Common subexpression elimination===
 
 All expressions in a query that have the same AST (the same record or same result of syntactic parsing) are considered to have identical values. Such expressions are concatenated and executed once. Identical subqueries are also eliminated this way.
 
@@ -4474,7 +4524,7 @@ For example, you can&#39;t compare a date with a string. You have to use a funct
 
 Strings are compared by bytes. A shorter string is smaller than all strings that start with it and that contain at least one more character.
 
-Signed and unsigned numbers are compared the same way as in C++. That is, you can get an incorrect result in some cases. Example: SELECT 9223372036854775807 > -1
+Note: before version 1.1.54134 signed and unsigned numbers were compared the same way as in C++. That is, you could got an incorrect result in such cases: SELECT 9223372036854775807 > -1. From version 1.1.54134, the behavior has changed and numbers are compared mathematically correct.
 
 
 ===equals, a = b and a == b operator===
@@ -4511,6 +4561,7 @@ Zero as an argument is considered &quot;false,&quot; while any non-zero value is
 ===toUInt8, toUInt16, toUInt32, toUInt64===
 ===toInt8, toInt16, toInt32, toInt64===
 ===toFloat32, toFloat64===
+===toUInt8OrZero, toUInt16OrZero, toUInt32OrZero, toUInt64OrZero, toInt8OrZero, toInt16OrZero, toInt32OrZero, toInt64OrZero, toFloat32OrZero, toFloat64OrZero===
 ===toDate, toDateTime===
 ===toString===
 
@@ -4561,7 +4612,22 @@ Converts a String type argument to a FixedString(N) type (a string with fixed le
 
 ===toStringCutToZero(s)===
 
-Accepts a String or FixedString argument. Returns a String and removes the null bytes from the end of the string.
+Accepts a String or FixedString argument. Returns a String that is cut to a first null byte occurrence.
+
+Example:
+%%
+:) SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
+
+┌─s─────────────┬─s_cut─┐
+│ foo\0\0\0\0\0 │ foo   │
+└───────────────┴───────┘
+
+:) SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
+
+┌─s──────────┬─s_cut─┐
+│ foo\0bar\0 │ foo   │
+└────────────┴───────┘
+%%
 
 ===reinterpretAsUInt8, reinterpretAsUInt16, reinterpretAsUInt32, reinterpretAsUInt64===
 ===reinterpretAsInt8, reinterpretAsInt16, reinterpretAsInt32, reinterpretAsInt64===
@@ -4574,77 +4640,98 @@ These functions accept a string and interpret the bytes placed at the beginning 
 
 This function accepts a number or date or date with time, and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
 
+===CAST(x, t)===
+
+Casts <i>x</i> to the <i>t</i> data type.
+The syntax %%CAST(x AS t)%% is also supported.
+
+Example:
+%%
+SELECT
+    '2016-06-15 23:00:00' AS timestamp,
+    CAST(timestamp AS DateTime) AS datetime,
+    CAST(timestamp AS Date) AS date,
+    CAST(timestamp, 'String') AS string,
+    CAST(timestamp, 'FixedString(22)') AS fixed_string
+
+┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
+│ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │
+└─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
+%%
+
+Casting to FixedString(N) works only for String and FixedString(N).
+
 
 ==Functions for working with dates and times==
 
 ===toYear===
-- Converts a date or date with time to a UInt16 number containing the year number (AD).
+Converts a date or date with time to a UInt16 number containing the year number (AD).
 
 ===toMonth===
-- Converts a date or date with time to a UInt8 number containing the month number (1-12).
+Converts a date or date with time to a UInt8 number containing the month number (1-12).
 
 ===toDayOfMonth===
-- Converts a date or date with time to a UInt8 number containing the number of the day of the month (1-31).
+Converts a date or date with time to a UInt8 number containing the number of the day of the month (1-31).
 
 ===toDayOfWeek===
-- Converts a date or date with time to a UInt8 number containing the number of the day of the week (Monday is 1, and Sunday is 7).
+Converts a date or date with time to a UInt8 number containing the number of the day of the week (Monday is 1, and Sunday is 7).
 
 ===toHour===
-- Converts a date with time to a UInt8 number containing the number of the hour in 24-hour time (0-23).
+Converts a date with time to a UInt8 number containing the number of the hour in 24-hour time (0-23).
 This function assumes that if clocks are moved ahead, it is by one hour and occurs at 2 a.m., and if clocks are moved back, it is by one hour and occurs at 3 a.m. (which is not always true - even in Moscow the clocks were once changed at a different time).
 
 ===toMinute===
-- Converts a date with time to a UInt8 number containing the number of the minute of the hour (0-59).
+Converts a date with time to a UInt8 number containing the number of the minute of the hour (0-59).
 
 ===toSecond===
-- Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
+Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
 
 ===toMonday===
-- Rounds down a date or date with time to the nearest Monday.
+Rounds down a date or date with time to the nearest Monday.
 Returns the date.
 
 ===toStartOfMonth===
-- Rounds down a date or date with time to the first day of the month.
+Rounds down a date or date with time to the first day of the month.
 Returns the date.
 
 ===toStartOfQuarter===
-- Rounds down a date or date with time to the first day of the quarter.
+Rounds down a date or date with time to the first day of the quarter.
 The first day of the quarter is either 1 January, 1 April, 1 July, or 1 October. Returns the date.
 
 ===toStartOfYear===
-- Rounds down a date or date with time to the first day of the year.
+Rounds down a date or date with time to the first day of the year.
 Returns the date.
 
 ===toStartOfMinute===
-- Rounds down a date with time to the start of the minute.
+Rounds down a date with time to the start of the minute.
 
 ===toStartOfHour===
-- Rounds down a date with time to the start of the hour.
+Rounds down a date with time to the start of the hour.
 
 ===toTime===
-- Converts a date with time to the date of the start of the Unix Epoch, while preserving the time.
+Converts a date with time to the date of the start of the Unix Epoch, while preserving the time.
 
 ===toRelativeYearNum===
-- Converts a date with time or date to the number of the year, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the year, starting from a certain fixed point in the past.
 
 ===toRelativeMonthNum===
-- Converts a date with time or date to the number of the month, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the month, starting from a certain fixed point in the past.
 
 ===toRelativeWeekNum===
-- Converts a date with time or date to the number of the week, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the week, starting from a certain fixed point in the past.
 
 ===toRelativeDayNum===
-- Converts a date with time or date to the number of the day, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the day, starting from a certain fixed point in the past.
 
 ===toRelativeHourNum===
-- Converts a date with time or date to the number of the hour, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the hour, starting from a certain fixed point in the past.
 
 ===toRelativeMinuteNum===
-- Converts a date with time or date to the number of the minute, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the minute, starting from a certain fixed point in the past.
 
 ===toRelativeSecondNum===
-- Converts a date with time or date to the number of the second, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the second, starting from a certain fixed point in the past.
 
 ===now===
 Accepts zero arguments and returns the current time at one of the moments of request execution.
@@ -4659,11 +4746,11 @@ Accepts zero arguments and returns yesterday&#39;s date at one of the moments of
 The same as &#39;today() - 1&#39;.
 
 ===timeSlot===
-- Rounds the time to the half hour.
+Rounds the time to the half hour.
 This function is specific to Yandex.Metrica, since half an hour is the minimum amount of time for breaking a session into two sessions if a counter shows a single user&#39;s consecutive pageviews that differ in time by strictly more than this amount. This means that tuples (the counter number, user ID, and time slot) can be used to search for pageviews that are included in the corresponding session.
 
 ===timeSlots(StartTime, Duration)===
-- For a time interval starting at &#39;StartTime&#39; and continuing for &#39;Duration&#39; seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the half hour.
+For a time interval starting at &#39;StartTime&#39; and continuing for &#39;Duration&#39; seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the half hour.
 For example, %%timeSlots(toDateTime(&#39;2012-01-01 12:20:00&#39;), toUInt32(600)) = [toDateTime(&#39;2012-01-01 12:00:00&#39;), toDateTime(&#39;2012-01-01 12:30:00&#39;)]%%.
 This is necessary for searching for pageviews in the corresponding session.
 
@@ -4671,53 +4758,52 @@ This is necessary for searching for pageviews in the corresponding session.
 ==Functions for working with strings==
 
 ===empty===
-- Returns 1 for an empty string or 0 for a non-empty string.
+Returns 1 for an empty string or 0 for a non-empty string.
 The result type is UInt8.
 A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
 The function also works for arrays.
 
 ===notEmpty===
-- Returns 0 for an empty string or 1 for a non-empty string.
+Returns 0 for an empty string or 1 for a non-empty string.
 The result type is UInt8.
 The function also works for arrays.
 
 ===length===
-- Returns the length of a string in bytes (not in characters, and not in code points).
+Returns the length of a string in bytes (not in characters, and not in code points).
 The result type is UInt64.
 The function also works for arrays.
 
 ===lengthUTF8===
-- Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn&#39;t throw an exception).
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn&#39;t throw an exception).
 The result type is UInt64.
 
 ===lower===
-- Converts ASCII Latin symbols in a string to lowercase.
+Converts ASCII Latin symbols in a string to lowercase.
 
 ===upper===
-- Converts ASCII Latin symbols in a string to uppercase.
+Converts ASCII Latin symbols in a string to uppercase.
 
 ===lowerUTF8===
-- Converts a string to lowercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn&#39;t detect the language. So for Turkish the result might not be exactly correct.
+Converts a string to lowercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn&#39;t detect the language. So for Turkish the result might not be exactly correct.
 If length of UTF-8 sequence is different for upper and lower case of code point, then result for that code point could be incorrect.
 If value contains invalid UTF-8, the behavior is unspecified.
 
 ===upperUTF8===
-- Converts a string to uppercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn&#39;t detect the language. So for Turkish the result might not be exactly correct.
+Converts a string to uppercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn&#39;t detect the language. So for Turkish the result might not be exactly correct.
 If length of UTF-8 sequence is different for upper and lower case of code point, then result for that code point could be incorrect.
 If value contains invalid UTF-8, the behavior is unspecified.
 
 ===reverse===
-- Reverses the string (as a sequence of bytes).
+Reverses the string (as a sequence of bytes).
 
 ===reverseUTF8===
-- Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it doesn&#39;t throw an exception).
+Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it doesn&#39;t throw an exception).
 
-===concat(s1, s2)===
-- Concatenates two strings, without a separator.
-If you need to concatenate more than two strings, write &#39;concat&#39; multiple times.
+===concat(s1, s2, ...)===
+Concatenates strings from the function arguments, without a separator.
 
 ===substring(s, offset, length)===
-- Returns a substring starting with the byte from the &#39;offset&#39; index that is &#39;length&#39; bytes long. Character indexing starts from one (as in standard SQL). The &#39;offset&#39; and &#39;length&#39; arguments must be constants.
+Returns a substring starting with the byte from the &#39;offset&#39; index that is &#39;length&#39; bytes long. Character indexing starts from one (as in standard SQL). The &#39;offset&#39; and &#39;length&#39; arguments must be constants.
 
 ===substringUTF8(s, offset, length)===
 The same as &#39;substring&#39;, but for Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn&#39;t throw an exception).
@@ -4725,6 +4811,8 @@ The same as &#39;substring&#39;, but for Unicode code points. Works under the as
 ===appendTrailingCharIfAbsent(s, c)===
 If the %%s%% string is non-empty and does not contain the %%c%% character at the end, it appends the %%c%% character to the end.
 
+===convertCharset(s, from, to)===
+Returns a string with the data %%s%% (encoded as %%from%% charset) that was converted to the %%to%% charset.
 
 ==Functions for searching strings==
 
@@ -4732,14 +4820,16 @@ The search is case-sensitive in all these functions.
 The search substring or regular expression must be a constant in all these functions.
 
 ===position(haystack, needle)===
-- Search for the &#39;needle&#39; substring in the &#39;haystack&#39; string.
+Searches for the &#39;needle&#39; substring in the &#39;haystack&#39; string.
 Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
+There's also positionCaseInsensitive function.
 
 ===positionUTF8(haystack, needle)===
 The same as &#39;position&#39;, but the position is returned in Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn&#39;t throw an exception).
+There's also positionCaseInsensitiveUTF8 function.
 
 ===match(haystack, pattern)===
-- Checks whether the string matches the &#39;pattern&#39; regular expression.
+Checks whether the string matches the &#39;pattern&#39; regular expression.
 The regular expression is re2.
 Returns 0 if it doesn&#39;t match, or 1 if it matches.
 
@@ -4756,7 +4846,7 @@ Extracts a fragment of a string using a regular expression. If &#39;haystack&#39
 Extracts all the fragments of a string using a regular expression. If &#39;haystack&#39; doesn&#39;t match the &#39;pattern&#39; regex, an empty string is returned. Returns an array of strings consisting of all matches to the regex. In general, the behavior is the same as the &#39;extract&#39; function (it takes the first subpattern, or the entire expression if there isn&#39;t a subpattern).
 
 ===like(haystack, pattern), haystack LIKE pattern operator===
-- Checks whether a string matches a simple regular expression. The regular expression can contain the metasymbols %%%%% and %%_%%.
+Checks whether a string matches a simple regular expression. The regular expression can contain the metasymbols %%%%% and %%_%%.
 %%%%% indicates any quantity of any bytes (including zero characters).
 %%_%% indicates any one byte.
 
@@ -4838,17 +4928,17 @@ SELECT replaceRegexpAll(&#39;Hello, World!&#39;, &#39;^&#39;, &#39;here: &#39;) 
 ==Functions for working with arrays==
 
 ===empty===
-- Returns 1 for an empty array, or 0 for a non-empty array.
+Returns 1 for an empty array, or 0 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
 ===notEmpty===
-- Returns 0 for an empty array, or 1 for a non-empty array.
+Returns 0 for an empty array, or 1 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
 ===length===
-- Returns the number of items in the array.
+Returns the number of items in the array.
 The result type is UInt64.
 The function also works for strings.
 
@@ -4859,17 +4949,20 @@ The function also works for strings.
 ===emptyArrayString===
 Accepts zero arguments and returns an empty array of the appropriate type.
 
+===emptyArrayToSingle===
+Accepts an empty array as argument and returns an array of one element equal to the default value.
+
 ===range(N)===
-- Returns an array of numbers from 0 to N-1.
+Returns an array of numbers from 0 to N-1.
 Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
 
 ===array(x1, ...), [x1, ...] operator===
-- Creates an array from the function arguments.
+Creates an array from the function arguments.
 The arguments must be constants and have types that have the smallest common type. At least one argument must be passed, because otherwise it isn&#39;t clear which type of array to create. That is, you can&#39;t use this function to create an empty array (to do that, use the &#39;emptyArray*&#39; function described above).
 Returns an &#39;Array(T)&#39; type result, where &#39;T&#39; is the smallest common type out of the passed arguments.
 
 ===arrayElement(arr, n), arr[n] operator===
-- Get the element with the index &#39;n&#39; from the array &#39;arr&#39;.
+Get the element with the index &#39;n&#39; from the array &#39;arr&#39;.
 &#39;n&#39; should be any integer type.
 Indexes in an array begin from one.
 Negative indexes are supported - in this case, it selects the corresponding element numbered from the end. For example, &#39;arr[-1]&#39; is the last item in the array.
@@ -4879,18 +4972,18 @@ If the index goes beyond the array bounds:
 - otherwise, a default value is returned (0 for numbers, an empty string for strings, etc.).
 
 ===has(arr, elem)===
-- Checking whether the &#39;arr&#39; array has the &#39;elem&#39; element.
+Checks whether the &#39;arr&#39; array has the &#39;elem&#39; element.
 Returns 0 if the the element is not in the array, or 1 if it is.
 &#39;elem&#39; must be a constant.
 
 ===indexOf(arr, x)===
-- Returns the index of the &#39;x&#39; element (starting from 1) if it is in the array, or 0 if it is not.
+Returns the index of the &#39;x&#39; element (starting from 1) if it is in the array, or 0 if it is not.
 
 ===countEqual(arr, x)===
-- Returns the number of elements in the array equal to &#39;x&#39;. Equivalent to <span class="inline-example">arrayCount(elem -> elem = x, arr)</span>.
+Returns the number of elements in the array equal to &#39;x&#39;. Equivalent to <span class="inline-example">arrayCount(elem -> elem = x, arr)</span>.
 
 ===arrayEnumerate(arr)===
-- Returns the array %%[1, 2, 3, ..., length(arr)]%%
+Returns the array %%[1, 2, 3, ..., length(arr)]%%
 
 This function is normally used together with ARRAY JOIN. It allows counting something just once for each array after applying ARRAY JOIN. Example:
 
@@ -4927,7 +5020,7 @@ WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 This function can also be used in higher-order functions. For example, you can use it to get array indexes for elements that match a condition.
 
 ===arrayEnumerateUniq(arr, ...)===
-- Returns an array the same size as the source array, indicating for each element what its position is among elements with the same value.
+Returns an array the same size as the source array, indicating for each element what its position is among elements with the same value.
 For example: %%arrayEnumerateUniq([10, 20, 10, 30]) = [1,  1,  2,  1]%%.
 
 This function is useful when using ARRAY JOIN and aggregation of array elements. Example:
@@ -4974,8 +5067,17 @@ SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 
 This is necessary when using ARRAY JOIN with a nested data structure and further aggregation across multiple elements in this structure.
 
+
+===arrayUniq(arr, ...)===
+
+If a single array is passed, returns a number of unique elements in that array.
+If multiple arrays of the same size are passed as arguments to the function, returns a number of unique tuples of elements in the same positions in all the arrays.
+
+If you need an array of the unique elements, you can use %%arrayReduce('groupUniqArray', arr)%%.
+
+
 ===arrayJoin(arr)===
-- A special function. See the section &quot;arrayJoin function&quot;.
+A special function. See the section &quot;arrayJoin function&quot;.
 
 
 ==Higher-order functions==
@@ -5040,15 +5142,20 @@ Returns the index of the first element in the &#39;arr1&#39; array for which &#3
 ==Functions for splitting and merging strings and arrays==
 
 ===splitByChar(separator, s)===
-- Splits a string into substrings, using &#39;separator&#39; as the separator.
+Splits a string into substrings, using &#39;separator&#39; as the separator.
 &#39;separator&#39; must be a string constant consisting of exactly one character.
 Returns an array of selected substrings. Empty substrings may be selected if the separator occurs at the beginning or end of the string, or if there are multiple consecutive separators.
 
 ===splitByString(separator, s)===
-- The same as above, but it uses a string of multiple characters as the separator. The string must be non-empty.
+The same as above, but it uses a string of multiple characters as the separator. The string must be non-empty.
+
+===arrayStringConcat(arr[, separator])===
+Concatenates strings from the array elements, using &#39;separator&#39; as the separator.
+&#39;separator&#39; is a string constant, an optional parameter. By default it is an empty string.
+Returns a string.
 
 ===alphaTokens(s)===
-- Selects substrings of consecutive bytes from the range a-z and A-Z.
+Selects substrings of consecutive bytes from the range a-z and A-Z.
 Returns an array of selected substrings.
 
 
@@ -5125,24 +5232,36 @@ URLPathHierarchy(&#39;https://example.com/browse/CONV-6788&#39;) =
 ]
 %%
 
+<h4>decodeURLComponent(URL)</h4>
+Returns a URL-decoded URL.
+
+Example:
+%%
+:) SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
+
+┌─DecodedURL─────────────────────────────┐
+│ http://127.0.0.1:8123/?query=SELECT 1; │
+└────────────────────────────────────────┘
+%%
+
 ===Functions that remove part of a URL.===
 
 If the URL doesn&#39;t have anything similar, the URL remains unchanged.
 
 <h4>cutWWW</h4>
-- Removes no more than one &#39;www.&#39; from the beginning of the URL&#39;s domain, if present.
+Removes no more than one &#39;www.&#39; from the beginning of the URL&#39;s domain, if present.
 
 <h4>cutQueryString</h4>
-- Removes the query-string. The question mark is also removed.
+Removes the query-string. The question mark is also removed.
 
 <h4>cutFragment</h4>
-- Removes the fragment identifier. The number sign is also removed.
+Removes the fragment identifier. The number sign is also removed.
 
 <h4>cutQueryStringAndFragment</h4>
-- Removes the query-string and fragment identifier. The question mark and number sign are also removed.
+Removes the query-string and fragment identifier. The question mark and number sign are also removed.
 
 <h4>cutURLParameter(URL, name)</h4>
-- Removes the URL parameter named &#39;name&#39;, if present. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
+Removes the URL parameter named &#39;name&#39;, if present. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
 
 
 ==Functions for working with IP addresses==
@@ -5255,11 +5374,11 @@ If an argument is passed, it can be any type, and its value is not used for anyt
 The only purpose of this argument is to prevent common subexpression elimination, so that two different instances of the same function return different columns with different random numbers.
 
 ===rand===
-- Returns a pseudo-random UInt32 number, evenly distributed among all UInt32-type numbers.
+Returns a pseudo-random UInt32 number, evenly distributed among all UInt32-type numbers.
 Uses a linear congruential generator.
 
 ===rand64===
-- Returns a pseudo-random UInt64 number, evenly distributed among all UInt64-type numbers.
+Returns a pseudo-random UInt64 number, evenly distributed among all UInt64-type numbers.
 Uses a linear congruential generator.
 
 
@@ -5268,45 +5387,45 @@ Uses a linear congruential generator.
 Hash functions can be used for deterministic pseudo-random shuffling of elements.
 
 ===halfMD5===
-- Calculates the MD5 from a string. Then it takes the first 8 bytes of the hash and interprets them as UInt64 in big endian.
+Calculates the MD5 from a string. Then it takes the first 8 bytes of the hash and interprets them as UInt64 in big endian.
 Accepts a String-type argument. Returns UInt64.
 This function works fairly slowly (5 million short strings per second per processor core).
 If you don&#39;t need MD5 in particular, use the &#39;sipHash64&#39; function instead.
 
 ===MD5===
-- Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
+Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
 If you don&#39;t need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the &#39;sipHash128&#39; function instead.
 If you need the same result as gives 'md5sum' utility, write %%lower(hex(MD5(s)))%%.
 
 ===sipHash64===
-- Calculates SipHash from a string.
+Calculates SipHash from a string.
 Accepts a String-type argument. Returns UInt64.
 SipHash is a cryptographic hash function. It works at least three times faster than MD5. For more information, see <a href="https://131002.net/siphash/">https://131002.net/siphash/</a>
 
 ===sipHash128===
-- Calculates SipHash from a string.
+Calculates SipHash from a string.
 Accepts a String-type argument. Returns FixedString(16).
-Differs from sipHash64 in that the final xor-folding state is only done up to 128 bytes.
+Differs from sipHash64 in that the final xor-folding state is only done up to 128 bits.
 
 ===cityHash64===
-- Calculates CityHash64 from a string or a similar hash function for any number of any type of arguments.
+Calculates CityHash64 from a string or a similar hash function for any number of any type of arguments.
 For String-type arguments, CityHash is used. This is a fast non-cryptographic hash function for strings with decent quality.
 For other types of arguments, a decent implementation-specific fast non-cryptographic hash function is used.
 If multiple arguments are passed, the function is calculated using the same rules and chain combinations using the CityHash combinator.
 For example, you can compute the checksum of an entire table with accuracy up to the row order: %%SELECT sum(cityHash64(*)) FROM table%%.
 
 ===intHash32===
-- Calculates a 32-bit hash code from any type of integer.
+Calculates a 32-bit hash code from any type of integer.
 This is a relatively fast non-cryptographic hash function of average quality for numbers.
 
 ===intHash64===
-- Calculates a 64-bit hash code from any type of integer.
+Calculates a 64-bit hash code from any type of integer.
 It works faster than intHash32. Average quality.
 
 ===SHA1===
 ===SHA224===
 ===SHA256===
-- Calculates SHA-1, SHA-224, or SHA-256 from a string and returns the resulting set of bytes as FixedString(20), FixedString(28), or FixedString(32).
+Calculates SHA-1, SHA-224, or SHA-256 from a string and returns the resulting set of bytes as FixedString(20), FixedString(28), or FixedString(32).
 The function works fairly slowly (SHA-1 processes about 5 million short strings per second per processor core, while SHA-224 and SHA-256 process about 2.2 million).
 We recommend using this function only in cases when you need a specific hash function and you can&#39;t select it.
 Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in SELECTS.
@@ -5325,6 +5444,12 @@ Accepts a string, number, date, or date with time. Returns a string containing t
 ===unhex(str)===
 Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits doesn&#39;t have to be even. If it is odd, the last digit is interpreted as the younger half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn&#39;t thrown).
 If you want to convert the result to a number, you can use the functions &#39;reverse&#39; and &#39;reinterpretAs<i>Type</i>&#39;.
+
+===UUIDStringToNum(str)===
+Accepts a string containing the UUID in the text format (%%123e4567-e89b-12d3-a456-426655440000%%). Returns a binary representation of the UUID in FixedString(16).
+
+===UUIDNumToString(str)===
+Accepts a FixedString(16) value containing the UUID in the binary format. Returns a readable string containing the UUID in the text format.
 
 ===bitmaskToList(num)===
 Accepts an integer. Returns a string containing the list of powers of two that total the source number when summed. They are comma-separated without spaces in text format, in ascending order.
@@ -5681,12 +5806,12 @@ See the section &quot;IN operators&quot;.
 
 
 ===tuple(x, y, ...), operator (x, y, ...)===
-- A function that allows grouping multiple columns.
+A function that allows grouping multiple columns.
 For columns with the types T1, T2, ..., it returns a Tuple(T1, T2, ...) type tuple containing these columns. There is no cost to execute the function.
 Tuples are normally used as intermediate values for an argument of IN operators, or for creating a list of formal parameters of lambda functions. Tuples can&#39;t be written to a table.
 
 ===tupleElement(tuple, n), operator x.N===
-- A function that allows getting columns from a tuple.
+A function that allows getting columns from a tuple.
 &#39;N&#39; is the column index, starting from 1. &#39;N&#39; must be a constant. &#39;N&#39; must be a strict postive integer no greater than the size of the tuple.
 There is no cost to execute the function.
 
@@ -5694,24 +5819,24 @@ There is no cost to execute the function.
 ==Other functions==
 
 ===hostName()===
-- Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
+Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
 ===visibleWidth(x)===
-- Calculates the approximate width when outputting values to the console in text format (tab-separated). This function is used by the system for implementing Pretty formats.
+Calculates the approximate width when outputting values to the console in text format (tab-separated). This function is used by the system for implementing Pretty formats.
 
 ===toTypeName(x)===
-- Gets the type name. Returns a string containing the type name of the passed argument.
+Gets the type name. Returns a string containing the type name of the passed argument.
 
 ===blockSize()===
-- Gets the size of the block.
+Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
 
 ===materialize(x)===
-- Turns a constant into a full column containing just one value.
+Turns a constant into a full column containing just one value.
 In ClickHouse, full columns and constants are represented differently in memory. Functions work differently for constant arguments and normal arguments (different code is executed), although the result is almost always the same. This function is for debugging this behavior.
 
 ===ignore(...)===
-- A function that accepts any arguments and always returns 0.
+A function that accepts any arguments and always returns 0.
 However, the argument is still calculated. This can be used for benchmarks.
 
 ===sleep(seconds)===
@@ -5730,6 +5855,12 @@ Note that 0 is returned for a NaN.
 
 ===isNaN(x)===
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is a NaN, otherwise 0.
+
+===hasColumnInTable('database', 'table', 'column')===
+Accepts constant String columns - database name, table name and column name. Returns constant UInt8 value, equal to 1 if column exists,
+otherwise 0.
+If table doesn't exist than exception is thrown.
+For elements of nested data structure function checks existence of column. For nested data structure 0 is returned.
 
 ===bar===
 Allows building a unicode-art diagram.
@@ -5852,6 +5983,78 @@ LIMIT 10
 └────────────────┴─────────┘
 %%
 
+===formatReadableSize(x)===
+
+Gets a size (number of bytes). Returns a string that contains rounded size with the suffix (KiB, MiB etc.).
+
+Example:
+
+%%
+SELECT
+    arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
+    formatReadableSize(filesize_bytes) AS filesize
+
+┌─filesize_bytes─┬─filesize───┐
+│              1 │ 1.00 B     │
+│           1024 │ 1.00 KiB   │
+│        1048576 │ 1.00 MiB   │
+│      192851925 │ 183.92 MiB │
+└────────────────┴────────────┘
+%%
+
+===least(a, b)===
+
+Returns the least element of a and b.
+
+===greatest(a, b)===
+
+Returns the greatest element of a and b.
+
+===uptime()===
+
+Returns server's uptime in seconds.
+
+===version()===
+
+Returns server's version as a string.
+
+===rowNumberInAllBlocks()===
+
+Returns an incremental row number within all blocks that were processed by this function.
+
+===runningDifference(x)===
+
+Calculates the difference between consecutive values in the data block.
+Result of the function depends on the order of the data in the blocks.
+
+It works only inside of the each processed block of data. Data splitting in the blocks is not explicitly controlled by the user.
+If you specify ORDER BY in subquery and call runningDifference outside of it, you could get an expected result.
+
+Example:
+%%
+SELECT
+    EventID,
+    EventTime,
+    runningDifference(EventTime) AS delta
+FROM
+(
+    SELECT
+        EventID,
+        EventTime
+    FROM events
+    WHERE EventDate = '2016-11-24'
+    ORDER BY EventTime ASC
+    LIMIT 5
+)
+
+┌─EventID─┬───────────EventTime─┬─delta─┐
+│    1106 │ 2016-11-24 00:00:04 │     0 │
+│    1107 │ 2016-11-24 00:00:05 │     1 │
+│    1108 │ 2016-11-24 00:00:05 │     0 │
+│    1109 │ 2016-11-24 00:00:09 │     4 │
+│    1110 │ 2016-11-24 00:00:10 │     1 │
+└─────────┴─────────────────────┴───────┘
+%%
 
 ==arrayJoin function==
 
@@ -6330,6 +6533,23 @@ The dictionary config file has the following format:
 			&lt;/clickhouse>
 			&lt;!- - If the address is similar to localhost, the request is made without network interaction. For fault tolerance, you can create a Distributed table on localhost and enter it. - ->
 			-->
+
+			&lt;!-- or the source is a executable. If layout.complex_key_cache - list of needed keys will be written in STDIN of program -->
+			&lt;executable>
+				&lt;!-- Path on the local file system or name located in one of env PATH dirs. -->
+				&lt;command>cat /opt/dictionaries/os.tsv&lt;/command>
+				&lt;!-- Which format to use for reading/writing stream. -->
+				&lt;format>TabSeparated&lt;/format>
+			&lt;/executable>
+
+			&lt;!-- or the source is a http server. If layout.complex_key_cache - list of needed keys will be sent as POST  -->
+			&lt;http>
+				&lt;!-- Host. -->
+				&lt;url>http://[::1]/os.tsv&lt;/url>
+				&lt;!-- Which format to use for reading answer and making POST. -->
+				&lt;format>TabSeparated&lt;/format>
+			&lt;/http>
+
 		&lt;/source>
 
 		&lt;!-- Update interval for fully loaded dictionaries. 0 - never update. -->
@@ -6395,7 +6615,7 @@ This is the most effective method. It works if all keys are smaller than 500,000
 This method is slightly less effective than the first one. The dictionary is also loaded to RAM in its entirety, and can contain any number of items with any identifiers. In practice, it makes sense to use up to tens of millions of items, while there is enough RAM.
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
-3. %%cache%% - This is the least effective method. It is appropriate if the dictionary doesn&#39;t fit in RAM. It is a cache of a fixed number of cells, where frequently-used data can be located. MySQL and ClickHouse sources are supported, but file sources are not supported. When searching a dictionary, the cache is searched first. For each data block, all keys not found in the cache (or expired keys) are collected in a package, which is sent to the source with the query %%SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)%%. The received data is then written to the cache.
+3. %%cache%% - This is the least effective method. It is appropriate if the dictionary doesn&#39;t fit in RAM. It is a cache of a fixed number of cells, where frequently-used data can be located. MySQL, ClickHouse, executable, http sources are supported, but file sources are not supported. When searching a dictionary, the cache is searched first. For each data block, all keys not found in the cache (or expired keys) are collected in a package, which is sent to the source with the query %%SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)%%. The received data is then written to the cache.
 
 We recommend using the flat method when possible, or hashed. The speed of the dictionaries is impeccable with this type of memory storage.
 
@@ -6496,7 +6716,7 @@ There usually isn&#39;t any reason to change this setting.
 The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
 The INSERT query also contains data for INSERT that is processed by a separate stream parser (that consumes O(1) RAM), which is not included in this restriction.
 
-By default, 64 KiB.
+By default, 256 KiB.
 
 
 ==interactive_delay==
@@ -6616,6 +6836,17 @@ Allows setting a default sampling coefficient for all SELECT queries.
 (For tables that don&#39;t support sampling, an exception will be thrown.)
 If set to 1, default sampling is not performed.
 
+==input_format_skip_unknown_fields==
+
+If the parameter is true, INSERT operation will skip columns with unknown names from input.
+Otherwise, an exception will be generated, it is default behavior.
+The parameter works only for JSONEachRow and TSKV input formats.
+
+==output_format_json_quote_64bit_integers==
+
+If the parameter is true (default value), UInt64 and Int64 numbers are printed as quoted strings in all JSON output formats.
+Such behavior is compatible with most JavaScript interpreters that stores all numbers as double-precision floating point numbers.
+Otherwise, they are printed as regular numbers.
 
 ==Restrictions on query complexity==
 
@@ -6634,9 +6865,11 @@ any (only for group_by_overflow_mode) - Continuing aggregation for the keys that
 
 ===readonly===
 
-If set to 1, run only queries that don&#39;t change data or settings.
-As an example, SELECT and SHOW queries are allowed, but INSERT and SET are forbidden.
-After you write %%SET readonly = 1%%, you can&#39;t disable readonly mode in the current session.
+If set to 0, allows to run any queries.
+If set to 1, allows to run only queries that don&#39;t change data or settings (e.g. SELECT or SHOW). INSERT and SET are forbidden.
+If set to 2, allows to run queries that don&#39;t change data (SELECT, SHOW) and allows to change settings (SET).
+
+After you set the read-only mode, you won&#39;t be able to disable it in the current session.
 
 When using the GET method in the HTTP interface, &#39;readonly = 1&#39; is set automatically. In other words, for queries that modify data, you can only use the POST method. You can send the query itself either in the POST body, or in the URL parameter.
 
@@ -6932,7 +7165,7 @@ We could have defined this list of networks directly in &#39;users.xml&#39;, or 
 
 The config includes comments explaining how to open access from everywhere.
 
-For use in production, only specify IP elements (IP addresses and their masks), since using &#39;host&#39; and &#39;hoost_regexp&#39; might cause extra latency.
+For use in production, only specify IP elements (IP addresses and their masks), since using &#39;host&#39; and &#39;host_regexp&#39; might cause extra latency.
 
 Next the user settings profile is specified (see the section &quot;Settings profiles&quot;). You can specify the default profile, &#39;default&#39;. The profile can have any name. You can specify the same profile for different users. The most important thing you can write in the settings profile is &#39;readonly&#39; set to 1, which provides read-only access.
 
