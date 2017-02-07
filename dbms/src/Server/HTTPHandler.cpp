@@ -66,7 +66,7 @@ namespace ErrorCodes
 	extern const int REQUIRED_PASSWORD;
 }
 
-static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHttpStatus(int exception_code)
+static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int exception_code)
 {
 	using namespace Poco::Net;
 
@@ -376,7 +376,7 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 		}
 		else
 		{
-			response.setStatusAndReason(exceptionCodeToHttpStatus(exception_code));
+			response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
 		}
 
 		if (!response.sent() && !used_output.out_maybe_compressed)
