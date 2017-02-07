@@ -147,11 +147,13 @@ public:
 		return res;
 	}
 
-	/// Copies pointers to in/out streams, it can be called once
+	/// Copies pointers to in/out streams
 	void setQueryStreams(const BlockIO & io);
 
+	/// Frees in/out streams
 	void releaseQueryStreams();
 
+	/// It means that ProcessListEntry still exists, but stream was already destroyed
 	bool streamsAreReleased();
 
 	/// Get query in/out pointers from BlockIO
