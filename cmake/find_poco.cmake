@@ -1,5 +1,5 @@
 
-if (UNBUNDLED OR NOT USE_INTERNAL_POCO_LIBRARY)
+if (NOT USE_INTERNAL_POCO_LIBRARY)
 	find_package (Poco REQUIRED Util Net XML Data Crypto DataODBC MongoDB Foundation)
 	if (Poco_INCLUDE_DIRS)
 		include_directories (${Poco_INCLUDE_DIRS})
