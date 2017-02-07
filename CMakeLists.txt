@@ -60,20 +60,27 @@ endif ()
 
 
 option (UNBUNDLED "Try find all libraries in system (if fail - use bundled from contrib/)" OFF)
+if (UNBUNDLED)
+	set(NOT_UNBUNDLED 0)
+else ()
+	set(NOT_UNBUNDLED 1)
+endif ()
 
-set (USE_INTERNAL_BOOST_LIBRARY TRUE CACHE BOOL "Set to FALSE to use system boost library instead of bundled")
+option (USE_INTERNAL_BOOST_LIBRARY "Set to FALSE to use system boost library instead of bundled" ${NOT_UNBUNDLED})
 
 if (USE_INTERNAL_BOOST_LIBRARY)
 	add_definitions(-DBOOST_SYSTEM_NO_DEPRECATED)
 endif ()
 
-option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ON)
+option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ${NOT_UNBUNDLED})
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
 	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" OFF)
 else ()
 	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ON)
 endif ()
+
+option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
 
 option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc." ON)
 
@@ -172,6 +179,7 @@ endif ()
 include (cmake/find_openssl.cmake)
 include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
+include (cmake/find_zlib.cmake)
 include (cmake/find_poco.cmake)
 include (cmake/find_libtool.cmake)
 include (cmake/find_rt.cmake)
