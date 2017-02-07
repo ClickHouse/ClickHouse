@@ -409,23 +409,6 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 	}
 }
 
-static int getCurrentExceptionCode()
-{
-	try
-	{
-		throw;
-	}
-	catch (const Exception & e)
-	{
-		return e.code();
-	}
-	catch (...)
-	{
-
-	}
-
-	return 0;
-}
 
 void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {

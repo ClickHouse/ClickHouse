@@ -87,9 +87,11 @@ private:
 		const String & table_name_regexp_,
 		const Context & context_);
 
-	void getSelectedTables(StorageVector & selected_tables) const;
+	using StorageListWithLocks = std::list<std::pair<StoragePtr, TableStructureReadLockPtr>>;
 
-	Block getBlockWithVirtualColumns(const StorageVector & selected_tables) const;
+	StorageListWithLocks getSelectedTables() const;
+
+	Block getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const;
 };
 
 }
