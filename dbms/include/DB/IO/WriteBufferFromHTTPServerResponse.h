@@ -2,7 +2,7 @@
 
 #include <experimental/optional>
 #include <mutex>
-
+#include <Poco/Version.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/IO/WriteBufferFromOStream.h>
@@ -49,7 +49,10 @@ private:
 	int compression_level = Z_DEFAULT_COMPRESSION;
 
 	std::ostream * response_body_ostr = nullptr;
+
+#if POCO_CLICKHOUSE_PATCH
 	std::ostream * response_header_ostr = nullptr;
+#endif
 
 	std::experimental::optional<WriteBufferFromOStream> out_raw;
 	std::experimental::optional<ZlibDeflatingWriteBuffer> deflating_buf;
