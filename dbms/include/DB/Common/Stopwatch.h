@@ -9,14 +9,14 @@
 #include <common/apple_rt.h>
 #endif
 
-/** Отличается от Poco::Stopwatch только тем, что использует clock_gettime вместо gettimeofday,
-  * возвращает наносекунды вместо микросекунд, а также другими незначительными отличиями.
+/** Differs from Poco::Stopwatch only by using 'clock_gettime' instead of 'gettimeofday',
+  *  returns nanoseconds instead of microseconds, and also by other minor differencies.
   */
 class Stopwatch
 {
 public:
-	/** CLOCK_MONOTONIC работает сравнительно эффективно (~15 млн. вызовов в сек.) и не приводит к системному вызову.
-	  * Поставьте CLOCK_MONOTONIC_COARSE, если нужна больше производительность, но достаточно погрешности в несколько мс.
+	/** CLOCK_MONOTONIC works relatively efficient (~15 million calls/sec) and doesn't lead to syscall.
+	  * Pass CLOCK_MONOTONIC_COARSE, if you need better performance with acceptable cost of several milliseconds of inaccuracy.
 	  */
 	Stopwatch(clockid_t clock_type_ = CLOCK_MONOTONIC) : clock_type(clock_type_) { restart(); }
 

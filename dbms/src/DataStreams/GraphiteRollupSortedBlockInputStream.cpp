@@ -31,7 +31,7 @@ UInt32 GraphiteRollupSortedBlockInputStream::selectPrecision(const Graphite::Ret
 			return retention.precision;
 	}
 
-	/// Без огрубления.
+	/// No rounding.
 	return 1;
 }
 
@@ -74,10 +74,9 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
 	if (merged_columns.empty())
 		return Block();
 
-	/// Дополнительная инициализация.
+	/// Additional initialization.
 	if (!current_path.data)
 	{
-		/// Определим максимальный размер состояния агрегатных функций.
 		size_t max_size_of_aggregate_state = 0;
 		for (const auto & pattern : params.patterns)
 			if (pattern.function->sizeOfData() > max_size_of_aggregate_state)
@@ -85,7 +84,7 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
 
 		place_for_aggregate_state.resize(max_size_of_aggregate_state);
 
-		/// Запомним номера столбцов.
+		/// Memoize column numbers in block.
 		path_column_num = merged_block.getPositionByName(params.path_column_name);
 		time_column_num = merged_block.getPositionByName(params.time_column_name);
 		value_column_num = merged_block.getPositionByName(params.value_column_name);
@@ -132,7 +131,7 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 			UInt32 precision = selectPrecision(current_pattern->retentions, next_time);
 			next_time = roundTimeToPrecision(date_lut, next_time, precision);
 		}
-		/// А если ни один шаблон не сработал - то это понимается как отсутствие необходимости выполнять округление.
+		/// If no patterns has matched - it means that no need to do rounding.
 
 		bool is_new_key = path_differs || next_time != current_time;
 
@@ -142,7 +141,7 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 			{
 				finishCurrentRow(merged_columns);
 
-				/// если накопилось достаточно строк
+				/// if we have enough rows
 				if (merged_rows >= max_block_size)
 					return;
 			}
