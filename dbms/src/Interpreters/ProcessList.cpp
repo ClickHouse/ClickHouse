@@ -160,6 +160,7 @@ ProcessListEntry::~ProcessListEntry()
 void ProcessListElement::setQueryStreams(const BlockIO & io)
 {
 	std::lock_guard<std::mutex> lock(query_streams_mutex);
+
 	query_stream_in = io.in;
 	query_stream_out = io.out;
 	query_streams_initialized = true;
@@ -181,7 +182,6 @@ bool ProcessListElement::streamsAreReleased()
 
 	return query_streams_released;
 }
-
 
 bool ProcessListElement::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const
 {
@@ -248,8 +248,12 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
 
 	ProcessListElement * elem = tryGetProcessListElement(current_query_id, current_user);
 
-	if (!elem || elem->streamsAreReleased())
+	if (!elem)
 		return CancellationCode::NotFound;
+
+	/// Streams are destroyed, and ProcessListElement will be deleted from ProcessList soon. We need wait a little bit
+	if (elem->streamsAreReleased())
+		return CancellationCode::CancelSent;
 
 	BlockInputStreamPtr input_stream;
 	BlockOutputStreamPtr output_stream;
