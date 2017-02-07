@@ -847,7 +847,7 @@ For further info please read the documentation: https://clickhouse.yandex/
 		else
 			return StorageMergeTree::create(
 				data_path, database_name, table_name,
-				columns, materialized_columns, alias_columns, column_defaults,
+				columns, materialized_columns, alias_columns, column_defaults, attach,
 				context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, merging_params,
 				has_force_restore_data_flag,
