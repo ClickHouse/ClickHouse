@@ -585,6 +585,8 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 	if (primary_expr)
 		keys = primary_expr->getRequiredColumns();
 
+	keys.push_back(date_column_name);
+
 	if (!merging_params.sign_column.empty())
 		keys.push_back(merging_params.sign_column);
 
