@@ -26,7 +26,7 @@ private:
 	size_t quorum_timeout_ms;
 	size_t block_index = 0;
 
-	using Poco::Logger;
+	using Logger = Poco::Logger;
 	Logger * log;
 };
 
