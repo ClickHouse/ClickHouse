@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Poco/Version.h>
 #include <Poco/URI.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>

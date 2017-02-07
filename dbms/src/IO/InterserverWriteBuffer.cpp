@@ -1,11 +1,13 @@
 #include <DB/IO/InterserverWriteBuffer.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 
+#include <Poco/Version.h>
 #include <Poco/URI.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 
 #include <common/logger_useful.h>
+
 
 namespace DB
 {

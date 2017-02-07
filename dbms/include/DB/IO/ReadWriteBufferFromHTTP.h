@@ -5,14 +5,17 @@
 #include <DB/IO/ReadBufferFromHTTP.h>
 #include <DB/IO/ReadBuffer.h>
 
+
 namespace DB
 {
 
-struct HTTPTimeouts {
+struct HTTPTimeouts
+{
 	Poco::Timespan connection_timeout = Poco::Timespan(DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, 0);
 	Poco::Timespan send_timeout = Poco::Timespan(DEFAULT_HTTP_READ_BUFFER_TIMEOUT, 0);
 	Poco::Timespan receive_timeout = Poco::Timespan(DEFAULT_HTTP_READ_BUFFER_TIMEOUT, 0);
 };
+
 
 /** Perform HTTP POST request and provide response to read.
   */
@@ -28,15 +31,14 @@ private:
 	std::unique_ptr<ReadBuffer> impl;
 
 public:
-	using OutStreamCallback = std::function<void(std::ostream&)>;
+	using OutStreamCallback = std::function<void(std::ostream &)>;
 
 	ReadWriteBufferFromHTTP(
 		const Poco::URI & uri,
 		const std::string & method = {},
 		OutStreamCallback out_stream_callback = {},
 		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-		const HTTPTimeouts & timeouts = {}
-	);
+		const HTTPTimeouts & timeouts = {});
 
 	bool nextImpl() override;
 };
