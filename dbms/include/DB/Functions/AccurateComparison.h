@@ -10,6 +10,8 @@
 namespace accurate
 {
 
+using DB::UInt64;
+
 /** Cases:
 	1) Safe conversion (in case of default C++ operators)
 		a) int vs any int

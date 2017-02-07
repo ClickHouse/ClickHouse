@@ -109,6 +109,9 @@ ProcessList::EntryPtr ProcessList::insert(
 
 ProcessListEntry::~ProcessListEntry()
 {
+	/// Destroy all streams to avoid long lock of ProcessList
+	it->releaseQueryStreams();
+
 	std::lock_guard<std::mutex> lock(parent.mutex);
 
 	/// Важен порядок удаления memory_tracker-ов.
@@ -156,13 +159,34 @@ ProcessListEntry::~ProcessListEntry()
 
 void ProcessListElement::setQueryStreams(const BlockIO & io)
 {
+	std::lock_guard<std::mutex> lock(query_streams_mutex);
+
 	query_stream_in = io.in;
 	query_stream_out = io.out;
-	query_streams_initialized = true; // forces strict memory ordering
+	query_streams_initialized = true;
+}
+
+void ProcessListElement::releaseQueryStreams()
+{
+	std::lock_guard<std::mutex> lock(query_streams_mutex);
+
+	query_streams_initialized = false;
+	query_streams_released = true;
+	query_stream_in.reset();
+	query_stream_out.reset();
+}
+
+bool ProcessListElement::streamsAreReleased()
+{
+	std::lock_guard<std::mutex> lock(query_streams_mutex);
+
+	return query_streams_released;
 }
 
 bool ProcessListElement::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const
 {
+	std::lock_guard<std::mutex> lock(query_streams_mutex);
+
 	if (!query_streams_initialized)
 		return false;
 
@@ -227,6 +251,10 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
 	if (!elem)
 		return CancellationCode::NotFound;
 
+	/// Streams are destroyed, and ProcessListElement will be deleted from ProcessList soon. We need wait a little bit
+	if (elem->streamsAreReleased())
+		return CancellationCode::CancelSent;
+
 	BlockInputStreamPtr input_stream;
 	BlockOutputStreamPtr output_stream;
 	IProfilingBlockInputStream * input_stream_casted;
@@ -240,6 +268,7 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
 		}
 		return CancellationCode::CancelCannotBeSent;
 	}
+
 	return CancellationCode::QueryIsNotInitializedYet;
 }
 
