@@ -27,23 +27,10 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
 		if (add_cors_header)
 			response.set("Access-Control-Allow-Origin", "*");
 
-		if (compress)
-		{
-			if (compression_method == ZlibCompressionMethod::Gzip)
-				response.set("Content-Encoding", "gzip");
-			else if (compression_method == ZlibCompressionMethod::Zlib)
-				response.set("Content-Encoding", "deflate");
-			else
-				throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
-								ErrorCodes::LOGICAL_ERROR);
-		}
-
 		setResponseDefaultHeaders(response);
 
 #if POCO_CLICKHOUSE_PATCH
 		std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
-#else
-		response_body_ostr = &(response.send());
 #endif
 	}
 }
@@ -76,19 +63,48 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 		{
 			if (compress)
 			{
+				if (compression_method == ZlibCompressionMethod::Gzip)
+				{
+#if POCO_CLICKHOUSE_PATCH
+					*response_header_ostr << "Content-Encoding: gzip\r\n";
+#else
+					response.set("Content-Encoding", "gzip");
+#endif
+				}
+				else if (compression_method == ZlibCompressionMethod::Zlib)
+				{
+#if POCO_CLICKHOUSE_PATCH
+					*response_header_ostr << "Content-Encoding: deflate\r\n";
+#else
+					response.set("Content-Encoding", "deflate");
+#endif
+				}
+				else
+					throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
+									ErrorCodes::LOGICAL_ERROR);
 				/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
+
+#if !POCO_CLICKHOUSE_PATCH
+				response_body_ostr = &(response.send());
+#endif
+
 				out_raw.emplace(*response_body_ostr);
 				deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
 				out = &deflating_buf.value();
 			}
 			else
 			{
+#if !POCO_CLICKHOUSE_PATCH
+				response_body_ostr = &(response.send());
+#endif
+
 				out_raw.emplace(*response_body_ostr, working_buffer.size(), working_buffer.begin());
 				out = &out_raw.value();
 			}
 		}
 
 		finishSendHeaders();
+
 	}
 
 	out->position() = position();
