@@ -248,6 +248,7 @@ public:
 					const MergeTreeSettings & settings_,
 					const String & log_name_,
 					bool require_part_metadata_,
+					bool attach,
 					BrokenPartCallback broken_part_callback_ = [](const String &){});
 
 	/// Загрузить множество кусков с данными с диска. Вызывается один раз - сразу после создания объекта.
@@ -523,6 +524,8 @@ private:
 	/** Для каждого шарда множество шардированных кусков.
 	  */
 	PerShardDataParts per_shard_data_parts;
+
+	void checkNoMultidimensionalArrays(const NamesAndTypesList & columns, bool attach) const;
 
 	void initPrimaryKey();
 

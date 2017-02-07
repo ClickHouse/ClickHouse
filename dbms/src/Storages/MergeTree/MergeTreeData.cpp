@@ -67,6 +67,7 @@ MergeTreeData::MergeTreeData(
 	const MergeTreeSettings & settings_,
 	const String & log_name_,
 	bool require_part_metadata_,
+	bool attach,
 	BrokenPartCallback broken_part_callback_)
     : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
@@ -101,6 +102,9 @@ MergeTreeData::MergeTreeData(
 			"Date column (" + date_column_name + ") does not exist in table declaration.",
 			ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
+	checkNoMultidimensionalArrays(*columns, attach);
+	checkNoMultidimensionalArrays(materialized_columns, attach);
+
 	merging_params.check(*columns);
 
 	/// Creating directories, if not exist.
@@ -111,6 +115,27 @@ MergeTreeData::MergeTreeData(
 		initPrimaryKey();
 	else if (merging_params.mode != MergingParams::Unsorted)
 		throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
+}
+
+
+void MergeTreeData::checkNoMultidimensionalArrays(const NamesAndTypesList & columns, bool attach) const
+{
+	for (const auto & column : columns)
+	{
+		if (const auto * array = dynamic_cast<const DataTypeArray *>(column.type.get()))
+		{
+			if (dynamic_cast<const DataTypeArray *>(array->getNestedType().get()))
+			{
+				std::string message =
+					"Column " + column.name + " is a multidimensional array. "
+					+ "Multidimensional arrays are not supported in MergeTree engines.";
+				if (!attach)
+					throw Exception(message, ErrorCodes::BAD_TYPE_OF_FIELD);
+				else
+					LOG_ERROR(log, message);
+			}
+		}
+	}
 }
 
 
@@ -576,6 +601,9 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 	auto new_alias_columns = alias_columns;
 	auto new_column_defaults = column_defaults;
 	params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
+
+	checkNoMultidimensionalArrays(new_columns, /* attach = */ false);
+	checkNoMultidimensionalArrays(new_materialized_columns, /* attach = */ false);
 
 	/// Список столбцов, которые нельзя трогать.
 	/// sampling_expression можно не учитывать, потому что он обязан содержаться в первичном ключе.
