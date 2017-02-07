@@ -58,6 +58,9 @@ if (USE_STATIC_LIBRARIES)
 	list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
+
+option (UNBUNDLED "Try find all libraries in system (if fail - use bundled from contrib/)" OFF)
+
 set (USE_INTERNAL_BOOST_LIBRARY TRUE CACHE BOOL "Set to FALSE to use system boost library instead of bundled")
 
 if (USE_INTERNAL_BOOST_LIBRARY)
