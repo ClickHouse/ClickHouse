@@ -408,6 +408,7 @@ public:
 int mainEntryClickhouseBenchmark(int argc, char ** argv)
 {
 	using namespace DB;
+	bool print_stacktrace = true;
 
 	try
 	{
@@ -428,6 +429,7 @@ int mainEntryClickhouseBenchmark(int argc, char ** argv)
 			("user", 			value<std::string>()->default_value("default"),		"")
 			("password",		value<std::string>()->default_value(""), 			"")
 			("database",		value<std::string>()->default_value("default"), 	"")
+			("stacktrace",															"print stack traces of exceptions")
 
 		#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
 		#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
@@ -446,6 +448,8 @@ int mainEntryClickhouseBenchmark(int argc, char ** argv)
 			std::cout << desc << "\n";
 			return 1;
 		}
+
+		print_stacktrace = options.count("stacktrace");
 
 		/// Извлекаем settings and limits из полученных options
 		Settings settings;
@@ -474,7 +478,7 @@ int mainEntryClickhouseBenchmark(int argc, char ** argv)
 	}
 	catch (...)
 	{
-		std::cerr << getCurrentExceptionMessage(true) << std::endl;
+		std::cerr << getCurrentExceptionMessage(print_stacktrace, true) << std::endl;
 		return getCurrentExceptionCode();
 	}
 
