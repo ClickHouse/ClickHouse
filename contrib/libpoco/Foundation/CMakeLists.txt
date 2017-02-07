@@ -71,7 +71,7 @@ else()
     )
 endif (POCO_UNBUNDLED)
 
-# Use zlib founded by clickhouse.
+# Use zlib found by clickhouse.
 set(SYSLIBS ${SYSLIBS} ${ZLIB_LIBRARIES})
 
 if(WIN32)
