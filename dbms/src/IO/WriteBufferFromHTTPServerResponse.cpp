@@ -1,3 +1,4 @@
+#include <Poco/Version.h>
 #include <Poco/Net/HTTPServerResponse.h>
 
 #include <DB/Common/Exception.h>
