@@ -7,6 +7,9 @@
 #include <DB/IO/WriteHelpers.h>
 #include <daemon/BaseDaemon.h>
 
+#include <experimental/optional>
+#include <functional>
+
 
 /** Форматирует по своему.
   * Некоторые детали невозможно получить, используя только Poco::PatternFormatter.
@@ -30,16 +33,16 @@ public:
 		ADD_LAYER_TAG = 1 << 0
 	};
 
-	OwnPatternFormatter(const BaseDaemon & daemon_, Options options_ = ADD_NOTHING) : Poco::PatternFormatter(""), daemon(daemon_), options(options_) {}
+	OwnPatternFormatter(const BaseDaemon * daemon_, Options options_ = ADD_NOTHING) : Poco::PatternFormatter(""), daemon(daemon_), options(options_) {}
 
 	void format(const Poco::Message & msg, std::string & text) override
 	{
 		DB::WriteBufferFromString wb(text);
 
 		/// For syslog: tag must be before message and first whitespace.
-		if (options & ADD_LAYER_TAG)
+		if (options & ADD_LAYER_TAG && daemon)
 		{
-			auto layer = daemon.getLayer();
+			auto layer = daemon->getLayer();
 			if (layer)
 			{
 				writeCString("layer[", wb);
@@ -75,6 +78,6 @@ public:
 	}
 
 private:
-	const BaseDaemon & daemon;
+	const BaseDaemon * daemon;
 	Options options;
 };
