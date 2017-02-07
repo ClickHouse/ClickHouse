@@ -60,6 +60,7 @@ private:
 	const String hostname;
 	const String datacenter_name;
 
+	using Poco::Logger;
 	Logger * log;
 
 	Context & context;

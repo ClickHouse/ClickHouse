@@ -2,12 +2,11 @@
 
 #include <mutex>
 #include <thread>
-
 #include <ext/shared_ptr_helper.hpp>
-
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
+#include <Poco/Event.h>
 
 
 namespace Poco { class Logger; }
