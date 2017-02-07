@@ -42,12 +42,13 @@ namespace
 		for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
 		{
 			const auto address = boost::copy_range<std::string>(*it);
+			const auto address_end = address.data() + address.size();
 
 			const auto user_pw_end = strchr(address.data(), '@');
 			const auto colon = strchr(address.data(), ':');
 			if (!user_pw_end || !colon)
 				throw Exception{
-					"Shard address '" + address + "' does not match to 'user[:password]@host:port' pattern",
+					"Shard address '" + address + "' does not match to 'user[:password]@host:port#default_database' pattern",
 					ErrorCodes::INCORRECT_FILE_NAME
 				};
 
@@ -59,12 +60,16 @@ namespace
 					ErrorCodes::INCORRECT_FILE_NAME
 				};
 
+			const auto has_db = strchr(address.data(), '#');
+			const auto port_end = has_db ? has_db : address_end;
+
 			const auto user = unescapeForFileName({address.data(), has_pw ? static_cast<const char *>(colon) : user_pw_end});
 			const auto password = has_pw ? unescapeForFileName({colon + 1, user_pw_end}) : std::string{};
 			const auto host = unescapeForFileName({user_pw_end + 1, host_end});
-			const auto port = parse<UInt16>(host_end + 1);
+			const auto port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
+			const auto database = has_db ? unescapeForFileName({has_db + 1, address_end}) : std::string{};
 
-			pools.emplace_back(factory(host, port, user, password));
+			pools.emplace_back(factory(host, port, user, password, database));
 		}
 
 		return pools;
@@ -131,9 +136,11 @@ void StorageDistributedDirectoryMonitor::run()
 ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name)
 {
 	const auto pool_factory = [this, &name] (const std::string & host, const UInt16 port,
-												const std::string & user, const std::string & password) {
+											 const std::string & user, const std::string & password,
+											 const std::string & default_database)
+	{
 		return std::make_shared<ConnectionPool>(
-			1, host, port, "",
+			1, host, port, default_database,
 			user, password,
 			storage.getName() + '_' + name);
 	};
