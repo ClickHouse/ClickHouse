@@ -540,7 +540,7 @@ void BaseDaemon::buildLoggers()
 		Poco::AutoPtr<SplitterChannel> split = new SplitterChannel;
 
 		// set up two channel chains
-		Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
+		Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(*this);
 		pf->setProperty("times", "local");
 		Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
 		log_file = new FileChannel;
@@ -558,7 +558,7 @@ void BaseDaemon::buildLoggers()
 			std::cerr << "Should error logs to " << config().getString("logger.errorlog") << std::endl;
 			Poco::AutoPtr<Poco::LevelFilterChannel> level = new Poco::LevelFilterChannel;
 			level->setLevel(Message::PRIO_NOTICE);
-			Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
+			Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(*this);
 			pf->setProperty("times", "local");
 			Poco::AutoPtr<FormattingChannel> errorlog = new FormattingChannel(pf);
 			error_log_file = new FileChannel;
@@ -575,7 +575,7 @@ void BaseDaemon::buildLoggers()
 
 		if (config().getBool("logger.use_syslog", false) || config().getBool("dynamic_layer_selection", false))
 		{
-			Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_LAYER_TAG);
+			Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(*this, OwnPatternFormatter::ADD_LAYER_TAG);
 			pf->setProperty("times", "local");
 			Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
 			syslog_channel = new Poco::SyslogChannel(commandName(), Poco::SyslogChannel::SYSLOG_CONS | Poco::SyslogChannel::SYSLOG_PID, Poco::SyslogChannel::SYSLOG_DAEMON);
@@ -592,7 +592,7 @@ void BaseDaemon::buildLoggers()
 	{
 		// Выводим на консоль
 		Poco::AutoPtr<ConsoleChannel> file = new ConsoleChannel;
-		Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
+		Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(*this);
 		pf->setProperty("times", "local");
 		Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
 		log->setChannel(file);

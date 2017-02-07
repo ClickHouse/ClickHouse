@@ -32,7 +32,7 @@ public:
 
 	OwnPatternFormatter(const BaseDaemon & daemon_, Options options_ = ADD_NOTHING) : Poco::PatternFormatter(""), daemon(daemon_), options(options_) {}
 
-	void format(const Message & msg, std::string & text) override
+	void format(const Poco::Message & msg, std::string & text) override
 	{
 		DB::WriteBufferFromString wb(text);
 
