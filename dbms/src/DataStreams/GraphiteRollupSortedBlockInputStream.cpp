@@ -93,6 +93,9 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
 		for (size_t i = 0; i < num_columns; ++i)
 			if (i != time_column_num && i != value_column_num && i != version_column_num)
 				unmodified_column_numbers.push_back(i);
+
+		if (selected_row.empty())
+			selected_row.columns.resize(num_columns);
 	}
 
 	if (has_collation)
@@ -123,46 +126,63 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 		bool path_differs = is_first || next_path != current_path;
 		is_first = false;
 
-		if (path_differs)
-			current_pattern = selectPatternForPath(next_path);
-
-		if (current_pattern)
-		{
-			UInt32 precision = selectPrecision(current_pattern->retentions, next_time);
-			next_time = roundTimeToPrecision(date_lut, next_time, precision);
-		}
-		/// If no patterns has matched - it means that no need to do rounding.
-
+		/// Is new key before rounding.
 		bool is_new_key = path_differs || next_time != current_time;
+
+		UInt64 current_version = current->all_columns[version_column_num]->get64(current->pos);
 
 		if (is_new_key)
 		{
-			if (merged_rows)
-			{
-				finishCurrentRow(merged_columns);
-
-				/// if we have enough rows
-				if (merged_rows >= max_block_size)
-					return;
-			}
-
-			startNextRow(merged_columns, current);
-
-			owned_current_block = source_blocks[current.impl->order];
-			current_path = next_path;
-			current_time = next_time;
 			current_max_version = 0;
 
-			if (prev_pattern)
-				prev_pattern->function->destroy(place_for_aggregate_state.data());
+			if (path_differs)
+				current_pattern = selectPatternForPath(next_path);
+
 			if (current_pattern)
-				current_pattern->function->create(place_for_aggregate_state.data());
+			{
+				UInt32 precision = selectPrecision(current_pattern->retentions, next_time);
+				next_time_rounded = roundTimeToPrecision(date_lut, next_time, precision);
+			}
+			/// If no patterns has matched - it means that no need to do rounding.
 
-			++merged_rows;
+			/// Key will be new after rounding.
+			bool will_be_new_key = path_differs || next_time_rounded != current_time_rounded;
+
+			if (will_be_new_key)
+			{
+				if (merged_rows)
+				{
+					finishCurrentRow(merged_columns);
+
+					/// if we have enough rows
+					if (merged_rows >= max_block_size)
+						return;
+				}
+
+				startNextRow(merged_columns, current);
+
+				current_path = next_path;
+				current_time = next_time;
+				current_time_rounded = next_time_rounded;
+
+				if (prev_pattern)
+					prev_pattern->function->destroy(place_for_aggregate_state.data());
+				if (current_pattern)
+					current_pattern->function->create(place_for_aggregate_state.data());
+
+				++merged_rows;
+			}
+
+			accumulateRow(selected_row);
+			current_max_version = current_version;
 		}
-
-		accumulateRow(current);
-		current_max_version = std::max(current_max_version, current->all_columns[version_column_num]->get64(current->pos));
+		else if (current_version >= current_max_version)
+		{
+			/// Within all rows with same key, we should leave only one row with maximum version;
+			///  and for rows with same maximum version - only last row.
+			current_max_version = current_version;
+			setRowRef(selected_row, current);
+		}
 
 		queue.pop();
 
@@ -210,7 +230,7 @@ void GraphiteRollupSortedBlockInputStream::startNextRow(ColumnPlainPtrs & merged
 void GraphiteRollupSortedBlockInputStream::finishCurrentRow(ColumnPlainPtrs & merged_columns)
 {
 	/// Вставляем вычисленные значения столбцов time, value, version.
-	merged_columns[time_column_num]->insert(UInt64(current_time));
+	merged_columns[time_column_num]->insert(UInt64(current_time_rounded));
 	merged_columns[version_column_num]->insert(current_max_version);
 
 	if (current_pattern)
@@ -218,11 +238,10 @@ void GraphiteRollupSortedBlockInputStream::finishCurrentRow(ColumnPlainPtrs & me
 }
 
 
-template <class TSortCursor>
-void GraphiteRollupSortedBlockInputStream::accumulateRow(TSortCursor & cursor)
+void GraphiteRollupSortedBlockInputStream::accumulateRow(RowRef & row)
 {
 	if (current_pattern)
-		current_pattern->function->add(place_for_aggregate_state.data(), &cursor->all_columns[value_column_num], cursor->pos, nullptr);
+		current_pattern->function->add(place_for_aggregate_state.data(), &row.columns[value_column_num], row.row_num, nullptr);
 }
 
 }
