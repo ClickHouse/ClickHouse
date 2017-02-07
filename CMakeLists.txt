@@ -19,10 +19,6 @@ else ()
 	message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 3.8+ and GCC 5+.")
 endif ()
 
-if (APPLE)
-	set (PLATFORM_EXTRA_CXX_FLAG "-Dexp10=__exp10") # Also needed for libc++
-endif ()
-
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
 	set (PLATFORM_EXTRA_CXX_FLAG "-DCLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST")
 endif ()
