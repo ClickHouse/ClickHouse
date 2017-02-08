@@ -247,7 +247,7 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 		for (const auto row : ext::range(0, rows))
 		{
 			const auto id = ids[row];
-			auto find_result = findCellIdx(id, now);
+			const auto find_result = findCellIdx(id, now);
 			const auto & cell_idx = find_result.second;
 			if (!find_result.first) {
 				outdated_ids[id].push_back(row);
@@ -426,7 +426,7 @@ void CacheDictionary::getItemsNumberImpl(
 				*	2. cell has expired,
 				*	3. explicit defaults were specified and cell was set default. */
 
-			auto find_result = findCellIdx(id, now);
+			const auto find_result = findCellIdx(id, now);
 			if (!find_result.first) {
 				outdated_ids[id].push_back(row);
 			} else {
@@ -485,7 +485,7 @@ void CacheDictionary::getItemsString(
 		{
 			const auto id = ids[row];
 
-			auto find_result = findCellIdx(id, now);
+			const auto find_result = findCellIdx(id, now);
 			if (!find_result.first) {
 				found_outdated_values = true;
 				break;
@@ -524,7 +524,7 @@ void CacheDictionary::getItemsString(
 		{
 			const auto id = ids[row];
 
-			auto find_result = findCellIdx(id, now);
+			const auto find_result = findCellIdx(id, now);
 			if (!find_result.first) {
 				outdated_ids[id].push_back(row);
 			} else {
@@ -616,7 +616,7 @@ void CacheDictionary::update(
 			{
 				const auto id = ids[i];
 
-				auto find_result = findCellIdx(id, now);
+				const auto find_result = findCellIdx(id, now);
 				const auto & cell_idx = find_result.second;
 
 				auto & cell = cells[cell_idx];
