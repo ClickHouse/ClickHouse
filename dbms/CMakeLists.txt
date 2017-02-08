@@ -70,7 +70,15 @@ if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
 		src/IO/WriteBufferAIO.cpp)
 endif()
 
-add_library(dbms ${dbms_headers} ${dbms_sources})
+include (${CMAKE_SOURCE_DIR}/libs/libcommon/cmake/version.cmake)
+
+if (USE_STATIC_LIBRARIES)
+	add_library(dbms ${dbms_headers} ${dbms_sources})
+else ()
+	add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
+	set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR} VERSION ${VERSION_STRING} OUTPUT_NAME clickhouse)
+	install (TARGETS dbms LIBRARY DESTINATION lib COMPONENT clickhouse)
+endif ()
 
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -146,7 +154,3 @@ target_link_libraries(dbms
 	${LTDL_LIB}
 	${CMAKE_THREAD_LIBS_INIT}
 	)
-
-add_dependencies (dbms
-	common
-	zkutil)

@@ -34,8 +34,6 @@ add_library (mysqlxx
 	include/mysqlxx/Value.h
 )
 
-add_dependencies (mysqlxx common)
-
 set(PLATFORM_LIBS ${CMAKE_DL_LIBS})
 
 if (USE_STATIC_LIBRARIES)
