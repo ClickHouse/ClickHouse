@@ -374,7 +374,7 @@ public:
 	/// - all type conversions can be done.
 	/// - columns corresponding to primary key, sign, sampling expression and date are not affected.
 	/// If something is wrong, throws an exception.
-	void checkAlter(const AlterCommands & params);
+	void checkAlter(const AlterCommands & commands);
 
 	/// Performs ALTER of the data part, writes the result to temporary files.
 	/// Returns an object allowing to rename temporary files to permanent files.
