@@ -22,6 +22,7 @@ namespace ProfileEvents
 	extern const Event DictCacheKeysRequestedFound;
 	extern const Event DictCacheKeysExpired;
 	extern const Event DictCacheKeysNotFound;
+	extern const Event DictCacheKeysTryNext;
 	extern const Event DictCacheKeysHit;
 	extern const Event DictCacheRequestTimeNs;
 	extern const Event DictCacheRequests;
@@ -229,6 +230,8 @@ private:
 
 	Attribute & getAttribute(const std::string & attribute_name) const;
 
+	std::pair<bool, size_t> findCellIdx (const Key & id, const CellMetadata::time_point_t now) const;
+
 	const std::string name;
 	const DictionaryStructure dict_struct;
 	const DictionarySourcePtr source_ptr;
@@ -236,6 +239,7 @@ private:
 
 	mutable Poco::RWLock rw_lock;
 	const std::size_t size;
+	const std::size_t max_collision_length = 10;
 	const UInt64 zero_cell_idx{getCellIdx(0)};
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	mutable std::vector<Attribute> attributes;
