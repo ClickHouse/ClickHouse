@@ -6,12 +6,13 @@ if (ENABLE_LIBTCMALLOC)
 	endif ()
 
 	if (NOT (GPERFTOOLS_INCLUDE_DIR AND GPERFTOOLS_TCMALLOC_MINIMAL))
-		set(GPERFTOOLS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libtcmalloc/include")
-		set(GPERFTOOLS_TCMALLOC_MINIMAL tcmalloc_minimal_internal)
+		set (USE_INTERNAL_GPERFTOOLS_LIBRARY 1)
+		set (GPERFTOOLS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libtcmalloc/include")
+		set (GPERFTOOLS_TCMALLOC_MINIMAL tcmalloc_minimal_internal)
 		include_directories (BEFORE ${GPERFTOOLS_INCLUDE_DIR})
 	endif ()
 
 	set (USE_TCMALLOC 1)
 
-	message(STATUS "Using tcmalloc=${USE_TCMALLOC}: ${GPERFTOOLS_INCLUDE_DIR} : ${GPERFTOOLS_TCMALLOC_MINIMAL}")
+	message (STATUS "Using tcmalloc=${USE_TCMALLOC}: ${GPERFTOOLS_INCLUDE_DIR} : ${GPERFTOOLS_TCMALLOC_MINIMAL}")
 endif ()
