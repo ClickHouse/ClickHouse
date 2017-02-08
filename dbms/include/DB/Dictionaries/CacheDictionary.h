@@ -230,7 +230,7 @@ private:
 
 	Attribute & getAttribute(const std::string & attribute_name) const;
 
-	std::pair<bool, size_t> findCellIdx (const Key & id, const CellMetadata::time_point_t now) const;
+	std::pair<bool, size_t> findCellIdx(const Key & id, const CellMetadata::time_point_t now) const;
 
 	const std::string name;
 	const DictionaryStructure dict_struct;

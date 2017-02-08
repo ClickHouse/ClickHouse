@@ -177,30 +177,31 @@ void CacheDictionary::getString(
 /// returns 'cell is valid' flag, cell_idx
 std::pair<bool, size_t>  CacheDictionary::findCellIdx (const Key & id, const CellMetadata::time_point_t now) const
 {
-	auto cell_idx = getCellIdx(id);
-	auto oldest_id = cell_idx;
-	auto oldest_time = cells[cell_idx].expiresAt();
-	auto stop = std::min(size, cell_idx + max_collision_length);
-	std::cerr << "go id="<< id<<" cell_idx="<<cell_idx << " size=" << size<<" stop="<<stop  << "\n";
-	cell_idx = std::min(size - max_collision_length, cell_idx);
-	for (; cell_idx < stop; ++cell_idx) {
+	auto pos = getCellIdx(id);
+	auto oldest_id = pos;
+	auto oldest_time = CellMetadata::time_point_t::max();
+	const auto mask = size - 1;
+	const auto stop = pos + max_collision_length;
+	std::cerr << "go id="<< id<<" pos="<<pos << " size=" << size<<" stop="<<stop  << "\n";
+	for (; pos < stop; ++pos) {
+			const auto cell_idx = pos & mask;
 
 			const auto & cell = cells[cell_idx];
-			std::cerr << "start id="<< id<<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data<< "\n";
+			std::cerr << "start id="<< id<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data << "\n";
 
 /// variant 1: always try minimize lookup
-// /*
+/*
 			if (cell.expiresAt() < now)
 			{
 				std::cerr << "exp cell.expiresAt() < now : " << cell.expiresAt().time_since_epoch().count() << " < "<< now.time_since_epoch().count() << "\n";
 				ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired); // first notfound also here
 				return std::make_pair(false, cell_idx);
 			}
-// */
+*/
 
 			if (cell.id != id && cell.data > 0)
 			{
-				std::cerr << "notf cell.id != id : " << cell.id << " != " <<  id << " cell exp=" << cell.expiresAt().time_since_epoch().count() <<  "\n";
+				std::cerr << "notf cell.id != id : " << cell.id << " != " <<  id << " cell.data" << cell.data <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() <<  "\n";
 				ProfileEvents::increment(ProfileEvents::DictCacheKeysTryNext);
 
 				/// maybe we already found nearest expired cell
@@ -212,15 +213,13 @@ std::pair<bool, size_t>  CacheDictionary::findCellIdx (const Key & id, const Cel
 				continue;
 			}
 
-/// variant 2:
-/*
+/// variant 2: minimize cache miss
 			if (cell.expiresAt() < now)
 			{
 				std::cerr << "exp cell.expiresAt() < now : " << cell.expiresAt().time_since_epoch().count() << " < "<< now.time_since_epoch().count() << "\n";
 				ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired); // first notfound also here
 				return std::make_pair(false, cell_idx);
 			}
-*/
 
 			{
 				std::cerr << "hit id="<< id<<" cell_idx="<<cell_idx << " stop="<<stop  <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() << "\n";
