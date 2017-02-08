@@ -47,6 +47,9 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 		*response_header_ostr << "\r\n" << std::flush;
 #else
 		/// Newline autosent by response.send()
+		/// if nothing to send in body:
+		if (!response_body_ostr)
+			response_body_ostr = &(response.send());
 #endif
 	}
 }
