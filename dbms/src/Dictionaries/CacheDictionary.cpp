@@ -35,7 +35,7 @@ CacheDictionary::CacheDictionary(const std::string & name, const DictionaryStruc
 	const std::size_t size)
 	: name{name}, dict_struct(dict_struct),
 		source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-		size{roundUpToPowerOfTwoOrZero(size)},
+		size{roundUpToPowerOfTwoOrZero(std::max(size, max_collision_length))},
 		cells{this->size},
 		rnd_engine{randomSeed()}
 {
@@ -174,13 +174,15 @@ void CacheDictionary::getString(
 }
 
 
-/// returns cell is valid flag, cell_idx
+/// returns 'cell is valid' flag, cell_idx
 std::pair<bool, size_t>  CacheDictionary::findCellIdx (const Key & id, const CellMetadata::time_point_t now) const
 {
 	auto cell_idx = getCellIdx(id);
 	auto oldest_id = cell_idx;
 	auto oldest_time = cells[cell_idx].expiresAt();
 	auto stop = std::min(size, cell_idx + max_collision_length);
+	std::cerr << "go id="<< id<<" cell_idx="<<cell_idx << " size=" << size<<" stop="<<stop  << "\n";
+	cell_idx = std::min(size - max_collision_length, cell_idx);
 	for (; cell_idx < stop; ++cell_idx) {
 
 			const auto & cell = cells[cell_idx];
