@@ -1,4 +1,4 @@
-if (UNBUNDLED OR NOT USE_INTERNAL_BOOST_LIBRARY)
+if (NOT USE_INTERNAL_BOOST_LIBRARY)
 	set (Boost_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
 	set (BOOST_ROOT "/usr/local")
 	find_package (Boost 1.55 COMPONENTS program_options system filesystem regex thread)
