@@ -71,14 +71,8 @@ else()
     )
 endif (POCO_UNBUNDLED)
 
-if (USE_STATIC_LIBRARIES)
-	# Use zlib from clickhouse contrib.
-	set(SYSLIBS ${SYSLIBS} zlibstatic)
-else()
-	find_package(ZLIB REQUIRED)
-	set(SYSLIBS ${SYSLIBS} ${ZLIB_LIBRARIES})
-	include_directories(${ZLIB_INCLUDE_DIRS})
-endif (USE_STATIC_LIBRARIES)
+# Use zlib found by clickhouse.
+set(SYSLIBS ${SYSLIBS} ${ZLIB_LIBRARIES})
 
 if(WIN32)
     set(SYSLIBS ${SYSLIBS} iphlpapi)

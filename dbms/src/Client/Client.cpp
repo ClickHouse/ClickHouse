@@ -350,7 +350,7 @@ private:
 			{
 				if (Poco::File(history_file).exists())
 				{
-#ifdef USE_READLINE
+#if USE_READLINE
 					int res = read_history(history_file.c_str());
 					if (res)
 						throwFromErrno("Cannot read history from file " + history_file, ErrorCodes::CANNOT_READ_HISTORY);

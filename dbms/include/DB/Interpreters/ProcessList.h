@@ -78,16 +78,16 @@ struct ProcessListElement
 
 protected:
 
+	mutable std::mutex query_streams_mutex;
+
 	/// Streams with query results, point to BlockIO from executeQuery()
 	/// This declaration is compatible with notes about BlockIO::process_list_entry:
 	///  there are no cyclic dependencies: BlockIO::in,out point to objects inside ProcessListElement (not whole object)
 	BlockInputStreamPtr query_stream_in;
 	BlockOutputStreamPtr query_stream_out;
 
-	/// Abovemetioned streams have delayed initialization, this flag indicates thier initialization
-	/// It is better to use atomic (instead of raw bool) with tryGet/setQueryStreams() thread-safe methods despite that
-	///  now in all contexts ProcessListElement is always used under ProcessList::mutex (and raw bool is also Ok)
-	std::atomic<bool> query_streams_initialized{false};
+	bool query_streams_initialized{false};
+	bool query_streams_released{false};
 
 public:
 
@@ -147,9 +147,16 @@ public:
 		return res;
 	}
 
-	/// Copies pointers to in/out streams, it can be called once
+	/// Copies pointers to in/out streams
 	void setQueryStreams(const BlockIO & io);
-	/// Get query in/out pointers
+
+	/// Frees in/out streams
+	void releaseQueryStreams();
+
+	/// It means that ProcessListEntry still exists, but stream was already destroyed
+	bool streamsAreReleased();
+
+	/// Get query in/out pointers from BlockIO
 	bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
 };
 

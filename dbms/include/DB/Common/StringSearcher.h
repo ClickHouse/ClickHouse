@@ -7,6 +7,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#if __SSE2__
+	#include <emmintrin.h>
+#endif
+
 #if __SSE4_1__
 	#include <smmintrin.h>
 #endif
@@ -29,7 +33,7 @@ namespace ErrorCodes
 
 struct StringSearcherBase
 {
-#if defined(__x86_64__)
+#if __SSE2__
 	static constexpr auto n = sizeof(__m128i);
 	const int page_size = getpagesize();
 

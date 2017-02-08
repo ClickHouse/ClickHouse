@@ -1,4 +1,12 @@
-if (USE_INTERNAL_POCO_LIBRARY)
+
+if (NOT USE_INTERNAL_POCO_LIBRARY)
+	find_package (Poco REQUIRED Util Net XML Data Crypto DataODBC MongoDB Foundation)
+	if (Poco_INCLUDE_DIRS)
+		include_directories (${Poco_INCLUDE_DIRS})
+	endif ()
+endif ()
+
+if (NOT (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY AND Poco_MongoDB_LIBRARY AND Poco_DataODBC_LIBRARY))
 	set (Poco_INCLUDE_DIRS
 		"${ClickHouse_SOURCE_DIR}/contrib/libpoco/Foundation/include/"
 		"${ClickHouse_SOURCE_DIR}/contrib/libpoco/Util/include/"
@@ -23,9 +31,6 @@ if (USE_INTERNAL_POCO_LIBRARY)
 	set (Poco_MongoDB_LIBRARY PocoMongoDB)
 	set (Poco_Foundation_LIBRARY PocoFoundation)
 	include_directories (BEFORE ${Poco_INCLUDE_DIRS})
-else ()
-	find_package (Poco REQUIRED Util Net XML Data Crypto DataODBC MongoDB Foundation)
-	include_directories (${Poco_INCLUDE_DIRS})
 endif ()
 
 message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Net_LIBRARY},${Poco_Util_LIBRARY},${Poco_XML_LIBRARY},${Poco_Data_LIBRARY},${Poco_DataODBC_LIBRARY},${Poco_MongoDB_LIBRARY},${Poco_Foundation_LIBRARY}")
