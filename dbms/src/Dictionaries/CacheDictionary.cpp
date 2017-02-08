@@ -238,8 +238,6 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 	/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
 	std::unordered_map<Key, std::vector<std::size_t>> outdated_ids;
 
-	//size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
-
 	const auto rows = ext::size(ids);
 	{
 		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
@@ -248,9 +246,6 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 		/// fetch up-to-date values, decide which ones require update
 		for (const auto row : ext::range(0, rows))
 		{
-			//bool found, isdefault;
-			//CacheDictionary::CellMetadata &cell
-			
 			const auto id = ids[row];
 			auto find_result = findCellIdx(id, now);
 			const auto & cell_idx = find_result.second;
@@ -451,6 +446,7 @@ void CacheDictionary::getItemsNumberImpl(
 	std::vector<Key> required_ids(outdated_ids.size());
 	std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::begin(required_ids),
 		[] (auto & pair) { return pair.first; });
+
 	/// request new values
 	update(required_ids, [&] (const auto id, const auto cell_idx) {
 		const auto attribute_value = attribute_array[cell_idx];
