@@ -589,15 +589,53 @@ void MergeTreeData::dropAllData()
 	LOG_TRACE(log, "dropAllData: done.");
 }
 
+namespace
+{
 
-void MergeTreeData::checkAlter(const AlterCommands & params)
+/// If true, then in order to ALTER the type of the column from the type from to the type to
+/// we don't need to rewrite the data, we only need to update metadata and columns.txt in part directories.
+bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
+{
+	while (true)
+	{
+		if ((typeid_cast<const DataTypeEnum8 *>(to) && typeid_cast<const DataTypeEnum8 *>(from))
+			|| (typeid_cast<const DataTypeEnum16 *>(to) && typeid_cast<const DataTypeEnum16 *>(from)))
+		{
+			return true;
+		}
+
+		const auto * arr_from = typeid_cast<const DataTypeArray *>(from);
+		const auto * arr_to = typeid_cast<const DataTypeArray *>(to);
+		if (arr_from && arr_to)
+		{
+			from = arr_from->getNestedType().get();
+			to = arr_to->getNestedType().get();
+			continue;
+		}
+
+		const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
+		const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
+		if (nullable_from && nullable_to)
+		{
+			from = nullable_from->getNestedType().get();
+			to = nullable_to->getNestedType().get();
+			continue;
+		}
+
+		return false;
+	}
+}
+
+}
+
+void MergeTreeData::checkAlter(const AlterCommands & commands)
 {
 	/// Check that needed transformations can be applied to the list of columns without considering type conversions.
 	auto new_columns = *columns;
 	auto new_materialized_columns = materialized_columns;
 	auto new_alias_columns = alias_columns;
 	auto new_column_defaults = column_defaults;
-	params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
+	commands.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
 
 	checkNoMultidimensionalArrays(new_columns, /* attach = */ false);
 	checkNoMultidimensionalArrays(new_materialized_columns, /* attach = */ false);
@@ -617,10 +655,25 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 
 	std::sort(keys.begin(), keys.end());
 
-	for (const AlterCommand & command : params)
+	std::map<String, const IDataType *> old_types;
+	for (const auto & column : *columns)
+	{
+		old_types.emplace(column.name, column.type.get());
+	}
+
+	for (const AlterCommand & command : commands)
 	{
 		if (std::binary_search(keys.begin(), keys.end(), command.column_name))
+		{
+			if (command.type == AlterCommand::MODIFY_COLUMN)
+			{
+				auto it = old_types.find(command.column_name);
+				if (it != old_types.end() && isMetadataOnlyConversion(it->second, command.data_type.get()))
+					continue;
+			}
+
 			throw Exception("trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
+		}
 	}
 
 	/// Check that type conversions are possible.
@@ -642,10 +695,10 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 	out_rename_map = {};
 	out_force_update_metadata = false;
 
-	using NameToType = std::map<String, DataTypePtr>;
+	using NameToType = std::map<String, const IDataType *>;
 	NameToType new_types;
 	for (const NameAndTypePair & column : new_columns)
-		new_types.emplace(column.name, column.type);
+		new_types.emplace(column.name, column.type.get());
 
 	/// The number of columns in each Nested structure. Columns not belonging to Nested structure will also be
 	/// in this map, but they won't interfere with the computation.
@@ -701,56 +754,16 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 		}
 		else
 		{
-			const auto new_type = new_types[column.name].get();
+			const auto * new_type = new_types[column.name];
 			const String new_type_name = new_type->getName();
-			const auto old_type = column.type.get();
+			const auto * old_type = column.type.get();
 
 			if (new_type_name != old_type->getName() && (!part || part->hasColumnFiles(column.name)))
 			{
-				bool is_nullable = new_type->isNullable();
-				const IDataType * observed_type;
-				if (is_nullable)
+				if (isMetadataOnlyConversion(old_type, new_type))
 				{
-					const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*new_type);
-					observed_type = nullable_type.getNestedType().get();
-				}
-				else
-					observed_type = new_type;
-
-				/// When ALTERing between Enums with same underlying type, don't modify columns, just update columns.txt.
-				/// Same for Arrays of Enums, arbitary depth.
-				if (part)
-				{
-					const IDataType * type_from = old_type;
-					const IDataType * type_to = observed_type;
-
-					bool enums_with_same_type = false;
-					while (true)
-					{
-						if ((typeid_cast<const DataTypeEnum8 *>(type_to) && typeid_cast<const DataTypeEnum8 *>(type_from))
-							|| (typeid_cast<const DataTypeEnum16 *>(type_to) && typeid_cast<const DataTypeEnum16 *>(type_from)))
-						{
-							enums_with_same_type = true;
-							break;
-						}
-
-						const DataTypeArray * arr_from = typeid_cast<const DataTypeArray *>(type_from);
-						const DataTypeArray * arr_to = typeid_cast<const DataTypeArray *>(type_to);
-
-						if (arr_from && arr_to)
-						{
-							type_from = arr_from->getNestedType().get();
-							type_to = arr_to->getNestedType().get();
-						}
-						else
-							break;
-					}
-
-					if (enums_with_same_type)
-					{
-						out_force_update_metadata = true;
-						continue;
-					}
+					out_force_update_metadata = true;
+					continue;
 				}
 
 				/// Need to modify column type.
@@ -774,6 +787,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 				out_expression->add(ExpressionAction::removeColumn(column.name));
 
 				conversions.emplace_back(column.name, out_names.at(0));
+
 			}
 		}
 	}
@@ -797,7 +811,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 			out_rename_map[escaped_converted_column + ".bin"] = escaped_source_column + ".bin";
 			out_rename_map[escaped_converted_column + ".mrk"] = escaped_source_column + ".mrk";
 
-			const IDataType * new_type = new_types[source_and_expression.first].get();
+			const IDataType * new_type = new_types[source_and_expression.first];
 
 			/// NOTE Sizes of arrays are not updated during conversion.
 
