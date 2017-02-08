@@ -26,6 +26,8 @@
  * SUCH DAMAGE.
  */
 #pragma once
+#ifdef __APPLE__
+
 #include <stddef.h>
 #include <string.h>
 #if defined (__cplusplus)
@@ -48,4 +50,6 @@ inline void *memrchr(const void *s, int c, size_t n) {
 }
 #if defined (__cplusplus)
 }
+#endif
+
 #endif

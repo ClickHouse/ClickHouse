@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/URI.h>
 #include <DB/IO/ReadBufferFromHTTP.h>

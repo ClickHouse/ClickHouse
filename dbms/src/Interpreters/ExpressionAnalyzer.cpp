@@ -989,7 +989,11 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 			block = res.in->read();
 
 			if (!block)
-				throw Exception("Scalar subquery returned empty result", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+			{
+				/// Interpret subquery with empty result as Null literal
+				ast = std::make_unique<ASTLiteral>(ast->range, Null());
+				return;
+			}
 
 			if (block.rows() != 1 || res.in->read())
 				throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);

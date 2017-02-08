@@ -108,10 +108,13 @@ private:
 	Settings settings;
 	QueryProcessingStage::Enum query_processing_stage;
 
+	/// Don't execute new queries after timelimit or SIGINT or exception
+	std::atomic<bool> shutdown{false};
+
 	struct Stats
 	{
 		Stopwatch watch;
-		size_t queries = 0;
+		std::atomic<size_t> queries{0};
 		size_t read_rows = 0;
 		size_t read_bytes = 0;
 		size_t result_rows = 0;
@@ -144,6 +147,7 @@ private:
 
 	Stats info_per_interval;
 	Stats info_total;
+	Stopwatch delay_watch;
 
 	std::mutex mutex;
 
@@ -179,6 +183,43 @@ private:
 		std::cerr << ".\n";
 	}
 
+	/// Try push new query and check cancellation conditions
+	bool tryPushQueryInteractively(const String & query, InterruptListener & interrupt_listener)
+	{
+		bool inserted = false;
+
+		while (!inserted)
+		{
+			inserted = queue.tryPush(query, 100);
+
+			if (shutdown)
+			{
+				/// An exception occurred in a worker
+				return false;
+			}
+
+			if (max_time > 0 && info_total.watch.elapsedSeconds() >= max_time)
+			{
+				std::cout << "Stopping launch of queries. Requested time limit is exhausted.\n";
+				return false;
+			}
+
+			if (interrupt_listener.check())
+			{
+				std::cout << "Stopping launch of queries. SIGINT recieved.\n";
+				return false;
+			}
+
+			if (delay > 0 && delay_watch.elapsedSeconds() > delay)
+			{
+				printNumberOfQueriesExecuted(info_total.queries);
+				report(info_per_interval);
+				delay_watch.restart();
+			}
+		};
+
+		return true;
+	}
 
 	void run()
 	{
@@ -189,52 +230,25 @@ private:
 			pool.schedule(std::bind(&Benchmark::thread, this, connections.IConnectionPool::get()));
 
 		InterruptListener interrupt_listener;
-
 		info_per_interval.watch.restart();
-		Stopwatch watch;
+		delay_watch.restart();
 
-		/// В цикле, кладём все запросы в очередь.
+		/// Push queries into queue
 		for (size_t i = 0; !max_iterations || i < max_iterations; ++i)
 		{
 			size_t query_index = randomize ? distribution(generator) : i % queries.size();
 
-			queue.push(queries[query_index]);
-
-			if (delay > 0 && watch.elapsedSeconds() > delay)
-			{
-				auto total_queries = 0;
-				{
-					std::lock_guard<std::mutex> lock(mutex);
-					total_queries = info_total.queries;
-				}
-				printNumberOfQueriesExecuted(total_queries);
-
-				report(info_per_interval);
-				watch.restart();
-			}
-
-			if (max_time > 0 && info_total.watch.elapsedSeconds() >= max_time)
-			{
-				std::cout << "Stopping launch of queries. Requested time limit is exhausted.\n";
+			if (!tryPushQueryInteractively(queries[query_index], interrupt_listener))
 				break;
-			}
-
-			if (interrupt_listener.check())
-			{
-				std::cout << "Stopping launch of queries. SIGINT recieved.\n";
-				break;
-			}
 		}
 
-		/// Попросим потоки завершиться.
-		for (size_t i = 0; i < concurrency; ++i)
-			queue.push("");
-
+		shutdown = true;
 		pool.wait();
-
 		info_total.watch.stop();
+
 		if (!json_path.empty())
 			reportJSON(info_total, json_path);
+
 		printNumberOfQueriesExecuted(info_total.queries);
 		report(info_total);
 	}
@@ -246,58 +260,32 @@ private:
 
 		try
 		{
-			try
-			{
-				/// В этих потоках не будем принимать сигнал INT.
-				sigset_t sig_set;
-				if (sigemptyset(&sig_set)
-					|| sigaddset(&sig_set, SIGINT)
-					|| pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
-					throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
+			/// В этих потоках не будем принимать сигнал INT.
+			sigset_t sig_set;
+			if (sigemptyset(&sig_set)
+				|| sigaddset(&sig_set, SIGINT)
+				|| pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
+				throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
 
-				while (true)
+			while (true)
+			{
+				bool extracted = false;
+
+				while (!extracted)
 				{
-					queue.pop(query);
+					extracted = queue.tryPop(query, 100);
 
-					/// Пустой запрос обозначает конец работы.
-					if (query.empty())
-						break;
-
-					execute(connection, query);
+					if (shutdown)
+						return;
 				}
-			}
-			catch (const Exception & e)
-			{
-				std::string text = e.displayText();
 
-				std::cerr << "Code: " << e.code() << ". " << text << "\n\n";
-
-				/// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
-				if (std::string::npos == text.find("Stack trace"))
-					std::cerr << "Stack trace:\n"
-						<< e.getStackTrace().toString();
-
-				throw;
-			}
-			catch (const Poco::Exception & e)
-			{
-				std::cerr << "Poco::Exception: " << e.displayText() << "\n";
-				throw;
-			}
-			catch (const std::exception & e)
-			{
-				std::cerr << "std::exception: " << e.what() << "\n";
-				throw;
-			}
-			catch (...)
-			{
-				std::cerr << "Unknown exception\n";
-				throw;
+				execute(connection, query);
 			}
 		}
 		catch (...)
 		{
-			std::cerr << "On query:\n" << query << "\n";
+			shutdown = true;
+			std::cerr << "An error occurred while processing query:\n" << query << "\n";
 			throw;
 		}
 	}
@@ -329,6 +317,10 @@ private:
 	void report(Stats & info)
 	{
 		std::lock_guard<std::mutex> lock(mutex);
+
+		/// Avoid zeros, nans or exceptions
+		if (0 == info.queries)
+			return;
 
 		double seconds = info.watch.elapsedSeconds();
 
@@ -368,7 +360,7 @@ private:
 			json_out << double_quote << key << ": " << value << (with_comma ? ",\n" : "\n");
 		};
 
-		auto print_percentile = [&](auto percent, bool with_comma = true)
+		auto print_percentile = [&json_out, &info](auto percent, bool with_comma = true)
 		{
 			json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileInterpolated(percent / 100.0) << (with_comma ? ",\n" : "\n");
 		};
@@ -401,6 +393,13 @@ private:
 
 		json_out << "}\n";
 	}
+
+public:
+
+	~Benchmark()
+	{
+		shutdown = true;
+	}
 };
 
 }
@@ -409,6 +408,7 @@ private:
 int mainEntryClickhouseBenchmark(int argc, char ** argv)
 {
 	using namespace DB;
+	bool print_stacktrace = true;
 
 	try
 	{
@@ -429,6 +429,7 @@ int mainEntryClickhouseBenchmark(int argc, char ** argv)
 			("user", 			value<std::string>()->default_value("default"),		"")
 			("password",		value<std::string>()->default_value(""), 			"")
 			("database",		value<std::string>()->default_value("default"), 	"")
+			("stacktrace",															"print stack traces of exceptions")
 
 		#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
 		#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
@@ -447,6 +448,8 @@ int mainEntryClickhouseBenchmark(int argc, char ** argv)
 			std::cout << desc << "\n";
 			return 1;
 		}
+
+		print_stacktrace = options.count("stacktrace");
 
 		/// Извлекаем settings and limits из полученных options
 		Settings settings;
@@ -473,33 +476,10 @@ int mainEntryClickhouseBenchmark(int argc, char ** argv)
 			options["json"].as<std::string>(),
 			settings);
 	}
-	catch (const Exception & e)
-	{
-		std::string text = e.displayText();
-
-		std::cerr << "Code: " << e.code() << ". " << text << "\n\n";
-
-		/// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
-		if (std::string::npos == text.find("Stack trace"))
-			std::cerr << "Stack trace:\n"
-				<< e.getStackTrace().toString();
-
-		return e.code();
-	}
-	catch (const Poco::Exception & e)
-	{
-		std::cerr << "Poco::Exception: " << e.displayText() << "\n";
-		return ErrorCodes::POCO_EXCEPTION;
-	}
-	catch (const std::exception & e)
-	{
-		std::cerr << "std::exception: " << e.what() << "\n";
-		return ErrorCodes::STD_EXCEPTION;
-	}
 	catch (...)
 	{
-		std::cerr << "Unknown exception\n";
-		return ErrorCodes::UNKNOWN_EXCEPTION;
+		std::cerr << getCurrentExceptionMessage(print_stacktrace, true) << std::endl;
+		return getCurrentExceptionCode();
 	}
 
 	return 0;

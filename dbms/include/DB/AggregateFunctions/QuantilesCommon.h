@@ -9,6 +9,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
 
 /** Параметры разных функций quantilesSomething.
   * - список уровней квантилей.
