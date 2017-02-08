@@ -137,6 +137,11 @@ if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
 	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
 endif ()
 
+if (NOT USE_STATIC_LIBRARIES)
+	set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -fPIC")
+	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} -fPIC")
+endif ()
+
 set (SAN_FLAGS "-O3 -g -fno-omit-frame-pointer")
 set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN}  ${SAN_FLAGS} -fsanitize=address")
 set (CMAKE_C_FLAGS_ASAN                  "${CMAKE_C_FLAGS_ASAN}    ${SAN_FLAGS} -fsanitize=address")
