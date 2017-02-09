@@ -155,7 +155,11 @@ endif (TEST_COVERAGE)
 # Run tests with "make check"
 if (ENABLE_TESTS)
 	message (STATUS "Tests are enabled")
-	include (cmake/add_check.cmake)
+	if (TARGET check)
+		message (STATUS "Target check already exists")
+	else ()
+		include (cmake/add_check.cmake)
+	endif ()
 endif (ENABLE_TESTS)
 
 # Installation prefix
