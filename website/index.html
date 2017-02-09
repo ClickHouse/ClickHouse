@@ -91,7 +91,7 @@
 
         body {
             background: #fff;
-            font: 300 12pt/200% 'Yandex Sans Text Web', Arial, sans-serif;
+            font: 300 1.15em/200% 'Yandex Sans Text Web', Arial, sans-serif;
             margin: 0;
             padding: 0;
         }
@@ -112,8 +112,9 @@
             left: 0;
             z-index: 100;
             position: fixed;
-            padding: 0 40px;
-            margin: 0 0 40px -50px;
+            font-size: 75%;
+            padding: 0 4em;
+            margin: 0 0 2.5em -4em;
             -webkit-transform: rotate(45deg);
             -moz-transform: rotate(45deg);
             -ms-transform: rotate(45deg);
@@ -140,13 +141,13 @@
         }
 
         #main_title {
-            font: 400 48pt 'Yandex Sans Display Web', Arial, sans-serif;
+            font: 400 275% 'Yandex Sans Display Web', Arial, sans-serif;
             margin: 0 0 0 0;
         }
 
         h2 {
             margin: 47px 0 23px;
-            font: 400 24pt 'Yandex Sans Display Web', Arial, sans-serif;
+            font: 400 200%/133% 'Yandex Sans Display Web', Arial, sans-serif;
         }
 
         a:link, a:visited {
@@ -206,7 +207,7 @@
 
         #plane {
             width: 66%;
-            margin: 33% auto 0 auto;
+            margin: 15% auto 0 auto;
         }
 
         #performance {
@@ -219,7 +220,7 @@
         #call_to_action, #benchmark_learn_more {
             text-decoration: none;
             text-align: center;
-            font-size: 18pt;
+            font-size: 120%;
             width: 182px;
             height: 50px;
             line-height: 50px;
@@ -351,7 +352,7 @@
             #navbar {
                 position: relative;
                 text-align: center;
-                margin: 8px 0;
+                margin: 1em 0;
                 padding: 0;
                 border: none;
             }
@@ -366,7 +367,11 @@
             }
 
             #hero .index_item {
-                font-size: 26pt;
+                font-size: 160%;
+            }
+
+            #hero .dashed {
+                margin-bottom: 50px;
             }
 
             #call_to_action {
@@ -420,13 +425,6 @@
     </a>
 </div>
 
-<div id="github">
-    <a id="github_link"
-       href="https://github.com/yandex/ClickHouse"
-       rel="external nofollow"
-       target="_blank"
-    >Fork me on GitHub</a>
-</div>
 <div id="hero">
     <div class="page">
         <div class="block-70">
@@ -466,10 +464,16 @@
         <div class="clear"></div>
     </div>
 </div>
+<a id="github_link"
+   href="https://github.com/yandex/ClickHouse"
+   rel="external nofollow"
+   target="_blank"
+><div id="github">Fork me on GitHub</div></a>
+
 <div class="page">
+    <h2 id="slogan">ClickHouse. Just makes you think faster.</h2>
 
     <div class="block-70">
-        <h2 id="slogan">ClickHouse. Just makes you think faster.</h2>
         <ul class="dashed">
             <li>Run more queries in the same amount of time</li>
             <li>Test more hypotheses</li>
