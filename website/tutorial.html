@@ -180,6 +180,7 @@
         .orange {
             fill: #fc0;
         }
+
         .red {
             fill: #f00
         }
@@ -211,14 +212,16 @@
         It's hard to call this sample a Big Data (contains 166 millions rows, 63 Gb of uncompressed data) but this
         allows us to quickly get to work. Dataset is available for download <a href="https://yadi.sk/d/pOZxpa42sDdgm">here</a>.
         Also you may download it from the original datasource <a
-                href="https://github.com/yandex/ClickHouse/raw/master/doc/example_datasets/1_ontime.txt" rel="external nofollow">as described
+                href="https://github.com/yandex/ClickHouse/raw/master/doc/example_datasets/1_ontime.txt"
+                rel="external nofollow">as described
             here</a>.</p>
 
     <p>Firstly we will deploy ClickHouse to a single server. Below that we will also review the process of deployment to
         a cluster with support for sharding and replication.</p>
 
     <p>On Ubuntu and Debian Linux ClickHouse can be installed from <a href="/#download">packages</a>.
-        For other Linux distributions you can <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md" rel="external nofollow">compile
+        For other Linux distributions you can <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md"
+                                                 rel="external nofollow">compile
             ClickHouse from sources</a> and then install.</p>
 
     <p><b>clickhouse-client</b> package contains <a
@@ -769,10 +772,13 @@ ENGINE = ReplicatedMergeTree(
 
     <h3>Feedback</h3>
 
-    <p>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse" rel="external nofollow">Stack Overflow</a>.</p>
-    <p>Discuss with real users in Telegram chat in <a href="https://telegram.me/clickhouse_en" rel="external nofollow">English</a> or in <a
-            href="https://telegram.me/clickhouse_ru" rel="external nofollow">Russian</a>.</p>
-    <p>Use <a href="https://groups.google.com/group/clickhouse" rel="external nofollow">Google Group</a> for discussion.</p>
+    <p>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse" rel="external nofollow">Stack
+        Overflow</a>.</p>
+    <p>Discuss with real users in Telegram chat in <a href="https://telegram.me/clickhouse_en" rel="external nofollow">English</a>
+        or in <a
+                href="https://telegram.me/clickhouse_ru" rel="external nofollow">Russian</a>.</p>
+    <p>Use <a href="https://groups.google.com/group/clickhouse" rel="external nofollow">Google Group</a> for discussion.
+    </p>
     <p>Or send private message to developers:
         <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
     </p>
