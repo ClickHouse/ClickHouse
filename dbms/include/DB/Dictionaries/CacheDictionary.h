@@ -22,7 +22,6 @@ namespace ProfileEvents
 	extern const Event DictCacheKeysRequestedFound;
 	extern const Event DictCacheKeysExpired;
 	extern const Event DictCacheKeysNotFound;
-	extern const Event DictCacheKeysTryNext;
 	extern const Event DictCacheKeysHit;
 	extern const Event DictCacheRequestTimeNs;
 	extern const Event DictCacheRequests;

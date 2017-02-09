@@ -175,10 +175,12 @@ void CacheDictionary::getString(
 
 
 /// returns 'cell is valid' flag, 'cell is outdated' flag, cell_idx
-/// true  true  impossible
-/// true  false found and valid
-/// false true  not found (something outdated, maybe our cell)
-/// false false not found (other id stored with valid data)
+/// true  false  impossible
+/// true  true   found and valid
+/// false false  not found (something outdated, maybe our cell)
+/// false true   not found (other id stored with valid data)
+///
+/// todo: split this func to two: find_for_get and find_for_set
 std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, const CellMetadata::time_point_t now) const
 {
 	auto pos = getCellIdx(id);
@@ -193,20 +195,10 @@ std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, co
 			const auto & cell = cells[cell_idx];
 			std::cerr << "start id="<< id<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data << "\n";
 
-/// variant 1: always try minimize lookup
-/*
-			if (cell.expiresAt() < now)
-			{
-				std::cerr << "exp cell.expiresAt() < now : " << cell.expiresAt().time_since_epoch().count() << " < "<< now.time_since_epoch().count() << "\n";
-				ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired); // first notfound also here
-				return std::make_pair(false, cell_idx);
-			}
-*/
-
 			if (cell.id != id && cell.data > 0)
 			{
 				std::cerr << "notf cell.id != id : " << cell.id << " != " <<  id << " cell.data" << cell.data <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() <<  "\n";
-				ProfileEvents::increment(ProfileEvents::DictCacheKeysTryNext);
+				//ProfileEvents::increment(ProfileEvents::DictCacheKeysTryNext);
 
 				/// maybe we already found nearest expired cell
 				if (oldest_time > now && oldest_time > cell.expiresAt())
@@ -217,24 +209,23 @@ std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, co
 				continue;
 			}
 
-/// variant 2: minimize cache miss
 			if (cell.expiresAt() < now)
 			{
 				std::cerr << "exp cell.expiresAt() < now : " << cell.expiresAt().time_since_epoch().count() << " < "<< now.time_since_epoch().count() << "\n";
-				ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired); // first notfound also here
-				return std::make_tuple(false, true, cell_idx);
+				//ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired); // first notfound also here
+				return std::make_tuple(false, false, cell_idx);
 			}
 
 			{
 				std::cerr << "hit id="<< id<<" cell_idx="<<cell_idx << " stop="<<stop  <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() << "\n";
-				ProfileEvents::increment(ProfileEvents::DictCacheKeysHit);
-				return std::make_tuple(true, false, cell_idx);
+				//ProfileEvents::increment(ProfileEvents::DictCacheKeysHit);
+				return std::make_tuple(true, true, cell_idx);
 			}
 		}
 
 		std::cerr << "miss,oldest " <<  " id="<< id << " cell_idx="<<oldest_id << "\n";
-		ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound);
-		return std::make_tuple(false, false, oldest_id);
+		//ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound);
+		return std::make_tuple(false, true, oldest_id);
 
 }
 
@@ -242,6 +233,8 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 {
 	/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
 	std::unordered_map<Key, std::vector<std::size_t>> outdated_ids;
+
+	size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
 
 	const auto rows = ext::size(ids);
 	{
@@ -256,13 +249,21 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 			const auto & cell_idx = std::get<2>(find_result);
 			if (!std::get<0>(find_result)) {
 				outdated_ids[id].push_back(row);
+				if (!std::get<1>(find_result))
+					++cache_expired;
+				else
+					++cache_not_found;
 			} else {
+				++cache_hit;
 				const auto & cell = cells[cell_idx];
 				out[row] = !cell.isDefault();
 			}
 		}
 	}
 
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
 	query_count.fetch_add(rows, std::memory_order_relaxed);
 	hit_count.fetch_add(rows - outdated_ids.size(), std::memory_order_release);
@@ -417,6 +418,8 @@ void CacheDictionary::getItemsNumberImpl(
 	auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
 	const auto rows = ext::size(ids);
 
+	size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
+
 	{
 		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
@@ -434,13 +437,22 @@ void CacheDictionary::getItemsNumberImpl(
 			const auto find_result = findCellIdx(id, now);
 			if (!std::get<0>(find_result)) {
 				outdated_ids[id].push_back(row);
+				if (!std::get<1>(find_result))
+					++cache_expired;
+				else
+					++cache_not_found;
 			} else {
+				++cache_hit;
 				const auto & cell_idx = std::get<2>(find_result);
 				const auto & cell = cells[cell_idx];
 				out[row] = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 			}
 		}
 	}
+
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
 	query_count.fetch_add(rows, std::memory_order_relaxed);
 	hit_count.fetch_add(rows - outdated_ids.size(), std::memory_order_release);
@@ -521,6 +533,7 @@ void CacheDictionary::getItemsString(
 	std::unordered_map<Key, String> map;
 
 	std::size_t total_length = 0;
+	size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
 	{
 		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
@@ -532,7 +545,12 @@ void CacheDictionary::getItemsString(
 			const auto find_result = findCellIdx(id, now);
 			if (!std::get<0>(find_result)) {
 				outdated_ids[id].push_back(row);
+				if (!std::get<1>(find_result))
+					++cache_expired;
+				else
+					++cache_not_found;
 			} else {
+				++cache_hit;
 				const auto & cell_idx = std::get<2>(find_result);
 				const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
@@ -544,6 +562,9 @@ void CacheDictionary::getItemsString(
 			}
 		}
 	}
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
 	query_count.fetch_add(rows, std::memory_order_relaxed);
 	hit_count.fetch_add(rows - outdated_ids.size(), std::memory_order_release);
