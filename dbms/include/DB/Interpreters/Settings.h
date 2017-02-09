@@ -259,6 +259,11 @@ struct Settings
 	  */ \
 	M(SettingUInt64, input_format_allow_errors_num, 0) \
 	M(SettingFloat, input_format_allow_errors_ratio, 0) \
+	\
+	/** Size of buffer with query results */ \
+	M(SettingUInt64, send_buffer_size, DBMS_DEFAULT_BUFFER_SIZE) \
+	M(SettingUInt64, http_response_memory_buffer_size, 0) \
+	M(SettingString, http_response_memory_buffer_overflow, "") \
 
 	/// Possible limits for query execution.
 	Limits limits;
