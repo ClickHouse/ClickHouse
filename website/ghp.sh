@@ -4,8 +4,7 @@ BASEDIR=$(mktemp)
 REMOTE_URL=$(git remote -v | grep origin | grep push | awk '{print $2;}')
 rm -rf "${BASEDIR}"
 git clone "${REMOTE_URL}" "${BASEDIR}"
-git checkout gh-pages
-(cd "${BASEDIR}"; git rm -r *)
+(cd "${BASEDIR}"; git checkout gh-pages; git rm -r *)
 cat publish.txt | while read FILENAME
 do
     cp "${FILENAME}" "${BASEDIR}/"
