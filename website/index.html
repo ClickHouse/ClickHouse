@@ -471,23 +471,23 @@ clickhouse-client
 
     <script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
     <script type="text/javascript">
-        var name = document.getElementById('main_title').textContent.trim().toLowerCase();
+        var name = $('#main_title').html().trim().toLowerCase();
         var feedback_address = name + '-feedback' + '@yandex-team.com';
-        var feedback_email = document.getElementById('feedback_email');
-        feedback_email.setAttribute('href', 'mailto:' + feedback_address);
-        feedback_email.textContent = feedback_address;
+        var feedback_email = $('#feedback_email');
+        feedback_email.attr('href', 'mailto:' + feedback_address);
+        feedback_email.html(feedback_address);
 
         var available_distributives = ['xenial', 'trusty', 'precise'];
 
         function selectDistributive(name) {
-            document.getElementById('distributive').innerHTML = name;
+            $('#distributive').html(name);
             available_distributives.forEach(function (distr) {
-                document.getElementById('ubuntu_' + distr).className = (name == distr) ? 'distributive_selected' : 'distributive_not_selected';
+                $('#ubuntu_' + distr).attr('class', (name == distr) ? 'distributive_selected' : 'distributive_not_selected');
             });
         }
 
         available_distributives.forEach(function (distr) {
-            document.getElementById('ubuntu_' + distr).addEventListener('click', function (e) {
+            $('#ubuntu_' + distr).on('click', function () {
                 selectDistributive(distr);
             });
         });
