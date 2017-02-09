@@ -1,0 +1,12 @@
+benchmark.html
+favicon.ico
+google419fbd824d7ff97d.html
+index.html
+logo.svg
+reference.css
+reference_en.html
+reference_ru.html
+robots.txt
+tutorial.html
+yandex-black-button.png
+yandex-white-button.png
