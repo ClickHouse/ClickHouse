@@ -99,9 +99,8 @@
             margin: auto;
         }
 
-        h1 {
-            font: 400 100pt 'Yandex Sans Display Web', Arial, sans-serif;
-            margin: 100px 0 30px;
+        #main_title {
+            font: 400 48pt 'Yandex Sans Display Web', Arial, sans-serif;
         }
 
         h2 {
@@ -243,7 +242,21 @@
 <body>
 <div class="page">
 
-    <h1 id="main_title">ClickHouse</h1>
+    <h1 id="main_title">
+        <svg xmlns="http://www.w3.org/2000/svg" width="54" height="48" viewBox="0 0 9 8">
+            <style>
+                .o{fill:#fc0}
+                .r{fill:#f00}
+            </style>
+            <path class="r" d="M0,7 h1 v1 h-1 z"></path>
+            <path class="o" d="M0,0 h1 v7 h-1 z"></path>
+            <path class="o" d="M2,0 h1 v8 h-1 z"></path>
+            <path class="o" d="M4,0 h1 v8 h-1 z"></path>
+            <path class="o" d="M6,0 h1 v8 h-1 z"></path>
+            <path class="o" d="M8,3.25 h1 v1.5 h-1 z"></path>
+        </svg>
+
+        ClickHouse</h1>
 
     <div class="feedback_form">
         <h2>Feedback</h2>
@@ -259,7 +272,7 @@
     </div>
 
     <p class="short_description">ClickHouse is an open-source column-oriented database management system that allows
-        generating analytical data reports in real time.</p>
+        generating analytical data reports in real time using SQL queries.</p>
 
     <div class="menu">
         <a class="menu_item" href="reference_en.html">Documentation</a>
