@@ -10,13 +10,16 @@
 
     <meta property="og:title" content="ClickHouse DBMS"/>
     <meta property="og:description"
-          content="ClickHouse is an open-source column-oriented database management system that allows generating analytical data reports in real time."/>
+          content="ClickHouse is an open-source column-oriented database management system that allows generating
+                   analytical data reports in real time."/>
     <meta property="og:type" content="website"/>
 
     <meta property="twitter:title" content="ClickHouse DBMS"/>
 
     <meta name="description"
-          content="ClickHouse is an open-source distributed column-oriented database management system that allows generating analytical data reports in real time. Сreated by Yandex ClickHouse manages extremely large volumes of data in a stable and sustainable manner."/>
+          content="ClickHouse is an open-source distributed column-oriented database management system that allows
+                   generating analytical data reports in real time. Сreated by Yandex ClickHouse manages
+                   extremely large volumes of data in a stable and sustainable manner."/>
     <meta name="keywords"
           content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics"/>
 
@@ -240,13 +243,14 @@
 <body>
 <div class="page">
 
-    <h1>ClickHouse</h1>
+    <h1 id="main_title">ClickHouse</h1>
 
     <div class="feedback_form">
         <h2>Feedback</h2>
         <p>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse">Stack Overflow</a>.</p>
         <p>Use <a href="https://groups.google.com/group/clickhouse">Google Group</a> for discussion.</p>
-        <p>Or send private message to developers: <a href="mailto:clickhouse-feedback@yandex-team.com">clickhouse-feedback@yandex-team.com</a>.
+        <p>Or send private message to developers:
+            <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
         </p>
         <p>Discuss with real users in Telegram chat in <a href="https://telegram.me/clickhouse_en">English</a> or in <a
                 href="https://telegram.me/clickhouse_ru">Russian</a>.</p>
@@ -515,6 +519,12 @@ clickhouse-client
 
         document.getElementById('download_menu_item').addEventListener('click', show_download_block);
         document.getElementById('download_big_button').addEventListener('click', show_download_block);
+        var name = document.getElementById('main_title').textContent.trim().toLowerCase();
+        var feedback_address = name + '-feedback' + '@yandex-team.com';
+        var feedback_email = document.getElementById('feedback_email');
+        feedback_email.setAttribute('href', 'mailto:' + feedback_address);
+        feedback_email.textContent = feedback_address;
+
 
         document.body.addEventListener('click', function (e) {
             var element = e.target;
