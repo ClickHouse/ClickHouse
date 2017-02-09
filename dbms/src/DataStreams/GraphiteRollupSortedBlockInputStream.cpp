@@ -133,7 +133,9 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 
 		if (is_new_key)
 		{
-			current_max_version = 0;
+			/// For previous group of rows with same key, accumulate a row that has maximum version.
+			if (merged_rows)
+				accumulateRow(selected_row);
 
 			if (path_differs)
 				current_pattern = selectPatternForPath(next_path);
@@ -145,11 +147,12 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 			}
 			/// If no patterns has matched - it means that no need to do rounding.
 
-			/// Key will be new after rounding.
+			/// Key will be new after rounding. It means new result row.
 			bool will_be_new_key = path_differs || next_time_rounded != current_time_rounded;
 
 			if (will_be_new_key)
 			{
+				/// This is not the first row in block.
 				if (merged_rows)
 				{
 					finishCurrentRow(merged_columns);
@@ -172,14 +175,12 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 
 				++merged_rows;
 			}
-
-			accumulateRow(selected_row);
-			current_max_version = current_version;
 		}
-		else if (current_version >= current_max_version)
+
+		/// Within all rows with same key, we should leave only one row with maximum version;
+		///  and for rows with same maximum version - only last row.
+		if (is_new_key || current_version >= current_max_version)
 		{
-			/// Within all rows with same key, we should leave only one row with maximum version;
-			///  and for rows with same maximum version - only last row.
 			current_max_version = current_version;
 			setRowRef(selected_row, current);
 		}
@@ -198,8 +199,9 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 		}
 	}
 
-	/// Запишем данные для последней группы.
+	/// Write result row for the last group.
 	++merged_rows;
+	accumulateRow(selected_row);
 	finishCurrentRow(merged_columns);
 
 	finished = true;
