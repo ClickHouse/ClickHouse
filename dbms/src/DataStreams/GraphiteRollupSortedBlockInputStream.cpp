@@ -133,6 +133,9 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 
 		if (is_new_key)
 		{
+			current_path = next_path;
+			current_time = next_time;
+
 			/// For previous group of rows with same key, accumulate a row that has maximum version.
 			if (merged_rows)
 				accumulateRow(selected_row);
@@ -164,8 +167,6 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 
 				startNextRow(merged_columns, current);
 
-				current_path = next_path;
-				current_time = next_time;
 				current_time_rounded = next_time_rounded;
 
 				if (prev_pattern)
