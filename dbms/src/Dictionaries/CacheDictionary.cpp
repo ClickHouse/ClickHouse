@@ -193,11 +193,11 @@ std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, co
 			const auto cell_idx = pos & size_overlap_mask;
 
 			const auto & cell = cells[cell_idx];
-			std::cerr << "start id="<< id<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data << "\n";
+			//std::cerr << "start id="<< id<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data << "\n";
 
 			if (cell.id != id /* && cell.data > 0 */)
 			{
-				std::cerr << "notf cell.id != id : " << cell.id << " != " <<  id << " cell.data" << cell.data <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() <<  "\n";
+				//std::cerr << "notf cell.id != id : " << cell.id << " != " <<  id << " cell.data" << cell.data <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() <<  "\n";
 				//ProfileEvents::increment(ProfileEvents::DictCacheKeysTryNext);
 
 				/// maybe we already found nearest expired cell
@@ -211,19 +211,18 @@ std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, co
 
 			if (cell.expiresAt() < now)
 			{
-				std::cerr << "exp cell.expiresAt() < now : " << cell.expiresAt().time_since_epoch().count() << " < "<< now.time_since_epoch().count() << "\n";
+				//std::cerr << "exp cell.expiresAt() < now : " << cell.expiresAt().time_since_epoch().count() << " < "<< now.time_since_epoch().count() << "\n";
 				//ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired); // first notfound also here
 				return std::make_tuple(false, false, cell_idx);
 			}
 
-			std::cerr << "hit id="<< id<<" cell_idx="<<cell_idx << " stop="<<stop  <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() << "\n";
+			//std::cerr << "hit id="<< id<<" cell_idx="<<cell_idx << " stop="<<stop  <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() << "\n";
 			return std::make_tuple(true, true, cell_idx);
 		}
 
-		std::cerr << "miss,oldest " <<  " id="<< id << " cell_idx="<<oldest_id << "\n";
+		//std::cerr << "miss,oldest " <<  " id="<< id << " cell_idx="<<oldest_id << "\n";
 		//ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound);
 		return std::make_tuple(false, true, oldest_id);
-
 }
 
 void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
