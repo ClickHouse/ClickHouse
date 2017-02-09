@@ -241,26 +241,26 @@
         It's hard to call this sample a Big Data (contains 166 millions rows, 63 Gb of uncompressed data) but this
         allows us to quickly get to work. Dataset is available for download <a href="https://yadi.sk/d/pOZxpa42sDdgm">here</a>.
         Also you may download it from the original datasource <a
-                href="https://github.com/yandex/ClickHouse/raw/master/doc/example_datasets/1_ontime.txt">as described
+                href="https://github.com/yandex/ClickHouse/raw/master/doc/example_datasets/1_ontime.txt" rel="external nofollow">as described
             here</a>.</p>
 
     <p>Firstly we will deploy ClickHouse to a single server. Below that we will also review the process of deployment to
         a cluster with support for sharding and replication.</p>
 
-    <p>On Ubuntu and Debian Linux ClickHouse can be installed from <a href="https://clickhouse.yandex/#download">packages</a>.
-        For other Linux distributions you can <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md">compile
+    <p>On Ubuntu and Debian Linux ClickHouse can be installed from <a href="/#download">packages</a>.
+        For other Linux distributions you can <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md" rel="external nofollow">compile
             ClickHouse from sources</a> and then install.</p>
 
     <p><b>clickhouse-client</b> package contains <a
-            href="https://clickhouse.yandex/reference_en.html#Command-line%20client">clickhouse-client</a> application —
+            href="/reference_en.html#Command-line%20client">clickhouse-client</a> application —
         interactive ClickHouse client. <b>clickhouse-server-base</b> contains a clickhouse-server binary file. <b>clickhouse-server-common</b>
         — contains config files for the clickhouse-server.</p>
 
     <p>Server config files are located in /etc/clickhouse-server/. Before getting to work please notice the <b>path</b>
         element in config. <b>Path</b>&nbsp;determines the location for data storage. It's not really handy to directly
         edit <b>config.xml</b> file considering package updates. Recommended way is to override the config elements in
-        <a href="https://clickhouse.yandex/reference_en.html#Configuration%20files">files of config.d directory</a>.
-        Also you may want to <a href="https://clickhouse.yandex/reference_en.html#Access%20rights">set up access
+        <a href="/reference_en.html#Configuration%20files">files of config.d directory</a>.
+        Also you may want to <a href="/reference_en.html#Access%20rights">set up access
             rights</a> at the start.</p>
 
     <p><b>clickhouse-server</b> won't be launched automatically after package installation. It won't be automatically
@@ -422,7 +422,7 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
         </div>
     </div>
 
-    <p>Now we have a table of <a href="https://clickhouse.yandex/reference_en.html#MergeTree">MergeTree type</a>.
+    <p>Now we have a table of <a href="/reference_en.html#MergeTree">MergeTree type</a>.
         MergeTree table type is recommended for usage in production. Table of this kind has a primary key used for
         incremental sort of table data. This allows fast execution of queries in ranges of a primary key.</p>
 
@@ -442,15 +442,15 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
 
     <h3>Load data</h3>
     <pre>xz -v -c -d &lt; ontime.csv.xz | clickhouse-client --query="INSERT INTO ontime FORMAT CSV"</pre>
-    <p>ClickHouse INSERT query allows to load data in any <a href="https://clickhouse.yandex/reference_en.html#Formats">supported
+    <p>ClickHouse INSERT query allows to load data in any <a href="/reference_en.html#Formats">supported
         format</a>. Data load requires just O(1) RAM consumption. INSERT query can receive any data volume as input.
         It's strongly recommended to insert data with <a
-                href="https://clickhouse.yandex/reference_en.html#Performance%20on%20data%20insertion.">not too small
+                href="/reference_en.html#Performance%20on%20data%20insertion.">not too small
             size blocks</a>. Notice that insert of blocks with size up to max_insert_block_size (= 1&nbsp;048&nbsp;576
         rows by default) is an atomic operation: data block will be inserted completely or not inserted at all. In case
         of disconnect during insert operation you may not know if the block was inserted successfully. To achieve
         exactly-once semantics ClickHouse supports idempotency for <a
-                href="https://clickhouse.yandex/reference_en.html#Data%20replication">replicated tables</a>. This means
+                href="/reference_en.html#Data%20replication">replicated tables</a>. This means
         that you may retry insert of the same data block (possibly on a different replicas) but this block will be
         inserted just once. Anyway in this guide we will load data from our localhost so we may not take care about data
         blocks generation and exactly-once semantics.</p>
@@ -461,7 +461,7 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
     <p>Our sample dataset is a bit not optimal. There are two reasons.</p>
 
     <p>The first is that String data type is used in cases when <a
-            href="https://clickhouse.yandex/reference_en.html#Enum">Enum</a> or numeric type would fit best.</p>
+            href="/reference_en.html#Enum">Enum</a> or numeric type would fit best.</p>
 
     <p class="tip"><b>⚖</b> When set of possible values is determined and known to be small. (E.g. OS name, browser
         vendors etc.) it's&nbsp;recommended to use Enums or numbers to improve performance.
@@ -472,7 +472,7 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
         which DateTime handling functions may be not efficient.</p>
 
     <p class="tip"><b>✯</b> ClickHouse <a
-            href="https://clickhouse.yandex/reference_en.html#Functions%20for%20working%20with%20dates%20and%20times">functions
+            href="/reference_en.html#Functions%20for%20working%20with%20dates%20and%20times">functions
         for operating with DateTime fields</a> are well-optimized so such redundancy is not required. Anyway much
         columns is not a reason to worry — ClickHouse is a <a href="https://en.wikipedia.org/wiki/Column-oriented_DBMS">column-oriented
             DBMS</a>. This allows you to have as much fields as you need. Hundreds of columns in a table is fine for
@@ -638,11 +638,11 @@ LIMIT 20
         <li>Install ClickHouse server on all machines of the cluster</li>
         <li>Set up cluster configs in configuration file</li>
         <li>Create local tables on each instance</li>
-        <li>Create a <a href="https://clickhouse.yandex/reference_en.html#Distributed">Distributed table</a></li>
+        <li>Create a <a href="/reference_en.html#Distributed">Distributed table</a></li>
     </ol>
     </p>
 
-    <p><a href="https://clickhouse.yandex/reference_en.html#Distributed">Distributed-table</a> is actually a kind of
+    <p><a href="/reference_en.html#Distributed">Distributed-table</a> is actually a kind of
         "view" to local tables of ClickHouse cluster. SELECT query from a distributed table will be executed using
         resources of all cluster's shards. You may specify configs for multiple clusters and create multiple
         Distributed-tables providing views to different clusters.</p>
@@ -684,15 +684,15 @@ LIMIT 20
 
     <p>You can create a Distributed table on all machines in the cluster. This would allow to run distributed queries on
         any machine of the cluster. Besides distributed table you can also use <a
-                href="https://clickhouse.yandex/reference_en.html#remote">*remote* table function</a>.</p>
+                href="/reference_en.html#remote">*remote* table function</a>.</p>
 
-    <p>Let's run <a href="https://clickhouse.yandex/reference_en.html#INSERT">INSERT SELECT</a> into Distributed table
+    <p>Let's run <a href="/reference_en.html#INSERT">INSERT SELECT</a> into Distributed table
         to spread the table to multiple servers.</p>
 
     <pre>INSERT INTO ontime_all SELECT * FROM ontime;</pre>
 
     <p class="tip"><b>⚠</b> Worth to notice that the approach given above wouldn't fit for sharding of large
-        tables.<br/>Please use <a href="https://clickhouse.yandex/reference_en.html#Resharding">built-in sharding
+        tables.<br/>Please use <a href="/reference_en.html#Resharding">built-in sharding
             feature</a>.</p>
 
     <p>As you could expect heavy queries are executed N times faster being launched on 3 servers instead of one.</p>
@@ -787,7 +787,7 @@ ENGINE = ReplicatedMergeTree(
     (Year, FlightDate),
     8192);
 </pre>
-    <p>Here we use <a href="https://clickhouse.yandex/reference_en.html#ReplicatedMergeTree">ReplicatedMergeTree</a>
+    <p>Here we use <a href="/reference_en.html#ReplicatedMergeTree">ReplicatedMergeTree</a>
         table type. In parameters we specify ZooKeeper path containing shard and replica identifiers.</p>
 
     <pre>INSERT INTO ontime_replica SELECT * FROM ontime;</pre>
@@ -799,13 +799,13 @@ ENGINE = ReplicatedMergeTree(
 
     <h3>Feedback</h3>
 
-    <p>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse">Stack Overflow</a>.</p>
-    <p>Use <a href="https://groups.google.com/group/clickhouse">Google Group</a> for discussion.</p>
+    <p>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse" rel="external nofollow">Stack Overflow</a>.</p>
+    <p>Use <a href="https://groups.google.com/group/clickhouse" rel="external nofollow">Google Group</a> for discussion.</p>
     <p>Or send private message to developers:
         <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
     </p>
-    <p>Discuss with real users in Telegram chat in <a href="https://telegram.me/clickhouse_en">English</a> or in <a
-            href="https://telegram.me/clickhouse_ru">Russian</a>.</p>
+    <p>Discuss with real users in Telegram chat in <a href="https://telegram.me/clickhouse_en" rel="external nofollow">English</a> or in <a
+            href="https://telegram.me/clickhouse_ru" rel="external nofollow">Russian</a>.</p>
     <p class="warranty">Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
         either express or implied.</p>
 
