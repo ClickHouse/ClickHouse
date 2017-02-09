@@ -92,6 +92,18 @@
         body {
             background: #fff;
             font: 300 12pt/200% 'Yandex Sans Text Web', Arial, sans-serif;
+            margin: 80px 0 0 0;
+        }
+
+        #navbar {
+            top: 0;
+            z-index: 100;
+            position: fixed;
+            width: 100%;
+            background: #fff;
+            border-bottom: 1px solid #efefef;
+            padding: 4px 8px;
+            margin: 0;
         }
 
         .page {
@@ -99,8 +111,14 @@
             margin: auto;
         }
 
+        #logo {
+            color: #000;
+            text-decoration: none;
+        }
+
         #main_title {
             font: 400 48pt 'Yandex Sans Display Web', Arial, sans-serif;
+            margin: 0 0 0 0;
         }
 
         h2 {
@@ -119,23 +137,21 @@
         }
 
         .menu {
-            margin: 0 0 50px;
-            font-weight: 400;
+            padding: 20px 4px 0 0;
+            font: 400 18pt 'Yandex Sans Display Web', Arial, sans-serif;
+            float: right;
         }
 
         .menu_item:link,
         .menu_item:active,
         .menu_item:visited {
             margin: 0 8px 0 0;
-
             padding: 5px;
-            background: #ffdb4d;
             color: #000;
         }
 
         .menu_item:hover {
-            background: #f80;
-            color: #fff;
+            border-bottom: 2px solid #fc0;
             text-decoration: none;
         }
 
@@ -237,26 +253,41 @@
             cursor: pointer;
             border-bottom: 1px dashed #08f;
         }
+
+        .orange {
+            fill: #fc0;
+        }
+        .red {
+            fill: #f00
+        }
     </style>
 </head>
 <body>
-<div class="page">
+<div id="navbar">
+    <div class="menu">
+        <a class="menu_item" href="reference_en.html">Documentation</a>
+        <a class="menu_item" href="tutorial.html">Quick start</a>
+        <a class="menu_item" href="#download" id="download_menu_item">Download</a>
+        <a class="menu_item" href="https://github.com/yandex/ClickHouse">Source</a>
+        <a class="menu_item" href="benchmark.html">Benchmark</a>
+        <a class="menu_item" href="#feedback" id="feedback">Feedback</a>
+    </div>
 
+    <a id="logo" href="#">
     <h1 id="main_title">
         <svg xmlns="http://www.w3.org/2000/svg" width="54" height="48" viewBox="0 0 9 8">
-            <style>
-                .o{fill:#fc0}
-                .r{fill:#f00}
-            </style>
-            <path class="r" d="M0,7 h1 v1 h-1 z"></path>
-            <path class="o" d="M0,0 h1 v7 h-1 z"></path>
-            <path class="o" d="M2,0 h1 v8 h-1 z"></path>
-            <path class="o" d="M4,0 h1 v8 h-1 z"></path>
-            <path class="o" d="M6,0 h1 v8 h-1 z"></path>
-            <path class="o" d="M8,3.25 h1 v1.5 h-1 z"></path>
+            <path class="red" d="M0,7 h1 v1 h-1 z"></path>
+            <path class="orange" d="M0,0 h1 v7 h-1 z"></path>
+            <path class="orange" d="M2,0 h1 v8 h-1 z"></path>
+            <path class="orange" d="M4,0 h1 v8 h-1 z"></path>
+            <path class="orange" d="M6,0 h1 v8 h-1 z"></path>
+            <path class="orange" d="M8,3.25 h1 v1.5 h-1 z"></path>
         </svg>
 
         ClickHouse</h1>
+    </a>
+</div>
+<div class="page">
 
     <div class="feedback_form">
         <h2>Feedback</h2>
@@ -273,15 +304,6 @@
 
     <p class="short_description">ClickHouse is an open-source column-oriented database management system that allows
         generating analytical data reports in real time using SQL queries.</p>
-
-    <div class="menu">
-        <a class="menu_item" href="reference_en.html">Documentation</a>
-        <a class="menu_item" href="tutorial.html">Quick start</a>
-        <a class="menu_item" href="#download" id="download_menu_item">Download</a>
-        <a class="menu_item" href="https://github.com/yandex/ClickHouse">Source</a>
-        <a class="menu_item" href="benchmark.html">Benchmark</a>
-        <a class="menu_item" href="#feedback" id="feedback">Feedback</a>
-    </div>
 
     <p>ClickHouse manages extremely large volumes of data in a stable and sustainable manner. It&nbsp;currently powers
         <a href="https://metrica.yandex.com/">Yandex.Metrica</a>, world’s <a
