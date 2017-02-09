@@ -93,6 +93,7 @@
             background: #fff;
             font: 300 12pt/200% 'Yandex Sans Text Web', Arial, sans-serif;
             margin: 0;
+            padding: 0;
         }
 
         #navbar {
@@ -130,7 +131,6 @@
         .page {
             max-width: 800px;
             margin: auto;
-            padding: 0 10px;
         }
 
         #logo {
@@ -237,6 +237,12 @@
             color: #000;
         }
 
+        #ubuntu-install {
+            overflow: auto;
+            overflow-y: hidden;
+            -ms-overflow-y: hidden;
+        }
+
         #footer {
             text-align: right;
             padding: 8px 18px 0 0;
@@ -323,9 +329,16 @@
             .desktop-only {
                 display: none;
             }
+            .page {
+                width: 90%;
+                margin: 0 auto;
+            }
             #navbar {
                 position: relative;
                 text-align: center;
+                margin: 8px 0;
+                padding: 0;
+                border: none;
             }
             #hero {
                 padding: 10px 0;
@@ -619,7 +632,7 @@
                 class="distributive_not_selected" id="ubuntu_precise">Ubuntu 12.04 (Precise)</span>:
     </p>
 
-        <code>
+        <code id="ubuntu-install">
 <pre>
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 
