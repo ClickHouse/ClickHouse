@@ -150,6 +150,10 @@
             font: 400 200%/133% 'Yandex Sans Display Web', Arial, sans-serif;
         }
 
+        .smaller-font {
+            font-size: 80%;
+        }
+
         a:link, a:visited {
             color: #08f;
             text-decoration: none;
@@ -287,14 +291,16 @@
 
         ul.dashed > li:before {
             content: '— ';
-            text-indent: 5px;
+            text-indent: 1em;
         }
 
         .warranty {
-            margin-top: 40px;
-            font-size: 10pt;
+            margin-top: 6em;
+            font-size: 50%;
             color: #888;
             line-height: 150%;
+            border-top: 1px solid #888;
+            padding: 1em 0;
         }
 
         .distributive_selected {
@@ -340,6 +346,9 @@
         }
 
         @media (max-width: 1023px) {
+            body {
+                font-size: 1.33em;
+            }
             .desktop-only {
                 display: none;
             }
@@ -349,10 +358,14 @@
                 margin: 0 auto;
             }
 
+            .smaller-font {
+                font-size: 100%;
+            }
+
             #navbar {
                 position: relative;
                 text-align: center;
-                margin: 1em 0;
+                margin: 1.33em 0;
                 padding: 0;
                 border: none;
             }
@@ -378,8 +391,13 @@
                 margin: 20px auto 60px auto;
             }
 
+            #benchmark_learn_more, #call_to_action {
+                font-size: 80%;
+            }
+
             #github {
                 text-align: center;
+                font-size: 133%;
                 bottom: 0;
                 left: 0;
                 z-index: 100;
@@ -392,6 +410,7 @@
                 -o-transform: rotate(0deg);
                 background: #000;
             }
+
 
             .block-30, .block-50, .block-70 {
                 width: 100%;
@@ -579,7 +598,7 @@
     <div class="block-50">
         <h2>Key Features</h2>
 
-        <ul class="dashed">
+        <ul class="dashed smaller-font">
             <li>True column-oriented</li>
             <li>Vectorized query execution</li>
             <li>Data compression</li>
@@ -605,7 +624,7 @@
     <div class="block-50">
         <h2>Applications</h2>
 
-        <ul class="dashed">
+        <ul class="dashed smaller-font">
             <li>Web and App analytics</li>
             <li>Advertising networks and RTB</li>
             <li>Telecommunications</li>
@@ -618,6 +637,7 @@
         </ul>
 
         <h2>Use Cases</h2>
+        <div class="smaller-font">
         <p>ClickHouse manages extremely large volumes of data in a stable and sustainable manner. It&nbsp;currently
             powers
             <a href="https://metrica.yandex.com/" rel="external nofollow">Yandex.Metrica</a>, world’s <a
@@ -631,6 +651,7 @@
                 rel="external nofollow">CERN’s LHCb
             experiment</a> to store and process metadata on 10bn events with over 1000 attributes per event registered
             in 2011.</p>
+        </div>
     </div>
 
     <div class="clear"></div>
@@ -718,13 +739,13 @@ clickhouse-client
     </ul>
 
     <h2>Like ClickHouse?</h2>
-    <p>Help to spread the word via <a rel="external nofollow" target="_blank" href="https://www.facebook.com/sharer.php?u=https://clickhouse.yandex">Facebook</a>,
+    <p>Help to spread the word about it via <a rel="external nofollow" target="_blank" href="https://www.facebook.com/sharer.php?u=https://clickhouse.yandex">Facebook</a>,
         <a rel="external nofollow" target="_blank" href="https://twitter.com/intent/tweet?url=https://clickhouse.yandex">Twitter</a> and
         <a rel="external nofollow" target="_blank" href="https://www.linkedin.com/shareArticle?url=https://clickhouse.yandex">LinkedIn</a>!</p>
 
 
     <p class="warranty">Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-        KIND,<br/> either express or implied.</p>
+        KIND, either express or implied.</p>
 
 </div>
 
