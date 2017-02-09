@@ -182,7 +182,7 @@
 
         #footer {
             text-align: right;
-            padding: 10px 4px 0 0;
+            padding: 8px 18px 0 0;
             color: #888;
             font-size: 10pt;
         }
@@ -243,9 +243,9 @@
 <div id="navbar">
     <div class="menu">
         <a class="menu_item" href="#quick-start">Quick Start</a>
-        <a class="menu_item" href="reference_en.html">Documentation</a>
         <a class="menu_item" href="benchmark.html">Benchmark</a>
         <a class="menu_item" href="#contacts">Contacts</a>
+        <a class="menu_item" href="reference_en.html">Documentation</a>
     </div>
 
     <a id="logo" href="#">
@@ -264,7 +264,11 @@
 </div>
 
 <div id="github">
-    <a id="github_link" href="https://github.com/yandex/ClickHouse" rel="external nofollow">Fork me on GitHub</a>
+    <a id="github_link"
+       href="https://github.com/yandex/ClickHouse"
+       rel="external nofollow"
+       target="_blank"
+    >Fork me on GitHub</a>
 </div>
 
 <div class="page">
@@ -470,7 +474,7 @@ clickhouse-client
         </code>
 
     <p>Or build ClickHouse from <a href="https://github.com/yandex/ClickHouse" rel="external nofollow">sources</a> according to the <a
-            href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md" rel="external nofollow">instruction</a>.</p>
+            href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md" rel="external nofollow" target="_blank">instruction</a>.</p>
 
     <p>Then proceed to <a href="tutorial.html">tutorial</a> or <a href="reference_en.html">full documentation</a>.</p>
 
@@ -493,27 +497,35 @@ clickhouse-client
 
     <script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
     <script type="text/javascript">
-        var name = $('#main_title').text().trim().toLowerCase();
-        var feedback_address = name + '-feedback' + '@yandex-team.com';
-        var feedback_email = $('#feedback_email');
-        feedback_email.attr('href', 'mailto:' + feedback_address);
-        feedback_email.html(feedback_address);
+        $(document).ready(function() {
+            var name = $('#main_title').text().trim().toLowerCase();
+            var feedback_address = name + '-feedback' + '@yandex-team.com';
+            var feedback_email = $('#feedback_email');
+            feedback_email.attr('href', 'mailto:' + feedback_address);
+            feedback_email.html(feedback_address);
 
-        var available_distributives = ['xenial', 'trusty', 'precise'];
-
-        function selectDistributive(name) {
-            $('#distributive').html(name);
-            available_distributives.forEach(function (distr) {
-                $('#ubuntu_' + distr).attr('class', (name == distr) ? 'distributive_selected' : 'distributive_not_selected');
+            $("a[href^='#']").on('click', function(e) {
+                e.preventDefault();
+                var selector = $(e.target).attr('href');
+                var offset = 0;
+                if (selector != '#') {
+                    offset = $(selector).offset().top - $('#logo').height() * 1.5;
+                }
+                $('html, body').animate({
+                    scrollTop: offset
+                }, 500);
             });
-        }
 
-        available_distributives.forEach(function (distr) {
-            $('#ubuntu_' + distr).on('click', function () {
-                selectDistributive(distr);
+            var available_distributives = ['xenial', 'trusty', 'precise'];
+            available_distributives.forEach(function (distr) {
+                $('#ubuntu_' + distr).on('click', function () {
+                    $('#distributive').html(name);
+                    available_distributives.forEach(function (distr) {
+                        $('#ubuntu_' + distr).attr('class', (name == distr) ? 'distributive_selected' : 'distributive_not_selected');
+                    });
+                });
             });
         });
-
     </script>
 
     <!-- Yandex.Metrika counter -->
