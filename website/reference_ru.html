@@ -12,30 +12,6 @@
     </head>
     <body>
 
-<script type="text/javascript">
-function getParams() {
-    var matches = document.cookie.match(/yandex_login=([\w\-]+)/);
-    return (matches && matches.length == 2) ? { "login": matches[1] } : {};
-}
-</script>
-
-<!-- Yandex.Metrika counter -->
-<script src="https://mc.yandex.ru/metrika/watch.js" type="text/javascript"></script>
-<script type="text/javascript">
-try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
-          webvisor:true,
-          clickmap:true,
-          trackLinks:true,
-          accurateTrackBounce:true,
-          trackHash:true,
-          params: getParams()});
-} catch(e) { }
-</script>
-<noscript><div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
-<!-- /Yandex.Metrika counter -->
-
-<script type="text/javascript" src="https://yandex.st/jquery/1.7.2/jquery.min.js"></script>
-
 <div class="island">
 
 <div style="float: left; margin-right: -100%; margin-top: 3px; margin-left: 3px;">
@@ -56,7 +32,7 @@ try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
 	<a href="reference_ru.html" title="In russian">
 		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 6" width="50" height="30" style="border: 1px solid #AAA;">
 			<rect fill="#fff" width="10" height="3"></rect>
-			<rect fill="#d52b1e" y="3" width="10" height="3">
+			<rect fill="#d52b1e" y="3" width="10" height="3"></rect>
 			<rect fill="#0039a6" y="2" width="10" height="2"></rect>
 		</svg>
 	Russian
@@ -7576,7 +7552,7 @@ target="_blank" rel="nofollow"><img src="https://bs.yandex.ru/informer/18343495/
 style="width:80px; height:31px; border:0;" alt="Яндекс.Метрика" title="Яндекс.Метрика: данные за сегодня (просмотры)" onclick="try{Ya.Metrika.informer({i:this,id:18343495,type:0,lang:'ru'});return false}catch(e){}"/></a>
 <!-- /Yandex.Metrika informer -->
 </div>
-
+<script type="text/javascript" src="https://yandex.st/jquery/1.7.2/jquery.min.js"></script>
 <script type="text/javascript">
 
 // Генерация HTML по разметке, отдалённо напоминающей Wiki. Криво.
@@ -7728,7 +7704,26 @@ if (location.hash.length > 1) {
 }
 
 
+	function getParams() {
+		var matches = document.cookie.match(/yandex_login=([\w\-]+)/);
+		return (matches && matches.length == 2) ? { "login": matches[1] } : {};
+	}
 </script>
+
+<!-- Yandex.Metrika counter -->
+<script src="https://mc.yandex.ru/metrika/watch.js" type="text/javascript"></script>
+<script type="text/javascript">
+	try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
+		webvisor:true,
+		clickmap:true,
+		trackLinks:true,
+		accurateTrackBounce:true,
+		trackHash:true,
+		params: getParams()});
+	} catch(e) { }
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
 
     </body>
 </html>

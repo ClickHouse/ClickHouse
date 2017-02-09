@@ -12,30 +12,6 @@
     </head>
     <body>
 
-<script type="text/javascript">
-function getParams() {
-    var matches = document.cookie.match(/yandex_login=([\w\-]+)/);
-    return (matches && matches.length == 2) ? { "login": matches[1] } : {};
-}
-</script>
-
-<!-- Yandex.Metrica counter -->
-<script src="https://mc.yandex.ru/metrika/watch.js" type="text/javascript"></script>
-<script type="text/javascript">
-try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
-          webvisor:true,
-          clickmap:true,
-          trackLinks:true,
-          accurateTrackBounce:true,
-          trackHash:true,
-          params: getParams()});
-} catch(e) { }
-</script>
-<noscript><div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt=" " /></div></noscript>
-<!-- /Yandex.Metrica counter -->
-
-<script type="text/javascript" src="https://yandex.st/jquery/1.7.2/jquery.min.js"></script>
-
 <div class="island">
 
 <div style="float: left; margin-right: -100%; margin-top: 3px; margin-left: 3px;">
@@ -7286,165 +7262,184 @@ When the server is restarted, quotas are reset.
 
 
 <div class="informer">
-<!-- Yandex.Metrica informer -->
-<a href="https://metrika.yandex.ru/stat/?id=18343495&amp;from=informer"
-target="_blank" rel="nofollow"><img src="https://bs.yandex.ru/informer/18343495/2_1_FFFFFFFF_EFEFEFFF_0_pageviews"
-style="width:80px; height:31px; border:0;" alt="Yandex.Metrica" title="Yandex.Metrica: data for today (pageviews)" onclick="try{Ya.Metrika.informer({i:this,id:18343495,type:0,lang:'ru'});return false}catch(e){}"/></a>
-<!-- /Yandex.Metrica informer -->
+	<!-- Yandex.Metrika informer -->
+	<a href="https://metrika.yandex.ru/stat/?id=18343495&amp;from=informer"
+	   target="_blank" rel="nofollow"><img src="https://bs.yandex.ru/informer/18343495/2_1_FFFFFFFF_EFEFEFFF_0_pageviews"
+										   style="width:80px; height:31px; border:0;" alt="Яндекс.Метрика" title="Яндекс.Метрика: данные за сегодня (просмотры)" onclick="try{Ya.Metrika.informer({i:this,id:18343495,type:0,lang:'ru'});return false}catch(e){}"/></a>
+	<!-- /Yandex.Metrika informer -->
 </div>
-
+<script type="text/javascript" src="https://yandex.st/jquery/1.7.2/jquery.min.js"></script>
 <script type="text/javascript">
 
-// Генерация HTML по разметке, отдалённо напоминающей Wiki. Криво.
-function wikiToHTML(text) {
+	// Генерация HTML по разметке, отдалённо напоминающей Wiki. Криво.
+	function wikiToHTML(text) {
 
-	text = text.replace(/\n{0,2}===(.+?)===\n{0,2}/g, '\n\n<h3>$1<\/h3>\n\n');
-	text = text.replace(/\n{0,2}==(.+?)==\n{0,2}/g, '\n\n<h2>$1<\/h2>\n\n');
+		text = text.replace(/\n{0,2}===(.+?)===\n{0,2}/g, '\n\n<h3>$1<\/h3>\n\n');
+		text = text.replace(/\n{0,2}==(.+?)==\n{0,2}/g, '\n\n<h2>$1<\/h2>\n\n');
 
-	text = text.replace(/%%(.+?)%%/g, '<span class="inline-example">$1<\/span>');
-	text = text.replace(/%%([\s\S]+?)%%/g, '<pre class="text-example">$1<\/pre>');
+		text = text.replace(/%%(.+?)%%/g, '<span class="inline-example">$1<\/span>');
+		text = text.replace(/%%([\s\S]+?)%%/g, '<pre class="text-example">$1<\/pre>');
 
-	text = text.replace(/(<pre[^>]*>)([\s\S]+?)(<\/pre>)/g, function(match, p1, p2, p3) {
-		return p1 + p2.replace(/\n/g, '<newline>') + p3;
-	});
+		text = text.replace(/(<pre[^>]*>)([\s\S]+?)(<\/pre>)/g, function(match, p1, p2, p3) {
+			return p1 + p2.replace(/\n/g, '<newline>') + p3;
+		});
 
-	text = '<p>' + text + '<\/p>';
-	text = text.replace(/\n(\s*\n)+/g, '<\/p><p>');
+		text = '<p>' + text + '<\/p>';
+		text = text.replace(/\n(\s*\n)+/g, '<\/p><p>');
 
-	text = text.replace(/(<pre[^>]*>)([\s\S]+?)(<\/pre>)/g, function(match, p1, p2, p3) {
-		return p1 + p2.replace(/<newline>/g, '\n') + p3;
-	});
+		text = text.replace(/(<pre[^>]*>)([\s\S]+?)(<\/pre>)/g, function(match, p1, p2, p3) {
+			return p1 + p2.replace(/<newline>/g, '\n') + p3;
+		});
 
-	return text;
-}
-
-$('.content').each(function() {
-	var elem = $(this);
-	elem.html(wikiToHTML(elem.html()));
-});
-
-
-$('.show-example').each(function() {
-    var link = $("<a class='show-hide-link'>Show example<\/a>");
-    var example = $(this);
-    example.before(link);
-    link.click(function() {
-        example.toggle(100);
-        link.text('Example:');
-    });
-});
-
-
-// Создаём содержание.
-
-var contents = [];
-var set_of_anchors = {};
-
-// Триграмный индекс текстов anchor-ов. Используется, чтобы расставить ссылки на разделы внутри текста.
-var trigram_to_anchor = {};
-var anchor_to_element = {};
-
-function getTrigrams(s) {
-	s = s.toLowerCase();
-
-	var res = [];
-	if (s.length < 3) {
-		return;
+		return text;
 	}
 
-	for (var i = 0; i < s.length - 2; ++i) {
-		res.push(s.substring(i, i + 3));
-	}
+	$('.content').each(function() {
+		var elem = $(this);
+		elem.html(wikiToHTML(elem.html()));
+	});
 
-	return res;
-}
 
-$('h1, h2, h3, h4, h5, h6').each(function() {
-    var elem = $(this);
-    var text = elem.text().replace(/^\d+\.\s+/, '');
-    var anchor = text;
-    var margin = elem.prop('tagName').substring(1) - 1;
+	$('.show-example').each(function() {
+		var link = $('<a class="show-hide-link">Показать пример<\/a>');
+		var example = $(this);
+		example.before(link);
+		link.click(function() {
+			example.toggle(100);
+			link.text('Пример:');
+		});
+	});
 
-    if (elem.hasClass('not-for-contents')) {
-        return;
-    }
 
-    /// Снимает неоднозначность
+	// Создаём содержание.
 
-    if (set_of_anchors[anchor] === undefined) {
-        set_of_anchors[anchor] = 0;
-    }
+	var contents = [];
+	var set_of_anchors = {};
 
-    ++set_of_anchors[anchor];
+	// Триграмный индекс текстов anchor-ов. Используется, чтобы расставить ссылки на разделы внутри текста.
+	var trigram_to_anchor = {};
+	var anchor_to_element = {};
 
-    if (set_of_anchors[anchor] > 1) {
-        anchor += set_of_anchors[anchor];
-    }
+	function getTrigrams(s) {
+		s = s.toLowerCase();
 
-	var trigrams = getTrigrams(anchor);
-	for (var i in trigrams) {
-		if (trigram_to_anchor[trigrams[i]] === undefined) {
-			trigram_to_anchor[trigrams[i]] = [];
+		var res = [];
+		if (s.length < 3) {
+			return;
 		}
-		trigram_to_anchor[trigrams[i]].push(anchor);
+
+		for (var i = 0; i < s.length - 2; ++i) {
+			res.push(s.substring(i, i + 3));
+		}
+
+		return res;
 	}
 
-    elem.before($('<a href="#' + anchor + '" class="head-anchor" name="' + anchor + '">⚓<\/a>'));
+	$('h1, h2, h3, h4, h5, h6').each(function() {
+		var elem = $(this);
+		var text = elem.text().replace(/^\d+\.\s+/, '');
+		var anchor = text;
+		var margin = elem.prop('tagName').substring(1) - 1;
 
-    contents.push('<a href="#' + anchor + '" class="contents-element" style="margin-left:' + margin + 'em">' + text + '<\/a><br \/>');
-});
+		if (elem.hasClass('not-for-contents')) {
+			return;
+		}
 
-$('#contents').html(contents.join(''));
+		/// Снимает неоднозначность
+
+		if (set_of_anchors[anchor] === undefined) {
+			set_of_anchors[anchor] = 0;
+		}
+
+		++set_of_anchors[anchor];
+
+		if (set_of_anchors[anchor] > 1) {
+			anchor += set_of_anchors[anchor];
+		}
+
+		var trigrams = getTrigrams(anchor);
+		for (var i in trigrams) {
+			if (trigram_to_anchor[trigrams[i]] === undefined) {
+				trigram_to_anchor[trigrams[i]] = [];
+			}
+			trigram_to_anchor[trigrams[i]].push(anchor);
+		}
+
+		elem.before($('<a href="#' + anchor + '" class="head-anchor" name="' + anchor + '">⚓<\/a>'));
+
+		contents.push('<a href="#' + anchor + '" class="contents-element" style="margin-left:' + margin + 'em">' + text + '<\/a><br \/>');
+	});
+
+	$('#contents').html(contents.join(''));
 
 
-// Найти по триграмному индексу лучший anchor для текста.
-function findBestAnchor(s) {
-	s = s.toLowerCase();
-	var trigrams = getTrigrams(s);
-	var anchors_score = {};
+	// Найти по триграмному индексу лучший anchor для текста.
+	function findBestAnchor(s) {
+		s = s.toLowerCase();
+		var trigrams = getTrigrams(s);
+		var anchors_score = {};
 
-	for (var i in trigrams) {
-		if (trigram_to_anchor.hasOwnProperty(trigrams[i])) {
-			for (var j in trigram_to_anchor[trigrams[i]]) {
-				if (anchors_score[trigram_to_anchor[trigrams[i]][j]] === undefined) {
-					anchors_score[trigram_to_anchor[trigrams[i]][j]] = 0;
+		for (var i in trigrams) {
+			if (trigram_to_anchor.hasOwnProperty(trigrams[i])) {
+				for (var j in trigram_to_anchor[trigrams[i]]) {
+					if (anchors_score[trigram_to_anchor[trigrams[i]][j]] === undefined) {
+						anchors_score[trigram_to_anchor[trigrams[i]][j]] = 0;
+					}
+					anchors_score[trigram_to_anchor[trigrams[i]][j]] += 1.0 / Math.sqrt(trigram_to_anchor[trigrams[i]][j].length);
 				}
-				anchors_score[trigram_to_anchor[trigrams[i]][j]] += 1.0 / Math.sqrt(trigram_to_anchor[trigrams[i]][j].length);
 			}
 		}
-	}
 
-	var anchors_matched = [];
-	for (var name in anchors_score) {
-		anchors_matched.push({ name : name, score : anchors_score[name] });
-	}
+		var anchors_matched = [];
+		for (var name in anchors_score) {
+			anchors_matched.push({ name : name, score : anchors_score[name] });
+		}
 
-	anchors_matched.sort(function(a, b) { return b.score - a.score; });
+		anchors_matched.sort(function(a, b) { return b.score - a.score; });
 //	console.log(anchors_matched);
-	return anchors_matched[0].name;
-}
-
-
-$('p').each(function() {
-    var elem = $(this);
-    var text = elem.text();
-
-    var match = text.match(/(?:разделе?|sections?|see(?: the)?) "([^"]+?)"/i);
-    if (match) {
-		elem.html(elem.html().replace(/((?:разделе?|sections?|see(?: the)?) ")([^"]+?)\d?(")/i, '$1<a href="#' + findBestAnchor(match[1]) + '">$2</a>$3'));
-    }
-});
-
-// Если человек пришёл по ссылке с именем раздела в хэше, а этого раздела не существует, то найдём лучший раздел по триграмному индексу.
-if (location.hash.length > 1) {
-	var queried = decodeURIComponent(location.hash.substring(1));
-	if (!set_of_anchors.hasOwnProperty(queried)) {
-		location.hash = "#" + findBestAnchor(queried);
+		return anchors_matched[0].name;
 	}
-}
 
 
+	$('p').each(function() {
+		var elem = $(this);
+		var text = elem.text();
+
+		var match = text.match(/разделе? "([^"]+?)"/);
+		if (match) {
+			elem.html(elem.html().replace(/(разделе? ")([^"]+?)\d?(")/, '$1<a href="#' + findBestAnchor(match[1]) + '">$2</a>$3'));
+		}
+	});
+
+	// Если человек пришёл по ссылке с именем раздела в хэше, а этого раздела не существует, то найдём лучший раздел по триграмному индексу.
+	if (location.hash.length > 1) {
+		var queried = decodeURIComponent(location.hash.substring(1));
+		if (!set_of_anchors.hasOwnProperty(queried)) {
+			location.hash = "#" + findBestAnchor(queried);
+		}
+	}
+
+
+	function getParams() {
+		var matches = document.cookie.match(/yandex_login=([\w\-]+)/);
+		return (matches && matches.length == 2) ? { "login": matches[1] } : {};
+	}
 </script>
+
+<!-- Yandex.Metrika counter -->
+<script src="https://mc.yandex.ru/metrika/watch.js" type="text/javascript"></script>
+<script type="text/javascript">
+	try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
+		webvisor:true,
+		clickmap:true,
+		trackLinks:true,
+		accurateTrackBounce:true,
+		trackHash:true,
+		params: getParams()});
+	} catch(e) { }
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
 
     </body>
 </html>
