@@ -106,6 +106,26 @@
             margin: 0;
         }
 
+        #github {
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            position: fixed;
+            padding: 0 40px;
+            margin: 0 0 40px -50px;
+            -webkit-transform: rotate(45deg);
+            -moz-transform: rotate(45deg);
+            -ms-transform: rotate(45deg);
+            -o-transform: rotate(45deg);
+            background: #000;
+        }
+        #github_link {
+            color: #fff;
+        }
+        #github_link:hover {
+            color: #fff;
+        }
+
         .page {
             width: 800px;
             margin: auto;
@@ -224,7 +244,6 @@
     <div class="menu">
         <a class="menu_item" href="#quick-start">Quick Start</a>
         <a class="menu_item" href="reference_en.html">Documentation</a>
-        <a class="menu_item" href="https://github.com/yandex/ClickHouse" rel="external nofollow">Source</a>
         <a class="menu_item" href="benchmark.html">Benchmark</a>
         <a class="menu_item" href="#contacts">Contacts</a>
     </div>
@@ -242,6 +261,10 @@
 
         ClickHouse</h1>
     </a>
+</div>
+
+<div id="github">
+    <a id="github_link" href="https://github.com/yandex/ClickHouse" rel="external nofollow">Fork me on GitHub</a>
 </div>
 
 <div class="page">
