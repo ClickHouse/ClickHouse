@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <memory>
+#include <iostream>
 
 #include <DB/Common/Exception.h>
 #include <DB/IO/BufferBase.h>
@@ -94,6 +96,9 @@ private:
 	  */
 	virtual void nextImpl() { throw Exception("Cannot write after end of buffer.", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER); };
 };
+
+
+using WriteBufferPtr = std::shared_ptr<WriteBuffer>;
 
 
 }

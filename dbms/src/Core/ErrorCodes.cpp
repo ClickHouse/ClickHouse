@@ -362,6 +362,8 @@ namespace ErrorCodes
 	extern const int RESERVED_IDENTIFIER_NAME = 357;
 	extern const int INTO_OUTFILE_NOT_ALLOWED = 358;
 	extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT = 359;
+	extern const int CURRENT_WRITE_BUFFER_IS_EXHAUSTED = 360;
+	extern const int CANNOT_CREATE_IO_BUFFER = 361;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

@@ -13,6 +13,8 @@ namespace DB
 {
 
 class WriteBufferFromHTTPServerResponse;
+class CascadeWriteBuffer;
+
 
 class HTTPHandler : public Poco::Net::HTTPRequestHandler
 {
@@ -27,6 +29,9 @@ private:
 		std::shared_ptr<WriteBufferFromHTTPServerResponse> out;
 		/// Used for sending response. Points to 'out', or to CompressedWriteBuffer(*out), depending on settings.
 		std::shared_ptr<WriteBuffer> out_maybe_compressed;
+
+		std::shared_ptr<CascadeWriteBuffer> delayed_out_raw;
+		std::shared_ptr<WriteBuffer> delayed_out_maybe_compressed;
 	};
 
 	Server & server;

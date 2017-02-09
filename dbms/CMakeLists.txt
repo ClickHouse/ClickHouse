@@ -18,6 +18,7 @@ if (NOT NO_WERROR)
 endif ()
 
 add_subdirectory (src)
+add_subdirectory (tests/unit_tests)
 
 add_library(string_utils
 	include/DB/Common/StringUtils.h

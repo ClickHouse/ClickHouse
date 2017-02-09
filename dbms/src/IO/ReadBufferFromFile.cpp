@@ -61,11 +61,14 @@ ReadBufferFromFile::ReadBufferFromFile(
 
 ReadBufferFromFile::ReadBufferFromFile(
 	int fd,
+	const std::string & original_file_name,
 	size_t buf_size,
 	int flags,
 	char * existing_memory,
 	size_t alignment)
-	: ReadBufferFromFileDescriptor(fd, buf_size, existing_memory, alignment), file_name("(fd = " + toString(fd) + ")")
+	:
+	ReadBufferFromFileDescriptor(fd, buf_size, existing_memory, alignment),
+	file_name(original_file_name.empty() ? "(fd = " + toString(fd) + ")" : original_file_name)
 {
 }
 
