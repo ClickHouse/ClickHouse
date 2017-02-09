@@ -420,16 +420,6 @@
         </tr>
     </table>
 
-    <h2 id="contacts">Contacts</h2>
-    <p>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse" rel="external nofollow">Stack Overflow</a>.</p>
-    <p>Discuss with real users in Telegram chat in <a href="https://telegram.me/clickhouse_en" rel="external nofollow">English</a> or in <a
-            href="https://telegram.me/clickhouse_ru" rel="external nofollow">Russian</a>.</p>
-    <p>Use <a href="https://groups.google.com/group/clickhouse" rel="external nofollow">Google Group</a> for discussion.</p>
-    <p>Or send private message to developers:
-        <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
-    </p>
-
-
     <h2 id="download">Download</h2>
 
     <p>System requirements: Linux, x86_64 with SSE 4.2.</p>
@@ -462,6 +452,15 @@ clickhouse-client
     <p>Then proceed to <a href="tutorial.html">quick start guide</a> or <a href="reference_en.html">full documentation</a>.</p>
 
 
+    <h2 id="contacts">Contacts</h2>
+    <p>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse" rel="external nofollow">Stack Overflow</a>.</p>
+    <p>Discuss with real users in Telegram chat in <a href="https://telegram.me/clickhouse_en" rel="external nofollow">English</a> or in <a
+            href="https://telegram.me/clickhouse_ru" rel="external nofollow">Russian</a>.</p>
+    <p>Use <a href="https://groups.google.com/group/clickhouse" rel="external nofollow">Google Group</a> for discussion.</p>
+    <p>Or send private message to developers:
+        <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
+    </p>
+
     <p class="warranty">Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
         KIND,<br/> either express or implied.</p>
 
@@ -471,7 +470,7 @@ clickhouse-client
 
     <script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
     <script type="text/javascript">
-        var name = $('#main_title').html().trim().toLowerCase();
+        var name = $('#main_title').text().trim().toLowerCase();
         var feedback_address = name + '-feedback' + '@yandex-team.com';
         var feedback_email = $('#feedback_email');
         feedback_email.attr('href', 'mailto:' + feedback_address);
