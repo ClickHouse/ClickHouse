@@ -119,6 +119,7 @@
             -o-transform: rotate(45deg);
             background: #000;
         }
+
         #github_link {
             color: #fff;
         }
@@ -127,8 +128,9 @@
         }
 
         .page {
-            width: 800px;
+            max-width: 800px;
             margin: auto;
+            padding: 0 10px;
         }
 
         #logo {
@@ -283,18 +285,81 @@
             border-bottom: 1px dashed #08f;
         }
 
+        .block-50 {
+            float: left;
+            display: block;
+            width: 50%;
+        }
+
+        .block-30 {
+            float: left;
+            display: block;
+            width: 30%;
+        }
+
+        .block-70 {
+            float: left;
+            display: block;
+            width: 70%;
+        }
+        .clear {
+            clear: both;
+        }
+
         .orange {
             fill: #fc0;
             color: #fc0;
         }
+
         .red {
             fill: #f00;
+        }
+
+        @media (max-width: 1023px) {
+            .desktop-only {
+                display: none;
+            }
+            #navbar {
+                position: relative;
+                text-align: center;
+            }
+            #hero {
+                padding: 10px 0;
+                text-align: center;
+            }
+            #hero ul.dashed > li:before {
+                content: '';
+            }
+            #hero .index_item {
+                font-size: 26pt;
+            }
+            #call_to_action {
+                margin: 20px auto 60px auto;
+            }
+            #github {
+                text-align: center;
+                bottom: 0;
+                left: 0;
+                z-index: 100;
+                position: relative;
+                padding: 4px;
+                margin: 0;
+                -webkit-transform: rotate(0deg);
+                -moz-transform: rotate(0deg);
+                -ms-transform: rotate(0deg);
+                -o-transform: rotate(0deg);
+                background: #000;
+            }
+            .block-30, .block-50, .block-70 {
+                width: 100%;
+                float: none;
+            }
         }
     </style>
 </head>
 <body>
 <div id="navbar">
-    <div class="menu">
+    <div class="menu desktop-only">
         <a class="menu_item" href="#quick-start">Quick Start</a>
         <a class="menu_item" href="#performance">Performance</a>
         <a class="menu_item" href="reference_en.html">Documentation</a>
@@ -325,16 +390,14 @@
 </div>
 <div id="hero">
     <div class="page">
-    <table width="100%">
-        <tr>
-            <td valign="top" width="70%">
+    <div class="block-70">
             <p id="short_description">ClickHouse is an free <span class="orange">open-source</span> column-oriented database management system
                 capable of <span class="orange">realtime</span> generation of analytical data reports using <span class="orange">SQL</span> queries.</p>
                 <a id="call_to_action" href="#quick-start">
                     Quick Start
                 </a>
-            </td>
-            <td valign="top" width="30%">
+            </div>
+            <div class="block-30">
                 <ul id="index_ul" class="dashed">
                     <li>
                         <a class="index_item" href="#linearly-scalable">Linearly Scalable</a>
@@ -355,8 +418,8 @@
                         <a class="index_item" href="#simple-and-handy">Simple and Handy</a>
                     </li>
                 </ul>
-            </td>
-            </tr></table>
+            </div>
+            <div class="clear"></div>
     </div></div>
     <div class="page">
     <h2 id="slogan">ClickHouse. Just makes you think faster.</h2>
@@ -448,9 +511,7 @@
     <p>The system’s conditional aggregate functions, calculation of totals and extremes, allow getting results with a
         single query without having to run a number of them.</p>
 
-    <table width="100%">
-        <tr>
-            <td valign="top" width="50%">
+    <div class="block-50">
                 <h2>Key Features</h2>
 
                 <ul class="dashed">
@@ -475,8 +536,8 @@
                     <li>Detailed documentation</li>
                     <li>Clean documented code</li>
                 </ul>
-            </td>
-            <td valign="top" width="50%">
+            </div>
+            <div class="block-50">
                 <h2>Applications</h2>
 
                 <ul class="dashed">
@@ -501,9 +562,9 @@
                         href="https://www.yandex.com/company/press_center/press_releases/2012/2012-04-10/" rel="external nofollow">CERN’s LHCb
                     experiment</a> to store and process metadata on 10bn events with over 1000 attributes per event registered
                     in 2011.</p>
-            </td>
-        </tr>
-    </table>
+            </div>
+
+    <div class="clear"></div>
 
 
     <h2 id="simple-and-handy">Simple and Handy</h2>
