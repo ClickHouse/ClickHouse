@@ -155,55 +155,16 @@
             text-decoration: none;
         }
 
-        .short_description,
-        .call_to_action {
+        .short_description {
             font: 300 18pt/150% 'Yandex Sans Display Web', Arial, sans-serif;
             margin: 6px 0 24px;
         }
 
-        .call_to_action {
-            color: #07f;
-            font-weight: 400;
-        }
-
-        .download_div {
-            margin: 80px;
-            text-align: center;
-        }
-
-        .download:link,
-        .download:active,
-        .download:visited {
-            background: #ffdb4d;
-            font: 300 18pt 'Yandex Sans Display Web', Arial, sans-serif;
-            padding: 15px 22px;
-            margin: auto;
-            color: #000;
-            text-decoration: none;
-            border-radius: 3px;
-        }
-
-        .download:hover {
-            color: #f00;
-            text-decoration: none;
-        }
-
-        .footer {
+        #footer {
             text-align: right;
-            padding: 10px 0 0;
+            padding: 10px 4px 0 0;
             color: #888;
             font-size: 10pt;
-        }
-
-        .feedback_form {
-            position: absolute;
-        }
-
-        .feedback_form, .download_instructions {
-            display: none;
-            background: #fff;
-            padding: 20px;
-            box-shadow: 10px 10px 300px 350px #fff;
         }
 
         code {
@@ -239,10 +200,6 @@
             line-height: 150%;
         }
 
-        .nomarkerlist {
-            list-style-type: none;
-        }
-
         .distributive_selected {
             color: #000;
             font-weight: bold;
@@ -267,10 +224,10 @@
     <div class="menu">
         <a class="menu_item" href="reference_en.html">Documentation</a>
         <a class="menu_item" href="tutorial.html">Quick start</a>
-        <a class="menu_item" href="#download" id="download_menu_item">Download</a>
+        <a class="menu_item" href="#download">Download</a>
         <a class="menu_item" href="https://github.com/yandex/ClickHouse" rel="external nofollow">Source</a>
         <a class="menu_item" href="benchmark.html">Benchmark</a>
-        <a class="menu_item" href="#feedback" id="feedback">Feedback</a>
+        <a class="menu_item" href="#contacts">Contacts</a>
     </div>
 
     <a id="logo" href="#">
@@ -288,19 +245,6 @@
     </a>
 </div>
 <div class="page">
-
-    <div class="feedback_form">
-        <h2>Feedback</h2>
-        <p>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse" rel="external nofollow">Stack Overflow</a>.</p>
-        <p>Discuss with real users in Telegram chat in <a href="https://telegram.me/clickhouse_en" rel="external nofollow">English</a> or in <a
-                href="https://telegram.me/clickhouse_ru" rel="external nofollow">Russian</a>.</p>
-        <p>Use <a href="https://groups.google.com/group/clickhouse" rel="external nofollow">Google Group</a> for discussion.</p>
-        <p>Or send private message to developers:
-            <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
-        </p>
-        <p class="warranty">Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-            KIND,<br/> either express or implied.</p>
-    </div>
 
     <p class="short_description">ClickHouse is an open-source column-oriented database management system that allows
         generating analytical data reports in real time using SQL queries.</p>
@@ -477,20 +421,25 @@
         </tr>
     </table>
 
-    <div class="download_div">
-        <a class="download" href="#" id="download_big_button">Download</a>
-    </div>
+    <h2 id="contacts">Contacts</h2>
+    <p>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse" rel="external nofollow">Stack Overflow</a>.</p>
+    <p>Discuss with real users in Telegram chat in <a href="https://telegram.me/clickhouse_en" rel="external nofollow">English</a> or in <a
+            href="https://telegram.me/clickhouse_ru" rel="external nofollow">Russian</a>.</p>
+    <p>Use <a href="https://groups.google.com/group/clickhouse" rel="external nofollow">Google Group</a> for discussion.</p>
+    <p>Or send private message to developers:
+        <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
+    </p>
 
-    <div class="download_instructions">
-        <h2>Download</h2>
 
-        <p>System requirements: Linux, x86_64 with SSE 4.2.</p>
+    <h2 id="download">Download</h2>
 
-        <p>Install packages for
-            <span class="distributive_not_selected" id="ubuntu_xenial">Ubuntu 16.04 (Xenial)</span> or <span
-                    class="distributive_selected" id="ubuntu_trusty">Ubuntu 14.04 (Trusty)</span> or <span
-                    class="distributive_not_selected" id="ubuntu_precise">Ubuntu 12.04 (Precise)</span>:
-        </p>
+    <p>System requirements: Linux, x86_64 with SSE 4.2.</p>
+
+    <p>Install packages for
+        <span class="distributive_not_selected" id="ubuntu_xenial">Ubuntu 16.04 (Xenial)</span> or <span
+                class="distributive_selected" id="ubuntu_trusty">Ubuntu 14.04 (Trusty)</span> or <span
+                class="distributive_not_selected" id="ubuntu_precise">Ubuntu 12.04 (Precise)</span>:
+    </p>
 
         <code>
 <pre>
@@ -508,85 +457,30 @@ clickhouse-client
 </pre>
         </code>
 
-        <p>Read the <a href="reference_en.html">documentation</a>.</p>
+    <p>Or build ClickHouse from <a href="https://github.com/yandex/ClickHouse" rel="external nofollow">sources</a> according to the <a
+            href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md" rel="external nofollow">instruction</a>.</p>
 
-        <p>Or build ClickHouse from <a href="https://github.com/yandex/ClickHouse" rel="external nofollow">sources</a> according to the <a
-                href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md" rel="external nofollow">instruction</a>.</p>
+    <p>Then proceed to <a href="tutorial.html">quick start guide</a> or <a href="reference_en.html">full documentation</a>.</p>
+
+
+    <p class="warranty">Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+        KIND,<br/> either express or implied.</p>
 
     </div>
 
-    <p class="footer">&copy; 2016–2017 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
+    <p id="footer">&copy; 2016–2017 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
+
 
     <script type="text/javascript">
-
-        var block_visible = [];
-
-        function showBlock(class_name) {
-            var element = document.getElementsByClassName(class_name)[0];
-            element.style.display = 'block';
-            document.body.style.backgroundColor = '#888';
-            block_visible[class_name] = true;
-        }
-
-        function hideBlock(class_name) {
-            var element = document.getElementsByClassName(class_name)[0];
-            element.style.display = 'none';
-            document.body.style.backgroundColor = 'white';
-            block_visible[class_name] = false;
-        }
-
-        document.getElementById('feedback').addEventListener('click', function (e) {
-            var class_name = 'feedback_form';
-            block_visible[class_name] ? hideBlock(class_name) : showBlock(class_name);
-            e.stopPropagation();
-        });
-
-        var show_download_block = function (e) {
-            var class_name = 'download_instructions';
-            block_visible[class_name] ? hideBlock(class_name) : showBlock(class_name);
-            document.getElementById('download_big_button').style.display = 'none';
-            if (e) {
-                e.stopPropagation();
-                e.preventDefault();
-            }
-            window.scrollTo(0, document.getElementsByClassName(class_name)[0].offsetTop);
-        };
-
-        document.getElementById('download_menu_item').addEventListener('click', show_download_block);
-        document.getElementById('download_big_button').addEventListener('click', show_download_block);
         var name = document.getElementById('main_title').textContent.trim().toLowerCase();
         var feedback_address = name + '-feedback' + '@yandex-team.com';
         var feedback_email = document.getElementById('feedback_email');
         feedback_email.setAttribute('href', 'mailto:' + feedback_address);
         feedback_email.textContent = feedback_address;
 
-
-        document.body.addEventListener('click', function (e) {
-            var element = e.target;
-            while (element !== document.body) {
-                if (element.className == 'feedback_form' || element.className == 'download_instructions') {
-                    return;
-                }
-                element = element.parentNode;
-            }
-            hideBlock('feedback_form');
-            hideBlock('download_instructions');
-            document.getElementById('download_big_button').style.display = 'inline';
-        });
-
-        if (location.hash == "#download") {
-            show_download_block();
-        }
-
-        if (location.hash == "#feedback") {
-            var class_name = 'feedback_form';
-            block_visible[class_name] ? hideBlock(class_name) : showBlock(class_name);
-        }
-
         var available_distributives = ['xenial', 'trusty', 'precise'];
 
         function selectDistributive(name) {
-            console.log(name);
             document.getElementById('distributive').innerHTML = name;
             available_distributives.forEach(function (distr) {
                 document.getElementById('ubuntu_' + distr).className = (name == distr) ? 'distributive_selected' : 'distributive_not_selected';
