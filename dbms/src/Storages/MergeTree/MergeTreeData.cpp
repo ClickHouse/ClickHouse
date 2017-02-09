@@ -30,6 +30,8 @@
 #include <algorithm>
 #include <iomanip>
 #include <thread>
+#include <typeinfo>
+#include <typeindex>
 
 
 namespace ProfileEvents
@@ -594,14 +596,31 @@ namespace
 
 /// If true, then in order to ALTER the type of the column from the type from to the type to
 /// we don't need to rewrite the data, we only need to update metadata and columns.txt in part directories.
+/// The function works for Arrays and Nullables of the same structure.
 bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 {
+	if (from->getName() == to->getName())
+		return true;
+
+	static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
+		{
+			{ typeid(DataTypeEnum8),    typeid(DataTypeEnum8)    },
+			{ typeid(DataTypeEnum8),    typeid(DataTypeInt8)     },
+			{ typeid(DataTypeEnum16),   typeid(DataTypeEnum16)   },
+			{ typeid(DataTypeEnum16),   typeid(DataTypeInt16)    },
+			{ typeid(DataTypeDateTime), typeid(DataTypeUInt32)   },
+			{ typeid(DataTypeUInt32),   typeid(DataTypeDateTime) },
+			{ typeid(DataTypeDate),     typeid(DataTypeUInt16)   },
+			{ typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
+		};
+
 	while (true)
 	{
-		if ((typeid_cast<const DataTypeEnum8 *>(to) && typeid_cast<const DataTypeEnum8 *>(from))
-			|| (typeid_cast<const DataTypeEnum16 *>(to) && typeid_cast<const DataTypeEnum16 *>(from)))
+		auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
+		for (auto it = it_range.first; it != it_range.second; ++it)
 		{
-			return true;
+			if (it->second == typeid(*to))
+				return true;
 		}
 
 		const auto * arr_from = typeid_cast<const DataTypeArray *>(from);
@@ -640,20 +659,32 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
 	checkNoMultidimensionalArrays(new_columns, /* attach = */ false);
 	checkNoMultidimensionalArrays(new_materialized_columns, /* attach = */ false);
 
-	/// List of columns that shouldn't be altered.
-	/// We don't add sampling_expression columns because they must be contained in the primary key columns.
+	/// Set of columns that shouldn't be altered.
+	NameSet columns_alter_forbidden;
 
-	Names keys;
-
-	if (primary_expr)
-		keys = primary_expr->getRequiredColumns();
-
-	keys.push_back(date_column_name);
+	columns_alter_forbidden.insert(date_column_name);
 
 	if (!merging_params.sign_column.empty())
-		keys.push_back(merging_params.sign_column);
+		columns_alter_forbidden.insert(merging_params.sign_column);
 
-	std::sort(keys.begin(), keys.end());
+	/// Primary key columns can be ALTERed only if they are used in the primary key as-is
+	/// (and not as a part of some expression) and if the ALTER only affects column metadata.
+	/// We don't add sampling_expression columns here because they must be among the primary key columns.
+	NameSet columns_alter_metadata_only;
+
+	if (primary_expr)
+	{
+		for (const auto & action : primary_expr->getActions())
+		{
+			auto action_columns = action.getNeededColumns();
+			columns_alter_forbidden.insert(action_columns.begin(), action_columns.end());
+		}
+		for (const auto & col : primary_expr->getRequiredColumns())
+		{
+			if (!columns_alter_forbidden.count(col))
+				columns_alter_metadata_only.insert(col);
+		}
+	}
 
 	std::map<String, const IDataType *> old_types;
 	for (const auto & column : *columns)
@@ -663,7 +694,10 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
 
 	for (const AlterCommand & command : commands)
 	{
-		if (std::binary_search(keys.begin(), keys.end(), command.column_name))
+		if (columns_alter_forbidden.count(command.column_name))
+			throw Exception("trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
+
+		if (columns_alter_metadata_only.count(command.column_name))
 		{
 			if (command.type == AlterCommand::MODIFY_COLUMN)
 			{
@@ -672,7 +706,9 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
 					continue;
 			}
 
-			throw Exception("trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
+			throw Exception(
+					"ALTER of key column " + command.column_name + " must be metadata-only",
+					ErrorCodes::ILLEGAL_COLUMN);
 		}
 	}
 
