@@ -1,12 +1,13 @@
 
 if (NOT USE_INTERNAL_POCO_LIBRARY)
-	find_package (Poco REQUIRED Util Net XML Data Crypto DataODBC MongoDB Foundation)
+	find_package (Poco COMPONENTS Net XML Data Crypto DataODBC MongoDB)
 	if (Poco_INCLUDE_DIRS)
 		include_directories (${Poco_INCLUDE_DIRS})
 	endif ()
 endif ()
 
 if (NOT (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY AND Poco_MongoDB_LIBRARY AND Poco_DataODBC_LIBRARY))
+	set (USE_INTERNAL_POCO_LIBRARY 1)
 	set (Poco_INCLUDE_DIRS
 		"${ClickHouse_SOURCE_DIR}/contrib/libpoco/Foundation/include/"
 		"${ClickHouse_SOURCE_DIR}/contrib/libpoco/Util/include/"
