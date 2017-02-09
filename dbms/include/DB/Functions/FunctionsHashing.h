@@ -552,7 +552,7 @@ private:
 
 	void executeForArgument(const IDataType * type, const IColumn * column, ColumnUInt64::Container_t & vec_to, bool & is_first)
 	{
-		/// Раскрытие кортежей.
+		/// Flattening of tuples.
 		if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
 		{
 			const Block & tuple_data = tuple->getData();
@@ -579,7 +579,6 @@ private:
 	}
 
 public:
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -588,13 +587,11 @@ public:
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t rows = block.rows();
@@ -605,11 +602,11 @@ public:
 
 		if (arguments.empty())
 		{
-			/// Случайное число из /dev/urandom используется как хеш пустого количества аргументов.
+			/// Constant random number from /dev/urandom is used as a hash value of empty list of arguments.
 			vec_to.assign(rows, 0xe28dbde7fe22e41c);
 		}
 
-		/// Функция поддерживает произвольное количество аргументов всевозможных типов.
+		/// The function supports arbitary number of arguments of arbitary types.
 
 		bool is_first_argument = true;
 		for (size_t i = 0; i < arguments.size(); ++i)
@@ -617,6 +614,21 @@ public:
 			const ColumnWithTypeAndName & col = block.safeGetByPosition(arguments[i]);
 			executeForArgument(col.type.get(), col.column.get(), vec_to, is_first_argument);
 		}
+
+		/// If all arguments are constants, we should return constant result.
+
+		bool all_constants = true;
+		for (size_t arg_idx : arguments)
+		{
+			if (!block.getByPosition(arg_idx).column->isConst())
+			{
+				all_constants = false;
+				break;
+			}
+		}
+
+		if (all_constants && block.rows() > 0)
+			block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(1, (*block.getByPosition(result).column)[0]);
 	}
 };
 

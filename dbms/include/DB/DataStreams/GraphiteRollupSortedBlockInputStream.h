@@ -179,15 +179,16 @@ private:
 	/// All data has been read.
 	bool finished = false;
 
-	/// This object owns a column while 'current_path' references to it.
-	SharedBlockPtr owned_current_block;
+	RowRef selected_row;		/// Last row with maximum version for current primary key.
+	UInt64 current_max_version = 0;
 
 	bool is_first = true;
 	StringRef current_path;
-	time_t current_time;
+	time_t current_time = 0;
+	time_t current_time_rounded = 0;
 	StringRef next_path;
-	time_t next_time;
-	UInt64 current_max_version = 0;
+	time_t next_time = 0;
+	time_t next_time_rounded = 0;
 
 	const Graphite::Pattern * current_pattern = nullptr;
 	std::vector<char> place_for_aggregate_state;
@@ -207,8 +208,7 @@ private:
 	void finishCurrentRow(ColumnPlainPtrs & merged_columns);
 
 	/// Обновить состояние агрегатной функции новым значением value.
-	template <class TSortCursor>
-	void accumulateRow(TSortCursor & cursor);
+	void accumulateRow(RowRef & row);
 };
 
 }
