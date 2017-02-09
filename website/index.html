@@ -92,7 +92,7 @@
         body {
             background: #fff;
             font: 300 12pt/200% 'Yandex Sans Text Web', Arial, sans-serif;
-            margin: 80px 0 0 0;
+            margin: 0;
         }
 
         #navbar {
@@ -170,14 +170,62 @@
             color: #000;
         }
 
-        .menu_item:hover {
+        .menu_item:hover, .index_item:hover {
             border-bottom: 2px solid #fc0;
             text-decoration: none;
         }
 
+        .index_item:link,
+        .index_item:active,
+        .index_item:visited {
+            color: #ededed;
+            font: 300 18pt/200% 'Yandex Sans Display Web', Arial, sans-serif;
+        }
+
         .short_description {
-            font: 300 18pt/150% 'Yandex Sans Display Web', Arial, sans-serif;
+            font: 300 21pt/150% 'Yandex Sans Display Web', Arial, sans-serif;
             margin: 6px 0 24px;
+        }
+
+        #hero {
+            background: #444;
+            padding: 90px 0 30px 0;
+            color: #ededed;
+        }
+
+        #slogan {
+            color: #444;
+        }
+
+        #performance {
+            width: 100%;
+            background: #fc0;
+            padding: 60px 0 120px 0;
+        }
+
+        #call_to_action, #benchmark_learn_more {
+            text-decoration: none;
+            text-align: center;
+            font-size: 18pt;
+            width: 182px;
+            height: 50px;
+            line-height: 50px;
+            display: block;
+        }
+
+        #call_to_action {
+            background: url('yandex-white-button.png') no-repeat;
+            color: #ededed;
+        }
+        #call_to_action:hover {
+            color: #fc0;
+        }
+
+        #benchmark_learn_more {
+            background: url('yandex-black-button.png') no-repeat;
+            float: right;
+            margin-right: 7.5%;
+            color: #000;
         }
 
         #footer {
@@ -215,6 +263,7 @@
         }
 
         .warranty {
+            margin-top: 40px;
             font-size: 10pt;
             color: #888;
             line-height: 150%;
@@ -243,9 +292,9 @@
 <div id="navbar">
     <div class="menu">
         <a class="menu_item" href="#quick-start">Quick Start</a>
-        <a class="menu_item" href="benchmark.html">Benchmark</a>
-        <a class="menu_item" href="#contacts">Contacts</a>
+        <a class="menu_item" href="#performance">Performance</a>
         <a class="menu_item" href="reference_en.html">Documentation</a>
+        <a class="menu_item" href="#contacts">Contacts</a>
     </div>
 
     <a id="logo" href="#">
@@ -270,22 +319,43 @@
        target="_blank"
     >Fork me on GitHub</a>
 </div>
-
-<div class="page">
-    <p class="short_description">ClickHouse is an open-source column-oriented database management system that allows
-        generating analytical data reports in real time using SQL queries.</p>
-
-    <p>ClickHouse manages extremely large volumes of data in a stable and sustainable manner. It&nbsp;currently powers
-        <a href="https://metrica.yandex.com/" rel="external nofollow">Yandex.Metrica</a>, world’s <a
-                href="http://w3techs.com/technologies/overview/traffic_analysis/all" rel="external nofollow">second largest</a> web analytics
-        platform, with over 13 trillion database records and over 20 billion events a day, generating customized reports
-        on-the-fly, directly from non-aggregated data. This system was successfully implemented at <a
-                href="https://www.yandex.com/company/press_center/press_releases/2012/2012-04-10/" rel="external nofollow">CERN’s LHCb
-            experiment</a> to store and process metadata on 10bn events with over 1000 attributes per event registered
-        in 2011.</p>
-
-
-    <h2>ClickHouse. Just makes you think faster.</h2>
+<div id="hero">
+    <div class="page">
+    <table width="100%">
+        <tr>
+            <td valign="top" width="66%">
+            <p class="short_description">ClickHouse is an open-source column-oriented database management system that allows
+                generating analytical data reports in real time using SQL queries.</p>
+                <a id="call_to_action" href="#quick-start">
+                    Quick Start
+                </a>
+            </td>
+            <td valign="top" width="34%">
+                <ul class="dashed">
+                    <li>
+                        <a class="index_item" href="#linearly-scalable">Linearly Scalable</a>
+                    </li>
+                    <li>
+                        <a class="index_item" href="#hardware-efficient">Hardware Efficient</a>
+                    </li>
+                    <li>
+                        <a class="index_item" href="#blazing-fast">Blazing Fast</a>
+                    </li>
+                    <li>
+                        <a class="index_item" href="#fault-tolerant">Fault Tolerant</a>
+                    </li>
+                    <li>
+                        <a class="index_item" href="#feature-rich">Feature Rich</a>
+                    </li>
+                    <li>
+                        <a class="index_item" href="#simple-and-handy">Simple and Handy</a>
+                    </li>
+                </ul>
+            </td>
+            </tr></table>
+    </div></div>
+    <div class="page">
+    <h2 id="slogan">ClickHouse. Just makes you think faster.</h2>
 
     <ul class="dashed">
         <li>Run more queries in the same amount of time</li>
@@ -296,7 +366,7 @@
     </ul>
 
 
-    <h2>Linearly Scalable</h2>
+    <h2 id="linearly-scalable">Linearly Scalable</h2>
 
     <p>ClickHouse allows companies to add servers to their clusters when necessary without investing time or money into
         additional DBMS modification. The system has been successfully serving <a href="https://metrica.yandex.com/">Yandex.Metrica</a>,
@@ -309,7 +379,7 @@
         node.</p>
 
 
-    <h2>Hardware-efficient</h2>
+    <h2 id="hardware-efficient">Hardware Efficient</h2>
 
     <p>ClickHouse processes typical analytical queries two to three orders of magnitude faster than traditional
         row-oriented systems with the same available IO throughput. The system’s columnar format allows fitting more hot
@@ -324,7 +394,7 @@
         create reports without using a network that supports high-performance computing.</p>
 
 
-    <h2>Blazing Fast</h2>
+    <h2 id="blazing-fast">Blazing Fast</h2>
 
     <p>ClickHouse’s performance <a href="benchmark.html">exceeds</a> comparable column-oriented DBMS currently available
         on the market. It&nbsp;processes hundreds of millions to more than a billion rows and tens of gigabytes of data
@@ -333,9 +403,21 @@
     <p>ClickHouse uses all available hardware to its full potential to process each query as fast as possible. The peak
         processing performance for a single query (after decompression, only used columns) stands at more than 2&nbsp;terabytes
         per second.</p>
+</div>
+    <div id="performance">
+        <div class="page">
+            <h2>ClickHouse works 100-1,000x faster than traditional approaches</h2>
+            <p>In contrast to data management methods, where vast amounts of raw data in its native format are available as a ‘data lake’ for any
+                given query, ClickHouse, in most cases, offers instant results: the data is processed faster than it&nbsp;takes
+                to make a query. Follow the link to see detailed benchmarks in comparison with other database management systems.</p>
+            <a id="benchmark_learn_more" href="benchmark.html">
+                Learn more
+            </a>
+        </div>
+    </div>
 
-
-    <h2>Fault-tolerant</h2>
+<div class="page">
+    <h2 id="fault-tolerant">Fault Tolerant</h2>
 
     <p>ClickHouse supports multi-master asynchronous replication and can be deployed across multiple datacenters.
         Downtime of a single node or the whole datacenter won’t affect the system’s availability for reads and writes.
@@ -343,7 +425,7 @@
         synchronized automatically or semi-automatically after the downtime.</p>
 
 
-    <h2>Feature-rich</h2>
+    <h2 id="feature-rich">Feature Rich</h2>
 
     <p>ClickHouse features a number of built-in user-friendly web analytics capabilities, including probabilistic data
         structures for fast and memory-efficient calculation of cardinalities and quantiles, or functions for addressing
@@ -362,48 +444,9 @@
     <p>The system’s conditional aggregate functions, calculation of totals and extremes, allow getting results with a
         single query without having to run a number of them.</p>
 
-
-    <h2>Simple and Handy</h2>
-
-    <p>ClickHouse is simple and works out-of-the-box. As well as performing on hundreds of node clusters, this system
-        can be easily installed on a single server or even a virtual machine. No development experience or code-writing
-        skills are required to install ClickHouse.</p>
-
-
-    <h2>Highly Reliable</h2>
-
-    <p>ClickHouse has been managing petabytes of data serving a number of high-load mass-audience services of Russia’s
-        leading search provider and one of Europe’s largest IT companies, <a href="https://www.yandex.com/company/">Yandex</a>.
-        Since 2012, ClickHouse has been providing robust database management for the company’s <a
-                href="https://metrica.yandex.com/">web analytics service</a>, comparison shopping platform, email
-        service, online advertising platform, business intelligence and infrastructure monitoring.</p>
-
-    <p>ClickHouse is purely distributed system located on independent nodes, which has no single point of failure.</p>
-
-    <p>Software or hardware failures or misconfigurations do not result in loss of data. Instead of deleting "broken"
-        data, Clickhouse saves it&nbsp;or asks you what to do before a startup. All data are checksummed before every
-        read or write to disk or network. It&nbsp;is virtually impossible to delete data by accident.</p>
-
-    <p>ClickHouse offers flexible limits on query complexity and resource usage, which can be fine-tuned using settings.
-        It&nbsp;is possible to simultaneously serve both a number of high priority low-latency requests and some
-        long-running queries with lowered priority.</p>
-
-
-    <h2>Opens New Possibilities</h2>
-
-    <p>ClickHouse streamlines all your data processing. It’s easy to use: ingest all your structured data into the
-        system, and it&nbsp;is instantly available for reports. New columns for new properties or dimensions can be
-        easily added to the system at any time without slowing it&nbsp;down.</p>
-
-    <p>ClickHouse works <a href="benchmark.html">100-1,000x faster</a> than traditional approaches. In contrast to data
-        management methods, where vast amounts of raw data in its native format are available as a ‘data lake’ for any
-        given query, ClickHouse, in most cases, offers instant results: the data is processed faster than it&nbsp;takes
-        to make a query.</p>
-
-
     <table width="100%">
         <tr>
-            <td valign="top">
+            <td valign="top" width="50%">
                 <h2>Key Features</h2>
 
                 <ul class="dashed">
@@ -429,7 +472,7 @@
                     <li>Clean documented code</li>
                 </ul>
             </td>
-            <td valign="top">
+            <td valign="top" width="50%">
                 <h2>Applications</h2>
 
                 <ul class="dashed">
@@ -443,9 +486,52 @@
                     <li>Online games</li>
                     <li>Internet of Things</li>
                 </ul>
+
+                <h2>Use Cases</h2>
+                <p>ClickHouse manages extremely large volumes of data in a stable and sustainable manner. It&nbsp;currently powers
+                    <a href="https://metrica.yandex.com/" rel="external nofollow">Yandex.Metrica</a>, world’s <a
+                            href="http://w3techs.com/technologies/overview/traffic_analysis/all" rel="external nofollow">second largest</a> web analytics
+                    platform, with over 13 trillion database records and over 20 billion events a day, generating customized reports
+                    on-the-fly, directly from non-aggregated data.</p>
+                <p>This system was successfully implemented at <a
+                        href="https://www.yandex.com/company/press_center/press_releases/2012/2012-04-10/" rel="external nofollow">CERN’s LHCb
+                    experiment</a> to store and process metadata on 10bn events with over 1000 attributes per event registered
+                    in 2011.</p>
             </td>
         </tr>
     </table>
+
+
+    <h2 id="simple-and-handy">Simple and Handy</h2>
+    <p>ClickHouse streamlines all your data processing. It’s easy to use: ingest all your structured data into the
+        system, and it&nbsp;is instantly available for reports. New columns for new properties or dimensions can be
+        easily added to the system at any time without slowing it&nbsp;down.</p>
+
+
+    <p>ClickHouse is simple and works out-of-the-box. As well as performing on hundreds of node clusters, this system
+        can be easily installed on a single server or even a virtual machine. No development experience or code-writing
+        skills are required to install ClickHouse.</p>
+
+
+    <h2 id="highly-reliable">Highly Reliable</h2>
+
+    <p>ClickHouse has been managing petabytes of data serving a number of high-load mass-audience services of Russia’s
+        leading search provider and one of Europe’s largest IT companies, <a href="https://www.yandex.com/company/">Yandex</a>.
+        Since 2012, ClickHouse has been providing robust database management for the company’s <a
+                href="https://metrica.yandex.com/">web analytics service</a>, comparison shopping platform, email
+        service, online advertising platform, business intelligence and infrastructure monitoring.</p>
+
+    <p>ClickHouse is purely distributed system located on independent nodes, which has no single point of failure.</p>
+
+    <p>Software or hardware failures or misconfigurations do not result in loss of data. Instead of deleting "broken"
+        data, Clickhouse saves it&nbsp;or asks you what to do before a startup. All data are checksummed before every
+        read or write to disk or network. It&nbsp;is virtually impossible to delete data by accident.</p>
+
+    <p>ClickHouse offers flexible limits on query complexity and resource usage, which can be fine-tuned using settings.
+        It&nbsp;is possible to simultaneously serve both a number of high priority low-latency requests and some
+        long-running queries with lowered priority.</p>
+
+
 
     <h2 id="quick-start">Quick Start</h2>
 
@@ -476,17 +562,19 @@ clickhouse-client
     <p>Or build ClickHouse from <a href="https://github.com/yandex/ClickHouse" rel="external nofollow">sources</a> according to the <a
             href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md" rel="external nofollow" target="_blank">instruction</a>.</p>
 
-    <p>Then proceed to <a href="tutorial.html">tutorial</a> or <a href="reference_en.html">full documentation</a>.</p>
+    <p>Then proceed to <strong><a href="tutorial.html">tutorial</a></strong> or <strong><a href="reference_en.html">full documentation</a></strong>.</p>
 
 
     <h2 id="contacts">Contacts</h2>
-    <p>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse" rel="external nofollow">Stack Overflow</a>.</p>
-    <p>Discuss with real users in Telegram chat in <a href="https://telegram.me/clickhouse_en" rel="external nofollow">English</a> or in <a
-            href="https://telegram.me/clickhouse_ru" rel="external nofollow">Russian</a>.</p>
-    <p>Use <a href="https://groups.google.com/group/clickhouse" rel="external nofollow">Google Group</a> for discussion.</p>
-    <p>Or send private message to developers:
+    <ul class="dashed">
+        <li>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse" rel="external nofollow">Stack Overflow</a>.</li>
+    <li>Discuss with real users in Telegram chat in <a href="https://telegram.me/clickhouse_en" rel="external nofollow">English</a> or in <a
+            href="https://telegram.me/clickhouse_ru" rel="external nofollow">Russian</a>.</li>
+    <li>Use <a href="https://groups.google.com/group/clickhouse" rel="external nofollow">Google Group</a> for discussion.</li>
+    <li>Or send private message to developers:
         <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
-    </p>
+    </li>
+    </ul>
 
     <p class="warranty">Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
         KIND,<br/> either express or implied.</p>
