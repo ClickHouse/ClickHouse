@@ -182,8 +182,8 @@
             font: 300 18pt/200% 'Yandex Sans Display Web', Arial, sans-serif;
         }
 
-        .short_description {
-            font: 300 21pt/150% 'Yandex Sans Display Web', Arial, sans-serif;
+        #short_description {
+            font: 300 23pt/166% 'Yandex Sans Display Web', Arial, sans-serif;
             margin: 6px 0 24px;
         }
 
@@ -191,6 +191,9 @@
             background: #444;
             padding: 90px 0 30px 0;
             color: #ededed;
+        }
+        #index_ul {
+            padding-left: 18px;
         }
 
         #slogan {
@@ -282,9 +285,10 @@
 
         .orange {
             fill: #fc0;
+            color: #fc0;
         }
         .red {
-            fill: #f00
+            fill: #f00;
         }
     </style>
 </head>
@@ -323,15 +327,15 @@
     <div class="page">
     <table width="100%">
         <tr>
-            <td valign="top" width="66%">
-            <p class="short_description">ClickHouse is an open-source column-oriented database management system that allows
-                generating analytical data reports in real time using SQL queries.</p>
+            <td valign="top" width="70%">
+            <p id="short_description">ClickHouse is an free <span class="orange">open-source</span> column-oriented database management system
+                capable of <span class="orange">realtime</span> generation of analytical data reports using <span class="orange">SQL</span> queries.</p>
                 <a id="call_to_action" href="#quick-start">
                     Quick Start
                 </a>
             </td>
-            <td valign="top" width="34%">
-                <ul class="dashed">
+            <td valign="top" width="30%">
+                <ul id="index_ul" class="dashed">
                     <li>
                         <a class="index_item" href="#linearly-scalable">Linearly Scalable</a>
                     </li>
