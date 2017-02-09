@@ -174,8 +174,12 @@ void CacheDictionary::getString(
 }
 
 
-/// returns 'cell is valid' flag, cell_idx
-std::pair<bool, size_t>  CacheDictionary::findCellIdx (const Key & id, const CellMetadata::time_point_t now) const
+/// returns 'cell is valid' flag, 'cell is outdated' flag, cell_idx
+/// true  true  impossible
+/// true  false found and valid
+/// false true  not found (something outdated, maybe our cell)
+/// false false not found (other id stored with valid data)
+std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, const CellMetadata::time_point_t now) const
 {
 	auto pos = getCellIdx(id);
 	auto oldest_id = pos;
@@ -218,19 +222,19 @@ std::pair<bool, size_t>  CacheDictionary::findCellIdx (const Key & id, const Cel
 			{
 				std::cerr << "exp cell.expiresAt() < now : " << cell.expiresAt().time_since_epoch().count() << " < "<< now.time_since_epoch().count() << "\n";
 				ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired); // first notfound also here
-				return std::make_pair(false, cell_idx);
+				return std::make_tuple(false, true, cell_idx);
 			}
 
 			{
 				std::cerr << "hit id="<< id<<" cell_idx="<<cell_idx << " stop="<<stop  <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() << "\n";
 				ProfileEvents::increment(ProfileEvents::DictCacheKeysHit);
-				return std::make_pair(true, cell_idx);
+				return std::make_tuple(true, false, cell_idx);
 			}
 		}
 
 		std::cerr << "miss,oldest " <<  " id="<< id << " cell_idx="<<oldest_id << "\n";
 		ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound);
-		return std::make_pair(false, oldest_id);
+		return std::make_tuple(false, false, oldest_id);
 
 }
 
@@ -249,8 +253,8 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 		{
 			const auto id = ids[row];
 			const auto find_result = findCellIdx(id, now);
-			const auto & cell_idx = find_result.second;
-			if (!find_result.first) {
+			const auto & cell_idx = std::get<2>(find_result);
+			if (!std::get<0>(find_result)) {
 				outdated_ids[id].push_back(row);
 			} else {
 				const auto & cell = cells[cell_idx];
@@ -428,10 +432,10 @@ void CacheDictionary::getItemsNumberImpl(
 				*	3. explicit defaults were specified and cell was set default. */
 
 			const auto find_result = findCellIdx(id, now);
-			if (!find_result.first) {
+			if (!std::get<0>(find_result)) {
 				outdated_ids[id].push_back(row);
 			} else {
-				const auto & cell_idx = find_result.second;
+				const auto & cell_idx = std::get<2>(find_result);
 				const auto & cell = cells[cell_idx];
 				out[row] = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 			}
@@ -487,11 +491,11 @@ void CacheDictionary::getItemsString(
 			const auto id = ids[row];
 
 			const auto find_result = findCellIdx(id, now);
-			if (!find_result.first) {
+			if (!std::get<0>(find_result)) {
 				found_outdated_values = true;
 				break;
 			} else {
-				const auto & cell_idx = find_result.second;
+				const auto & cell_idx = std::get<2>(find_result);
 				const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 				out->insertData(string_ref.data, string_ref.size);
@@ -526,10 +530,10 @@ void CacheDictionary::getItemsString(
 			const auto id = ids[row];
 
 			const auto find_result = findCellIdx(id, now);
-			if (!find_result.first) {
+			if (!std::get<0>(find_result)) {
 				outdated_ids[id].push_back(row);
 			} else {
-				const auto & cell_idx = find_result.second;
+				const auto & cell_idx = std::get<2>(find_result);
 				const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 
@@ -618,7 +622,7 @@ void CacheDictionary::update(
 				const auto id = ids[i];
 
 				const auto find_result = findCellIdx(id, now);
-				const auto & cell_idx = find_result.second;
+				const auto & cell_idx = std::get<2>(find_result);
 
 				auto & cell = cells[cell_idx];
 
@@ -669,7 +673,7 @@ void CacheDictionary::update(
 		const auto id = id_found_pair.first;
 
 		const auto find_result = findCellIdx(id, now);
-		const auto & cell_idx = find_result.second;
+		const auto & cell_idx = std::get<2>(find_result);
 
 		auto & cell = cells[cell_idx];
 
