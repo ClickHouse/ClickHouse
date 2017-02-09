@@ -110,7 +110,6 @@
 	M(DictCacheKeysRequestedFound) \
 	M(DictCacheKeysExpired) \
 	M(DictCacheKeysNotFound) \
-	M(DictCacheKeysTryNext) \
 	M(DictCacheKeysHit) \
 	M(DictCacheRequestTimeNs) \
 	M(DictCacheRequests) \

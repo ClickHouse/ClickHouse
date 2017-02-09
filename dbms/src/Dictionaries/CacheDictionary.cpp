@@ -35,7 +35,9 @@ CacheDictionary::CacheDictionary(const std::string & name, const DictionaryStruc
 	const std::size_t size)
 	: name{name}, dict_struct(dict_struct),
 		source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-		size{roundUpToPowerOfTwoOrZero(std::max(size, max_collision_length))},
+		//size{roundUpToPowerOfTwoOrZero(std::max(size, max_collision_length))},
+		size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(10)))},
+		size_overlap_mask{this->size - 1},
 		cells{this->size},
 		rnd_engine{randomSeed()}
 {
@@ -186,16 +188,15 @@ std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, co
 	auto pos = getCellIdx(id);
 	auto oldest_id = pos;
 	auto oldest_time = CellMetadata::time_point_t::max();
-	const auto mask = size - 1;
-	const auto stop = pos + max_collision_length;
-	std::cerr << "go id="<< id<<" pos="<<pos << " size=" << size<<" stop="<<stop  << "\n";
+	const auto stop = pos + 10; //max_collision_length;
+	//std::cerr << "go id="<< id<<" pos="<<pos << " size=" << size<<" stop="<<stop  << "\n";
 	for (; pos < stop; ++pos) {
-			const auto cell_idx = pos & mask;
+			const auto cell_idx = pos & size_overlap_mask;
 
 			const auto & cell = cells[cell_idx];
 			std::cerr << "start id="<< id<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data << "\n";
 
-			if (cell.id != id && cell.data > 0)
+			if (cell.id != id /* && cell.data > 0 */)
 			{
 				std::cerr << "notf cell.id != id : " << cell.id << " != " <<  id << " cell.data" << cell.data <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() <<  "\n";
 				//ProfileEvents::increment(ProfileEvents::DictCacheKeysTryNext);
@@ -216,11 +217,8 @@ std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, co
 				return std::make_tuple(false, false, cell_idx);
 			}
 
-			{
-				std::cerr << "hit id="<< id<<" cell_idx="<<cell_idx << " stop="<<stop  <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() << "\n";
-				//ProfileEvents::increment(ProfileEvents::DictCacheKeysHit);
-				return std::make_tuple(true, true, cell_idx);
-			}
+			std::cerr << "hit id="<< id<<" cell_idx="<<cell_idx << " stop="<<stop  <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() << "\n";
+			return std::make_tuple(true, true, cell_idx);
 		}
 
 		std::cerr << "miss,oldest " <<  " id="<< id << " cell_idx="<<oldest_id << "\n";
@@ -260,6 +258,8 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 			}
 		}
 	}
+
+std::cerr << __LINE__ << " cache_expired="<<cache_expired << " cache_not_found=" << cache_not_found <<" cache_hit=" << cache_hit << " \n";
 
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
@@ -450,6 +450,10 @@ void CacheDictionary::getItemsNumberImpl(
 		}
 	}
 
+std::cerr << __LINE__ << " cache_expired="<<cache_expired << " cache_not_found=" << cache_not_found <<" cache_hit=" << cache_hit << " \n";
+//std::abort();
+
+
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
@@ -562,6 +566,9 @@ void CacheDictionary::getItemsString(
 			}
 		}
 	}
+
+std::cerr << __LINE__ << " cache_expired="<<cache_expired << " cache_not_found=" << cache_not_found <<" cache_hit=" << cache_hit << " \n";
+
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);

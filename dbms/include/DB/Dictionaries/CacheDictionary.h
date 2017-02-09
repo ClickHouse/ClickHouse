@@ -238,7 +238,8 @@ private:
 
 	mutable Poco::RWLock rw_lock;
 	const std::size_t size;
-	static const std::size_t max_collision_length = 10;
+	const std::size_t size_overlap_mask;
+	static constexpr std::size_t max_collision_length = 10;
 	const UInt64 zero_cell_idx{getCellIdx(0)};
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	mutable std::vector<Attribute> attributes;
