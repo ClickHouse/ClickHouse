@@ -35,8 +35,7 @@ CacheDictionary::CacheDictionary(const std::string & name, const DictionaryStruc
 	const std::size_t size)
 	: name{name}, dict_struct(dict_struct),
 		source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-		//size{roundUpToPowerOfTwoOrZero(std::max(size, max_collision_length))},
-		size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(10)))},
+		size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(max_collision_length)))},
 		size_overlap_mask{this->size - 1},
 		cells{this->size},
 		rnd_engine{randomSeed()}
@@ -188,7 +187,7 @@ std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, co
 	auto pos = getCellIdx(id);
 	auto oldest_id = pos;
 	auto oldest_time = CellMetadata::time_point_t::max();
-	const auto stop = pos + 10; //max_collision_length;
+	const auto stop = pos + max_collision_length;
 	//std::cerr << "go id="<< id<<" pos="<<pos << " size=" << size<<" stop="<<stop  << "\n";
 	for (; pos < stop; ++pos) {
 			const auto cell_idx = pos & size_overlap_mask;
