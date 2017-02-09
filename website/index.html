@@ -693,7 +693,8 @@ clickhouse-client
                 e.preventDefault();
                 var selector = $(e.target).attr('href');
                 var offset = 0;
-                if (selector != '#') {
+
+                if (selector) {
                     offset = $(selector).offset().top - $('#logo').height() * 1.5;
                 }
                 $('html, body').animate({
