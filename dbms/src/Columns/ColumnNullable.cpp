@@ -195,67 +195,45 @@ int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null
 
 void ColumnNullable::getPermutation(bool reverse, size_t limit, Permutation & res) const
 {
-	nested_column->getPermutation(reverse, limit, res);
-	size_t s = res.size();
+	/// Cannot pass limit because of unknown amount of NULLs.
+	nested_column->getPermutation(reverse, 0, res);
 
-	/// Since we have created a permutation "res" that sorts a subset of the column values
-	/// and some of these values may actually be nulls, there is no guarantee that
-	/// these null values are well positioned. So we create a permutation "p" which
-	/// operates on the result of "res" by moving all the null values to the required
-	/// direction and leaving the order of the remaining elements unchanged.
+	/// Shift all NULL values to the end.
 
-	/// Create the permutation p.
-	Permutation p;
-	p.resize(s);
+	size_t read_idx = 0;
+	size_t write_idx = 0;
+	size_t end_idx = res.size();
 
-	size_t pos_left = 0;
-	size_t pos_right = s - 1;
+	if (!limit)
+		limit = end_idx;
 
-	if (reverse)
+	while (read_idx < limit && !isNullAt(res[read_idx]))
 	{
-		/// Move the null elements to the right.
-		for (size_t i = 0; i < s; ++i)
-		{
-			if (isNullAt(res[i]))
-			{
-				p[i] = pos_right;
-				--pos_right;
-			}
-			else
-			{
-				p[i] = pos_left;
-				++pos_left;
-			}
-		}
-	}
-	else
-	{
-		/// Move the null elements to the left.
-		for (size_t i = 0; i < s; ++i)
-		{
-			size_t j = s - i - 1;
-
-			if (isNullAt(res[j]))
-			{
-				p[j] = pos_left;
-				++pos_left;
-			}
-			else
-			{
-				p[j] = pos_right;
-				--pos_right;
-			}
-		}
+		++read_idx;
+		++write_idx;
 	}
 
-	/// Combine the permutations res and p.
-	Permutation res2;
-	res2.resize(s);
+	++read_idx;
 
-	for (size_t i = 0; i < s; ++i)
-		res2[i] = res[p[i]];
+	/// Invariants:
+	///  write_idx < read_idx
+	///  write_idx points to NULL
+	///  read_idx will be incremented to position of next not-NULL
+	///  there are range of NULLs between write_idx and read_idx - 1,
+	/// We are moving elements from end to begin of this range,
+	///  so range will "bubble" towards the end.
+	/// Relative order of NULL elements could be changed,
+	///  but relative order of non-NULLs is preserved.
 
-	res = std::move(res2);
+	while (read_idx < end_idx && write_idx < limit)
+	{
+		if (!isNullAt(res[read_idx]))
+		{
+			std::swap(res[read_idx], res[write_idx]);
+			++write_idx;
+		}
+		++read_idx;
+	}
 }
 
 void ColumnNullable::reserve(size_t n)
