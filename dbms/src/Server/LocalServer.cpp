@@ -165,10 +165,12 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 	nullptr};
 
 	for (const char ** name = settings_names; *name; ++name)
-		_options.addOption(Poco::Util::Option(*name, "", "Settings.h").group("Settings").required(false).repeatable(false).binding(*name));
+		_options.addOption(Poco::Util::Option(*name, "", "Settings.h").required(false).argument("<value>")
+		.repeatable(false).binding(*name));
 
 	for (const char ** name = limits_names; *name; ++name)
-		_options.addOption(Poco::Util::Option(*name, "", "Limits.h").group("Limits").required(false).repeatable(false).binding(*name));
+		_options.addOption(Poco::Util::Option(*name, "", "Limits.h").required(false).argument("<value>")
+		.repeatable(false).binding(*name));
 }
 
 

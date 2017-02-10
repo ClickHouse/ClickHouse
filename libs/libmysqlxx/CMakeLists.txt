@@ -34,8 +34,6 @@ add_library (mysqlxx
 	include/mysqlxx/Value.h
 )
 
-add_dependencies (mysqlxx common)
-
 set(PLATFORM_LIBS ${CMAKE_DL_LIBS})
 
 if (USE_STATIC_LIBRARIES)
@@ -47,13 +45,9 @@ if (USE_STATIC_LIBRARIES)
 		COMMENT "Patching mysqlclient library.")
 	add_custom_target (our_mysql_client DEPENDS ${MYSQLCLIENT_LIB})
 	add_dependencies (mysqlxx our_mysql_client)
-	set (Z_LIB zlibstatic)
-else ()
-	set (Z_PATHS "/usr/local/opt/zlib/lib" ${MYSQL_LIB_PATHS})
-	find_library (Z_LIB z PATHS ${Z_PATHS})
 endif ()
 
-target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${Z_LIB} ${PLATFORM_LIBS})
+target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBS})
 
 if (ENABLE_TESTS)
 	add_subdirectory (src/tests)

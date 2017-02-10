@@ -46,7 +46,8 @@ inline std::string addressToDirName(const Cluster::Address & address)
 		escapeForFileName(address.user) +
 		(address.password.empty() ? "" : (':' + escapeForFileName(address.password))) + '@' +
 		escapeForFileName(address.resolved_address.host().toString()) + ':' +
-		std::to_string(address.resolved_address.port());
+		std::to_string(address.resolved_address.port()) +
+		(address.default_database.empty() ? "" : ('#' + escapeForFileName(address.default_database)));
 }
 
 /// To cache DNS requests.

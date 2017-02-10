@@ -172,6 +172,10 @@ static void appendGraphitePattern(const Context & context,
 		throw Exception("Aggregate function is mandatory for retention patterns in GraphiteMergeTree",
 			ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
+	if (pattern.function->allocatesMemoryInArena())
+		throw Exception("Aggregate function " + pattern.function->getName() + " isn't supported in GraphiteMergeTree",
+						ErrorCodes::NOT_IMPLEMENTED);
+
 	/// retention-ы должны идти по убыванию возраста.
 	std::sort(pattern.retentions.begin(), pattern.retentions.end(),
 		[] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
@@ -843,7 +847,7 @@ For further info please read the documentation: https://clickhouse.yandex/
 		else
 			return StorageMergeTree::create(
 				data_path, database_name, table_name,
-				columns, materialized_columns, alias_columns, column_defaults,
+				columns, materialized_columns, alias_columns, column_defaults, attach,
 				context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, merging_params,
 				has_force_restore_data_flag,

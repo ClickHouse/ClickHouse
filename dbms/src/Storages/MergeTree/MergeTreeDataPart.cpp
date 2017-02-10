@@ -310,9 +310,8 @@ String MergeTreeDataPart::getMinimumSizeColumnName() const
 
 	if (!minimum_size_column)
 		throw Exception{
-				"Could not find a column of minimum size in MergeTree",
-				ErrorCodes::LOGICAL_ERROR
-		};
+			"Could not find a column of minimum size in MergeTree",
+			ErrorCodes::LOGICAL_ERROR};
 
 	return *minimum_size_column;
 }
@@ -605,7 +604,7 @@ bool MergeTreeDataPart::hasColumnFiles(const String & column) const
 	String prefix = storage.full_path + (is_sharded ? ("reshard/" + DB::toString(shard_no) + "/") : "") + name + "/";
 	String escaped_column = escapeForFileName(column);
 	return Poco::File(prefix + escaped_column + ".bin").exists() &&
-			Poco::File(prefix + escaped_column + ".mrk").exists();
+		Poco::File(prefix + escaped_column + ".mrk").exists();
 }
 
 
