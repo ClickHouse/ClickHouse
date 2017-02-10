@@ -108,7 +108,10 @@ public:
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
 	{
-		nested_function->merge(nestedPlace(place), rhs, arena);
+		if (getFlag(rhs))
+			setFlag(place);
+
+		nested_function->merge(nestedPlace(place), nestedPlace(rhs), arena);
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
