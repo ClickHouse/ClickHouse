@@ -1,5 +1,5 @@
 include_directories (include)
-include_directories (${CMAKE_SOURCE_DIR}/libs/libcommon/include)
+include_directories (${ClickHouse_SOURCE_DIR}/libs/libcommon/include)
 
 add_library (pocoext
 	src/LevelFilterChannel.cpp
