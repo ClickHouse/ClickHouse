@@ -12,7 +12,8 @@ var connect = require('gulp-connect');
 var outputDir = 'public';
 
 var paths = {
-    htmls: ['*.html'],
+    htmls: ['*.html', '!reference_ru.html', '!reference_en.html'],
+    reference: ['reference_ru.html', 'reference_en.html'],
     scripts: ['*.js', '!gulpfile.js'],
     styles: ['*.css'],
     images: ['*.png', '*.ico']
@@ -22,8 +23,15 @@ gulp.task('clean', function () {
     return del([outputDir + '**']);
 });
 
-gulp.task('htmls', [], function () {
-    return gulp.src('*.html')
+gulp.task('reference', [], function () {
+    return gulp.src(paths.reference)
+        .pipe(minifyInline())
+        .pipe(gulp.dest(outputDir))
+        .pipe(connect.reload())
+});
+
+gulp.task('htmls', ['reference'], function () {
+    return gulp.src(paths.htmls)
         .pipe(htmlmin({collapseWhitespace: true}))
         .pipe(minifyInline())
         .pipe(gulp.dest(outputDir))
