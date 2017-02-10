@@ -241,7 +241,9 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 					++cache_expired;
 				else
 					++cache_not_found;
-			} else {
+			}
+			else
+			{
 				++cache_hit;
 				const auto & cell = cells[cell_idx];
 				out[row] = !cell.isDefault();
@@ -430,7 +432,9 @@ void CacheDictionary::getItemsNumberImpl(
 					++cache_expired;
 				else
 					++cache_not_found;
-			} else {
+			}
+			else
+			{
 				++cache_hit;
 				const auto & cell_idx = std::get<2>(find_result);
 				const auto & cell = cells[cell_idx];
@@ -496,7 +500,9 @@ void CacheDictionary::getItemsString(
 			{
 				found_outdated_values = true;
 				break;
-			} else {
+			}
+			else
+			{
 				const auto & cell_idx = std::get<2>(find_result);
 				const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
@@ -540,7 +546,9 @@ void CacheDictionary::getItemsString(
 					++cache_expired;
 				else
 					++cache_not_found;
-			} else {
+			}
+			else
+			{
 				++cache_hit;
 				const auto & cell_idx = std::get<2>(find_result);
 				const auto & cell = cells[cell_idx];
