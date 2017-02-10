@@ -112,7 +112,7 @@ public:
 };
 
 
-/// Count number of calls with all arguments are not NULL.
+/// Count number of calls where all arguments are not NULL.
 class AggregateFunctionCountNotNullVariadic final : public IAggregateFunctionHelper<AggregateFunctionCountData>
 {
 public:
