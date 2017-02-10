@@ -182,7 +182,7 @@ void CacheDictionary::getString(
 /// true  false  impossible
 ///
 /// todo: split this func to two: find_for_get and find_for_set
-std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, const CellMetadata::time_point_t now) const
+std::tuple<bool, bool, size_t> CacheDictionary::findCellIdx (const Key & id, const CellMetadata::time_point_t now) const
 {
 	auto pos = getCellIdx(id);
 	auto oldest_id = pos;
@@ -191,7 +191,6 @@ std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, co
 	for (; pos < stop; ++pos)
 	{
 		const auto cell_idx = pos & size_overlap_mask;
-
 		const auto & cell = cells[cell_idx];
 
 		if (cell.id != id)
