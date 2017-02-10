@@ -52,7 +52,8 @@ AggregateFunctionPtr createAggregateFunctionArray(AggregateFunctionPtr & nested)
 AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionState(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionMerge(AggregateFunctionPtr & nested);
-AggregateFunctionPtr createAggregateFunctionNull(AggregateFunctionPtr & nested);
+AggregateFunctionPtr createAggregateFunctionNullUnary(AggregateFunctionPtr & nested);
+AggregateFunctionPtr createAggregateFunctionNullVariadic(AggregateFunctionPtr & nested);
 
 
 AggregateFunctionFactory::AggregateFunctionFactory()
@@ -124,7 +125,11 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		}
 
 		AggregateFunctionPtr function = getImpl(name, new_argument_types, recursion_level);
-		return createAggregateFunctionNull(function);
+
+		if (argument_types.size() == 1)
+			return createAggregateFunctionNullUnary(function);
+		else
+			return createAggregateFunctionNullVariadic(function);
 	}
 	else
 		return getImpl(name, argument_types, recursion_level);
