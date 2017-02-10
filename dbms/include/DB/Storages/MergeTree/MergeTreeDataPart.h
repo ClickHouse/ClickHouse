@@ -16,12 +16,12 @@ namespace DB
 /// Чексумма одного файла.
 struct MergeTreeDataPartChecksum
 {
-	size_t file_size;
-	uint128 file_hash;
+	size_t file_size {};
+	uint128 file_hash {};
 
 	bool is_compressed = false;
-	size_t uncompressed_size;
-	uint128 uncompressed_hash;
+	size_t uncompressed_size {};
+	uint128 uncompressed_hash {};
 
 	MergeTreeDataPartChecksum() {}
 	MergeTreeDataPartChecksum(size_t file_size_, uint128 file_hash_) : file_size(file_size_), file_hash(file_hash_) {}
