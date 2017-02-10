@@ -190,30 +190,30 @@ std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, co
 	const auto stop = pos + max_collision_length;
 	for (; pos < stop; ++pos)
 	{
-			const auto cell_idx = pos & size_overlap_mask;
+		const auto cell_idx = pos & size_overlap_mask;
 
-			const auto & cell = cells[cell_idx];
+		const auto & cell = cells[cell_idx];
 
-			if (cell.id != id /* && cell.data > 0 */)
+		if (cell.id != id)
+		{
+			/// maybe we already found nearest expired cell
+			if (oldest_time > now && oldest_time > cell.expiresAt())
 			{
-				/// maybe we already found nearest expired cell
-				if (oldest_time > now && oldest_time > cell.expiresAt())
-				{
-					oldest_time = cell.expiresAt();
-					oldest_id = cell_idx;
-				}
-				continue;
+				oldest_time = cell.expiresAt();
+				oldest_id = cell_idx;
 			}
-
-			if (cell.expiresAt() < now)
-			{
-				return std::make_tuple(false, false, cell_idx);
-			}
-
-			return std::make_tuple(true, true, cell_idx);
+			continue;
 		}
 
-		return std::make_tuple(false, true, oldest_id);
+		if (cell.expiresAt() < now)
+		{
+			return std::make_tuple(false, false, cell_idx);
+		}
+
+		return std::make_tuple(true, true, cell_idx);
+	}
+
+	return std::make_tuple(false, true, oldest_id);
 }
 
 void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
@@ -241,7 +241,9 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 					++cache_expired;
 				else
 					++cache_not_found;
-			} else {
+			}
+			else
+			{
 				++cache_hit;
 				const auto & cell = cells[cell_idx];
 				out[row] = !cell.isDefault();
@@ -430,7 +432,9 @@ void CacheDictionary::getItemsNumberImpl(
 					++cache_expired;
 				else
 					++cache_not_found;
-			} else {
+			}
+			else
+			{
 				++cache_hit;
 				const auto & cell_idx = std::get<2>(find_result);
 				const auto & cell = cells[cell_idx];
@@ -496,7 +500,9 @@ void CacheDictionary::getItemsString(
 			{
 				found_outdated_values = true;
 				break;
-			} else {
+			}
+			else
+			{
 				const auto & cell_idx = std::get<2>(find_result);
 				const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
@@ -540,7 +546,9 @@ void CacheDictionary::getItemsString(
 					++cache_expired;
 				else
 					++cache_not_found;
-			} else {
+			}
+			else
+			{
 				++cache_hit;
 				const auto & cell_idx = std::get<2>(find_result);
 				const auto & cell = cells[cell_idx];
