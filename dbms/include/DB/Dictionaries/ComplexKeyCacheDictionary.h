@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Dictionaries/IDictionarySource.h>
@@ -257,6 +257,37 @@ private:
 	static StringRef copyIntoArena(StringRef src, Arena & arena);
 	StringRef copyKey(const StringRef key) const;
 
+struct CellFinder {
+
+	const DictionaryStructure & dict_struct;
+  const ConstColumnPlainPtrs & key_columns;
+  const size_t rows_num;
+	PODArray<StringRef> keys_array;
+	const size_t keys_size;
+	//const size_t & size;
+	StringRefs keys;
+	Arena temporary_keys_pool;
+
+	CellFinder(const DictionaryStructure & dict_struct, const ConstColumnPlainPtrs & key_columns) :
+	dict_struct{dict_struct},
+	key_columns{key_columns},
+	rows_num{key_columns.front()->size()},
+	keys_array{rows_num},
+	keys_size{dict_struct.key.value().size()},
+	keys{keys_size}
+	{
+	}
+
+};
+
+
+
+
+	std::tuple<bool, bool, size_t> findCellIdx(CellFinder& cell_finder, const size_t row, const StringRef & key, const CellMetadata::time_point_t now) const;
+
+
+
+
 	const std::string name;
 	const DictionaryStructure dict_struct;
 	const DictionarySourcePtr source_ptr;
@@ -265,6 +296,8 @@ private:
 
 	mutable Poco::RWLock rw_lock;
 	const std::size_t size;
+	const std::size_t size_overlap_mask;
+	static constexpr std::size_t max_collision_length = 10;
 	const UInt64 zero_cell_idx{getCellIdx(StringRef{})};
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	mutable std::vector<Attribute> attributes;
