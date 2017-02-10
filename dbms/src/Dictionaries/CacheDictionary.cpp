@@ -182,7 +182,7 @@ void CacheDictionary::getString(
 /// true  false  impossible
 ///
 /// todo: split this func to two: find_for_get and find_for_set
-std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, const CellMetadata::time_point_t now) const
+std::tuple<bool, bool, size_t> CacheDictionary::findCellIdx (const Key & id, const CellMetadata::time_point_t now) const
 {
 	auto pos = getCellIdx(id);
 	auto oldest_id = pos;
@@ -190,30 +190,29 @@ std::tuple<bool, bool, size_t>  CacheDictionary::findCellIdx (const Key & id, co
 	const auto stop = pos + max_collision_length;
 	for (; pos < stop; ++pos)
 	{
-			const auto cell_idx = pos & size_overlap_mask;
+		const auto cell_idx = pos & size_overlap_mask;
+		const auto & cell = cells[cell_idx];
 
-			const auto & cell = cells[cell_idx];
-
-			if (cell.id != id /* && cell.data > 0 */)
+		if (cell.id != id)
+		{
+			/// maybe we already found nearest expired cell
+			if (oldest_time > now && oldest_time > cell.expiresAt())
 			{
-				/// maybe we already found nearest expired cell
-				if (oldest_time > now && oldest_time > cell.expiresAt())
-				{
-					oldest_time = cell.expiresAt();
-					oldest_id = cell_idx;
-				}
-				continue;
+				oldest_time = cell.expiresAt();
+				oldest_id = cell_idx;
 			}
-
-			if (cell.expiresAt() < now)
-			{
-				return std::make_tuple(false, false, cell_idx);
-			}
-
-			return std::make_tuple(true, true, cell_idx);
+			continue;
 		}
 
-		return std::make_tuple(false, true, oldest_id);
+		if (cell.expiresAt() < now)
+		{
+			return std::make_tuple(false, false, cell_idx);
+		}
+
+		return std::make_tuple(true, true, cell_idx);
+	}
+
+	return std::make_tuple(false, true, oldest_id);
 }
 
 void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
