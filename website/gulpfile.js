@@ -1,7 +1,7 @@
 var gulp = require('gulp');
 var concat = require('gulp-concat');
 var uglify = require('gulp-uglify');
-var cleanCss = require('clean-css');
+var cleanCss = require('gulp-clean-css');
 var imagemin = require('gulp-imagemin');
 var sourcemaps = require('gulp-sourcemaps');
 var htmlmin = require('gulp-htmlmin');
@@ -68,4 +68,4 @@ gulp.task('connect', function() {
     })
 });
 
-gulp.task('default', ['htmls', 'scripts', 'images', 'watch', 'connect']);
+gulp.task('default', ['htmls', 'scripts', 'styles', 'images', 'watch', 'connect']);
