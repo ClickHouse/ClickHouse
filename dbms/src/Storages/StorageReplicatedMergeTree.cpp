@@ -216,7 +216,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, merging_params_,
-		settings_, database_name_ + "." + table_name, true,
+		settings_, database_name_ + "." + table_name, true, attach,
 		[this] (const std::string & name) { enqueuePartForCheck(name); }),
 	reader(data), writer(data), merger(data, context.getBackgroundPool()), fetcher(data), sharded_partition_uploader_client(*this),
 	shutdown_event(false), part_check_thread(*this),
@@ -295,7 +295,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 			materialized_columns_, alias_columns_, column_defaults_,
 			context_, primary_expr_ast_,
 			date_column_name_, sampling_expression_, index_granularity_, merging_params_, settings_,
-			database_name_ + "." + table_name + "[unreplicated]", false);
+			database_name_ + "." + table_name + "[unreplicated]", /* require_part_metadata = */ false, /* attach = */ true);
 
 		unreplicated_data->loadDataParts(skip_sanity_checks);
 

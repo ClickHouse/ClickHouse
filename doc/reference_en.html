@@ -4146,7 +4146,7 @@ Using ALTER, it is possible to change an %%Enum8%% to an %%Enum16%% or vice vers
 ==Array(T)==
 
 Array of T-type items. The T type can be any type, including an array.
-We don&#39;t recommend using multidimensional arrays, because they are not well supported (for example, you can&#39;t store multidimensional arrays in any tables except Memory tables).
+We don&#39;t recommend using multidimensional arrays, because they are not well supported (for example, you can&#39;t store multidimensional arrays in tables with engines from MergeTree family).
 
 
 ==Tuple(T1, T2, ...)==
@@ -4189,7 +4189,7 @@ CREATE TABLE test.visits
 
 This example declares the &#39;Goals&#39; nested data structure, which contains data about conversions (goals reached). Each row in the &#39;visits&#39; table can correspond to zero or any number of conversions.
 
-Only a single nesting level is supported.
+Only a single nesting level is supported. Nested structure columns with array type are equivalent to multidimensional arrays and thus their support is limited (storing such columns in tables with engines from MergeTree family is not supported).
 
 In most cases, when working with a nested data structure, its individual columns are specified. To do this, the column names are separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
 

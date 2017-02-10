@@ -98,7 +98,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 	if (!block)
 		return;
 
-	/// Если столбец сортировки один
+	/// If only one column to sort by
 	if (description.size() == 1)
 	{
 		bool reverse = description[0].direction == -1;
