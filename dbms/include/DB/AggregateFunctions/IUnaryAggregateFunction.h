@@ -40,7 +40,7 @@ public:
 	IAggregateFunction::AddFunc getAddressOfAddFunction() const override { return &addFree; }
 
 	/** Implement the following in descendant class:
-	  * void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const;
+	  * void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const;
 	  * void setArgument(const DataTypePtr & argument);
 	  */
 };
