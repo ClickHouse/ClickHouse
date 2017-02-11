@@ -272,7 +272,7 @@ MergeTreeDataPartChecksums MergeTreeDataPartChecksums::parse(const String & s)
 
 
 /// Returns the size of .bin file for column `name` if found, zero otherwise.
-std::size_t MergeTreeDataPart::getColumnSize(const String & name) const
+size_t MergeTreeDataPart::getColumnCompressedSize(const String & name) const
 {
 	if (checksums.empty())
 		return {};
@@ -289,18 +289,18 @@ std::size_t MergeTreeDataPart::getColumnSize(const String & name) const
 
 /** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
 	*	If no checksums are present returns the name of the first physically existing column. */
-String MergeTreeDataPart::getMinimumSizeColumnName() const
+String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 {
 	const auto & columns = storage.getColumnsList();
 	const std::string * minimum_size_column = nullptr;
-	auto minimum_size = std::numeric_limits<std::size_t>::max();
+	auto minimum_size = std::numeric_limits<size_t>::max();
 
 	for (const auto & column : columns)
 	{
 		if (!hasColumnFiles(column.name))
 			continue;
 
-		const auto size = getColumnSize(column.name);
+		const auto size = getColumnCompressedSize(column.name);
 		if (size < minimum_size)
 		{
 			minimum_size = size;

@@ -1573,13 +1573,17 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 		const auto bin_file_name = escaped_name + ".bin";
 		const auto mrk_file_name = escaped_name + ".mrk";
 
-		auto & column_size = column_sizes[column.name];
+		ColumnSize & column_size = column_sizes[column.name];
 
 		if (files.count(bin_file_name))
-			column_size += files.find(bin_file_name)->second.file_size;
+		{
+			const auto & bin_file_checksums = files.at(bin_file_name);
+			column_size.data_compressed += bin_file_checksums.file_size;
+			column_size.data_uncompressed += bin_file_checksums.uncompressed_size;
+		}
 
 		if (files.count(mrk_file_name))
-			column_size += files.find(mrk_file_name)->second.file_size;
+			column_size.marks += files.at(mrk_file_name).file_size;
 	}
 }
 
@@ -1596,10 +1600,14 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 		auto & column_size = column_sizes[column.name];
 
 		if (files.count(bin_file_name))
-			column_size -= files.find(bin_file_name)->second.file_size;
+		{
+			const auto & bin_file_checksums = files.at(bin_file_name);
+			column_size.data_compressed -= bin_file_checksums.file_size;
+			column_size.data_uncompressed -= bin_file_checksums.uncompressed_size;
+		}
 
 		if (files.count(mrk_file_name))
-			column_size -= files.find(mrk_file_name)->second.file_size;
+			column_size.marks -= files.at(mrk_file_name).file_size;
 	}
 }
 

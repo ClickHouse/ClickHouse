@@ -68,7 +68,7 @@ void MergeTreeWhereOptimizer::calculateColumnSizes(const MergeTreeData & data, c
 {
 	for (const auto & column_name : column_names)
 	{
-		const auto column_size = data.getColumnSize(column_name);
+		const auto column_size = data.getColumnCompressedSize(column_name);
 
 		column_sizes[column_name] = column_size;
 		total_column_size += column_size;
