@@ -445,6 +445,11 @@ public:
 		return res;
 	}
 
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		return scatterImpl<ColumnString>(num_columns, selector);
+	}
+
 	void reserve(size_t n) override
 	{
 		offsets.reserve(n);
