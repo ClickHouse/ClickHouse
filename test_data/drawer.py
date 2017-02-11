@@ -15,15 +15,17 @@ def parse_args():
 def draw():
     place = dict()
     max_coord = 0
+    global_top = 0
     for line in open(TMP_FILE):
         numbers = line.split('\t')
         if len(numbers) <= 2:
             continue 
         name = numbers[-2]
         if numbers[0] == '1':
-            max_coord += int(numbers[3]) / 10000
-            place[name] = [1, max_coord, 1]
-            max_coord += int(numbers[3]) / 10000
+            dx = int(numbers[3])
+            max_coord += dx
+            place[name] = [1, max_coord, 1, dx]
+            max_coord += dx
     for line in open(TMP_FILE):
         numbers = line.split('\t')
         if len(numbers) <= 2:
@@ -31,16 +33,21 @@ def draw():
         name = numbers[-2]
         if numbers[0] == '2':
             list = ast.literal_eval(numbers[-1])
-            coord = [0,0,0]
+            coord = [0,0,0,0]
             for cur_name in list:
                 coord[0] = max(place[cur_name][0], coord[0])
                 coord[1] += place[cur_name][1] * place[cur_name][2]
                 coord[2] += place[cur_name][2]
+                coord[3] += place[cur_name][3]
             coord[1] /= coord[2]
             coord[0] += 1
+            global_top = max(global_top, coord[0])
             place[name] = coord
             for cur_name in list:
                 plt.plot([coord[1], place[cur_name][1]],[coord[0], place[cur_name][0]])
+            plt.plot([coord[1] - coord[3], coord[1] + coord[3]], [coord[0], coord[0]])
+    plt.plot([0], [global_top + 1])
+    plt.plot([0], [-1])
     plt.show()	
 
 
