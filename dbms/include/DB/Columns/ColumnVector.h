@@ -503,7 +503,7 @@ public:
 	}
 
 
-	/** Более эффективные методы манипуляции */
+	/** More efficient methods of manipulation - to manipulate with data directly. */
 	Container_t & getData()
 	{
 		return data;

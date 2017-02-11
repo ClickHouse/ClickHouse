@@ -172,6 +172,27 @@ public:
 		return std::make_shared<ColumnTuple>(res_block);
 	}
 
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		size_t num_tuple_elements = columns.size();
+		std::vector<Columns> scattered_tuple_elements(num_tuple_elements);
+
+		for (size_t tuple_element_idx = 0; tuple_element_idx < num_tuple_elements; ++tuple_element_idx)
+			scattered_tuple_elements[tuple_element_idx] = data.getByPosition(tuple_element_idx).column->scatter(num_columns, selector);
+
+		Columns res(num_columns);
+
+		for (size_t scattered_idx = 0; scattered_idx < num_columns; ++scattered_idx)
+		{
+			Block res_block = data.cloneEmpty();
+			for (size_t tuple_element_idx = 0; tuple_element_idx < num_tuple_elements; ++tuple_element_idx)
+				res_block.getByPosition(tuple_element_idx).column = scattered_tuple_elements[tuple_element_idx][scattered_idx];
+			res[scattered_idx] = std::make_shared<ColumnTuple>(res_block);
+		}
+
+		return res;
+	}
+
 	int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override
 	{
 		size_t size = columns.size();

@@ -1,5 +1,3 @@
-#pragma once
-
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnVector.h>
 
@@ -32,9 +30,9 @@ IColumn::Selector createBlockSelector(
 	using UnsignedT = typename std::make_unsigned<T>::type;
 
 	/// const columns contain only one value, therefore we do not need to read it at every iteration
-	if (column->isConst())
+	if (column.isConst())
 	{
-		const auto data = typeid_cast<const ColumnConst<T> *>(column)->getData();
+		const auto data = typeid_cast<const ColumnConst<T> &>(column).getData();
 		const auto shard_num = slots[static_cast<UnsignedT>(data) % total_weight];
 		selector.assign(num_rows, shard_num);
 	}
@@ -45,10 +43,10 @@ IColumn::Selector createBlockSelector(
 
 		libdivide::divider<TUInt32Or64> divider(total_weight);
 
-		const auto & data = typeid_cast<const ColumnVector<T> *>(column)->getData();
+		const auto & data = typeid_cast<const ColumnVector<T> &>(column).getData();
 
-		for (size_t i = 0; i < num_rows; ++j)
-			selector[i] = slots[static_cast<TUInt32Or64>(data[j]) - (static_cast<TUInt32Or64>(data[j]) / divider) * total_weight];
+		for (size_t i = 0; i < num_rows; ++i)
+			selector[i] = slots[static_cast<TUInt32Or64>(data[i]) - (static_cast<TUInt32Or64>(data[i]) / divider) * total_weight];
 	}
 
 	return selector;

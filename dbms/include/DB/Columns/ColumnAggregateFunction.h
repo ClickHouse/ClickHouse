@@ -238,6 +238,29 @@ public:
 		throw Exception("Method replicate is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		/// Columns with scattered values will point to this column as the owner of values.
+		Columns columns(num_columns);
+		for (auto & column : columns)
+			column = std::make_shared<ColumnAggregateFunction>(*this);
+
+		size_t num_rows = size();
+
+		{
+			size_t reserve_size = num_rows / num_columns * 1.1;	/// 1.1 is just a guess. Better to use n-sigma rule.
+
+			if (reserve_size > 1)
+				for (auto & column : columns)
+					column->reserve(reserve_size);
+		}
+
+		for (size_t i = 0; i < num_rows; ++i)
+			static_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
+
+		return columns;
+	}
+
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 	{
 		return 0;

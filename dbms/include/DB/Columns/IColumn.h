@@ -283,7 +283,7 @@ protected:
 	/// Template is to devirtualize calls to insertFrom method.
 	/// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
 	template <typename Derived>
-	Columns IColumn::scatterImpl(ColumnIndex num_columns, const Selector & selector) const
+	Columns scatterImpl(ColumnIndex num_columns, const Selector & selector) const
 	{
 		Columns columns(num_columns, cloneEmpty());
 
