@@ -2332,11 +2332,12 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 
 		for (size_t bucket = 0, size = num_buckets; bucket < size; ++bucket)
 		{
-			Block & dst = destinations[bucket];
-			dst.info.bucket_num = bucket;
-
 			if (!scattered_columns[bucket]->empty())
+			{
+				Block & dst = destinations[bucket];
+				dst.info.bucket_num = bucket;
 				dst.insert({scattered_columns[bucket], src_col.type, src_col.name});
+			}
 
 			/** Inserted columns of type ColumnAggregateFunction will own states of aggregate functions
 			  *  by holding shared_ptr to source column. See ColumnAggregateFunction.h
