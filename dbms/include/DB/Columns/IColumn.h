@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
 	extern const int CANNOT_GET_SIZE_OF_FIELD;
 	extern const int NOT_IMPLEMENTED;
+	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 class IColumn;
@@ -285,9 +286,14 @@ protected:
 	template <typename Derived>
 	Columns scatterImpl(ColumnIndex num_columns, const Selector & selector) const
 	{
-		Columns columns(num_columns, cloneEmpty());
-
 		size_t num_rows = size();
+
+		if (num_rows != selector.size())
+			throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		Columns columns(num_columns);
+		for (auto & column : columns)
+			column = cloneEmpty();
 
 		{
 			size_t reserve_size = num_rows / num_columns * 1.1;	/// 1.1 is just a guess. Better to use n-sigma rule.
