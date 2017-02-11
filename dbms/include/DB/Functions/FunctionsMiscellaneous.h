@@ -1251,14 +1251,12 @@ public:
 
 		agg_func.create(place.get());	/// Немного не exception-safe. Если здесь выкинется исключение, то зря вызовется destroy.
 
+		std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
+
 		ColumnPtr result_column_ptr = agg_func.getReturnType()->createColumn();
 		block.safeGetByPosition(result).column = result_column_ptr;
 		IColumn & result_column = *result_column_ptr;
 		result_column.reserve(column_with_states->size());
-
-		auto arena = (agg_func.allocatesMemoryInArena())
-			? arenas_pool.get(0, []{ return new Arena(); })
-			: nullptr;
 
 		const auto & states = column_with_states->getData();
 		for (const auto & state_to_add : states)
@@ -1268,10 +1266,6 @@ public:
 			agg_func.insertResultInto(place.get(), result_column);
 		}
 	}
-
-private:
-
-	ObjectPool<Arena, int> arenas_pool; /// Used only for complex functions
 };
 
 

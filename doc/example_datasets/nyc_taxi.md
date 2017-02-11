@@ -272,7 +272,8 @@ WHERE (table = 'trips_mergetree') AND active
 BTW, you could run OPTIMIZE for MergeTree table. But this is not necessary, everything will be fine.
 
 
-Results on single server:
+Results on single server
+========================
 
 Q1:
 ```
@@ -342,3 +343,22 @@ Q4: 1.241 sec.
 No surprise, as queries are linearly scalable.
 
 
+Also there are results for 140-node cluster:
+
+Q1: 0.028 sec.
+Q2: 0.043 sec.
+Q3: 0.051 sec.
+Q4: 0.072 sec.
+
+In that case, query execution speed is dominated by latency.
+We do queries from client located in Yandex datacenter in Mäntsälä (Finland) to cluster somewhere in Russia, that adds at least 20 ms of latency.
+
+Summary
+=======
+
+```
+nodes   Q1     Q2     Q3     Q4
+  1  0.490  1.224  2.104  3.593
+  3  0.212  0.438  0.733  1.241
+140  0.028  0.043  0.051  0.072
+```

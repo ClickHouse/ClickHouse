@@ -25,6 +25,7 @@ public:
 	  *  то будет также загружен файл /opt/geo/regions_hierarchy_ua.txt, если такой есть - он будет доступен по ключу ua.
 	  */
 	RegionsHierarchies();
+	explicit RegionsHierarchies(const std::string & path_to_regions_hierarchy_file);
 
 	/// Has corresponding section in configuration file.
 	static bool isConfigured();

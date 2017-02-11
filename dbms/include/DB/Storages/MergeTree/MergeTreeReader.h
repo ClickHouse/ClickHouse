@@ -13,8 +13,6 @@ class IDataType;
 class CachedCompressedReadBuffer;
 class CompressedReadBufferFromFile;
 
-class IDataType;
-
 
 /// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
 /// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.

@@ -11,20 +11,20 @@ echo 'Creating table'
 echo 'CREATE TABLE increment.a (d Date, v UInt64) ENGINE=MergeTree(d, tuple(v), 8192)' | clickhouse-client || exit 3
 echo 'Inserting'
 echo "2014-01-01	42" | clickhouse-client --query="INSERT INTO increment.a FORMAT TabSeparated" || exit 4
-ls /opt/clickhouse/data/increment/a/
-cat /opt/clickhouse/data/increment/a/increment.txt
-rm /opt/clickhouse/data/increment/a/increment.txt
+ls /var/lib/clickhouse/data/increment/a/
+cat /var/lib/clickhouse/data/increment/a/increment.txt
+rm /var/lib/clickhouse/data/increment/a/increment.txt
 echo 'Inserting without increment.txt'
 echo "2014-01-01	41" | clickhouse-client --query="INSERT INTO increment.a FORMAT TabSeparated"
-ls /opt/clickhouse/data/increment/a/
-cat /opt/clickhouse/data/increment/a/increment.txt
-sudo /etc/init.d/clickhouse-server stop
-sudo /etc/init.d/clickhouse-server start
+ls /var/lib/clickhouse/data/increment/a/
+cat /var/lib/clickhouse/data/increment/a/increment.txt
+sudo service clickhouse-server stop
+sudo service clickhouse-server start
 sleep 10s
-ls /opt/clickhouse/data/increment/a/
-cat /opt/clickhouse/data/increment/a/increment.txt
+ls /var/lib/clickhouse/data/increment/a/
+cat /var/lib/clickhouse/data/increment/a/increment.txt
 echo 'Inserting after restart without increment.txt'
 echo "2014-01-01	43" | clickhouse-client --query="INSERT INTO increment.a FORMAT TabSeparated"
-ls /opt/clickhouse/data/increment/a/
-cat /opt/clickhouse/data/increment/a/increment.txt
+ls /var/lib/clickhouse/data/increment/a/
+cat /var/lib/clickhouse/data/increment/a/increment.txt
 echo "SELECT * FROM increment.a" | clickhouse-client

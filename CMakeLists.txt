@@ -1,7 +1,7 @@
 project (ClickHouse)
 cmake_minimum_required (VERSION 2.6)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/cmake/Modules/")
 
 message(STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
 
@@ -17,10 +17,6 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 	endif ()
 else ()
 	message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 3.8+ and GCC 5+.")
-endif ()
-
-if (APPLE)
-	set (PLATFORM_EXTRA_CXX_FLAG "-Dexp10=__exp10") # Also needed for libc++
 endif ()
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
@@ -58,19 +54,29 @@ if (USE_STATIC_LIBRARIES)
 	list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-set (USE_INTERNAL_BOOST_LIBRARY TRUE CACHE BOOL "Set to FALSE to use system boost library instead of bundled")
+
+option (UNBUNDLED "Try find all libraries in system (if fail - use bundled from contrib/)" OFF)
+if (UNBUNDLED)
+	set(NOT_UNBUNDLED 0)
+else ()
+	set(NOT_UNBUNDLED 1)
+endif ()
+
+option (USE_INTERNAL_BOOST_LIBRARY "Set to FALSE to use system boost library instead of bundled" ${NOT_UNBUNDLED})
 
 if (USE_INTERNAL_BOOST_LIBRARY)
 	add_definitions(-DBOOST_SYSTEM_NO_DEPRECATED)
 endif ()
 
-option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ON)
+option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ${NOT_UNBUNDLED})
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
 	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" OFF)
 else ()
 	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ON)
 endif ()
+
+option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
 
 option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc." ON)
 
@@ -131,6 +137,11 @@ if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
 	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
 endif ()
 
+if (NOT USE_STATIC_LIBRARIES)
+	set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -fPIC")
+	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} -fPIC")
+endif ()
+
 set (SAN_FLAGS "-O3 -g -fno-omit-frame-pointer")
 set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN}  ${SAN_FLAGS} -fsanitize=address")
 set (CMAKE_C_FLAGS_ASAN                  "${CMAKE_C_FLAGS_ASAN}    ${SAN_FLAGS} -fsanitize=address")
@@ -155,7 +166,11 @@ endif (TEST_COVERAGE)
 # Run tests with "make check"
 if (ENABLE_TESTS)
 	message (STATUS "Tests are enabled")
-	include (cmake/add_check.cmake)
+	if (TARGET check)
+		message (STATUS "Target check already exists")
+	else ()
+		include (cmake/add_check.cmake)
+	endif ()
 endif (ENABLE_TESTS)
 
 # Installation prefix
@@ -169,6 +184,7 @@ endif ()
 include (cmake/find_openssl.cmake)
 include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
+include (cmake/find_zlib.cmake)
 include (cmake/find_poco.cmake)
 include (cmake/find_libtool.cmake)
 include (cmake/find_rt.cmake)

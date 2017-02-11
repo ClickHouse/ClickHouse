@@ -187,9 +187,7 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 	Arena temporary_keys_pool;
 	PODArray<StringRef> keys_array(rows);
 
-	size_t cache_expired = 0;
-	size_t cache_not_found = 0;
-	size_t cache_hit = 0;
+	size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
 	{
 		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
@@ -384,6 +382,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 	Arena temporary_keys_pool;
 	PODArray<StringRef> keys_array(rows);
 
+	size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
 	{
 		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
@@ -401,12 +400,26 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 				*	1. keys (or hash) do not match,
 				*	2. cell has expired,
 				*	3. explicit defaults were specified and cell was set default. */
-			if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
+			if (cell.hash != hash || cell.key != key)
+			{
+				++cache_not_found;
 				outdated_keys[key].push_back(row);
+			}
+			else if (cell.expiresAt() < now)
+			{
+				++cache_expired;
+				outdated_keys[key].push_back(row);
+			}
 			else
+			{
+				++cache_hit;
 				out[row] =  cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
+			}
 		}
 	}
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
 	query_count.fetch_add(rows, std::memory_order_relaxed);
 	hit_count.fetch_add(rows - outdated_keys.size(), std::memory_order_release);
@@ -496,6 +509,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 	PODArray<StringRef> keys_array(rows);
 
 	size_t total_length = 0;
+	size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
 	{
 		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
@@ -508,10 +522,19 @@ void ComplexKeyCacheDictionary::getItemsString(
 			const size_t cell_idx = hash & (size - 1);
 			const auto & cell = cells[cell_idx];
 
-			if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
+			if (cell.hash != hash || cell.key != key)
+			{
+				++cache_not_found;
 				outdated_keys[key].push_back(row);
+			}
+			else if (cell.expiresAt() < now)
+			{
+				++cache_expired;
+				outdated_keys[key].push_back(row);
+			}
 			else
 			{
+				++cache_hit;
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 
 				if (!cell.isDefault())
@@ -521,6 +544,9 @@ void ComplexKeyCacheDictionary::getItemsString(
 			}
 		}
 	}
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
 	query_count.fetch_add(rows, std::memory_order_relaxed);
 	hit_count.fetch_add(rows - outdated_keys.size(), std::memory_order_release);

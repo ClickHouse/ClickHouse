@@ -432,7 +432,7 @@ inline bool likePatternIsStrstr(const String & pattern, String & res)
 namespace Regexps
 {
 	using Regexp = OptimizedRegularExpressionImpl<false>;
-	using Pool = ObjectPool<Regexp, String>;
+	using Pool = ObjectPoolMap<Regexp, String>;
 
 	template <bool like>
 	inline Regexp createRegexp(const std::string & pattern, int flags) { return {pattern, flags}; }

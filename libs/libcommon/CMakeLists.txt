@@ -1,11 +1,11 @@
 set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
-set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_build.h)
+set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/src/config_build.cpp)
 
 include_directories (include)
-include_directories (BEFORE ${CMAKE_SOURCE_DIR}/contrib/libcctz/include)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcctz/include)
 
-include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 if (APPLE)
 	if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
@@ -20,11 +20,11 @@ message (STATUS "Will build ${VERSION_FULL}")
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${CONFIG_COMMON})
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_version.h.in ${CONFIG_VERSION})
 
-get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
-get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
+get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
 
-string (TIMESTAMP BUILD_DATE UTC)
-configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_build.h.in ${CONFIG_BUILD})
+string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/config_build.cpp.in ${CONFIG_BUILD})
 
 if (APPLE)
 	add_library (apple_rt
@@ -55,6 +55,7 @@ add_library (common
 	include/common/singleton.h
 	include/common/strong_typedef.h
 	include/common/JSON.h
+	include/common/config_build.h
 
 	include/ext/bit_cast.hpp
 	include/ext/collection_cast.hpp
@@ -69,6 +70,7 @@ add_library (common
 
 	${CONFIG_VERSION}
 	${CONFIG_COMMON}
+	${CONFIG_BUILD}
 )
 
 # When testing for memory leaks, dont link tcmalloc or jemalloc.
@@ -78,11 +80,11 @@ if (USE_JEMALLOC)
 	set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
 elseif (USE_TCMALLOC)
 	if (DEBUG_LIBTCMALLOC)
-		message (STATUS "Link libtcmalloc_minimal_debug for testing")
-		set (MALLOC_LIBRARIES libtcmalloc_minimal_debug.a)
+		message (STATUS "Link libtcmalloc_minimal_debug for testing: ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG}")
+		set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG})
 	else ()
-		message (STATUS "Link libtcmalloc_minimal : ${GPERFTOOLS_TCMALLOC}")
-		set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC})
+		message (STATUS "Link libtcmalloc_minimal : ${GPERFTOOLS_TCMALLOC_MINIMAL}")
+		set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL})
 	endif ()
 else ()
 	message (STATUS "Disabling libtcmalloc for valgrind better analysis")

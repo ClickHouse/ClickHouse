@@ -2,6 +2,7 @@
 
 #include <time.h>
 #include <cstdlib>
+#include <random>
 #include <DB/Common/PoolBase.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/NetException.h>

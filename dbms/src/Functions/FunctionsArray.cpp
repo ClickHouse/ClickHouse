@@ -2743,6 +2743,8 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 	std::unique_ptr<char[]> place_holder { new char[agg_func.sizeOfData()] };
 	AggregateDataPtr place = place_holder.get();
 
+	std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
+
 	size_t rows = block.rows();
 
 	/// Агрегатные функции не поддерживают константные столбцы. Поэтому, материализуем их.
@@ -2785,7 +2787,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 		try
 		{
 			for (size_t j = current_offset; j < next_offset; ++j)
-				agg_func.add(place, aggregate_arguments, j, nullptr);
+				agg_func.add(place, aggregate_arguments, j, arena.get());
 
 			agg_func.insertResultInto(place, res_col);
 		}

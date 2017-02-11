@@ -1,4 +1,4 @@
-include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
@@ -70,7 +70,15 @@ if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
 		src/IO/WriteBufferAIO.cpp)
 endif()
 
-add_library(dbms ${dbms_headers} ${dbms_sources})
+include (${CMAKE_SOURCE_DIR}/libs/libcommon/cmake/version.cmake)
+
+if (USE_STATIC_LIBRARIES)
+	add_library(dbms ${dbms_headers} ${dbms_sources})
+else ()
+	add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
+	set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR} VERSION ${VERSION_STRING} OUTPUT_NAME clickhouse)
+	install (TARGETS dbms LIBRARY DESTINATION lib COMPONENT clickhouse)
+endif ()
 
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -114,23 +122,13 @@ if (NOT AARCH64)
 	set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 endif()
 
-set (APPLE_ICONV_LIB "")
-if (APPLE)
-	set(APPLE_ICONV_LIB iconv)
-endif()
-
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
     set(PLATFORM_LIBS "execinfo")
 else()
     set(PLATFORM_LIBS "")
 endif()
 
-if (USE_STATIC_LIBRARIES)
-	set (Z_LIB zlibstatic)
-else()
-	set (Z_HINTS "/usr/local/opt/zlib/lib")
-	find_library (Z_LIB z HINTS ${Z_HINTS})
-endif ()
+include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
 
 find_package (Threads)
 
@@ -142,7 +140,7 @@ target_link_libraries(dbms
 	lz4 zstd
 	string_utils
 	double-conversion
-	${Z_LIB}
+	${ZLIB_LIBRARIES}
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
 	re2 re2_st
 	${OPENSSL_CRYPTO_LIBRARY}
@@ -151,13 +149,9 @@ target_link_libraries(dbms
 	${Poco_DataODBC_LIBRARY}
 	${Poco_MongoDB_LIBRARY}
 	${Poco_Foundation_LIBRARY}
-	${APPLE_ICONV_LIB}
+	${ICONV_LIBRARY}
 	${PLATFORM_LIBS}
 	${CMAKE_DL_LIBS}
 	${LTDL_LIB}
 	${CMAKE_THREAD_LIBS_INIT}
 	)
-
-add_dependencies (dbms
-	common
-	zkutil)

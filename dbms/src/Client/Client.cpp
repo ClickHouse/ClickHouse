@@ -60,28 +60,7 @@
 #include <DB/Common/NetException.h>
 
 #include <common/config_common.h>
-
-/// Different line editing libraries can be used depending on the environment.
-#ifdef USE_READLINE
-	#include <readline/readline.h>
-	#include <readline/history.h>
-#elif USE_LIBEDIT
-	#include <editline/readline.h>
-	#include <editline/history.h>
-#else
-	char * readline(const char * prompt)
-	{
-		std::string s;
-		std::cout << prompt;
-		std::getline(std::cin, s);
-
-		if (!std::cin.good())
-			return nullptr;
-		return strdup(s.data());
-	}
-	#define add_history(...) do {} while (0);
-	#define rl_bind_key(...) do {} while (0);
-#endif
+#include <common/readline_use.h>
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
@@ -371,7 +350,7 @@ private:
 			{
 				if (Poco::File(history_file).exists())
 				{
-#ifdef USE_READLINE
+#if USE_READLINE
 					int res = read_history(history_file.c_str());
 					if (res)
 						throwFromErrno("Cannot read history from file " + history_file, ErrorCodes::CANNOT_READ_HISTORY);

@@ -234,9 +234,9 @@ int Server::main(const std::vector<std::string> & args)
 			rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
 			int rc = setrlimit(RLIMIT_NOFILE, &rlim);
 			if (rc != 0)
-				LOG_WARNING(log, std::string("Cannot setrlimit (tried rlim_cur = ") + std::to_string(rlim.rlim_cur) + "). Try to specify max_open_files according to your system limits. error: " + strerror(errno));
+				LOG_WARNING(log, std::string("Cannot set max number of file descriptors to ") + std::to_string(rlim.rlim_cur) + ". Try to specify max_open_files according to your system limits. error: " + strerror(errno));
 			else
-				LOG_DEBUG(log, "Set rlimit on number of file descriptors to " << rlim.rlim_cur << " (was " << old << ").");
+				LOG_DEBUG(log, "Set max number of file descriptors to " << rlim.rlim_cur << " (was " << old << ").");
 		}
 	}
 
@@ -445,13 +445,16 @@ int Server::main(const std::vector<std::string> & args)
 				server_pool,
 				http_socket,
 				http_params);
+
+				LOG_INFO(log, "Listening http://" + http_socket_address.toString());
 		}
 
 		/// TCP
 		std::experimental::optional<Poco::Net::TCPServer> tcp_server;
 		if (config().has("tcp_port"))
 		{
-			Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress(listen_host, config().getInt("tcp_port")));
+			Poco::Net::SocketAddress tcp_address(listen_host, config().getInt("tcp_port"));
+			Poco::Net::ServerSocket tcp_socket(tcp_address);
 			tcp_socket.setReceiveTimeout(settings.receive_timeout);
 			tcp_socket.setSendTimeout(settings.send_timeout);
 			tcp_server.emplace(
@@ -459,6 +462,8 @@ int Server::main(const std::vector<std::string> & args)
 				server_pool,
 				tcp_socket,
 				new Poco::Net::TCPServerParams);
+
+				LOG_INFO(log, "Listening tcp: " + tcp_address.toString());
 		}
 
 		/// At least one of TCP and HTTP servers must be created.
@@ -469,7 +474,8 @@ int Server::main(const std::vector<std::string> & args)
 		std::experimental::optional<Poco::Net::HTTPServer> interserver_io_http_server;
 		if (config().has("interserver_http_port"))
 		{
-			Poco::Net::ServerSocket interserver_io_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("interserver_http_port")));
+			Poco::Net::SocketAddress interserver_address(listen_host, config().getInt("interserver_http_port"));
+			Poco::Net::ServerSocket interserver_io_http_socket(interserver_address);
 			interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
 			interserver_io_http_socket.setSendTimeout(settings.send_timeout);
 			interserver_io_http_server.emplace(
@@ -477,6 +483,7 @@ int Server::main(const std::vector<std::string> & args)
 				server_pool,
 				interserver_io_http_socket,
 				http_params);
+				LOG_INFO(log, "Listening interserver: " + interserver_address.toString());
 		}
 
 		if (http_server)

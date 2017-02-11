@@ -1198,7 +1198,7 @@ There is no support for changing the column type in arrays and nested data struc
 
 The ALTER query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like &#39;name.nested_name&#39; and the type &#39;Array(<i>T</i>)&#39;. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 
-There is no support for deleting or changing the type for columns in the primary key or the sampling key (columns that are in the ENGINE expression).
+There is no support for deleting of columns in the primary key or the sampling key (columns that are in the ENGINE expression). Changing the type of columns in the primary key is allowed only if such change doesn't entail changing the actual data (e.g. adding the value to an Enum or changing the type from DateTime to UInt32 is allowed).
 
 If the ALTER query is not sufficient for making the table changes you need, you can create a new table, copy the data to it using the INSERT SELECT query, then switch the tables using the RENAME query and delete the old table.
 
@@ -1520,7 +1520,7 @@ All the clauses are optional, except for the required list of expressions immedi
 The clauses below are described in almost the same order as in the query execution conveyor.
 
 If the query omits the DISTINCT, GROUP BY, and ORDER BY clauses and the IN and JOIN subqueries, the query will be completely stream processed, using O(1) amount of RAM.
-Otherwise, the query may consume too much RAM, if appropriate restrictions are not defined (max_memory_usage, max_rows_to_group_by, max_rows_to_sort, max_rows_in_distinct, max_bytes_in_distinct, max_rows_in_set, max_bytes_in_set, max_rows_in_join, max_bytes_in_join, max_bytes_before_external_sort). For more information, see the section &quot;Settings&quot;. It is possible to use external sorting (saving temporary tables to a disk). The system does not have external aggregation or merge join.
+Otherwise, the query may consume too much RAM, if appropriate restrictions are not defined (max_memory_usage, max_rows_to_group_by, max_rows_to_sort, max_rows_in_distinct, max_bytes_in_distinct, max_rows_in_set, max_bytes_in_set, max_rows_in_join, max_bytes_in_join, max_bytes_before_external_sort, max_bytes_before_external_group_by). For more information, see the section &quot;Settings&quot;. It is possible to use external sorting (saving temporary tables to a disk) and external aggregation. Merge join is not implemented.
 
 <h4>FROM clause</h4>
 
@@ -2005,6 +2005,21 @@ The other alternatives include only the rows that pass through HAVING in &#39;to
 If &#39;max_rows_to_group_by&#39; and &#39;group_by_overflow_mode = &#39;any&#39;&#39; are not used, all variations of &#39;after_having&#39; are the same, and you can use any of them (for example, &#39;after_having_auto&#39;).
 
 You can use WITH TOTALS in subqueries, including subqueries in the JOIN clause. In this case, the respective total values are combined.
+
+
+<h5>external memory GROUP BY</h5>
+
+It is possible to turn on spilling temporary data to disk to limit memory consumption during the execution of GROUP BY. Value of %%max_bytes_before_external_group_by%% setting determines the maximum memory consumption before temporary data is dumped to the file system. If it is 0 (the default value), the feature is turned off.
+
+When using %%max_bytes_before_external_group_by%% it is advisable to set %%max_memory_usage%% to an approximately twice greater value. The reason for this is that aggregation is executed in two stages: reading and generation of intermediate data (1) and merging of intermediate data (2). Spilling data to the filesystem can be performed only on stage 1. If the spilling did not happen, then stage 2 could consume up to the same amount of memory as stage 1.
+
+For example: if %%max_memory_usage%% is equal to 10000000000 and you want to use external aggregation, it makes sense to set %%max_bytes_before_external_group_by%% to 10000000000 and %%max_memory_usage%% to 20000000000. If dumping data to the file system happened at least once during the execution, maximum memory consumption would be just a little bit higher than %%max_bytes_before_external_group_by%%.
+
+During distributed query execution external aggregation is performed on the remote servers. If you want the memory consumption on the originating server to be small, set %%distributed_aggregation_memory_efficient%% to 1. If %%distributed_aggregation_memory_efficient%% is turned on then during merging of the dumped data and also during merging of the query results from the remote servers, total memory consumption is no more than 1/256 * number of threads of the total amount of memory.
+
+If external aggregation is turned on and total memory consumption was less than %%max_bytes_before_external_group_by%% (meaning that no spilling took place), the query performance is the same as when external aggregation is turned off. If some data was dumped, then execution time will be several times longer (approximately 3x).
+
+If you have an ORDER BY clause with some small LIMIT after a GROUP BY, then ORDER BY will not consume significant amount of memory. But if no LIMIT is provided, don't forget to turn on external sorting (%%max_bytes_before_external_sort%%).
 
 
 <h4>HAVING clause</h4>
@@ -2723,6 +2738,23 @@ ORDER BY StartDate;
 You can create a materialized view like this and assign a normal view to it that finishes data aggregation.
 
 Note that in most cases, using AggregatingMergeTree is not justified, since queries can be run efficiently enough on non-aggregated data.
+
+
+==ReplacingMergeTree==
+
+This engine differs from MergeTree in that it can deduplicate data by primary key while merging.
+
+For ReplacingMergeTree mode, last parameter is optional name of 'version' column. While merging, for all rows with same primary key, only one row is selected: last row, if version column was not specified, or last row with maximum version value, if specified.
+
+Version column must have type of UInt family or Date or DateTime.
+
+%%ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, ver)%%
+
+Please note, that data is deduplicated only while merging process. Merges are processed in background. Exact time of merge is unspecified and you could not rely on it. Some part of data could be not merged at all. While you could trigger extra merge with OPTIMIZE query, it is not recommended, as OPTIMIZE will read and write vast amount of data.
+
+This table engine is suitable for background removal of duplicate data to save space, but not suitable to guarantee of deduplication.
+
+Developed for special purposes of not Yandex.Metrica department.
 
 
 ==Null==
@@ -4114,7 +4146,7 @@ Using ALTER, it is possible to change an %%Enum8%% to an %%Enum16%% or vice vers
 ==Array(T)==
 
 Array of T-type items. The T type can be any type, including an array.
-We don&#39;t recommend using multidimensional arrays, because they are not well supported (for example, you can&#39;t store multidimensional arrays in any tables except Memory tables).
+We don&#39;t recommend using multidimensional arrays, because they are not well supported (for example, you can&#39;t store multidimensional arrays in tables with engines from MergeTree family).
 
 
 ==Tuple(T1, T2, ...)==
@@ -4157,7 +4189,7 @@ CREATE TABLE test.visits
 
 This example declares the &#39;Goals&#39; nested data structure, which contains data about conversions (goals reached). Each row in the &#39;visits&#39; table can correspond to zero or any number of conversions.
 
-Only a single nesting level is supported.
+Only a single nesting level is supported. Nested structure columns with array type are equivalent to multidimensional arrays and thus their support is limited (storing such columns in tables with engines from MergeTree family is not supported).
 
 In most cases, when working with a nested data structure, its individual columns are specified. To do this, the column names are separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
 
@@ -4670,6 +4702,9 @@ Converts a date with time to a UInt8 number containing the number of the minute 
 Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
 
+===toStartOfDay===
+Rounds down a date with time to the start of the day.
+
 ===toMonday===
 Rounds down a date or date with time to the nearest Monday.
 Returns the date.
@@ -4689,11 +4724,14 @@ Returns the date.
 ===toStartOfMinute===
 Rounds down a date with time to the start of the minute.
 
+===toStartOfFiveMinute===
+Rounds down a date with time to the start of the 5 minute (00:00, 00:05, 00:10...).
+
 ===toStartOfHour===
 Rounds down a date with time to the start of the hour.
 
 ===toTime===
-Converts a date with time to the date of the start of the Unix Epoch, while preserving the time.
+Converts a date with time to some fixed date, while preserving the time.
 
 ===toRelativeYearNum===
 Converts a date with time or date to the number of the year, starting from a certain fixed point in the past.

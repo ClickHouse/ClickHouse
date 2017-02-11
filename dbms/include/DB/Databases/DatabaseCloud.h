@@ -2,7 +2,10 @@
 
 #include <DB/Databases/IDatabase.h>
 #include <DB/Common/UInt128.h>
+#include <DB/Storages/IStorage.h>
 
+
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -57,6 +60,7 @@ private:
 	const String hostname;
 	const String datacenter_name;
 
+	using Logger = Poco::Logger;
 	Logger * log;
 
 	Context & context;

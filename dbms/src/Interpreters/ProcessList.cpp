@@ -83,13 +83,20 @@ ProcessList::EntryPtr ProcessList::insert(
 
 			if (current_memory_tracker)
 			{
-				/// Отслеживаем суммарное потребление оперативки на одновременно выполняющиеся запросы одного пользователя.
-				user_process_list.user_memory_tracker.setLimit(settings.limits.max_memory_usage_for_user);
+				/// Limits are only raised (to be more relaxed) or set to something instead of zero,
+				///  because settings for different queries will interfere each other:
+				///  setting from one query effectively sets values for all other queries.
+
+				/// Track memory usage for all simultaneously running queries from single user.
+				user_process_list.user_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_user);
 				user_process_list.user_memory_tracker.setDescription("(for user)");
 				current_memory_tracker->setNext(&user_process_list.user_memory_tracker);
 
-				/// Отслеживаем суммарное потребление оперативки на все одновременно выполняющиеся запросы.
-				total_memory_tracker.setLimit(settings.limits.max_memory_usage_for_all_queries);
+				/// Track memory usage for all simultaneously running queries.
+				/// You should specify this value in configuration for default profile,
+				///  not for specific users, sessions or queries,
+				///  because this setting is effectively global.
+				total_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_all_queries);
 				total_memory_tracker.setDescription("(total)");
 				user_process_list.user_memory_tracker.setNext(&total_memory_tracker);
 			}
@@ -102,6 +109,9 @@ ProcessList::EntryPtr ProcessList::insert(
 
 ProcessListEntry::~ProcessListEntry()
 {
+	/// Destroy all streams to avoid long lock of ProcessList
+	it->releaseQueryStreams();
+
 	std::lock_guard<std::mutex> lock(parent.mutex);
 
 	/// Важен порядок удаления memory_tracker-ов.
@@ -149,13 +159,34 @@ ProcessListEntry::~ProcessListEntry()
 
 void ProcessListElement::setQueryStreams(const BlockIO & io)
 {
+	std::lock_guard<std::mutex> lock(query_streams_mutex);
+
 	query_stream_in = io.in;
 	query_stream_out = io.out;
-	query_streams_initialized = true; // forces strict memory ordering
+	query_streams_initialized = true;
+}
+
+void ProcessListElement::releaseQueryStreams()
+{
+	std::lock_guard<std::mutex> lock(query_streams_mutex);
+
+	query_streams_initialized = false;
+	query_streams_released = true;
+	query_stream_in.reset();
+	query_stream_out.reset();
+}
+
+bool ProcessListElement::streamsAreReleased()
+{
+	std::lock_guard<std::mutex> lock(query_streams_mutex);
+
+	return query_streams_released;
 }
 
 bool ProcessListElement::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const
 {
+	std::lock_guard<std::mutex> lock(query_streams_mutex);
+
 	if (!query_streams_initialized)
 		return false;
 
@@ -220,6 +251,10 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
 	if (!elem)
 		return CancellationCode::NotFound;
 
+	/// Streams are destroyed, and ProcessListElement will be deleted from ProcessList soon. We need wait a little bit
+	if (elem->streamsAreReleased())
+		return CancellationCode::CancelSent;
+
 	BlockInputStreamPtr input_stream;
 	BlockOutputStreamPtr output_stream;
 	IProfilingBlockInputStream * input_stream_casted;
@@ -233,6 +268,7 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
 		}
 		return CancellationCode::CancelCannotBeSent;
 	}
+
 	return CancellationCode::QueryIsNotInitializedYet;
 }
 

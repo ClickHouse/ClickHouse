@@ -13,20 +13,20 @@
 namespace DB
 {
 
-/** Предназначен для реализации "rollup" - загрубления старых данных
-  *  для таблицы с данными Графита - системы количественного мониторинга.
+/** Intended for implementation of "rollup" - aggregation (rounding) of older data
+  *  for a table with Graphite data (Graphite is the system for time series monitoring).
   *
-  * Таблица с данными Графита имеет по крайней мере следующие столбцы (с точностью до названия):
+  * Table with graphite data has at least the folowing columns (accurate to the name):
   * Path, Time, Value, Version
   *
-  * Path - имя метрики (сенсора);
-  * Time - время, к которому относится измерение;
-  * Value - значение;
-  * Version - число, такое что для одинаковых пар Path, Time, следует брать значение максимальной версии.
+  * Path - name of metric (sensor);
+  * Time - time of measurement;
+  * Value - value of measurement;
+  * Version - a number, that for equal pairs of Path and Time, need to leave only record with maximum version.
   *
-  * Каждая строчка в таблице соответствует одному значению одного сенсора.
+  * Each row in a table correspond to one value of one sensor.
   *
-  * Правила загрубления задаются в следующем виде:
+  * Rollup rules are specified in the following way:
   *
   * pattern
   * 	regexp
@@ -41,15 +41,15 @@ namespace DB
   *		age -> precision
   * 	...
   *
-  * regexp - шаблон на имя сенсора
-  * default - если ни один шаблон не сработал
+  * regexp - pattern for sensor name
+  * default - if no pattern has matched
   *
-  * age - минимальный возраст данных (в секундах), после которого следует применять округление до величины precision.
-  * precision - величина округления (в секундах)
+  * age - minimal data age (in seconds), to start rounding with specified precision.
+  * precision - rounding precision (in seconds)
   *
-  * function - имя агрегатной функции, которую следует применять к значениям, время которых округлилось до одинакового.
+  * function - name of aggregate function to be applied for values, that time was rounded to same.
   *
-  * Пример:
+  * Example:
   *
   * <graphite_rollup>
   * 	<pattern>
@@ -96,7 +96,7 @@ namespace Graphite
 	{
 		std::shared_ptr<OptimizedRegularExpression> regexp;
 		AggregateFunctionPtr function;
-		Retentions retentions;	/// Должны быть упорядочены по убыванию age.
+		Retentions retentions;	/// Must be ordered by 'age' descending.
 	};
 
 	using Patterns = std::vector<Pattern>;
@@ -171,23 +171,24 @@ private:
 	size_t value_column_num;
 	size_t version_column_num;
 
-	/// Все столбцы кроме time, value, version. Они вставляются без модификации.
+	/// All columns other than 'time', 'value', 'version'. They are unmodified during rollup.
 	ColumnNumbers unmodified_column_numbers;
 
 	time_t time_of_merge;
 
-	/// Прочитали до конца.
+	/// All data has been read.
 	bool finished = false;
 
-	/// Владеет столбцом, пока на него ссылается current_path.
-	SharedBlockPtr owned_current_block;
+	RowRef selected_row;		/// Last row with maximum version for current primary key.
+	UInt64 current_max_version = 0;
 
 	bool is_first = true;
 	StringRef current_path;
-	time_t current_time;
+	time_t current_time = 0;
+	time_t current_time_rounded = 0;
 	StringRef next_path;
-	time_t next_time;
-	UInt64 current_max_version = 0;
+	time_t next_time = 0;
+	time_t next_time_rounded = 0;
 
 	const Graphite::Pattern * current_pattern = nullptr;
 	std::vector<char> place_for_aggregate_state;
@@ -207,8 +208,7 @@ private:
 	void finishCurrentRow(ColumnPlainPtrs & merged_columns);
 
 	/// Обновить состояние агрегатной функции новым значением value.
-	template <class TSortCursor>
-	void accumulateRow(TSortCursor & cursor);
+	void accumulateRow(RowRef & row);
 };
 
 }
