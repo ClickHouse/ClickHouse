@@ -1567,6 +1567,7 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 {
 	const auto & files = part->checksums.files;
 
+	/// TODO This method doesn't take into account columns with multiple files.
 	for (const auto & column : *columns)
 	{
 		const auto escaped_name = escapeForFileName(column.name);
@@ -1591,6 +1592,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 {
 	const auto & files = part->checksums.files;
 
+	/// TODO This method doesn't take into account columns with multiple files.
 	for (const auto & column : *columns)
 	{
 		const auto escaped_name = escapeForFileName(column.name);
