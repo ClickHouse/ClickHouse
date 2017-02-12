@@ -9,32 +9,24 @@
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 #include <DB/Interpreters/InterpreterInsertQuery.h>
 #include <DB/Interpreters/Cluster.h>
-#include <DB/Common/BlockFilterCreator.h>
+#include <DB/Interpreters/createBlockSelector.h>
 
 #include <DB/Common/Increment.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <memory>
 #include <common/ClickHouseRevision.h>
 
 #include <iostream>
 
+
 namespace DB
 {
-
-namespace
-{
-
-template <typename T>
-std::vector<IColumn::Filter> createFiltersImpl(const size_t num_rows, const IColumn * column, const Cluster & cluster)
-{
-	return BlockFilterCreator<T>::perform(num_rows, column, cluster.getShardsInfo().size(), cluster.getSlotToShard());
-}
-
-}
 
 DistributedBlockOutputStream::DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_)
 	: storage(storage), query_ast(query_ast), cluster(cluster_)
 {
 }
+
 
 void DistributedBlockOutputStream::write(const Block & block)
 {
@@ -44,34 +36,32 @@ void DistributedBlockOutputStream::write(const Block & block)
 	writeImpl(block);
 }
 
-std::vector<IColumn::Filter> DistributedBlockOutputStream::createFilters(Block block)
+
+IColumn::Selector DistributedBlockOutputStream::createSelector(Block block)
 {
-	using create_filters_sig = std::vector<IColumn::Filter>(size_t, const IColumn *, const Cluster &);
-	/// hashmap of pointers to functions corresponding to each integral type
-	static std::unordered_map<std::string, create_filters_sig *> creators{
-		{ TypeName<UInt8>::get(), &createFiltersImpl<UInt8> },
-		{ TypeName<UInt16>::get(), &createFiltersImpl<UInt16> },
-		{ TypeName<UInt32>::get(), &createFiltersImpl<UInt32> },
-		{ TypeName<UInt64>::get(), &createFiltersImpl<UInt64> },
-		{ TypeName<Int8>::get(), &createFiltersImpl<Int8> },
-		{ TypeName<Int16>::get(), &createFiltersImpl<Int16> },
-		{ TypeName<Int32>::get(), &createFiltersImpl<Int32> },
-		{ TypeName<Int64>::get(), &createFiltersImpl<Int64> },
-	};
-
 	storage.getShardingKeyExpr()->execute(block);
-
 	const auto & key_column = block.getByName(storage.getShardingKeyColumnName());
+	size_t num_shards = cluster->getShardsInfo().size();
+	const auto & slot_to_shard = cluster->getSlotToShard();
 
-	/// check that key column has valid type
-	const auto it = creators.find(key_column.type->getName());
+#define CREATE_FOR_TYPE(TYPE) \
+	if (typeid_cast<const DataType ## TYPE *>(key_column.type.get())) \
+		return createBlockSelector<TYPE>(*key_column.column, num_shards, slot_to_shard);
 
-	if (it == std::end(creators))
-		throw Exception{"Sharding key expression does not evaluate to an integer type",
-			ErrorCodes::TYPE_MISMATCH};
+	CREATE_FOR_TYPE(UInt8)
+	CREATE_FOR_TYPE(UInt16)
+	CREATE_FOR_TYPE(UInt32)
+	CREATE_FOR_TYPE(UInt64)
+	CREATE_FOR_TYPE(Int8)
+	CREATE_FOR_TYPE(Int16)
+	CREATE_FOR_TYPE(Int32)
+	CREATE_FOR_TYPE(Int64)
 
-	return (*it->second)(block.rows(), key_column.column.get(), *cluster);
+#undef CREATE_FOR_TYPE
+
+	throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
 }
+
 
 void DistributedBlockOutputStream::writeSplit(const Block & block)
 {
@@ -81,23 +71,29 @@ void DistributedBlockOutputStream::writeSplit(const Block & block)
 	for (size_t i = 0; i < columns.size(); ++i)
 		columns[i] = block.safeGetByPosition(i).column.get();
 
-	auto filters = createFilters(block);
+	auto selector = createSelector(block);
 
-	const auto num_shards = cluster->getShardsInfo().size();
+	/// Split block to num_shard smaller block, using 'selector'.
 
-	ssize_t size_hint = ((block.rows() + num_shards - 1) / num_shards) * 1.1;	/// Число 1.1 выбрано наугад.
+	const size_t num_shards = cluster->getShardsInfo().size();
+	Blocks splitted_blocks(num_shards);
 
-	for (size_t i = 0; i < num_shards; ++i)
+	for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
+		splitted_blocks[shard_idx] = block.cloneEmpty();
+
+	size_t columns_in_block = block.columns();
+	for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
 	{
-		auto target_block = block.cloneEmpty();
-
-		for (size_t col = 0; col < num_cols; ++col)
-			target_block.safeGetByPosition(col).column = columns[col]->filter(filters[i], size_hint);
-
-		if (target_block.rows())
-			writeImpl(target_block, i);
+		Columns splitted_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
+		for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
+			splitted_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(splitted_columns[shard_idx]);
 	}
+
+	for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
+		if (splitted_blocks[shard_idx].rows())
+			writeImpl(splitted_blocks[shard_idx], shard_idx);
 }
+
 
 void DistributedBlockOutputStream::writeImpl(const Block & block, const size_t shard_id)
 {
@@ -109,6 +105,7 @@ void DistributedBlockOutputStream::writeImpl(const Block & block, const size_t s
 	if (!shard_info.dir_names.empty())
 		writeToShard(block, shard_info.dir_names);
 }
+
 
 void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_t repeats)
 {
@@ -122,6 +119,7 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
 
 	block_io.out->writeSuffix();
 }
+
 
 void DistributedBlockOutputStream::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {

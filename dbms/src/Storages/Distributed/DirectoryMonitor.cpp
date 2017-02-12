@@ -67,7 +67,8 @@ namespace
 			const auto password = has_pw ? unescapeForFileName({colon + 1, user_pw_end}) : std::string{};
 			const auto host = unescapeForFileName({user_pw_end + 1, host_end});
 			const auto port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
-			const auto database = has_db ? unescapeForFileName({has_db + 1, address_end}) : std::string{};
+			const auto database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end))
+			                             : std::string();
 
 			pools.emplace_back(factory(host, port, user, password, database));
 		}

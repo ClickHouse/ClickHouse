@@ -1073,8 +1073,8 @@ public:
 	  */
 	Block mergeBlocks(BlocksList & blocks, bool final);
 
-	/** Преобразовать (разрезать) блок частично-агрегированных данных на много блоков, как если бы использовался двухуровневый метод агрегации.
-	  * Это нужно, чтобы потом было проще объединить результат с другими результатами, уже являющимися двухуровневыми.
+	/** Split block with partially-aggregated data to many blocks, as if two-level method of aggregation was used.
+	  * This is needed to simplify merging of that data with other results, that are already two-level.
 	  */
 	std::vector<Block> convertBlockToTwoLevel(const Block & block);
 

@@ -34,76 +34,71 @@ namespace ErrorCodes
 	extern const int TABLE_DIFFERS_TOO_MUCH;
 }
 
-/** Структура данных для *MergeTree движков.
-  * Используется merge tree для инкрементальной сортировки данных.
-  * Таблица представлена набором сортированных кусков.
-  * При вставке, данные сортируются по указанному выражению (первичному ключу) и пишутся в новый кусок.
-  * Куски объединяются в фоне, согласно некоторой эвристике.
-  * Для каждого куска, создаётся индексный файл, содержащий значение первичного ключа для каждой n-ой строки.
-  * Таким образом, реализуется эффективная выборка по диапазону первичного ключа.
-  *
-  * Дополнительно:
-  *
-  *  Указывается столбец, содержащий дату.
-  *  Для каждого куска пишется минимальная и максимальная дата.
-  *  (по сути - ещё один индекс)
-  *
-  *  Данные разделяются по разным месяцам (пишутся в разные куски для разных месяцев).
-  *  Куски для разных месяцев не объединяются - для простоты эксплуатации.
-  *  (дают локальность обновлений, что удобно для синхронизации и бэкапа)
-  *
-  * Структура файлов:
-  *  / min-date _ max-date _ min-id _ max-id _ level / - директория с куском.
-  * Внутри директории с куском:
-  *  checksums.txt - содержит список файлов с их размерами и контрольными суммами.
-  *  columns.txt - содержит список столбцов с их типами.
-  *  primary.idx - индексный файл.
-  *  [Column].bin - данные столбца
-  *  [Column].mrk - засечки, указывающие, откуда начинать чтение, чтобы пропустить n * k строк.
-  *
-  * Имеется несколько режимов работы, определяющих, что делать при мердже:
-  * - Ordinary - ничего дополнительно не делать;
-  * - Collapsing - при склейке кусков "схлопывать"
-  *   пары записей с разными значениями sign_column для одного значения первичного ключа.
-  *   (см. CollapsingSortedBlockInputStream.h)
-  * - Replacing - при склейке кусков, при совпадении PK, оставлять только одну строчку
-  *             - последнюю, либо, если задан столбец "версия" - последнюю среди строчек с максимальной версией.
-  * - Summing - при склейке кусков, при совпадении PK суммировать все числовые столбцы, не входящие в PK.
-  * - Aggregating - при склейке кусков, при совпадении PK, делается слияние состояний столбцов-агрегатных функций.
-  * - Unsorted - при склейке кусков, данные не упорядочиваются, а всего лишь конкатенируются;
-  *            - это позволяет читать данные ровно такими пачками, какими они были записаны.
-  * - Graphite - выполняет загрубление исторических данных для таблицы Графита - системы количественного мониторинга.
-  */
+/// Data structure for *MergeTree engines.
+/// Merge tree is used for incremental sorting of data.
+/// The table consists of several sorted parts.
+/// During insertion new data is sorted according to the primary key and is written to the new part.
+/// Parts are merged in the background according to a heuristic algorithm.
+/// For each part the index file is created containing primary key values for every n-th row.
+/// This allows efficient selection by primary key range predicate.
+///
+/// Additionally:
+///
+/// The date column is specified. For each part min and max dates are remembered.
+/// Essentially it is an index too.
+///
+/// Data is partitioned by month. Parts belonging to different months are not merged - for the ease of
+/// administration (data sync and backup).
+///
+/// File structure:
+/// Part directory - / min-date _ max-date _ min-id _ max-id _ level /
+/// Inside the part directory:
+/// checksums.txt - contains the list of all files along with their sizes and checksums.
+/// columns.txt - contains the list of all columns and their types.
+/// primary.idx - contains the primary index.
+/// [Column].bin - contains compressed column data.
+/// [Column].mrk - marks, pointing to seek positions allowing to skip n * k rows.
+///
+/// Several modes are implemented. Modes determine additional actions during merge:
+/// - Ordinary - don't do anything special
+/// - Collapsing - collapse pairs of rows with the opposite values of sign_columns for the same values
+///   of primary key (cf. CollapsingSortedBlockInputStream.h)
+/// - Replacing - for all rows with the same primary key keep only the latest one. Or, if the version
+///   column is set, keep the latest row with the maximal version.
+/// - Summing - sum all numeric columns not contained in the primary key for all rows with the same primary key.
+/// - Aggregating - merge columns containing aggregate function states for all rows with the same primary key.
+/// - Unsorted - during the merge the data is not sorted but merely concatenated; this allows reading the data
+///   in the same batches as they were written.
+/// - Graphite - performs coarsening of historical data for Graphite (a system for quantitative monitoring).
 
-/** Этот класс хранит список кусков и параметры структуры данных.
-  * Для чтения и изменения данных используются отдельные классы:
-  *  - MergeTreeDataSelectExecutor
-  *  - MergeTreeDataWriter
-  *  - MergeTreeDataMerger
-  */
+/// The MergeTreeData class contains a list of parts and the data structure parameters.
+/// To read and modify the data use other classes:
+/// - MergeTreeDataSelectExecutor
+/// - MergeTreeDataWriter
+/// - MergeTreeDataMerger
 
-class MergeTreeData : public ITableDeclaration
+ class MergeTreeData : public ITableDeclaration
 {
 	friend class ReshardingWorker;
 
 public:
-	/// Функция, которую можно вызвать, если есть подозрение, что данные куска испорчены.
+	/// Function to call if the part is suspected to contain corrupt data.
 	using BrokenPartCallback = std::function<void (const String &)>;
 	using DataPart = MergeTreeDataPart;
 
 	using MutableDataPartPtr = std::shared_ptr<DataPart>;
-	/// После добавление в рабочее множество DataPart нельзя изменять.
+	/// After the DataPart is added to the working set, it cannot be changed.
 	using DataPartPtr = std::shared_ptr<const DataPart>;
 	struct DataPartPtrLess { bool operator() (const DataPartPtr & lhs, const DataPartPtr & rhs) const { return *lhs < *rhs; } };
 	using DataParts = std::set<DataPartPtr, DataPartPtrLess>;
 	using DataPartsVector = std::vector<DataPartPtr>;
 
-	/// Для перешардирования.
+	/// For resharding.
 	using MutableDataParts = std::set<MutableDataPartPtr, DataPartPtrLess>;
 	using PerShardDataParts = std::unordered_map<size_t, MutableDataPartPtr>;
 
-	/// Некоторые операции над множеством кусков могут возвращать такой объект.
-	/// Если не был вызван commit или rollback, деструктор откатывает операцию.
+	/// Some operations on the set of parts return a Transaction object.
+	/// If neither commit() nor rollback() was called, the destructor rollbacks the operation.
 	class Transaction : private boost::noncopyable
 	{
 	public:
@@ -141,7 +136,7 @@ public:
 
 		MergeTreeData * data = nullptr;
 
-		/// Что делать для отката операции.
+		/// What to do on rollback.
 		DataPartsVector parts_to_remove_on_rollback;
 		DataPartsVector parts_to_add_on_rollback;
 
@@ -153,17 +148,18 @@ public:
 		}
 	};
 
-	/// Объект, помнящий какие временные файлы были созданы в директории с куском в ходе изменения (ALTER) его столбцов.
+	/// An object that stores the names of temporary files created in the part directory during ALTER of its
+	/// columns.
 	class AlterDataPartTransaction : private boost::noncopyable
 	{
 	public:
-		/// Переименовывает временные файлы, завершая ALTER куска.
+		/// Renames temporary files, finishing the ALTER of the part.
 		void commit();
 
-		/// Если не был вызван commit(), удаляет временные файлы, отменяя ALTER куска.
+		/// If commit() was not called, deletes temporary files, canceling the ALTER.
 		~AlterDataPartTransaction();
 
-		/// Посмотреть изменения перед коммитом.
+		/// Review the changes before the commit.
 		const NamesAndTypesList & getNewColumns() const { return new_columns; }
 		const DataPart::Checksums & getNewChecksums() const { return new_checksums; }
 
@@ -183,20 +179,20 @@ public:
 
 		DataPart::Checksums new_checksums;
 		NamesAndTypesList new_columns;
-		/// Если значение - пустая строка, файл нужно удалить, и он не временный.
+		/// If the value is an empty string, the file is not temporary, and it must be deleted.
 		NameToNameMap rename_map;
 	};
 
 	using AlterDataPartTransactionPtr = std::unique_ptr<AlterDataPartTransaction>;
 
 
-	/// Настройки для разных режимов работы.
+	/// Parameters for various modes.
 	struct MergingParams
 	{
-		/// Режим работы. См. выше.
+		/// Merging mode. See above.
 		enum Mode
 		{
-			Ordinary 	= 0,	/// Числа сохраняются - не меняйте.
+			Ordinary 	= 0,	/// Enum values are saved. Do not change them.
 			Collapsing 	= 1,
 			Summing 	= 2,
 			Aggregating = 3,
@@ -207,34 +203,32 @@ public:
 
 		Mode mode;
 
-		/// Для Collapsing режима.
+		/// For collapsing mode.
 		String sign_column;
 
-		/// Для Summing режима. Если пустое - то выбирается автоматически.
+		/// For Summing mode. If empty - columns_to_sum is determined automatically.
 		Names columns_to_sum;
 
-		/// Для Replacing режима. Может быть пустым.
+		/// For Replacing mode. Can be empty.
 		String version_column;
 
-		/// Для Graphite режима.
+		/// For Graphite mode.
 		Graphite::Params graphite_params;
 
-		/// Проверить наличие и корректность типов столбцов.
+		/// Check that needed columns are present and have correct types.
 		void check(const NamesAndTypesList & columns) const;
 
 		String getModeName() const;
 	};
 
 
-	/** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
-	  *  (корректность имён и путей не проверяется)
-	  *  состоящую из указанных столбцов.
-	  *
-	  * primary_expr_ast	- выражение для сортировки; Пустое для UnsortedMergeTree.
-	  * date_column_name 	- имя столбца с датой;
-	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
-	  * require_part_metadata - обязательно ли в директории с куском должны быть checksums.txt и columns.txt
-	  */
+	/// Attach the table corresponding to the directory in full_path (must end with /), with the given columns.
+	/// Correctness of names and paths is not checked.
+	///
+	/// primary_expr_ast - expression used for sorting; empty for UnsortedMergeTree.
+	/// index_granularity - how many rows correspond to one primary key value.
+	/// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
+	/// attach - whether the existing table is attached or the new table is created.
 	MergeTreeData(	const String & full_path_, NamesAndTypesListPtr columns_,
 					const NamesAndTypesList & materialized_columns_,
 					const NamesAndTypesList & alias_columns_,
@@ -242,15 +236,16 @@ public:
 					Context & context_,
 					ASTPtr & primary_expr_ast_,
 					const String & date_column_name_,
-					const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
+					const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
 					size_t index_granularity_,
 					const MergingParams & merging_params_,
 					const MergeTreeSettings & settings_,
 					const String & log_name_,
 					bool require_part_metadata_,
+					bool attach,
 					BrokenPartCallback broken_part_callback_ = [](const String &){});
 
-	/// Загрузить множество кусков с данными с диска. Вызывается один раз - сразу после создания объекта.
+	/// Load the set of data parts from disk. Call once - immediately after the object is created.
 	void loadDataParts(bool skip_sanity_checks);
 
 	bool supportsSampling() const { return !!sampling_expression; }
@@ -297,124 +292,104 @@ public:
 
 	String getLogName() const { return log_name; }
 
-	/** Возвращает копию списка, чтобы снаружи можно было не заботиться о блокировках.
-	  */
+	/// Returns a copy of the list so that the caller shouldn't worry about locks.
 	DataParts getDataParts() const;
 	DataPartsVector getDataPartsVector() const;
 	DataParts getAllDataParts() const;
 
-	/** Размер активной части в количестве байт.
-	  */
+	/// Total size of active parts in bytes.
 	size_t getTotalActiveSizeInBytes() const;
 
-	/** Максимальное количество кусков в одном месяце.
-	  */
 	size_t getMaxPartsCountForMonth() const;
 
-	/** Минимальный номер блока в указанном месяце.
-	  * Возвращает также bool - есть ли хоть один кусок.
-	  */
+	/// Returns a pair of min block number in the given month and a bool denoting if there is at least one part.
 	std::pair<Int64, bool> getMinBlockNumberForMonth(DayNum_t month) const;
 
-	/** Есть ли указанный номер блока в каком-нибудь куске указанного месяца.
-	  */
+	///	Returns true if block_number is contained in some part of the given month.
 	bool hasBlockNumberInMonth(Int64 block_number, DayNum_t month) const;
 
-	/** Если в таблице слишком много активных кусков, спит некоторое время, чтобы дать им возможность смерджиться.
-	  * Если передано until - проснуться раньше, если наступило событие.
-	  */
+	/// If the table contains too many active parts, sleep for a while to give them time to merge.
+	/// If until is non-null, wake up from the sleep earlier if the event happened.
 	void delayInsertIfNeeded(Poco::Event * until = nullptr);
 
-	/** Возвращает активный кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
-	  */
+	/// Returns an active part with the given name or a part containing it. If there is no such part,
+	/// returns nullptr.
 	DataPartPtr getActiveContainingPart(const String & part_name);
 
-	/** Возвращает кусок с таким именем (активный или не активный). Если нету, nullptr.
-	  */
+	/// Returns the part with the given name or nullptr if no such part.
 	DataPartPtr getPartIfExists(const String & part_name);
 	DataPartPtr getShardedPartIfExists(const String & part_name, size_t shard_no);
 
-	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
-	  * Если increment != nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
-	  * Предполагается, что кусок не пересекается с существующими.
-	  * Если out_transaction не nullptr, присваивает туда объект, позволяющий откатить добавление куска (но не переименование).
-	  */
+	/// Renames temporary part to a permanent part and adds it to the working set.
+	/// If increment != nullptr, part index is determing using increment. Otherwise part index remains unchanged.
+	/// It is assumed that the part does not intersect with existing parts.
+	/// If out_transaction != nullptr, sets it to an object allowing to rollback part addition (but not the renaming).
 	void renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
-	/** То же, что renameTempPartAndAdd, но кусок может покрывать существующие куски.
-	  * Удаляет и возвращает все куски, покрытые добавляемым (в возрастающем порядке).
-	  */
+	/// The same as renameTempPartAndAdd but the part can intersect existing parts.
+	/// Deletes and returns all parts covered by the added part (in ascending order).
 	DataPartsVector renameTempPartAndReplace(
 		MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
-	/** Убирает из рабочего набора куски remove и добавляет куски add. add должны уже быть в all_data_parts.
-	  * Если clear_without_timeout, данные будут удалены сразу, либо при следующем clearOldParts, игнорируя old_parts_lifetime.
-	  */
+	/// Removes from the working set parts in remove and adds parts in add. Parts in add must already be in
+	/// all_data_parts.
+	/// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
+	/// clearOldParts (ignoring old_parts_lifetime).
 	void replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout);
 
-	/** Добавляет новый кусок в список известных кусков и в рабочий набор.
-	  */
+	/// Adds new part to the list of known parts and to the working set.
 	void attachPart(const DataPartPtr & part);
 
-	/** Переименовывает кусок в detached/prefix_кусок и забывает про него. Данные не будут удалены в clearOldParts.
-	  * Если restore_covered, добавляет в рабочий набор неактивные куски, слиянием которых получен удаляемый кусок.
-	  */
+	/// Renames the part to detached/<prefix>_<part> and forgets about it. The data won't be deleted in
+	/// clearOldParts.
+	/// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
 	void renameAndDetachPart(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
 
-	/** Убирает кусок из списка кусков (включая all_data_parts), но не перемещает директорию.
-	  */
+	/// Removes the part from the list of parts (including all_data_parts), but doesn't move the directory.
 	void detachPartInPlace(const DataPartPtr & part);
 
-	/** Возвращает старые неактуальные куски, которые можно удалить. Одновременно удаляет их из списка кусков, но не с диска.
-	  */
+	/// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts
+	/// but not from the disk.
 	DataPartsVector grabOldParts();
 
-	/** Обращает изменения, сделанные grabOldParts().
-	  */
+	/// Reverts the changes made by grabOldParts().
 	void addOldParts(const DataPartsVector & parts);
 
-	/** Удалить неактуальные куски.
-	  */
+	/// Delete irrelevant parts.
 	void clearOldParts();
 
-	/** Удалить старые временные директории.
-	  */
 	void clearOldTemporaryDirectories();
 
-	/** После вызова dropAllData больше ничего вызывать нельзя.
-	  * Удаляет директорию с данными и сбрасывает кеши разжатых блоков и засечек.
-	  */
+	/// After the call to dropAllData() no method can be called.
+	/// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
 	void dropAllData();
 
-	/** Перемещает всю директорию с данными.
-	  * Сбрасывает кеши разжатых блоков и засечек.
-	  * Нужно вызывать под залоченным lockStructureForAlter().
-	  */
+	/// Moves the entire data directory.
+	/// Flushes the uncompressed blocks cache and the marks cache.
+	/// Must be called with locked lockStructureForAlter().
 	void setPath(const String & full_path, bool move_data);
 
-	/* Проверить, что такой ALTER можно выполнить:
-	 *  - Есть все нужные столбцы.
-	 *  - Все преобразования типов допустимы.
-	 *  - Не затронуты столбцы ключа, знака и семплирования.
-	 * Бросает исключение, если что-то не так.
-	 */
-	void checkAlter(const AlterCommands & params);
+	/// Check if the ALTER can be performed:
+	/// - all needed columns are present.
+	/// - all type conversions can be done.
+	/// - columns corresponding to primary key, sign, sampling expression and date are not affected.
+	/// If something is wrong, throws an exception.
+	void checkAlter(const AlterCommands & commands);
 
-	/** Выполняет ALTER куска данных, записывает результат во временные файлы.
-	  * Возвращает объект, позволяющий переименовать временные файлы в постоянные.
-	  * Если измененных столбцов подозрительно много, и !skip_sanity_checks, бросает исключение.
-	  * Если никаких действий над данными не требуется, возвращает nullptr.
-	  */
+	/// Performs ALTER of the data part, writes the result to temporary files.
+	/// Returns an object allowing to rename temporary files to permanent files.
+	/// If the number of affected columns is suspiciously high and skip_sanity_checks is false, throws an exception.
+	/// If no data transformations are necessary, returns nullptr.
 	AlterDataPartTransactionPtr alterDataPart(
 		const DataPartPtr & part,
 		const NamesAndTypesList & new_columns,
 		const ASTPtr & new_primary_key,
 		bool skip_sanity_checks);
 
-	/// Нужно вызывать под залоченным lockStructureForAlter().
+	/// Must be called with locked lockStructureForAlter().
 	void setColumnsList(const NamesAndTypesList & new_columns) { columns = std::make_shared<NamesAndTypesList>(new_columns); }
 
-	/// Нужно вызвать, если есть подозрение, что данные куска испорчены.
+	/// Should be called if part data is suspected to be corrupted.
 	void reportBrokenPart(const String & name)
 	{
 		broken_part_callback(name);
@@ -423,6 +398,7 @@ public:
 	ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
 	SortDescription getSortDescription() const { return sort_descr; }
 
+	/// Check that the part is not broken and calculate the checksums for it if they are not present.
 	/// Проверить, что кусок не сломан и посчитать для него чексуммы, если их нет.
 	MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
 
@@ -432,41 +408,53 @@ public:
 	  */
 	void freezePartition(const std::string & prefix, const String & with_name);
 
-	/** Возвращает размер заданной партиции в байтах.
-	  */
+	/// Returns the size of partition in bytes.
 	size_t getPartitionSize(const std::string & partition_name) const;
 
-	size_t getColumnSize(const std::string & name) const
+	struct ColumnSize
+	{
+		size_t marks = 0;
+		size_t data_compressed = 0;
+		size_t data_uncompressed = 0;
+
+		size_t getTotalCompressedSize() const
+		{
+			return marks + data_compressed;
+		}
+	};
+
+	size_t getColumnCompressedSize(const std::string & name) const
 	{
 		std::lock_guard<std::mutex> lock{data_parts_mutex};
 
 		const auto it = column_sizes.find(name);
-		return it == std::end(column_sizes) ? 0 : it->second;
+		return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
 	}
 
-	using ColumnSizes = std::unordered_map<std::string, size_t>;
+	using ColumnSizes = std::unordered_map<std::string, ColumnSize>;
 	ColumnSizes getColumnSizes() const
 	{
 		std::lock_guard<std::mutex> lock{data_parts_mutex};
 		return column_sizes;
 	}
 
-	size_t getColumnsTotalSize() const
+	/// NOTE Could be off after DROPped and MODIFYed columns in ALTER. Doesn't include primary.idx.
+	size_t getTotalCompressedSize() const
 	{
 		std::lock_guard<std::mutex> lock{data_parts_mutex};
 		size_t total_size = 0;
 
 		for (const auto & col : column_sizes)
-			total_size += col.second;
+			total_size += col.second.getTotalCompressedSize();
 		return total_size;
 	}
 
-	/// Для ATTACH/DETACH/DROP/RESHARD PARTITION.
+	/// For ATTACH/DETACH/DROP/RESHARD PARTITION.
 	static String getMonthName(const Field & partition);
 	static String getMonthName(DayNum_t month);
 	static DayNum_t getMonthDayNum(const Field & partition);
 	static DayNum_t getMonthFromName(const String & month_name);
-	/// Получить месяц из имени куска или достаточной его части.
+	/// Get month from the part name or a sufficient prefix.
 	static DayNum_t getMonthFromPartPrefix(const String & part_prefix);
 
 	Context & context;
@@ -474,7 +462,7 @@ public:
 	const ASTPtr sampling_expression;
 	const size_t index_granularity;
 
-	/// Режим работы - какие дополнительные действия делать при мердже.
+	/// Merging params - what additional actions to perform during merge.
 	const MergingParams merging_params;
 
 	const MergeTreeSettings settings;
@@ -496,7 +484,8 @@ private:
 	String full_path;
 
 	NamesAndTypesListPtr columns;
-	/// Актуальные размеры столбцов в сжатом виде
+
+	/// Current column sizes in compressed and uncompressed form.
 	ColumnSizes column_sizes;
 
 	BrokenPartCallback broken_part_callback;
@@ -504,42 +493,44 @@ private:
 	String log_name;
 	Logger * log;
 
-	/** Актуальное множество кусков с данными. */
+	/// Current set of data parts.
 	DataParts data_parts;
 	mutable std::mutex data_parts_mutex;
 
-	/** Множество всех кусков с данными, включая уже слитые в более крупные, но ещё не удалённые. Оно обычно небольшое (десятки элементов).
-	  * Ссылки на кусок есть отсюда, из списка актуальных кусков и из каждого потока чтения, который его сейчас использует.
-	  * То есть, если количество ссылок равно 1 - то кусок не актуален и не используется прямо сейчас, и его можно удалить.
-	  */
+	/// The set of all data parts including already merged but not yet deleted. Usually it is small (tens of elements).
+	/// The part is referenced from here, from the list of current parts and from each thread reading from it.
+	/// This means that if reference count is 1 - the part is not used right now and can be deleted.
 	DataParts all_data_parts;
 	mutable std::mutex all_data_parts_mutex;
 
-	/// Используется, чтобы не выполнять одновременно функцию grabOldParts.
+	/// Used to serialize calls to grabOldParts.
 	std::mutex grab_old_parts_mutex;
-	/// То же самое для clearOldTemporaryDirectories.
+	/// The same for clearOldTemporaryDirectories.
 	std::mutex clear_old_temporary_directories_mutex;
 
-	/** Для каждого шарда множество шардированных кусков.
-	  */
+	/// For each shard of the set of sharded parts.
 	PerShardDataParts per_shard_data_parts;
+
+	/// Check that columns list doesn't contain multidimensional arrays.
+	/// If attach is true (attaching an existing table), writes an error message to log.
+	/// Otherwise (new table or alter) throws an exception.
+	void checkNoMultidimensionalArrays(const NamesAndTypesList & columns, bool attach) const;
 
 	void initPrimaryKey();
 
-	/** Выражение, преобразующее типы столбцов.
-	  * Если преобразований типов нет, out_expression=nullptr.
-	  * out_rename_map отображает файлы-столбцы на выходе выражения в новые файлы таблицы.
-	  * out_force_update_metadata показывает, нужно ли обновить метаданные даже если out_rename_map пуста (используется
-	  * 	для бесплатного изменения списка значений Enum).
-	  * Файлы, которые нужно удалить, в out_rename_map отображаются в пустую строку.
-	  * Если !part, просто проверяет, что все нужные преобразования типов допустимы.
-	  */
+	/// Expression for column type conversion.
+	/// If no conversions are needed, out_expression=nullptr.
+	/// out_rename_map maps column files for the out_expression onto new table files.
+	/// out_force_update_metadata denotes if metadata must be changed even if out_rename_map is empty (used
+	/// for transformation-free changing of Enum values list).
+	/// Files to be deleted are mapped to an empty string in out_rename_map.
+	/// If part == nullptr, just checks that all type conversions are possible.
 	void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
 		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
 
-	/// Рассчитывает размеры столбцов в сжатом виде для текущего состояния data_parts. Вызывается под блокировкой.
+	/// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
 	void calculateColumnSizes();
-	/// Добавляет или вычитывает вклад part в размеры столбцов в сжатом виде
+	/// Adds or subtracts the contribution of the part to compressed column sizes.
 	void addPartContributionToColumnSizes(const DataPartPtr & part);
 	void removePartContributionToColumnSizes(const DataPartPtr & part);
 };

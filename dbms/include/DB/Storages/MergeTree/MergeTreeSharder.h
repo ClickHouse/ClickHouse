@@ -43,9 +43,8 @@ public:
 	ShardedBlocksWithDateIntervals shardBlock(const Block & block);
 
 private:
-	std::vector<IColumn::Filter> createFilters(Block block);
+	IColumn::Selector createSelector(Block block);
 
-private:
 	MergeTreeData & data;
 	const ReshardingJob & job;
 	Logger * log;

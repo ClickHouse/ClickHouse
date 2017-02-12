@@ -928,7 +928,7 @@ private:
 					if (arr[i].isNull())
 					{
 						if (null_map && ((*null_map)[row] == 1))
-								hit = true;
+							hit = true;
 					}
 					else if (applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
 						hit = true;

@@ -34,6 +34,7 @@ StorageMergeTree::StorageMergeTree(
 	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
+	bool attach,
 	Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_,
@@ -49,7 +50,7 @@ StorageMergeTree::StorageMergeTree(
 		 materialized_columns_, alias_columns_, column_defaults_,
 		 context_, primary_expr_ast_, date_column_name_,
 		 sampling_expression_, index_granularity_, merging_params_,
-		 settings_, database_name_ + "." + table_name, false),
+		 settings_, database_name_ + "." + table_name, false, attach),
 	reader(data), writer(data), merger(data, context.getBackgroundPool()),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
@@ -65,6 +66,7 @@ StoragePtr StorageMergeTree::create(
 	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
+	bool attach,
 	Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_,
@@ -76,7 +78,7 @@ StoragePtr StorageMergeTree::create(
 {
 	auto res = make_shared(
 		path_, database_name_, table_name_,
-		columns_, materialized_columns_, alias_columns_, column_defaults_,
+		columns_, materialized_columns_, alias_columns_, column_defaults_, attach,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, merging_params_, has_force_restore_data_flag_, settings_
 	);
@@ -126,7 +128,7 @@ BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query, const Settings & sett
 
 bool StorageMergeTree::checkTableCanBeDropped() const
 {
-	context.checkTableCanBeDropped(database_name, table_name, getData().getColumnsTotalSize());
+	context.checkTableCanBeDropped(database_name, table_name, getData().getTotalCompressedSize());
 	return true;
 }
 

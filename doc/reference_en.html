@@ -1198,7 +1198,7 @@ There is no support for changing the column type in arrays and nested data struc
 
 The ALTER query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like &#39;name.nested_name&#39; and the type &#39;Array(<i>T</i>)&#39;. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 
-There is no support for deleting or changing the type for columns in the primary key or the sampling key (columns that are in the ENGINE expression).
+There is no support for deleting of columns in the primary key or the sampling key (columns that are in the ENGINE expression). Changing the type of columns in the primary key is allowed only if such change doesn't entail changing the actual data (e.g. adding the value to an Enum or changing the type from DateTime to UInt32 is allowed).
 
 If the ALTER query is not sufficient for making the table changes you need, you can create a new table, copy the data to it using the INSERT SELECT query, then switch the tables using the RENAME query and delete the old table.
 
@@ -4146,7 +4146,7 @@ Using ALTER, it is possible to change an %%Enum8%% to an %%Enum16%% or vice vers
 ==Array(T)==
 
 Array of T-type items. The T type can be any type, including an array.
-We don&#39;t recommend using multidimensional arrays, because they are not well supported (for example, you can&#39;t store multidimensional arrays in any tables except Memory tables).
+We don&#39;t recommend using multidimensional arrays, because they are not well supported (for example, you can&#39;t store multidimensional arrays in tables with engines from MergeTree family).
 
 
 ==Tuple(T1, T2, ...)==
@@ -4189,7 +4189,7 @@ CREATE TABLE test.visits
 
 This example declares the &#39;Goals&#39; nested data structure, which contains data about conversions (goals reached). Each row in the &#39;visits&#39; table can correspond to zero or any number of conversions.
 
-Only a single nesting level is supported.
+Only a single nesting level is supported. Nested structure columns with array type are equivalent to multidimensional arrays and thus their support is limited (storing such columns in tables with engines from MergeTree family is not supported).
 
 In most cases, when working with a nested data structure, its individual columns are specified. To do this, the column names are separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
 
