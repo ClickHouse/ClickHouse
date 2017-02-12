@@ -18,16 +18,16 @@ using DataTypePtr = std::shared_ptr<IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
 
-/** Метаданные типа для хранения (столбца).
-  * Содержит методы для сериализации/десериализации.
+/** Properties of data type.
+  * Contains methods for serialization/deserialization.
   */
 class IDataType
 {
 public:
-	/// Основное имя типа (например, UInt64).
+	/// Name of data type (examples: UInt64, Array(String)).
 	virtual std::string getName() const = 0;
 
-	/// Is this type the null type?
+	/// Is this type the null type? TODO Move this method to separate "traits" classes.
 	virtual bool isNull() const { return false; }
 
 	/// Is this type nullable?
@@ -43,20 +43,19 @@ public:
 	/// relevant for it? True for numbers. False for Date and DateTime types.
 	virtual bool behavesAsNumber() const { return false; }
 
-	/// Клонировать
 	virtual DataTypePtr clone() const = 0;
 
-	/** Бинарная сериализация диапазона значений столбца - для сохранения на диск / в сеть и т. п.
-	  * offset и limit используются, чтобы сериализовать часть столбца.
-	  * limit = 0 - означает - не ограничено.
-	  * offset не должен быть больше размера столбца.
-	  * offset + limit может быть больше размера столбца
-	  *  - в этом случае, столбец сериализуется до конца.
+	/** Binary serialization for range of values in column - for writing to disk/network, etc.
+	  * 'offset' and 'limit' are used to specify range.
+	  * limit = 0 - means no limit.
+	  * offset must be not greater than size of column.
+	  * offset + limit could be greater than size of column
+	  *  - in that case, column is serialized to the end.
 	  */
 	virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const = 0;
 
-	/** Считать не более limit значений и дописать их в конец столбца.
-	  * avg_value_size_hint - если не 0, то может использоваться, чтобы избежать реаллокаций при чтении строкового столбца.
+	/** Read no more than limit values and append them into column.
+	  * avg_value_size_hint - if not zero, may be used to avoid reallocations while reading column of String type.
 	  */
 	virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const = 0;
 
@@ -71,17 +70,17 @@ public:
 	  *  but if you bulk serialize column with arrays, then sizes and elements will be written to separate streams.
 	  */
 
-	/// Для бинарной сериализации есть два варианта. Один вариант работает с Field.
+	/// There is two variants for binary serde. First variant work with Field.
 	virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;
 	virtual void deserializeBinary(Field & field, ReadBuffer & istr) const = 0;
 
-	/// Все остальные варианты сериализации работают со столбцом, что позволяет избежать создания временного объекта типа Field.
-	/// При этом, столбец не должен быть константным.
+	/// Other variants takes a column, to avoid creating temporary Field object.
+	/// Column must be non-constant.
 
-	/// Сериализовать одно значение на указанной позиции в столбце.
+	/// Serialize one value of a column at specified row number.
 	virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
-	/// Десериализвать одно значение и вставить его в столбец.
-	/// Если функция кидает исключение при чтении, то столбец будет находиться в таком же состоянии, как до вызова функции.
+	/// Deserialize one value and insert into a column.
+	/// If method will throw an exception, then column will be in same state as before call to method.
 	virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
 
 	/** Text serialization with escaping but without quoting.
@@ -123,19 +122,20 @@ public:
 		serializeText(column, row_num, ostr);
 	}
 
-	/** Создать пустой столбец соответствующего типа.
+	/** Create empty (non-constant) column for corresponding type.
 	  */
 	virtual ColumnPtr createColumn() const = 0;
 
-	/** Создать столбец соответствующего типа, содержащий константу со значением Field, длины size.
+	/** Create constant column for corresponding type, with specified size and value.
 	  */
 	virtual ColumnPtr createConstColumn(size_t size, const Field & field) const = 0;
 
-	/** Получить значение "по-умолчанию".
+	/** Get default value of data type.
+	  * It is the "default" default, regardless the fact that a table could contain different user-specified default.
 	  */
 	virtual Field getDefault() const = 0;
 
-	/// Вернуть приблизительный (оценочный) размер значения.
+	/// For fixed-size types, return size of value in bytes. For other data types, return some approximate size just for estimation.
 	virtual size_t getSizeOfField() const
 	{
 		throw Exception("getSizeOfField() method is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
