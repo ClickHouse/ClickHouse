@@ -497,7 +497,13 @@ public:
 	}
 
 
-	/** Более эффективные методы манипуляции */
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		return this->scatterImpl<Self>(num_columns, selector);
+	}
+
+
+	/** More efficient methods of manipulation - to manipulate with data directly. */
 	Container_t & getData()
 	{
 		return data;

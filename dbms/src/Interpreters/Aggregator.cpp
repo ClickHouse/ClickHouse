@@ -2305,49 +2305,42 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 	size_t rows = source.rows();
 	size_t columns = source.columns();
 
-	/// Для каждого номера корзины создадим фильтр, где будут отмечены строки, относящиеся к этой корзине.
-	std::vector<IColumn::Filter> filters(destinations.size());
+	/// Create a 'selector' that will contain bucket index for every row. It will be used to scatter rows to buckets.
+	IColumn::Selector selector(rows);
 
-	/// Для всех строчек.
+	/// For every row.
 	for (size_t i = 0; i < rows; ++i)
 	{
-		/// Получаем ключ. Вычисляем на его основе номер корзины.
+		/// Obtain a key. Calculate bucket number from it.
 		typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *pool);
 
 		auto hash = method.data.hash(key);
 		auto bucket = method.data.getBucketFromHash(hash);
 
-		/// Этот ключ нам больше не нужен.
+		selector[i] = bucket;
+
+		/// We don't need to store this key in pool.
 		method.onExistingKey(key, keys, *pool);
-
-		auto & filter = filters[bucket];
-
-		if (unlikely(filter.empty()))
-			filter.resize_fill(rows);
-
-		filter[i] = 1;
 	}
 
-	ssize_t size_hint = ((source.rows() + method.data.NUM_BUCKETS - 1)
-		/ method.data.NUM_BUCKETS) * 1.1;	/// Число 1.1 выбрано наугад.
+	size_t num_buckets = destinations.size();
 
-	for (size_t bucket = 0, size = destinations.size(); bucket < size; ++bucket)
+	for (size_t column_idx = 0; column_idx < columns; ++column_idx)
 	{
-		const auto & filter = filters[bucket];
+		const ColumnWithTypeAndName & src_col = source.getByPosition(column_idx);
+		Columns scattered_columns = src_col.column->scatter(num_buckets, selector);
 
-		if (filter.empty())
-			continue;
-
-		Block & dst = destinations[bucket];
-		dst.info.bucket_num = bucket;
-
-		for (size_t j = 0; j < columns; ++j)
+		for (size_t bucket = 0, size = num_buckets; bucket < size; ++bucket)
 		{
-			const ColumnWithTypeAndName & src_col = source.getByPosition(j);
-			dst.insert({src_col.column->filter(filter, size_hint), src_col.type, src_col.name});
+			if (!scattered_columns[bucket]->empty())
+			{
+				Block & dst = destinations[bucket];
+				dst.info.bucket_num = bucket;
+				dst.insert({scattered_columns[bucket], src_col.type, src_col.name});
+			}
 
-			/** Вставленные в блок столбцы типа ColumnAggregateFunction будут владеть состояниями агрегатных функций
-			  *  путём удержания shared_ptr-а на исходный столбец. См. ColumnAggregateFunction.h
+			/** Inserted columns of type ColumnAggregateFunction will own states of aggregate functions
+			  *  by holding shared_ptr to source column. See ColumnAggregateFunction.h
 			  */
 		}
 	}

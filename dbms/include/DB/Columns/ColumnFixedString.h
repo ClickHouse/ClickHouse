@@ -309,6 +309,11 @@ public:
 		return res;
 	}
 
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		return scatterImpl<ColumnFixedString>(num_columns, selector);
+	}
+
 	void reserve(size_t size) override
 	{
 		chars.reserve(n * size);

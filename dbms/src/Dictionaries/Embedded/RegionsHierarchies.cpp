@@ -9,10 +9,14 @@ static constexpr auto config_key = "path_to_regions_hierarchy_file";
 
 
 RegionsHierarchies::RegionsHierarchies()
+: RegionsHierarchies(Poco::Util::Application::instance().config().getString(config_key))
+{
+}
+
+
+RegionsHierarchies::RegionsHierarchies(const std::string & path)
 {
 	Logger * log = &Logger::get("RegionsHierarchies");
-
-	std::string path = Poco::Util::Application::instance().config().getString(config_key);
 
 	LOG_DEBUG(log, "Adding default regions hierarchy from " << path);
 
