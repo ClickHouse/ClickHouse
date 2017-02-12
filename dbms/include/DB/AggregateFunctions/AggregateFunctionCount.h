@@ -2,9 +2,9 @@
 
 #include <DB/IO/VarInt.h>
 
+#include <array>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeNullable.h>
-
 #include <DB/AggregateFunctions/INullaryAggregateFunction.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/Columns/ColumnNullable.h>

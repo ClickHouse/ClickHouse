@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/Columns/ColumnNullable.h>
