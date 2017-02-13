@@ -59,7 +59,7 @@ Please fix this and reinstall this package." >&2
 	if [ ! -d ${CLICKHOUSE_LOGDIR} ]; then
 		mkdir -p ${CLICKHOUSE_LOGDIR}
 		chown root:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}
-		chmod 770 ${CLICKHOUSE_LOGDIR}
+		chmod 775 ${CLICKHOUSE_LOGDIR}
 	fi
 
 
