@@ -42,11 +42,11 @@ namespace
 		for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
 		{
 			const auto address = boost::copy_range<std::string>(*it);
-			const char* address_begin = static_cast<const char*>(address.data());
-			const char* address_end = address_begin + address.size();
+			const char * address_begin = static_cast<const char*>(address.data());
+			const char * address_end = address_begin + address.size();
 
-			const char* user_pw_end = strchr(address.data(), '@');
-			const char* colon = strchr(address.data(), ':');
+			const char * user_pw_end = strchr(address.data(), '@');
+			const char * colon = strchr(address.data(), ':');
 			if (!user_pw_end || !colon)
 				throw Exception{
 					"Shard address '" + address + "' does not match to 'user[:password]@host:port#default_database' pattern",
@@ -54,15 +54,15 @@ namespace
 				};
 
 			const bool has_pw = colon < user_pw_end;
-			const char* host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
+			const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
 			if (!host_end)
 				throw Exception{
 					"Shard address '" + address + "' does not contain port",
 					ErrorCodes::INCORRECT_FILE_NAME
 				};
 
-			const char* has_db = strchr(address.data(), '#');
-			const char* port_end = has_db ? has_db : address_end;
+			const char * has_db = strchr(address.data(), '#');
+			const char * port_end = has_db ? has_db : address_end;
 
 			const auto user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
 			const auto password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
@@ -87,6 +87,7 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(StorageDi
 {
 }
 
+
 StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
 {
 	{
@@ -96,6 +97,7 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
 	cond.notify_one();
 	thread.join();
 }
+
 
 void StorageDistributedDirectoryMonitor::run()
 {
@@ -135,6 +137,7 @@ void StorageDistributedDirectoryMonitor::run()
 	}
 }
 
+
 ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name)
 {
 	const auto pool_factory = [this, &name] (const std::string & host, const UInt16 port,
@@ -151,6 +154,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 
 	return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM);
 }
+
 
 bool StorageDistributedDirectoryMonitor::findFiles()
 {
@@ -179,6 +183,7 @@ bool StorageDistributedDirectoryMonitor::findFiles()
 
 	return true;
 }
+
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
@@ -228,6 +233,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
 	LOG_TRACE(log, "Finished processing `" << file_path << '`');
 }
+
 
 std::string StorageDistributedDirectoryMonitor::getLoggerName() const
 {
