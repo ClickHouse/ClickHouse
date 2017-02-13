@@ -373,7 +373,7 @@ NameSet MergeTreeReadPool::injectRequiredColumns(const MergeTreeData::DataPartPt
 		*/
 	if (all_column_files_missing)
 	{
-		const auto minimum_size_column_name = part->getMinimumSizeColumnName();
+		const auto minimum_size_column_name = part->getColumnNameWithMinumumCompressedSize();
 		columns.push_back(minimum_size_column_name);
 		/// correctly report added column
 		injected_columns.insert(columns.back());
