@@ -106,6 +106,11 @@
             margin: 0;
         }
 
+        #navbar-inner {
+            max-width: 1280px;
+            margin: auto;
+        }
+
         #github {
             bottom: 0;
             left: 0;
@@ -419,27 +424,29 @@
 </head>
 <body>
 <div id="navbar">
-    <div class="menu desktop-only">
-        <a class="menu_item" href="#quick-start">Quick Start</a>
-        <a class="menu_item" href="#performance">Performance</a>
-        <a class="menu_item" href="reference_en.html">Documentation</a>
-        <a class="menu_item" href="#contacts">Contacts</a>
+    <div id="navbar-inner">
+        <div class="menu desktop-only">
+            <a class="menu_item" href="#quick-start">Quick Start</a>
+            <a class="menu_item" href="#performance">Performance</a>
+            <a class="menu_item" href="reference_en.html">Documentation</a>
+            <a class="menu_item" href="#contacts">Contacts</a>
+        </div>
+
+        <a id="logo" href="#">
+            <h1 id="main_title">
+                <svg xmlns="http://www.w3.org/2000/svg" width="54" height="48" viewBox="0 0 9 8">
+                    <path class="red" d="M0,7 h1 v1 h-1 z"></path>
+                    <path class="orange" d="M0,0 h1 v7 h-1 z"></path>
+                    <path class="orange" d="M2,0 h1 v8 h-1 z"></path>
+                    <path class="orange" d="M4,0 h1 v8 h-1 z"></path>
+                    <path class="orange" d="M6,0 h1 v8 h-1 z"></path>
+                    <path class="orange" d="M8,3.25 h1 v1.5 h-1 z"></path>
+                </svg>
+
+                ClickHouse
+            </h1>
+        </a>
     </div>
-
-    <a id="logo" href="#">
-        <h1 id="main_title">
-            <svg xmlns="http://www.w3.org/2000/svg" width="54" height="48" viewBox="0 0 9 8">
-                <path class="red" d="M0,7 h1 v1 h-1 z"></path>
-                <path class="orange" d="M0,0 h1 v7 h-1 z"></path>
-                <path class="orange" d="M2,0 h1 v8 h-1 z"></path>
-                <path class="orange" d="M4,0 h1 v8 h-1 z"></path>
-                <path class="orange" d="M6,0 h1 v8 h-1 z"></path>
-                <path class="orange" d="M8,3.25 h1 v1.5 h-1 z"></path>
-            </svg>
-
-            ClickHouse
-        </h1>
-    </a>
 </div>
 
 <div id="hero">
