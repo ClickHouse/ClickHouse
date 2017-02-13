@@ -388,7 +388,6 @@ void MergeTreeDataPart::remove() const
 	}
 	catch (const Poco::FileNotFoundException & e)
 	{
-		/// Если директория уже удалена. Такое возможно лишь при ручном вмешательстве.
 		LOG_WARNING(storage.log, "Directory " << from << " (part to remove) doesn't exist or one of nested files has gone."
 			" Most likely this is due to manual removing. This should be discouraged. Ignoring.");
 
