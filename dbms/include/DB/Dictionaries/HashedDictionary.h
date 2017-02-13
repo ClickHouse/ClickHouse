@@ -119,6 +119,10 @@ public:
 
 	void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
+        void getKeys(const std::string & attribute_name, std::vector<std::vector<Key>> &out, const std::string & value_of_target_attr) const;
+
+        void splitString(const std::string & str, std::vector<std::string> & strvector) const;
+
 private:
 	template <typename Value> using CollectionType = HashMap<UInt64, Value>;
 	template <typename Value> using CollectionPtrType = std::unique_ptr<CollectionType<Value>>;

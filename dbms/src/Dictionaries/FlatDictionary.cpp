@@ -468,4 +468,47 @@ void FlatDictionary::has(const Attribute & attribute, const PaddedPODArray<Key> 
 	query_count.fetch_add(ids_count, std::memory_order_relaxed);
 }
 
+void FlatDictionary::getKeys(const std::string & attribute_name,
+                             std::vector<std::vector<IDictionary::Key>> & out, const std::string & value_of_target_attr) const
+{
+    const auto & attribute = getAttribute(attribute_name);
+    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
+        throw Exception{
+        name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+                ErrorCodes::TYPE_MISMATCH};
+
+    const auto & attr = *std::get<ContainerPtrType<StringRef>>(attribute.arrays);
+
+    std::vector<std::string> strvector;
+    splitString(value_of_target_attr, strvector);
+
+    std::vector<int> idarray;
+    for (auto it = attr.begin(); it != attr.end(); it++)
+    {
+        for(auto str_it = strvector.begin(); str_it != strvector.end(); ++str_it)
+        {
+            if(*it == *str_it)
+            {
+                idarray.push_back(std::distance(attr.begin(),it));
+                out[0].push_back(std::distance(attr.begin(),it));
+            }
+        }
+    }
+}
+
+void FlatDictionary::splitString(const std::string & str, std::vector<std::string> & strvector) const
+{
+    std::string delimiter("|");
+    size_t prev = 0;
+    size_t next;
+    size_t delim_size = delimiter.length();
+
+    while ((next = str.find(delimiter, prev)) != std::string::npos)
+    {
+        strvector.push_back(str.substr(prev, next - prev));
+        prev = next + delim_size;
+    }
+    strvector.push_back(str.substr(prev));
+}
+
 }

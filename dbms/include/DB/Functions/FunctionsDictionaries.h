@@ -2410,5 +2410,123 @@ private:
 	const ExternalDictionaries & dictionaries;
 };
 
+class FunctionDictGetKeys final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGetKeys";
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionDictGetKeys> (context.getExternalDictionaries());
+    }
+
+    FunctionDictGetKeys (const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
+
+    String getName() const override { return name; }
+
+private:
+
+    size_t getNumberOfArguments() const override { return 3; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() != 3)
+            throw Exception{
+                "Number of arguments for function " + getName() + " doesn't match: passed "
+                    + toString(arguments.size()) + ", should be 3.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+        if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
+        {
+            throw Exception{
+                "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
+                    + ", expected a string.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        }
+
+        if (!typeid_cast<const DataTypeString *>(arguments[1].get()))
+        {
+            throw Exception{
+                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
+                    + ", expected a string.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        }
+
+        if (!typeid_cast<const DataTypeString *>(arguments[2].get()))
+        {
+            throw Exception{
+                "Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
+                    + ", expected a string.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        }
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    {
+        const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
+        if (!dict_name_col)
+            throw Exception{
+                "First argument of function " + getName() + " must be a constant string",
+                ErrorCodes::ILLEGAL_COLUMN};
+
+        auto dict = dictionaries.getDictionary(dict_name_col->getData());
+        const auto dict_ptr = dict.get();
+
+        if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+                !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr))
+            throw Exception{
+            "Unsupported dictionary type " + dict_ptr->getTypeName(),
+                    ErrorCodes::UNKNOWN_TYPE};
+    }
+
+    template <typename DictionaryType>
+    bool executeDispatch(
+        Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+    {
+        auto dict = typeid_cast<const DictionaryType *>(dictionary);
+        if (!dict)
+            return false;
+
+        const auto get_keys_vector = [&] (PaddedPODArray<UInt64> & out, PaddedPODArray<UInt64> & offsets) {
+            auto size = out.size();
+            size = 1;
+
+            std::vector<std::vector<IDictionary::Key>> outerIds(size);
+
+            const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+            const auto & attr_name = attr_name_col->getData();
+
+            const auto value_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[2]).column.get());
+            const auto & searched_value = value_col->getData();
+
+            dict->getKeys(attr_name, outerIds, searched_value);
+
+            out.reserve(outerIds[0].size());
+            offsets.resize(size);
+
+            for (const auto i : ext::range(0, size))
+            {
+                const auto & ids = outerIds[i];
+                out.insert_assume_reserved(std::begin(ids), std::end(ids));
+                offsets[i] = out.size();
+            }
+        };
+
+        const auto backend = std::make_shared<ColumnUInt64>();
+        const auto array = std::make_shared<ColumnArray>(backend);
+
+        get_keys_vector(backend->getData(), array->getOffsets());
+
+        block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
+                    1,(*array)[0].get<Array>(),
+                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()));
+
+        return true;
+    }
+
+    const ExternalDictionaries & dictionaries;
+};
 
 };
