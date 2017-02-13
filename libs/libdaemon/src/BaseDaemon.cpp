@@ -723,13 +723,28 @@ void BaseDaemon::initialize(Application& self)
 		std::string core_path = config().getString("core_path", "");
 		if (core_path.empty())
 			core_path = getDefaultCorePath();
-		Poco::File(core_path).createDirectories();
+
+		try
+		{
+			Poco::File(core_path).createDirectories();
+		}
+		catch (const std::exception & e)
+		{
+			logger().warning("Cannot create core_path directory [ " +  core_path + " ]" + " what(): " + e.what());
+		}
 
 		Poco::File cores = core_path;
 		if (!( cores.exists() && cores.isDirectory() ))
 		{
 			core_path = !log_path.empty() ? log_path : "/opt/";
-			Poco::File(core_path).createDirectories();
+			try
+			{
+				Poco::File(core_path).createDirectories();
+			}
+			catch (const std::exception & e)
+			{
+				logger().warning("Cannot create core_path directory [ " +  core_path + " ]" + " what(): " + e.what());
+			}
 		}
 
 		if (0 != chdir(core_path.c_str()))
