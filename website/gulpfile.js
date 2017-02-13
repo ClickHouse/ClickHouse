@@ -76,4 +76,6 @@ gulp.task('connect', function() {
     })
 });
 
-gulp.task('default', ['htmls', 'scripts', 'styles', 'images', 'watch', 'connect']);
+gulp.task('build', ['htmls', 'scripts', 'styles', 'images']);
+
+gulp.task('default', ['build', 'watch', 'connect']);
