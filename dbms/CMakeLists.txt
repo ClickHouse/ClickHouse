@@ -1,4 +1,4 @@
-include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
@@ -10,6 +10,7 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libsparsehash)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libre2/)
 include_directories (BEFORE ${ClickHouse_BINARY_DIR}/contrib/libre2/)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
+include_directories (${ODBC_INCLUDE_DIRECTORIES})
 
 if (NOT NO_WERROR)
 	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
@@ -128,7 +129,8 @@ else()
     set(PLATFORM_LIBS "")
 endif()
 
-include (${CMAKE_SOURCE_DIR}/cmake/find_iconv.cmake)
+include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
+
 find_package (Threads)
 
 target_link_libraries(dbms

@@ -4,7 +4,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/IO/HashingWriteBuffer.h>
-#include <DB/Common/BlockFilterCreator.h>
+#include <DB/Interpreters/createBlockSelector.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 
 #include <ctime>
@@ -47,71 +47,62 @@ ShardedBlocksWithDateIntervals MergeTreeSharder::shardBlock(const Block & block)
 	for (size_t i = 0; i < columns.size(); ++i)
 		columns[i] = block.safeGetByPosition(i).column.get();
 
-	auto filters = createFilters(block);
+	auto selector = createSelector(block);
+
+	/// Split block to num_shard smaller block, using 'selector'.
 
 	const auto num_shards = job.paths.size();
+	Blocks splitted_blocks(num_shards);
 
-	ssize_t size_hint = ((block.rows() + num_shards - 1) / num_shards) * 1.1;	/// Число 1.1 выбрано наугад.
+	for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
+		splitted_blocks[shard_idx] = block.cloneEmpty();
 
-	for (size_t shard_no = 0; shard_no < num_shards; ++shard_no)
+	size_t columns_in_block = block.columns();
+	for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
 	{
-		auto target_block = block.cloneEmpty();
+		Columns splitted_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
+		for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
+			splitted_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(splitted_columns[shard_idx]);
+	}
 
-		for (size_t col = 0; col < num_cols; ++col)
-			target_block.safeGetByPosition(col).column = columns[col]->filter(filters[shard_no], size_hint);
-
-		if (target_block.rows())
+	for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
+	{
+		if (splitted_blocks[shard_idx].rows())
 		{
-			/// Достаём столбец с датой.
-			const ColumnUInt16::Container_t & dates =
-				typeid_cast<const ColumnUInt16 &>(*target_block.getByName(data.date_column_name).column).getData();
-
-			/// Минимальная и максимальная дата.
-			UInt16 min_date = std::numeric_limits<UInt16>::max();
-			UInt16 max_date = std::numeric_limits<UInt16>::min();
-			for (ColumnUInt16::Container_t::const_iterator it = dates.begin(); it != dates.end(); ++it)
-			{
-				if (*it < min_date)
-					min_date = *it;
-				if (*it > max_date)
-					max_date = *it;
-			}
-
-			res.emplace_back(target_block, shard_no, min_date, max_date);
+			/// Get min and max date.
+			Field min_date;
+			Field max_date;
+			typeid_cast<const ColumnUInt16 &>(*splitted_blocks[shard_idx].getByName(data.date_column_name).column).getExtremes(min_date, max_date);
+			res.emplace_back(splitted_blocks[shard_idx], shard_idx, get<UInt64>(min_date), get<UInt64>(max_date));
 		}
 	}
 
 	return res;
 }
 
-std::vector<IColumn::Filter> MergeTreeSharder::createFilters(Block block)
+
+IColumn::Selector MergeTreeSharder::createSelector(Block block)
 {
-	using create_filters_sig = std::vector<IColumn::Filter>(size_t, const IColumn *, size_t num_shards, const std::vector<size_t> & slots);
-	/// hashmap of pointers to functions corresponding to each integral type
-	static std::unordered_map<std::string, create_filters_sig *> creators{
-		{ TypeName<UInt8>::get(), &BlockFilterCreator<UInt8>::perform },
-		{ TypeName<UInt16>::get(), &BlockFilterCreator<UInt16>::perform },
-		{ TypeName<UInt32>::get(), &BlockFilterCreator<UInt32>::perform },
-		{ TypeName<UInt64>::get(), &BlockFilterCreator<UInt64>::perform },
-		{ TypeName<Int8>::get(), &BlockFilterCreator<Int8>::perform },
-		{ TypeName<Int16>::get(), &BlockFilterCreator<Int16>::perform },
-		{ TypeName<Int32>::get(), &BlockFilterCreator<Int32>::perform },
-		{ TypeName<Int64>::get(), &BlockFilterCreator<Int64>::perform },
-	};
-
 	sharding_key_expr->execute(block);
-
 	const auto & key_column = block.getByName(sharding_key_column_name);
+	size_t num_shards = job.paths.size();
 
-	/// check that key column has valid type
-	const auto it = creators.find(key_column.type->getName());
+#define CREATE_FOR_TYPE(TYPE) \
+	if (typeid_cast<const DataType ## TYPE *>(key_column.type.get())) \
+		return createBlockSelector<TYPE>(*key_column.column, num_shards, slots);
 
-	return it != std::end(creators)
-		? (*it->second)(block.rows(), key_column.column.get(), job.paths.size(), slots)
-		: throw Exception{
-			"Sharding key expression does not evaluate to an integer type",
-			ErrorCodes::TYPE_MISMATCH
-		};
+	CREATE_FOR_TYPE(UInt8)
+	CREATE_FOR_TYPE(UInt16)
+	CREATE_FOR_TYPE(UInt32)
+	CREATE_FOR_TYPE(UInt64)
+	CREATE_FOR_TYPE(Int8)
+	CREATE_FOR_TYPE(Int16)
+	CREATE_FOR_TYPE(Int32)
+	CREATE_FOR_TYPE(Int64)
+
+#undef CREATE_FOR_TYPE
+
+	throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
 }
 
 }

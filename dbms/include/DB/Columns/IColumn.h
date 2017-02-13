@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
 	extern const int CANNOT_GET_SIZE_OF_FIELD;
 	extern const int NOT_IMPLEMENTED;
+	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 class IColumn;
@@ -245,6 +246,14 @@ public:
 	using Offsets_t = PaddedPODArray<Offset_t>;
 	virtual ColumnPtr replicate(const Offsets_t & offsets) const = 0;
 
+	/** Split column to smaller columns. Each value goes to column index, selected by corresponding element of 'selector'.
+	  * Selector must contain values from 0 to num_columns - 1.
+	  * For default implementation, see scatterImpl.
+	  */
+	using ColumnIndex = UInt64;
+	using Selector = PaddedPODArray<ColumnIndex>;
+	virtual Columns scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
+
 	/** Посчитать минимум и максимум по столбцу.
 	  * Функция должна быть реализована полноценно только для числовых столбцов, а также дат/дат-с-временем.
 	  * Для строк и массивов функция должна возвращать значения по-умолчанию
@@ -269,6 +278,36 @@ public:
 	virtual size_t allocatedSize() const = 0;
 
 	virtual ~IColumn() {}
+
+protected:
+
+	/// Template is to devirtualize calls to insertFrom method.
+	/// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
+	template <typename Derived>
+	Columns scatterImpl(ColumnIndex num_columns, const Selector & selector) const
+	{
+		size_t num_rows = size();
+
+		if (num_rows != selector.size())
+			throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		Columns columns(num_columns);
+		for (auto & column : columns)
+			column = cloneEmpty();
+
+		{
+			size_t reserve_size = num_rows / num_columns * 1.1;	/// 1.1 is just a guess. Better to use n-sigma rule.
+
+			if (reserve_size > 1)
+				for (auto & column : columns)
+					column->reserve(reserve_size);
+		}
+
+		for (size_t i = 0; i < num_rows; ++i)
+			static_cast<Derived &>(*columns[selector[i]]).insertFrom(*this, i);
+
+		return columns;
+	}
 };
 
 

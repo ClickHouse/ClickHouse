@@ -1,7 +1,7 @@
 include_directories (include)
-include_directories (${CMAKE_SOURCE_DIR}/libs/libcommon/include)
+include_directories (${ClickHouse_SOURCE_DIR}/libs/libcommon/include)
 
-include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 add_library(zkutil
 	src/ZooKeeper.cpp

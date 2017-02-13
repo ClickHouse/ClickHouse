@@ -37,7 +37,7 @@ void throwFromErrno(const std::string & s, int code, int e)
 #endif
 	{
 		std::string tmp = std::to_string(code);
-		const char* code = tmp.c_str();
+		const char * code = tmp.c_str();
 		strcpy(buf, unknown_message);
 		strcpy(buf + strlen(unknown_message), code);
 	}
