@@ -10,6 +10,7 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libsparsehash)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libre2/)
 include_directories (BEFORE ${ClickHouse_BINARY_DIR}/contrib/libre2/)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
+include_directories (${ODBC_INCLUDE_DIRECTORIES})
 
 if (NOT NO_WERROR)
 	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
