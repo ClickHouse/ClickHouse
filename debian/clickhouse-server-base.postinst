@@ -56,7 +56,7 @@ Please fix this and reinstall this package." >&2
 
 		# ensure home directory ownership
 		#su -s /bin/sh clickhouse -c "test -O /var/lib/clickhouse && test -G /var/lib/clickhouse" || \
-		chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR}
+		chown -h ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR}
 		chmod 700 ${CLICKHOUSE_DATADIR}
 	fi
 
