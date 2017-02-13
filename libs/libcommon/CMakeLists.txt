@@ -3,9 +3,9 @@ set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
 set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/src/config_build.cpp)
 
 include_directories (include)
-include_directories (BEFORE ${CMAKE_SOURCE_DIR}/contrib/libcctz/include)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcctz/include)
 
-include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 if (APPLE)
 	if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
@@ -20,8 +20,8 @@ message (STATUS "Will build ${VERSION_FULL}")
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${CONFIG_COMMON})
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_version.h.in ${CONFIG_VERSION})
 
-get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
-get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
+get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
 
 string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/config_build.cpp.in ${CONFIG_BUILD})

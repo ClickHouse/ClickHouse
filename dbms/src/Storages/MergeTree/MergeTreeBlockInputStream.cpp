@@ -189,7 +189,7 @@ NameSet MergeTreeBlockInputStream::injectRequiredColumns(Names & columns) const
 	/// If all files are missing read at least one column to determine correct column sizes
 	if (all_column_files_missing)
 	{
-		const auto minimum_size_column_name = owned_data_part->getMinimumSizeColumnName();
+		const auto minimum_size_column_name = owned_data_part->getColumnNameWithMinumumCompressedSize();
 		columns.push_back(minimum_size_column_name);
 		injected_columns.insert(std::move(minimum_size_column_name));
 	}

@@ -1170,7 +1170,7 @@ There is no support for changing the column type in arrays and nested data struc
 
 The ALTER query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like &#39;name.nested_name&#39; and the type &#39;Array(<i>T</i>)&#39;. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 
-There is no support for deleting or changing the type for columns in the primary key or the sampling key (columns that are in the ENGINE expression).
+There is no support for deleting of columns in the primary key or the sampling key (columns that are in the ENGINE expression). Changing the type of columns in the primary key is allowed only if such change doesn't entail changing the actual data (e.g. adding the value to an Enum or changing the type from DateTime to UInt32 is allowed).
 
 If the ALTER query is not sufficient for making the table changes you need, you can create a new table, copy the data to it using the INSERT SELECT query, then switch the tables using the RENAME query and delete the old table.
 

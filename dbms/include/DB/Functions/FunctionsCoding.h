@@ -612,7 +612,7 @@ public:
 				 out_offset < vec_res.size();
 				 out_offset += ipv6_bytes_length, ++i)
 			{
-				ipv6_scan(reinterpret_cast<const char* >(&vec_src[src_offset]), &vec_res[out_offset]);
+				ipv6_scan(reinterpret_cast<const char * >(&vec_src[src_offset]), &vec_res[out_offset]);
 				src_offset = offsets_src[i];
 			}
 		}
