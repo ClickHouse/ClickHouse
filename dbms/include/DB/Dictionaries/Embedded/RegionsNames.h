@@ -68,6 +68,7 @@ public:
 	/** Перезагружает, при необходимости, имена регионов.
 	  */
 	void reload();
+	void reload(const std::string & directory);
 
 	/// Has corresponding section in configuration file.
 	static bool isConfigured();

@@ -86,15 +86,16 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
 	MergeTreeDataPart(MergeTreeData & storage_) : storage(storage_) {}
 
 	/// Returns the size of .bin file for column `name` if found, zero otherwise
-	std::size_t getColumnSize(const String & name) const;
+	size_t getColumnCompressedSize(const String & name) const;
 
 	/** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
-		*	If no checksums are present returns the name of the first physically existing column. */
-	String getMinimumSizeColumnName() const;
+	  * If no checksums are present returns the name of the first physically existing column.
+	  */
+	String getColumnNameWithMinumumCompressedSize() const;
 
 	MergeTreeData & storage;
 
-	size_t size = 0;				/// в количестве засечек.
+	size_t size = 0;				/// in number of marks.
 	std::atomic<size_t> size_in_bytes {0}; 	/// размер в байтах, 0 - если не посчитано;
 											/// используется из нескольких потоков без блокировок (изменяется при ALTER).
 	time_t modification_time = 0;

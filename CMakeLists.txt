@@ -1,7 +1,7 @@
 project (ClickHouse)
 cmake_minimum_required (VERSION 2.6)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/cmake/Modules/")
 
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -168,7 +168,11 @@ endif (TEST_COVERAGE)
 # Run tests with "make check"
 if (ENABLE_TESTS)
 	message (STATUS "Tests are enabled")
-	include (cmake/add_check.cmake)
+	if (TARGET check)
+		message (STATUS "Target check already exists")
+	else ()
+		include (cmake/add_check.cmake)
+	endif ()
 endif (ENABLE_TESTS)
 
 # Installation prefix

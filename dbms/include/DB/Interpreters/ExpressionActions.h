@@ -168,6 +168,8 @@ public:
 	/// - Если output_columns пуст, оставляет один произвольный столбец (чтобы не потерялось количество строк в блоке).
 	void finalize(const Names & output_columns);
 
+	const Actions & getActions() const { return actions; }
+
 	/// Получить список входных столбцов.
 	Names getRequiredColumns() const
 	{
