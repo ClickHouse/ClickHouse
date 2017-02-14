@@ -465,7 +465,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 	}
 	catch (...)
 	{
-		DB::tryLogCurrentException(logger, std::string{} + __PRETTY_FUNCTION__ + ": when creating " + path);
+		DB::tryLogCurrentException(logger, std::string(__PRETTY_FUNCTION__) + ": when creating " + path);
 	}
 	return false;
 }
