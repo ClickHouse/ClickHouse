@@ -13,7 +13,7 @@ namespace DB
 class ASTCreateQuery : public IAST
 {
 public:
-	bool attach{false};	/// Запрос ATTACH TABLE, а не CREATE TABLE.
+	bool attach{false};	/// If true then it means what query is ATTACH TABLE.
 	bool if_not_exists{false};
 	bool is_view{false};
 	bool is_materialized_view{false};
@@ -21,9 +21,10 @@ public:
 	bool is_temporary{false};
 	String database;
 	String table;
+	String cluster;
 	ASTPtr columns;
 	ASTPtr storage;
-	ASTPtr inner_storage;	/// Внутренний engine для запроса CREATE MATERIALIZED VIEW
+	ASTPtr inner_storage;	/// Inner engine for CREATE MATERIALIZED VIEW query.
 	String as_database;
 	String as_table;
 	ASTPtr select;
