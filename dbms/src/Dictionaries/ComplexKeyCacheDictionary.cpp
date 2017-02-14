@@ -180,7 +180,8 @@ void ComplexKeyCacheDictionary::getString(
 
    
 /// returns 'cell is valid' flag, cell_idx
-std::tuple<bool, bool, size_t> ComplexKeyCacheDictionary::findCellIdx (CellFinder & cell_finder ,const size_t row, const StringRef & key, const CellMetadata::time_point_t now) const
+//std::tuple<bool, bool, size_t>
+ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (CellFinder & cell_finder ,const size_t row, const StringRef & key, const CellMetadata::time_point_t now) const
 {
 // 	const StringRef key = placeKeysInPool(row, cell_finder.key_columns, cell_finder.keys, cell_finder.temporary_keys_pool);
 //	cell_finder.keys_array[row] = key;
@@ -215,20 +216,20 @@ std::tuple<bool, bool, size_t> ComplexKeyCacheDictionary::findCellIdx (CellFinde
 			{
 				//std::cerr << "exp cell.expiresAt() < now : " << cell.expiresAt().time_since_epoch().count() << " < "<< now.time_since_epoch().count() << "\n";
 				//ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired); // first notfound also here
-				return std::make_tuple(false, false, cell_idx);
+				return {false, true, cell_idx};
 			}
 
 			//std::cerr << "hit id="<< id<<" cell_idx="<<cell_idx << " stop="<<stop  <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() << "\n";
-			return std::make_tuple(true, true, cell_idx);
+			return {true, false, cell_idx};
 		}
 
 		//std::cerr << "miss,oldest " <<  " id="<< id << " cell_idx="<<oldest_id << "\n";
 		//ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound);
-		return std::make_tuple(false, true, oldest_id);
+		return {false, false, oldest_id};
 
  // #endif
 
-		return std::make_tuple(false, true, 0);
+		//return {false, true, 0};
 }
 
 
@@ -264,11 +265,11 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 			cell_finder.keys_array[row] = key;
 
 			const auto find_result = findCellIdx(cell_finder, row, key, now);
-			const auto & cell_idx = std::get<2>(find_result);
-			if (!std::get<0>(find_result))
+			const auto & cell_idx = find_result.cell_idx;
+			if (!find_result.valid)
 			{
 				outdated_keys[key].push_back(row);
-				if (!std::get<1>(find_result))
+				if (find_result.outdated)
 					++cache_expired;
 				else
 					++cache_not_found;
@@ -458,10 +459,10 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 			cell_finder.keys_array[row] = key;
 
 			const auto find_result = findCellIdx(cell_finder, row, key, now);
-			  if (!std::get<0>(find_result))
+			  if (!find_result.valid)
 			{
 				outdated_keys[key].push_back(row);
-				if (!std::get<1>(find_result))
+				if (find_result.outdated)
 					++cache_expired;
 				else
 					++cache_not_found;
@@ -469,7 +470,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 			else
 			{
 				++cache_hit;
-				  const auto & cell_idx = std::get<2>(find_result);
+				  const auto & cell_idx = find_result.cell_idx;
 				  const auto & cell = cells[cell_idx];
 				out[row] =  cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 			}
@@ -538,7 +539,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 			const auto find_result = findCellIdx(cell_finder, row, key, now);
 
 			//const size_t cell_idx = hash & (size - 1);
-			if (!std::get<0>(find_result))
+			if (!find_result.valid)
 			//if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
 			{
 				found_outdated_values = true;
@@ -546,7 +547,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 			}
 			else
 			{
-				const auto & cell_idx = std::get<2>(find_result);
+				const auto & cell_idx = find_result.cell_idx;
 				const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 				out->insertData(string_ref.data, string_ref.size);
@@ -589,11 +590,11 @@ void ComplexKeyCacheDictionary::getItemsString(
 			//const size_t cell_idx = hash & (size - 1);
 			//const auto & cell = cells[cell_idx];
 
-			if (!std::get<0>(find_result))
+			if (!find_result.valid)
 			//if (cell.hash != hash || cell.key != key)
 			{
 				outdated_keys[key].push_back(row);
-				if (!std::get<1>(find_result))
+				if (find_result.outdated)
 					++cache_expired;
 				else
 					++cache_not_found;
@@ -601,7 +602,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 			else
 			{
 				++cache_hit;
-				  const auto & cell_idx = std::get<2>(find_result);
+				  const auto & cell_idx = find_result.cell_idx;
 				  const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 

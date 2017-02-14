@@ -257,6 +257,12 @@ private:
 	static StringRef copyIntoArena(StringRef src, Arena & arena);
 	StringRef copyKey(const StringRef key) const;
 
+	struct FindResult {
+		const bool valid;
+		const bool outdated;
+		const size_t cell_idx;
+	};
+
 struct CellFinder {
 
 	const DictionaryStructure & dict_struct;
@@ -283,7 +289,9 @@ struct CellFinder {
 
 
 
-	std::tuple<bool, bool, size_t> findCellIdx(CellFinder& cell_finder, const size_t row, const StringRef & key, const CellMetadata::time_point_t now) const;
+	//std::tuple<bool, bool, size_t>
+FindResult
+findCellIdx(CellFinder& cell_finder, const size_t row, const StringRef & key, const CellMetadata::time_point_t now) const;
 
 
 
