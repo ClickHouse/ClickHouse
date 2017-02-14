@@ -291,7 +291,7 @@ struct CellFinder {
 
 	//std::tuple<bool, bool, size_t>
 FindResult
-findCellIdx(CellFinder& cell_finder, const size_t row, const StringRef & key, const CellMetadata::time_point_t now) const;
+findCellIdx(CellFinder& cell_finder, /*const size_t row,*/ const StringRef & key, const CellMetadata::time_point_t now) const;
 
 
 

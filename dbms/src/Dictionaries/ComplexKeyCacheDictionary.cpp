@@ -181,7 +181,7 @@ void ComplexKeyCacheDictionary::getString(
    
 /// returns 'cell is valid' flag, cell_idx
 //std::tuple<bool, bool, size_t>
-ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (CellFinder & cell_finder ,const size_t row, const StringRef & key, const CellMetadata::time_point_t now) const
+ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (CellFinder & cell_finder , /*const size_t row,*/ const StringRef & key, const CellMetadata::time_point_t now) const
 {
 // 	const StringRef key = placeKeysInPool(row, cell_finder.key_columns, cell_finder.keys, cell_finder.temporary_keys_pool);
 //	cell_finder.keys_array[row] = key;
@@ -264,7 +264,7 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 			const auto key = placeKeysInPool(row, cell_finder.key_columns, cell_finder.keys, cell_finder.temporary_keys_pool);
 			cell_finder.keys_array[row] = key;
 
-			const auto find_result = findCellIdx(cell_finder, row, key, now);
+			const auto find_result = findCellIdx(cell_finder, key, now);
 			const auto & cell_idx = find_result.cell_idx;
 			if (!find_result.valid)
 			{
@@ -458,7 +458,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 			const StringRef key = placeKeysInPool(row, key_columns, cell_finder.keys, cell_finder.temporary_keys_pool);
 			cell_finder.keys_array[row] = key;
 
-			const auto find_result = findCellIdx(cell_finder, row, key, now);
+			const auto find_result = findCellIdx(cell_finder, key, now);
 			  if (!find_result.valid)
 			{
 				outdated_keys[key].push_back(row);
@@ -536,7 +536,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 			SCOPE_EXIT(cell_finder.temporary_keys_pool.rollback(key.size));
 			//const auto hash = StringRefHash{}(key);
 
-			const auto find_result = findCellIdx(cell_finder, row, key, now);
+			const auto find_result = findCellIdx(cell_finder, key, now);
 
 			//const size_t cell_idx = hash & (size - 1);
 			if (!find_result.valid)
@@ -585,8 +585,8 @@ void ComplexKeyCacheDictionary::getItemsString(
 			  keys_array[row] = key;
 			//const auto hash = StringRefHash{}(key);
 
-			const auto find_result = findCellIdx(cell_finder, row, key, now);
-
+			const auto find_result = findCellIdx(cell_finder, key, now);
+			//const auto & cell_idx = find_result.cell_idx;
 			//const size_t cell_idx = hash & (size - 1);
 			//const auto & cell = cells[cell_idx];
 
@@ -679,10 +679,13 @@ void ComplexKeyCacheDictionary::update(
 		auto stream = source_ptr->loadKeys(in_key_columns, in_requested_rows);
 		stream->readPrefix();
 
+		CellFinder cell_finder(dict_struct, key_columns);
+
 		const auto keys_size = dict_struct.key.value().size();
 		StringRefs keys(keys_size);
 
 		const auto attributes_size = attributes.size();
+		const auto now = std::chrono::system_clock::now();
 
 		while (const auto block = stream->read())
 		{
@@ -701,14 +704,17 @@ void ComplexKeyCacheDictionary::update(
 					return block.safeGetByPosition(keys_size + attribute_idx).column.get();
 				});
 
+			CellFinder cell_finder(dict_struct, key_columns);
+
 			const auto rows = block.rows();
 
 			for (const auto row : ext::range(0, rows))
 			{
 				auto key = allocKey(row, key_columns, keys);
 				const auto hash = StringRefHash{}(key);
-				const size_t cell_idx = hash & (size - 1);
-				auto & cell = cells[cell_idx];
+				//const size_t cell_idx = hash & (size - 1);
+				const auto find_result = findCellIdx(cell_finder, key, now);
+				const auto & cell_idx = find_result.cell_idx;
 
 				for (const auto attribute_idx : ext::range(0, attributes.size()))
 				{
@@ -718,6 +724,7 @@ void ComplexKeyCacheDictionary::update(
 					setAttributeValue(attribute, cell_idx, attribute_column[row]);
 				}
 
+				auto & cell = cells[cell_idx];
 				/// if cell id is zero and zero does not map to this cell, then the cell is unused
 				if (cell.key == StringRef{} && cell_idx != zero_cell_idx)
 					element_count.fetch_add(1, std::memory_order_relaxed);
@@ -760,6 +767,8 @@ void ComplexKeyCacheDictionary::update(
 	size_t found_num = 0;
 	size_t not_found_num = 0;
 
+	const auto now = std::chrono::system_clock::now();
+
 	/// Check which ids have not been found and require setting null_value
 	for (const auto key_found_pair : remaining_keys)
 	{
@@ -773,7 +782,12 @@ void ComplexKeyCacheDictionary::update(
 
 		auto key = key_found_pair.first;
 		const auto hash = StringRefHash{}(key);
-		const size_t cell_idx = hash & (size - 1);
+
+		const auto find_result = findCellIdx(cell_finder, key, now);
+		const auto & cell_idx = find_result.cell_idx;
+
+		//const size_t cell_idx = hash & (size - 1);
+
 		auto & cell = cells[cell_idx];
 
 		/// Set null_value for each attribute
