@@ -456,6 +456,20 @@ static std::string createDirectory(const std::string & _path)
 	return str;
 };
 
+static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path)
+{
+	try
+	{
+		Poco::File(path).createDirectories();
+		return true;
+	}
+	catch (...)
+	{
+		DB::tryLogCurrentException(logger, std::string(__PRETTY_FUNCTION__) + ": when creating " + path);
+	}
+	return false;
+}
+
 
 void BaseDaemon::reloadConfiguration()
 {
@@ -723,13 +737,14 @@ void BaseDaemon::initialize(Application& self)
 		std::string core_path = config().getString("core_path", "");
 		if (core_path.empty())
 			core_path = getDefaultCorePath();
-		Poco::File(core_path).createDirectories();
+
+		tryCreateDirectories(&logger(), core_path);
 
 		Poco::File cores = core_path;
 		if (!( cores.exists() && cores.isDirectory() ))
 		{
 			core_path = !log_path.empty() ? log_path : "/opt/";
-			Poco::File(core_path).createDirectories();
+			tryCreateDirectories(&logger(), core_path);
 		}
 
 		if (0 != chdir(core_path.c_str()))
