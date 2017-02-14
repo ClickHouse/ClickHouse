@@ -458,8 +458,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 			cell_finder.keys_array[row] = key;
 
 			const auto find_result = findCellIdx(cell_finder, row, key, now);
-			const auto & cell_idx = std::get<2>(find_result);
-			if (!std::get<0>(find_result))
+			  if (!std::get<0>(find_result))
 			{
 				outdated_keys[key].push_back(row);
 				if (!std::get<1>(find_result))
@@ -470,7 +469,8 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 			else
 			{
 				++cache_hit;
-				const auto & cell = cells[cell_idx];
+				  const auto & cell_idx = std::get<2>(find_result);
+				  const auto & cell = cells[cell_idx];
 				out[row] =  cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 			}
 		}
@@ -513,9 +513,11 @@ void ComplexKeyCacheDictionary::getItemsString(
 	/// save on some allocations
 	out->getOffsets().reserve(rows);
 
-	const auto keys_size = dict_struct.key.value().size();
+	CellFinder cell_finder(dict_struct, key_columns);
+	/*const auto keys_size = dict_struct.key.value().size();
 	StringRefs keys(keys_size);
 	Arena temporary_keys_pool;
+*/
 
 	auto & attribute_array = std::get<ContainerPtrType<StringRef>>(attribute.arrays);
 
@@ -529,19 +531,23 @@ void ComplexKeyCacheDictionary::getItemsString(
 		/// fetch up-to-date values, discard on fail
 		for (const auto row : ext::range(0, rows))
 		{
-			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
-			SCOPE_EXIT(temporary_keys_pool.rollback(key.size));
-			const auto hash = StringRefHash{}(key);
-			const size_t cell_idx = hash & (size - 1);
-			const auto & cell = cells[cell_idx];
+			const StringRef key = placeKeysInPool(row, key_columns, cell_finder.keys, cell_finder.temporary_keys_pool);
+			SCOPE_EXIT(cell_finder.temporary_keys_pool.rollback(key.size));
+			//const auto hash = StringRefHash{}(key);
 
-			if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
+			const auto find_result = findCellIdx(cell_finder, row, key, now);
+
+			//const size_t cell_idx = hash & (size - 1);
+			if (!std::get<0>(find_result))
+			//if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
 			{
 				found_outdated_values = true;
 				break;
 			}
 			else
 			{
+				const auto & cell_idx = std::get<2>(find_result);
+				const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 				out->insertData(string_ref.data, string_ref.size);
 			}
@@ -574,29 +580,33 @@ void ComplexKeyCacheDictionary::getItemsString(
 		const auto now = std::chrono::system_clock::now();
 		for (const auto row : ext::range(0, rows))
 		{
-			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
-			keys_array[row] = key;
-			const auto hash = StringRefHash{}(key);
-			const size_t cell_idx = hash & (size - 1);
-			const auto & cell = cells[cell_idx];
+			const StringRef key = placeKeysInPool(row, key_columns, cell_finder.keys, cell_finder.temporary_keys_pool);
+			  keys_array[row] = key;
+			//const auto hash = StringRefHash{}(key);
 
-			if (cell.hash != hash || cell.key != key)
+			const auto find_result = findCellIdx(cell_finder, row, key, now);
+
+			//const size_t cell_idx = hash & (size - 1);
+			//const auto & cell = cells[cell_idx];
+
+			if (!std::get<0>(find_result))
+			//if (cell.hash != hash || cell.key != key)
 			{
-				++cache_not_found;
 				outdated_keys[key].push_back(row);
-			}
-			else if (cell.expiresAt() < now)
-			{
-				++cache_expired;
-				outdated_keys[key].push_back(row);
+				if (!std::get<1>(find_result))
+					++cache_expired;
+				else
+					++cache_not_found;
 			}
 			else
 			{
 				++cache_hit;
+				  const auto & cell_idx = std::get<2>(find_result);
+				  const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 
 				if (!cell.isDefault())
-					map[key] = copyIntoArena(string_ref, temporary_keys_pool);
+					map[key] = copyIntoArena(string_ref, cell_finder.temporary_keys_pool);
 
 				total_length += string_ref.size + 1;
 			}
@@ -623,8 +633,8 @@ void ComplexKeyCacheDictionary::getItemsString(
 
 				/// We must copy key and value to own memory, because it may be replaced with another
 				///  in next iterations of inner loop of update.
-				const StringRef copied_key = copyIntoArena(key, temporary_keys_pool);
-				const StringRef copied_value = copyIntoArena(attribute_value, temporary_keys_pool);
+				const StringRef copied_key = copyIntoArena(key, cell_finder.temporary_keys_pool);
+				const StringRef copied_value = copyIntoArena(attribute_value, cell_finder.temporary_keys_pool);
 
 				map[copied_key] = copied_value;
 				total_length += (attribute_value.size + 1) * outdated_keys[key].size();
