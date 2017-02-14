@@ -29,12 +29,12 @@ void stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 		char header[COMPRESSED_BLOCK_HEADER_SIZE];
 		in.readStrict(header, COMPRESSED_BLOCK_HEADER_SIZE);
 
-		UInt32 size_compressed = unalignedLoad(&header[1]);
+		UInt32 size_compressed = unalignedLoad<UInt32>(&header[1]);
 
 		if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
 			throw DB::Exception("Too large size_compressed. Most likely corrupted data.", DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
-		UInt32 size_decompressed = unalignedLoad(&header[5]);
+		UInt32 size_decompressed = unalignedLoad<UInt32>(&header[5]);
 
 		DB::writeText(size_decompressed, out);
 		DB::writeChar('\t', out);
