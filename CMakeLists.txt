@@ -73,11 +73,12 @@ option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library inste
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
 	set(NOT_FREEBSD 0)
+	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ${NOT_FREEBSD})
 else ()
 	set(NOT_FREEBSD 1)
+	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ${NOT_UNBUNDLED})
 endif ()
 
-option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ${NOT_FREEBSD})
 
 option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
 
