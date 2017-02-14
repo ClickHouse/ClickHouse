@@ -328,7 +328,7 @@ To remove the limitations of OLAPServer and solve the problem of working with no
 
 ==Usage in Yandex.Metrica and other Yandex services==
 
-ClickHouse is used for multiple purposes in Yandex.Metrica. Its main task is to build reports in online mode using non-aggregated data. It uses a cluster of 374 servers, which store over 8 trillion rows (more than a quadrillion values) in the database. The volume of compressed data, without counting duplication and replication, is about 800 TB. The volume of uncompressed data (in TSV format) would be approximately 7 PB.
+ClickHouse is used for multiple purposes in Yandex.Metrica. Its main task is to build reports in online mode using non-aggregated data. It uses a cluster of 374 servers, which store over 20.3 trillion rows in the database. The volume of compressed data, without counting duplication and replication, is about 2 PB. The volume of uncompressed data (in TSV format) would be approximately 17 PB.
 
 ClickHouse is also used for:
 - Storing WebVisor data.
