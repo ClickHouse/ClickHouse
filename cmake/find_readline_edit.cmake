@@ -36,6 +36,7 @@ include (CheckCXXSourceRuns)
 
 set (CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} ${LINE_EDITING_LIBS})
 check_cxx_source_runs("
+	#include <stdio.h>
 	#include <readline/readline.h>
 	#include <readline/history.h>
 	int main() {
