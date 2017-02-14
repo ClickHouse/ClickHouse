@@ -1,4 +1,4 @@
-include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
@@ -10,6 +10,7 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libsparsehash)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libre2/)
 include_directories (BEFORE ${ClickHouse_BINARY_DIR}/contrib/libre2/)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
+include_directories (${ODBC_INCLUDE_DIRECTORIES})
 
 if (NOT NO_WERROR)
 	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
@@ -76,7 +77,7 @@ if (USE_STATIC_LIBRARIES)
 	add_library(dbms ${dbms_headers} ${dbms_sources})
 else ()
 	add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
-	set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR} VERSION ${VERSION_STRING} OUTPUT_NAME clickhouse)
+	set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse)
 	install (TARGETS dbms LIBRARY DESTINATION lib COMPONENT clickhouse)
 endif ()
 
@@ -128,7 +129,8 @@ else()
     set(PLATFORM_LIBS "")
 endif()
 
-include (${CMAKE_SOURCE_DIR}/cmake/find_iconv.cmake)
+include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
+
 find_package (Threads)
 
 target_link_libraries(dbms

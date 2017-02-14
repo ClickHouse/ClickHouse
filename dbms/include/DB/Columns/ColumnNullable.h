@@ -60,6 +60,11 @@ public:
 	void updateHashWithValue(size_t n, SipHash & hash) const override;
 	void getExtremes(Field & min, Field & max) const override;
 
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		return scatterImpl<ColumnNullable>(num_columns, selector);
+	}
+
 	/// Return the column that represents values.
 	ColumnPtr & getNestedColumn() { return nested_column; }
 	const ColumnPtr & getNestedColumn() const { return nested_column; }

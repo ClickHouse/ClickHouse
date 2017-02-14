@@ -1,12 +1,15 @@
-#define NO_METRIKA
-#include <common/Test.h>
+#define BOOST_TEST_MODULE JSON_MODULE
+
 #include <vector>
 #include <string>
+#include <exception>
 #include <common/JSON.h>
 
 #include <boost/range/irange.hpp>
 
 using namespace std::literals::string_literals;
+
+#include <boost/test/included/unit_test.hpp>
 
 enum class ResultType
 {
@@ -21,7 +24,7 @@ struct GetStringTestRecord
 	std::string result;
 };
 
-void get_string()
+void test()
 {
 	std::vector<GetStringTestRecord> test_data =
 	{
@@ -641,20 +644,26 @@ void get_string()
 			try
 			{
 				JSON j(r.input.c_str(), r.input.c_str() + r.input.size());
-				Test::compare(j.getString(), r.result);
-				Test::compare(r.result_type == ResultType::Return, true);
+				
+				BOOST_CHECK_EQUAL(j.getString(), r.result);
+				BOOST_CHECK(r.result_type == ResultType::Return);
 			}
 			catch (JSONException & e)
 			{
-				Test::compare(r.result_type == ResultType::Throw, true);
-				Test::compare(e.message(), r.result);
+				BOOST_CHECK(r.result_type == ResultType::Throw);
+				BOOST_CHECK_EQUAL(e.message(), r.result);
 			}
 		}
 	}
 }
 
-int main()
+BOOST_AUTO_TEST_SUITE(JSON_Suite)
+
+BOOST_AUTO_TEST_CASE(SimpleTest)
 {
-	get_string();
-	return 0;
+	test();
 }
+
+BOOST_AUTO_TEST_SUITE_END()
+
+

@@ -9,8 +9,7 @@ namespace DB
 
 class Context;
 
-/** Реализует системную таблицу columns, которая позволяет получить информацию
-  * о столбцах каждой таблицы для всех баз данных.
+/** Implements system table 'columns', that allows to get information about columns for every table.
   */
 class StorageSystemColumns : private ext::shared_ptr_helper<StorageSystemColumns>, public IStorage
 {

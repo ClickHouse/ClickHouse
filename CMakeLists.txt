@@ -1,9 +1,8 @@
 project (ClickHouse)
 cmake_minimum_required (VERSION 2.6)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/cmake/Modules/")
 
-message(STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 	# Require at least gcc 5
@@ -62,6 +61,8 @@ else ()
 	set(NOT_UNBUNDLED 1)
 endif ()
 
+message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} UNBUNDLED=${UNBUNDLED}")
+
 option (USE_INTERNAL_BOOST_LIBRARY "Set to FALSE to use system boost library instead of bundled" ${NOT_UNBUNDLED})
 
 if (USE_INTERNAL_BOOST_LIBRARY)
@@ -71,10 +72,12 @@ endif ()
 option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ${NOT_UNBUNDLED})
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
-	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" OFF)
+	set(NOT_FREEBSD 0)
 else ()
-	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ON)
+	set(NOT_FREEBSD 1)
 endif ()
+
+option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ${NOT_FREEBSD})
 
 option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
 
@@ -138,8 +141,7 @@ if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
 endif ()
 
 if (NOT USE_STATIC_LIBRARIES)
-	set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -fPIC")
-	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} -fPIC")
+	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
 
 set (SAN_FLAGS "-O3 -g -fno-omit-frame-pointer")
@@ -166,7 +168,11 @@ endif (TEST_COVERAGE)
 # Run tests with "make check"
 if (ENABLE_TESTS)
 	message (STATUS "Tests are enabled")
-	include (cmake/add_check.cmake)
+	if (TARGET check)
+		message (STATUS "Target check already exists")
+	else ()
+		include (cmake/add_check.cmake)
+	endif ()
 endif (ENABLE_TESTS)
 
 # Installation prefix
@@ -188,8 +194,8 @@ include (cmake/find_readline_edit.cmake)
 include (cmake/find_gperftools.cmake)
 include (cmake/find_jemalloc.cmake)
 
-set(FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")
-set(FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")
+set (FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")
+set (FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")
 message (STATUS "C_FLAGS    = ${FULL_C_FLAGS}")
 message (STATUS "CXX_FLAGS  = ${FULL_CXX_FLAGS}")
 message (STATUS "LINK_FLAGS = ${CMAKE_EXE_LINKER_FLAGS}")

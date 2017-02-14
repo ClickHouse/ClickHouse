@@ -28,13 +28,16 @@ std::string RegionsNames::dumpSupportedLanguagesNames()
 	return res;
 }
 
-
 void RegionsNames::reload()
+{
+	std::string directory = Poco::Util::Application::instance().config().getString(config_key);
+	reload(directory);
+}
+
+void RegionsNames::reload(const std::string & directory)
 {
 	Logger * log = &Logger::get("RegionsNames");
 	LOG_DEBUG(log, "Reloading regions names");
-
-	std::string directory = Poco::Util::Application::instance().config().getString(config_key);
 
 	RegionID max_region_id = 0;
 	for (size_t language_id = 0; language_id < SUPPORTED_LANGUAGES_COUNT; ++language_id)

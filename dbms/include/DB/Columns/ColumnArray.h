@@ -308,6 +308,10 @@ public:
 
 	ColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
 
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		return scatterImpl<ColumnArray>(num_columns, selector);
+	}
 
 	ColumnPtr convertToFullColumnIfConst() const override
 	{
