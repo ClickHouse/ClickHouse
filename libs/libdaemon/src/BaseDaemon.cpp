@@ -630,7 +630,7 @@ void BaseDaemon::closeLogs()
 		logger().warning("Logging to console but received signal to close log file (ignoring).");
 }
 
-std::string BaseDaemon::getDefaultCorePath () const
+std::string BaseDaemon::getDefaultCorePath() const
 {
 	return "/opt/cores/";
 }
@@ -726,7 +726,7 @@ void BaseDaemon::initialize(Application& self)
 		Poco::File(core_path).createDirectories();
 
 		Poco::File cores = core_path;
-		if (!( cores.exists() && cores.isDirectory() ))
+		if (!(cores.exists() && cores.isDirectory()))
 		{
 			core_path = !log_path.empty() ? log_path : "/opt/";
 			Poco::File(core_path).createDirectories();
