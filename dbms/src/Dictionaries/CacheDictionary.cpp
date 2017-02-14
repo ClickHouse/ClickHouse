@@ -182,7 +182,6 @@ void CacheDictionary::getString(
 /// true  true    impossible
 ///
 /// todo: split this func to two: find_for_get and find_for_set
-//std::tuple<bool, bool, size_t>
 CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const CellMetadata::time_point_t now) const
 {
 	auto pos = getCellIdx(id);
