@@ -244,7 +244,7 @@ private:
 
 	mutable Poco::RWLock rw_lock;
 
-	// Actual size will be increased to match some power of 2
+	// Actual size will be increased to match power of 2
 	const std::size_t size;
 
 	// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
