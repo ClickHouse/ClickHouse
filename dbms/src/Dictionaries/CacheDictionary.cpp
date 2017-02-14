@@ -1,3 +1,4 @@
+#include <functional>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Dictionaries/CacheDictionary.h>
 #include <DB/Common/BitHelpers.h>
@@ -34,7 +35,8 @@ CacheDictionary::CacheDictionary(const std::string & name, const DictionaryStruc
 	const std::size_t size)
 	: name{name}, dict_struct(dict_struct),
 		source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-		size{roundUpToPowerOfTwoOrZero(size)},
+		size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(max_collision_length)))},
+		size_overlap_mask{this->size - 1},
 		cells{this->size},
 		rnd_engine{randomSeed()}
 {
@@ -173,6 +175,46 @@ void CacheDictionary::getString(
 }
 
 
+/// returns 'cell is valid' flag, 'cell is outdated' flag, cell_idx
+/// true  false   found and valid
+/// false true    not found (something outdated, maybe our cell)
+/// false false   not found (other id stored with valid data)
+/// true  true    impossible
+///
+/// todo: split this func to two: find_for_get and find_for_set
+CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const CellMetadata::time_point_t now) const
+{
+	auto pos = getCellIdx(id);
+	auto oldest_id = pos;
+	auto oldest_time = CellMetadata::time_point_t::max();
+	const auto stop = pos + max_collision_length;
+	for (; pos < stop; ++pos)
+	{
+		const auto cell_idx = pos & size_overlap_mask;
+		const auto & cell = cells[cell_idx];
+
+		if (cell.id != id)
+		{
+			/// maybe we already found nearest expired cell (try minimize collision_length on insert)
+			if (oldest_time > now && oldest_time > cell.expiresAt())
+			{
+				oldest_time = cell.expiresAt();
+				oldest_id = cell_idx;
+			}
+			continue;
+		}
+
+		if (cell.expiresAt() < now)
+		{
+			return {false, true, cell_idx};
+		}
+
+		return {true, false, cell_idx};
+	}
+
+	return {false, false, oldest_id};
+}
+
 void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
 {
 	/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
@@ -189,26 +231,20 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 		for (const auto row : ext::range(0, rows))
 		{
 			const auto id = ids[row];
-			const auto cell_idx = getCellIdx(id);
-			const auto & cell = cells[cell_idx];
-
-			/** cell should be updated if either:
-				*	1. ids do not match,
-				*	2. cell has expired,
-				*	3. explicit defaults were specified and cell was set default. */
-			if (cell.id != id)
+			const auto find_result = findCellIdx(id, now);
+			const auto & cell_idx = find_result.cell_idx;
+			if (!find_result.valid)
 			{
-				++cache_not_found;
 				outdated_ids[id].push_back(row);
-			}
-			else if (cell.expiresAt() < now)
-			{
-				++cache_expired;
-				outdated_ids[id].push_back(row);
+				if (find_result.outdated)
+					++cache_expired;
+				else
+					++cache_not_found;
 			}
 			else
 			{
 				++cache_hit;
+				const auto & cell = cells[cell_idx];
 				out[row] = !cell.isDefault();
 			}
 		}
@@ -381,26 +417,26 @@ void CacheDictionary::getItemsNumberImpl(
 		for (const auto row : ext::range(0, rows))
 		{
 			const auto id = ids[row];
-			const auto cell_idx = getCellIdx(id);
-			const auto & cell = cells[cell_idx];
 
 			/** cell should be updated if either:
 				*	1. ids do not match,
 				*	2. cell has expired,
 				*	3. explicit defaults were specified and cell was set default. */
-			if (cell.id != id)
+
+			const auto find_result = findCellIdx(id, now);
+			if (!find_result.valid)
 			{
-				++cache_not_found;
 				outdated_ids[id].push_back(row);
-			}
-			else if (cell.expiresAt() < now)
-			{
-				++cache_expired;
-				outdated_ids[id].push_back(row);
+				if (find_result.outdated)
+					++cache_expired;
+				else
+					++cache_not_found;
 			}
 			else
 			{
 				++cache_hit;
+				const auto & cell_idx = find_result.cell_idx;
+				const auto & cell = cells[cell_idx];
 				out[row] = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 			}
 		}
@@ -457,16 +493,17 @@ void CacheDictionary::getItemsString(
 		for (const auto row : ext::range(0, rows))
 		{
 			const auto id = ids[row];
-			const auto cell_idx = getCellIdx(id);
-			const auto & cell = cells[cell_idx];
 
-			if (cell.id != id || cell.expiresAt() < now)
+			const auto find_result = findCellIdx(id, now);
+			if (!find_result.valid)
 			{
 				found_outdated_values = true;
 				break;
 			}
 			else
 			{
+				const auto & cell_idx = find_result.cell_idx;
+				const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 				out->insertData(string_ref.data, string_ref.size);
 			}
@@ -499,22 +536,21 @@ void CacheDictionary::getItemsString(
 		for (const auto row : ext::range(0, ids.size()))
 		{
 			const auto id = ids[row];
-			const auto cell_idx = getCellIdx(id);
-			const auto & cell = cells[cell_idx];
 
-			if (cell.id != id)
+			const auto find_result = findCellIdx(id, now);
+			if (!find_result.valid)
 			{
-				++cache_not_found;
 				outdated_ids[id].push_back(row);
-			}
-			else if (cell.expiresAt() < now)
-			{
-				++cache_expired;
-				outdated_ids[id].push_back(row);
+				if (find_result.outdated)
+					++cache_expired;
+				else
+					++cache_not_found;
 			}
 			else
 			{
 				++cache_hit;
+				const auto & cell_idx = find_result.cell_idx;
+				const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 
 				if (!cell.isDefault())
@@ -524,6 +560,7 @@ void CacheDictionary::getItemsString(
 			}
 		}
 	}
+
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
@@ -583,6 +620,8 @@ void CacheDictionary::update(
 		auto stream = source_ptr->loadIds(requested_ids);
 		stream->readPrefix();
 
+		const auto now = std::chrono::system_clock::now();
+
 		while (const auto block = stream->read())
 		{
 			const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
@@ -601,7 +640,10 @@ void CacheDictionary::update(
 			for (const auto i : ext::range(0, ids.size()))
 			{
 				const auto id = ids[i];
-				const auto cell_idx = getCellIdx(id);
+
+				const auto find_result = findCellIdx(id, now);
+				const auto & cell_idx = find_result.cell_idx;
+
 				auto & cell = cells[cell_idx];
 
 				for (const auto attribute_idx : ext::range(0, attributes.size()))
@@ -637,6 +679,7 @@ void CacheDictionary::update(
 
 	size_t not_found_num = 0, found_num = 0;
 
+	const auto now = std::chrono::system_clock::now();
 	/// Check which ids have not been found and require setting null_value
 	for (const auto id_found_pair : remaining_ids)
 	{
@@ -648,7 +691,10 @@ void CacheDictionary::update(
 		++not_found_num;
 
 		const auto id = id_found_pair.first;
-		const auto cell_idx = getCellIdx(id);
+
+		const auto find_result = findCellIdx(id, now);
+		const auto & cell_idx = find_result.cell_idx;
+
 		auto & cell = cells[cell_idx];
 
 		/// Set null_value for each attribute
