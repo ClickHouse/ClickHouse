@@ -1,56 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <meta charset="utf-8"/>
+        <meta charset="utf-8">
         <title>ClickHouse Guide</title>
 
-        <link rel="shortcut icon" href="favicon.ico"/>
-        <link rel="stylesheet" href="reference.css"/>
+        <link rel="shortcut icon" href="favicon.ico">
+        <link rel="stylesheet" href="reference.css">
 
-        <meta name="description" content="ClickHouse — open-source distributed column-oriented DBMS"/>
-		<meta name="keywords" content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics"/>
+        <meta name="description" content="ClickHouse — open-source distributed column-oriented DBMS">
+		<meta name="keywords" content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics">
     </head>
     <body>
-
-<script type="text/javascript">
-function getParams() {
-    var matches = document.cookie.match(/yandex_login=([\w\-]+)/);
-    return (matches && matches.length == 2) ? { "login": matches[1] } : {};
-}
-</script>
-
-<!-- Yandex.Metrica counter -->
-<script src="https://mc.yandex.ru/metrika/watch.js" type="text/javascript"></script>
-<script type="text/javascript">
-try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
-          webvisor:true,
-          clickmap:true,
-          trackLinks:true,
-          accurateTrackBounce:true,
-          trackHash:true,
-          params: getParams()});
-} catch(e) { }
-</script>
-<noscript><div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt=" " /></div></noscript>
-<!-- /Yandex.Metrica counter -->
-
-<script type="text/javascript" src="https://yandex.st/jquery/1.7.2/jquery.min.js"></script>
 
 <div class="island">
 
 <div style="float: left; margin-right: -100%; margin-top: 3px; margin-left: 3px;">
 	<a href="/">
-		<svg xmlns="http://www.w3.org/2000/svg" width="90" height="80" viewBox="0 0 9 8">
-			<style>
-				.o{fill:#fc0}
-				.r{fill:#f00}
-			</style>
-			<path class="r" d="M0,7 h1 v1 h-1 z"/>
-			<path class="o" d="M0,0 h1 v7 h-1 z"/>
-			<path class="o" d="M2,0 h1 v8 h-1 z"/>
-			<path class="o" d="M4,0 h1 v8 h-1 z"/>
-			<path class="o" d="M6,0 h1 v8 h-1 z"/>
-			<path class="o" d="M8,3.25 h1 v1.5 h-1 z"/>
+		<svg xmlns="http://www.w3.org/2000/svg" width="90" height="80" viewbox="0 0 9 8">
+			<path class="red" d="M0,7 h1 v1 h-1 z"/>
+			<path class="orange" d="M0,0 h1 v7 h-1 z"/>
+			<path class="orange" d="M2,0 h1 v8 h-1 z"/>
+			<path class="orange" d="M4,0 h1 v8 h-1 z"/>
+			<path class="orange" d="M6,0 h1 v8 h-1 z"/>
+			<path class="orange" d="M8,3.25 h1 v1.5 h-1 z"/>
 		</svg>
 	</a>
 </div>
@@ -58,7 +30,7 @@ try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
 <div style="float: right; margin-left: -100%; margin-top: 3px; margin-right: 3px;">
 	<div style="display: inline-block; width: 50px; text-align: center; margin-right: 2px;">
 	<a href="reference_ru.html" title="In russian">
-		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 6" width="50" height="30" style="border: 1px solid #AAA;">
+		<svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 10 6" width="50" height="30" style="border: 1px solid #AAA;">
 			<rect fill="#fff" width="10" height="3"/>
 			<rect fill="#d52b1e" y="3" width="10" height="3"/>
 			<rect fill="#0039a6" y="2" width="10" height="2"/>
@@ -69,7 +41,7 @@ try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
 
 	<div style="display: inline-block; width: 50px; text-align: center; margin-left: 2px;">
 	<a href="reference_en.html" title="In english">
-		<svg xmlns="http://www.w3.org/2000/svg" width="50" height="30" viewBox="0,0 25,15" style="border: 1px solid #AAA;">
+		<svg xmlns="http://www.w3.org/2000/svg" width="50" height="30" viewbox="0,0 25,15" style="border: 1px solid #AAA;">
 			<rect width="25" height="15" fill="#00247d"/>
 			<path d="M 0,0 L 25,15 M 25,0 L 0,15" stroke="#fff" stroke-width="3"/>
 			<path d="M 12.5,0 V 15 M 0,7.5 H 25" stroke="#fff" stroke-width="5"/>
@@ -87,7 +59,7 @@ try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
 
 <div class="island">
 <h1>Contents</h1>
-<br />
+<br>
 <div id="contents"></div>
 </div>
 
@@ -5554,7 +5526,7 @@ Accepts a numeric argument and returns a Float64 number close to the square root
 Accepts a numeric argument and returns a Float64 number close to the cubic root of the argument.
 
 ===erf(x)===
-<img src="https://upload.wikimedia.org/math/3/4/4/3443265ce8cb884d9c894401ab15fa71.png"/>
+<img src="https://upload.wikimedia.org/math/3/4/4/3443265ce8cb884d9c894401ab15fa71.png">
 If &#39;x&#39; is non-negative, then %%erf(x / σ√2)%% is the probability that a random variable having a normal distribution with standard deviation &#39;σ&#39; takes the value that is separated from the expected value by more than &#39;x&#39;.
 
 Example (three sigma rule):
@@ -7290,165 +7262,18 @@ When the server is restarted, quotas are reset.
 
 
 <div class="informer">
-<!-- Yandex.Metrica informer -->
-<a href="https://metrika.yandex.ru/stat/?id=18343495&amp;from=informer"
-target="_blank" rel="nofollow"><img src="https://bs.yandex.ru/informer/18343495/2_1_FFFFFFFF_EFEFEFFF_0_pageviews"
-style="width:80px; height:31px; border:0;" alt="Yandex.Metrica" title="Yandex.Metrica: data for today (pageviews)" onclick="try{Ya.Metrika.informer({i:this,id:18343495,type:0,lang:'ru'});return false}catch(e){}"/></a>
-<!-- /Yandex.Metrica informer -->
+	<!-- Yandex.Metrika informer -->
+	<a href="https://metrika.yandex.ru/stat/?id=18343495&amp;from=informer" target="_blank" rel="nofollow"><img src="https://bs.yandex.ru/informer/18343495/2_1_FFFFFFFF_EFEFEFFF_0_pageviews" style="width:80px; height:31px; border:0;" alt="Яндекс.Метрика" title="Яндекс.Метрика: данные за сегодня (просмотры)" onclick="try{Ya.Metrika.informer({i:this,id:18343495,type:0,lang:'ru'});return false}catch(e){}"></a>
+	<!-- /Yandex.Metrika informer -->
 </div>
+<script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
+<script type="text/javascript">function wikiToHTML(r){return r=r.replace(/\n{0,2}===(.+?)===\n{0,2}/g,"\n\n<h3>$1</h3>\n\n"),r=r.replace(/\n{0,2}==(.+?)==\n{0,2}/g,"\n\n<h2>$1</h2>\n\n"),r=r.replace(/%%(.+?)%%/g,'<span class="inline-example">$1</span>'),r=r.replace(/%%([\s\S]+?)%%/g,'<pre class="text-example">$1</pre>'),r=r.replace(/(<pre[^>]*>)([\s\S]+?)(<\/pre>)/g,function(r,n,e,t){return n+e.replace(/\n/g,"<newline>")+t}),r="<p>"+r+"</p>",r=r.replace(/\n(\s*\n)+/g,"</p><p>"),r=r.replace(/(<pre[^>]*>)([\s\S]+?)(<\/pre>)/g,function(r,n,e,t){return n+e.replace(/<newline>/g,"\n")+t})}function getTrigrams(r){r=r.toLowerCase();var n=[];if(!(r.length<3)){for(var e=0;e<r.length-2;++e)n.push(r.substring(e,e+3));return n}}function findBestAnchor(r){r=r.toLowerCase();var n=getTrigrams(r),e={};for(var t in n)if(trigram_to_anchor.hasOwnProperty(n[t]))for(var a in trigram_to_anchor[n[t]])void 0===e[trigram_to_anchor[n[t]][a]]&&(e[trigram_to_anchor[n[t]][a]]=0),e[trigram_to_anchor[n[t]][a]]+=1/Math.sqrt(trigram_to_anchor[n[t]][a].length);var o=[];for(var s in e)o.push({name:s,score:e[s]});return o.sort(function(r,n){return n.score-r.score}),o[0].name}function getParams(){var r=document.cookie.match(/yandex_login=([\w\-]+)/);return r&&2==r.length?{login:r[1]}:{}}$(".content").each(function(){var r=$(this);r.html(wikiToHTML(r.html()))}),$(".show-example").each(function(){var r=$('<a class="show-hide-link">Показать пример</a>'),n=$(this);n.before(r),r.click(function(){n.toggle(100),r.text("Пример:")})});var contents=[],set_of_anchors={},trigram_to_anchor={},anchor_to_element={};if($("h1, h2, h3, h4, h5, h6").each(function(){var r=$(this),n=r.text().replace(/^\d+\.\s+/,""),e=n,t=r.prop("tagName").substring(1)-1;if(!r.hasClass("not-for-contents")){void 0===set_of_anchors[e]&&(set_of_anchors[e]=0),++set_of_anchors[e],set_of_anchors[e]>1&&(e+=set_of_anchors[e]);var a=getTrigrams(e);for(var o in a)void 0===trigram_to_anchor[a[o]]&&(trigram_to_anchor[a[o]]=[]),trigram_to_anchor[a[o]].push(e);r.before($('<a href="#'+e+'" class="head-anchor" name="'+e+'">⚓</a>')),contents.push('<a href="#'+e+'" class="contents-element" style="margin-left:'+t+'em">'+n+"</a><br />")}}),$("#contents").html(contents.join("")),$("p").each(function(){var r=$(this),n=r.text(),e=n.match(/разделе? "([^"]+?)"/);e&&r.html(r.html().replace(/(разделе? ")([^"]+?)\d?(")/,'$1<a href="#'+findBestAnchor(e[1])+'">$2</a>$3'))}),location.hash.length>1){var queried=decodeURIComponent(location.hash.substring(1));set_of_anchors.hasOwnProperty(queried)||(location.hash="#"+findBestAnchor(queried))}</script>
 
-<script type="text/javascript">
-
-// Генерация HTML по разметке, отдалённо напоминающей Wiki. Криво.
-function wikiToHTML(text) {
-
-	text = text.replace(/\n{0,2}===(.+?)===\n{0,2}/g, '\n\n<h3>$1<\/h3>\n\n');
-	text = text.replace(/\n{0,2}==(.+?)==\n{0,2}/g, '\n\n<h2>$1<\/h2>\n\n');
-
-	text = text.replace(/%%(.+?)%%/g, '<span class="inline-example">$1<\/span>');
-	text = text.replace(/%%([\s\S]+?)%%/g, '<pre class="text-example">$1<\/pre>');
-
-	text = text.replace(/(<pre[^>]*>)([\s\S]+?)(<\/pre>)/g, function(match, p1, p2, p3) {
-		return p1 + p2.replace(/\n/g, '<newline>') + p3;
-	});
-
-	text = '<p>' + text + '<\/p>';
-	text = text.replace(/\n(\s*\n)+/g, '<\/p><p>');
-
-	text = text.replace(/(<pre[^>]*>)([\s\S]+?)(<\/pre>)/g, function(match, p1, p2, p3) {
-		return p1 + p2.replace(/<newline>/g, '\n') + p3;
-	});
-
-	return text;
-}
-
-$('.content').each(function() {
-	var elem = $(this);
-	elem.html(wikiToHTML(elem.html()));
-});
-
-
-$('.show-example').each(function() {
-    var link = $("<a class='show-hide-link'>Show example<\/a>");
-    var example = $(this);
-    example.before(link);
-    link.click(function() {
-        example.toggle(100);
-        link.text('Example:');
-    });
-});
-
-
-// Создаём содержание.
-
-var contents = [];
-var set_of_anchors = {};
-
-// Триграмный индекс текстов anchor-ов. Используется, чтобы расставить ссылки на разделы внутри текста.
-var trigram_to_anchor = {};
-var anchor_to_element = {};
-
-function getTrigrams(s) {
-	s = s.toLowerCase();
-
-	var res = [];
-	if (s.length < 3) {
-		return;
-	}
-
-	for (var i = 0; i < s.length - 2; ++i) {
-		res.push(s.substring(i, i + 3));
-	}
-
-	return res;
-}
-
-$('h1, h2, h3, h4, h5, h6').each(function() {
-    var elem = $(this);
-    var text = elem.text().replace(/^\d+\.\s+/, '');
-    var anchor = text;
-    var margin = elem.prop('tagName').substring(1) - 1;
-
-    if (elem.hasClass('not-for-contents')) {
-        return;
-    }
-
-    /// Снимает неоднозначность
-
-    if (set_of_anchors[anchor] === undefined) {
-        set_of_anchors[anchor] = 0;
-    }
-
-    ++set_of_anchors[anchor];
-
-    if (set_of_anchors[anchor] > 1) {
-        anchor += set_of_anchors[anchor];
-    }
-
-	var trigrams = getTrigrams(anchor);
-	for (var i in trigrams) {
-		if (trigram_to_anchor[trigrams[i]] === undefined) {
-			trigram_to_anchor[trigrams[i]] = [];
-		}
-		trigram_to_anchor[trigrams[i]].push(anchor);
-	}
-
-    elem.before($('<a href="#' + anchor + '" class="head-anchor" name="' + anchor + '">⚓<\/a>'));
-
-    contents.push('<a href="#' + anchor + '" class="contents-element" style="margin-left:' + margin + 'em">' + text + '<\/a><br \/>');
-});
-
-$('#contents').html(contents.join(''));
-
-
-// Найти по триграмному индексу лучший anchor для текста.
-function findBestAnchor(s) {
-	s = s.toLowerCase();
-	var trigrams = getTrigrams(s);
-	var anchors_score = {};
-
-	for (var i in trigrams) {
-		if (trigram_to_anchor.hasOwnProperty(trigrams[i])) {
-			for (var j in trigram_to_anchor[trigrams[i]]) {
-				if (anchors_score[trigram_to_anchor[trigrams[i]][j]] === undefined) {
-					anchors_score[trigram_to_anchor[trigrams[i]][j]] = 0;
-				}
-				anchors_score[trigram_to_anchor[trigrams[i]][j]] += 1.0 / Math.sqrt(trigram_to_anchor[trigrams[i]][j].length);
-			}
-		}
-	}
-
-	var anchors_matched = [];
-	for (var name in anchors_score) {
-		anchors_matched.push({ name : name, score : anchors_score[name] });
-	}
-
-	anchors_matched.sort(function(a, b) { return b.score - a.score; });
-//	console.log(anchors_matched);
-	return anchors_matched[0].name;
-}
-
-
-$('p').each(function() {
-    var elem = $(this);
-    var text = elem.text();
-
-    var match = text.match(/(?:разделе?|sections?|see(?: the)?) "([^"]+?)"/i);
-    if (match) {
-		elem.html(elem.html().replace(/((?:разделе?|sections?|see(?: the)?) ")([^"]+?)\d?(")/i, '$1<a href="#' + findBestAnchor(match[1]) + '">$2</a>$3'));
-    }
-});
-
-// Если человек пришёл по ссылке с именем раздела в хэше, а этого раздела не существует, то найдём лучший раздел по триграмному индексу.
-if (location.hash.length > 1) {
-	var queried = decodeURIComponent(location.hash.substring(1));
-	if (!set_of_anchors.hasOwnProperty(queried)) {
-		location.hash = "#" + findBestAnchor(queried);
-	}
-}
-
-
-</script>
+<!-- Yandex.Metrika counter -->
+<script src="https://mc.yandex.ru/metrika/watch.js" type="text/javascript"></script>
+<script type="text/javascript">try{var yaCounter18343495=new Ya.Metrika({id:18343495,webvisor:!0,clickmap:!0,trackLinks:!0,accurateTrackBounce:!0,trackHash:!0,params:getParams()})}catch(a){}</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt=""></div></noscript>
+<!-- /Yandex.Metrika counter -->
 
     </body>
 </html>

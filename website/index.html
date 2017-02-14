@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+
+    <title>ClickHouse — open-source distributed column-oriented DBMS</title>
+
+    <link rel="shortcut icon" href="favicon.ico"/>
+
+    <meta property="og:title" content="ClickHouse DBMS"/>
+    <meta property="og:description"
+          content="ClickHouse is an open-source column-oriented database management system that allows generating analytical data reports in real time using SQL queries."/>
+    <meta property="og:type" content="website"/>
+    <meta property="og:url" content="https://clickhouse.yandex"/>
+    <meta property="og:image" content="https://clickhouse.yandex/logo.png"/>
+
+    <meta property="twitter:title" content="ClickHouse DBMS"/>
+
+    <meta name="description"
+          content="ClickHouse is an open-source distributed column-oriented database management system that allows generating analytical data reports in real time using SQL queries. Сreated by Yandex ClickHouse manages extremely large volumes of data in a stable and sustainable manner."/>
+    <meta name="keywords"
+          content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics" />
+
+    <style type="text/css">
+        @font-face {
+            font-family: 'Yandex Sans Text Web';
+            src: url(https://yastatic.net/adv-www/_/yy5JveR58JFkc97waf-xp0i6_jM.eot);
+            src: url(https://yastatic.net/adv-www/_/yy5JveR58JFkc97waf-xp0i6_jM.eot?#iefix) format('embedded-opentype'),
+            url(https://yastatic.net/adv-www/_/CYblzLEXzCqQIvrYs7QKQe2omRk.woff2) format('woff2'),
+            url(https://yastatic.net/adv-www/_/pUcnOdRwl83MvPPzrNomhyletnA.woff) format('woff'),
+            url(https://yastatic.net/adv-www/_/vNFEmXOcGYKJ4AAidUprHWoXrLU.ttf) format('truetype'),
+            url(https://yastatic.net/adv-www/_/0w7OcWZM_QLP8x-LQUXFOgXO6dE.svg#YandexSansTextWeb-Bold) format('svg');
+            font-weight: 700;
+            font-style: normal;
+            font-stretch: normal
+        }
+
+        @font-face {
+            font-family: 'Yandex Sans Text Web';
+            src: url(https://yastatic.net/adv-www/_/LI6l3L2RqcgxBe2pXmuUha37czQ.eot);
+            src: url(https://yastatic.net/adv-www/_/LI6l3L2RqcgxBe2pXmuUha37czQ.eot?#iefix) format('embedded-opentype'),
+            url(https://yastatic.net/adv-www/_/z3MYElcut0R2MF_Iw1RDNrstgYs.woff2) format('woff2'),
+            url(https://yastatic.net/adv-www/_/1jvKJ_-hCXl3s7gmFl-y_-UHTaI.woff) format('woff'),
+            url(https://yastatic.net/adv-www/_/9nzjfpCR2QHvK1EzHpDEIoVFGuY.ttf) format('truetype'),
+            url(https://yastatic.net/adv-www/_/gwyBTpxSwkFCF1looxqs6JokKls.svg#YandexSansTextWeb-Regular) format('svg');
+            font-weight: 400;
+            font-style: normal;
+            font-stretch: normal
+        }
+
+        @font-face {
+            font-family: 'Yandex Sans Text Web';
+            src: url(https://yastatic.net/adv-www/_/ayAFYoY8swgBLhq_I56tKj2JftU.eot);
+            src: url(https://yastatic.net/adv-www/_/ayAFYoY8swgBLhq_I56tKj2JftU.eot?#iefix) format('embedded-opentype'),
+            url(https://yastatic.net/adv-www/_/lGQcYklLVV0hyvz1HFmFsUTj8_0.woff2) format('woff2'),
+            url(https://yastatic.net/adv-www/_/f0AAJ9GJ4iiwEmhG-7PWMHk6vUY.woff) format('woff'),
+            url(https://yastatic.net/adv-www/_/4UDe4nlVvgEJ-VmLWNVq3SxCsA.ttf) format('truetype'),
+            url(https://yastatic.net/adv-www/_/EKLr1STNokPqxLAQa_RyN82pL98.svg#YandexSansTextWeb-Light) format('svg');
+            font-weight: 300;
+            font-style: normal;
+            font-stretch: normal
+        }
+
+        @font-face {
+            font-family: 'Yandex Sans Display Web';
+            src: url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
+            src: url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
+            url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
+            url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
+            url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
+            url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
+            font-weight: 400;
+            font-style: normal;
+            font-stretch: normal
+        }
+
+        @font-face {
+            font-family: 'Yandex Sans Display Web';
+            src: url(https://yastatic.net/adv-www/_/g8_MyyKVquSZ3xEL6tarK__V9Vw.eot);
+            src: url(https://yastatic.net/adv-www/_/g8_MyyKVquSZ3xEL6tarK__V9Vw.eot?#iefix) format('embedded-opentype'),
+            url(https://yastatic.net/adv-www/_/LGiRvlfqQHlWR9YKLhsw5e7KGNA.woff2) format('woff2'),
+            url(https://yastatic.net/adv-www/_/40vXwNl4eYYMgteIVgLP49dwmfc.woff) format('woff'),
+            url(https://yastatic.net/adv-www/_/X6zG5x_wO8-AtwJ-vDLJcKC5228.ttf) format('truetype'),
+            url(https://yastatic.net/adv-www/_/ZKhaR0m08c8CRRL77GtFKoHcLYA.svg#YandexSansDisplayWeb-Light) format('svg');
+            font-weight: 300;
+            font-style: normal;
+            font-stretch: normal
+        }
+
+        body {
+            background: #fff;
+            font: 300 1.1em/200% 'Yandex Sans Text Web', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        #navbar {
+            top: 0;
+            z-index: 100;
+            position: fixed;
+            width: 100%;
+            background: #fff;
+            border-bottom: 1px solid #efefef;
+            padding: 8px 0px 8px 12px;
+            margin: 0;
+        }
+
+        #navbar-inner {
+            max-width: 1280px;
+            margin: auto;
+        }
+
+        #github {
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            position: fixed;
+            font-size: 75%;
+            padding: 0 4em;
+            margin: 0 0 2.5em -4em;
+            -webkit-transform: rotate(45deg);
+            -moz-transform: rotate(45deg);
+            -ms-transform: rotate(45deg);
+            -o-transform: rotate(45deg);
+            background: #000;
+        }
+
+        #github_link {
+            color: #fff;
+        }
+
+        #github_link:hover {
+            color: #fff;
+        }
+
+        .page {
+            max-width: 800px;
+            margin: auto;
+        }
+
+        #logo {
+            color: #000;
+            text-decoration: none;
+            font-size: 110%;
+        }
+
+        #main_title {
+            font: 400 275% 'Yandex Sans Display Web', Arial, sans-serif;
+            margin: 0 0 0 0;
+        }
+
+        h2 {
+            margin: 47px 0 23px;
+            font: 400 200%/133% 'Yandex Sans Display Web', Arial, sans-serif;
+        }
+
+        .smaller-font {
+            font-size: 80%;
+        }
+
+        a:link, a:visited {
+            color: #08f;
+            text-decoration: none;
+        }
+
+        a:hover, a:active {
+            color: #f00;
+            text-decoration: underline;
+        }
+
+        .menu {
+            padding: 18px 12px 0 0;
+            font: 400 18pt 'Yandex Sans Display Web', Arial, sans-serif;
+            float: right;
+        }
+
+        .menu_item:link,
+        .menu_item:active,
+        .menu_item:visited {
+            margin: 0 8px 0 0;
+            padding: 5px;
+            color: #000;
+        }
+
+        .menu_item:hover, .index_item:hover {
+            border-bottom: 2px solid #fc0;
+            text-decoration: none;
+        }
+
+        .index_item:link,
+        .index_item:active,
+        .index_item:visited {
+            color: #ededed;
+            font: 300 18pt/200% 'Yandex Sans Display Web', Arial, sans-serif;
+        }
+
+        #short-description {
+            font: 300 23pt/175% 'Yandex Sans Display Web', Arial, sans-serif;
+            margin: 0 0 58px 0;
+        }
+
+        #hero {
+            background: #555;
+            padding: 120px 0 30px 0;
+            color: #ededed;
+        }
+
+        #index_ul {
+            padding-left: 18px;
+        }
+
+        #slogan {
+            color: #555;
+        }
+
+        #placeholder {
+            width: 66%;
+            margin: 10% auto 0 auto;
+        }
+
+        #performance {
+            width: 100%;
+            background: #fc0;
+            padding: 60px 0 120px 0;
+            margin-top: 70px;
+        }
+
+        #call_to_action, #benchmark_learn_more {
+            text-decoration: none;
+            padding-left: 18px;
+            font-size: 120%;
+            width: 182px;
+            height: 50px;
+            line-height: 50px;
+            display: block;
+        }
+
+        #call_to_action {
+            background: url('yandex-white-button.png') no-repeat;
+            color: #ededed;
+        }
+
+        #call_to_action:hover {
+            color: #fc0;
+        }
+
+        #benchmark_learn_more {
+            background: url('yandex-black-button.png') no-repeat;
+            float: right;
+            margin-right: 7.5%;
+            color: #000;
+        }
+
+        #grey-block {
+            width: 100%;
+            background: #555;
+            padding: 10px 0 35px 0;
+            color: #ededed;
+        }
+
+        #ubuntu-install {
+            overflow: auto;
+            overflow-y: hidden;
+            -ms-overflow-y: hidden;
+        }
+
+        #footer {
+            text-align: right;
+            padding: 8px 18px 0 0;
+            color: #888;
+            font-size: 10pt;
+        }
+
+        code {
+            font: 13px/18px monospace, "Courier New";
+            display: block;
+            border-left: 5px solid #ffdb4d;
+            padding: 5px 10px;
+            background: #000;
+            color: #ccc;
+        }
+
+        ul {
+            margin: 0;
+            padding-left: 0;
+        }
+
+        ul.dashed {
+            list-style-type: none;
+        }
+
+        ul.dashed > li {
+            text-indent: 5px;
+        }
+
+        ul.dashed > li:before {
+            content: '— ';
+            text-indent: 1em;
+        }
+
+        .warranty {
+            margin-top: 6em;
+            font-size: 50%;
+            color: #888;
+            line-height: 150%;
+            border-top: 1px solid #888;
+            padding: 1em 0;
+        }
+
+        .distributive_selected {
+            color: #000;
+            font-weight: bold;
+        }
+
+        .distributive_not_selected {
+            color: #08f;
+            cursor: pointer;
+            border-bottom: 1px dashed #08f;
+        }
+
+        .block-50 {
+            float: left;
+            display: block;
+            width: 50%;
+        }
+
+        .block-30 {
+            float: left;
+            display: block;
+            width: 30%;
+        }
+
+        .block-70 {
+            float: left;
+            display: block;
+            width: 70%;
+        }
+
+        .clear {
+            clear: both;
+        }
+
+        .orange {
+            fill: #fc0;
+            color: #fc0;
+        }
+
+        .red {
+            fill: #f00;
+        }
+
+        @media (max-width: 1023px) {
+            body {
+                font-size: 1.33em;
+            }
+            .desktop-only {
+                display: none;
+            }
+
+            .page {
+                width: 90%;
+                margin: 0 auto;
+            }
+
+            .smaller-font {
+                font-size: 100%;
+            }
+
+            #navbar {
+                position: relative;
+                text-align: center;
+                margin: 1.33em 0;
+                padding: 0;
+                border: none;
+            }
+
+            #hero {
+                padding: 10px 0;
+                text-align: center;
+            }
+
+            #hero ul.dashed > li:before {
+                content: '';
+            }
+
+            #hero .index_item {
+                font-size: 160%;
+            }
+
+            #hero .dashed {
+                margin-bottom: 50px;
+            }
+
+            #call_to_action {
+                margin: 20px auto 60px auto;
+            }
+
+            #benchmark_learn_more, #call_to_action {
+                font-size: 80%;
+            }
+
+            #github {
+                text-align: center;
+                font-size: 133%;
+                bottom: 0;
+                left: 0;
+                z-index: 100;
+                position: relative;
+                padding: 4px;
+                margin: 0;
+                -webkit-transform: rotate(0deg);
+                -moz-transform: rotate(0deg);
+                -ms-transform: rotate(0deg);
+                -o-transform: rotate(0deg);
+                background: #000;
+            }
+
+            .block-30, .block-50, .block-70 {
+                width: 100%;
+                float: none;
+            }
+        }
+    </style>
+</head>
+<body>
+<div id="navbar">
+    <div id="navbar-inner">
+        <div class="menu desktop-only">
+            <a class="menu_item" href="#quick-start">Quick Start</a>
+            <a class="menu_item" href="#performance">Performance</a>
+            <a class="menu_item" href="reference_en.html">Documentation</a>
+            <a class="menu_item" href="#contacts">Contacts</a>
+        </div>
+
+        <a id="logo" href="#">
+            <h1 id="main_title">
+                <svg xmlns="http://www.w3.org/2000/svg" width="54" height="48" viewBox="0 0 9 8">
+                    <path class="red" d="M0,7 h1 v1 h-1 z"></path>
+                    <path class="orange" d="M0,0 h1 v7 h-1 z"></path>
+                    <path class="orange" d="M2,0 h1 v8 h-1 z"></path>
+                    <path class="orange" d="M4,0 h1 v8 h-1 z"></path>
+                    <path class="orange" d="M6,0 h1 v8 h-1 z"></path>
+                    <path class="orange" d="M8,3.25 h1 v1.5 h-1 z"></path>
+                </svg>
+
+                ClickHouse
+            </h1>
+        </a>
+    </div>
+</div>
+
+<div id="hero">
+    <div class="page">
+        <div class="block-70">
+            <p id="short-description">ClickHouse is a free <span class="orange">open-source</span> column-oriented
+                database management system
+                capable of <span class="orange">real time</span> generation of analytical data reports using <span
+                        class="orange">SQL</span> queries.</p>
+            <a id="call_to_action" href="#quick-start">
+                Quick Start
+            </a>
+        </div>
+        <div class="block-30">
+            <ul id="index_ul" class="dashed">
+                <li>
+                    <a class="index_item" href="#blazing-fast">Blazing Fast</a>
+                </li>
+                <li>
+                    <a class="index_item" href="#linearly-scalable">Linearly Scalable</a>
+                </li>
+                <li>
+                    <a class="index_item" href="#hardware-efficient">Hardware Efficient</a>
+                </li>
+                <li>
+                    <a class="index_item" href="#fault-tolerant">Fault Tolerant</a>
+                </li>
+                <li>
+                    <a class="index_item" href="#feature-rich">Feature Rich</a>
+                </li>
+                <li>
+                    <a class="index_item" href="#simple-and-handy">Simple and Handy</a>
+                </li>
+                <li>
+                    <a class="index_item" href="#highly-reliable">Highly Reliable</a>
+                </li>
+            </ul>
+        </div>
+        <div class="clear"></div>
+    </div>
+</div>
+<a id="github_link"
+   href="https://github.com/yandex/ClickHouse"
+   rel="external nofollow"
+   target="_blank"
+><div id="github">Fork me on GitHub</div></a>
+
+<div class="page">
+    <h2 id="slogan">ClickHouse. Just makes you think faster.</h2>
+
+    <div class="block-70">
+        <ul class="dashed">
+            <li>Run more queries in the same amount of time</li>
+            <li>Test more hypotheses</li>
+            <li>Slice and dice your data in many more new ways</li>
+            <li>Look at your data from new angles</li>
+            <li>Discover new dimensions</li>
+        </ul>
+    </div>
+    <div class="block-30">
+        <svg id="placeholder" class="desktop-only" viewBox="0 0 76 76" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <rect id="path-1" x="0" y="16" width="60" height="60" rx="1"></rect>
+                <mask id="mask-2" maskContentUnits="userSpaceOnUse" maskUnits="objectBoundingBox" x="0" y="0" width="60" height="60" fill="white">
+                    <use xlink:href="#path-1"></use>
+                </mask>
+                <rect id="path-3" x="16" y="0" width="60" height="60" rx="1"></rect>
+                <mask id="mask-4" maskContentUnits="userSpaceOnUse" maskUnits="objectBoundingBox" x="0" y="0" width="60" height="60" fill="white">
+                    <use xlink:href="#path-3"></use>
+                </mask>
+                <rect id="path-5" x="0" y="8" width="20" height="20" rx="1"></rect>
+                <mask id="mask-6" maskContentUnits="userSpaceOnUse" maskUnits="objectBoundingBox" x="0" y="0" width="20" height="20" fill="white">
+                    <use xlink:href="#path-5"></use>
+                </mask>
+                <rect id="path-7" x="8" y="0" width="20" height="20" rx="1"></rect>
+                <mask id="mask-8" maskContentUnits="userSpaceOnUse" maskUnits="objectBoundingBox" x="0" y="0" width="20" height="20" fill="white">
+                    <use xlink:href="#path-7"></use>
+                </mask>
+            </defs>
+            <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd" stroke-linecap="round">
+                <g id="Clickhouse_2" transform="translate(-558.000000, -1293.000000)">
+                    <g id="Group-11" transform="translate(558.000000, 1293.000000)">
+                        <use id="Rectangle-33" stroke="#FFCC00" mask="url(#mask-2)" stroke-width="4" xlink:href="#path-1"></use>
+                        <use id="Rectangle-33" stroke="#FFCC00" mask="url(#mask-4)" stroke-width="4" xlink:href="#path-3"></use>
+                        <path d="M0.989013672,17.017334 L16.8210449,1.16748047" id="Path-26" stroke="#FFCC00" stroke-width="2"></path>
+                        <path d="M59.0788574,74.9973145 L74.7983398,59.2650146" id="Path-26" stroke="#FFCC00" stroke-width="2"></path>
+                        <path d="M59.1091309,17.1687012 L74.9368896,1.10351562" id="Path-26-Copy" stroke="#FFCC00" stroke-width="2"></path>
+                        <path d="M1.07910156,17.2504883 L26.0395508,33.4033203" id="Path-26" stroke="#FFCC00" stroke-width="2"></path>
+                        <path d="M17.2602539,1.18457031 L34.0175781,25.1796875" id="Path-26" stroke="#FFCC00" stroke-width="2"></path>
+                        <path d="M51.2958984,25.4736328 L58.8277588,17" id="Path-26-Copy" stroke="#FFCC00" stroke-width="2"></path>
+                        <path d="M1.01904297,50.942627 L25.9216309,75.064209" id="Path-26" stroke="#FFCC00" stroke-width="2" transform="translate(13.470337, 63.003418) scale(-1, 1) translate(-13.470337, -63.003418) "></path>
+                        <path d="M44.1804199,51.300293 L58.9638672,75.010498" id="Path-26" stroke="#FFCC00" stroke-width="2"></path>
+                        <path d="M52.0131836,43.1345215 L75.0227051,58.9299316" id="Path-26" stroke="#FFCC00" stroke-width="2"></path>
+                        <g id="Group-3" transform="translate(25.000000, 24.000000)" stroke="#444444">
+                            <use id="Rectangle-33" mask="url(#mask-6)" stroke-width="4" xlink:href="#path-5"></use>
+                            <use id="Rectangle-33" mask="url(#mask-8)" stroke-width="4" xlink:href="#path-7"></use>
+                            <path d="M19.2587891,1.08825684 L26.7729492,8.8046875" id="Path-26" stroke-width="2" transform="translate(23.015869, 4.946472) scale(-1, 1) translate(-23.015869, -4.946472) "></path>
+                            <path d="M1.05773926,1.04125977 L8.82080078,8.9654541" id="Path-26" stroke-width="2" transform="translate(4.939270, 5.003357) scale(-1, 1) translate(-4.939270, -5.003357) "></path>
+                            <path d="M1.12487793,18.887207 L9.26220703,26.8897705" id="Path-26" stroke-width="2" transform="translate(5.193542, 22.888489) scale(-1, 1) translate(-5.193542, -22.888489) "></path>
+                            <path d="M19.038208,19.1968994 L26.9085693,26.9760742" id="Path-26" stroke-width="2" transform="translate(22.973389, 23.086487) scale(-1, 1) translate(-22.973389, -23.086487) "></path>
+                        </g>
+                    </g>
+                </g>
+            </g>
+        </svg>
+
+    </div>
+    <div class="clear"></div>
+
+
+    <h2 id="blazing-fast">Blazing Fast</h2>
+
+    <p>ClickHouse’s performance <a href="benchmark.html">exceeds</a> comparable column-oriented DBMS currently available
+        on the market. It&nbsp;processes hundreds of millions to more than a billion rows and tens of gigabytes of data
+        per single server per second.</p>
+
+    <p>ClickHouse uses all available hardware to its full potential to process each query as fast as possible. The peak
+        processing performance for a single query (after decompression, only used columns) stands at more than 2&nbsp;terabytes
+        per second.</p>
+</div>
+<div id="performance">
+    <div class="page">
+        <h2>ClickHouse works 100-1,000x faster than traditional approaches</h2>
+        <p>In contrast to data management methods, where vast amounts of raw data in its native format are available as
+            a ‘data lake’ for any
+            given query, ClickHouse, in most cases, offers instant results: the data is processed faster than it&nbsp;takes
+            to make a query. Follow the link to see detailed benchmarks in comparison with other database management
+            systems.</p>
+        <a id="benchmark_learn_more" href="benchmark.html">
+            Learn more
+        </a>
+    </div>
+</div>
+
+<div class="page">
+    <h2 id="linearly-scalable">Linearly Scalable</h2>
+
+    <p>ClickHouse allows companies to add servers to their clusters when necessary without investing time or money into
+        additional DBMS modification. The system has been successfully serving <a href="https://metrica.yandex.com/">Yandex.Metrica</a>,
+        while the servers just in its main cluster, located in six geographically distributed datacenters, have grown
+        from 60 to 394 in two years.</p>
+
+    <p>ClickHouse scales well both vertically and horizontally. ClickHouse is easily adaptable to perform both on
+        hundreds of node clusters, and on a single server or even virtual machine. It&nbsp;currently has installations
+        with more than two trillion rows per single node, as well as installations with 100 TB of storage per single
+        node.</p>
+
+
+    <h2 id="hardware-efficient">Hardware Efficient</h2>
+
+    <p>ClickHouse processes typical analytical queries two to three orders of magnitude faster than traditional
+        row-oriented systems with the same available IO throughput. The system’s columnar format allows fitting more hot
+        data in the server’s RAM, which leads to a shorter response time.</p>
+
+    <p>ClickHouse allows to minimize number of seeks for range queries, which increases efficiency of using rotational
+        drives, as it&nbsp;maintains locality of reference for stored data continually.</p>
+
+    <p>ClickHouse is CPU efficient because of its vectorized query execution and runtime code generation.</p>
+
+    <p>By minimizing data transfers for most types of queries, ClickHouse enables companies to manage their data and
+        create reports without using a network that supports high-performance computing.</p>
+</div>
+<div id="grey-block">
+    <div class="page">
+        <h2 id="fault-tolerant">Fault Tolerant</h2>
+
+        <p>ClickHouse supports multi-master asynchronous replication and can be deployed across multiple datacenters.
+            Downtime of a single node or the whole datacenter won’t affect the system’s availability for reads and
+            writes.
+            Distributed reads are automatically balanced to live replicas without increasing latency. Replicated data
+            are
+            synchronized automatically or semi-automatically after the downtime.</p>
+    </div>
+</div>
+<div class="page">
+
+    <h2 id="feature-rich">Feature Rich</h2>
+
+    <p>ClickHouse features a number of built-in user-friendly web analytics capabilities, including probabilistic data
+        structures for fast and memory-efficient calculation of cardinalities and quantiles, or functions for addressing
+        URLs and IPs (both IPv4 and IPv6) as well as identifying dates, times and time zones.</p>
+
+    <p>Data management methods available in ClickHouse, such as arrays, array joins and nested data structures, are
+        extremely efficient for managing denormalized data.</p>
+
+    <p>Using ClickHouse allows joining both distributed data and co-located data, as the system supports local joins and
+        distributed joins. It&nbsp;also offers an opportunity to use external dictionaries, dimension tables loaded from
+        an external source, for seamless joins.</p>
+
+    <p>ClickHouse supports approximate query processing – you can get results as fast as you want, which is
+        indispensable when dealing with terabytes and petabytes of data.</p>
+
+    <p>The system’s conditional aggregate functions, calculation of totals and extremes, allow getting results with a
+        single query without having to run a number of them.</p>
+
+    <div class="block-50">
+        <h2>Key Features</h2>
+
+        <ul class="dashed smaller-font">
+            <li>True column-oriented</li>
+            <li>Vectorized query execution</li>
+            <li>Data compression</li>
+            <li>Parallel and distributed query execution</li>
+            <li>Real-time data ingestion</li>
+            <li>On-disk locality of reference</li>
+            <li>Real-time query processing</li>
+            <li>Cross-datacenter replication</li>
+            <li>High availability</li>
+            <li>SQL support</li>
+            <li>Local and distributed joins</li>
+            <li>Pluggable external dimension tables</li>
+            <li>Arrays and nested data types</li>
+            <li>Approximate query processing</li>
+            <li>Probabilistic data structures</li>
+            <li>Full support of IPv6</li>
+            <li>Features for web analytics</li>
+            <li>State-of-the-art algorithms</li>
+            <li>Detailed documentation</li>
+            <li>Clean documented code</li>
+        </ul>
+    </div>
+    <div class="block-50">
+        <h2>Applications</h2>
+
+        <ul class="dashed smaller-font">
+            <li>Web and App analytics</li>
+            <li>Advertising networks and RTB</li>
+            <li>Telecommunications</li>
+            <li>E-commerce</li>
+            <li>Information security</li>
+            <li>Monitoring and telemetry</li>
+            <li>Business intelligence</li>
+            <li>Online games</li>
+            <li>Internet of Things</li>
+        </ul>
+
+        <h2>Use Cases</h2>
+        <div class="smaller-font">
+        <p>ClickHouse currently powers
+            <a href="https://metrica.yandex.com/" rel="external nofollow">Yandex.Metrica</a>, world’s <a
+                    href="http://w3techs.com/technologies/overview/traffic_analysis/all" rel="external nofollow">second
+                largest</a> web analytics
+            platform, with over 13 trillion database records and over 20 billion events a day, generating customized
+            reports on-the-fly, directly from non-aggregated data. Another example is <a
+                href="https://www.yandex.com/company/press_center/press_releases/2012/2012-04-10/"
+                rel="external nofollow">CERN’s LHCb
+            experiment</a> to store and process metadata on 10bn events with over 1000 attributes per event registered
+            in 2011.</p>
+        </div>
+    </div>
+
+    <div class="clear"></div>
+
+    <h2 id="simple-and-handy">Simple and Handy</h2>
+    <p>ClickHouse streamlines all your data processing. It’s easy to use: ingest all your structured data into the
+        system, and it&nbsp;is instantly available for reports. New columns for new properties or dimensions can be
+        easily added to the system at any time without slowing it&nbsp;down.</p>
+
+
+    <p>ClickHouse is simple and works out-of-the-box. As well as performing on hundreds of node clusters, this system
+        can be easily installed on a single server or even a virtual machine. No development experience or code-writing
+        skills are required to install ClickHouse.</p>
+
+    <h2 id="highly-reliable">Highly Reliable</h2>
+
+    <p>ClickHouse has been managing petabytes of data serving a number of high-load mass-audience services of Russia’s
+        leading search provider and one of Europe’s largest IT companies, <a href="https://www.yandex.com/company/"
+                                                                             rel="external nofollow">Yandex</a>.
+        Since 2012, ClickHouse has been providing robust database management for the company’s <a
+                href="https://metrica.yandex.com/" rel="external nofollow">web analytics service</a>, comparison
+        shopping platform, email
+        service, online advertising platform, business intelligence and infrastructure monitoring.</p>
+
+    <p>ClickHouse is purely distributed system located on independent nodes, which has no single point of failure.</p>
+
+    <p>Software or hardware failures or misconfigurations do not result in loss of data. Instead of deleting "broken"
+        data, ClickHouse saves it&nbsp;or asks you what to do before a startup. All data are checksummed before every
+        read or write to disk or network. It&nbsp;is virtually impossible to delete data by accident.</p>
+
+    <p>ClickHouse offers flexible limits on query complexity and resource usage, which can be fine-tuned using settings.
+        It&nbsp;is possible to simultaneously serve both a number of high priority low-latency requests and some
+        long-running queries with lowered priority.</p>
+
+    <h2 id="quick-start">Quick Start</h2>
+
+    <p>System requirements: Linux, x86_64 with SSE 4.2.</p>
+
+    <p>Install packages for
+        <span class="distributive_not_selected" id="ubuntu_xenial">Ubuntu 16.04 (Xenial)</span> or <span
+                class="distributive_selected" id="ubuntu_trusty">Ubuntu 14.04 (Trusty)</span> or <span
+                class="distributive_not_selected" id="ubuntu_precise">Ubuntu 12.04 (Precise)</span>:
+    </p>
+
+    <code id="ubuntu-install">
+<pre>
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
+
+sudo mkdir -p /etc/apt/sources.list.d
+echo "deb http://repo.yandex.ru/clickhouse/<span id="distributive">trusty</span> stable main" |
+&nbsp;&nbsp;&nbsp;&nbsp;sudo tee /etc/apt/sources.list.d/clickhouse.list
+sudo apt-get update
+
+sudo apt-get install clickhouse-server-common clickhouse-client
+
+sudo service clickhouse-server start
+clickhouse-client
+</pre>
+    </code>
+
+    <p>Or build ClickHouse from <a href="https://github.com/yandex/ClickHouse" rel="external nofollow">sources</a>
+        according to the <a
+                href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md" rel="external nofollow"
+                target="_blank">instruction</a>.</p>
+
+    <p>Then proceed to <strong><a href="tutorial.html">tutorial</a></strong> or <strong><a href="reference_en.html">full
+        documentation</a></strong>.</p>
+
+
+    <h2 id="contacts">Contacts</h2>
+    <ul class="dashed">
+        <li>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse"
+                                    rel="external nofollow">Stack Overflow</a>.
+        </li>
+        <li>Discuss with real users in Telegram chat in <a href="https://telegram.me/clickhouse_en"
+                                                           rel="external nofollow">English</a> or in <a
+                href="https://telegram.me/clickhouse_ru" rel="external nofollow">Russian</a>.
+        </li>
+        <li>Use <a href="https://groups.google.com/group/clickhouse" rel="external nofollow">Google Group</a> for
+            discussion.
+        </li>
+        <li>Or send private message to developers:
+            <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
+        </li>
+    </ul>
+
+    <h2>Like ClickHouse?</h2>
+    <p>Help to spread the word about it via <a rel="external nofollow" target="_blank" href="https://www.facebook.com/sharer.php?u=https://clickhouse.yandex">Facebook</a>,
+        <a rel="external nofollow" target="_blank" href="https://twitter.com/intent/tweet?url=https://clickhouse.yandex">Twitter</a> and
+        <a rel="external nofollow" target="_blank" href="https://www.linkedin.com/shareArticle?url=https://clickhouse.yandex">LinkedIn</a>!</p>
+
+
+    <p class="warranty">Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+        KIND, either express or implied.</p>
+
+</div>
+
+<p id="footer">&copy; 2016–2017 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
+
+<script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
+<script type="text/javascript">
+    $(document).ready(function () {
+        var name = $('#main_title').text().trim().toLowerCase();
+        var feedback_address = name + '-feedback' + '@yandex-team.com';
+        var feedback_email = $('#feedback_email');
+        feedback_email.attr('href', 'mailto:' + feedback_address);
+        feedback_email.html(feedback_address);
+
+        $("a[href^='#']").on('click', function (e) {
+            e.preventDefault();
+            var selector = $(e.target).attr('href');
+            var offset = 0;
+
+            if (selector) {
+                offset = $(selector).offset().top - $('#logo').height() * 1.5;
+            }
+            $('html, body').animate({
+                scrollTop: offset
+            }, 500);
+        });
+
+        var available_distributives = ['xenial', 'trusty', 'precise'];
+        available_distributives.forEach(function (distr) {
+            $('#ubuntu_' + distr).on('click', function () {
+                $('#distributive').html(name);
+                available_distributives.forEach(function (distr) {
+                    $('#ubuntu_' + distr).attr('class', (name == distr) ? 'distributive_selected' : 'distributive_not_selected');
+                });
+            });
+        });
+    });
+</script>
+
+<!-- Yandex.Metrika counter -->
+<script src="https://mc.yandex.ru/metrika/watch.js" type="text/javascript"></script>
+<script type="text/javascript">
+    try {
+        var yaCounter18343495 = new Ya.Metrika({
+            id: 18343495,
+            webvisor: true,
+            clickmap: true,
+            trackLinks: true,
+            accurateTrackBounce: true,
+            trackHash: true
+        });
+    } catch (e) {
+    }
+</script>
+<noscript>
+    <div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt=""/></div>
+</noscript>
+<!-- /Yandex.Metrika counter -->
+</body>
+</html>
