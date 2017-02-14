@@ -270,6 +270,11 @@ public:
 		return getData().byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);
 	}
 
+	size_t allocatedSize() const override
+	{
+		return getData().allocatedSize() + getOffsets().allocated_size() * sizeof(getOffsets()[0]);
+	}
+
 	bool hasEqualOffsets(const ColumnArray & other) const
 	{
 		if (offsets == other.offsets)
@@ -303,6 +308,10 @@ public:
 
 	ColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
 
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		return scatterImpl<ColumnArray>(num_columns, selector);
+	}
 
 	ColumnPtr convertToFullColumnIfConst() const override
 	{

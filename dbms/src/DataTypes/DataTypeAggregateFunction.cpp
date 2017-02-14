@@ -24,7 +24,7 @@ std::string DataTypeAggregateFunction::getName() const
 		{
 			if (i)
 				stream << ", ";
-			stream << apply_visitor(DB::FieldVisitorToString(), parameters[i]);
+			stream << applyVisitor(DB::FieldVisitorToString(), parameters[i]);
 		}
 		stream << ")";
 	}
@@ -80,7 +80,7 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 	column_concrete.getData().push_back(place);
 }
 
-void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnAggregateFunction & real_column = typeid_cast<const ColumnAggregateFunction &>(column);
 	const ColumnAggregateFunction::Container_t & vec = real_column.getData();
@@ -95,7 +95,7 @@ void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuf
 		function->serialize(*it, ostr);
 }
 
-void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
 	ColumnAggregateFunction::Container_t & vec = real_column.getData();

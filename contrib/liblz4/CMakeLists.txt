@@ -1,3 +1,5 @@
+include_directories (BEFORE include)
+
 add_library (lz4
     src/lz4.c
     src/lz4hc.c

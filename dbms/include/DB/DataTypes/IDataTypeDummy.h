@@ -25,10 +25,10 @@ public:
 	void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override 		{ throwNoSerialization(); }
 	void deserializeBinary(IColumn & column, ReadBuffer & istr) const override 								{ throwNoSerialization(); }
 
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr,
-		size_t offset = 0, size_t limit = 0) const override													{ throwNoSerialization(); }
+	void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr,
+		size_t offset, size_t limit) const override													{ throwNoSerialization(); }
 
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override { throwNoSerialization(); }
+	void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override { throwNoSerialization(); }
 
 	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override 			{ throwNoSerialization(); }
 

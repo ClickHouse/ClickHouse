@@ -51,15 +51,15 @@ private:
 
 	Logger * log = &Logger::get("ReplacingSortedBlockInputStream");
 
-	/// Прочитали до конца.
+	/// All data has been read.
 	bool finished = false;
 
-	RowRef current_key;			/// Текущий первичный ключ.
-	RowRef next_key;			/// Первичный ключ следующей строки.
+	RowRef current_key;			/// Primary key of current row.
+	RowRef next_key;			/// Primary key of next row.
 
-	RowRef selected_row;		/// Последняя строка с максимальной версией для текущего первичного ключа.
+	RowRef selected_row;		/// Last row with maximum version for current primary key.
 
-	UInt64 max_version = 0;		/// Максимальная версия для текущего первичного ключа.
+	UInt64 max_version = 0;		/// Max version for current primary key.
 
 	template<class TSortCursor>
 	void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);

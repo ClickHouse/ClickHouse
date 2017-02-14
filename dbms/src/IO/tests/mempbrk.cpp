@@ -1,7 +1,3 @@
-#if defined(__x86_64__)
-	#include <nmmintrin.h>
-#endif
-
 #include <string>
 #include <iostream>
 #include <iomanip>

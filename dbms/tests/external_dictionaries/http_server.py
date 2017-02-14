@@ -1,16 +1,25 @@
 #!/usr/bin/env python
-from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
-from os import curdir, sep
+import os
+import socket
+import sys
+import BaseHTTPServer
+import SocketServer
 
-PORT_NUMBER = 58000
+PORT_NUMBER = 80
+if len(sys.argv) > 1 and int(sys.argv[1]):
+    PORT_NUMBER = int(sys.argv[1])
 
-class myHandler(BaseHTTPRequestHandler):
+class myHTTPServer(SocketServer.ForkingMixIn, BaseHTTPServer.HTTPServer):
+    address_family = socket.AF_INET6
+    pass
+
+class myHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
             self.path = "/http_server.py"
 
         try:
-            f = open(curdir + sep + self.path)
+            f = open(os.curdir + os.sep + self.path)
             self.send_response(200)
             self.send_header('Content-type', 'text/plain')
             self.end_headers()
@@ -26,8 +35,8 @@ class myHandler(BaseHTTPRequestHandler):
         return
 
 try:
-    server = HTTPServer(('', PORT_NUMBER), myHandler)
-    print 'Started httpserver on port ' , PORT_NUMBER
+    server = myHTTPServer(('', PORT_NUMBER), myHandler)
+    print 'Started httpserver on port' , PORT_NUMBER
     server.serve_forever()
 
 except KeyboardInterrupt:

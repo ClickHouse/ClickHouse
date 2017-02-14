@@ -1,9 +1,13 @@
 #pragma once
 
 #include <DB/Core/Types.h>
+#include <memory>
 
 namespace DB
 {
+
+class IDataType;
+using DataTypePtr = std::shared_ptr<IDataType>;
 
 namespace Conditional
 {

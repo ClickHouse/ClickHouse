@@ -1,11 +1,18 @@
 #pragma once
 
-#include <DB/Storages/IStorage.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Interpreters/Context.h>
+#include <string>
+#include <memory>
+
 
 namespace DB
 {
+
+class Context;
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
+
 
 /** Интерфейс для табличных функций.
   *

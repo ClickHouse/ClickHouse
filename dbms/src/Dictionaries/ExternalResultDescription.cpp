@@ -25,7 +25,7 @@ void ExternalResultDescription::init(const Block & sample_block_)
 
 	for (const auto idx : ext::range(0, num_columns))
 	{
-		const auto & column = sample_block.getByPosition(idx);
+		const auto & column = sample_block.safeGetByPosition(idx);
 		const auto type = column.type.get();
 
 		if (typeid_cast<const DataTypeUInt8 *>(type))

@@ -22,6 +22,7 @@
 #include <DB/Common/Arena.h>
 
 #include <DB/IO/ReadBuffer.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/IO/VarInt.h>
 #include <city.h>
 
@@ -179,6 +180,36 @@ inline bool checkChar(char c, ReadBuffer & buf)
 	++buf.position();
 	return true;
 }
+
+bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf);
+inline bool checkStringCaseInsensitive(const String & s, ReadBuffer & buf)
+{
+	return checkStringCaseInsensitive(s.c_str(), buf);
+}
+
+void assertStringCaseInsensitive(const char * s, ReadBuffer & buf);
+inline void assertStringCaseInsensitive(const String & s, ReadBuffer & buf)
+{
+	return assertStringCaseInsensitive(s.c_str(), buf);
+}
+
+/** Check that next character in buf matches first character of s.
+  * If true, then check all characters in s and throw exception if it doesn't match.
+  * If false, then return false, and leave position in buffer unchanged.
+  */
+bool checkStringByFirstCharacterAndAssertTheRest(const char * s, ReadBuffer & buf);
+bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, ReadBuffer & buf);
+
+inline bool checkStringByFirstCharacterAndAssertTheRest(const String & s, ReadBuffer & buf)
+{
+	return checkStringByFirstCharacterAndAssertTheRest(s.c_str(), buf);
+}
+
+inline bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const String & s, ReadBuffer & buf)
+{
+	return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(s.c_str(), buf);
+}
+
 
 inline void readBoolText(bool & x, ReadBuffer & buf)
 {
@@ -554,12 +585,12 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 
-void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf);
+void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
 
 /** In YYYY-MM-DD hh:mm:ss format, according to current time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
-inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
+inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
 	/** Read 10 characters, that could represent unix timestamp.
 	  * Only unix timestamp of 5-10 characters is supported.
@@ -584,7 +615,7 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 			if (unlikely(year == 0))
 				datetime = 0;
 			else
-				datetime = DateLUT::instance().makeDateTime(year, month, day, hour, minute, second);
+				datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
 			buf.position() += 19;
 		}
@@ -593,7 +624,7 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 			readIntText(datetime, buf);
 	}
 	else
-		readDateTimeTextFallback(datetime, buf);
+		readDateTimeTextFallback(datetime, buf, date_lut);
 }
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
@@ -906,7 +937,7 @@ template <typename T>
 inline T parse(const char * data, size_t size)
 {
 	T res;
-	ReadBuffer buf(const_cast<char *>(data), size, 0);
+	ReadBufferFromMemory buf(data, size);
 	readText(res, buf);
 	return res;
 }
@@ -939,5 +970,12 @@ inline void skipBOMIfExists(ReadBuffer & buf)
 		buf.position() += 3;
 	}
 }
+
+
+/// Skip to next character after next \n. If no \n in stream, skip to end.
+void skipToNextLineOrEOF(ReadBuffer & buf);
+
+/// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
+void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 
 }

@@ -17,6 +17,7 @@
 #include <DB/Common/Macros.h>
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/IO/HTTPCommon.h>
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
@@ -40,6 +41,7 @@
 #include <DB/Storages/System/StorageSystemClusters.h>
 #include <DB/Storages/System/StorageSystemMetrics.h>
 #include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
+#include <DB/Storages/System/StorageSystemBuildOptions.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Databases/DatabaseOrdinary.h>
@@ -73,6 +75,7 @@ public:
 	{
 		try
 		{
+			setResponseDefaultHeaders(response);
 			const char * data = "Ok.\n";
 			response.sendBuffer(data, strlen(data));
 		}
@@ -188,6 +191,10 @@ static std::string getCanonicalPath(std::string && path)
 	return path;
 }
 
+std::string Server::getDefaultCorePath() const
+{
+	return getCanonicalPath(config().getString("path")) + "cores";
+}
 
 int Server::main(const std::vector<std::string> & args)
 {
@@ -227,10 +234,9 @@ int Server::main(const std::vector<std::string> & args)
 			rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
 			int rc = setrlimit(RLIMIT_NOFILE, &rlim);
 			if (rc != 0)
-				//throwFromErrno(std::string("Cannot setrlimit (tried rlim_cur = ") + std::to_string(rlim.rlim_cur) + "). Try to specify max_open_files according to your system limits");
-				throw DB::Exception(std::string("Cannot setrlimit (tried rlim_cur = ") + std::to_string(rlim.rlim_cur) + "). Try to specify max_open_files according to your system limits. error: " + strerror(errno));
-
-			LOG_DEBUG(log, "Set rlimit on number of file descriptors to " << rlim.rlim_cur << " (was " << old << ").");
+				LOG_WARNING(log, std::string("Cannot set max number of file descriptors to ") + std::to_string(rlim.rlim_cur) + ". Try to specify max_open_files according to your system limits. error: " + strerror(errno));
+			else
+				LOG_DEBUG(log, "Set max number of file descriptors to " << rlim.rlim_cur << " (was " << old << ").");
 		}
 	}
 
@@ -305,6 +311,10 @@ int Server::main(const std::vector<std::string> & args)
 	/// Limit on total number of coucurrently executed queries.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
 
+	/// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
+	if (config().has("max_table_size_to_drop"))
+		global_context->setMaxTableSizeToDrop(config().getUInt64("max_table_size_to_drop"));
+
 	/// Size of cache for uncompressed blocks. Zero means disabled.
 	size_t uncompressed_cache_size = parse<size_t>(config().getString("uncompressed_cache_size", "0"));
 	if (uncompressed_cache_size)
@@ -357,6 +367,7 @@ int Server::main(const std::vector<std::string> & args)
 	system_database->attachTable("columns",   	StorageSystemColumns::create("columns"));
 	system_database->attachTable("functions", 	StorageSystemFunctions::create("functions"));
 	system_database->attachTable("clusters", 	StorageSystemClusters::create("clusters", *global_context));
+	system_database->attachTable("build_options", 	StorageSystemBuildOptions::create("build_options"));
 
 	if (has_zookeeper)
 		system_database->attachTable("zookeeper", StorageSystemZooKeeper::create("zookeeper"));
@@ -434,13 +445,16 @@ int Server::main(const std::vector<std::string> & args)
 				server_pool,
 				http_socket,
 				http_params);
+
+				LOG_INFO(log, "Listening http://" + http_socket_address.toString());
 		}
 
 		/// TCP
 		std::experimental::optional<Poco::Net::TCPServer> tcp_server;
 		if (config().has("tcp_port"))
 		{
-			Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress(listen_host, config().getInt("tcp_port")));
+			Poco::Net::SocketAddress tcp_address(listen_host, config().getInt("tcp_port"));
+			Poco::Net::ServerSocket tcp_socket(tcp_address);
 			tcp_socket.setReceiveTimeout(settings.receive_timeout);
 			tcp_socket.setSendTimeout(settings.send_timeout);
 			tcp_server.emplace(
@@ -448,6 +462,8 @@ int Server::main(const std::vector<std::string> & args)
 				server_pool,
 				tcp_socket,
 				new Poco::Net::TCPServerParams);
+
+				LOG_INFO(log, "Listening tcp: " + tcp_address.toString());
 		}
 
 		/// At least one of TCP and HTTP servers must be created.
@@ -458,7 +474,8 @@ int Server::main(const std::vector<std::string> & args)
 		std::experimental::optional<Poco::Net::HTTPServer> interserver_io_http_server;
 		if (config().has("interserver_http_port"))
 		{
-			Poco::Net::ServerSocket interserver_io_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("interserver_http_port")));
+			Poco::Net::SocketAddress interserver_address(listen_host, config().getInt("interserver_http_port"));
+			Poco::Net::ServerSocket interserver_io_http_socket(interserver_address);
 			interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
 			interserver_io_http_socket.setSendTimeout(settings.send_timeout);
 			interserver_io_http_server.emplace(
@@ -466,6 +483,7 @@ int Server::main(const std::vector<std::string> & args)
 				server_pool,
 				interserver_io_http_socket,
 				http_params);
+				LOG_INFO(log, "Listening interserver: " + interserver_address.toString());
 		}
 
 		if (http_server)
@@ -510,7 +528,7 @@ int Server::main(const std::vector<std::string> & args)
 		{
 			if (!config().getBool("dictionaries_lazy_load", true))
 			{
-				global_context->tryCreateDictionaries();
+				global_context->tryCreateEmbeddedDictionaries();
 				global_context->tryCreateExternalDictionaries();
 			}
 		}

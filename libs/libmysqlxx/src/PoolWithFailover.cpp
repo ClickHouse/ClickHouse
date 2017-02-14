@@ -1,4 +1,6 @@
+#include <Poco/NumberFormatter.h>
 #include <mysqlxx/PoolWithFailover.h>
+
 
 using namespace mysqlxx;
 

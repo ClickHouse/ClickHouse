@@ -7,26 +7,16 @@
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnTuple.h>
+#include <DB/Columns/ColumnNullable.h>
 
 #include <DB/Functions/IFunction.h>
-#include <DB/Functions/Conditional/CondException.h>
-#include <DB/Common/HashTable/HashMap.h>
-#include <DB/Common/HashTable/ClearableHashMap.h>
+#include <DB/Functions/DataTypeTraits.h>
+#include <DB/Functions/ObjectPool.h>
 #include <DB/Common/StringUtils.h>
-#include <DB/Interpreters/AggregationCommon.h>
-#include <DB/Functions/FunctionsConditional.h>
-#include <DB/Functions/FunctionsConversion.h>
-#include <DB/Functions/Conditional/getArrayType.h>
-#include <DB/AggregateFunctions/IAggregateFunction.h>
-#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-#include <DB/Parsers/ExpressionListParsers.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTLiteral.h>
 
 #include <ext/range.hpp>
 
@@ -80,6 +70,9 @@ public:
 
 	bool hasSpecialSupportForNulls() const override { return true; }
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -111,6 +104,8 @@ public:
 
 	/// Получить имя функции.
 	String getName() const override;
+
+	size_t getNumberOfArguments() const override { return 2; }
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -779,7 +774,7 @@ private:
 	template <typename T, typename U>
 	bool executeNumberNumber(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.getByPosition(arguments[0]).column.get());
+		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
 
 		if (!col_array)
 			return false;
@@ -790,7 +785,7 @@ private:
 			return false;
 
 		const auto col_res = std::make_shared<ResultColumnType>();
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 
 		/// Null maps of the 1st and second function arguments,
 		/// if it applies.
@@ -799,16 +794,16 @@ private:
 
 		if (arguments.size() > 2)
 		{
-			const auto & null_map1 = block.getByPosition(arguments[2]).column;
+			const auto & null_map1 = block.safeGetByPosition(arguments[2]).column;
 			if (null_map1)
 				null_map_data = &static_cast<const ColumnUInt8 &>(*null_map1).getData();
 
-			const auto & null_map2 = block.getByPosition(arguments[3]).column;
+			const auto & null_map2 = block.safeGetByPosition(arguments[3]).column;
 			if (null_map2)
 				null_map_item = &static_cast<const ColumnUInt8 &>(*null_map2).getData();
 		}
 
-		const auto item_arg = block.getByPosition(arguments[1]).column.get();
+		const auto item_arg = block.safeGetByPosition(arguments[1]).column.get();
 
 		if (item_arg->isNull())
 			ArrayIndexNumNullImpl<T, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
@@ -827,7 +822,7 @@ private:
 
 	bool executeString(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.getByPosition(arguments[0]).column.get());
+		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
 
 		if (!col_array)
 			return false;
@@ -838,7 +833,7 @@ private:
 			return false;
 
 		const auto col_res = std::make_shared<ResultColumnType>();
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 
 		/// Null maps of the 1st and second function arguments,
 		/// if it applies.
@@ -847,16 +842,16 @@ private:
 
 		if (arguments.size() > 2)
 		{
-			const auto & col1 = block.getByPosition(arguments[2]).column;
+			const auto & col1 = block.safeGetByPosition(arguments[2]).column;
 			if (col1)
 				null_map_data = &static_cast<const ColumnUInt8 &>(*col1).getData();
 
-			const auto & col2 = block.getByPosition(arguments[3]).column;
+			const auto & col2 = block.safeGetByPosition(arguments[3]).column;
 			if (col2)
 				null_map_item = &static_cast<const ColumnUInt8 &>(*col2).getData();
 		}
 
-		const auto item_arg = block.getByPosition(arguments[1]).column.get();
+		const auto item_arg = block.safeGetByPosition(arguments[1]).column.get();
 
 		if (item_arg->isNull())
 			ArrayIndexStringNullImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
@@ -877,14 +872,14 @@ private:
 
 	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const ColumnConstArray * col_array = typeid_cast<const ColumnConstArray *>(block.getByPosition(arguments[0]).column.get());
+		const ColumnConstArray * col_array = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[0]).column.get());
 
 		if (!col_array)
 			return false;
 
 		const Array & arr = col_array->getData();
 
-		const auto item_arg = block.getByPosition(arguments[1]).column.get();
+		const auto item_arg = block.safeGetByPosition(arguments[1]).column.get();
 		if (item_arg->isConst())
 		{
 			typename IndexConv::ResultType current = 0;
@@ -892,14 +887,14 @@ private:
 
 			for (size_t i = 0, size = arr.size(); i < size; ++i)
 			{
-				if (apply_visitor(FieldVisitorAccurateEquals(), arr[i], value))
+				if (applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
 				{
 					if (!IndexConv::apply(i, current))
 						break;
 				}
 			}
 
-			block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+			block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(
 				item_arg->size(),
 				static_cast<typename NearestFieldType<typename IndexConv::ResultType>::Type>(current));
 		}
@@ -910,14 +905,14 @@ private:
 
 			if (arguments.size() > 2)
 			{
-				const auto & col = block.getByPosition(arguments[3]).column;
+				const auto & col = block.safeGetByPosition(arguments[3]).column;
 				if (col)
 					null_map = &static_cast<const ColumnUInt8 &>(*col).getData();
 			}
 
 			const auto size = item_arg->size();
 			const auto col_res = std::make_shared<ResultColumnType>(size);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			auto & data = col_res->getData();
 
@@ -933,9 +928,9 @@ private:
 					if (arr[i].isNull())
 					{
 						if (null_map && ((*null_map)[row] == 1))
-								hit = true;
+							hit = true;
 					}
-					else if (apply_visitor(FieldVisitorAccurateEquals(), arr[i], value))
+					else if (applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
 						hit = true;
 
 					if (hit)
@@ -952,16 +947,16 @@ private:
 
 	bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.getByPosition(arguments[0]).column.get());
+		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
 
 		if (!col_array)
 			return false;
 
 		const IColumn & col_nested = col_array->getData();
-		const IColumn & item_arg = *block.getByPosition(arguments[1]).column;
+		const IColumn & item_arg = *block.safeGetByPosition(arguments[1]).column;
 
 		const auto col_res = std::make_shared<ResultColumnType>();
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 
 		/// Null maps of the 1st and second function arguments,
 		/// if it applies.
@@ -970,11 +965,11 @@ private:
 
 		if (arguments.size() > 2)
 		{
-			const auto & null_map1 = block.getByPosition(arguments[2]).column;
+			const auto & null_map1 = block.safeGetByPosition(arguments[2]).column;
 			if (null_map1)
 				null_map_data = &static_cast<const ColumnUInt8 &>(*null_map1).getData();
 
-			const auto & null_map2 = block.getByPosition(arguments[3]).column;
+			const auto & null_map2 = block.safeGetByPosition(arguments[3]).column;
 			if (null_map2)
 				null_map_item = &static_cast<const ColumnUInt8 &>(*null_map2).getData();
 		}
@@ -1015,14 +1010,11 @@ public:
 		return true;
 	}
 
+	size_t getNumberOfArguments() const override { return 2; }
+
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
 		if (!array_type)
 			throw Exception("First argument for function " + getName() + " must be an array.",
@@ -1063,14 +1055,14 @@ public:
 		bool is_nullable;
 
 		const ColumnArray * col_array = nullptr;
-		col_array = typeid_cast<const ColumnArray *>(block.getByPosition(arguments[0]).column.get());
+		col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
 		if (col_array)
 			is_nullable = col_array->getData().isNullable();
 		else
 			is_nullable = false;
 
 		/// Check nullability of the 2nd function argument.
-		bool is_arg_nullable = block.getByPosition(arguments[1]).column->isNullable();
+		bool is_arg_nullable = block.safeGetByPosition(arguments[1]).column->isNullable();
 
 		if (!is_nullable && !is_arg_nullable)
 		{
@@ -1102,7 +1094,7 @@ public:
 				/// Function result.
 				{
 					nullptr,
-					block.getByPosition(result).type,
+					block.safeGetByPosition(result).type,
 					""
 				}
 			};
@@ -1112,45 +1104,45 @@ public:
 				const auto & nullable_col = static_cast<const ColumnNullable &>(col_array->getData());
 				const auto & nested_col = nullable_col.getNestedColumn();
 
-				auto & data = source_block.unsafeGetByPosition(0);
+				auto & data = source_block.getByPosition(0);
 				data.column = std::make_shared<ColumnArray>(nested_col, col_array->getOffsetsColumn());
-				data.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[0]).type).getNestedType();
+				data.type = static_cast<const DataTypeNullable &>(*block.safeGetByPosition(arguments[0]).type).getNestedType();
 
-				auto & null_map = source_block.unsafeGetByPosition(2);
-				null_map.column = nullable_col.getNullValuesByteMap();
+				auto & null_map = source_block.getByPosition(2);
+				null_map.column = nullable_col.getNullMapColumn();
 				null_map.type = std::make_shared<DataTypeUInt8>();
 			}
 			else
 			{
-				auto & data = source_block.unsafeGetByPosition(0);
-				data = block.getByPosition(arguments[0]);
+				auto & data = source_block.getByPosition(0);
+				data = block.safeGetByPosition(arguments[0]);
 			}
 
 			if (is_arg_nullable)
 			{
-				const auto & col = block.getByPosition(arguments[1]).column;
+				const auto & col = block.safeGetByPosition(arguments[1]).column;
 				const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
 
-				auto & arg = source_block.unsafeGetByPosition(1);
+				auto & arg = source_block.getByPosition(1);
 				arg.column = nullable_col.getNestedColumn();
-				arg.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[1]).type).getNestedType();
+				arg.type = static_cast<const DataTypeNullable &>(*block.safeGetByPosition(arguments[1]).type).getNestedType();
 
-				auto & null_map = source_block.unsafeGetByPosition(3);
-				null_map.column = nullable_col.getNullValuesByteMap();
+				auto & null_map = source_block.getByPosition(3);
+				null_map.column = nullable_col.getNullMapColumn();
 				null_map.type = std::make_shared<DataTypeUInt8>();
 			}
 			else
 			{
-				auto & arg = source_block.unsafeGetByPosition(1);
-				arg = block.getByPosition(arguments[1]);
+				auto & arg = source_block.getByPosition(1);
+				arg = block.safeGetByPosition(arguments[1]);
 			}
 
 			/// Now perform the function.
 			perform(source_block, {0, 1, 2, 3}, 4);
 
 			/// Move the result to its final position.
-			const ColumnWithTypeAndName & source_col = source_block.unsafeGetByPosition(4);
-			ColumnWithTypeAndName & dest_col = block.unsafeGetByPosition(result);
+			const ColumnWithTypeAndName & source_col = source_block.getByPosition(4);
+			ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 			dest_col.column = std::move(source_col.column);
 		}
 	}
@@ -1173,7 +1165,7 @@ private:
 			|| executeString(block, arguments, result)
 			|| executeGeneric(block, arguments, result)))
 			throw Exception{
-				"Illegal column " + block.getByPosition(arguments[0]).column->getName()
+				"Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 				+ " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN};
 	}
@@ -1188,6 +1180,8 @@ public:
 
 	/// Получить имя функции.
 	String getName() const override;
+
+	size_t getNumberOfArguments() const override { return 1; }
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -1207,6 +1201,9 @@ public:
 
 	/// Получить имя функции.
 	String getName() const override;
+
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -1247,6 +1244,9 @@ public:
 
 	/// Получить имя функции.
 	String getName() const override;
+
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -1299,13 +1299,10 @@ private:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 0; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 0)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 0.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		return std::make_shared<DataTypeArray>(std::make_shared<DataType>());
 	}
 
@@ -1313,9 +1310,9 @@ private:
 	{
 		using UnderlyingColumnType = typename TypeToColumnType<typename DataType::FieldType>::ColumnType;
 
-		block.getByPosition(result).column = std::make_shared<ColumnArray>(
+		block.safeGetByPosition(result).column = std::make_shared<ColumnArray>(
 			std::make_shared<UnderlyingColumnType>(),
-			std::make_shared<ColumnArray::ColumnOffsets_t>(block.rowsInFirstColumn(), 0));
+			std::make_shared<ColumnArray::ColumnOffsets_t>(block.rows(), 0));
 	}
 };
 
@@ -1331,6 +1328,8 @@ public:
 
 private:
 	String getName() const override;
+
+	size_t getNumberOfArguments() const override { return 1; }
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1349,6 +1348,8 @@ public:
 
 	/// Получить имя функции.
 	String getName() const override;
+
+	size_t getNumberOfArguments() const override { return 1; }
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -1389,6 +1390,8 @@ public:
 	/// Получить имя функции.
 	String getName() const override;
 
+	size_t getNumberOfArguments() const override { return 1; }
+
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1419,8 +1422,11 @@ private:
 };
 
 
-/** Применяет к массиву агрегатную функцию и возвращает её результат.
-  * Также может быть применена к нескольким массивам одинаковых размеров, если агрегатная функция принимает несколько аргументов.
+class IAggregateFunction;
+using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
+
+/** Applies an aggregate function to array and returns its result.
+  * If aggregate function has multiple arguments, then this function can be applied to multiple arrays with the same size.
   */
 class FunctionArrayReduce : public IFunction
 {
@@ -1430,6 +1436,9 @@ public:
 
 	/// Получить имя функции.
 	String getName() const override;
+
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 
 	void getReturnTypeAndPrerequisitesImpl(
 		const ColumnsWithTypeAndName & arguments,

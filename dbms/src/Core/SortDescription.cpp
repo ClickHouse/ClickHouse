@@ -1,3 +1,4 @@
+#include <sstream>
 #include <DB/Core/SortDescription.h>
 #include <DB/Common/Collator.h>
 

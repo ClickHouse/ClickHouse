@@ -3,7 +3,7 @@
 #include <cstring>
 #include <cmath>
 #include <string>
-
+#include <DB/Core/Types.h>
 
 #define UNICODE_BAR_CHAR_SIZE (strlen("█"))
 
@@ -14,6 +14,8 @@
 
 namespace UnicodeBar
 {
+	using DB::Int64;
+
 	inline double getWidth(Int64 x, Int64 min, Int64 max, double max_width)
 	{
 		if (x <= min)

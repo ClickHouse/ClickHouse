@@ -63,6 +63,11 @@ public:
 		return chars.size() + offsets.size() * sizeof(offsets[0]);
 	}
 
+	size_t allocatedSize() const override
+	{
+		return chars.allocated_size() + offsets.allocated_size() * sizeof(offsets[0]);
+	}
+
 	ColumnPtr cloneResized(size_t size) const override
 	{
 		ColumnPtr new_col_holder = std::make_shared<ColumnString>();
@@ -438,6 +443,11 @@ public:
 		}
 
 		return res;
+	}
+
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		return scatterImpl<ColumnString>(num_columns, selector);
 	}
 
 	void reserve(size_t n) override

@@ -1,10 +1,20 @@
+
+include (cmake/find_mysqlclient.cmake)
+
+include_directories (include)
+include_directories (${ClickHouse_SOURCE_DIR}/libs/libcommon/include)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
+
 add_library (mysqlxx
 	src/Connection.cpp
+	src/Exception.cpp
 	src/Query.cpp
 	src/ResultBase.cpp
 	src/StoreQueryResult.cpp
 	src/UseQueryResult.cpp
+	src/Row.cpp
 	src/Value.cpp
+	src/Pool.cpp
 	src/PoolWithFailover.cpp
 
 	include/mysqlxx/Connection.h
@@ -24,20 +34,10 @@ add_library (mysqlxx
 	include/mysqlxx/Value.h
 )
 
-add_dependencies (mysqlxx common)
-
-set (Z_HINTS "/usr/local/opt/zlib/lib")
-if (USE_STATIC_LIBRARIES)
-	find_library (Z_LIB libz.a HINTS ${Z_HINTS})
-else ()
-	find_library (Z_LIB z HINTS ${Z_HINTS})
-endif ()
-
 set(PLATFORM_LIBS ${CMAKE_DL_LIBS})
 
 if (USE_STATIC_LIBRARIES)
 	set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)
-	target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${Z_LIB} ${PLATFORM_LIBS})
 	add_custom_command (
 		OUTPUT ${MYSQLCLIENT_LIB}
 		COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/patch.sh ${STATIC_MYSQLCLIENT_LIB} ${MYSQLCLIENT_LIB}
@@ -47,7 +47,7 @@ if (USE_STATIC_LIBRARIES)
 	add_dependencies (mysqlxx our_mysql_client)
 endif ()
 
-target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${Z_LIB} ${PLATFORM_LIBS})
+target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBS})
 
 if (ENABLE_TESTS)
 	add_subdirectory (src/tests)

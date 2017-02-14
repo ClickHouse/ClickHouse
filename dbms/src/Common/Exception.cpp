@@ -2,6 +2,8 @@
 #include <string.h>
 #include <cxxabi.h>
 
+#include <Poco/String.h>
+
 #include <common/logger_useful.h>
 
 #include <DB/IO/WriteHelpers.h>
@@ -35,7 +37,7 @@ void throwFromErrno(const std::string & s, int code, int e)
 #endif
 	{
 		std::string tmp = std::to_string(code);
-		const char* code = tmp.c_str();
+		const char * code = tmp.c_str();
 		strcpy(buf, unknown_message);
 		strcpy(buf + strlen(unknown_message), code);
 	}
@@ -71,7 +73,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
 	}
 }
 
-std::string getCurrentExceptionMessage(bool with_stacktrace)
+std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace)
 {
 	std::stringstream stream;
 
@@ -83,9 +85,23 @@ std::string getCurrentExceptionMessage(bool with_stacktrace)
 	{
 		try
 		{
-			stream << "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
+			std::string text = e.displayText();
 
-			if (with_stacktrace)
+			bool has_embedded_stack_trace = false;
+			if (check_embedded_stacktrace)
+			{
+				auto embedded_stack_trace_pos = text.find("Stack trace");
+				has_embedded_stack_trace = embedded_stack_trace_pos != std::string::npos;
+				if (!with_stacktrace && has_embedded_stack_trace)
+				{
+					text.resize(embedded_stack_trace_pos);
+					Poco::trimRightInPlace(text);
+				}
+			}
+
+			stream << "Code: " << e.code() << ", e.displayText() = " << text << ", e.what() = " << e.what();
+
+			if (with_stacktrace && !has_embedded_stack_trace)
 				stream << ", Stack trace:\n\n" << e.getStackTrace().toString();
 		}
 		catch (...) {}
@@ -129,6 +145,31 @@ std::string getCurrentExceptionMessage(bool with_stacktrace)
 	}
 
 	return stream.str();
+}
+
+
+int getCurrentExceptionCode()
+{
+	try
+	{
+		throw;
+	}
+	catch (const Exception & e)
+	{
+		return e.code();
+	}
+	catch (const Poco::Exception & e)
+	{
+		return ErrorCodes::POCO_EXCEPTION;
+	}
+	catch (const std::exception & e)
+	{
+		return ErrorCodes::STD_EXCEPTION;
+	}
+	catch (...)
+	{
+		return ErrorCodes::UNKNOWN_EXCEPTION;
+	}
 }
 
 

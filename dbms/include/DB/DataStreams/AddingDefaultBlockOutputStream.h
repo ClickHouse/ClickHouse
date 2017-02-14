@@ -2,7 +2,6 @@
 
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/Columns/ColumnConst.h>
-
 #include <DB/Storages/ColumnDefault.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/evaluateMissingDefaults.h>

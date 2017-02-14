@@ -3,6 +3,7 @@
 #include <DB/Common/CurrentMetrics.h>
 #include <DB/Common/NetException.h>
 #include <DB/IO/ReadBufferFromHTTP.h>
+#include <Poco/File.h>
 
 
 namespace CurrentMetrics

@@ -29,18 +29,12 @@ public:
 	{
 		auto res = std::make_shared<ASTShowTablesQuery>(*this);
 		res->children.clear();
-
-		if (format)
-		{
-			res->format = format->clone();
-			res->children.push_back(res->format);
-		}
-
+		cloneOutputOptions(*res);
 		return res;
 	}
 
 protected:
-	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
 	{
 		if (databases)
 		{
@@ -57,13 +51,6 @@ protected:
 			if (!like.empty())
 				settings.ostr << (settings.hilite ? hilite_keyword : "") << " LIKE " << (settings.hilite ? hilite_none : "")
 					<< mysqlxx::quote << like;
-		}
-
-		if (format)
-		{
-			std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-			settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str << "FORMAT " << (settings.hilite ? hilite_none : "");
-			format->formatImpl(settings, state, frame);
 		}
 	}
 };

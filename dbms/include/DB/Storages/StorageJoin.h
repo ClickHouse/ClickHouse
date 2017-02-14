@@ -3,11 +3,15 @@
 #include <ext/shared_ptr_helper.hpp>
 
 #include <DB/Storages/StorageSet.h>
-#include <DB/Interpreters/Join.h>
+#include <DB/Parsers/ASTTablesInSelectQuery.h>
 
 
 namespace DB
 {
+
+class Join;
+using JoinPtr = std::shared_ptr<Join>;
+
 
 /** Позволяет сохранить состояние для последующего использования в правой части JOIN.
   * При вставке в таблицу, данные будут вставлены в состояние,
@@ -62,8 +66,8 @@ private:
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_);
 
-	void insertBlock(const Block & block) override { join->insertFromBlock(block); }
-	size_t getSize() const override { return join->getTotalRowCount(); };
+	void insertBlock(const Block & block) override;
+	size_t getSize() const override;
 };
 
 }

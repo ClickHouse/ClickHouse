@@ -205,7 +205,7 @@ void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeBinary(
+void DataTypeEnum<Type>::serializeBinaryBulk(
 	const IColumn & column, WriteBuffer & ostr, const size_t offset, size_t limit) const
 {
 	const auto & x = typeid_cast<const ColumnType &>(column).getData();
@@ -218,7 +218,7 @@ void DataTypeEnum<Type>::serializeBinary(
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeBinary(
+void DataTypeEnum<Type>::deserializeBinaryBulk(
 	IColumn & column, ReadBuffer & istr, const size_t limit, const double avg_value_size_hint) const
 {
 	auto & x = typeid_cast<ColumnType &>(column).getData();

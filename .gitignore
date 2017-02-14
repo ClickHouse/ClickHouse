@@ -1,6 +1,7 @@
 # emacs files
 *~
 *\#
+.tramp_history
 
 # auto generated files
 *.logrt
@@ -13,6 +14,12 @@ callgrind.out.*
 # ignore kdevelop files
 *.kdev4
 *.kdev_include_paths
+
+# ignore sublime project files
+*.sublime-*
+
+# Qt Creator files
+*.user
 
 # ignore perf output
 */perf.data

@@ -10,7 +10,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/VarInt.h>
 
-#if defined(__x86_64__)
+#if __SSE2__
 	#include <emmintrin.h>
 #endif
 
@@ -74,7 +74,7 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr) cons
 }
 
 
-void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnString & column_string = typeid_cast<const ColumnString &>(column);
 	const ColumnString::Chars_t & data = column_string.getChars();
@@ -125,7 +125,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, Column
 
 		if (size)
 		{
-#if defined(__x86_64__)
+#if __SSE2__
 			/// Оптимистичная ветка, в которой возможно более эффективное копирование.
 			if (offset + 16 * UNROLL_TIMES <= data.allocated_size() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
 			{
@@ -167,7 +167,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, Column
 }
 
 
-void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnString & column_string = typeid_cast<ColumnString &>(column);
 	ColumnString::Chars_t & data = column_string.getChars();

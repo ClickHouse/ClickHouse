@@ -2,6 +2,7 @@
 #include <DB/Common/formatReadable.h>
 
 #include <DB/IO/ConcatReadBuffer.h>
+#include <DB/IO/WriteBufferFromFile.h>
 
 #include <DB/DataStreams/BlockIO.h>
 #include <DB/DataStreams/copyData.h>
@@ -12,6 +13,7 @@
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTShowProcesslistQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ParserQuery.h>
 #include <DB/Parsers/parseQuery.h>
 
@@ -34,6 +36,7 @@ namespace ErrorCodes
 {
 	extern const int LOGICAL_ERROR;
 	extern const int QUERY_IS_TOO_LARGE;
+	extern const int INTO_OUTFILE_NOT_ALLOWED;
 }
 
 
@@ -88,12 +91,12 @@ static void logException(Context & context, QueryLogElement & elem)
 
 static void onExceptionBeforeStart(const String & query, Context & context, time_t current_time)
 {
-	/// Эксепшен до начала выполнения запроса.
+	/// Exception before the query execution.
 	context.getQuota().addError();
 
 	bool log_queries = context.getSettingsRef().log_queries;
 
-	/// Логгируем в таблицу начало выполнения запроса, если нужно.
+	/// Log the start of query execution into the table if necessary.
 	if (log_queries)
 	{
 		QueryLogElement elem;
@@ -179,6 +182,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 		{
 			process_list_entry = context.getProcessList().insert(
 				query,
+				ast.get(),
 				context.getClientInfo(),
 				settings);
 
@@ -187,6 +191,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 		auto interpreter = InterpreterFactory::get(ast, context, stage);
 		res = interpreter->execute();
+
+		/// Delayed initialization of query streams (required for KILL QUERY purposes)
+		if (process_list_entry)
+			(*process_list_entry)->setQueryStreams(res);
 
 		/// Hold element of process list till end of query execution.
 		res.process_list_entry = process_list_entry;
@@ -353,8 +361,8 @@ BlockIO executeQuery(
 void executeQuery(
 	ReadBuffer & istr,
 	WriteBuffer & ostr,
+	bool allow_into_outfile,
 	Context & context,
-	BlockInputStreamPtr & query_plan,
 	std::function<void(const String &)> set_content_type)
 {
 	PODArray<char> parse_buf;
@@ -400,16 +408,36 @@ void executeQuery(
 		{
 			const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
-			String format_name = ast_query_with_output && (ast_query_with_output->getFormat() != nullptr)
-				? typeid_cast<const ASTIdentifier &>(*ast_query_with_output->getFormat()).name
+			WriteBuffer * out_buf = &ostr;
+			std::experimental::optional<WriteBufferFromFile> out_file_buf;
+			if (ast_query_with_output && ast_query_with_output->out_file)
+			{
+				if (!allow_into_outfile)
+					throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
+
+				const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
+				out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
+				out_buf = &out_file_buf.value();
+			}
+
+			String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+				? typeid_cast<const ASTIdentifier &>(*ast_query_with_output->format).name
 				: context.getDefaultFormat();
 
-			BlockOutputStreamPtr out = context.getOutputFormat(format_name, ostr, streams.in_sample);
+			BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in_sample);
 
 			if (auto stream = dynamic_cast<IProfilingBlockInputStream *>(streams.in.get()))
 			{
+				/// Save previous progress callback if any. TODO Do it more conveniently.
+				auto previous_progress_callback = context.getProgressCallback();
+
 				/// NOTE Progress callback takes shared ownership of 'out'.
-				stream->setProgressCallback([out] (const Progress & progress) { out->onProgress(progress); });
+				stream->setProgressCallback([out, previous_progress_callback] (const Progress & progress)
+				{
+					if (previous_progress_callback)
+						previous_progress_callback(progress);
+					out->onProgress(progress);
+				});
 			}
 
 			if (set_content_type)

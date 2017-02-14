@@ -90,7 +90,7 @@ public:
 
 	HTTPResponse();
 		/// Creates the HTTPResponse with OK status.
-		
+
 	HTTPResponse(HTTPStatus status, const std::string& reason);
 		/// Creates the HTTPResponse with the given status
 		/// and reason phrase.
@@ -98,7 +98,7 @@ public:
 	HTTPResponse(const std::string& version, HTTPStatus status, const std::string& reason);
 		/// Creates the HTTPResponse with the given version, status
 		/// and reason phrase.
-		
+
 	HTTPResponse(HTTPStatus status);
 		/// Creates the HTTPResponse with the given status
 		/// an an appropriate reason phrase.
@@ -114,25 +114,25 @@ public:
 		/// Sets the HTTP status code.
 		///
 		/// Does not change the reason phrase.
-		
+
 	HTTPStatus getStatus() const;
 		/// Returns the HTTP status code.
-		
+
 	void setStatus(const std::string& status);
 		/// Sets the HTTP status code.
 		///
 		/// The string must contain a valid
 		/// HTTP numerical status code.
-		
+
 	void setReason(const std::string& reason);
 		/// Sets the HTTP reason phrase.
-		
+
 	const std::string& getReason() const;
 		/// Returns the HTTP reason phrase.
 
 	void setStatusAndReason(HTTPStatus status, const std::string& reason);
 		/// Sets the HTTP status code and reason phrase.
-		
+
 	void setStatusAndReason(HTTPStatus status);
 		/// Sets the HTTP status code and reason phrase.
 		///
@@ -140,7 +140,7 @@ public:
 
 	void setDate(const Poco::Timestamp& dateTime);
 		/// Sets the Date header to the given date/time value.
-		
+
 	Poco::Timestamp getDate() const;
 		/// Returns the value of the Date header.
 
@@ -159,12 +159,16 @@ public:
 		/// Writes the HTTP response to the given
 		/// output stream.
 
+	void beginWrite(std::ostream& ostr) const;
+		/// Writes the HTTP response to the given
+		/// output stream, but do not finish with \r\n delimiter.
+
 	void read(std::istream& istr);
 		/// Reads the HTTP response from the
 		/// given input stream.
 		///
 		/// 100 Continue responses are ignored.
-	
+
 	static const std::string& getReasonForStatus(HTTPStatus status);
 		/// Returns an appropriate reason phrase
 		/// for the given status code.
@@ -210,7 +214,7 @@ public:
 	static const std::string HTTP_REASON_GATEWAY_TIMEOUT;
 	static const std::string HTTP_REASON_VERSION_NOT_SUPPORTED;
 	static const std::string HTTP_REASON_UNKNOWN;
-	
+
 	static const std::string DATE;
 	static const std::string SET_COOKIE;
 
@@ -221,10 +225,10 @@ private:
 		MAX_STATUS_LENGTH  = 3,
 		MAX_REASON_LENGTH  = 512
 	};
-	
+
 	HTTPStatus  _status;
 	std::string _reason;
-	
+
 	HTTPResponse(const HTTPResponse&);
 	HTTPResponse& operator = (const HTTPResponse&);
 };

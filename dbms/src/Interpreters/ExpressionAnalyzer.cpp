@@ -27,6 +27,8 @@
 #include <DB/Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
 #include <DB/Interpreters/ExternalDictionaries.h>
+#include <DB/Interpreters/Set.h>
+#include <DB/Interpreters/Join.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -46,6 +48,7 @@
 #include <DB/Parsers/formatAST.h>
 
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 
 #include <ext/range.hpp>
 #include <DB/DataTypes/DataTypeFactory.h>
@@ -72,6 +75,7 @@ namespace ErrorCodes
 	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 	extern const int ILLEGAL_AGGREGATION;
 	extern const int SUPPORT_IS_DISABLED;
+	extern const int TOO_DEEP_AST;
 }
 
 
@@ -86,7 +90,6 @@ const std::unordered_set<String> injective_function_names
 	"reverseUTF8",
 	"toString",
 	"toFixedString",
-	"toStringCutToZero",
 	"IPv4NumToString",
 	"IPv4StringToNum",
 	"hex",
@@ -142,6 +145,23 @@ void removeDuplicateColumns(NamesAndTypesList & columns)
 
 }
 
+
+ExpressionAnalyzer::ExpressionAnalyzer(
+	const ASTPtr & ast_,
+	const Context & context_,
+	StoragePtr storage_,
+	const NamesAndTypesList & columns_,
+	size_t subquery_depth_,
+	bool do_global_)
+	: ast(ast_), context(context_), settings(context.getSettings()),
+	subquery_depth(subquery_depth_), columns(columns_),
+	storage(storage_ ? storage_ : getTable()),
+	do_global(do_global_)
+{
+	init();
+}
+
+
 void ExpressionAnalyzer::init()
 {
 	removeDuplicateColumns(columns);
@@ -150,7 +170,7 @@ void ExpressionAnalyzer::init()
 
 	/// В зависимости от профиля пользователя проверить наличие прав на выполнение
 	/// распределённых подзапросов внутри секций IN или JOIN и обработать эти подзапросы.
-	InJoinSubqueriesPreprocessor<>(select_query, context, storage).perform();
+	InJoinSubqueriesPreprocessor(context).process(select_query);
 
 	/// Оптимизирует логические выражения.
 	LogicalExpressionsOptimizer(select_query, settings).perform();
@@ -175,6 +195,9 @@ void ExpressionAnalyzer::init()
 
 	/// Удалить из ORDER BY повторяющиеся элементы.
 	optimizeOrderBy();
+
+	// Remove duplicated elements from LIMIT BY clause.
+	optimizeLimitBy();
 
 	/// array_join_alias_to_name, array_join_result_to_source.
 	getArrayJoinedColumns();
@@ -635,7 +658,7 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
 	String alias = ast->tryGetAlias();
 	if (!alias.empty())
 	{
-		if (aliases.count(alias) && ast->getTreeID() != aliases[alias]->getTreeID())
+		if (aliases.count(alias) && ast->getTreeHash() != aliases[alias]->getTreeHash())
 			throw Exception("Different expressions with the same alias " + alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 
 		aliases[alias] = ast;
@@ -966,7 +989,11 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 			block = res.in->read();
 
 			if (!block)
-				throw Exception("Scalar subquery returned empty result", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+			{
+				/// Interpret subquery with empty result as Null literal
+				ast = std::make_unique<ASTLiteral>(ast->range, Null());
+				return;
+			}
 
 			if (block.rows() != 1 || res.in->read())
 				throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
@@ -982,9 +1009,9 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 		size_t columns = block.columns();
 		if (columns == 1)
 		{
-			auto lit = std::make_unique<ASTLiteral>(ast->range, (*block.getByPosition(0).column)[0]);
+			auto lit = std::make_unique<ASTLiteral>(ast->range, (*block.safeGetByPosition(0).column)[0]);
 			lit->alias = subquery->alias;
-			ast = addTypeConversion(std::move(lit), block.getByPosition(0).type->getName());
+			ast = addTypeConversion(std::move(lit), block.safeGetByPosition(0).type->getName());
 		}
 		else
 		{
@@ -1001,8 +1028,8 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 			for (size_t i = 0; i < columns; ++i)
 			{
 				exp_list->children[i] = addTypeConversion(
-					std::make_unique<ASTLiteral>(ast->range, (*block.getByPosition(i).column)[0]),
-					block.getByPosition(i).type->getName());
+					std::make_unique<ASTLiteral>(ast->range, (*block.safeGetByPosition(i).column)[0]),
+					block.safeGetByPosition(i).type->getName());
 			}
 		}
 	}
@@ -1161,6 +1188,28 @@ void ExpressionAnalyzer::optimizeOrderBy()
 		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(*elem);
 
 		if (elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
+			unique_elems.emplace_back(elem);
+	}
+
+	if (unique_elems.size() < elems.size())
+		elems = unique_elems;
+}
+
+
+void ExpressionAnalyzer::optimizeLimitBy()
+{
+	if (!(select_query && select_query->limit_by_expression_list))
+		return;
+
+	std::set<String> elems_set;
+
+	ASTs & elems = select_query->limit_by_expression_list->children;
+	ASTs unique_elems;
+	unique_elems.reserve(elems.size());
+
+	for (const auto & elem : elems)
+	{
+		if (elems_set.emplace(elem->getColumnName()).second)
 			unique_elems.emplace_back(elem);
 	}
 
@@ -1540,7 +1589,7 @@ struct ExpressionAnalyzer::ScopeStack
 
 		const Block & sample_block = actions->getSampleBlock();
 		for (size_t i = 0, size = sample_block.columns(); i < size; ++i)
-			stack.back().new_columns.insert(sample_block.unsafeGetByPosition(i).name);
+			stack.back().new_columns.insert(sample_block.getByPosition(i).name);
 	}
 
 	void pushLevel(const NamesAndTypesList & input_columns)
@@ -1561,7 +1610,7 @@ struct ExpressionAnalyzer::ScopeStack
 		const Block & prev_sample_block = prev.actions->getSampleBlock();
 		for (size_t i = 0, size = prev_sample_block.columns(); i < size; ++i)
 		{
-			const ColumnWithTypeAndName & col = prev_sample_block.unsafeGetByPosition(i);
+			const ColumnWithTypeAndName & col = prev_sample_block.getByPosition(i);
 			if (!new_names.count(col.name))
 				all_columns.push_back(col);
 		}
@@ -1769,7 +1818,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				actions_stack.addAction(ExpressionAction::copyColumn(arg->getColumnName(), result_name));
 				NameSet joined_columns;
 				joined_columns.insert(result_name);
-				actions_stack.addAction(ExpressionAction::arrayJoin(joined_columns, false));
+				actions_stack.addAction(ExpressionAction::arrayJoin(joined_columns, false, context));
 			}
 
 			return;
@@ -1966,7 +2015,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 	}
 	else if (ASTLiteral * node = typeid_cast<ASTLiteral *>(ast.get()))
 	{
-		DataTypePtr type = apply_visitor(FieldToDataType(), node->value);
+		DataTypePtr type = applyVisitor(FieldToDataType(), node->value);
 
 		ColumnWithTypeAndName column;
 		column.column = type->createConstColumn(1, node->value);
@@ -2111,7 +2160,7 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actio
 		result_columns.insert(result_source.first);
 	}
 
-	actions->add(ExpressionAction::arrayJoin(result_columns, select_query->array_join_is_left()));
+	actions->add(ExpressionAction::arrayJoin(result_columns, select_query->array_join_is_left(), context));
 }
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
@@ -2591,7 +2640,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 
 	for (const auto i : ext::range(0, nested_result_sample.columns()))
 	{
-		const auto & col = nested_result_sample.getByPosition(i);
+		const auto & col = nested_result_sample.safeGetByPosition(i);
 		if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name)
 			&& !joined_columns.count(col.name))	/// Дублирующиеся столбцы в подзапросе для JOIN-а не имеют смысла.
 		{

@@ -8,6 +8,7 @@ namespace ErrorCodes
 {
 	extern const int BAD_ARGUMENTS;
 	extern const int DICTIONARY_IS_EMPTY;
+	extern const int TYPE_MISMATCH;
 }
 
 
@@ -112,15 +113,15 @@ void RangeHashedDictionary::loadData()
 
 	while (const auto block = stream->read())
 	{
-		const auto & id_column = *block.getByPosition(0).column;
-		const auto & min_range_column = *block.getByPosition(1).column;
-		const auto & max_range_column = *block.getByPosition(2).column;
+		const auto & id_column = *block.safeGetByPosition(0).column;
+		const auto & min_range_column = *block.safeGetByPosition(1).column;
+		const auto & max_range_column = *block.safeGetByPosition(2).column;
 
 		element_count += id_column.size();
 
 		for (const auto attribute_idx : ext::range(0, attributes.size()))
 		{
-			const auto & attribute_column = *block.getByPosition(attribute_idx + 3).column;
+			const auto & attribute_column = *block.safeGetByPosition(attribute_idx + 3).column;
 			auto & attribute = attributes[attribute_idx];
 
 			for (const auto row_idx : ext::range(0, id_column.size()))

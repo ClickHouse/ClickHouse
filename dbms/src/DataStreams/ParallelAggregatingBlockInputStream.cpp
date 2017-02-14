@@ -125,7 +125,7 @@ void ParallelAggregatingBlockInputStream::Handler::onBlock(Block & block, size_t
 		parent.threads_data[thread_num].key_sizes, parent.threads_data[thread_num].key,
 		parent.no_more_keys);
 
-	parent.threads_data[thread_num].src_rows += block.rowsInFirstColumn();
+	parent.threads_data[thread_num].src_rows += block.rows();
 	parent.threads_data[thread_num].src_bytes += block.bytes();
 }
 

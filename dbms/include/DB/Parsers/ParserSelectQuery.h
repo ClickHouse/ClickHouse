@@ -7,7 +7,7 @@ namespace DB
 {
 
 
-class ParserSelectQuery : public ParserQueryWithOutput
+class ParserSelectQuery : public IParserBase
 {
 protected:
 	const char * getName() const override { return "SELECT query"; }

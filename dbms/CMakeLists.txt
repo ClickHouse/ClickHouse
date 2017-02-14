@@ -1,17 +1,27 @@
-include_directories (BEFORE include)
-#include_directories (/usr/include/mysql)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
-add_subdirectory (src)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include/)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libzstd/include/)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libsparsehash)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libre2/)
+include_directories (BEFORE ${ClickHouse_BINARY_DIR}/contrib/libre2/)
+include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
+include_directories (${ODBC_INCLUDE_DIRECTORIES})
 
-if (NOT ENABLE_LIBTCMALLOC)
-	add_definitions(-D NO_TCMALLOC)
+if (NOT NO_WERROR)
+	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
+	set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
 
+add_subdirectory (src)
 
 add_library(string_utils
 	include/DB/Common/StringUtils.h
 	src/Common/StringUtils.cpp)
-
 
 set(dbms_headers)
 set(dbms_sources)
@@ -21,6 +31,7 @@ add_headers_and_sources(dbms Functions)
 add_headers_and_sources(dbms Functions/Conditional)
 add_headers_and_sources(dbms TableFunctions)
 add_headers_and_sources(dbms Parsers)
+add_headers_and_sources(dbms Analyzers)
 add_headers_and_sources(dbms AggregateFunctions)
 add_headers_and_sources(dbms Core)
 add_headers_and_sources(dbms DataStreams)
@@ -60,7 +71,15 @@ if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
 		src/IO/WriteBufferAIO.cpp)
 endif()
 
-add_library(dbms ${dbms_headers} ${dbms_sources})
+include (${CMAKE_SOURCE_DIR}/libs/libcommon/cmake/version.cmake)
+
+if (USE_STATIC_LIBRARIES)
+	add_library(dbms ${dbms_headers} ${dbms_sources})
+else ()
+	add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
+	set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse)
+	install (TARGETS dbms LIBRARY DESTINATION lib COMPONENT clickhouse)
+endif ()
 
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -104,16 +123,15 @@ if (NOT AARCH64)
 	set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 endif()
 
-set (APPLE_ICONV_LIB "")
-if (APPLE)
-	set(APPLE_ICONV_LIB iconv)
-endif()
-
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
     set(PLATFORM_LIBS "execinfo")
 else()
     set(PLATFORM_LIBS "")
 endif()
+
+include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
+
+find_package (Threads)
 
 target_link_libraries(dbms
 	common
@@ -123,18 +141,18 @@ target_link_libraries(dbms
 	lz4 zstd
 	string_utils
 	double-conversion
+	${ZLIB_LIBRARIES}
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
 	re2 re2_st
 	${OPENSSL_CRYPTO_LIBRARY}
 	${Boost_SYSTEM_LIBRARY}
-	PocoData
-	PocoDataODBC
-	PocoMongoDB
-	${APPLE_ICONV_LIB}
+	${Poco_Data_LIBRARY}
+	${Poco_DataODBC_LIBRARY}
+	${Poco_MongoDB_LIBRARY}
+	${Poco_Foundation_LIBRARY}
+	${ICONV_LIBRARY}
 	${PLATFORM_LIBS}
 	${CMAKE_DL_LIBS}
-	${LTDL_LIB})
-
-add_dependencies (dbms
-	common
-	zkutil)
+	${LTDL_LIB}
+	${CMAKE_THREAD_LIBS_INIT}
+	)

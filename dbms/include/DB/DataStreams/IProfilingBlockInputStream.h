@@ -112,12 +112,12 @@ public:
 		return is_cancelled.load(std::memory_order_seq_cst);
 	}
 
-	/** Какие ограничения (и квоты) проверяются.
-	  * Если LIMITS_CURRENT - ограничения проверяются на количество данных, прочитанных только в этом stream-е.
-	  * - используется для реализации ограничений на объём результата выполнения запроса.
-	  * Если LIMITS_TOTAL, то ещё дополнительно делается проверка в колбэке прогресса,
-	  *  по суммарным данным по всем листовым stream-ам, в том числе, с удалённых серверов.
-	  * - используется для реализации ограничений на общий объём прочитанных (исходных) данных.
+	/** What limitations and quotas should be checked.
+	  * LIMITS_CURRENT - checks amount of data read by current stream only (BlockStreamProfileInfo is used for check).
+	  *  Currently it is used in root streams to check max_result_{rows,bytes} limits.
+	  * LIMITS_TOTAL - checks total amount of read data from leaf streams (i.e. data read from disk and remote servers).
+	  *  It is checks max_{rows,bytes}_to_read in progress handler and use info from ProcessListElement::progress_in for this.
+	  *  Currently this check is performed only in leaf streams.
 	  */
 	enum LimitsMode
 	{
@@ -125,11 +125,12 @@ public:
 		LIMITS_TOTAL,
 	};
 
-	/// Используется подмножество ограничений из Limits.
+	/// It is a subset of limitations from Limits.
 	struct LocalLimits
 	{
 		LimitsMode mode = LIMITS_CURRENT;
 
+		/// If it is zero, corresponding limit check isn't performed.
 		size_t max_rows_to_read = 0;
 		size_t max_bytes_to_read = 0;
 		OverflowMode read_overflow_mode = OverflowMode::THROW;
@@ -137,16 +138,21 @@ public:
 		Poco::Timespan max_execution_time = 0;
 		OverflowMode timeout_overflow_mode = OverflowMode::THROW;
 
-		/// В строчках в секунду.
+		/// in rows per second
 		size_t min_execution_speed = 0;
 		/// Проверять, что скорость не слишком низкая, после прошествия указанного времени.
 		Poco::Timespan timeout_before_checking_execution_speed = 0;
 	};
 
-	/** Установить ограничения для проверки на каждый блок. */
+	/** Set limitations that checked on each block. */
 	void setLimits(const LocalLimits & limits_)
 	{
 		limits = limits_;
+	}
+
+	const LocalLimits & getLimits() const
+	{
+		return limits;
 	}
 
 	/** Установить квоту. Если устанавливается квота на объём исходных данных,

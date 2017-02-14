@@ -3,6 +3,7 @@
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
+#include <DB/Storages/AlterCommands.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
@@ -19,6 +20,7 @@
 #include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 #include <Poco/DirectoryIterator.h>
 #include <DB/Common/Increment.h>
 #include <DB/Common/escapeForFileName.h>
@@ -28,6 +30,8 @@
 #include <algorithm>
 #include <iomanip>
 #include <thread>
+#include <typeinfo>
+#include <typeindex>
 
 
 namespace ProfileEvents
@@ -65,6 +69,7 @@ MergeTreeData::MergeTreeData(
 	const MergeTreeSettings & settings_,
 	const String & log_name_,
 	bool require_part_metadata_,
+	bool attach,
 	BrokenPartCallback broken_part_callback_)
     : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
@@ -76,7 +81,7 @@ MergeTreeData::MergeTreeData(
 	broken_part_callback(broken_part_callback_),
 	log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
 {
-	/// Проверяем, что столбец с датой существует и имеет тип Date.
+	/// Check that the date column exists and is of type Date.
 	const auto check_date_exists = [this] (const NamesAndTypesList & columns)
 	{
 		for (const auto & column : columns)
@@ -99,6 +104,9 @@ MergeTreeData::MergeTreeData(
 			"Date column (" + date_column_name + ") does not exist in table declaration.",
 			ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
+	checkNoMultidimensionalArrays(*columns, attach);
+	checkNoMultidimensionalArrays(materialized_columns, attach);
+
 	merging_params.check(*columns);
 
 	/// Creating directories, if not exist.
@@ -109,6 +117,27 @@ MergeTreeData::MergeTreeData(
 		initPrimaryKey();
 	else if (merging_params.mode != MergingParams::Unsorted)
 		throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
+}
+
+
+void MergeTreeData::checkNoMultidimensionalArrays(const NamesAndTypesList & columns, bool attach) const
+{
+	for (const auto & column : columns)
+	{
+		if (const auto * array = dynamic_cast<const DataTypeArray *>(column.type.get()))
+		{
+			if (dynamic_cast<const DataTypeArray *>(array->getNestedType().get()))
+			{
+				std::string message =
+					"Column " + column.name + " is a multidimensional array. "
+					+ "Multidimensional arrays are not supported in MergeTree engines.";
+				if (!attach)
+					throw Exception(message, ErrorCodes::BAD_TYPE_OF_FIELD);
+				else
+					LOG_ERROR(log, message);
+			}
+		}
+	}
 }
 
 
@@ -135,7 +164,7 @@ void MergeTreeData::initPrimaryKey()
 	/// Also a primary key must not contain any nullable column.
 	for (size_t i = 0; i < primary_key_size; ++i)
 	{
-		const auto & element = primary_key_sample.unsafeGetByPosition(i);
+		const auto & element = primary_key_sample.getByPosition(i);
 
 		const ColumnPtr & column = element.column;
 		if (column && column->isConst())
@@ -147,13 +176,13 @@ void MergeTreeData::initPrimaryKey()
 
 	primary_key_data_types.resize(primary_key_size);
 	for (size_t i = 0; i < primary_key_size; ++i)
-		primary_key_data_types[i] = primary_key_sample.unsafeGetByPosition(i).type;
+		primary_key_data_types[i] = primary_key_sample.getByPosition(i).type;
 }
 
 
 void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) const
 {
-	/// Проверяем, что столбец sign_column, если нужен, существует, и имеет тип Int8.
+	/// Check that if the sign column is needed, it exists and is of type Int8.
 	if (mode == MergingParams::Collapsing)
 	{
 		if (sign_column.empty())
@@ -174,7 +203,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
 	else if (!sign_column.empty())
 		throw Exception("Sign column for MergeTree cannot be specified in all modes except Collapsing.", ErrorCodes::LOGICAL_ERROR);
 
-	/// Если заданы columns_to_sum, проверяем, что такие столбцы существуют.
+	/// If colums_to_sum are set, then check that such columns exist.
 	if (!columns_to_sum.empty())
 	{
 		if (mode != MergingParams::Summing)
@@ -187,7 +216,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
 				throw Exception("Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
 	}
 
-	/// Проверяем, что столбец version_column, если допустим, имеет тип целого беззнакового числа.
+	/// Check that version_column column is set only for Replacing mode and is of unsigned integer type.
 	if (!version_column.empty())
 	{
 		if (mode != MergingParams::Replacing)
@@ -212,7 +241,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
 		}
 	}
 
-	/// TODO Проверки для Graphite
+	/// TODO Checks for Graphite mode.
 }
 
 
@@ -260,7 +289,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 	Poco::DirectoryIterator end;
 	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
 	{
-		/// Пропускаем временные директории старше суток.
+		/// Skip temporary directories older than one day.
 		if (startsWith(it.name(), "tmp_"))
 			continue;
 
@@ -292,10 +321,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 		}
 		catch (const Exception & e)
 		{
-			/** Если не хватает памяти для загрузки куска - не нужно считать его битым.
-			  * На самом деле, похожих ситуаций может быть ещё много.
-			  * Но это не страшно, так как ниже есть защита от слишком большого количества кусков для удаления.
-			  */
+			/// Don't count the part as broken if there is not enough memory to load it.
+			/// In fact, there can be many similar situations.
+			/// But it is OK, because there is a safety guard against deleting too many parts.
 			if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
 				throw;
 
@@ -308,19 +336,20 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 			tryLogCurrentException(__PRETTY_FUNCTION__);
 		}
 
-		/// Игнорируем и, возможно, удаляем битые куски, которые могут образовываться после грубого перезапуска сервера.
+		/// Ignore and possibly delete broken parts that can appear as a result of hard server restart.
 		if (broken)
 		{
 			if (part->level == 0)
 			{
-				/// Восстановить куски нулевого уровня невозможно.
+				/// It is impossible to restore level 0 parts.
 				LOG_ERROR(log, "Considering to remove broken part " << full_path + file_name << " because it's impossible to repair.");
 				broken_parts_to_remove.push_back(part);
 			}
 			else
 			{
-				/// Посмотрим, сколько кусков покрыты битым. Если хотя бы два, предполагаем, что битый кусок образован их
-				///  слиянием, и мы ничего не потеряем, если его удалим.
+				/// Count the number of parts covered by the broken part. If it is at least two, assume that
+				/// the broken part was created as a result of merging them and we won't lose data if we
+				/// delete it.
 				int contained_parts = 0;
 
 				LOG_ERROR(log, "Part " << full_path + file_name << " is broken. Looking for parts to replace it.");
@@ -373,10 +402,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
 	all_data_parts = data_parts;
 
-	/** Удаляем из набора актуальных кусков куски, которые содержатся в другом куске (которые были склеены),
-	  *  но по каким-то причинам остались лежать в файловой системе.
-	  * Удаление файлов будет произведено потом в методе clearOldParts.
-	  */
+	/// Delete from the set of current parts those parts that are covered by another part (those parts that
+	/// were merged), but that for some reason are still not deleted from the file system.
+	/// Deletion of files will be performed later in the clearOldParts() method.
 
 	if (data_parts.size() >= 2)
 	{
@@ -385,7 +413,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 		++curr_jt;
 		while (curr_jt != data_parts.end())
 		{
-			/// Куски данных за разные месяцы рассматривать не будем
+			/// Don't consider data parts belonging to different months.
 			if ((*curr_jt)->month != (*prev_jt)->month)
 			{
 				++prev_jt;
@@ -419,12 +447,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 }
 
 
-/** Является ли директория куска старой.
-  * Это так, если её дата модификации,
-  *  и одновременно дата модификации всех файлов внутри неё
-  *  (рассматриваются файлы только на одном уровне вложенности),
-  *  меньше threshold.
-  */
+/// Is the part directory old.
+/// True if its modification time and the modification time of all files inside it is less then threshold.
+/// (Only files on the first level of nesting are considered).
 static bool isOldPartDirectory(Poco::File & directory, time_t threshold)
 {
 	if (directory.getLastModified().epochTime() >= threshold)
@@ -441,14 +466,14 @@ static bool isOldPartDirectory(Poco::File & directory, time_t threshold)
 
 void MergeTreeData::clearOldTemporaryDirectories()
 {
-	/// Если метод уже вызван из другого потока, то можно ничего не делать.
+	/// If the method is already called from another thread, then we don't need to do anything.
 	std::unique_lock<std::mutex> lock(clear_old_temporary_directories_mutex, std::defer_lock);
 	if (!lock.try_lock())
 		return;
 
 	time_t current_time = time(0);
 
-	/// Удаляем временные директории старше суток.
+	/// Delete temporary directories older than a day.
 	Poco::DirectoryIterator end;
 	for (Poco::DirectoryIterator it{full_path}; it != end; ++it)
 	{
@@ -466,7 +491,7 @@ void MergeTreeData::clearOldTemporaryDirectories()
 			}
 			catch (const Poco::FileNotFoundException &)
 			{
-				/// Ничего не делаем, если файл уже удалён.
+				/// If the file is already deleted, do nothing.
 			}
 		}
 	}
@@ -477,7 +502,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 {
 	DataPartsVector res;
 
-	/// Если метод уже вызван из другого потока, то можно ничего не делать.
+	/// If the method is already called from another thread, then we don't need to do anything.
 	std::unique_lock<std::mutex> lock(grab_old_parts_mutex, std::defer_lock);
 	if (!lock.try_lock())
 		return res;
@@ -489,7 +514,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 
 		for (DataParts::iterator it = all_data_parts.begin(); it != all_data_parts.end();)
 		{
-			if (it->unique() && /// После этого ref_count не может увеличиться.
+			if (it->unique() && /// After this ref_count cannot increase.
 				(*it)->remove_time < now &&
 				now - (*it)->remove_time > settings.old_parts_lifetime)
 			{
@@ -536,7 +561,8 @@ void MergeTreeData::setPath(const String & new_full_path, bool move_data)
 				ErrorCodes::DIRECTORY_ALREADY_EXISTS
 			};
 		Poco::File(full_path).renameTo(new_full_path);
-		/// Если данные перемещать не нужно, значит их переместил кто-то другой. Расчитываем, что он еще и сбросил кеши.
+		/// If we don't need to move the data, it means someone else has already moved it.
+		/// We hope that he has also reset the caches.
 		context.resetCaches();
 	}
 
@@ -565,36 +591,128 @@ void MergeTreeData::dropAllData()
 	LOG_TRACE(log, "dropAllData: done.");
 }
 
-
-void MergeTreeData::checkAlter(const AlterCommands & params)
+namespace
 {
-	/// Проверим, что указанные преобразования можно совершить над списком столбцов без учета типов.
+
+/// If true, then in order to ALTER the type of the column from the type from to the type to
+/// we don't need to rewrite the data, we only need to update metadata and columns.txt in part directories.
+/// The function works for Arrays and Nullables of the same structure.
+bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
+{
+	if (from->getName() == to->getName())
+		return true;
+
+	static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
+		{
+			{ typeid(DataTypeEnum8),    typeid(DataTypeEnum8)    },
+			{ typeid(DataTypeEnum8),    typeid(DataTypeInt8)     },
+			{ typeid(DataTypeEnum16),   typeid(DataTypeEnum16)   },
+			{ typeid(DataTypeEnum16),   typeid(DataTypeInt16)    },
+			{ typeid(DataTypeDateTime), typeid(DataTypeUInt32)   },
+			{ typeid(DataTypeUInt32),   typeid(DataTypeDateTime) },
+			{ typeid(DataTypeDate),     typeid(DataTypeUInt16)   },
+			{ typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
+		};
+
+	while (true)
+	{
+		auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
+		for (auto it = it_range.first; it != it_range.second; ++it)
+		{
+			if (it->second == typeid(*to))
+				return true;
+		}
+
+		const auto * arr_from = typeid_cast<const DataTypeArray *>(from);
+		const auto * arr_to = typeid_cast<const DataTypeArray *>(to);
+		if (arr_from && arr_to)
+		{
+			from = arr_from->getNestedType().get();
+			to = arr_to->getNestedType().get();
+			continue;
+		}
+
+		const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
+		const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
+		if (nullable_from && nullable_to)
+		{
+			from = nullable_from->getNestedType().get();
+			to = nullable_to->getNestedType().get();
+			continue;
+		}
+
+		return false;
+	}
+}
+
+}
+
+void MergeTreeData::checkAlter(const AlterCommands & commands)
+{
+	/// Check that needed transformations can be applied to the list of columns without considering type conversions.
 	auto new_columns = *columns;
 	auto new_materialized_columns = materialized_columns;
 	auto new_alias_columns = alias_columns;
 	auto new_column_defaults = column_defaults;
-	params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
+	commands.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
 
-	/// Список столбцов, которые нельзя трогать.
-	/// sampling_expression можно не учитывать, потому что он обязан содержаться в первичном ключе.
+	checkNoMultidimensionalArrays(new_columns, /* attach = */ false);
+	checkNoMultidimensionalArrays(new_materialized_columns, /* attach = */ false);
 
-	Names keys;
+	/// Set of columns that shouldn't be altered.
+	NameSet columns_alter_forbidden;
 
-	if (primary_expr)
-		keys = primary_expr->getRequiredColumns();
+	columns_alter_forbidden.insert(date_column_name);
 
 	if (!merging_params.sign_column.empty())
-		keys.push_back(merging_params.sign_column);
+		columns_alter_forbidden.insert(merging_params.sign_column);
 
-	std::sort(keys.begin(), keys.end());
+	/// Primary key columns can be ALTERed only if they are used in the primary key as-is
+	/// (and not as a part of some expression) and if the ALTER only affects column metadata.
+	/// We don't add sampling_expression columns here because they must be among the primary key columns.
+	NameSet columns_alter_metadata_only;
 
-	for (const AlterCommand & command : params)
+	if (primary_expr)
 	{
-		if (std::binary_search(keys.begin(), keys.end(), command.column_name))
-			throw Exception("trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
+		for (const auto & action : primary_expr->getActions())
+		{
+			auto action_columns = action.getNeededColumns();
+			columns_alter_forbidden.insert(action_columns.begin(), action_columns.end());
+		}
+		for (const auto & col : primary_expr->getRequiredColumns())
+		{
+			if (!columns_alter_forbidden.count(col))
+				columns_alter_metadata_only.insert(col);
+		}
 	}
 
-	/// Проверим, что преобразования типов возможны.
+	std::map<String, const IDataType *> old_types;
+	for (const auto & column : *columns)
+	{
+		old_types.emplace(column.name, column.type.get());
+	}
+
+	for (const AlterCommand & command : commands)
+	{
+		if (columns_alter_forbidden.count(command.column_name))
+			throw Exception("trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
+
+		if (columns_alter_metadata_only.count(command.column_name))
+		{
+			if (command.type == AlterCommand::MODIFY_COLUMN)
+			{
+				auto it = old_types.find(command.column_name);
+				if (it != old_types.end() && isMetadataOnlyConversion(it->second, command.data_type.get()))
+					continue;
+			}
+
+			throw Exception(
+					"ALTER of key column " + command.column_name + " must be metadata-only",
+					ErrorCodes::ILLEGAL_COLUMN);
+		}
+	}
+
+	/// Check that type conversions are possible.
 	ExpressionActionsPtr unused_expression;
 	NameToNameMap unused_map;
 	bool unused_bool;
@@ -613,12 +731,13 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 	out_rename_map = {};
 	out_force_update_metadata = false;
 
-	using NameToType = std::map<String, DataTypePtr>;
+	using NameToType = std::map<String, const IDataType *>;
 	NameToType new_types;
 	for (const NameAndTypePair & column : new_columns)
-		new_types.emplace(column.name, column.type);
+		new_types.emplace(column.name, column.type.get());
 
-	/// Сколько столбцов сейчас в каждой вложенной структуре. Столбцы не из вложенных структур сюда тоже попадут и не помешают.
+	/// The number of columns in each Nested structure. Columns not belonging to Nested structure will also be
+	/// in this map, but they won't interfere with the computation.
 	std::map<String, size_t> nested_table_counts;
 	for (const NameAndTypePair & column : old_columns)
 		++nested_table_counts[DataTypeNested::extractNestedTableName(column.name)];
@@ -634,7 +753,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 			if (!part || part->hasColumnFiles(column.name))
 			{
-				/// Столбец нужно удалить.
+				/// The column must be deleted.
 				const IDataType * observed_type;
 				if (is_nullable)
 				{
@@ -650,15 +769,16 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 				if (is_nullable)
 				{
-					out_rename_map[escaped_column + ".null"] = "";
-					out_rename_map[escaped_column + ".null_mrk"] = "";
+					out_rename_map[escaped_column + ".null.bin"] = "";
+					out_rename_map[escaped_column + ".null.mrk"] = "";
 				}
 
-				/// Если это массив или последний столбец вложенной структуры, нужно удалить файлы с размерами.
+				/// If the column is an array or the last column of nested structure, we must delete the
+				/// sizes file.
 				if (typeid_cast<const DataTypeArray *>(observed_type))
 				{
 					String nested_table = DataTypeNested::extractNestedTableName(column.name);
-					/// Если это был последний столбец, относящийся к этим файлам .size0, удалим файлы.
+					/// If it was the last column referencing these .size0 files, delete them.
 					if (!--nested_table_counts[nested_table])
 					{
 						String escaped_nested_table = escapeForFileName(nested_table);
@@ -670,56 +790,16 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 		}
 		else
 		{
-			const auto new_type = new_types[column.name].get();
+			const auto * new_type = new_types[column.name];
 			const String new_type_name = new_type->getName();
-			const auto old_type = column.type.get();
+			const auto * old_type = column.type.get();
 
 			if (new_type_name != old_type->getName() && (!part || part->hasColumnFiles(column.name)))
 			{
-				bool is_nullable = new_type->isNullable();
-				const IDataType * observed_type;
-				if (is_nullable)
+				if (isMetadataOnlyConversion(old_type, new_type))
 				{
-					const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*new_type);
-					observed_type = nullable_type.getNestedType().get();
-				}
-				else
-					observed_type = new_type;
-
-				/// When ALTERing between Enums with same underlying type, don't modify columns, just update columns.txt.
-				/// Same for Arrays of Enums, arbitary depth.
-				if (part)
-				{
-					const IDataType * type_from = old_type;
-					const IDataType * type_to = observed_type;
-
-					bool enums_with_same_type = false;
-					while (true)
-					{
-						if ((typeid_cast<const DataTypeEnum8 *>(type_to) && typeid_cast<const DataTypeEnum8 *>(type_from))
-							|| (typeid_cast<const DataTypeEnum16 *>(type_to) && typeid_cast<const DataTypeEnum16 *>(type_from)))
-						{
-							enums_with_same_type = true;
-							break;
-						}
-
-						const DataTypeArray * arr_from = typeid_cast<const DataTypeArray *>(type_from);
-						const DataTypeArray * arr_to = typeid_cast<const DataTypeArray *>(type_to);
-
-						if (arr_from && arr_to)
-						{
-							type_from = arr_from->getNestedType().get();
-							type_to = arr_to->getNestedType().get();
-						}
-						else
-							break;
-					}
-
-					if (enums_with_same_type)
-					{
-						out_force_update_metadata = true;
-						continue;
-					}
+					out_force_update_metadata = true;
+					continue;
 				}
 
 				/// Need to modify column type.
@@ -743,6 +823,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 				out_expression->add(ExpressionAction::removeColumn(column.name));
 
 				conversions.emplace_back(column.name, out_names.at(0));
+
 			}
 		}
 	}
@@ -766,15 +847,15 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 			out_rename_map[escaped_converted_column + ".bin"] = escaped_source_column + ".bin";
 			out_rename_map[escaped_converted_column + ".mrk"] = escaped_source_column + ".mrk";
 
-			const IDataType * new_type = new_types[source_and_expression.first].get();
+			const IDataType * new_type = new_types[source_and_expression.first];
 
 			/// NOTE Sizes of arrays are not updated during conversion.
 
 			/// Information on how to update the null map if it is a nullable column.
 			if (new_type->isNullable())
 			{
-				out_rename_map[escaped_converted_column + ".null"] = escaped_source_column + ".null";
-				out_rename_map[escaped_converted_column + ".null_mrk"] = escaped_source_column + ".null_mrk";
+				out_rename_map[escaped_converted_column + ".null.bin"] = escaped_source_column + ".null.bin";
+				out_rename_map[escaped_converted_column + ".null.mrk"] = escaped_source_column + ".null.mrk";
 			}
 		}
 
@@ -808,7 +889,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	bool skip_sanity_checks)
 {
 	ExpressionActionsPtr expression;
-	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Блокирует изменение куска.
+	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Blocks changes to the part.
 	bool force_update_metadata;
 	createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map, force_update_metadata);
 
@@ -846,7 +927,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
 	DataPart::Checksums add_checksums;
 
-	/// Обновление первичного ключа, если нужно.
+	/// Update primary key if needed.
 	size_t new_primary_key_file_size{};
 	uint128 new_primary_key_hash{};
 
@@ -858,13 +939,13 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
 		Columns new_index(new_key_size);
 
-		/// Копируем существующие столбцы первичного ключа. Новые заполняем значениями по-умолчанию.
-		/// NOTE Не поддерживаются вычислимые значения по-умолчанию.
+		/// Copy the existing primary key columns. Fill new columns with default values.
+		/// NOTE default expressions are not supported.
 
 		ssize_t prev_position_of_existing_column = -1;
 		for (size_t i = 0; i < new_key_size; ++i)
 		{
-			const String & column_name = new_primary_key_sample.getByPosition(i).name;
+			const String & column_name = new_primary_key_sample.safeGetByPosition(i).name;
 
 			if (primary_key_sample.has(column_name))
 			{
@@ -878,7 +959,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 			}
 			else
 			{
-				const IDataType & type = *new_primary_key_sample.getByPosition(i).type;
+				const IDataType & type = *new_primary_key_sample.safeGetByPosition(i).type;
 				new_index[i] = type.createConstColumn(part->size, type.getDefault())->convertToFullColumnIfConst();
 			}
 		}
@@ -892,7 +973,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
 		for (size_t i = 0, size = part->size; i < size; ++i)
 			for (size_t j = 0; j < new_key_size; ++j)
-				new_primary_key_sample.unsafeGetByPosition(j).type.get()->serializeBinary(*new_index[j].get(), i, index_stream);
+				new_primary_key_sample.getByPosition(j).type.get()->serializeBinary(*new_index[j].get(), i, index_stream);
 
 		transaction->rename_map["primary.idx.tmp"] = "primary.idx";
 
@@ -907,7 +988,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 		return nullptr;
 	}
 
-	/// Применим выражение и запишем результат во временные файлы.
+	/// Apply the expression and write the result to temporary files.
 	if (expression)
 	{
 		MarkRanges ranges(1, MarkRange(0, part->size));
@@ -927,7 +1008,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 		add_checksums = out.writeSuffixAndGetChecksums();
 	}
 
-	/// Обновим контрольные суммы.
+	/// Update the checksums.
 	DataPart::Checksums new_checksums = part->checksums;
 	for (auto it : transaction->rename_map)
 	{
@@ -943,7 +1024,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 		new_checksums.files["primary.idx"].file_hash = new_primary_key_hash;
 	}
 
-	/// Запишем обновленные контрольные суммы во временный файл
+	/// Write the checksums to the temporary file.
 	if (!part->checksums.empty())
 	{
 		transaction->new_checksums = new_checksums;
@@ -952,7 +1033,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 		transaction->rename_map["checksums.txt.tmp"] = "checksums.txt";
 	}
 
-	/// Запишем обновленный список столбцов во временный файл.
+	/// Write the new column list to the temporary file.
 	{
 		transaction->new_columns = new_columns.filter(part->columns.getNames());
 		WriteBufferFromFile columns_file(full_path + part->name + "/columns.txt.tmp", 4096);
@@ -978,7 +1059,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 		/// to a nullable column, new files are created which did not exist
 		/// before, i.e. they do not have older versions.
 
-		/// 1) Переименуем старые файлы.
+		/// 1) Rename the old files.
 		for (auto it : rename_map)
 		{
 			String name = it.second.empty() ? it.first : it.second;
@@ -987,7 +1068,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 				file.renameTo(path + name + ".tmp2");
 		}
 
-		/// 2) Переместим на их место новые и обновим метаданные в оперативке.
+		/// 2) Move new files in the place of old and update the metadata in memory.
 		for (auto it : rename_map)
 		{
 			if (!it.second.empty())
@@ -998,7 +1079,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 		mutable_part.checksums = new_checksums;
 		mutable_part.columns = new_columns;
 
-		/// 3) Удалим старые файлы.
+		/// 3) Delete the old files.
 		for (auto it : rename_map)
 		{
 			String name = it.second.empty() ? it.first : it.second;
@@ -1009,14 +1090,14 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 
 		mutable_part.size_in_bytes = MergeTreeData::DataPart::calcTotalSize(path);
 
-		/// TODO: можно не сбрасывать кеши при добавлении столбца.
+		/// TODO: we can skip resetting caches when the column is added.
 		data_part->storage.context.resetCaches();
 
 		clear();
 	}
 	catch (...)
 	{
-		/// Если что-то пошло не так, не будем удалять временные файлы в деструкторе.
+		/// Don't delete temporary files in the destructor in case something went wrong.
 		clear();
 		throw;
 	}
@@ -1098,17 +1179,18 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
 		String new_path = getFullPath() + new_name + "/";
 
-		/// Переименовываем кусок.
+		/// Rename the part.
 		Poco::File(old_path).renameTo(new_path);
 
 		part->is_temp = false;
 		part->name = new_name;
 
-		bool obsolete = false; /// Покрыт ли part каким-нибудь куском.
+		bool obsolete = false; /// Is the part covered by some other part?
 
-		/// Куски, содержащиеся в part, идут в data_parts подряд, задевая место, куда вставился бы сам part.
+		/// Parts contained in the part are consecutive in data_parts, intersecting the insertion place
+		/// for the part itself.
 		DataParts::iterator it = data_parts.lower_bound(part);
-		/// Пойдем влево.
+		/// Go to the left.
 		while (it != data_parts.begin())
 		{
 			--it;
@@ -1122,10 +1204,10 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 			replaced.push_back(*it);
 			(*it)->remove_time = time(0);
 			removePartContributionToColumnSizes(*it);
-			data_parts.erase(it++); /// Да, ++, а не --.
+			data_parts.erase(it++); /// Yes, ++, not --.
 		}
-		std::reverse(replaced.begin(), replaced.end()); /// Нужно получить куски в порядке возрастания.
-		/// Пойдем вправо.
+		std::reverse(replaced.begin(), replaced.end()); /// Parts must be in ascending order.
+		/// Go to the right.
 		while (it != data_parts.end())
 		{
 			if (!part->contains(**it))
@@ -1330,9 +1412,9 @@ std::pair<Int64, bool> MergeTreeData::getMinBlockNumberForMonth(DayNum_t month) 
 {
 	std::lock_guard<std::mutex> lock(all_data_parts_mutex);
 
-	for (const auto & part : all_data_parts)	/// Поиск можно сделать лучше.
+	for (const auto & part : all_data_parts)	/// The search can be done better.
 		if (part->month == month)
-			return { part->left, true };	/// Блоки в data_parts упорядочены по month и left.
+			return { part->left, true };	/// Blocks in data_parts are sorted by month and left.
 
 	return { 0, false };
 }
@@ -1342,7 +1424,7 @@ bool MergeTreeData::hasBlockNumberInMonth(Int64 block_number, DayNum_t month) co
 {
 	std::lock_guard<std::mutex> lock(data_parts_mutex);
 
-	for (const auto & part : data_parts)	/// Поиск можно сделать лучше.
+	for (const auto & part : data_parts)	/// The search can be done better.
 	{
 		if (part->month == month && part->left <= block_number && part->right >= block_number)
 			return true;
@@ -1391,7 +1473,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
 
 	std::lock_guard<std::mutex> lock(data_parts_mutex);
 
-	/// Кусок может покрываться только предыдущим или следующим в data_parts.
+	/// The part can be covered only by the previous or the next one in data_parts.
 	DataParts::iterator it = data_parts.lower_bound(tmp_part);
 
 	if (it != data_parts.end())
@@ -1441,7 +1523,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 	part->name = relative_path;
 	ActiveDataPartSet::parsePartName(Poco::Path(relative_path).getFileName(), *part);
 
-	/// Раньше список столбцов записывался неправильно. Удалим его и создадим заново.
+	/// Earlier the list of columns was written incorrectly. Delete it and re-create.
 	if (Poco::File(full_path + relative_path + "/columns.txt").exists())
 		Poco::File(full_path + relative_path + "/columns.txt").remove();
 
@@ -1452,7 +1534,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 
 	part->modification_time = Poco::File(full_path + relative_path).getLastModified().epochTime();
 
-	/// Если нет файла с чексуммами, посчитаем чексуммы и запишем. Заодно проверим данные.
+	/// If the checksums file is not present, calculate the checksums and write them to disk.
+	/// Check the data while we are at it.
 	if (part->checksums.empty())
 	{
 		MergeTreePartChecker::Settings settings;
@@ -1484,19 +1567,24 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 {
 	const auto & files = part->checksums.files;
 
+	/// TODO This method doesn't take into account columns with multiple files.
 	for (const auto & column : *columns)
 	{
 		const auto escaped_name = escapeForFileName(column.name);
 		const auto bin_file_name = escaped_name + ".bin";
 		const auto mrk_file_name = escaped_name + ".mrk";
 
-		auto & column_size = column_sizes[column.name];
+		ColumnSize & column_size = column_sizes[column.name];
 
 		if (files.count(bin_file_name))
-			column_size += files.find(bin_file_name)->second.file_size;
+		{
+			const auto & bin_file_checksums = files.at(bin_file_name);
+			column_size.data_compressed += bin_file_checksums.file_size;
+			column_size.data_uncompressed += bin_file_checksums.uncompressed_size;
+		}
 
 		if (files.count(mrk_file_name))
-			column_size += files.find(mrk_file_name)->second.file_size;
+			column_size.marks += files.at(mrk_file_name).file_size;
 	}
 }
 
@@ -1504,6 +1592,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 {
 	const auto & files = part->checksums.files;
 
+	/// TODO This method doesn't take into account columns with multiple files.
 	for (const auto & column : *columns)
 	{
 		const auto escaped_name = escapeForFileName(column.name);
@@ -1513,10 +1602,14 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 		auto & column_size = column_sizes[column.name];
 
 		if (files.count(bin_file_name))
-			column_size -= files.find(bin_file_name)->second.file_size;
+		{
+			const auto & bin_file_checksums = files.at(bin_file_name);
+			column_size.data_compressed -= bin_file_checksums.file_size;
+			column_size.data_uncompressed -= bin_file_checksums.uncompressed_size;
+		}
 
 		if (files.count(mrk_file_name))
-			column_size -= files.find(mrk_file_name)->second.file_size;
+			column_size.marks -= files.at(mrk_file_name).file_size;
 	}
 }
 
@@ -1596,7 +1689,7 @@ static std::pair<String, DayNum_t> getMonthNameAndDayNum(const Field & partition
 
 	DayNum_t date = DateLUT::instance().YYYYMMDDToDayNum(parse<UInt32>(month_name + "01"));
 
-	/// Не можем просто сравнить date с нулем, потому что 0 тоже валидный DayNum.
+	/// Can't just compare date with 0, because 0 is a valid DayNum too.
 	if (month_name != toString(DateLUT::instance().toNumYYYYMMDD(date) / 100))
 		throw Exception("Invalid partition format: " + month_name + " doesn't look like month.",
 			ErrorCodes::INVALID_PARTITION_NAME);
@@ -1624,7 +1717,7 @@ DayNum_t MergeTreeData::getMonthFromName(const String & month_name)
 {
 	DayNum_t date = DateLUT::instance().YYYYMMDDToDayNum(parse<UInt32>(month_name + "01"));
 
-	/// Не можем просто сравнить date с нулем, потому что 0 тоже валидный DayNum.
+	/// Can't just compare date with 0, because 0 is a valid DayNum too.
 	if (month_name != toString(DateLUT::instance().toNumYYYYMMDD(date) / 100))
 		throw Exception("Invalid partition format: " + month_name + " doesn't look like month.",
 			ErrorCodes::INVALID_PARTITION_NAME);

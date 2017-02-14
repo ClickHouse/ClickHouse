@@ -44,7 +44,7 @@ Block NullableAdapterBlockInputStream::readImpl()
 
 	for (size_t i = 0; i < s; ++i)
 	{
-		const auto & elem = block.unsafeGetByPosition(i);
+		const auto & elem = block.getByPosition(i);
 		ColumnWithTypeAndName new_elem;
 
 		if (actions[i] == TO_ORDINARY)
@@ -52,7 +52,7 @@ Block NullableAdapterBlockInputStream::readImpl()
 			const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
 			const auto & nullable_type = static_cast<const DataTypeNullable &>(*elem.type);
 
-			const auto & null_map = static_cast<const ColumnUInt8 &>(*nullable_col.getNullValuesByteMap()).getData();
+			const auto & null_map = nullable_col.getNullMap();
 			bool has_nulls = std::any_of(null_map.begin(), null_map.end(), [](UInt8 val){ return val == 1; });
 
 			if (has_nulls)
@@ -101,10 +101,10 @@ NullableAdapterBlockInputStream::Actions NullableAdapterBlockInputStream::getAct
 	size_t j = 0;
 	for (size_t i = 0; i < in_size; ++i)
 	{
-		const auto & in_elem = in_sample.unsafeGetByPosition(i);
+		const auto & in_elem = in_sample.getByPosition(i);
 		while (j < out_size)
 		{
-			const auto & out_elem = out_sample.unsafeGetByPosition(j);
+			const auto & out_elem = out_sample.getByPosition(j);
 			if (in_elem.name == out_elem.name)
 			{
 				bool is_in_nullable = in_elem.type->isNullable();

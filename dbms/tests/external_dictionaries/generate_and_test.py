@@ -31,11 +31,14 @@ MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) +
 #Not complete disable
 use_mysql = True
 use_mongo = True
+use_http  = True
+http_port = 58000
 
 wait_for_loading_sleep_time_sec = 3
 
 failures = 0
 SERVER_DIED = False
+no_break = False
 
 prefix = base_dir = os.path.dirname(os.path.realpath(__file__))
 generated_prefix = prefix + '/generated/'
@@ -179,19 +182,20 @@ def generate_data(args):
         call([ args.client, '--port', args.port, '--query', query ], 'generated/' + file)
 
     # create MySQL table from complete_query
-    print 'Creating MySQL table'
-    subprocess.check_call('echo "'
-              'create database if not exists test;'
-              'drop table if exists test.dictionary_source;'
-              'create table test.dictionary_source ('
-                    'id tinyint unsigned, key0 tinyint unsigned, key0_str text, key1 tinyint unsigned, '
-                    'UInt8_ tinyint unsigned, UInt16_ smallint unsigned, UInt32_ int unsigned, UInt64_ bigint unsigned, '
-                    'Int8_ tinyint, Int16_ smallint, Int32_ int, Int64_ bigint, '
-                    'Float32_ float, Float64_ double, '
-                    'String_ text, Date_ date, DateTime_ datetime, Parent bigint unsigned'
-              ');'
-              'load data local infile \'{0}/source.tsv\' into table test.dictionary_source;" | mysql $MYSQL_OPTIONS --local-infile=1'
-              .format(prefix), shell=True)
+    if use_mysql:
+        print 'Creating MySQL table'
+        subprocess.check_call('echo "'
+                  'create database if not exists test;'
+                  'drop table if exists test.dictionary_source;'
+                  'create table test.dictionary_source ('
+                        'id tinyint unsigned, key0 tinyint unsigned, key0_str text, key1 tinyint unsigned, '
+                        'UInt8_ tinyint unsigned, UInt16_ smallint unsigned, UInt32_ int unsigned, UInt64_ bigint unsigned, '
+                        'Int8_ tinyint, Int16_ smallint, Int32_ int, Int64_ bigint, '
+                        'Float32_ float, Float64_ double, '
+                        'String_ text, Date_ date, DateTime_ datetime, Parent bigint unsigned'
+                  ');'
+                  'load data local infile \'{0}/source.tsv\' into table test.dictionary_source;" | mysql $MYSQL_OPTIONS --local-infile=1'
+                  .format(prefix), shell=True)
 
     # create MongoDB collection from complete_query via JSON file
     if use_mongo:
@@ -266,7 +270,7 @@ def generate_dictionaries(args):
 
     source_clickhouse = '''
     <clickhouse>
-        <host>127.0.0.1</host>
+        <host>localhost</host>
         <port>%s</port>
         <user>default</user>
         <password></password>
@@ -277,7 +281,7 @@ def generate_dictionaries(args):
 
     source_mysql = '''
     <mysql>
-        <host>127.0.0.1</host>
+        <host>localhost</host>
         <port>3306</port>
         <user>root</user>
         <password></password>
@@ -288,7 +292,7 @@ def generate_dictionaries(args):
 
     source_mongodb = '''
     <mongodb>
-        <host>127.0.0.1</host>
+        <host>localhost</host>
         <port>27017</port>
         <user></user>
         <password></password>
@@ -306,10 +310,10 @@ def generate_dictionaries(args):
 
     source_http = '''
     <http>
-        <url>http://localhost:58000/generated/%s</url>
+        <url>http://localhost:{http_port}/generated/%s</url>
         <format>TabSeparated</format>
     </http>
-    '''
+    '''.format(http_port=http_port)
 
     layout_flat = '<flat />'
     layout_hashed = '<hashed />'
@@ -420,6 +424,8 @@ def generate_dictionaries(args):
 
 
 def run_tests(args):
+    if use_http:
+        http_server = subprocess.Popen(["python", "http_server.py", str(http_port)]);
     keys = [ 'toUInt64(n)', '(n, n)', '(toString(n), n)' ]
     dict_get_query_skeleton = "select dictGet{type}('{name}', '{type}_', {key}) from system.one array join range(8) as n;"
     dict_has_query_skeleton = "select dictHas('{name}', {key}) from system.one array join range(8) as n;"
@@ -533,7 +539,7 @@ def run_tests(args):
 
     # the actual tests
     for (name, key_idx, has_parent) in dictionaries:
-        if SERVER_DIED:
+        if SERVER_DIED and not no_break:
             break
         key = keys[key_idx]
         print 'Testing dictionary', name
@@ -543,7 +549,7 @@ def run_tests(args):
 
         # query dictGet*
         for type, default in zip(types, explicit_defaults):
-            if SERVER_DIED:
+            if SERVER_DIED and not no_break:
                 break
             test_query(name,
                 dict_get_query_skeleton.format(**locals()),
@@ -558,6 +564,9 @@ def run_tests(args):
                 dict_hierarchy_query_skeleton.format(**locals()),
                 'hierarchy', ' for dictGetHierarchy, dictIsIn')
 
+    if use_http:
+        http_server.kill()
+
     if failures > 0:
         print(colored("\nHaving {0} errors!".format(failures), "red", attrs=["bold"]))
         sys.exit(1)
@@ -567,8 +576,8 @@ def run_tests(args):
 
 
 def main(args):
-    generate_data(args)
     generate_dictionaries(args)
+    generate_data(args)
     run_tests(args)
 
 

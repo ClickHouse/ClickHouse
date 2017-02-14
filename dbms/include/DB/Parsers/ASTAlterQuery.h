@@ -6,11 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-	extern const int UNEXPECTED_AST_STRUCTURE;
-}
-
 /** ALTER запрос
  *  ALTER TABLE [db.]name_type
  *  	ADD COLUMN col_name type [AFTER col_after],

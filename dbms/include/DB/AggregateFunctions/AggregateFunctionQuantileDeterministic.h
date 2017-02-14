@@ -70,7 +70,7 @@ public:
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+		level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
 	}
 
 
@@ -154,7 +154,7 @@ public:
 		levels.resize(size);
 
 		for (size_t i = 0; i < size; ++i)
-			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
+			levels[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
 	}
 
 

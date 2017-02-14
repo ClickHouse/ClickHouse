@@ -12,7 +12,7 @@ namespace DB
 
 /** Запрос SHOW PROCESSLIST
   */
-class ParserShowProcesslistQuery : public ParserQueryWithOutput
+class ParserShowProcesslistQuery : public IParserBase
 {
 protected:
 	const char * getName() const { return "SHOW PROCESSLIST query"; }
@@ -21,6 +21,7 @@ protected:
 	{
 		Pos begin = pos;
 
+		ParserWhiteSpaceOrComments ws;
 		ParserString s_show("SHOW", true, true);
 		ParserString s_processlist("PROCESSLIST", true, true);
 
@@ -37,10 +38,6 @@ protected:
 			return false;
 
 		ws.ignore(pos, end);
-
-		/// FORMAT format_name
-		if (!parseFormat(*query, pos, end, node, max_parsed_pos, expected))
-			return false;
 
 		query->range = StringRange(begin, pos);
 		node = query;

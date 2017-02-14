@@ -15,7 +15,7 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Interpreters/AggregationCommon.h>
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 	#include <smmintrin.h>
 #endif
 
@@ -77,7 +77,7 @@ DefineStringRef(StringRef_Compare16_1_byMemcmp)
 DefineStringRef(StringRef_Compare16_1_byUInt64_logicAnd)
 DefineStringRef(StringRef_Compare16_1_byUInt64_bitAnd)
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 DefineStringRef(StringRef_Compare16_1_byIntSSE)
 DefineStringRef(StringRef_Compare16_1_byFloatSSE)
 DefineStringRef(StringRef_Compare16_1_bySSE4)
@@ -196,7 +196,7 @@ inline bool compare_byUInt64_bitAnd(const char * p1, const char * p2)
 		 & (reinterpret_cast<const UInt64 *>(p1)[1] == reinterpret_cast<const UInt64 *>(p2)[1]);
 }
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 
 inline bool compare_byIntSSE(const char * p1, const char * p2)
 {
@@ -263,7 +263,7 @@ inline bool memequal(const char * p1, const char * p2, size_t size)
 }
 
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 
 inline bool memequal_sse41(const char * p1, const char * p2, size_t size)
 {
@@ -514,7 +514,7 @@ Op(byMemcmp)
 Op(byUInt64_logicAnd)
 Op(byUInt64_bitAnd)
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 
 Op(byIntSSE)
 Op(byFloatSSE)
@@ -642,7 +642,7 @@ int main(int argc, char ** argv)
 	if (!m || m == 5) bench<StringRef_Compare16_1_byMemcmp>			(data, "StringRef_Compare16_1_byMemcmp");
 	if (!m || m == 6) bench<StringRef_Compare16_1_byUInt64_logicAnd>(data, "StringRef_Compare16_1_byUInt64_logicAnd");
 	if (!m || m == 7) bench<StringRef_Compare16_1_byUInt64_bitAnd>	(data, "StringRef_Compare16_1_byUInt64_bitAnd");
-#if defined(__x86_64__)
+#if __SSE4_1__
 	if (!m || m == 8) bench<StringRef_Compare16_1_byIntSSE>			(data, "StringRef_Compare16_1_byIntSSE");
 	if (!m || m == 9) bench<StringRef_Compare16_1_byFloatSSE>		(data, "StringRef_Compare16_1_byFloatSSE");
 	if (!m || m == 10) bench<StringRef_Compare16_1_bySSE4>			(data, "StringRef_Compare16_1_bySSE4");

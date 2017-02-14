@@ -7,6 +7,7 @@
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/Interpreters/Set.h>
 #include <Poco/DirectoryIterator.h>
 
 
@@ -93,10 +94,15 @@ StorageSet::StorageSet(
 	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_)
-	: StorageSetOrJoinBase{path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_}
+	: StorageSetOrJoinBase{path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_},
+	set(std::make_shared<Set>(Limits{}))
 {
 	restore();
 }
+
+
+void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block); }
+size_t StorageSet::getSize() const { return set->getTotalRowCount(); };
 
 
 void StorageSetOrJoinBase::restore()

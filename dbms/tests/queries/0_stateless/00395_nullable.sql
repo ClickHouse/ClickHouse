@@ -367,7 +367,7 @@ INSERT INTO test.test1(col1,col2,col3) VALUES('C', NULL, 'ACDEFBGH');
 INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, 1, 'ACDEFGBH');
 INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, NULL, 'ACDEFGHB');
 
-SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2;
+SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2 ORDER BY col1, col2;
 
 DROP TABLE IF EXISTS test.test1;
 CREATE TABLE test.test1(col1 String, col2 Nullable(UInt8), col3 String) ENGINE=TinyLog;
@@ -384,7 +384,7 @@ INSERT INTO test.test1(col1,col2,col3) VALUES('C', NULL, 'ACDBEFGH');
 INSERT INTO test.test1(col1,col2,col3) VALUES('C', NULL, 'ACDEBFGH');
 INSERT INTO test.test1(col1,col2,col3) VALUES('C', NULL, 'ACDEFBGH');
 
-SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2;
+SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2 ORDER BY col1, col2;
 
 DROP TABLE IF EXISTS test.test1;
 CREATE TABLE test.test1(col1 Nullable(String), col2 String) ENGINE=TinyLog;
@@ -403,7 +403,7 @@ INSERT INTO test.test1(col1,col2) VALUES('C', 'ACDEFBGH');
 INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEFGBH');
 INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEFGHB');
 
-SELECT col1, count() FROM test.test1 GROUP BY col1;
+SELECT col1, count() FROM test.test1 GROUP BY col1 ORDER BY col1;
 
 DROP TABLE IF EXISTS test.test1;
 CREATE TABLE test.test1(col1 Nullable(UInt8), col2 String) ENGINE=TinyLog;
@@ -420,7 +420,7 @@ INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDBEFGH');
 INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEBFGH');
 INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEFBGH');
 
-SELECT col1, count() FROM test.test1 GROUP BY col1;
+SELECT col1, count() FROM test.test1 GROUP BY col1 ORDER BY col1;
 
 DROP TABLE IF EXISTS test.test1;
 CREATE TABLE test.test1(col1 Nullable(UInt64), col2 UInt64, col3 String) ENGINE=TinyLog;
@@ -437,7 +437,7 @@ INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, 2, 'ACDBEFGH');
 INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, 3, 'ACDEBFGH');
 INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, 3, 'ACDEFBGH');
 
-SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2;
+SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2 ORDER BY col1, col2;
 
 DROP TABLE IF EXISTS test.test1;
 CREATE TABLE test.test1(col1 Nullable(UInt64), col2 UInt64, col3 Nullable(UInt64), col4 String) ENGINE=TinyLog;
@@ -454,7 +454,7 @@ INSERT INTO test.test1(col1,col2,col3,col4) VALUES(NULL, 2, NULL, 'ACDBEFGH');
 INSERT INTO test.test1(col1,col2,col3,col4) VALUES(NULL, 3, 1, 'ACDEBFGH');
 INSERT INTO test.test1(col1,col2,col3,col4) VALUES(NULL, 3, NULL, 'ACDEFBGH');
 
-SELECT col1, col2, col3, count() FROM test.test1 GROUP BY col1, col2, col3;
+SELECT col1, col2, col3, count() FROM test.test1 GROUP BY col1, col2, col3 ORDER BY col1, col2, col3;
 
 DROP TABLE IF EXISTS test.test1;
 CREATE TABLE test.test1(col1 Nullable(Array(UInt8)), col2 String) ENGINE=TinyLog;
@@ -471,7 +471,7 @@ INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDBEFGH');
 INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEBFGH');
 INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEFBGH');
 
-SELECT col1, count() FROM test.test1 GROUP BY col1;
+SELECT col1, count() FROM test.test1 GROUP BY col1 ORDER BY col1;
 
 DROP TABLE IF EXISTS test.test1;
 CREATE TABLE test.test1(col1 Array(Nullable(UInt8)), col2 String) ENGINE=TinyLog;
@@ -488,7 +488,7 @@ INSERT INTO test.test1(col1,col2) VALUES([NULL], 'ACDBEFGH');
 INSERT INTO test.test1(col1,col2) VALUES([NULL], 'ACDEBFGH');
 INSERT INTO test.test1(col1,col2) VALUES([NULL], 'ACDEFBGH');
 
-SELECT col1, count() FROM test.test1 GROUP BY col1;
+SELECT col1, count() FROM test.test1 GROUP BY col1 ORDER BY col1;
 
 DROP TABLE IF EXISTS test.test1;
 CREATE TABLE test.test1(col1 Nullable(Array(UInt8)), col2 Array(Nullable(UInt8)), col3 String) ENGINE=TinyLog;
@@ -505,5 +505,5 @@ INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, [1], 'ACDBEFGH');
 INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, [NULL], 'ACDEBFGH');
 INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, [NULL], 'ACDEFBGH');
 
-SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2;
+SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2 ORDER BY col1, col2;
 SELECT DISTINCT col1, col2 FROM test.test1 ORDER BY col1, col2;

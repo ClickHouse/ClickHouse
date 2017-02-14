@@ -10,6 +10,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int BAD_ARGUMENTS;
+}
+
+
 std::string getClusterName(const IAST & node)
 {
 	if (const ASTIdentifier * ast_id = typeid_cast<const ASTIdentifier *>(&node))

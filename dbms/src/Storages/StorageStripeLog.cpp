@@ -29,6 +29,8 @@
 
 #include <DB/Columns/ColumnArray.h>
 
+#include <DB/Interpreters/Settings.h>
+
 #include <DB/Storages/StorageStripeLog.h>
 #include <Poco/DirectoryIterator.h>
 

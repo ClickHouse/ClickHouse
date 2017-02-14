@@ -1,19 +1,19 @@
 #pragma once
 
-#include <DB/IO/ReadBuffer.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 
 
 namespace DB
 {
 
-/** Позволяет читать из строки.
+/** Allows to read from std::string-like object.
   */
-class ReadBufferFromString : public ReadBuffer
+class ReadBufferFromString : public ReadBufferFromMemory
 {
 public:
-	/// std::string или mysqlxx::Value
+	/// std::string or mysqlxx::Value
 	template <typename S>
-	ReadBufferFromString(const S & s) : ReadBuffer(const_cast<char *>(s.data()), s.size(), 0) {}
+	ReadBufferFromString(const S & s) : ReadBufferFromMemory(s.data(), s.size()) {}
 };
 
 }

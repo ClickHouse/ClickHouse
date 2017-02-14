@@ -12,7 +12,7 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
 {
 	Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
 	port = config.getInt(config_name + ".port", 42000);
-	host = config.getString(config_name + ".host", "127.0.0.1");
+	host = config.getString(config_name + ".host", "localhost");
 	timeout = config.getDouble(config_name + ".timeout", 0.1);
 
 	root_path = config.getString(config_name + ".root_path", "one_min");

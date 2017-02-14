@@ -157,7 +157,7 @@ protected:
 			{
 				const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
 				actual_columns.push_back(nullable_col.getNestedColumn().get());
-				null_maps.push_back(nullable_col.getNullValuesByteMap().get());
+				null_maps.push_back(nullable_col.getNullMapColumn().get());
 			}
 			else
 			{

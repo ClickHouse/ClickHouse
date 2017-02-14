@@ -22,7 +22,7 @@ static ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & b
 	{
 		const IColumn * column = !description[i].column_name.empty()
 			? block.getByName(description[i].column_name).column.get()
-			: block.getByPosition(description[i].column_number).column.get();
+			: block.safeGetByPosition(description[i].column_number).column.get();
 
 		res.emplace_back(column, description[i]);
 	}
@@ -98,14 +98,14 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 	if (!block)
 		return;
 
-	/// Если столбец сортировки один
+	/// If only one column to sort by
 	if (description.size() == 1)
 	{
 		bool reverse = description[0].direction == -1;
 
 		const IColumn * column = !description[0].column_name.empty()
 			? block.getByName(description[0].column_name).column.get()
-			: block.getByPosition(description[0].column_number).column.get();
+			: block.safeGetByPosition(description[0].column_number).column.get();
 
 		IColumn::Permutation perm;
 		if (needCollation(column, description[0]))
@@ -118,7 +118,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 
 		size_t columns = block.columns();
 		for (size_t i = 0; i < columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
+			block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->permute(perm, limit);
 	}
 	else
 	{
@@ -163,7 +163,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 
 		size_t columns = block.columns();
 		for (size_t i = 0; i < columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
+			block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->permute(perm, limit);
 	}
 }
 
@@ -229,7 +229,7 @@ void stableSortBlock(Block & block, const SortDescription & description)
 
 	size_t columns = block.columns();
 	for (size_t i = 0; i < columns; ++i)
-		block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, 0);
+		block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->permute(perm, 0);
 }
 
 }

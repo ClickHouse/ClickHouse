@@ -4,12 +4,30 @@
 namespace DB
 {
 
+const DateLUTImpl * extractTimeZoneFromFunctionArguments(Block & block, const ColumnNumbers & arguments)
+{
+	if (arguments.size() == 2)
+	{
+		const ColumnConstString * time_zone_column = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get());
+
+		if (!time_zone_column)
+			throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
+				+ " of second (time zone) argument of function, must be constant string",
+				ErrorCodes::ILLEGAL_COLUMN);
+
+		return &DateLUT::instance(time_zone_column->getData());
+	}
+	else
+		return &DateLUT::instance();
+}
+
+
 void throwExceptionForIncompletelyParsedValue(
 	ReadBuffer & read_buffer, Block & block, const ColumnNumbers & arguments, size_t result)
 {
 	std::string message;
 	{
-		const IDataType & to_type = *block.getByPosition(result).type;
+		const IDataType & to_type = *block.safeGetByPosition(result).type;
 
 		WriteBufferFromString message_buf(message);
 		message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())

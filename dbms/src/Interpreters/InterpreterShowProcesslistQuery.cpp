@@ -19,15 +19,7 @@ BlockIO InterpreterShowProcesslistQuery::execute()
 
 String InterpreterShowProcesslistQuery::getRewrittenQuery()
 {
-	const ASTQueryWithOutput & query = dynamic_cast<const ASTQueryWithOutput &>(*query_ptr);
-
-	std::stringstream rewritten_query;
-	rewritten_query << "SELECT * FROM system.processes";
-
-	if (query.format)
-		rewritten_query << " FORMAT " << typeid_cast<const ASTIdentifier &>(*query.format).name;
-
-	return rewritten_query.str();
+	return "SELECT * FROM system.processes";
 }
 
 

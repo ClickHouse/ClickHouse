@@ -62,15 +62,15 @@ public:
 	  */
 
 	/** Записать только значения, без размеров. Вызывающая сторона также должна куда-нибудь записать смещения. */
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override;
+	void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
 
 	/** Прочитать только значения, без размеров.
 	  * При этом, в column уже заранее должны быть считаны все размеры.
 	  */
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+	void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
 	/** Записать размеры. */
-	void serializeOffsets(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const;
+	void serializeOffsets(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
 
 	/** Прочитать размеры. Вызывайте этот метод перед чтением значений. */
 	void deserializeOffsets(IColumn & column, ReadBuffer & istr, size_t limit) const;

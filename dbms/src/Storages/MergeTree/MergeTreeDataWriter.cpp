@@ -3,6 +3,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/IO/HashingWriteBuffer.h>
+#include <Poco/File.h>
 
 
 namespace ProfileEvents
@@ -23,6 +24,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 
 	const auto & date_lut = DateLUT::instance();
 
+	block.checkNumberOfRows();
 	size_t rows = block.rows();
 	size_t columns = block.columns();
 
@@ -59,7 +61,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 
 	ColumnPlainPtrs src_columns(columns);
 	for (size_t i = 0; i < columns; ++i)
-		src_columns[i] = block.getByPosition(i).column.get();
+		src_columns[i] = block.safeGetByPosition(i).column.get();
 
 	for (size_t i = 0; i < rows; ++i)
 	{
@@ -75,7 +77,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 		block_for_month->updateDates(dates[i]);
 
 		for (size_t j = 0; j < columns; ++j)
-			block_for_month->block.unsafeGetByPosition(j).column->insertFrom(*src_columns[j], i);
+			block_for_month->block.getByPosition(j).column->insertFrom(*src_columns[j], i);
 	}
 
 	return res;
@@ -151,7 +153,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	new_data_part->index.swap(out.getIndex());
 	new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(part_tmp_path);
 
-	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rowsInFirstColumn());
+	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->size_in_bytes);
 

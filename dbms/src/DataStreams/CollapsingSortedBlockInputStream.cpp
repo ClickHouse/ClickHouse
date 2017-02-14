@@ -26,7 +26,7 @@ void CollapsingSortedBlockInputStream::reportIncorrectData()
 	{
 		if (i != 0)
 			s << ", ";
-		s << apply_visitor(FieldVisitorToString(), (*current_key.columns[i])[current_key.row_num]);
+		s << applyVisitor(FieldVisitorToString(), (*current_key.columns[i])[current_key.row_num]);
 	}
 
 	s << ").";

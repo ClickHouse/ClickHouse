@@ -28,11 +28,13 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNullable.h>
 
+#include <DB/Interpreters/Settings.h>
+
 #include <DB/Storages/StorageTinyLog.h>
 #include <Poco/DirectoryIterator.h>
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION 	".bin"
-#define DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION ".null"
+#define DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION ".null.bin"
 
 
 namespace DB
@@ -300,7 +302,7 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 		IColumn & nested_col = *nullable_col.getNestedColumn();
 
 		/// First read from the null map.
-		DataTypeUInt8{}.deserializeBinary(*nullable_col.getNullValuesByteMap(),
+		DataTypeUInt8{}.deserializeBinaryBulk(nullable_col.getNullMapConcreteColumn(),
 			streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed, limit, 0);
 
 		/// Then read data.
@@ -328,7 +330,7 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 		}
 	}
 	else
-		type.deserializeBinary(column, streams[name]->compressed, limit, 0);	/// TODO Использовать avg_value_size_hint.
+		type.deserializeBinaryBulk(column, streams[name]->compressed, limit, 0);	/// TODO Использовать avg_value_size_hint.
 }
 
 
@@ -372,8 +374,8 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(column);
 		const IColumn & nested_col = *nullable_col.getNestedColumn();
 
-		DataTypeUInt8{}.serializeBinary(*nullable_col.getNullValuesByteMap(),
-			streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed);
+		DataTypeUInt8{}.serializeBinaryBulk(nullable_col.getNullMapConcreteColumn(),
+			streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed, 0, 0);
 
 		/// Then write data.
 		writeData(name, nested_type, nested_col, offset_columns, level);
@@ -386,15 +388,13 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 		if (offset_columns.count(size_name) == 0)
 		{
 			offset_columns.insert(size_name);
-			type_arr->serializeOffsets(
-				column,
-				streams[size_name]->compressed);
+			type_arr->serializeOffsets(column, streams[size_name]->compressed, 0, 0);
 		}
 
 		writeData(name, *type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(), offset_columns, level + 1);
 	}
 	else
-		type.serializeBinary(column, streams[name]->compressed);
+		type.serializeBinaryBulk(column, streams[name]->compressed, 0, 0);
 }
 
 
@@ -427,7 +427,7 @@ void TinyLogBlockOutputStream::write(const Block & block)
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		const ColumnWithTypeAndName & column = block.getByPosition(i);
+		const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
 		writeData(column.name, *column.type, *column.column, offset_columns);
 	}
 }

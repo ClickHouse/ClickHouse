@@ -1,0 +1,314 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          clickhouse-server
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Required-Start:
+# Required-Stop:
+# Short-Description: Yandex clickhouse-server daemon
+### END INIT INFO
+
+
+CLICKHOUSE_USER=clickhouse
+CLICKHOUSE_GROUP=${CLICKHOUSE_USER}
+SHELL=/bin/bash
+PROGRAM=clickhouse-server
+SYSCONFDIR=/etc/$PROGRAM
+CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
+CLICKHOUSE_LOGDIR_USER=root
+CLICKHOUSE_DATADIR=/var/lib/$CLICKHOUSE_USER
+CLICKHOUSE_DATADIR_OLD=/opt/clickhouse
+LOCALSTATEDIR=/var/lock
+BINDIR=/usr/bin
+CLICKHOUSE_CRONFILE=/etc/cron.d/clickhouse-server
+CLICKHOUSE_CONFIG=$SYSCONFDIR/config.xml
+LOCKFILE=$LOCALSTATEDIR/$PROGRAM
+RETVAL=0
+
+CLICKHOUSE_PIDDIR=/var/run/$PROGRAM
+CLICKHOUSE_PIDFILE="$CLICKHOUSE_PIDDIR/$PROGRAM.pid"
+
+# Override defaults from optional config file
+test -f /etc/default/clickhouse && . /etc/default/clickhouse
+
+# On x86_64, check for required instruction set.
+if uname -mpi | grep -q 'x86_64'; then
+	if ! grep -q 'sse4_2' /proc/cpuinfo; then
+		# On KVM, cpuinfo could falsely not report SSE 4.2 support, so skip the check.
+		if ! grep -q 'Common KVM processor' /proc/cpuinfo; then
+
+		    # Some other VMs also report wrong flags in cpuinfo.
+			# Tricky way to test for instruction set:
+			#  create temporary binary and run it;
+			#  if it get caught illegal instruction signal,
+			#  then required instruction set is not supported really.
+			#
+			# Generated this way:
+			# gcc -xc -Os -static -nostdlib - <<< 'void _start() { __asm__("pcmpgtq %%xmm0, %%xmm1; mov $0x3c, %%rax; xor %%rdi, %%rdi; syscall":::"memory"); }' && strip -R .note.gnu.build-id -R .comment -R .eh_frame -s ./a.out && gzip -c -9 ./a.out | base64 -w0; echo
+
+			if ! (echo -n 'H4sICAwAW1cCA2Eub3V0AKt39XFjYmRkgAEmBjsGEI+H0QHMd4CKGyCUAMUsGJiBJDNQNUiYlQEZOKDQclB9cnD9CmCSBYqJBRxQOvBpSQobGfqIAWn8FuYnPI4fsAGyPQz/87MeZtArziguKSpJTGLQK0mtKGGgGHADMSgoYH6AhTMPNHyE0NQzYuEzYzEXFr6CBPQDANAsXKTwAQAA' | base64 -d | gzip -d > /tmp/clickhouse_test_sse42 && chmod a+x /tmp/clickhouse_test_sse42 && /tmp/clickhouse_test_sse42); then
+				echo 'Warning! SSE 4.2 instruction set is not supported'
+				#exit 3
+			fi
+		fi
+	fi
+fi
+
+SUPPORTED_COMMANDS="{start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload|initdb}"
+is_supported_command()
+{
+	echo $SUPPORTED_COMMANDS | grep -E "(\{|\|)$1(\||})" &> /dev/null
+}
+
+generate_program_name()
+{
+	echo $PROGRAM
+}
+
+generate_pid_name()
+{
+	echo $CLICKHOUSE_PIDFILE
+}
+
+specific_log_file_for_each_process()
+{
+	echo ""
+}
+
+is_running()
+{
+	pidfile=$1
+
+	[ -r $pidfile ] && pgrep -s $(cat "$pidfile") 1> /dev/null 2> /dev/null
+}
+
+running_processes()
+{
+	running=0
+	if is_running $CLICKHOUSE_PIDFILE; then
+		running=$(($running + 1))
+	fi
+	echo $running
+}
+
+any_runs()
+{
+	if [ $(running_processes) -gt 0 ]; then return 0; else return 1; fi
+}
+
+all_runs()
+{
+	[ $(running_processes) -eq 1 ]
+}
+
+wait4done()
+{
+	while any_runs; do
+		sleep 1
+	done
+}
+
+
+initdb()
+{
+	if ! getent group ${CLICKHOUSE_USER} >/dev/null; then
+		echo "Can't chown to non-existing user ${CLICKHOUSE_USER}"
+		return
+	fi
+	if ! getent passwd ${CLICKHOUSE_GROUP} >/dev/null; then
+		echo "Can't chown to non-existing group ${CLICKHOUSE_GROUP}"
+		return
+	fi
+
+	if ! `su -s $SHELL ${CLICKHOUSE_USER} -c "test -r ${CLICKHOUSE_CONFIG}"`; then
+		echo "Warning! clickhouse config [${CLICKHOUSE_CONFIG}] not readable by user [${CLICKHOUSE_USER}]"
+	fi
+
+	if ! `su -s $SHELL ${CLICKHOUSE_USER} -c "test -O ${CLICKHOUSE_DATADIR} && test -G ${CLICKHOUSE_DATADIR}"`; then
+		echo "Changing owner of [${CLICKHOUSE_DATADIR}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
+		chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR}
+	fi
+
+	if ! `su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}"`; then
+		echo "Changing owner of [${CLICKHOUSE_LOGDIR}] to [${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP}]"
+		chown -R ${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}
+	fi
+
+	# Temporary fix for old metrika user, remove after 2017-06-01
+	if [ ! -z ${CLICKHOUSE_DATADIR_OLD} ] && [ -d ${CLICKHOUSE_DATADIR_OLD} ] && ! `su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_DATADIR_OLD}"` ; then
+		echo "Changing owner of old [${CLICKHOUSE_DATADIR_OLD}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
+		chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR_OLD}
+	fi
+}
+
+start()
+{
+	[ -x $BINDIR/$PROGRAM ] || exit 0
+	local EXIT_STATUS
+	EXIT_STATUS=0
+
+	echo -n "Start $PROGRAM service: "
+	ulimit -n 262144
+
+	if all_runs; then
+		echo -n "already running "
+		EXIT_STATUS=1
+	else
+		mkdir -p $CLICKHOUSE_PIDDIR
+		chown -R $CLICKHOUSE_USER:$CLICKHOUSE_GROUP $CLICKHOUSE_PIDDIR
+		initdb
+			if ! is_running $CLICKHOUSE_PIDFILE; then
+				rm -f $CLICKHOUSE_PIDFILE
+				# чтобы лок не удерживался в течении времени жизни дочернего процесса, освободим лок
+				su -l $CLICKHOUSE_USER -s $SHELL -c "flock -u 9; exec -a $(generate_program_name $i) \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$CLICKHOUSE_PIDFILE\" --config-file=\"$CLICKHOUSE_CONFIG\" $(specific_log_file_for_each_process $i)"
+				EXIT_STATUS=$?
+				if [ $EXIT_STATUS -ne 0 ]; then
+					break
+				fi
+			fi
+	fi
+
+	if [ $EXIT_STATUS -eq 0 ]; then
+		echo "DONE"
+	else
+		echo "FAILED"
+	fi
+
+	return $EXIT_STATUS
+}
+
+stop()
+{
+	local EXIT_STATUS
+	EXIT_STATUS=0
+
+	if [ -f $CLICKHOUSE_PIDFILE ]; then
+
+		echo -n "Stop $PROGRAM service: "
+
+		kill -TERM `cat "$CLICKHOUSE_PIDFILE"`
+
+		wait4done
+
+		echo "DONE"
+	fi
+	return $EXIT_STATUS
+}
+
+restart()
+{
+	stop
+	start
+}
+
+forcestop()
+{
+	local EXIT_STATUS
+	EXIT_STATUS=0
+
+	echo -n "Stop $PROGRAM service: "
+
+	kill -9 `cat "$CLICKHOUSE_PIDFILE"`
+
+	wait4done
+
+	echo "DONE"
+	return $EXIT_STATUS
+}
+
+forcerestart()
+{
+	forcestop
+	start
+}
+
+enable_cron()
+{
+	[ ! -z $CLICKHOUSE_CRONFILE ] && sed -i 's/^#*//' "$CLICKHOUSE_CRONFILE"
+}
+
+disable_cron()
+{
+	[ ! -z $CLICKHOUSE_CRONFILE ] && sed -i 's/^#*/#/' "$CLICKHOUSE_CRONFILE"
+}
+
+is_cron_disabled()
+{
+	[ -z $CLICKHOUSE_CRONFILE ] && return 0
+	[[ `grep -E "^#.*" $CLICKHOUSE_CRONFILE` == `cat $CLICKHOUSE_CRONFILE` ]];
+}
+
+main()
+{
+	# See how we were called.
+	EXIT_STATUS=0
+	case "$1" in
+	start)
+		start && enable_cron
+		;;
+	stop)
+		disable_cron && stop
+		;;
+	restart)
+		restart && enable_cron
+		;;
+	forcestop)
+		disable_cron && forcestop
+		;;
+	forcerestart)
+		forcerestart && enable_cron
+		;;
+	reload)
+		restart
+		;;
+	condstart)
+		all_runs || start
+		;;
+	condstop)
+		any_runs && stop
+		;;
+	condrestart)
+		any_runs && restart
+		;;
+	condreload)
+		any_runs && restart
+		;;
+	initdb)
+		initdb
+		;;
+	esac
+
+	exit $EXIT_STATUS
+}
+
+status()
+{
+	if [ $(running_processes) -eq 1 ]; then
+		echo "$PROGRAM service is running"
+	else
+		if is_cron_disabled; then
+			echo "$PROGRAM service is stopped";
+		else
+			echo "$PROGRAM: process unexpectedly terminated"
+		fi
+	fi
+}
+
+# Running commands whith not need blocking
+if ! is_supported_command "$1"; then
+	echo "Usage: ${0##*/} $SUPPORTED_COMMANDS"
+	exit 2
+fi
+
+if [ "$1" == "status" ]; then
+	status
+	exit 0
+fi
+
+(
+	if flock -n 9; then
+		main "$@"
+	else
+		echo "Init script is already running" && exit 1
+	fi
+) 9> $LOCKFILE

@@ -83,7 +83,7 @@ public:
 		return nested_func->alignOfData();
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
 	{
 		const IColumn * nested[num_agruments];
 
@@ -97,7 +97,7 @@ public:
 		size_t end = offsets[row_num];
 
 		for (size_t i = begin; i < end; ++i)
-			nested_func->add(place, nested, i, nullptr);
+			nested_func->add(place, nested, i, arena);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override

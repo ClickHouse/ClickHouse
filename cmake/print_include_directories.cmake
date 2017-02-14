@@ -1,4 +1,4 @@
-get_property (dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+get_property (dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/dbms PROPERTY INCLUDE_DIRECTORIES)
 file (WRITE ${CMAKE_CURRENT_BINARY_DIR}/include_directories.txt "")
 foreach (dir ${dirs})
 	string (REPLACE "${ClickHouse_SOURCE_DIR}" "." dir "${dir}")

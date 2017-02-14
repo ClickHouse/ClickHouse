@@ -153,7 +153,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 			if (!res)
 				return res;
 
-			progressImpl({ res.rowsInFirstColumn(), res.bytes() });
+			progressImpl({ res.rows(), res.bytes() });
 			pre_reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
 
 			/// Вычислим выражение в PREWHERE.
@@ -252,7 +252,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 				size_t rows = 0;
 				for (const auto i : ext::range(0, res.columns()))
 				{
-					auto & col = res.getByPosition(i);
+					auto & col = res.safeGetByPosition(i);
 					if (col.name == prewhere_column && res.columns() > 1)
 						continue;
 					col.column =
@@ -296,7 +296,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 		if (!res)
 			return res;
 
-		progressImpl({ res.rowsInFirstColumn(), res.bytes() });
+		progressImpl({ res.rows(), res.bytes() });
 		reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
 	}
 
@@ -306,7 +306,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 
 void MergeTreeThreadBlockInputStream::injectVirtualColumns(Block & block)
 {
-	const auto rows = block.rowsInFirstColumn();
+	const auto rows = block.rows();
 
 	/// add virtual columns
 	/// Кроме _sample_factor, который добавляется снаружи.

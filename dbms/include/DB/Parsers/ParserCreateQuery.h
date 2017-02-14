@@ -38,8 +38,8 @@ protected:
 };
 
 
-/** Тип или Storage, возможно, параметрический. Например, UInt8 или примеры из ParserIdentifierWithParameters
-  * Результат парсинга - ASTFunction с параметрами или без.
+/** Data type or table engine, possibly with parameters. For example, UInt8 or see examples from ParserIdentifierWithParameters
+  * Parse result is ASTFunction, with or without arguments.
   */
 class ParserIdentifierWithOptionalParameters : public IParserBase
 {

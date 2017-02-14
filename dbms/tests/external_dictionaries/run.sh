@@ -81,9 +81,6 @@ else
     echo 'MongoDB already started'
 fi
 
-python http_server.py &
-http_pid=$!
-
 # ClickHouse
 clickhouse-server &> clickhouse.log &
 sleep 3
@@ -101,5 +98,3 @@ fi
 kill -SIGTERM $PID
 #wait $PID
 echo 'Stopped ClickHouse server'
-
-kill $http_pid

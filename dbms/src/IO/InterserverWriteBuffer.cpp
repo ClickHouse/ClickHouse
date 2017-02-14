@@ -1,11 +1,13 @@
 #include <DB/IO/InterserverWriteBuffer.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 
+#include <Poco/Version.h>
 #include <Poco/URI.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 
 #include <common/logger_useful.h>
+
 
 namespace DB
 {
@@ -49,7 +51,11 @@ InterserverWriteBuffer::InterserverWriteBuffer(const std::string & host_, int po
 	session.setKeepAlive(true);
 
 	/// устанавливаем таймаут
+#if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
 	session.setTimeout(connection_timeout, send_timeout, receive_timeout);
+#else
+	session.setTimeout(connection_timeout);
+#endif
 
 	Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri_str, Poco::Net::HTTPRequest::HTTP_1_1);
 

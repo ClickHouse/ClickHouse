@@ -2,7 +2,10 @@
 
 #include <DB/Databases/IDatabase.h>
 #include <DB/Common/UInt128.h>
+#include <DB/Storages/IStorage.h>
 
+
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -57,6 +60,7 @@ private:
 	const String hostname;
 	const String datacenter_name;
 
+	using Logger = Poco::Logger;
 	Logger * log;
 
 	Context & context;
@@ -92,13 +96,16 @@ public:
 
 	bool empty() const override;
 
-	void createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine) override;
+	void createTable(
+		const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings) override;
+
 	void removeTable(const String & table_name) override;
 
 	void attachTable(const String & table_name, const StoragePtr & table) override;
 	StoragePtr detachTable(const String & table_name) override;
 
-	void renameTable(const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name) override;
+	void renameTable(
+		const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings) override;
 
 	time_t getTableMetadataModificationTime(const String & name) override;
 

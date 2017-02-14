@@ -39,13 +39,13 @@ public:
 	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override;
+	void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
 
 	/** limit обязательно должен быть в точности равен количеству сериализованных значений.
 	  * Именно из-за этого (невозможности читать меньший кусок записанных данных), Tuple не могут быть использованы для хранения данных в таблицах.
 	  * (Хотя могут быть использованы для передачи данных по сети в Native формате.)
 	  */
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+	void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
 	ColumnPtr createColumn() const override;
 	ColumnPtr createConstColumn(size_t size, const Field & field) const override;

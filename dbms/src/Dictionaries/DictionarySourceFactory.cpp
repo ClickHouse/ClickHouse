@@ -1,5 +1,6 @@
-#include <DB/Core/Block.h>
 #include <DB/Dictionaries/DictionarySourceFactory.h>
+
+#include <DB/Core/Block.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/FileDictionarySource.h>
 #include <DB/Dictionaries/MySQLDictionarySource.h>
@@ -11,7 +12,6 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/Core/FieldVisitors.h>
-
 #include <memory>
 #include <Poco/Data/ODBC/Connector.h>
 

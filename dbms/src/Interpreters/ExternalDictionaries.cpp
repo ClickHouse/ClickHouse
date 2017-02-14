@@ -6,6 +6,7 @@
 #include <ext/scope_guard.hpp>
 #include <Poco/Util/Application.h>
 #include <Poco/Glob.h>
+#include <Poco/File.h>
 
 
 namespace
@@ -210,10 +211,10 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 		const auto last_modified = config_file.getLastModified();
 		if (last_modified > config_last_modified)
 		{
+			Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(config_path);
+
 			/// definitions of dictionaries may have changed, recreate all of them
 			config_last_modified = last_modified;
-
-			Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(config_path);
 
 			/// get all dictionaries' definitions
 			Poco::Util::AbstractConfiguration::Keys keys;

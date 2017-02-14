@@ -9,6 +9,7 @@
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Common/setThreadName.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <common/logger_useful.h>
 #include <Poco/Ext/ThreadNumber.h>
 
 #include <ext/range.hpp>
@@ -101,7 +102,7 @@ protected:
 
 		std::lock_guard<std::mutex> lock(buffer.mutex);
 
-		if (!buffer.data.rowsInFirstColumn())
+		if (!buffer.data.rows())
 			return res;
 
 		for (const auto & name : column_names)
@@ -171,6 +172,9 @@ static void appendBlock(const Block & from, Block & to)
 	if (!to)
 		throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
 
+	from.checkNumberOfRows();
+	to.checkNumberOfRows();
+
 	size_t rows = from.rows();
 	size_t bytes = from.bytes();
 
@@ -183,8 +187,8 @@ static void appendBlock(const Block & from, Block & to)
 	{
 		for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
 		{
-			const IColumn & col_from = *from.getByPosition(column_no).column.get();
-			IColumn & col_to = *to.getByPosition(column_no).column.get();
+			const IColumn & col_from = *from.safeGetByPosition(column_no).column.get();
+			IColumn & col_to = *to.safeGetByPosition(column_no).column.get();
 
 			if (col_from.getName() != col_to.getName())
 				throw Exception("Cannot append block to another: different type of columns at index " + toString(column_no)
@@ -200,7 +204,7 @@ static void appendBlock(const Block & from, Block & to)
 		{
 			for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
 			{
-				ColumnPtr & col_to = to.getByPosition(column_no).column;
+				ColumnPtr & col_to = to.safeGetByPosition(column_no).column;
 				if (col_to->size() != old_rows)
 					col_to = col_to->cut(0, old_rows);
 			}
@@ -226,7 +230,7 @@ public:
 		if (!block)
 			return;
 
-		size_t rows = block.rowsInFirstColumn();
+		size_t rows = block.rows();
 		if (!rows)
 			return;
 
@@ -304,7 +308,7 @@ private:
 		{
 			buffer.data = sorted_block.cloneEmpty();
 		}
-		else if (storage.checkThresholds(buffer, current_time, sorted_block.rowsInFirstColumn(), sorted_block.bytes()))
+		else if (storage.checkThresholds(buffer, current_time, sorted_block.rows(), sorted_block.bytes()))
 		{
 			/** Если после вставки в буфер, ограничения будут превышены, то будем сбрасывать буфер.
 			  * Это также защищает от неограниченного потребления оперативки, так как в случае невозможности записать в таблицу,
@@ -377,7 +381,7 @@ bool StorageBuffer::checkThresholds(const Buffer & buffer, time_t current_time, 
 	if (buffer.first_write_time)
 		time_passed = current_time - buffer.first_write_time;
 
-	size_t rows = buffer.data.rowsInFirstColumn() + additional_rows;
+	size_t rows = buffer.data.rows() + additional_rows;
 	size_t bytes = buffer.data.bytes() + additional_bytes;
 
 	return checkThresholdsImpl(rows, bytes, time_passed);
@@ -413,7 +417,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 
 		block_to_write = buffer.data.cloneEmpty();
 
-		rows = buffer.data.rowsInFirstColumn();
+		rows = buffer.data.rows();
 		bytes = buffer.data.bytes();
 		if (buffer.first_write_time)
 			time_passed = current_time - buffer.first_write_time;
@@ -495,7 +499,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 	columns_intersection.reserve(block.columns());
 	for (size_t i : ext::range(0, structure_of_destination_table.columns()))
 	{
-		auto dst_col = structure_of_destination_table.unsafeGetByPosition(i);
+		auto dst_col = structure_of_destination_table.getByPosition(i);
 		if (block.has(dst_col.name))
 		{
 			if (block.getByName(dst_col.name).type->getName() != dst_col.type->getName())

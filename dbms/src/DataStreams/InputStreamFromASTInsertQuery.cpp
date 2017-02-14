@@ -1,4 +1,6 @@
+#include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/DataStreams/InputStreamFromASTInsertQuery.h>
+
 
 namespace DB
 {
@@ -17,8 +19,8 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
 
 	/// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
 
-	input_buffer_ast_part = std::make_unique<ReadBuffer>(
-		const_cast<char *>(ast_insert_query->data), ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0, 0);
+	input_buffer_ast_part = std::make_unique<ReadBufferFromMemory>(
+		ast_insert_query->data, ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0);
 
 	ConcatReadBuffer::ReadBuffers buffers;
 	if (ast_insert_query->data)

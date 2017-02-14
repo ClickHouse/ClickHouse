@@ -38,6 +38,8 @@ set (re2_sources
 # In order to avoid redundant locks in some cases, we use not thread-safe version of the library (re2_st).
 add_definitions (-DNDEBUG)
 
+include_directories (BEFORE .)
+
 add_library (re2 ${re2_sources})
 add_library (re2_st ${re2_sources})
 
