@@ -3,14 +3,15 @@
 #include <vector>
 
 template <typename T>
-std::ostream & operator<<(std::ostream & stream, std::vector<T> & what)
+std::ostream & operator<<(std::ostream & stream, std::vector<T> & what) const
 {
-	stream << "vector(" << what.size() << "/" << what.capacity() << ")[";
-	size_t n = 0;
-	for (auto & i : what)
+	stream << "vector(size = " << what.size() << ", capacity = " << what.capacity() << ")[";
+	bool first = true;
+	for (const auto & i : what)
 	{
-		if (n++)
-			stream << ",";
+		if (!first)
+			stream << ", ";
+		first = false;
 		stream << i;
 	}
 	stream << "]";
@@ -21,14 +22,15 @@ std::ostream & operator<<(std::ostream & stream, std::vector<T> & what)
 #include <array>
 
 template <typename T, size_t N>
-std::ostream & operator<<(std::ostream & stream, std::array<T, N> & what)
+std::ostream & operator<<(std::ostream & stream, std::array<T, N> & what) const
 {
-	stream << "array(" << what.size() << ")[";
-	size_t n = 0;
-	for (auto & i : what)
+	stream << "array(size = " << what.size() << ")[";
+	bool first = true;
+	for (const auto & i : what)
 	{
-		if (n++)
-			stream << ",";
+		if (!first)
+			stream << ", ";
+		first = false;
 		stream << i;
 	}
 	stream << "]";
@@ -39,15 +41,16 @@ std::ostream & operator<<(std::ostream & stream, std::array<T, N> & what)
 #include <map>
 
 template <typename K, typename V>
-std::ostream & operator<<(std::ostream & stream, std::map<K, V> & what)
+std::ostream & operator<<(std::ostream & stream, std::map<K, V> & what) const
 {
-	stream << "map(" << what.size() << ")[";
-	size_t n = 0;
-	for (auto & i : what)
+	stream << "map(size = " << what.size() << ")[";
+	bool first = true;
+	for (const auto & i : what)
 	{
-		if (n++)
-			stream << ",";
-		stream << i.first << ":" << i.second;
+		if (!first)
+			stream << ", ";
+		first = false;
+		stream << i.first << ": " << i.second;
 	}
 	stream << "]";
 	return stream;
@@ -57,15 +60,16 @@ std::ostream & operator<<(std::ostream & stream, std::map<K, V> & what)
 #include <unordered_map>
 
 template <typename K, typename V>
-std::ostream & operator<<(std::ostream & stream, std::unordered_map<K, V> & what)
+std::ostream & operator<<(std::ostream & stream, std::unordered_map<K, V> & what) const
 {
-	stream << "unordered_map(" << what.size() << ")[";
-	size_t n = 0;
-	for (auto & i : what)
+	stream << "unordered_map(size = " << what.size() << ")[";
+	bool first = true;
+	for (const auto & i : what)
 	{
-		if (n++)
-			stream << ",";
-		stream << i.first << ":" << i.second;
+		if (!first)
+			stream << ", ";
+		first = false;
+		stream << i.first << ": " << i.second;
 	}
 	stream << "]";
 	return stream;
@@ -75,9 +79,9 @@ std::ostream & operator<<(std::ostream & stream, std::unordered_map<K, V> & what
 #include <utility>
 
 template <typename K, typename V>
-std::ostream & operator<<(std::ostream & stream, std::pair<K, V> & what)
+std::ostream & operator<<(std::ostream & stream, std::pair<K, V> & what) const
 {
-	stream << "pair[" << what.first << "," << what.second << "]";
+	stream << "pair[" << what.first << ", " << what.second << "]";
 	return stream;
 }
 
