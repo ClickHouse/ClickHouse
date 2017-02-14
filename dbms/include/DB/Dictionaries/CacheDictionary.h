@@ -235,7 +235,6 @@ private:
 		const size_t cell_idx;
 	};
 
-	//std::tuple<bool, bool, size_t> 
 	FindResult findCellIdx(const Key & id, const CellMetadata::time_point_t now) const;
 
 	const std::string name;
