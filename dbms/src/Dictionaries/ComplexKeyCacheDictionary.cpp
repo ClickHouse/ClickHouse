@@ -1,11 +1,9 @@
-#include <DB/Dictionaries/ComplexKeyCacheDictionary.h>
+﻿#include <DB/Dictionaries/ComplexKeyCacheDictionary.h>
 #include <DB/Common/BitHelpers.h>
 #include <DB/Common/randomSeed.h>
 #include <DB/Common/Stopwatch.h>
 #include <DB/Common/ProfilingScopedRWLock.h>
 #include <ext/range.hpp>
-
-#include <common/iostream_debug_helpers.h>
 
 namespace DB
 {
@@ -423,15 +421,13 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 	MapType<std::vector<size_t>> outdated_keys;
 	auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
 
-
 	const auto rows_num = key_columns.front()->size();
 	PODArray<StringRef> keys_array(rows_num);
 
-{
+	{
 	const auto keys_size = dict_struct.key.value().size();
 	StringRefs keys(keys_size);
 	Arena temporary_keys_pool;
-
 
 	size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
 	{
@@ -467,7 +463,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 	query_count.fetch_add(rows_num, std::memory_order_relaxed);
 	hit_count.fetch_add(rows_num - outdated_keys.size(), std::memory_order_release);
-}
+	}
 
 	if (outdated_keys.empty())
 		return;
@@ -496,9 +492,9 @@ void ComplexKeyCacheDictionary::getItemsString(
 	Attribute & attribute, const ConstColumnPlainPtrs & key_columns, ColumnString * out,
 	DefaultGetter && get_default) const
 {
-	const auto rows = key_columns.front()->size();
+	const auto rows_num = key_columns.front()->size();
 	/// save on some allocations
-	out->getOffsets().reserve(rows);
+	out->getOffsets().reserve(rows_num);
 
 	const auto keys_size = dict_struct.key.value().size();
 	StringRefs keys(keys_size);
@@ -514,7 +510,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 
 		const auto now = std::chrono::system_clock::now();
 		/// fetch up-to-date values, discard on fail
-		for (const auto row : ext::range(0, rows))
+		for (const auto row : ext::range(0, rows_num))
 		{
 			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			SCOPE_EXIT(temporary_keys_pool.rollback(key.size));
@@ -539,8 +535,8 @@ void ComplexKeyCacheDictionary::getItemsString(
 	/// optimistic code completed successfully
 	if (!found_outdated_values)
 	{
-		query_count.fetch_add(rows, std::memory_order_relaxed);
-		hit_count.fetch_add(rows, std::memory_order_release);
+		query_count.fetch_add(rows_num, std::memory_order_relaxed);
+		hit_count.fetch_add(rows_num, std::memory_order_release);
 		return;
 	}
 
@@ -552,7 +548,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 	MapType<std::vector<size_t>> outdated_keys;
 	/// we are going to store every string separately
 	MapType<StringRef> map;
-	PODArray<StringRef> keys_array(rows);
+	PODArray<StringRef> keys_array(rows_num);
 
 	size_t total_length = 0;
 	size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
@@ -560,7 +556,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
 		const auto now = std::chrono::system_clock::now();
-		for (const auto row : ext::range(0, rows))
+		for (const auto row : ext::range(0, rows_num))
 		{
 			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			  keys_array[row] = key;
@@ -593,8 +589,8 @@ void ComplexKeyCacheDictionary::getItemsString(
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
-	query_count.fetch_add(rows, std::memory_order_relaxed);
-	hit_count.fetch_add(rows - outdated_keys.size(), std::memory_order_release);
+	query_count.fetch_add(rows_num, std::memory_order_relaxed);
+	hit_count.fetch_add(rows_num - outdated_keys.size(), std::memory_order_release);
 
 	/// request new values
 	if (!outdated_keys.empty())
