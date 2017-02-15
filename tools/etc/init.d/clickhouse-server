@@ -279,6 +279,7 @@ main()
 		initdb
 		;;
 	*)
+		# Print current script name
 		echo "Usage: ${0##*/} $SUPPORTED_COMMANDS"
 		exit 2
 		;;
@@ -300,7 +301,7 @@ status()
 	fi
 }
 
-# Running commands whith not need blocking
+# Running commands without need of locking
 case "$1" in
 status)
 	status
