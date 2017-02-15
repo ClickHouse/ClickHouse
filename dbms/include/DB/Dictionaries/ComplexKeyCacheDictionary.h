@@ -258,16 +258,16 @@ private:
 	StringRef copyKey(const StringRef key) const;
 
 	struct FindResult {
+		const size_t cell_idx;
 		const bool valid;
 		const bool outdated;
-		const size_t cell_idx;
 	};
 
-
-        FindResult findCellIdx(/*CellFinder& cell_finder,*/ /*const size_t row,*/ const StringRef & key, const CellMetadata::time_point_t now) const;
-
-
-
+    FindResult findCellIdx(const StringRef & key, const CellMetadata::time_point_t now, const size_t hash) const;
+    FindResult findCellIdx(const StringRef & key, const CellMetadata::time_point_t now) const {
+	  const auto hash = StringRefHash{}(key);
+	  return findCellIdx(key, now, hash);
+	};
 
 	const std::string name;
 	const DictionaryStructure dict_struct;

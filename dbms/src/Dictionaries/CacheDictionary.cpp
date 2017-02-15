@@ -175,7 +175,7 @@ void CacheDictionary::getString(
 }
 
 
-/// returns 'cell is valid' flag, 'cell is outdated' flag, cell_idx
+/// returns cell_idx (always valid for replacing), 'cell is valid' flag, 'cell is outdated' flag
 /// true  false   found and valid
 /// false true    not found (something outdated, maybe our cell)
 /// false false   not found (other id stored with valid data)
@@ -206,13 +206,13 @@ CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const C
 
 		if (cell.expiresAt() < now)
 		{
-			return {false, true, cell_idx};
+			return {cell_idx, false, true};
 		}
 
-		return {true, false, cell_idx};
+		return {cell_idx, true, false};
 	}
 
-	return {false, false, oldest_id};
+	return {oldest_id, false, false};
 }
 
 void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const

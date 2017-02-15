@@ -230,9 +230,9 @@ private:
 	Attribute & getAttribute(const std::string & attribute_name) const;
 
 	struct FindResult {
+		const size_t cell_idx;
 		const bool valid;
 		const bool outdated;
-		const size_t cell_idx;
 	};
 
 	FindResult findCellIdx(const Key & id, const CellMetadata::time_point_t now) const;

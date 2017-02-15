@@ -179,27 +179,26 @@ void ComplexKeyCacheDictionary::getString(
 
 
 
-   
-/// returns 'cell is valid' flag, cell_idx
-ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (const StringRef & key, const CellMetadata::time_point_t now) const
+/// returns cell_idx (always valid for replacing), 'cell is valid' flag, 'cell is outdated' flag,
+/// true  false   found and valid
+/// false true    not found (something outdated, maybe our cell)
+/// false false   not found (other id stored with valid data)
+/// true  true    impossible
+///
+/// todo: split this func to two: find_for_get and find_for_set
+ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (const StringRef & key, const CellMetadata::time_point_t now, const size_t hash) const
 {
-	const auto hash = StringRefHash{}(key);
 	auto pos = hash & size_overlap_mask;
-
 	auto oldest_id = pos;
 	auto oldest_time = CellMetadata::time_point_t::max();
 	const auto stop = pos + max_collision_length;
-	//std::cerr << "go hash="<< hash<<" pos="<<pos << " size=" << size<<" stop="<<stop  << "\n";
 	for (; pos < stop; ++pos) {
 			const auto cell_idx = pos & size_overlap_mask;
 
 			const auto & cell = cells[cell_idx];
-			//std::cerr << "start key="<< key<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data << "\n";
 
 			if (cell.hash != hash || cell.key != key)
 			{
-				//std::cerr << "notf cell.hash != hash : " << cell.hash << " != " <<  hash << " cell.key="<< cell.key << "!= key=" << key << " cell.data=" << cell.data <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() <<  "\n";
-
 				/// maybe we already found nearest expired cell
 				if (oldest_time > now && oldest_time > cell.expiresAt())
 				{
@@ -211,16 +210,13 @@ ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (co
 
 			if (cell.expiresAt() < now)
 			{
-				//std::cerr << "exp cell.expiresAt() < now : " << cell.expiresAt().time_since_epoch().count() << " < "<< now.time_since_epoch().count() << "\n";
-				return {false, true, cell_idx};
+				return {cell_idx, false, true};
 			}
 
-			//std::cerr << "hit key="<< key<<" cell_idx="<<cell_idx << " stop="<<stop  <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() << "\n";
-			return {true, false, cell_idx};
+			return {cell_idx, true, false};
 		}
 
-		//std::cerr << "miss,oldest " <<  " key="<< key << " cell_idx="<<oldest_id << "\n";
-		return {false, false, oldest_id};
+		return {oldest_id, false, false};
 }
 
 
@@ -527,7 +523,6 @@ void ComplexKeyCacheDictionary::getItemsString(
 		{
 			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			SCOPE_EXIT(temporary_keys_pool.rollback(key.size));
-			//const auto hash = StringRefHash{}(key);
 
 			const auto find_result = findCellIdx(key, now);
 
@@ -696,7 +691,7 @@ void ComplexKeyCacheDictionary::update(
 			{
 				auto key = allocKey(row, key_columns, keys);
 				const auto hash = StringRefHash{}(key);
-				const auto find_result = findCellIdx(key, now);
+				const auto find_result = findCellIdx(key, now, hash);
 				const auto & cell_idx = find_result.cell_idx;
 
 				for (const auto attribute_idx : ext::range(0, attributes.size()))
@@ -766,7 +761,7 @@ void ComplexKeyCacheDictionary::update(
 		auto key = key_found_pair.first;
 		const auto hash = StringRefHash{}(key);
 
-		const auto find_result = findCellIdx(key, now);
+		const auto find_result = findCellIdx(key, now, hash);
 		const auto & cell_idx = find_result.cell_idx;
 
 		auto & cell = cells[cell_idx];
