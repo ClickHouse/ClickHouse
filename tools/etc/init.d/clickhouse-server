@@ -278,6 +278,10 @@ main()
 	initdb)
 		initdb
 		;;
+	*)
+		echo "Usage: ${0##*/} $SUPPORTED_COMMANDS"
+		exit 2
+		;;
 	esac
 
 	exit $EXIT_STATUS
@@ -297,12 +301,6 @@ status()
 }
 
 # Running commands whith not need blocking
-if ! is_supported_command "$1"; then
-	echo "Usage: ${0##*/} $SUPPORTED_COMMANDS"
-	exit 2
-fi
-
-
 case "$1" in
 status)
 	status
