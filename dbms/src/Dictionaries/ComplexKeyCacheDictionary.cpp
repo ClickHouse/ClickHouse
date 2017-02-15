@@ -5,6 +5,7 @@
 #include <DB/Common/ProfilingScopedRWLock.h>
 #include <ext/range.hpp>
 
+#include <common/iostream_debug_helpers.h>
 
 namespace DB
 {
@@ -180,24 +181,24 @@ void ComplexKeyCacheDictionary::getString(
 
    
 /// returns 'cell is valid' flag, cell_idx
-ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (/*CellFinder & cell_finder , */ /*const size_t row,*/ const StringRef & key, const CellMetadata::time_point_t now) const
+ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (const StringRef & key, const CellMetadata::time_point_t now) const
 {
 	const auto hash = StringRefHash{}(key);
-	auto pos = hash; // & size_overlap_mask;
+	auto pos = hash & size_overlap_mask;
 
 	auto oldest_id = pos;
 	auto oldest_time = CellMetadata::time_point_t::max();
 	const auto stop = pos + max_collision_length;
-	std::cerr << "go hash="<< hash<<" pos="<<pos << " size=" << size<<" stop="<<stop  << "\n";
+	//std::cerr << "go hash="<< hash<<" pos="<<pos << " size=" << size<<" stop="<<stop  << "\n";
 	for (; pos < stop; ++pos) {
 			const auto cell_idx = pos & size_overlap_mask;
 
 			const auto & cell = cells[cell_idx];
-			//std::cerr << "start id="<< id<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data << "\n";
+			//std::cerr << "start key="<< key<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data << "\n";
 
 			if (cell.hash != hash || cell.key != key)
 			{
-				//std::cerr << "notf cell.id != id : " << cell.id << " != " <<  id << " cell.data" << cell.data <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() <<  "\n";
+				//std::cerr << "notf cell.hash != hash : " << cell.hash << " != " <<  hash << " cell.key="<< cell.key << "!= key=" << key << " cell.data=" << cell.data <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() <<  "\n";
 				//ProfileEvents::increment(ProfileEvents::DictCacheKeysTryNext);
 
 				/// maybe we already found nearest expired cell
@@ -216,17 +217,13 @@ ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (/*
 				return {false, true, cell_idx};
 			}
 
-			//std::cerr << "hit id="<< id<<" cell_idx="<<cell_idx << " stop="<<stop  <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() << "\n";
+			//std::cerr << "hit key="<< key<<" cell_idx="<<cell_idx << " stop="<<stop  <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() << "\n";
 			return {true, false, cell_idx};
 		}
 
-		//std::cerr << "miss,oldest " <<  " id="<< id << " cell_idx="<<oldest_id << "\n";
+		//std::cerr << "miss,oldest " <<  " key="<< key << " cell_idx="<<oldest_id << "\n";
 		//ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound);
 		return {false, false, oldest_id};
-
- // #endif
-
-		//return {false, true, 0};
 }
 
 
@@ -292,6 +289,8 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 	std::vector<size_t> required_rows(outdated_keys.size());
 	std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
 		[] (auto & pair) { return pair.second.front(); });
+
+std::cerr << "kc="<<key_columns << /* " ka="<< keys_array <<*/ " rr=" << required_rows << "\n";
 
 	/// request new values
 	update(key_columns, keys_array, required_rows,
@@ -486,6 +485,9 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 	std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
 		[] (auto & pair) { return pair.second.front(); });
 
+
+std::cerr << "kc="<<key_columns << /* " ka="<< keys_array <<*/ " rr=" << required_rows << "\n";
+
 	/// request new values
 	update(key_columns, keys_array, required_rows,
 		[&] (const StringRef key, const size_t cell_idx)
@@ -613,6 +615,8 @@ void ComplexKeyCacheDictionary::getItemsString(
 		std::vector<size_t> required_rows(outdated_keys.size());
 		std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
 			[] (auto & pair) { return pair.second.front(); });
+
+std::cerr << "kc="<<key_columns << /* " ka="<< keys_array << */" rr=" << required_rows << "\n";
 
 		update(key_columns, keys_array, required_rows,
 			[&] (const StringRef key, const size_t cell_idx)
