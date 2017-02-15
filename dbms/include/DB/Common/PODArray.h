@@ -462,4 +462,13 @@ void swap(PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & lhs, PODArray<T, I
 template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
 using PaddedPODArray = PODArray<T, INITIAL_SIZE, TAllocator, 15>;
 
+
+constexpr size_t integerRound(size_t value, size_t dividend)
+{
+	return ((value + dividend - 1) / dividend) * dividend;
+}
+
+template <typename T, size_t stack_size_in_bytes>
+using PODArrayWithStackMemory = PODArray<T, 0, AllocatorWithStackMemory<Allocator<false>, integerRound(stack_size_in_bytes, sizeof(T))>>;
+
 }

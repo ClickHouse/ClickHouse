@@ -100,6 +100,11 @@ public:
 	/// Аггрегатная функция или состояние аггрегатной функции.
 	bool isState() const override { return true; }
 
+	bool allocatesMemoryInArena() const override
+	{
+		return nested_func->allocatesMemoryInArena();
+	}
+
 	AggregateFunctionPtr getNestedFunction() const { return nested_func_owner; }
 
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)

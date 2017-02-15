@@ -3,8 +3,8 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
-#include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnAggregateFunction.h>
+#include <DB/Columns/ColumnConstAggregateFunction.h>
 
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 
@@ -29,8 +29,8 @@ std::string DataTypeAggregateFunction::getName() const
 		stream << ")";
 	}
 
-	for (DataTypes::const_iterator it = argument_types.begin(); it != argument_types.end(); ++it)
-		stream << ", " << (*it)->getName();
+	for (const auto & argument_type: argument_types)
+		stream << ", " << argument_type->getName();
 
 	stream << ")";
 	return stream.str();
@@ -236,7 +236,33 @@ ColumnPtr DataTypeAggregateFunction::createColumn() const
 
 ColumnPtr DataTypeAggregateFunction::createConstColumn(size_t size, const Field & field) const
 {
-	throw Exception("Const column with aggregate function is not supported", ErrorCodes::NOT_IMPLEMENTED);
+	return std::make_shared<ColumnConstAggregateFunction>(size, field, clone());
+}
+
+/// Create empty state
+Field DataTypeAggregateFunction::getDefault() const
+{
+	Field field = String();
+
+	PODArrayWithStackMemory<char, 16> place_buffer(function->sizeOfData());
+	AggregateDataPtr place = place_buffer.data();
+
+	function->create(place);
+
+	try
+	{
+		WriteBufferFromString buffer_from_field(field.get<String &>());
+		function->serialize(place, buffer_from_field);
+	}
+	catch (...)
+	{
+		function->destroy(place);
+		throw;
+	}
+
+	function->destroy(place);
+
+	return field;
 }
 
 

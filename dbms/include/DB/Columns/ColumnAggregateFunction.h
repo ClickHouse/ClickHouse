@@ -160,11 +160,21 @@ public:
 		insertMergeFrom(src, n);
 	}
 
+	void insertFrom(ConstAggregateDataPtr place)
+	{
+		insertDefault();
+		insertMergeFrom(place);
+	}
+
 	/// Merge state at last row with specified state in another column.
+	void insertMergeFrom(ConstAggregateDataPtr place)
+	{
+		func->merge(getData().back(), place, &createOrGetArena());
+	}
+
 	void insertMergeFrom(const IColumn & src, size_t n)
 	{
-		Arena & arena = createOrGetArena();
-		func->merge(getData().back(), static_cast<const ColumnAggregateFunction &>(src).getData()[n], &arena);
+		insertMergeFrom(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
 	}
 
 	Arena & createOrGetArena()
