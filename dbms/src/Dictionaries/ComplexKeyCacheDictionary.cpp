@@ -440,7 +440,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			keys_array[row] = key;
 
-			const auto find_result = findCellIdx(/*cell_finder,*/ key, now);
+			const auto find_result = findCellIdx(key, now);
 			  if (!find_result.valid)
 			{
 				outdated_keys[key].push_back(row);
