@@ -199,7 +199,6 @@ ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (co
 			if (cell.hash != hash || cell.key != key)
 			{
 				//std::cerr << "notf cell.hash != hash : " << cell.hash << " != " <<  hash << " cell.key="<< cell.key << "!= key=" << key << " cell.data=" << cell.data <<  " cell exp=" << cell.expiresAt().time_since_epoch().count() <<  "\n";
-				//ProfileEvents::increment(ProfileEvents::DictCacheKeysTryNext);
 
 				/// maybe we already found nearest expired cell
 				if (oldest_time > now && oldest_time > cell.expiresAt())
@@ -213,7 +212,6 @@ ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (co
 			if (cell.expiresAt() < now)
 			{
 				//std::cerr << "exp cell.expiresAt() < now : " << cell.expiresAt().time_since_epoch().count() << " < "<< now.time_since_epoch().count() << "\n";
-				//ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired); // first notfound also here
 				return {false, true, cell_idx};
 			}
 
@@ -222,7 +220,6 @@ ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (co
 		}
 
 		//std::cerr << "miss,oldest " <<  " key="<< key << " cell_idx="<<oldest_id << "\n";
-		//ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound);
 		return {false, false, oldest_id};
 }
 
