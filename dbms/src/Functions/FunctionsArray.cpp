@@ -2723,10 +2723,6 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
 
 		aggregate_function = AggregateFunctionFactory().get(aggregate_function_name, argument_types);
 
-		/// Потому что владение состояниями агрегатных функций никуда не отдаётся.
-		if (aggregate_function->isState())
-			throw Exception("Using aggregate function with -State modifier in function arrayReduce is not supported", ErrorCodes::BAD_ARGUMENTS);
-
 		if (has_parameters)
 			aggregate_function->setParameters(params_row);
 		aggregate_function->setArguments(argument_types);
@@ -2778,6 +2774,9 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 	block.safeGetByPosition(result).column = result_holder;
 	IColumn & res_col = *result_holder.get();
 
+	/// AggregateFunction's states should be inserted into column using specific way
+	auto res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(&res_col);
+
 	ColumnArray::Offset_t current_offset = 0;
 	for (size_t i = 0; i < rows; ++i)
 	{
@@ -2789,7 +2788,10 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 			for (size_t j = current_offset; j < next_offset; ++j)
 				agg_func.add(place, aggregate_arguments, j, arena.get());
 
-			agg_func.insertResultInto(place, res_col);
+			if (!res_col_aggregate_function)
+				agg_func.insertResultInto(place, res_col);
+			else
+				res_col_aggregate_function->insertFrom(place);
 		}
 		catch (...)
 		{

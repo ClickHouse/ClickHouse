@@ -1498,19 +1498,11 @@ private:
 		};
 	}
 
-	/// Only trivial NULL -> NULL case
-	WrapperType createNullWrapper(const DataTypePtr & from_type, const DataTypeNull * to_type)
+	WrapperType createIdentityWrapper(const DataTypePtr &)
 	{
-		if (!typeid_cast<const DataTypeNull *>(from_type.get()))
-			throw Exception("Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
-				ErrorCodes::CANNOT_CONVERT_TYPE);
-
 		return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
 		{
-			// just copy pointer to Null column
-			ColumnWithTypeAndName & res_col = block.safeGetByPosition(result);
-			const ColumnWithTypeAndName & src_col = block.safeGetByPosition(arguments.front());
-			res_col.column = src_col.column;
+			block.safeGetByPosition(result).column = block.safeGetByPosition(arguments.front()).column;
 		};
 	}
 
@@ -1602,7 +1594,9 @@ private:
 
 	WrapperType prepareImpl(const DataTypePtr & from_type, const IDataType * const to_type)
 	{
-		if (const auto to_actual_type = typeid_cast<const DataTypeUInt8 *>(to_type))
+		if (from_type->equals(*to_type))
+			return createIdentityWrapper(from_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeUInt8 *>(to_type))
 			return createWrapper(from_type, to_actual_type);
 		else if (const auto to_actual_type = typeid_cast<const DataTypeUInt16 *>(to_type))
 			return createWrapper(from_type, to_actual_type);
@@ -1638,8 +1632,6 @@ private:
 			return createEnumWrapper(from_type, type_enum);
 		else if (const auto type_enum = typeid_cast<const DataTypeEnum16 *>(to_type))
 			return createEnumWrapper(from_type, type_enum);
-		else if (const auto type_null = typeid_cast<const DataTypeNull *>(to_type))
-			return createNullWrapper(from_type, type_null);
 
 		/// It's possible to use ConvertImplGenericFromString to convert from String to AggregateFunction,
 		///  but it is disabled because deserializing aggregate functions state might be unsafe.
@@ -1691,7 +1683,7 @@ private:
 			else if (const auto type = typeid_cast<const DataTypeEnum16 *>(to_type))
 				monotonicity_for_range = monotonicityForType(type);
 		}
-		/// other types like FixedString, Array and Tuple have no monotonicity defined
+		/// other types like Null, FixedString, Array and Tuple have no monotonicity defined
 	}
 
 public:
