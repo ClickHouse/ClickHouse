@@ -302,10 +302,13 @@ if ! is_supported_command "$1"; then
 	exit 2
 fi
 
-if [ "$1" == "status" ]; then
+
+case "$1" in
+status)
 	status
 	exit 0
-fi
+	;;
+esac
 
 (
 	if flock -n 9; then
