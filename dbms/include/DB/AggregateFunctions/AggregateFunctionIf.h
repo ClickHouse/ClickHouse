@@ -103,6 +103,11 @@ public:
 		nested_func->insertResultInto(place, to);
 	}
 
+	bool allocatesMemoryInArena() const override
+	{
+		return nested_func->allocatesMemoryInArena();
+	}
+
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
 	{
 		static_cast<const AggregateFunctionIf &>(*that).add(place, columns, row_num, arena);
