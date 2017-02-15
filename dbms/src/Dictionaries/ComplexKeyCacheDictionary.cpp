@@ -192,31 +192,31 @@ ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (co
 	auto oldest_id = pos;
 	auto oldest_time = CellMetadata::time_point_t::max();
 	const auto stop = pos + max_collision_length;
-	for (; pos < stop; ++pos) {
-			const auto cell_idx = pos & size_overlap_mask;
+	for (; pos < stop; ++pos)
+	{
+		const auto cell_idx = pos & size_overlap_mask;
+		const auto & cell = cells[cell_idx];
 
-			const auto & cell = cells[cell_idx];
-
-			if (cell.hash != hash || cell.key != key)
+		if (cell.hash != hash || cell.key != key)
+		{
+			/// maybe we already found nearest expired cell
+			if (oldest_time > now && oldest_time > cell.expiresAt())
 			{
-				/// maybe we already found nearest expired cell
-				if (oldest_time > now && oldest_time > cell.expiresAt())
-				{
-					oldest_time = cell.expiresAt();
-					oldest_id = cell_idx;
-				}
-				continue;
+				oldest_time = cell.expiresAt();
+				oldest_id = cell_idx;
 			}
-
-			if (cell.expiresAt() < now)
-			{
-				return {cell_idx, false, true};
-			}
-
-			return {cell_idx, true, false};
+			continue;
 		}
 
-		return {oldest_id, false, false};
+		if (cell.expiresAt() < now)
+		{
+			return {cell_idx, false, true};
+		}
+
+		return {cell_idx, true, false};
+	}
+
+	return {oldest_id, false, false};
 }
 
 
@@ -282,8 +282,6 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 	std::vector<size_t> required_rows(outdated_keys.size());
 	std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
 		[] (auto & pair) { return pair.second.front(); });
-
-std::cerr << "kc="<<key_columns << /* " ka="<< keys_array <<*/ " rr=" << required_rows << "\n";
 
 	/// request new values
 	update(key_columns, keys_array, required_rows,
@@ -478,9 +476,6 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 	std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
 		[] (auto & pair) { return pair.second.front(); });
 
-
-std::cerr << "kc="<<key_columns << /* " ka="<< keys_array <<*/ " rr=" << required_rows << "\n";
-
 	/// request new values
 	update(key_columns, keys_array, required_rows,
 		[&] (const StringRef key, const size_t cell_idx)
@@ -607,8 +602,6 @@ void ComplexKeyCacheDictionary::getItemsString(
 		std::vector<size_t> required_rows(outdated_keys.size());
 		std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
 			[] (auto & pair) { return pair.second.front(); });
-
-std::cerr << "kc="<<key_columns << /* " ka="<< keys_array << */" rr=" << required_rows << "\n";
 
 		update(key_columns, keys_array, required_rows,
 			[&] (const StringRef key, const size_t cell_idx)
