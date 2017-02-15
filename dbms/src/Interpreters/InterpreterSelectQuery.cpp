@@ -583,7 +583,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 		if (second_stage)
 		{
-			bool need_second_distinct_pass = query.distinct;
+			bool need_second_distinct_pass;
 
 			if (need_aggregate)
 			{
@@ -601,9 +601,12 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 				need_second_distinct_pass = query.distinct && hasMoreThanOneStream();
 			}
-			else if (query.group_by_with_totals && !aggregate_final)
+			else
 			{
-				executeTotalsAndHaving(false, nullptr, aggregate_overflow_row);
+				need_second_distinct_pass = query.distinct && hasMoreThanOneStream();
+
+				if (query.group_by_with_totals && !aggregate_final)
+					executeTotalsAndHaving(false, nullptr, aggregate_overflow_row);
 			}
 
 			if (has_order_by)
@@ -636,14 +639,14 @@ void InterpreterSelectQuery::executeSingleQuery()
 			if (query.limit_length && hasMoreThanOneStream() && !query.distinct && !query.limit_by_expression_list)
 				executePreLimit();
 
-			if (need_second_distinct_pass)
+			if (union_within_single_query || stream_with_non_joined_data || need_second_distinct_pass)
 				union_within_single_query = true;
 
 			/// To execute LIMIT BY we should merge all streams together.
 			if (query.limit_by_expression_list && hasMoreThanOneStream())
 				union_within_single_query = true;
 
-			if (union_within_single_query || stream_with_non_joined_data)
+			if (union_within_single_query)
 				executeUnion();
 
 			if (streams.size() == 1)

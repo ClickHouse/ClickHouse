@@ -130,8 +130,10 @@ initdb()
 	fi
 
 	if ! `su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}"`; then
+		echo "Changing owner of [${CLICKHOUSE_LOGDIR}/*] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
+		chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}/*
 		echo "Changing owner of [${CLICKHOUSE_LOGDIR}] to [${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP}]"
-		chown -R ${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}
+		chown ${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}
 	fi
 
 	# Temporary fix for old metrika user, remove after 2017-06-01
