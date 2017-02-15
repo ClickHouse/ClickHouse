@@ -263,37 +263,8 @@ private:
 		const size_t cell_idx;
 	};
 
-#if 0
-struct CellFinder {
 
-	const DictionaryStructure & dict_struct;
-  //const ConstColumnPlainPtrs & key_columns;
-  //const size_t rows_num;
-	PODArray<StringRef> keys_array;
-	//const size_t keys_size;
-	//const size_t & size;
-	StringRefs keys;
-	Arena temporary_keys_pool;
-
-	CellFinder(const DictionaryStructure & dict_struct/*, const ConstColumnPlainPtrs & key_columns*/) :
-	dict_struct{dict_struct}//,
-	//key_columns{key_columns},
-	//rows_num{key_columns.front()->size()},
-	//keys_array{rows_num},
-	//keys_size{dict_struct.key.value().size()},
-	//keys{keys_size}
-	{
-	}
-
-};
-
-#endif
-
-
-
-	//std::tuple<bool, bool, size_t>
-FindResult
-findCellIdx(/*CellFinder& cell_finder,*/ /*const size_t row,*/ const StringRef & key, const CellMetadata::time_point_t now) const;
+        FindResult findCellIdx(/*CellFinder& cell_finder,*/ /*const size_t row,*/ const StringRef & key, const CellMetadata::time_point_t now) const;
 
 
 
