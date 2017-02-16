@@ -1,9 +1,11 @@
-﻿#include <DB/Dictionaries/ComplexKeyCacheDictionary.h>
+#include <DB/Dictionaries/ComplexKeyCacheDictionary.h>
 #include <DB/Common/BitHelpers.h>
 #include <DB/Common/randomSeed.h>
 #include <DB/Common/Stopwatch.h>
 #include <DB/Common/ProfilingScopedRWLock.h>
 #include <ext/range.hpp>
+
+#include <common/iostream_debug_helpers.h>
 
 namespace DB
 {
@@ -19,7 +21,7 @@ namespace ErrorCodes
 inline UInt64 ComplexKeyCacheDictionary::getCellIdx(const StringRef key) const
 {
 	const auto hash = StringRefHash{}(key);
-	const auto idx = hash & (size - 1);
+	const auto idx = hash & size_overlap_mask;
 	return idx;
 }
 
@@ -184,16 +186,21 @@ void ComplexKeyCacheDictionary::getString(
 /// true  true    impossible
 ///
 /// todo: split this func to two: find_for_get and find_for_set
-ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (const StringRef & key, const CellMetadata::time_point_t now, const size_t hash) const
+ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx(const StringRef & key, const CellMetadata::time_point_t now, const size_t hash) const
 {
 	auto pos = hash & size_overlap_mask;
 	auto oldest_id = pos;
 	auto oldest_time = CellMetadata::time_point_t::max();
 	const auto stop = pos + max_collision_length;
+
+std::cerr << "go "<< " pos="<<pos <<" stop="<<stop << " hash=" << hash << "\n";
+
 	for (; pos < stop; ++pos)
 	{
 		const auto cell_idx = pos & size_overlap_mask;
 		const auto & cell = cells[cell_idx];
+
+//std::cerr << "start "<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data  << " cell.hash=" << cell.hash<< "\n";
 
 		if (cell.hash != hash || cell.key != key)
 		{
@@ -203,17 +210,25 @@ ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx (co
 				oldest_time = cell.expiresAt();
 				oldest_id = cell_idx;
 			}
+
+std::cerr << "miss "<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data  << " cell.hash=" << cell.hash<< "\n";
+
 			continue;
 		}
 
 		if (cell.expiresAt() < now)
 		{
+std::cerr << "exp "<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data  << " cell.hash=" << cell.hash<< "\n";
 			return {cell_idx, false, true};
 		}
 
+std::cerr << "hit "<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data  << " cell.hash=" << cell.hash<< "\n";
 		return {cell_idx, true, false};
 	}
 
+	oldest_id &= size_overlap_mask;
+	const auto & cell = cells[oldest_id];
+std::cerr << "oldest "<< " oldest_id="<<oldest_id << " stop="<<stop  << " cell.data=" << cell.data  << " cell.hash=" << cell.hash<< "\n";
 	return {oldest_id, false, false};
 }
 
@@ -599,6 +614,9 @@ void ComplexKeyCacheDictionary::getItemsString(
 		std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
 			[] (auto & pair) { return pair.second.front(); });
 
+///std::cerr << __LINE__ << " required_rows="<<required_rows << " outdated_keys=" << outdated_keys<<"\n";
+///std::cerr << __LINE__ << " required_rows="<<required_rows <<"\n";
+
 		update(key_columns, keys_array, required_rows,
 			[&] (const StringRef key, const size_t cell_idx)
 			{
@@ -674,9 +692,9 @@ void ComplexKeyCacheDictionary::update(
 					return block.safeGetByPosition(keys_size + attribute_idx).column.get();
 				});
 
-			const auto rows = block.rows();
+			const auto rows_num = block.rows();
 
-			for (const auto row : ext::range(0, rows))
+			for (const auto row : ext::range(0, rows_num))
 			{
 				auto key = allocKey(row, key_columns, keys);
 				const auto hash = StringRefHash{}(key);
@@ -690,6 +708,8 @@ void ComplexKeyCacheDictionary::update(
 
 					setAttributeValue(attribute, cell_idx, attribute_column[row]);
 				}
+
+std::cerr << "UP insert hash=" << hash  << " cell_idx=" << cell_idx << "\n";
 
 				auto & cell = cells[cell_idx];
 				/// if cell id is zero and zero does not map to this cell, then the cell is unused
@@ -752,6 +772,8 @@ void ComplexKeyCacheDictionary::update(
 
 		const auto find_result = findCellIdx(key, now, hash);
 		const auto & cell_idx = find_result.cell_idx;
+
+std::cerr << "RE insert hash=" << hash  << " cell_idx=" << cell_idx << " zero_cell_idx=" << zero_cell_idx << " key="<< key << "\n";
 
 		auto & cell = cells[cell_idx];
 
