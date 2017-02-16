@@ -139,7 +139,7 @@ initdb()
 	# Temporary fix for old metrika user, remove after 2017-06-01
 	if [ ! -z ${CLICKHOUSE_DATADIR_OLD} ] && [ -d ${CLICKHOUSE_DATADIR_OLD} ] && ! `su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_DATADIR_OLD}"` ; then
 		echo "Changing owner of old [${CLICKHOUSE_DATADIR_OLD}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
-		chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR_OLD}
+		chown -RL ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR_OLD}
 	fi
 }
 
