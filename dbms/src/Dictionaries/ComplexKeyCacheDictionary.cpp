@@ -243,7 +243,7 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 
 	const auto rows_num = key_columns.front()->size();
 	PODArray<StringRef> keys_array(rows_num);
-	{
+	//{
 	const auto keys_size = dict_struct.key.value().size();
 	StringRefs keys(keys_size);
 	Arena temporary_keys_pool;
@@ -284,7 +284,7 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
-	}
+	//}
 
 	query_count.fetch_add(rows_num, std::memory_order_relaxed);
 	hit_count.fetch_add(rows_num - outdated_keys.size(), std::memory_order_release);
@@ -439,7 +439,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 	const auto rows_num = key_columns.front()->size();
 	PODArray<StringRef> keys_array(rows_num);
 
-	{
+	//{
 	const auto keys_size = dict_struct.key.value().size();
 	StringRefs keys(keys_size);
 	Arena temporary_keys_pool;
@@ -478,7 +478,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 	query_count.fetch_add(rows_num, std::memory_order_relaxed);
 	hit_count.fetch_add(rows_num - outdated_keys.size(), std::memory_order_release);
-	}
+	//}
 
 	if (outdated_keys.empty())
 		return;
