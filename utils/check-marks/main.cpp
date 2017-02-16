@@ -25,7 +25,7 @@ namespace DB
 
 
 /// Read and check header of compressed block. Print size of decompressed and compressed data.
-void stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
+std::pair<UInt32, UInt32> stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 {
 	in.ignore(16);	/// checksum
 
@@ -39,7 +39,7 @@ void stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 
 	UInt32 size_decompressed = unalignedLoad<UInt32>(&header[5]);
 
-	out << size_decompressed << '\t' << size_compressed << '\n' << DB::flush;
+	return {size_compressed, size_decompressed};
 }
 
 
@@ -67,7 +67,7 @@ int main(int argc, char ** argv)
 
 		DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
-		while (!mrk_in.eof())
+		for (size_t mark_num = 0; !mrk_in.eof(); ++mark_num)
 		{
 			UInt64 offset_in_compressed_file = 0;
 			UInt64 offset_in_decompressed_block = 0;
@@ -75,8 +75,12 @@ int main(int argc, char ** argv)
 			DB::readBinary(offset_in_compressed_file, mrk_in);
 			DB::readBinary(offset_in_decompressed_block, mrk_in);
 
+			out << "Mark " << mark_num << ", points to " << offset_in_compressed_file << ", " << offset_in_decompressed_block << ". ";
+
 			bin_in.seek(offset_in_compressed_file);
-			stat(bin_in, out);
+			auto sizes = stat(bin_in, out);
+
+			out << "Block sizes: " << sizes.first << ", " << sizes.second << '\n' << DB::flush;
 		}
 	}
 	catch (const DB::Exception & e)
