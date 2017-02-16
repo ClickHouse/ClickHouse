@@ -109,7 +109,8 @@ bool ValuesRowInputStream::read(Block & block)
 
 				istr.position() = const_cast<char *>(max_parsed_pos);
 
-				Field value = convertFieldToType(evaluateConstantExpression(ast, context), type);
+				std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
+				Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
 
 				if (value.isNull())
 				{

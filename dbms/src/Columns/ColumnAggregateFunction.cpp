@@ -1,6 +1,6 @@
 #include <DB/AggregateFunctions/AggregateFunctionState.h>
 #include <DB/Columns/ColumnAggregateFunction.h>
-
+#include <DB/Common/SipHash.h>
 
 namespace DB
 {
@@ -142,6 +142,16 @@ ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limi
 	return res;
 }
 
+/// Is required to support operations with Set
+void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) const
+{
+	String buf;
+	{
+		WriteBufferFromString wbuf(buf);
+		func->serialize(getData()[n], wbuf);
+	}
+	hash.update(buf.c_str(), buf.size());
+}
 
 /// NOTE: Highly overestimates size of a column if it was produced in AggregatingBlockInputStream (it contains size of other columns)
 size_t ColumnAggregateFunction::byteSize() const
