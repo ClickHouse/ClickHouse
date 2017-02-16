@@ -64,12 +64,17 @@ Please fix this and reinstall this package." >&2
 	fi
 
 
-	# only for compatibility for old metrika user, remove string after 2017-06-01 :
-	su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}" || chown -R root:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}; chmod -R ug+rw ${CLICKHOUSE_LOGDIR}
+	if [ -d ${CLICKHOUSE_LOGDIR} ]; then
+		# only for compatibility for old metrika user, remove string after 2017-06-01 :
+		su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}" || chown -R root:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}; chmod -R ug+rw ${CLICKHOUSE_LOGDIR}
+	fi
 
 
-	# -R only for compatibility for old metrika user, remove -R after 2017-06-01
-	su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_SERVER_ETCDIR}" || chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_SERVER_ETCDIR}
+	if [ -d ${CLICKHOUSE_SERVER_ETCDIR} ]; then
+		# -R only for compatibility for old metrika user, remove -R after 2017-06-01
+		su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_SERVER_ETCDIR}" || chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_SERVER_ETCDIR}
+	fi
+
 
 	# Clean old dynamic compilation results
 	if [ -d "${CLICKHOUSE_DATADIR}/build" ]; then
