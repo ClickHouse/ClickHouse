@@ -5,8 +5,6 @@
 #include <DB/Common/ProfilingScopedRWLock.h>
 #include <ext/range.hpp>
 
-#include <common/iostream_debug_helpers.h>
-
 namespace DB
 {
 
@@ -188,19 +186,15 @@ void ComplexKeyCacheDictionary::getString(
 /// todo: split this func to two: find_for_get and find_for_set
 ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx(const StringRef & key, const CellMetadata::time_point_t now, const size_t hash) const
 {
-	auto pos = hash & size_overlap_mask;
+	auto pos = hash;
 	auto oldest_id = pos;
 	auto oldest_time = CellMetadata::time_point_t::max();
 	const auto stop = pos + max_collision_length;
-
-std::cerr << "go "<< " pos="<<pos <<" stop="<<stop << " hash=" << hash << "\n";
 
 	for (; pos < stop; ++pos)
 	{
 		const auto cell_idx = pos & size_overlap_mask;
 		const auto & cell = cells[cell_idx];
-
-//std::cerr << "start "<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data  << " cell.hash=" << cell.hash<< "\n";
 
 		if (cell.hash != hash || cell.key != key)
 		{
@@ -211,24 +205,18 @@ std::cerr << "go "<< " pos="<<pos <<" stop="<<stop << " hash=" << hash << "\n";
 				oldest_id = cell_idx;
 			}
 
-std::cerr << "miss "<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data  << " cell.hash=" << cell.hash<< "\n";
-
 			continue;
 		}
 
 		if (cell.expiresAt() < now)
 		{
-std::cerr << "exp "<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data  << " cell.hash=" << cell.hash<< "\n";
 			return {cell_idx, false, true};
 		}
 
-std::cerr << "hit "<< " pos="<<pos <<" cell_idx="<<cell_idx << " stop="<<stop  << " cell.data=" << cell.data  << " cell.hash=" << cell.hash<< "\n";
 		return {cell_idx, true, false};
 	}
 
 	oldest_id &= size_overlap_mask;
-	const auto & cell = cells[oldest_id];
-std::cerr << "oldest "<< " oldest_id="<<oldest_id << " stop="<<stop  << " cell.data=" << cell.data  << " cell.hash=" << cell.hash<< "\n";
 	return {oldest_id, false, false};
 }
 
@@ -242,11 +230,10 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 
 
 	const auto rows_num = key_columns.front()->size();
-	PODArray<StringRef> keys_array(rows_num);
-	//{
 	const auto keys_size = dict_struct.key.value().size();
 	StringRefs keys(keys_size);
 	Arena temporary_keys_pool;
+	PODArray<StringRef> keys_array(rows_num);
 
 	size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
 	{
@@ -256,15 +243,14 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 		/// fetch up-to-date values, decide which ones require update
 		for (const auto row : ext::range(0, rows_num))
 		{
+			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+			keys_array[row] = key;
+			const auto find_result = findCellIdx(key, now);
+			const auto & cell_idx = find_result.cell_idx;
 			/** cell should be updated if either:
 				*	1. keys (or hash) do not match,
 				*	2. cell has expired,
 				*	3. explicit defaults were specified and cell was set default. */
-			const auto key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
-			keys_array[row] = key;
-
-			const auto find_result = findCellIdx(/*cell_finder,*/ key, now);
-			const auto & cell_idx = find_result.cell_idx;
 			if (!find_result.valid)
 			{
 				outdated_keys[key].push_back(row);
@@ -284,7 +270,6 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
-	//}
 
 	query_count.fetch_add(rows_num, std::memory_order_relaxed);
 	hit_count.fetch_add(rows_num - outdated_keys.size(), std::memory_order_release);
@@ -437,12 +422,10 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 	auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
 
 	const auto rows_num = key_columns.front()->size();
-	PODArray<StringRef> keys_array(rows_num);
-
-	//{
 	const auto keys_size = dict_struct.key.value().size();
 	StringRefs keys(keys_size);
 	Arena temporary_keys_pool;
+	PODArray<StringRef> keys_array(rows_num);
 
 	size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
 	{
@@ -454,8 +437,13 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 		{
 			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			keys_array[row] = key;
-
 			const auto find_result = findCellIdx(key, now);
+
+			/** cell should be updated if either:
+				*	1. keys (or hash) do not match,
+				*	2. cell has expired,
+				*	3. explicit defaults were specified and cell was set default. */
+
 			if (!find_result.valid)
 			{
 				outdated_keys[key].push_back(row);
@@ -478,7 +466,6 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 	query_count.fetch_add(rows_num, std::memory_order_relaxed);
 	hit_count.fetch_add(rows_num - outdated_keys.size(), std::memory_order_release);
-	//}
 
 	if (outdated_keys.empty())
 		return;
@@ -529,7 +516,6 @@ void ComplexKeyCacheDictionary::getItemsString(
 		{
 			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			SCOPE_EXIT(temporary_keys_pool.rollback(key.size));
-
 			const auto find_result = findCellIdx(key, now);
 
 			if (!find_result.valid)
@@ -575,7 +561,6 @@ void ComplexKeyCacheDictionary::getItemsString(
 		{
 			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			keys_array[row] = key;
-
 			const auto find_result = findCellIdx(key, now);
 
 			if (!find_result.valid)
@@ -613,9 +598,6 @@ void ComplexKeyCacheDictionary::getItemsString(
 		std::vector<size_t> required_rows(outdated_keys.size());
 		std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
 			[] (auto & pair) { return pair.second.front(); });
-
-///std::cerr << __LINE__ << " required_rows="<<required_rows << " outdated_keys=" << outdated_keys<<"\n";
-///std::cerr << __LINE__ << " required_rows="<<required_rows <<"\n";
 
 		update(key_columns, keys_array, required_rows,
 			[&] (const StringRef key, const size_t cell_idx)
@@ -700,6 +682,7 @@ void ComplexKeyCacheDictionary::update(
 				const auto hash = StringRefHash{}(key);
 				const auto find_result = findCellIdx(key, now, hash);
 				const auto & cell_idx = find_result.cell_idx;
+				auto & cell = cells[cell_idx];
 
 				for (const auto attribute_idx : ext::range(0, attributes.size()))
 				{
@@ -709,9 +692,6 @@ void ComplexKeyCacheDictionary::update(
 					setAttributeValue(attribute, cell_idx, attribute_column[row]);
 				}
 
-std::cerr << "UP insert hash=" << hash  << " cell_idx=" << cell_idx << "\n";
-
-				auto & cell = cells[cell_idx];
 				/// if cell id is zero and zero does not map to this cell, then the cell is unused
 				if (cell.key == StringRef{} && cell_idx != zero_cell_idx)
 					element_count.fetch_add(1, std::memory_order_relaxed);
@@ -769,12 +749,8 @@ std::cerr << "UP insert hash=" << hash  << " cell_idx=" << cell_idx << "\n";
 
 		auto key = key_found_pair.first;
 		const auto hash = StringRefHash{}(key);
-
 		const auto find_result = findCellIdx(key, now, hash);
 		const auto & cell_idx = find_result.cell_idx;
-
-std::cerr << "RE insert hash=" << hash  << " cell_idx=" << cell_idx << " zero_cell_idx=" << zero_cell_idx << " key="<< key << "\n";
-
 		auto & cell = cells[cell_idx];
 
 		/// Set null_value for each attribute
