@@ -441,7 +441,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 			keys_array[row] = key;
 
 			const auto find_result = findCellIdx(key, now);
-			  if (!find_result.valid)
+			if (!find_result.valid)
 			{
 				outdated_keys[key].push_back(row);
 				if (find_result.outdated)
@@ -452,8 +452,8 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 			else
 			{
 				++cache_hit;
-				  const auto & cell_idx = find_result.cell_idx;
-				  const auto & cell = cells[cell_idx];
+				const auto & cell_idx = find_result.cell_idx;
+				const auto & cell = cells[cell_idx];
 				out[row] =  cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 			}
 		}
@@ -559,7 +559,7 @@ void ComplexKeyCacheDictionary::getItemsString(
 		for (const auto row : ext::range(0, rows_num))
 		{
 			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
-			  keys_array[row] = key;
+			keys_array[row] = key;
 
 			const auto find_result = findCellIdx(key, now);
 
@@ -574,8 +574,8 @@ void ComplexKeyCacheDictionary::getItemsString(
 			else
 			{
 				++cache_hit;
-				  const auto & cell_idx = find_result.cell_idx;
-				  const auto & cell = cells[cell_idx];
+				const auto & cell_idx = find_result.cell_idx;
+				const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 
 				if (!cell.isDefault())
