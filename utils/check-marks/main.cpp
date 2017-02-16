@@ -5,7 +5,7 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/WriteHelpers.h>
-#include <DB/IO/copyData.h>
+#include <DB/IO/Operators.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
@@ -39,10 +39,7 @@ void stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 
 	UInt32 size_decompressed = unalignedLoad<UInt32>(&header[5]);
 
-	DB::writeText(size_decompressed, out);
-	DB::writeChar('\t', out);
-	DB::writeText(size_compressed, out);
-	DB::writeChar('\n', out);
+	out << size_decompressed << '\t' << size_compressed << '\n' << DB::flush;
 }
 
 
