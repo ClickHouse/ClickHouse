@@ -399,7 +399,7 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 
 static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const ASTPtr & node)
 {
-	if (desired_type->getName() == src_type->getName())
+	if (desired_type->equals(*src_type))
 		return;
 
 	try

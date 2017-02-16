@@ -27,17 +27,17 @@ public:
 
 	ColumnPtr convertToFullColumnIfConst() const override
 	{
+		return convertToFullColumn();
+	}
+
+	ColumnPtr convertToFullColumn() const override
+	{
 		auto res = std::make_shared<ColumnAggregateFunction>(getAggregateFunction());
 
 		for (size_t i = 0; i < s; ++i)
 			res->insert(value);
 
 		return res;
-	}
-
-	ColumnPtr convertToFullColumn() const override
-	{
-		return convertToFullColumnIfConst();
 	}
 
 	ColumnPtr cloneResized(size_t new_size) const override
@@ -58,7 +58,6 @@ public:
 
 	void get(size_t n, Field & res) const override
 	{
-		/// NOTE: there are no out of bounds check (like in ColumnConstBase)
 		res = value;
 	}
 
@@ -138,7 +137,7 @@ public:
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 	{
-		throw Exception("Method compareAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+		return 0;
 	}
 
 	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
@@ -187,14 +186,7 @@ private:
 	bool equalsFuncAndValue(const IColumn & rhs) const
 	{
 		auto rhs_const = dynamic_cast<const ColumnConstAggregateFunction *>(&rhs);
-		return !rhs_const && equalsFuncAndValue(*rhs_const);
-	}
-
-	bool equalsFuncAndValue(const ColumnConstAggregateFunction & rhs) const
-	{
-		/// Shallow check, no args, no params
-		return value == rhs.value
-			   && getAggregateFunction()->getName() == rhs.getAggregateFunction()->getName();
+		return rhs_const && value == rhs_const->value && data_type->equals(*rhs_const->data_type);
 	}
 };
 

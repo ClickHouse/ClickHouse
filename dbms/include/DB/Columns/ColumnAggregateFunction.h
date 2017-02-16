@@ -216,10 +216,7 @@ public:
 		throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void updateHashWithValue(size_t n, SipHash & hash) const override
-	{
-		throw Exception("Method updateHashWithValue is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
+	void updateHashWithValue(size_t n, SipHash & hash) const override;
 
 	size_t byteSize() const override;
 

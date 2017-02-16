@@ -10,8 +10,7 @@ ALTER TABLE test.agg_func_col ADD COLUMN af_avg1 AggregateFunction(avg, UInt8);
 SELECT k, sumMerge(d), avgMerge(af_avg1) FROM test.agg_func_col GROUP BY k ORDER BY k;
 
 SELECT '';
---INSERT INTO test.agg_func_col (k, af_avg1) VALUES (2, arrayReduce('avgState', [101]));
-INSERT INTO test.agg_func_col SELECT 2 AS k, arrayReduce('avgState', [101]) AS af_avg1;
+INSERT INTO test.agg_func_col (k, af_avg1) VALUES (2, arrayReduce('avgState', [101]));
 SELECT k, sumMerge(d), avgMerge(af_avg1) FROM test.agg_func_col GROUP BY k ORDER BY k;
 
 SELECT '';
@@ -19,7 +18,7 @@ ALTER TABLE test.agg_func_col ADD COLUMN af_gua AggregateFunction(groupUniqArray
 SELECT k, sumMerge(d), avgMerge(af_avg1), groupUniqArrayMerge(af_gua) FROM test.agg_func_col GROUP BY k ORDER BY k;
 
 SELECT '';
-INSERT INTO test.agg_func_col SELECT 3 AS k, arrayReduce('avgState', [102, 102]) AS af_avg1, arrayReduce('groupUniqArrayState', ['igua', 'igua']) AS af_gua;
+INSERT INTO test.agg_func_col (k, af_avg1, af_gua) VALUES (3, arrayReduce('avgState', [102, 102]), arrayReduce('groupUniqArrayState', ['igua', 'igua']));
 SELECT k, sumMerge(d), avgMerge(af_avg1), groupUniqArrayMerge(af_gua) FROM test.agg_func_col GROUP BY k ORDER BY k;
 
 OPTIMIZE TABLE test.agg_func_col;
@@ -31,3 +30,8 @@ DROP TABLE IF EXISTS test.agg_func_col;
 
 SELECT '';
 SELECT arrayReduce('groupUniqArrayIf', [CAST('---' AS Nullable(String)), CAST('---' AS Nullable(String))], [1, 1])[1];
+SELECT arrayReduce('groupUniqArrayMerge', [arrayReduce('groupUniqArrayState', [CAST('---' AS Nullable(String)), CAST('---' AS Nullable(String))])])[1];
+
+SELECT '';
+SELECT arrayReduce('avgState', [0]) IN (arrayReduce('avgState', [0, 1]), arrayReduce('avgState', [0]));
+SELECT arrayReduce('avgState', [0]) IN (arrayReduce('avgState', [0, 1]), arrayReduce('avgState', [1]));

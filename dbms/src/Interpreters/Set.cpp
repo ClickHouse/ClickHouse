@@ -168,9 +168,14 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 static Field extractValueFromNode(ASTPtr & node, const IDataType & type, const Context & context)
 {
 	if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(node.get()))
+	{
 		return convertFieldToType(lit->value, type);
+	}
 	else if (typeid_cast<ASTFunction *>(node.get()))
-		return convertFieldToType(evaluateConstantExpression(node, context), type);
+	{
+		std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(node, context);
+		return convertFieldToType(value_raw.first, type, value_raw.second.get());
+	}
 	else
 		throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 }

@@ -9,12 +9,13 @@ namespace DB
 
 class IAST;
 class Context;
+class IDataType;
 
-/** Evaluate constant expression.
+/** Evaluate constant expression and it type.
   * Used in rare cases - for elements of set for IN, for data to INSERT.
   * Quite suboptimal.
   */
-Field evaluateConstantExpression(std::shared_ptr<IAST> & node, const Context & context);
+std::pair<Field, std::shared_ptr<IDataType>> evaluateConstantExpression(std::shared_ptr<IAST> & node, const Context & context);
 
 
 /** Evaluate constant expression

@@ -2748,12 +2748,15 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 
 	std::vector<const IColumn *> aggregate_arguments_vec(arguments.size() - 1);
 
+	bool is_const = true;
+
 	for (size_t i = 0, size = arguments.size() - 1; i < size; ++i)
 	{
 		const IColumn * col = block.getByPosition(arguments[i + 1]).column.get();
 		if (const ColumnArray * arr = typeid_cast<const ColumnArray *>(col))
 		{
 			aggregate_arguments_vec[i] = arr->getDataPtr().get();
+			is_const = false;
 		}
 		else if (const ColumnConstArray * arr = typeid_cast<const ColumnConstArray *>(col))
 		{
@@ -2770,9 +2773,9 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 		? *materialized_columns.front().get()
 		: *block.getByPosition(arguments[1]).column.get()).getOffsets();
 
+
 	ColumnPtr result_holder = block.safeGetByPosition(result).type->createColumn();
-	block.safeGetByPosition(result).column = result_holder;
-	IColumn & res_col = *result_holder.get();
+	IColumn & res_col = *result_holder;
 
 	/// AggregateFunction's states should be inserted into column using specific way
 	auto res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(&res_col);
@@ -2801,6 +2804,15 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 
 		agg_func.destroy(place);
 		current_offset = next_offset;
+	}
+
+	if (!is_const)
+	{
+		block.safeGetByPosition(result).column = result_holder;
+	}
+	else
+	{
+		block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(rows, res_col[0]);
 	}
 }
 
