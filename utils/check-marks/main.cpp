@@ -9,6 +9,7 @@
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
+#include <DB/IO/CompressedReadBufferFromFile.h>
 
 
 /** This program checks correctness of .mrk (marks) file for corresponding compressed .bin file.
@@ -43,6 +44,53 @@ std::pair<UInt32, UInt32> stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 }
 
 
+void checkCompressedHeaders(const std::string & mrk_path, const std::string & bin_path)
+{
+	DB::ReadBufferFromFile mrk_in(mrk_path);
+	DB::ReadBufferFromFile bin_in(bin_path, 4096);	/// Small buffer size just to check header of compressed block.
+
+	DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);
+
+	for (size_t mark_num = 0; !mrk_in.eof(); ++mark_num)
+	{
+		UInt64 offset_in_compressed_file = 0;
+		UInt64 offset_in_decompressed_block = 0;
+
+		DB::readBinary(offset_in_compressed_file, mrk_in);
+		DB::readBinary(offset_in_decompressed_block, mrk_in);
+
+		out << "Mark " << mark_num << ", points to " << offset_in_compressed_file << ", " << offset_in_decompressed_block << ". ";
+
+		bin_in.seek(offset_in_compressed_file);
+		auto sizes = stat(bin_in, out);
+
+		out << "Block sizes: " << sizes.first << ", " << sizes.second << '\n' << DB::flush;
+	}
+}
+
+
+void checkByCompressedReadBuffer(const std::string & mrk_path, const std::string & bin_path)
+{
+	DB::ReadBufferFromFile mrk_in(mrk_path);
+	DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0);
+
+	DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);
+
+	for (size_t mark_num = 0; !mrk_in.eof(); ++mark_num)
+	{
+		UInt64 offset_in_compressed_file = 0;
+		UInt64 offset_in_decompressed_block = 0;
+
+		DB::readBinary(offset_in_compressed_file, mrk_in);
+		DB::readBinary(offset_in_decompressed_block, mrk_in);
+
+		out << "Mark " << mark_num << ", points to " << offset_in_compressed_file << ", " << offset_in_decompressed_block << ".\n" << DB::flush;
+
+		bin_in.seek(offset_in_compressed_file, offset_in_decompressed_block);
+	}
+}
+
+
 int main(int argc, char ** argv)
 {
 	boost::program_options::options_description desc("Allowed options");
@@ -62,26 +110,8 @@ int main(int argc, char ** argv)
 
 	try
 	{
-		DB::ReadBufferFromFile mrk_in(argv[1]);
-		DB::ReadBufferFromFile bin_in(argv[2], 4096);	/// Small buffer size just to check header of compressed block.
-
-		DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);
-
-		for (size_t mark_num = 0; !mrk_in.eof(); ++mark_num)
-		{
-			UInt64 offset_in_compressed_file = 0;
-			UInt64 offset_in_decompressed_block = 0;
-
-			DB::readBinary(offset_in_compressed_file, mrk_in);
-			DB::readBinary(offset_in_decompressed_block, mrk_in);
-
-			out << "Mark " << mark_num << ", points to " << offset_in_compressed_file << ", " << offset_in_decompressed_block << ". ";
-
-			bin_in.seek(offset_in_compressed_file);
-			auto sizes = stat(bin_in, out);
-
-			out << "Block sizes: " << sizes.first << ", " << sizes.second << '\n' << DB::flush;
-		}
+		/// checkCompressedHeaders(argv[1], argv[2]);
+		checkByCompressedReadBuffer(argv[1], argv[2]);
 	}
 	catch (const DB::Exception & e)
 	{
