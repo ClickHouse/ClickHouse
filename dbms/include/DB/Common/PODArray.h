@@ -463,7 +463,7 @@ template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocato
 using PaddedPODArray = PODArray<T, INITIAL_SIZE, TAllocator, 15>;
 
 
-constexpr size_t integerRound(size_t value, size_t dividend)
+inline constexpr size_t integerRound(size_t value, size_t dividend)
 {
 	return ((value + dividend - 1) / dividend) * dividend;
 }
