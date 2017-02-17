@@ -28,6 +28,9 @@ namespace DB
 /// Read and check header of compressed block. Print size of decompressed and compressed data.
 std::pair<UInt32, UInt32> stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 {
+	if (in.eof())
+		return {};
+
 	in.ignore(16);	/// checksum
 
 	char header[COMPRESSED_BLOCK_HEADER_SIZE];
