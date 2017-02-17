@@ -229,7 +229,8 @@ private:
 
 	Attribute & getAttribute(const std::string & attribute_name) const;
 
-	struct FindResult {
+	struct FindResult
+	{
 		const size_t cell_idx;
 		const bool valid;
 		const bool outdated;
