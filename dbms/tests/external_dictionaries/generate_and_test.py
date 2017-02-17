@@ -6,6 +6,7 @@ import json
 import subprocess
 import time
 import lxml.etree as et
+import atexit
 from itertools import chain
 from os import system
 from argparse import ArgumentParser
@@ -28,17 +29,10 @@ MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", "yellow", attrs=['bold'])
 MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUARE_BRACKET
 MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
-#Not complete disable
-use_mysql = True
-use_mongo = True
-use_http  = True
-http_port = 58000
-
 wait_for_loading_sleep_time_sec = 3
 
 failures = 0
 SERVER_DIED = False
-no_break = False
 
 prefix = base_dir = os.path.dirname(os.path.realpath(__file__))
 generated_prefix = prefix + '/generated/'
@@ -182,7 +176,7 @@ def generate_data(args):
         call([ args.client, '--port', args.port, '--query', query ], 'generated/' + file)
 
     # create MySQL table from complete_query
-    if use_mysql:
+    if not args.no_mysql:
         print 'Creating MySQL table'
         subprocess.check_call('echo "'
                   'create database if not exists test;'
@@ -198,7 +192,7 @@ def generate_data(args):
                   .format(prefix), shell=True)
 
     # create MongoDB collection from complete_query via JSON file
-    if use_mongo:
+    if not args.no_mongo:
         print 'Creating MongoDB collection'
         table_rows = json.loads(subprocess.check_output([
             args.client,
@@ -310,10 +304,10 @@ def generate_dictionaries(args):
 
     source_http = '''
     <http>
-        <url>http://localhost:{http_port}/generated/%s</url>
+        <url>http://{http_host}:{http_port}{http_path}%s</url>
         <format>TabSeparated</format>
     </http>
-    '''.format(http_port=http_port)
+    '''.format(http_host=args.http_host, http_port=args.http_port, http_path=args.http_path)
 
     layout_flat = '<flat />'
     layout_hashed = '<hashed />'
@@ -424,8 +418,12 @@ def generate_dictionaries(args):
 
 
 def run_tests(args):
-    if use_http:
-        http_server = subprocess.Popen(["python", "http_server.py", str(http_port)]);
+    if args.use_http:
+        http_server = subprocess.Popen(["python", "http_server.py", str(args.http_port)]);
+        @atexit.register
+        def http_killer():
+           http_server.kill()
+
     keys = [ 'toUInt64(n)', '(n, n)', '(toString(n), n)' ]
     dict_get_query_skeleton = "select dictGet{type}('{name}', '{type}_', {key}) from system.one array join range(8) as n;"
     dict_has_query_skeleton = "select dictHas('{name}', {key}) from system.one array join range(8) as n;"
@@ -539,7 +537,7 @@ def run_tests(args):
 
     # the actual tests
     for (name, key_idx, has_parent) in dictionaries:
-        if SERVER_DIED and not no_break:
+        if SERVER_DIED and not args.no_break:
             break
         key = keys[key_idx]
         print 'Testing dictionary', name
@@ -549,7 +547,7 @@ def run_tests(args):
 
         # query dictGet*
         for type, default in zip(types, explicit_defaults):
-            if SERVER_DIED and not no_break:
+            if SERVER_DIED and not args.no_break:
                 break
             test_query(name,
                 dict_get_query_skeleton.format(**locals()),
@@ -563,9 +561,6 @@ def run_tests(args):
             test_query(name,
                 dict_hierarchy_query_skeleton.format(**locals()),
                 'hierarchy', ' for dictGetHierarchy, dictIsIn')
-
-    if use_http:
-        http_server.kill()
 
     if failures > 0:
         print(colored("\nHaving {0} errors!".format(failures), "red", attrs=["bold"]))
@@ -590,6 +585,16 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--port', default = '9001', help = 'ClickHouse port')
     parser.add_argument('-o', '--output', default = 'output', help = 'Output xUnit compliant test report directory')
     parser.add_argument('-t', '--timeout', type = int, default = 10, help = 'Timeout for each test case in seconds')
+
+    # Not complete disable. Now only skip data prepare. Todo: skip requests too. Now can be used with --no_break
+    parser.add_argument('--no_mysql', action='store_true', help = 'Dont use mysql dictionaries')
+    parser.add_argument('--no_mongo', action='store_true', help = 'Use mongodb dictionaries')
+
+    parser.add_argument('--use_http', default = True, help = 'Use http dictionaries')
+    parser.add_argument('--http_port', default = 58000, help = 'http server port')
+    parser.add_argument('--http_host', default = 'localhost', help = 'http server host')
+    parser.add_argument('--http_path', default = '/generated/', help = 'http server path')
+    parser.add_argument('--no_break', action='store_true', help = 'Dont stop on errors')
 
     args = parser.parse_args()
 
