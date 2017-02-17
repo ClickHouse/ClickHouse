@@ -11,7 +11,7 @@ class IAST;
 class Context;
 class IDataType;
 
-/** Evaluate constant expression and it type.
+/** Evaluate constant expression and its type.
   * Used in rare cases - for elements of set for IN, for data to INSERT.
   * Quite suboptimal.
   */
