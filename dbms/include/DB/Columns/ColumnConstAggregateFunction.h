@@ -17,7 +17,7 @@ public:
 
 	String getName() const override
 	{
-		return "ColumnConst<ColumnAggregateFunction>";
+		return "ColumnConstAggregateFunction";
 	}
 
 	bool isConst() const override
