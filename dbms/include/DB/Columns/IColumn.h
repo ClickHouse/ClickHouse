@@ -33,24 +33,20 @@ using ConstColumnPlainPtrs = std::vector<const IColumn *>;
 class Arena;
 
 
-/** Интерфейс для хранения столбцов значений в оперативке.
-  */
+/// Declares interface to store columns in memory.
 class IColumn : private boost::noncopyable
 {
 public:
-	/** Имя столбца. Для информационных сообщений.
-	  */
+	/// Name of a Column. It is used in info messages.
 	virtual std::string getName() const = 0;
 
-	/** Столбец представляет собой вектор чисел или числовую константу.
-	  */
+	/// Column is vector of numbers or numeric constant.
 	virtual bool isNumeric() const { return false; }
 
 	/// Is this column numeric and not nullable?
 	virtual bool isNumericNotNullable() const { return isNumeric(); }
 
-	/** Столбец представляет собой константу.
-	  */
+	/// Column stores a constant value.
 	virtual bool isConst() const { return false; }
 
 	/// Is this column a container for nullable values?
@@ -59,75 +55,65 @@ public:
 	/// Is this a null column?
 	virtual bool isNull() const { return false; }
 
-	/** Если столбец не константа - возвращает nullptr (либо может вернуть самого себя).
-	  * Если столбец константа, то превращает его в полноценный столбец (если тип столбца предполагает такую возможность) и возвращает его.
-	  * Отдельный случай:
-	  * Если столбец состоит из нескольких других столбцов (пример: кортеж),
-	  *  и он может содержать как константные, так и полноценные столбцы,
-	  *  то превратить в нём все константные столбцы в полноценные, и вернуть результат.
+	/** If column isn't constant, returns nullptr (or itself).
+	  * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.
+	  * Special case:
+	  * If column is composed from several other columns (tuple for example), and contains both constant and full columns,
+	  *  then each constant column is transformed, and final result is returned.
 	  */
 	virtual ColumnPtr convertToFullColumnIfConst() const { return {}; }
 
-	/** Значения имеют фиксированную длину.
-	  */
+	/// Values in column have equal size in memory.
 	virtual bool isFixed() const { return false; }
 
-	/** Для столбцов фиксированной длины - вернуть длину значения.
-	  */
+	/// If column isFixed(), returns size of value.
 	virtual size_t sizeOfField() const { throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
 
-	/** Создать столбец с такими же данными. */
+	/// Creates the same column with the same data.
 	virtual ColumnPtr clone() const { return cut(0, size()); }
 
-	/** Создать пустой столбец такого же типа */
+	/// Creates empty column with the same type.
 	virtual ColumnPtr cloneEmpty() const { return cloneResized(0); }
 
-	/** Создать столбец такого же типа и указанного размера.
-	  * Если размер меньше текущего, данные обрезаются.
-	  * Если больше - добавляются значения по умолчанию.
-	  */
+	/// Creates column with the same type and specified size.
+	/// If size is less current size, then data is cut.
+	/// If size is greater, than default values are appended.
 	virtual ColumnPtr cloneResized(size_t size) const { throw Exception("Cannot cloneResized() column " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
-	/** Количество значений в столбце. */
+	/// Returns number of values in column.
 	virtual size_t size() const = 0;
 
+	/// There are no values in columns.
 	bool empty() const { return size() == 0; }
 
-	/** Получить значение n-го элемента.
-	  * Используется в редких случаях, так как создание временного объекта типа Field может быть дорогим.
-	  */
+	/// Returns value of n-th element in universal Field representation.
+	/// Is used in rare cases, since creation of Field instance is expensive usually.
 	virtual Field operator[](size_t n) const = 0;
 
-	/** То же самое, но позволяет избежать лишнего копирования, если Field, например, кладётся в контейнер.
-	  */
+	/// Like the previous one, but avoids extra copying if Field is in a container, for example.
 	virtual void get(size_t n, Field & res) const = 0;
 
-	/** Получить кусок памяти, в котором хранится значение, если возможно.
-	  * (если не реализуемо - кидает исключение)
-	  * Используется для оптимизации некоторых вычислений (например, агрегации).
-	  */
+	/// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
+	/// Is used to optimize some computations (in aggregation, for example).
 	virtual StringRef getDataAt(size_t n) const = 0;
 
-	/** Отличется от функции getDataAt только для строк переменной длины.
-	  * Для них возвращаются данные с нулём на конце (то есть, size на единицу больше длины строки).
-	  */
+	/// Like getData, but has special behavior for columns that contain variable-length strings.
+	/// Returns zero-ending memory chunk (i.e. its size is 1 byte longer).
 	virtual StringRef getDataAtWithTerminatingZero(size_t n) const
 	{
 		return getDataAt(n);
 	}
 
-	/** Для целых чисел - преобразовать в UInt64 static_cast-ом.
-	  * Для чисел с плавающей запятой - преобразовать в младшие байты UInt64 как memcpy; остальные байты, если есть - нулевые.
-	  * Используется для оптимизации некоторых вычислений (например, агрегации).
-	  */
+	/// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
+	/// If column stores floting point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
+	/// Is used to optimize some computations (in aggregation, for example).
 	virtual UInt64 get64(size_t n) const
 	{
 		throw Exception("Method get64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	/** Удалить всё кроме диапазона элементов.
-	  * Используется, например, для операции LIMIT.
-	  */
+	/// Removes all elements outside of specified range.
+	/// Is used in LIMIT operation, for example.
 	virtual ColumnPtr cut(size_t start, size_t length) const
 	{
 		ColumnPtr res = cloneEmpty();
@@ -135,112 +121,97 @@ public:
 		return res;
 	}
 
-	/** Вставить значение в конец столбца (количество значений увеличится на 1).
-	  * Используется для преобразования из строк в блоки (например, при чтении значений из текстового дампа)
-	  */
+	/// Appends new value at the end of column (column's size is increased by 1).
+	/// Is used to transform raw strings to Blocks (for example, inside input format parsers)
 	virtual void insert(const Field & x) = 0;
 
-	/** Вставить значение в конец столбца из другого столбца такого же типа, по заданному индексу.
-	  * Используется для merge-sort. Может быть реализована оптимальнее, чем реализация по-умолчанию.
-	  */
+	/// Appends n-th element from other column with the same type.
+	/// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
 	virtual void insertFrom(const IColumn & src, size_t n) { insert(src[n]); }
 
-	/** Вставить в конец столбца диапазон элементов из другого столбца.
-	  * Может использоваться для склейки столбцов.
-	  */
+	/// Appends range of elements from other column.
+	/// Could be used to concatenate columns.
 	virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
 
-	/** Вставить данные, расположенные в указанном куске памяти, если возможно.
-	  * (если не реализуемо - кидает исключение)
-	  * Используется для оптимизации некоторых вычислений (например, агрегации).
-	  * В случае данных постоянной длины, параметр length может игнорироваться.
-	  */
+	/// Appends data located in specified memory chunk if it is possible (throws an exception if it cannot be implemented).
+	/// Is used to optimize some computations (in aggregation, for example).
+	/// Parameter length could be ignored if column isFixed().
 	virtual void insertData(const char * pos, size_t length) = 0;
 
-	/** Отличется от функции insertData только для строк переменной длины.
-	  * Для них принимаются данные уже с нулём на конце (то есть, length на единицу больше длины строки).
-	  * В переданном куске памяти обязательно должен быть ноль на конце.
-	  */
+	/// Like getData, but has special behavior for columns that contain variable-length strings.
+	/// In this special case inserting data should be zero-ending (i.e. length is 1 byte greater than real string size).
 	virtual void insertDataWithTerminatingZero(const char * pos, size_t length)
 	{
 		insertData(pos, length);
 	}
 
-	/** Вставить значение "по умолчанию".
-	  * Используется, когда нужно увеличить размер столбца, но значение не имеет смысла.
-	  * Например, для ColumnNullable, если взведён флаг null, то соответствующее значение во вложенном столбце игнорируется.
-	  */
+	/// Appends "default value".
+	/// Is used when there are need to increase column size, but inserting value doesn't make sense.
+	/// For example, ColumnNullable(Nested) absolutely ignores values of nested column if it is marked as NULL.
 	virtual void insertDefault() = 0;
 
-	/** Удалить одно или несколько значений с конца.
-	  * Используется, чтобы сделать некоторые операции exception-safe,
-	  *  когда после вставки значения сделать что-то ещё не удалось, и нужно откатить вставку.
-	  * Если столбец имеет меньше n значений - поведение не определено.
-	  * Если n == 0 - поведение не определено.
+	/** Removes last n elements.
+	  * Is used to support exeption-safety of several operations.
+	  *  For example, sometimes insertion should be reverted if we catch an exception during operation processing.
+	  * If column has less than n elements or n == 0 - undefined behavior.
 	  */
 	virtual void popBack(size_t n) = 0;
 
-	/** Сериализовать значение, расположив его в непрерывном куске памяти в Arena.
-	  * Значение можно будет потом прочитать обратно. Используется для агрегации.
-	  * Метод похож на getDataAt, но может работать для тех случаев,
-	  *  когда значение не однозначно соответствует какому-то уже существующему непрерывному куску памяти
-	  *  - например, для массива строк, чтобы получить однозначное соответствие, надо укладывать строки вместе с их размерами.
-	  * Параметр begin - см. метод Arena::allocContinue.
+	/** Serializes n-th element. Serialized element should be placed continuously inside Arena's memory.
+	  * Serialized value can be deserialized to reconstruct original object. Is used in aggregation.
+	  * The method is similar to getDataAt(), but can work when element's value cannot be mapped to existing continuous memory chunk,
+	  *  For example, to obtain unambiguous representation of Array of strings, strings data should be interleaved with their sizes.
+	  * Parameter begin should be used with Arena::allocContinue.
 	  */
 	virtual StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const = 0;
 
-	/** Десериализовать значение, которое было сериализовано с помощью serializeValueIntoArena.
-	  * Вернуть указатель на позицию после прочитанных данных.
-	  */
+	/// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
+	/// Returns pointer to the position after the read data.
 	virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
 
-	/** Update state of hash function with value at index n.
-	  * On subsequent calls of this method for sequence of column values of arbitary types,
-	  *  passed bytes to hash must identify sequence of values unambiguously.
-	  */
+	/// Update state of hash function with value of n-th element.
+	/// On subsequent calls of this method for sequence of column values of arbitary types,
+	///  passed bytes to hash must identify sequence of values unambiguously.
 	virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
 
-	/** Оставить только значения, соответствующие фильтру.
-	  * Используется для операции WHERE / HAVING.
-	  * Если result_size_hint > 0, то сделать reserve этого размера у результата;
-	  *  если 0, то не делать reserve,
-	  *  иначе сделать reserve по размеру исходного столбца.
+	/** Removes elements that don't match the filter.
+	  * Is used in WHERE and HAVING operations.
+	  * If result_size_hint > 0, then makes advance reserve(result_size_hint) for the result column;
+	  *  if 0, then don't makes reserve(),
+	  *  otherwise (i.e. < 0), makes reserve() using size of source column.
 	  */
 	using Filter = PaddedPODArray<UInt8>;
 	virtual ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
-	/** Переставить значения местами, используя указанную перестановку.
-	  * Используется при сортировке.
-	  * limit - если не равно 0 - положить в результат только первые limit значений.
-	  */
+	/// Permutes elements using specified permutation. Is used in sortings.
+	/// limit - if it isn't 0, puts only first limit elements in the result.
 	using Permutation = PaddedPODArray<size_t>;
 	virtual ColumnPtr permute(const Permutation & perm, size_t limit) const = 0;
 
-	/** Сравнить (*this)[n] и rhs[m].
-	  * Вернуть отрицательное число, 0, или положительное число, если меньше, равно, или больше, соответственно.
-	  * Используется при сортировке.
+	/** Compares (*this)[n] and rhs[m].
+	  * Returns negative number, 0, or positive number (*this)[n] is less, equal, greater than rhs[m] respectively.
+	  * Is used in sortings.
 	  *
-	  * Если одно из значений является NaN, то:
-	  * - если nan_direction_hint == -1 - NaN считаются меньше всех чисел;
-	  * - если nan_direction_hint == 1 - NaN считаются больше всех чисел;
-	  * По-сути: nan_direction_hint == -1 говорит, что сравнение идёт для сортировки по убыванию,
-	  *  чтобы NaN-ы были в конце.
+	  * If one of element's value is NaN, then:
+	  * - if nan_direction_hint == -1, NaN is considered as least number;
+	  * - if nan_direction_hint ==  1, NaN is considered as greatest number.
+	  * In fact, if nan_direction_hint == -1 is used by descending sorting, NaNs will be at the end.
 	  *
-	  * Для чисел не с плавающей запятой, nan_direction_hint игнорируется.
+	  * nan_direction_hint is ignored for non floating point values.
 	  */
 	virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 
-	/** Получить перестановку чисел, такую, что для упорядочивания значений в столбце,
-	  *  надо применить эту сортировку - то есть, поставить на i-е место значение по индексу perm[i].
-	  * Используется при сортировке.
-	  * reverse - обратный порядок (по возрастанию). limit - если не равно 0 - для частичной сортировки только первых значений.
-	  * Независимо от порядка, NaN-ы располагаются в конце.
+	/** Returns a permutation that sorts elements of this column,
+	  *  i.e. perm[i]-th element of source column should be i-th element of sorted column.
+	  * reverse - reverse ordering (acsending).
+	  * limit - if isn't 0, then only first limit elements of the result column could be sorted.
+	  * Regardless of the ordering, NaNs should be at the end.
 	  */
 	virtual void getPermutation(bool reverse, size_t limit, Permutation & res) const = 0;
 
-	/** Размножить все значения столько раз, сколько прописано в offsets.
-	  * (i-е значение размножается в offsets[i] - offsets[i - 1] значений.)
-	  * Необходимо для реализации операции ARRAY JOIN.
+	/** Copies each element according offsets parameter.
+	  * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
+	  * It is necessary in ARRAY JOIN operation.
 	  */
 	using Offset_t = UInt64;
 	using Offsets_t = PaddedPODArray<Offset_t>;
@@ -254,27 +225,24 @@ public:
 	using Selector = PaddedPODArray<ColumnIndex>;
 	virtual Columns scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
 
-	/** Посчитать минимум и максимум по столбцу.
-	  * Функция должна быть реализована полноценно только для числовых столбцов, а также дат/дат-с-временем.
-	  * Для строк и массивов функция должна возвращать значения по-умолчанию
-	  *  (за исключением константных столбцов, для которых можно возвращать значение константы).
-	  * Если столбец пустой - функция должна возвращать значения по-умолчанию.
+	/** Computes minimum and maximum element of the column.
+	  * In addition to numeric types, the funtion is completely implemented for Date and DateTime.
+	  * For strings and arrays function should retrurn default value.
+	  *  (except for constant columns; they should return value of the constant).
+	  * If column is empty function should return default value.
 	  */
 	virtual void getExtremes(Field & min, Field & max) const = 0;
 
-
-	/** Если возможно - зарезервировать место для указанного количества элементов. Если невозможно или не поддерживается - ничего не делать.
-	  * Функция влияет только на производительность.
-	  */
+	/// Reserves memory for specified amount of elements. If reservation isn't possible, does nothing.
+	/// It affects performance only (not correctness).
 	virtual void reserve(size_t n) {};
 
-	/** Size of column data in memory (may be approximate) - for profiling. Zero, if could not be determined. */
+	/// Size of column data in memory (may be approximate) - for profiling. Zero, if could not be determined.
 	virtual size_t byteSize() const = 0;
 
-	/** Size of memory, allocated for column.
-	  * This is greater or equals to byteSize due to memory reservation in containers.
-	  * Zero, if could be determined.
-	  */
+	/// Size of memory, allocated for column.
+	/// This is greater or equals to byteSize due to memory reservation in containers.
+	/// Zero, if could be determined.
 	virtual size_t allocatedSize() const = 0;
 
 	virtual ~IColumn() {}
