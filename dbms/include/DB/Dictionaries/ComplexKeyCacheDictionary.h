@@ -257,7 +257,8 @@ private:
 	static StringRef copyIntoArena(StringRef src, Arena & arena);
 	StringRef copyKey(const StringRef key) const;
 
-	struct FindResult {
+	struct FindResult
+	{
 		const size_t cell_idx;
 		const bool valid;
 		const bool outdated;
