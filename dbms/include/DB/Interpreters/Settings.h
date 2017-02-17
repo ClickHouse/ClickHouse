@@ -216,7 +216,7 @@ struct Settings
 	M(SettingUInt64, resharding_barrier_timeout, 300) \
 	\
 	/** What aggregate function to use for implementation of count(DISTINCT ...) */ \
-	M(SettingString, count_distinct_implementation, "uniq") \
+	M(SettingString, count_distinct_implementation, "uniqExact") \
 	\
 	/** Write statistics about read rows, bytes, time elapsed in suitable output formats */ \
 	M(SettingBool, output_format_write_statistics, true) \
