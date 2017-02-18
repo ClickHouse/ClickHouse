@@ -2780,6 +2780,10 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 	/// AggregateFunction's states should be inserted into column using specific way
 	auto res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(&res_col);
 
+	if (!res_col_aggregate_function && agg_func.isState())
+		throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
+						+ block.safeGetByPosition(result).type->getName(), ErrorCodes::ILLEGAL_COLUMN);
+
 	ColumnArray::Offset_t current_offset = 0;
 	for (size_t i = 0; i < rows; ++i)
 	{

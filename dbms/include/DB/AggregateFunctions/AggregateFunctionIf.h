@@ -108,6 +108,11 @@ public:
 		return nested_func->allocatesMemoryInArena();
 	}
 
+	bool isState() const override
+	{
+		return nested_func->isState();
+	}
+
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
 	{
 		static_cast<const AggregateFunctionIf &>(*that).add(place, columns, row_num, arena);
