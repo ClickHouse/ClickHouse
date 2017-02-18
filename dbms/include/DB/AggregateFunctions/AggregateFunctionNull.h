@@ -147,6 +147,11 @@ public:
 			to_concrete.insertDefault();
 		}
 	}
+
+	bool allocatesMemoryInArena() const override
+	{
+		return nested_function->allocatesMemoryInArena();
+	}
 };
 
 
