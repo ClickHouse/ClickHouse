@@ -147,6 +147,11 @@ public:
 			to_concrete.insertDefault();
 		}
 	}
+
+	bool allocatesMemoryInArena() const override
+	{
+		return nested_function->allocatesMemoryInArena();
+	}
 };
 
 
@@ -253,6 +258,11 @@ public:
 
 		setFlag(place);
 		nested_function->add(nestedPlace(place), nested_columns, row_num, arena);
+	}
+
+	bool allocatesMemoryInArena() const override
+	{
+		return nested_function->allocatesMemoryInArena();
 	}
 
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place,

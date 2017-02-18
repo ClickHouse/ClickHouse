@@ -257,6 +257,20 @@ private:
 	static StringRef copyIntoArena(StringRef src, Arena & arena);
 	StringRef copyKey(const StringRef key) const;
 
+	struct FindResult
+	{
+		const size_t cell_idx;
+		const bool valid;
+		const bool outdated;
+	};
+
+	FindResult findCellIdx(const StringRef & key, const CellMetadata::time_point_t now, const size_t hash) const;
+	FindResult findCellIdx(const StringRef & key, const CellMetadata::time_point_t now) const
+	{
+		const auto hash = StringRefHash{}(key);
+		return findCellIdx(key, now, hash);
+	};
+
 	const std::string name;
 	const DictionaryStructure dict_struct;
 	const DictionarySourcePtr source_ptr;
@@ -264,7 +278,16 @@ private:
 	const std::string key_description{dict_struct.getKeyDescription()};
 
 	mutable Poco::RWLock rw_lock;
+
+	/// Actual size will be increased to match power of 2
 	const std::size_t size;
+
+	/// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
+	const std::size_t size_overlap_mask;
+
+	/// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
+	static constexpr std::size_t max_collision_length = 10;
+
 	const UInt64 zero_cell_idx{getCellIdx(StringRef{})};
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	mutable std::vector<Attribute> attributes;

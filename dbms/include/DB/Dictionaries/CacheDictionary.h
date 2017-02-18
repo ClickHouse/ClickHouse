@@ -229,10 +229,11 @@ private:
 
 	Attribute & getAttribute(const std::string & attribute_name) const;
 
-	struct FindResult {
+	struct FindResult
+	{
+		const size_t cell_idx;
 		const bool valid;
 		const bool outdated;
-		const size_t cell_idx;
 	};
 
 	FindResult findCellIdx(const Key & id, const CellMetadata::time_point_t now) const;
@@ -244,13 +245,13 @@ private:
 
 	mutable Poco::RWLock rw_lock;
 
-	// Actual size will be increased to match power of 2
+	/// Actual size will be increased to match power of 2
 	const std::size_t size;
 
-	// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
+	/// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
 	const std::size_t size_overlap_mask;
 
-	// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
+	/// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
 	static constexpr std::size_t max_collision_length = 10;
 
 	const UInt64 zero_cell_idx{getCellIdx(0)};
