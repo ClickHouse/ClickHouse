@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<title>Немного про ClickHouse</title>
+	<meta charset="utf-8">
+	<meta http-equiv="x-ua-compatible" content="ie=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="shower/themes/ribbon/styles/screen-16x10.css">
+</head>
+<body class="shower list">
+	<header class="caption">
+		<h1>Немного про ClickHouse</h1>
+	</header>
+	<section class="slide" id="cover">
+		<h1 style="margin-top: 200px">Немного про ClickHouse</h1>
+	</section>
+	<section class="slide">
+		<h2>Обо мне</h2>
+		<p>Алексей, разработчик ClickHouse.</p>
+		<p>С 2008 занимался движком обработки данных в Яндекс.Метрике.</p>
+	</section>
+	<section class="slide">
+		<h2>История</h2>
+		<p>Яндекс.Метрика — сервис веб-аналитики.</p>
+		<p>В России первый, в мире — второй.</p>
+		<p><img src="pictures/metrika_market_share.png"/></p>
+		<p>Ежедневно приходит ~25 млрд. событий.</p>
+		<p>Надо показывать отчёты в реальном времени.</p>
+	</section>
+	<section class="slide">
+		<h2>Старая Метрика (2008–2014)</h2>
+		<p>Всё отлично работало. Пользователь мог получить примерно 50 разных отчётов.</p>
+		<p>Но есть проблема. Нам хочется большего. Чтобы каждый отчёт был сколь угодно кастомизируемым.</p>
+	</section>
+	<section class="slide">
+		<h2>Конструктор отчётов</h2>
+		<p>Быстро сделали прототип и на его основе реализовали "Конструктор&nbsp;отчётов".</p>
+		<p>Это 2010 год.</p>
+		<p>Стало понятно, куда двигаться дальше. </p>
+		<p>Нам нужна хорошая column-oriented DBMS.</p>
+	</section>
+	<section class="slide">
+		<h2>Почему column-oriented?</h2>
+		<p>Так работают row-oriented системы:</p>
+		<p><img src="pictures/row_oriented.gif"/></p>
+	</section>
+	<section class="slide">
+		<h2>Почему column-oriented?</h2>
+		<p>Так работают column-oriented системы:</p>
+		<p><img src="pictures/column_oriented.gif"/></p>
+	</section>
+	<section class="slide">
+		<h2>Почему ClickHouse?</h2>
+		<p>Ничего готового не подошло.</p>
+		<p>Тогда мы сделали ClickHouse.</p>
+		<p>&laquo;Эволюция структур данных в Яндекс.Метрике&raquo;</p>
+		<p><a href="https://habrahabr.ru/company/yandex/blog/273305/">https://habrahabr.ru/company/yandex/blog/273305/</a></p>
+	</section>
+	<section class="slide">
+		<h2>Метрика 2.0</h2>
+		<img src="pictures/metrika2.png" style="height:70%"/>
+	</section>
+	<section class="slide">
+		<h2>Коротко</h2>
+		<ul>
+			<li>column-oriented</li>
+			<li>линейная масштабируемость</li>
+			<li>отказоустойчивость</li>
+			<li>загрузка данных в реальном времени</li>
+			<li>онлайн (sub-second) запросы</li>
+			<li>поддержка диалекта SQL + расширения<br/>(массивы, вложенные структуры данных, domain-specific функции, сэмплирование)</li>
+		</ul>
+	</section>
+	<section class="slide">
+		<h2>Основной кластер Метрики</h2>
+		<ul style="font-size:30px;">
+			<li>18.3 триллионов строк</li>
+			<li>426 серверов</li>
+			<li>скорость обработки данных до двух терабайт в секунду</li>
+		</ul>
+		<p style="font-size:60%; margin-top:2em">* Если вы хотите попробовать ClickHouse, достаточно и одного сервера.</p>
+	</section>
+	<section class="slide">
+		<h2>ClickHouse в Яндексе</h2>
+		<p>Нам удалось сделать систему сравнительно удобной.</p>
+		<p>С самого начала мы имели подробную документацию.</p>
+		<p>В течение пары лет ClickHouse распространился по другим отделам Яндекса.</p>
+		<p>Почта, Маркет, Директ, Вебмастер, AdFox, Инфраструктура, Бизнес аналитика...</p>
+		<p>Есть случаи, когда аналитики самостоятельно устанавливали ClickHouse на виртуальные машины и успешно использовали без каких-либо вопросов.</p>
+	</section>
+	<section class="slide">
+		<h2>Open-source</h2>
+		<p>Потом мы решили — ClickHouse слишком хорошая система, чтобы нам одним на нём сидеть.</p>
+		<p>Чтобы было веселее, надо подсадить на ClickHouse людей снаружи, пусть радуются. Решили сделать open-source.</p>
+	</section>
+	<section class="slide">
+		<h2>Open-source</h2>
+		<p>Лицензия Apache 2.0 — минимум ограничений.</p>
+		<p>Цель — максимальное распространение продукта.</p>
+		<p>Мы хотим, чтобы продуктом Яндекса пользовались по всему миру.</p>
+		<p>См. “Яндекс открывает ClickHouse”</p>
+		<p><a href="https://habrahabr.ru/company/yandex/blog/303282/">https://habrahabr.ru/company/yandex/blog/303282/</a></p>
+	</section>
+	<section class="slide">
+		<h2>Когда надо использовать ClickHouse</h2>
+		<p>Хорошо структурированные, очищенные, неизменяемые события.</p>
+		<p>&nbsp;</p>
+		<p>Click stream. Веб-аналитика. Рекламные&nbsp;сети. RTB. E-commerce.</p>
+		<p>Аналитика онлайн игр. Данные сенсоров и мониторингов. Телеком&nbsp;данные.</p>
+		<p>Финансовые транзакции. Биржевая аналитика.</p>
+	</section>
+	<section class="slide">
+		<h2 style="font-size: 40px;">Когда <span style="color:red;">не надо</span> использовать ClickHouse</h2>
+		<p><span style="font-size: 30px;color: #888;">OLTP</span><br/>В ClickHouse нет UPDATE и полноценных транзакций.</p>
+		<p><span style="font-size: 30px;color: #888;">Key-Value</span><br/>Если нужны частые запросы на обновление по ключу, используйте другое решение.</p>
+		<p><span style="font-size: 30px;color: #888;">Blob-store, document oriented</span><br/>ClickHouse предназначен для большого количества мелко-гранулированных данных.</p>
+		<p><span style="font-size: 30px;color: #888;">Излишне нормализованные данные</span><br/>Лучше сделать широкую таблицу фактов.</p>
+	</section>
+	<section class="slide">
+		<h2>Почему ClickHouse такой быстрый?</h2>
+		<p>&nbsp;</p>
+		<p style="font-size: 40px;">&mdash; от безысходности.</p>
+		<p style="font-size: 40px;">Яндекс.Метрика должна работать.</p>
+	</section>
+	<section class="slide">
+		<h2>Почему ClickHouse такой быстрый?</h2>
+		<p><b>Алгоритмическая оптимизация.</b></p>
+		<p>MergeTree, локальность расположения данных на диске<br/>— быстрые диапазонные запросы.</p>
+		<p>Пример: функция uniqCombined состоит из комбинации трёх различных структур данных, подходящих под разные диапазоны кардинальностей.</p>
+		<p><b>Низкоуровневая оптимизация.</b></p>
+		<p>Пример: vectorized query execution.</p>
+		<p><b>Специализация и внимание к деталям.</b></p>
+		<p>Пример: у нас есть 17 разных алгоритмов выполнения GROUP BY. Для вашего запроса выбирается лучший.</p>
+	</section>
+	
+	<section class="slide">
+		<h2 style="font-size: 40px;">ClickHouse vs. typical row-oriented DBMS</h2>
+		<p>Itai Shirav:<br /><br />&laquo;I haven't made a rigorous comparison, but I did convert a time-series table with 9 million rows from Postgres to ClickHouse.</p>
+		<p>Under ClickHouse queries run about 100 times faster, and the table takes 20 times less disk space. Which is pretty amazing if you ask me&raquo;.</p>
+	</section>
+	<section class="slide">
+		<h2>&nbsp;</h2>
+		<p>Bao Dang:<br /><br />&laquo;Obviously, ClickHouse outperformed PostgreSQL at any metric&raquo;.</p>
+		<p><a href="https://github.com/AnalyticsGo/AnalyticsGo/issues/1">https://github.com/AnalyticsGo/AnalyticsGo/issues/1</a></p>
+	</section>
+	<section class="slide">
+		<h2>ClickHouse vs. Vertica</h2>
+		<p>Timur Shenkao:<br /><br />&laquo;ClickHouse is extremely fast at simple SELECTs without joins, much faster than Vertica&raquo;.</p>
+	</section>
+	<section class="slide">
+		<h2>ClickHouse vs. PrestoDB</h2>
+		<p>Ömer Osman Koçak:<br /><br />
+		&laquo;When we evaluated ClickHouse the results were great compared to Prestodb. Even though the columnar storage optimizations for ORC and Clickhouse is quite similar, Clickhouse uses CPU and Memory resources more efficiently (Presto also uses vectorized execution but cannot take advantage of hardware level optimizations such as SIMD instruction sets because it's written in Java so that's fair) so we also wanted to add support for Clickhouse for our open-source analytics platform Rakam (https://github.com/rakam-io/rakam)&raquo;</p>
+	</section>
+	<section class="slide">
+		<h2>ClickHouse vs. Spark</h2>
+		<p>&laquo;Я потестировал Clickhouse, по скорости просто отлично = намного быстрее spark на одной машине (у меня получилось порядка 3x, но еще буду сравнивать). Кроме того compression получается лучше&raquo;.</p>
+	</section>
+	<section class="slide">
+		<h2>ClickHouse vs. Google BigQuery</h2>
+		<p>&laquo;ClickHouse показывает сравнимую скорость на <u>таком запросе</u> за 30 дней и в 8 раз быстрее (!) на <u>таком запросе</u>. В планах есть протестировать и другие запросы, еще не добрались.<br/><br/>Скорость выполнения запросов стабильна. В Google BigQuery в период пиковых нагрузок, например в 4:00 p.m. PDT или в начале месяца, время выполнения запросов может заметно увеличиваться&raquo;.</p>
+	</section>
+	<section class="slide">
+		<h2>ClickHouse vs. Druid</h2>
+		<p>&laquo;В этом году мы развернули сборку на основе Druid — Imply Analytics Platform, а также Tranquility, и уже приготовились запускать в продакшн… Но после выхода ClickHouse сразу отказались от Druid, хотя потратили два месяца на его изучение и внедрение&raquo;.</p>
+		<p><a href="https://habrahabr.ru/company/smi2/blog/314558/">https://habrahabr.ru/company/smi2/blog/314558/</a></p>
+	</section>
+	<section class="slide">
+		<h2>ClickHouse vs. InfiniDB</h2>
+		<p>&laquo;结论：clickhouse速度更快！&raquo;</p>
+		<p>&laquo;In conclusion, ClickHouse is faster!&raquo;</p>
+		<p><a href="http://verynull.com/2016/08/22/infinidb与clickhouse对比/">http://verynull.com/2016/08/22/infinidb与clickhouse对比/</a></p>
+		<p><img src="pictures/infinidb_cn.png" style="width:100%"/></p>
+	</section>
+	<section class="slide">
+		<h2>ClickHouse for sensor data</h2>
+		<p><img src="pictures/kaspersky.png" style="width:100%"/></p>
+	</section>
+	<section class="slide">
+		<h2>ClickHouse vs. Greenplum</h2>
+		<p><img src="pictures/greenplum.png" style="width:50%"/></p>
+		<p>На самом деле всё сложнее.</p>
+	</section>
+	
+	<section class="slide">
+		<h2>Подключение к ClickHouse</h2>
+		<p style="font-size: 30px;">HTTP REST</p>
+		<p style="font-size: 30px;">clickhouse-client</p>
+		<p style="font-size: 30px;">JDBC</p>
+		<p>&nbsp;</p>
+		<p>Python, PHP, Go, Perl, Ruby, Node.JS, R</p>
+		<p>&nbsp;</p>
+		<p>Web UI: <a href="https://github.com/smi2/clickhouse-frontend">https://github.com/smi2/clickhouse-frontend</a></p>
+	</section>
+	<section class="slide">
+		<h2>Сообщество</h2>
+		<p>Официальный сайт: <a href="https://clickhouse.yandex/">https://clickhouse.yandex/</a></p>
+		<p>Google группа: <a href="https://groups.google.com/forum/#!forum/clickhouse">https://groups.google.com/forum/#!forum/clickhouse</a></p>
+		<p>Рассылка: clickhouse-feedback@yandex-team.com</p>
+		<p>Чат в Telegram: <a href="https://telegram.me/clickhouse_ru">https://telegram.me/clickhouse_ru</a></p>
+		<p>GitHub: <a href="https://github.com/yandex/ClickHouse/">https://github.com/yandex/ClickHouse/</a></p>
+		<p>&nbsp;</p>
+		<p>+ митапы. Следите за анонсами.</p>
+	</section>
+	<section class="slide">
+		<h2>&nbsp;</h2>
+		<p style="font-size: 40px;">Как запустить ClickHouse своими силами<br/> и выиграть джекпот:</p>
+		<p><a href="https://habrahabr.ru/company/smi2/blog/314558/">https://habrahabr.ru/company/smi2/blog/314558/</a></p>
+	</section>
+	
+	<section class="slide">
+		<h2>&nbsp;</h2>
+		<p style="font-size: 40px;">Начните использовать ClickHouse сегодня!</p>
+		<p style="font-size: 40px;">Спасибо. Задавайте вопросы.</p>
+	</section>
+	
+	<div class="progress"></div>
+	<script src="shower/shower.min.js"></script>
+</body>
+</html>
