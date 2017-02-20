@@ -109,14 +109,14 @@ MergeTreeData::MergeTreeData(
 
 	merging_params.check(*columns);
 
+	if (!primary_expr_ast && merging_params.mode != MergingParams::Unsorted)
+		throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
+
+	initPrimaryKey();
+
 	/// Creating directories, if not exist.
 	Poco::File(full_path).createDirectories();
 	Poco::File(full_path + "detached").createDirectory();
-
-	if (primary_expr_ast)
-		initPrimaryKey();
-	else if (merging_params.mode != MergingParams::Unsorted)
-		throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
 }
 
 
@@ -143,6 +143,9 @@ void MergeTreeData::checkNoMultidimensionalArrays(const NamesAndTypesList & colu
 
 void MergeTreeData::initPrimaryKey()
 {
+	if (!primary_expr_ast)
+		return;
+
 	/// Initialize description of sorting.
 	sort_descr.clear();
 	sort_descr.reserve(primary_expr_ast->children.size());

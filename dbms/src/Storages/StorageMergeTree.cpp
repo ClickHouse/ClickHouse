@@ -233,8 +233,9 @@ void StorageMergeTree::alter(
 	if (primary_key_is_modified)
 	{
 		data.primary_expr_ast = new_primary_key_ast;
-		data.initPrimaryKey();
 	}
+	/// Reinitialize primary key because primary key column types might have changed.
+	data.initPrimaryKey();
 
 	for (auto & transaction : transactions)
 		transaction->commit();

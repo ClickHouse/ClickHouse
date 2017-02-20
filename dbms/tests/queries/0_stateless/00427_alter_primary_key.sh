@@ -28,6 +28,8 @@ perform "ALTER TABLE test.alter MODIFY COLUMN c UInt32"
 
 perform "INSERT INTO test.alter VALUES ('2017-02-09', 'bar', 1486598400, '2017-02-09 00:00:00')"
 
+perform "SELECT d FROM test.alter WHERE a = 'bar'"
+
 perform "SELECT a, b, b = toUnixTimestamp(c) FROM test.alter ORDER BY a FORMAT TSV"
 
 perform "DROP TABLE test.alter"
