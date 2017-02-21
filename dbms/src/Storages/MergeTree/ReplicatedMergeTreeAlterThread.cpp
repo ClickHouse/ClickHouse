@@ -129,6 +129,11 @@ void ReplicatedMergeTreeAlterThread::run()
 							storage.data.column_defaults = std::move(column_defaults);
 						}
 
+						/// Reinitialize primary key because primary key column types might have changed.
+						storage.data.initPrimaryKey();
+						if (storage.unreplicated_data)
+							storage.unreplicated_data->initPrimaryKey();
+
 						LOG_INFO(log, "Applied changes to table.");
 					}
 					else

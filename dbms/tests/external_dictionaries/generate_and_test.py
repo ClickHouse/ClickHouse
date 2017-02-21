@@ -45,6 +45,7 @@ dictionaries = [
     [ 'clickhouse_flat', 0, True ],
     [ 'mysql_flat', 0, True ],
     [ 'mongodb_flat', 0, True ],
+    #TODO (with new mongo auth) : [ 'mongodb_user_flat', 0, True ],
     [ 'executable_flat', 0, True ],
     [ 'http_flat', 0, True ],
 
@@ -193,6 +194,9 @@ def generate_data(args):
 
     # create MongoDB collection from complete_query via JSON file
     if not args.no_mongo:
+        print 'Creating MongoDB test_user'
+        subprocess.call([ 'mongo', '--eval', 'db.createUser({ user: "test_user", pwd: "test_pass", roles: [ { role: "readWrite", db: "test" } ] })' ])
+
         print 'Creating MongoDB collection'
         table_rows = json.loads(subprocess.check_output([
             args.client,
@@ -286,14 +290,25 @@ def generate_dictionaries(args):
 
     source_mongodb = '''
     <mongodb>
-        <host>localhost</host>
+        <host>{mongo_host}</host>
         <port>27017</port>
         <user></user>
         <password></password>
         <db>test</db>
         <collection>dictionary_source</collection>
     </mongodb>
-    '''
+    '''.format(mongo_host=args.mongo_host)
+
+    source_mongodb_user = '''
+    <mongodb>
+        <host>{mongo_host}</host>
+        <port>27017</port>
+        <user>test_user</user>
+        <password>test_pass</password>
+        <db>test</db>
+        <collection>dictionary_source</collection>
+    </mongodb>
+    '''.format(mongo_host=args.mongo_host)
 
     source_executable = '''
     <executable>
@@ -364,6 +379,7 @@ def generate_dictionaries(args):
         [ source_clickhouse, layout_flat ],
         [ source_mysql, layout_flat ],
         [ source_mongodb, layout_flat ],
+        #TODO (with new mongo auth) : [ source_mongodb_user, layout_flat ],
         [ source_executable % (generated_prefix + files[0]), layout_flat ],
         [ source_http % (files[0]), layout_flat ],
 
@@ -447,7 +463,7 @@ def run_tests(args):
         start_time = datetime.now()
         while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
             sleep(0)
-            
+
         if proc.returncode is None:
             try:
                 proc.kill()
@@ -464,45 +480,45 @@ def run_tests(args):
             stdout = unicode(stdout, errors='replace', encoding='utf-8')
             stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
             stderr = unicode(stderr, errors='replace', encoding='utf-8')
-            
+
             if proc.returncode != 0:
                 failure = et.Element("failure", attrib = {"message": "return code {}".format(proc.returncode)})
                 report_testcase.append(failure)
-                
+
                 stdout_element = et.Element("system-out")
                 stdout_element.text = et.CDATA(stdout)
                 report_testcase.append(stdout_element)
-                
+
                 failures = failures + 1
                 print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
-                
+
                 if stderr:
                     stderr_element = et.Element("system-err")
                     stderr_element.text = et.CDATA(stderr)
                     report_testcase.append(stderr_element)
                     print(stderr)
-                
+
                 if 'Connection refused' in stderr or 'Attempt to read after eof' in stderr:
                     SERVER_DIED = True
-            
+
             elif stderr:
                 failure = et.Element("failure", attrib = {"message": "having stderror"})
                 report_testcase.append(failure)
-                
+
                 stderr_element = et.Element("system-err")
                 stderr_element.text = et.CDATA(stderr)
                 report_testcase.append(stderr_element)
-                
+
                 failures = failures + 1
                 print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr.encode('utf-8')))
             elif 'Exception' in stdout:
                 failure = et.Element("error", attrib = {"message": "having exception"})
                 report_testcase.append(failure)
-                
+
                 stdout_element = et.Element("system-out")
                 stdout_element.text = et.CDATA(stdout)
                 report_testcase.append(stdout_element)
-                
+
                 failures = failures + 1
                 print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout.encode('utf-8')))
             elif not os.path.isfile(reference_file):
@@ -511,15 +527,15 @@ def run_tests(args):
                 print("{0} - no reference file".format(MSG_UNKNOWN))
             else:
                 (diff, _) = Popen(['diff', reference_file, stdout_file], stdout = PIPE).communicate()
-                
+
                 if diff:
                     failure = et.Element("failure", attrib = {"message": "result differs with reference"})
                     report_testcase.append(failure)
-                    
+
                     stdout_element = et.Element("system-out")
                     stdout_element.text = et.CDATA(diff)
                     report_testcase.append(stdout_element)
-                    
+
                     failures = failures + 1
                     print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff))
                 else:
@@ -528,10 +544,10 @@ def run_tests(args):
                         os.remove(stdout_file)
                     if os.path.exists(stderr_file):
                         os.remove(stderr_file)
-        
+
         dump_report(args.output, dict, name, report_testcase)
 
-    
+
     print 'Waiting for dictionaries to load...'
     time.sleep(wait_for_loading_sleep_time_sec)
 
@@ -589,6 +605,7 @@ if __name__ == '__main__':
     # Not complete disable. Now only skip data prepare. Todo: skip requests too. Now can be used with --no_break
     parser.add_argument('--no_mysql', action='store_true', help = 'Dont use mysql dictionaries')
     parser.add_argument('--no_mongo', action='store_true', help = 'Use mongodb dictionaries')
+    parser.add_argument('--mongo_host', default = 'localhost', help = 'mongo server host')
 
     parser.add_argument('--use_http', default = True, help = 'Use http dictionaries')
     parser.add_argument('--http_port', default = 58000, help = 'http server port')

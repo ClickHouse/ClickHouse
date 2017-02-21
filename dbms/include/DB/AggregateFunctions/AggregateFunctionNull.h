@@ -152,6 +152,11 @@ public:
 	{
 		return nested_function->allocatesMemoryInArena();
 	}
+
+	bool isState() const override
+	{
+		return nested_function->isState();
+	}
 };
 
 
