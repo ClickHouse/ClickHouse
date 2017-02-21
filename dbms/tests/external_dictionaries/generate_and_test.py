@@ -45,6 +45,7 @@ dictionaries = [
     [ 'clickhouse_flat', 0, True ],
     [ 'mysql_flat', 0, True ],
     [ 'mongodb_flat', 0, True ],
+    [ 'mongodb_user_flat', 0, True ],
     [ 'executable_flat', 0, True ],
     [ 'http_flat', 0, True ],
 
@@ -193,6 +194,12 @@ def generate_data(args):
 
     # create MongoDB collection from complete_query via JSON file
     if not args.no_mongo:
+        print 'Creating MongoDB test_user'
+        subprocess.call([
+            'mongo', '--eval',
+            'db.createUser({ user: "test_user", pwd: "test_pass", roles: [ { role: "readWrite", db: "test" } ] })'
+        ])
+
         print 'Creating MongoDB collection'
         table_rows = json.loads(subprocess.check_output([
             args.client,
@@ -286,14 +293,25 @@ def generate_dictionaries(args):
 
     source_mongodb = '''
     <mongodb>
-        <host>localhost</host>
+        <host>{mongo_host}</host>
         <port>27017</port>
         <user></user>
         <password></password>
         <db>test</db>
         <collection>dictionary_source</collection>
     </mongodb>
-    '''
+    '''.format(mongo_host=args.mongo_host)
+
+    source_mongodb_user = '''
+    <mongodb>
+        <host>{mongo_host}</host>
+        <port>27017</port>
+        <user>test_user</user>
+        <password>test_pass</password>
+        <db>test</db>
+        <collection>dictionary_source</collection>
+    </mongodb>
+    '''.format(mongo_host=args.mongo_host)
 
     source_executable = '''
     <executable>
@@ -364,6 +382,7 @@ def generate_dictionaries(args):
         [ source_clickhouse, layout_flat ],
         [ source_mysql, layout_flat ],
         [ source_mongodb, layout_flat ],
+        [ source_mongodb_user, layout_flat ],
         [ source_executable % (generated_prefix + files[0]), layout_flat ],
         [ source_http % (files[0]), layout_flat ],
 
@@ -589,6 +608,7 @@ if __name__ == '__main__':
     # Not complete disable. Now only skip data prepare. Todo: skip requests too. Now can be used with --no_break
     parser.add_argument('--no_mysql', action='store_true', help = 'Dont use mysql dictionaries')
     parser.add_argument('--no_mongo', action='store_true', help = 'Use mongodb dictionaries')
+    parser.add_argument('--mongo_host', default = 'localhost', help = 'mongo server host')
 
     parser.add_argument('--use_http', default = True, help = 'Use http dictionaries')
     parser.add_argument('--http_port', default = 58000, help = 'http server port')
