@@ -38,58 +38,74 @@ prefix = base_dir = os.path.dirname(os.path.realpath(__file__))
 generated_prefix = prefix + '/generated/'
 
 
-# [ name, key_type, has_parent ]
-dictionaries = [
-    # Simple key dictionaries
-    [ 'file_flat', 0, True ],
-    [ 'clickhouse_flat', 0, True ],
-    [ 'mysql_flat', 0, True ],
-    [ 'mongodb_flat', 0, True ],
-    #TODO (with new mongo auth) : [ 'mongodb_user_flat', 0, True ],
-    [ 'executable_flat', 0, True ],
-    [ 'http_flat', 0, True ],
+dictionaries = []
 
-    [ 'file_hashed', 0, True ],
-    [ 'clickhouse_hashed', 0, True ],
-    [ 'mysql_hashed', 0, True ],
-    [ 'mongodb_hashed', 0, True ],
-    [ 'executable_hashed', 0, True ],
-    [ 'http_hashed', 0, True ],
+def generate_structure(args):
+    global dictionaries
+      # [ name, key_type, has_parent ]
+    dictionaries.extend( [
+        # Simple key dictionaries
+        [ 'file_flat', 0, True ],
+        [ 'clickhouse_flat', 0, True ],
+        [ 'executable_flat', 0, True ],
+        [ 'http_flat', 0, True ],
 
-    [ 'clickhouse_cache', 0, True ],
-    [ 'mysql_cache', 0, True ],
-    [ 'mongodb_cache', 0, True ],
-    [ 'executable_cache', 0, True ],
-    [ 'http_cache', 0, True ],
+        [ 'file_hashed', 0, True ],
+        [ 'clickhouse_hashed', 0, True ],
+        [ 'executable_hashed', 0, True ],
+        [ 'http_hashed', 0, True ],
 
-    # Complex key dictionaries with (UInt8, UInt8) key
-    [ 'file_complex_integers_key_hashed', 1, False ],
-    [ 'clickhouse_complex_integers_key_hashed', 1, False ],
-    [ 'mysql_complex_integers_key_hashed', 1, False ],
-    [ 'mongodb_complex_integers_key_hashed', 1, False ],
-    [ 'executable_complex_integers_key_hashed', 1, False ],
-    [ 'http_complex_integers_key_hashed', 1, False ],
+        [ 'clickhouse_cache', 0, True ],
+        [ 'executable_cache', 0, True ],
+        [ 'http_cache', 0, True ],
 
-    [ 'clickhouse_complex_integers_key_cache', 1, False ],
-    [ 'mysql_complex_integers_key_cache', 1, False ],
-    [ 'mongodb_complex_integers_key_cache', 1, False ],
-    [ 'executable_complex_integers_key_cache', 1, False ],
-    [ 'http_complex_integers_key_cache', 1, False ],
+        # Complex key dictionaries with (UInt8, UInt8) key
+        [ 'file_complex_integers_key_hashed', 1, False ],
+        [ 'clickhouse_complex_integers_key_hashed', 1, False ],
+        [ 'executable_complex_integers_key_hashed', 1, False ],
+        [ 'http_complex_integers_key_hashed', 1, False ],
 
-    # Complex key dictionaries with (String, UInt8) key
-    [ 'file_complex_mixed_key_hashed', 2, False ],
-    [ 'clickhouse_complex_mixed_key_hashed', 2, False ],
-    [ 'mysql_complex_mixed_key_hashed', 2, False ],
-    [ 'mongodb_complex_mixed_key_hashed', 2, False ],
-    [ 'executable_complex_mixed_key_hashed', 2, False ],
-    [ 'http_complex_mixed_key_hashed', 2, False ],
+        [ 'clickhouse_complex_integers_key_cache', 1, False ],
+        [ 'executable_complex_integers_key_cache', 1, False ],
+        [ 'http_complex_integers_key_cache', 1, False ],
 
-    [ 'clickhouse_complex_mixed_key_cache', 2, False ],
-    [ 'mysql_complex_mixed_key_cache', 2, False ],
-    [ 'mongodb_complex_mixed_key_cache', 2, False ],
-    [ 'executable_complex_mixed_key_hashed', 2, False ],
-    [ 'http_complex_mixed_key_hashed', 2, False ],
-]
+        # Complex key dictionaries with (String, UInt8) key
+        [ 'file_complex_mixed_key_hashed', 2, False ],
+        [ 'clickhouse_complex_mixed_key_hashed', 2, False ],
+        [ 'executable_complex_mixed_key_hashed', 2, False ],
+        [ 'http_complex_mixed_key_hashed', 2, False ],
+
+        [ 'clickhouse_complex_mixed_key_cache', 2, False ],
+        [ 'executable_complex_mixed_key_hashed', 2, False ],
+        [ 'http_complex_mixed_key_hashed', 2, False ],
+    ])
+
+    if not args.no_mysql:
+        dictionaries.extend( [
+            [ 'mysql_flat', 0, True ],
+            [ 'mysql_hashed', 0, True ],
+            [ 'mysql_cache', 0, True ],
+            [ 'mysql_complex_integers_key_hashed', 1, False ],
+            [ 'mysql_complex_integers_key_cache', 1, False ],
+            [ 'mysql_complex_mixed_key_hashed', 2, False ],
+            [ 'mysql_complex_mixed_key_cache', 2, False ],
+        ])
+
+    if not args.no_mongo:
+        dictionaries.extend( [
+            [ 'mongodb_flat', 0, True ],
+            [ 'mongodb_hashed', 0, True ],
+            [ 'mongodb_cache', 0, True ],
+            [ 'mongodb_complex_integers_key_hashed', 1, False ],
+            [ 'mongodb_complex_integers_key_cache', 1, False ],
+            [ 'mongodb_complex_mixed_key_hashed', 2, False ],
+            [ 'mongodb_complex_mixed_key_cache', 2, False ],
+        ])
+
+    if args.use_mongo_user:
+        dictionaries.extend( [
+            [ 'mongodb_user_flat', 0, True ],
+        ])
 
 
 files = [ 'key_simple.tsv', 'key_complex_integers.tsv', 'key_complex_mixed.tsv' ]
@@ -377,53 +393,65 @@ def generate_dictionaries(args):
         # Simple key dictionaries
         [ source_file % (generated_prefix + files[0]), layout_flat],
         [ source_clickhouse, layout_flat ],
-        [ source_mysql, layout_flat ],
-        [ source_mongodb, layout_flat ],
-        #TODO (with new mongo auth) : [ source_mongodb_user, layout_flat ],
         [ source_executable % (generated_prefix + files[0]), layout_flat ],
         [ source_http % (files[0]), layout_flat ],
 
         [ source_file % (generated_prefix + files[0]), layout_hashed],
         [ source_clickhouse, layout_hashed ],
-        [ source_mysql, layout_hashed ],
-        [ source_mongodb, layout_hashed ],
         [ source_executable % (generated_prefix + files[0]), layout_hashed ],
         [ source_http % (files[0]), layout_hashed ],
 
         [ source_clickhouse, layout_cache ],
-        [ source_mysql, layout_cache ],
-        [ source_mongodb, layout_cache ],
         [ source_executable % (generated_prefix + files[0]), layout_cache ],
         [ source_http % (files[0]), layout_cache ],
 
         # Complex key dictionaries with (UInt8, UInt8) key
         [ source_file % (generated_prefix + files[1]), layout_complex_key_hashed],
         [ source_clickhouse, layout_complex_key_hashed ],
-        [ source_mysql, layout_complex_key_hashed ],
-        [ source_mongodb, layout_complex_key_hashed ],
         [ source_executable % (generated_prefix + files[1]), layout_complex_key_hashed ],
         [ source_http % (files[1]), layout_complex_key_hashed ],
 
         [ source_clickhouse, layout_complex_key_cache ],
-        [ source_mysql, layout_complex_key_cache ],
-        [ source_mongodb, layout_complex_key_cache ],
         [ source_executable % (generated_prefix + files[1]), layout_complex_key_cache ],
         [ source_http % (files[1]), layout_complex_key_cache ],
 
         # Complex key dictionaries with (String, UInt8) key
         [ source_file % (generated_prefix + files[2]), layout_complex_key_hashed],
         [ source_clickhouse, layout_complex_key_hashed ],
-        [ source_mysql, layout_complex_key_hashed ],
-        [ source_mongodb, layout_complex_key_hashed ],
         [ source_executable % (generated_prefix + files[2]), layout_complex_key_hashed ],
         [ source_http % (files[2]), layout_complex_key_hashed ],
 
         [ source_clickhouse, layout_complex_key_cache ],
-        [ source_mysql, layout_complex_key_cache ],
-        [ source_mongodb, layout_complex_key_cache ],
         [ source_executable % (generated_prefix + files[2]), layout_complex_key_cache ],
         [ source_http % (files[2]), layout_complex_key_cache ],
     ]
+
+    if not args.no_mysql:
+        sources_and_layouts.extend( [
+        [ source_mysql, layout_flat ],
+        [ source_mysql, layout_hashed ],
+        [ source_mysql, layout_cache ],
+        [ source_mysql, layout_complex_key_hashed ],
+        [ source_mysql, layout_complex_key_cache ],
+        [ source_mysql, layout_complex_key_hashed ],
+        [ source_mysql, layout_complex_key_cache ],
+    ])
+
+    if not args.no_mongo:
+        sources_and_layouts.extend( [
+        [ source_mongodb, layout_flat ],
+        [ source_mongodb, layout_hashed ],
+        [ source_mongodb, layout_cache ],
+        [ source_mongodb, layout_complex_key_cache ],
+        [ source_mongodb, layout_complex_key_hashed ],
+        [ source_mongodb, layout_complex_key_hashed ],
+        [ source_mongodb, layout_complex_key_cache ],
+    ])
+
+    if args.use_mongo_user:
+        sources_and_layouts.extend( [
+        [ source_mongodb_user, layout_flat ],
+    ])
 
     for (name, key_idx, has_parent), (source, layout) in zip(dictionaries, sources_and_layouts):
         filename = os.path.join(args.generated, 'dictionary_%s.xml' % name)
@@ -587,6 +615,7 @@ def run_tests(args):
 
 
 def main(args):
+    generate_structure(args)
     generate_dictionaries(args)
     generate_data(args)
     run_tests(args)
@@ -606,6 +635,7 @@ if __name__ == '__main__':
     parser.add_argument('--no_mysql', action='store_true', help = 'Dont use mysql dictionaries')
     parser.add_argument('--no_mongo', action='store_true', help = 'Use mongodb dictionaries')
     parser.add_argument('--mongo_host', default = 'localhost', help = 'mongo server host')
+    parser.add_argument('--use_mongo_user', action='store_true', help = 'Test mongodb with user-pass')
 
     parser.add_argument('--use_http', default = True, help = 'Use http dictionaries')
     parser.add_argument('--http_port', default = 58000, help = 'http server port')
