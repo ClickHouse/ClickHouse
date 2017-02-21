@@ -55,11 +55,6 @@ export CC=gcc-6
 export CXX=g++-6
 ```
 
-## Disable MongoDB binding
-```
-export ENABLE_MONGODB=0
-```
-
 ## Detect number of threads
 
 ```
