@@ -15,11 +15,13 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteBufferFromHTTPServerResponse.h>
-#include <DB/IO/MemoryReadWriteBuffer.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/copyData.h>
 #include <DB/IO/ConcatReadBuffer.h>
+#include <DB/IO/CascadeWriteBuffer.h>
+#include <DB/IO/MemoryReadWriteBuffer.h>
+#include <DB/IO/WriteBufferFromTemporaryFile.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
