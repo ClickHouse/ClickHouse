@@ -1,10 +1,11 @@
 #include <gtest/gtest.h>
-#include "/home/vludv/ClickHouse/contrib/googletest/include/gtest/gtest.h"
-#include <memory.h>
 
 #include <Poco/File.h>
 
+#include <DB/IO/CascadeWriteBuffer.h>
 #include <DB/IO/MemoryReadWriteBuffer.h>
+#include <DB/IO/WriteBufferFromTemporaryFile.h>
+
 #include <DB/IO/ConcatReadBuffer.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/copyData.h>
