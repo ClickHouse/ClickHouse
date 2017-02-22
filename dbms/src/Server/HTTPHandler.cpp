@@ -204,8 +204,8 @@ void HTTPHandler::processQuery(
 
 	if (use_memory_buffer)
 	{
-		ConcatWriteBuffer::WriteBufferPtrs concat_buffers1{ std::make_shared<MemoryWriteBuffer>(result_buffer_memory_size) };
-		ConcatWriteBuffer::WriteBufferConstructors concat_buffers2{};
+		CascadeWriteBuffer::WriteBufferPtrs concat_buffers1{ std::make_shared<MemoryWriteBuffer>(result_buffer_memory_size) };
+		CascadeWriteBuffer::WriteBufferConstructors concat_buffers2{};
 
 		if (result_buffer_overflow_to_disk)
 		{
@@ -237,7 +237,7 @@ void HTTPHandler::processQuery(
 		}
 
 		used_output.out = response_raw;
-		used_output.delayed_out_raw = std::make_shared<ConcatWriteBuffer>(std::move(concat_buffers1), std::move(concat_buffers2));
+		used_output.delayed_out_raw = std::make_shared<CascadeWriteBuffer>(std::move(concat_buffers1), std::move(concat_buffers2));
 		if (internal_compression)
 			used_output.delayed_out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.delayed_out_raw);
 		else
