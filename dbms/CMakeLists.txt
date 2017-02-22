@@ -18,7 +18,7 @@ if (NOT NO_WERROR)
 endif ()
 
 add_subdirectory (src)
-add_subdirectory (tests/unit_tests)
+add_subdirectory (tests)
 
 add_library(string_utils
 	include/DB/Common/StringUtils.h
@@ -157,4 +157,8 @@ target_link_libraries(dbms
 	${CMAKE_DL_LIBS}
 	${LTDL_LIB}
 	${CMAKE_THREAD_LIBS_INIT}
-	)
+)
+
+target_include_directories (dbms
+	INTERFACE include
+)
