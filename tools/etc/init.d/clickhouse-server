@@ -236,8 +236,11 @@ disable_cron()
 
 is_cron_disabled()
 {
-	[ -z $CLICKHOUSE_CRONFILE ] && return 0
-	[[ `grep -E "^#.*" $CLICKHOUSE_CRONFILE` == `cat $CLICKHOUSE_CRONFILE` ]];
+	[ -z "$CLICKHOUSE_CRONFILE" ] && return 0
+
+	# Assumes that either no lines are commented or all lines are commented.
+	# Also please note, that currently cron file for ClickHouse has only one line (but some time ago there was more).
+	grep -q -E '^#' "$CLICKHOUSE_CRONFILE";
 }
 
 main()
