@@ -43,7 +43,7 @@ dictionaries = []
 def generate_structure(args):
     global dictionaries
       # [ name, key_type, has_parent ]
-    dictionaries.extend( [
+    dictionaries.extend([
         # Simple key dictionaries
         [ 'file_flat', 0, True ],
         [ 'clickhouse_flat', 0, True ],
@@ -80,8 +80,15 @@ def generate_structure(args):
         [ 'http_complex_mixed_key_hashed', 2, False ],
     ])
 
+    if args.use_https:
+        dictionaries.extend([
+            [ 'https_flat', 0, True ],
+            [ 'https_hashed', 0, True ],
+            [ 'https_cache', 0, True ],
+        ])
+
     if not args.no_mysql:
-        dictionaries.extend( [
+        dictionaries.extend([
             [ 'mysql_flat', 0, True ],
             [ 'mysql_hashed', 0, True ],
             [ 'mysql_cache', 0, True ],
@@ -92,7 +99,7 @@ def generate_structure(args):
         ])
 
     if not args.no_mongo:
-        dictionaries.extend( [
+        dictionaries.extend([
             [ 'mongodb_flat', 0, True ],
             [ 'mongodb_hashed', 0, True ],
             [ 'mongodb_cache', 0, True ],
@@ -103,7 +110,7 @@ def generate_structure(args):
         ])
 
     if args.use_mongo_user:
-        dictionaries.extend( [
+        dictionaries.extend([
             [ 'mongodb_user_flat', 0, True ],
         ])
 
@@ -340,6 +347,13 @@ def generate_dictionaries(args):
     </http>
     '''.format(http_host=args.http_host, http_port=args.http_port, http_path=args.http_path)
 
+    source_https = '''
+    <http>
+        <url>https://{https_host}:{https_port}{https_path}%s</url>
+        <format>TabSeparated</format>
+    </http>
+    '''.format(https_host=args.https_host, https_port=args.https_port, https_path=args.https_path)
+
     layout_flat = '<flat />'
     layout_hashed = '<hashed />'
     layout_cache = '<cache><size_in_cells>128</size_in_cells></cache>'
@@ -426,8 +440,15 @@ def generate_dictionaries(args):
         [ source_http % (files[2]), layout_complex_key_cache ],
     ]
 
+    if args.use_https:
+        sources_and_layouts.extend([
+        [ source_https % (files[0]), layout_flat ],
+        [ source_https % (files[0]), layout_hashed ],
+        [ source_https % (files[0]), layout_cache ],
+    ])
+
     if not args.no_mysql:
-        sources_and_layouts.extend( [
+        sources_and_layouts.extend([
         [ source_mysql, layout_flat ],
         [ source_mysql, layout_hashed ],
         [ source_mysql, layout_cache ],
@@ -438,7 +459,7 @@ def generate_dictionaries(args):
     ])
 
     if not args.no_mongo:
-        sources_and_layouts.extend( [
+        sources_and_layouts.extend([
         [ source_mongodb, layout_flat ],
         [ source_mongodb, layout_hashed ],
         [ source_mongodb, layout_cache ],
@@ -463,10 +484,16 @@ def generate_dictionaries(args):
 
 def run_tests(args):
     if args.use_http:
-        http_server = subprocess.Popen(["python", "http_server.py", str(args.http_port)]);
+        http_server = subprocess.Popen(["python", "http_server.py", "--port", str(args.http_port), "--host", args.http_host]);
         @atexit.register
         def http_killer():
            http_server.kill()
+
+    if args.use_https:
+        https_server = subprocess.Popen(["python", "http_server.py", "--port", str(args.https_port), "--host", args.https_host, '--https']);
+        @atexit.register
+        def https_killer():
+           https_server.kill()
 
     keys = [ 'toUInt64(n)', '(n, n)', '(toString(n), n)' ]
     dict_get_query_skeleton = "select dictGet{type}('{name}', '{type}_', {key}) from system.one array join range(8) as n;"
@@ -641,6 +668,10 @@ if __name__ == '__main__':
     parser.add_argument('--http_port', default = 58000, help = 'http server port')
     parser.add_argument('--http_host', default = 'localhost', help = 'http server host')
     parser.add_argument('--http_path', default = '/generated/', help = 'http server path')
+    parser.add_argument('--use_https', default = True, help = 'Use https dictionaries')
+    parser.add_argument('--https_port', default = 58443, help = 'https server port')
+    parser.add_argument('--https_host', default = 'localhost', help = 'https server host')
+    parser.add_argument('--https_path', default = '/generated/', help = 'https server path')
     parser.add_argument('--no_break', action='store_true', help = 'Dont stop on errors')
 
     args = parser.parse_args()

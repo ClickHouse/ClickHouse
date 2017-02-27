@@ -152,6 +152,7 @@ target_link_libraries(dbms
 	${Poco_DataODBC_LIBRARY}
 	${Poco_MongoDB_LIBRARY}
 	${Poco_Foundation_LIBRARY}
+	${Poco_NetSSL_LIBRARY}
 	${ICONV_LIBRARY}
 	${PLATFORM_LIBS}
 	${CMAKE_DL_LIBS}
