@@ -188,7 +188,7 @@ def main(args):
 								report_testcase.append(skipped)
 								print("{0} - no reference file".format(MSG_UNKNOWN))
 							else:
-								result_is_different = subprocess.call(['cmp', '--quiet', reference_file, stdout_file], stdout = PIPE)
+								result_is_different = subprocess.call(['cmp', '-s', reference_file, stdout_file], stdout = PIPE)
 
 								if result_is_different:
 									(diff, _) = Popen(['diff', '--side-by-side', reference_file, stdout_file], stdout = PIPE).communicate()
