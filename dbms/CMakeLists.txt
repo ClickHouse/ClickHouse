@@ -139,7 +139,7 @@ target_link_libraries(dbms
 	mysqlxx
 	cityhash farmhash metrohash
 	${LZ4_LIBRARY}
-	zstd
+	${ZSTD_LIBRARY}
 	string_utils
 	${DOUBLE_CONVERSION_LIBRARY}
 	${ZLIB_LIBRARIES}
