@@ -14,6 +14,7 @@
 
 namespace DB
 {
+
 void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response)
 {
 	if (!response.getKeepAlive())
@@ -31,21 +32,22 @@ void clientSSLInit()
 	// http://stackoverflow.com/questions/18315472/https-request-in-c-using-poco
 	Poco::Net::initializeSSL();
 	bool insecure = Poco::Util::Application::instance().config().getInt("https_client_insecure", false);
-	Poco::SharedPtr<Poco::Net::InvalidCertificateHandler> ptrHandler(insecure
+	Poco::SharedPtr<Poco::Net::InvalidCertificateHandler> ptr_handler(insecure
 			? dynamic_cast<Poco::Net::InvalidCertificateHandler *>(new Poco::Net::AcceptCertificateHandler(true))
 			: dynamic_cast<Poco::Net::InvalidCertificateHandler *>(new Poco::Net::RejectCertificateHandler(true)));
-	Poco::Net::Context::Ptr ptrContext(new Poco::Net::Context(Poco::Net::Context::CLIENT_USE,
+	Poco::Net::Context::Ptr ptr_context(new Poco::Net::Context(Poco::Net::Context::CLIENT_USE,
 		"",
 		"",
 		"",
 		insecure ? Poco::Net::Context::VERIFY_NONE : Poco::Net::Context::VERIFY_RELAXED,
 		9,
 		true));
-	ptrContext->enableSessionCache(true);
+	ptr_context->enableSessionCache(true);
 #if POCO_VERSION >= 0x01070000
-	ptrContext->disableProtocols(Poco::Net::Context::PROTO_SSLV2 | Poco::Net::Context::PROTO_SSLV3);
-	ptrContext->preferServerCiphers();
+	ptr_context->disableProtocols(Poco::Net::Context::PROTO_SSLV2 | Poco::Net::Context::PROTO_SSLV3);
+	ptr_context->preferServerCiphers();
 #endif
-	Poco::Net::SSLManager::instance().initializeClient(nullptr, ptrHandler, ptrContext);
+	Poco::Net::SSLManager::instance().initializeClient(nullptr, ptr_handler, ptr_context);
 }
+
 }
