@@ -8,8 +8,8 @@
 	#include <quicklz/quicklz_level1.h>
 #endif
 
-#include <lz4/lz4.h>
-#include <zstd/zstd.h>
+#include <lz4.h>
+#include <zstd.h>
 
 #include <DB/Common/PODArray.h>
 #include <DB/Common/ProfileEvents.h>

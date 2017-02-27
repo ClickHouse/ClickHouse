@@ -53,39 +53,6 @@ if (USE_STATIC_LIBRARIES)
 	list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-
-option (UNBUNDLED "Try find all libraries in system (if fail - use bundled from contrib/)" OFF)
-if (UNBUNDLED)
-	set(NOT_UNBUNDLED 0)
-else ()
-	set(NOT_UNBUNDLED 1)
-endif ()
-
-message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} UNBUNDLED=${UNBUNDLED}")
-
-option (USE_INTERNAL_BOOST_LIBRARY "Set to FALSE to use system boost library instead of bundled" ${NOT_UNBUNDLED})
-
-if (USE_INTERNAL_BOOST_LIBRARY)
-	add_definitions(-DBOOST_SYSTEM_NO_DEPRECATED)
-endif ()
-
-option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ${NOT_UNBUNDLED})
-
-if (CMAKE_SYSTEM MATCHES "FreeBSD")
-	set(NOT_FREEBSD 0)
-	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ${NOT_FREEBSD})
-else ()
-	set(NOT_FREEBSD 1)
-	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ${NOT_UNBUNDLED})
-endif ()
-
-
-option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
-
-option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc." ON)
-
-option (DEBUG_LIBTCMALLOC "Set to TRUE to use debug version of libtcmalloc." OFF)
-
 option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
 
 if (GLIBC_COMPATIBILITY)
@@ -184,16 +151,57 @@ else ()
 	set (CLICKHOUSE_ETC_DIR ${CMAKE_INSTALL_PREFIX}/etc)
 endif ()
 
+
+option (UNBUNDLED "Try find all libraries in system (if fail - use bundled from contrib/)" OFF)
+if (UNBUNDLED)
+	set(NOT_UNBUNDLED 0)
+else ()
+	set(NOT_UNBUNDLED 1)
+endif ()
+
+message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} UNBUNDLED=${UNBUNDLED}")
+
 include (cmake/find_openssl.cmake)
 include (cmake/find_icu4c.cmake)
+
+option (USE_INTERNAL_BOOST_LIBRARY "Set to FALSE to use system boost library instead of bundled" ${NOT_UNBUNDLED})
+if (USE_INTERNAL_BOOST_LIBRARY)
+	add_definitions(-DBOOST_SYSTEM_NO_DEPRECATED)
+endif ()
 include (cmake/find_boost.cmake)
+
+option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
 include (cmake/find_zlib.cmake)
+
+option (USE_INTERNAL_ZSTD_LIBRARY "Set to FALSE to use system zstd library instead of bundled" ${NOT_UNBUNDLED})
+include (cmake/find_zstd.cmake)
+
+option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ${NOT_UNBUNDLED})
 include (cmake/find_poco.cmake)
+
 include (cmake/find_libtool.cmake)
 include (cmake/find_rt.cmake)
 include (cmake/find_readline_edit.cmake)
+
+option (USE_INTERNAL_ZOOKEEPER_LIBRARY "Set to FALSE to use system zookeeper library instead of bundled" ${NOT_UNBUNDLED})
+include (cmake/find_zookeeper.cmake)
+
+#TODO: option (USE_INTERNAL_RE2_LIBRARY "Set to FALSE to use system re2 library instead of bundled" ${NOT_UNBUNDLED})
+set (USE_INTERNAL_RE2_LIBRARY ON)
+include (${ClickHouse_SOURCE_DIR}/cmake/find_re2.cmake)
+
+if (CMAKE_SYSTEM MATCHES "FreeBSD")
+	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" OFF)
+else ()
+	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ${NOT_UNBUNDLED})
+endif ()
+option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc" ON)
+option (DEBUG_LIBTCMALLOC "Set to TRUE to use debug version of libtcmalloc" OFF)
 include (cmake/find_gperftools.cmake)
+
+option (ENABLE_JEMALLOC "Set to TRUE to use jemalloc instead of tcmalloc" OFF)
 include (cmake/find_jemalloc.cmake)
+
 
 set (FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")
 set (FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")
