@@ -1,12 +1,19 @@
 #include <DB/IO/HTTPCommon.h>
 
-#include <Poco/Util/Application.h>
+#include <Poco/Net/AcceptCertificateHandler.h>
+#include <Poco/Net/Context.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/InvalidCertificateHandler.h>
+#include <Poco/Net/PrivateKeyPassphraseHandler.h>
+#include <Poco/Net/RejectCertificateHandler.h>
+#include <Poco/Net/SSLManager.h>
+#include <Poco/Util/Application.h>
+#include <Poco/Util/Application.h>
+#include <Poco/Version.h>
 
 
 namespace DB
 {
-
 void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response)
 {
 	if (!response.getKeepAlive())
@@ -17,4 +24,28 @@ void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response)
 		response.set("Keep-Alive", "timeout=" + std::to_string(keep_alive_timeout.totalSeconds()));
 }
 
+std::once_flag client_ssl_init_once;
+
+void clientSSLInit()
+{
+	// http://stackoverflow.com/questions/18315472/https-request-in-c-using-poco
+	Poco::Net::initializeSSL();
+	bool insecure = Poco::Util::Application::instance().config().getInt("https_client_insecure", false);
+	Poco::SharedPtr<Poco::Net::InvalidCertificateHandler> ptrHandler(insecure
+			? dynamic_cast<Poco::Net::InvalidCertificateHandler *>(new Poco::Net::AcceptCertificateHandler(true))
+			: dynamic_cast<Poco::Net::InvalidCertificateHandler *>(new Poco::Net::RejectCertificateHandler(true)));
+	Poco::Net::Context::Ptr ptrContext(new Poco::Net::Context(Poco::Net::Context::CLIENT_USE,
+		"",
+		"",
+		"",
+		insecure ? Poco::Net::Context::VERIFY_NONE : Poco::Net::Context::VERIFY_RELAXED,
+		9,
+		true));
+	ptrContext->enableSessionCache(true);
+#if POCO_VERSION >= 0x01070000
+	ptrContext->disableProtocols(Poco::Net::Context::PROTO_SSLV2 | Poco::Net::Context::PROTO_SSLV3);
+	ptrContext->preferServerCiphers();
+#endif
+	Poco::Net::SSLManager::instance().initializeClient(nullptr, ptrHandler, ptrContext);
+}
 }
