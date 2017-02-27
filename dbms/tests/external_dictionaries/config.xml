@@ -12,6 +12,7 @@
 	<listen_host>localhost</listen_host>
 	<max_concurrent_queries>500</max_concurrent_queries>
 	<mark_cache_size>5368709120</mark_cache_size>
+	<https_client_insecure>1</https_client_insecure>
 	<path>./clickhouse/</path>
 	<users_config>users.xml</users_config>
 
