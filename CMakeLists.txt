@@ -186,6 +186,9 @@ include (cmake/find_readline_edit.cmake)
 option (USE_INTERNAL_ZOOKEEPER_LIBRARY "Set to FALSE to use system zookeeper library instead of bundled" ${NOT_UNBUNDLED})
 include (cmake/find_zookeeper.cmake)
 
+option (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY "Set to FALSE to use system double-conversion library instead of bundled" ${NOT_UNBUNDLED})
+include (${ClickHouse_SOURCE_DIR}/cmake/find_double-conversion.cmake)
+
 #TODO: option (USE_INTERNAL_RE2_LIBRARY "Set to FALSE to use system re2 library instead of bundled" ${NOT_UNBUNDLED})
 set (USE_INTERNAL_RE2_LIBRARY ON)
 include (${ClickHouse_SOURCE_DIR}/cmake/find_re2.cmake)
