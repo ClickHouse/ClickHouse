@@ -1,14 +1,9 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libzstd/include/)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libsparsehash)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libre2/)
-include_directories (BEFORE ${ClickHouse_BINARY_DIR}/contrib/libre2/)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
 include_directories (${ODBC_INCLUDE_DIRECTORIES})
 
@@ -16,6 +11,10 @@ if (NOT NO_WERROR)
 	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
 	set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
+
+include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
+
+find_package (Threads)
 
 add_subdirectory (src)
 
@@ -118,7 +117,6 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
 		PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
-
 if (NOT AARCH64)
 	set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 endif()
@@ -129,21 +127,19 @@ else()
     set(PLATFORM_LIBS "")
 endif()
 
-include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
-
-find_package (Threads)
-
 target_link_libraries(dbms
 	common
 	zkutil
 	mysqlxx
 	cityhash farmhash metrohash
-	lz4 zstd
+	${LZ4_LIBRARY}
+	${ZSTD_LIBRARY}
 	string_utils
-	double-conversion
+	${DOUBLE_CONVERSION_LIBRARY}
 	${ZLIB_LIBRARIES}
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
-	re2 re2_st
+	${RE2_LIBRARY}
+	${RE2_ST_LIBRARY}
 	${OPENSSL_CRYPTO_LIBRARY}
 	${Boost_SYSTEM_LIBRARY}
 	${Poco_Data_LIBRARY}

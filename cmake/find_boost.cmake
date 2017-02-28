@@ -1,3 +1,5 @@
+option (USE_INTERNAL_BOOST_LIBRARY "Set to FALSE to use system boost library instead of bundled" ${NOT_UNBUNDLED})
+
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
 	set (Boost_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
 	set (BOOST_ROOT "/usr/local")
@@ -16,6 +18,7 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
 endif ()
 
 if (NOT Boost_SYSTEM_LIBRARY)
+	add_definitions(-DBOOST_SYSTEM_NO_DEPRECATED)
 	set (USE_INTERNAL_BOOST_LIBRARY 1)
 	set (Boost_PROGRAM_OPTIONS_LIBRARY boost_program_options_internal)
 	set (Boost_SYSTEM_LIBRARY boost_system_internal)
@@ -24,4 +27,4 @@ if (NOT Boost_SYSTEM_LIBRARY)
 	include_directories (BEFORE ${Boost_INCLUDE_DIRS})
 endif ()
 
-message(STATUS "Using Boost: ${Boost_INCLUDE_DIRS} : ${Boost_PROGRAM_OPTIONS_LIBRARY},${Boost_SYSTEM_LIBRARY},${Boost_FILESYSTEM_LIBRARY}")
+message (STATUS "Using Boost: ${Boost_INCLUDE_DIRS} : ${Boost_PROGRAM_OPTIONS_LIBRARY},${Boost_SYSTEM_LIBRARY},${Boost_FILESYSTEM_LIBRARY}")
