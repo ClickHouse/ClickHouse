@@ -26,12 +26,25 @@ public:
 private:
 	struct Output
 	{
-		std::shared_ptr<WriteBufferFromHTTPServerResponse> out;
-		/// Used for sending response. Points to 'out', or to CompressedWriteBuffer(*out), depending on settings.
-		std::shared_ptr<WriteBuffer> out_maybe_compressed;
+		/* Raw data
+		 * ↓
+		 * CascadeWriteBuffer out_maybe_delayed_and_compressed (optional)
+		 * ↓ (forwards data if an overflow is occur or explicitly via pushDelayedResults)
+		 * CompressedWriteBuffer out_maybe_compressed (optional)
+		 * ↓
+		 * WriteBufferFromHTTPServerResponse out
+		 */
 
-		std::shared_ptr<CascadeWriteBuffer> delayed_out_raw;
-		std::shared_ptr<WriteBuffer> delayed_out_maybe_compressed;
+		std::shared_ptr<WriteBufferFromHTTPServerResponse> out;
+		/// Points to 'out' or to CompressedWriteBuffer(*out), depending on settings.
+		std::shared_ptr<WriteBuffer> out_maybe_compressed;
+		/// Points to 'out' or to CompressedWriteBuffer(*out) or to CascadeWriteBuffer.
+		std::shared_ptr<WriteBuffer> out_maybe_delayed_and_compressed;
+
+		inline bool hasDelayed() const
+		{
+			return out_maybe_delayed_and_compressed != out_maybe_compressed;
+		}
 	};
 
 	Server & server;
@@ -50,6 +63,8 @@ private:
 	void trySendExceptionToClient(const std::string & s, int exception_code,
 		Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
 		Output & used_output);
+
+	void pushDelayedResults(Output & used_output);
 };
 
 }
