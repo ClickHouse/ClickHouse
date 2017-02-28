@@ -13,6 +13,13 @@ if (NOT NO_WERROR)
 	set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
 
+include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
+
+option (USE_INTERNAL_LZ4_LIBRARY "Set to FALSE to use system lz4 library instead of bundled" ${NOT_UNBUNDLED})
+include (${ClickHouse_SOURCE_DIR}/cmake/find_lz4.cmake)
+
+find_package (Threads)
+
 add_subdirectory (src)
 
 add_library(string_utils
@@ -114,7 +121,6 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
 		PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
-
 if (NOT AARCH64)
 	set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 endif()
@@ -124,14 +130,6 @@ if (CMAKE_SYSTEM MATCHES "FreeBSD")
 else()
     set(PLATFORM_LIBS "")
 endif()
-
-
-include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
-
-option (USE_INTERNAL_LZ4_LIBRARY "Set to FALSE to use system lz4 library instead of bundled" ${NOT_UNBUNDLED})
-include (${ClickHouse_SOURCE_DIR}/cmake/find_lz4.cmake)
-
-find_package (Threads)
 
 target_link_libraries(dbms
 	common
