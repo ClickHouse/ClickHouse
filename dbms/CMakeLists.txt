@@ -15,9 +15,6 @@ endif ()
 
 include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
 
-option (USE_INTERNAL_LZ4_LIBRARY "Set to FALSE to use system lz4 library instead of bundled" ${NOT_UNBUNDLED})
-include (${ClickHouse_SOURCE_DIR}/cmake/find_lz4.cmake)
-
 find_package (Threads)
 
 add_subdirectory (src)

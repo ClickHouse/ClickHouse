@@ -179,6 +179,9 @@ include (cmake/find_zstd.cmake)
 option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ${NOT_UNBUNDLED})
 include (cmake/find_poco.cmake)
 
+option (USE_INTERNAL_LZ4_LIBRARY "Set to FALSE to use system lz4 library instead of bundled" ${NOT_UNBUNDLED})
+include (${ClickHouse_SOURCE_DIR}/cmake/find_lz4.cmake)
+
 include (cmake/find_libtool.cmake)
 include (cmake/find_rt.cmake)
 include (cmake/find_readline_edit.cmake)
