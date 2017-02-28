@@ -180,7 +180,10 @@ option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library inste
 include (cmake/find_poco.cmake)
 
 option (USE_INTERNAL_LZ4_LIBRARY "Set to FALSE to use system lz4 library instead of bundled" ${NOT_UNBUNDLED})
-include (${ClickHouse_SOURCE_DIR}/cmake/find_lz4.cmake)
+include (cmake/find_lz4.cmake)
+
+option (USE_INTERNAL_SPARCEHASH_LIBRARY "Set to FALSE to use system sparsehash library instead of bundled" ${NOT_UNBUNDLED})
+include (cmake/find_sparsehash.cmake)
 
 include (cmake/find_libtool.cmake)
 include (cmake/find_rt.cmake)
@@ -190,11 +193,11 @@ option (USE_INTERNAL_ZOOKEEPER_LIBRARY "Set to FALSE to use system zookeeper lib
 include (cmake/find_zookeeper.cmake)
 
 option (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY "Set to FALSE to use system double-conversion library instead of bundled" ${NOT_UNBUNDLED})
-include (${ClickHouse_SOURCE_DIR}/cmake/find_double-conversion.cmake)
+include (cmake/find_double-conversion.cmake)
 
 #TODO: option (USE_INTERNAL_RE2_LIBRARY "Set to FALSE to use system re2 library instead of bundled" ${NOT_UNBUNDLED})
 set (USE_INTERNAL_RE2_LIBRARY ON)
-include (${ClickHouse_SOURCE_DIR}/cmake/find_re2.cmake)
+include (cmake/find_re2.cmake)
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
 	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" OFF)

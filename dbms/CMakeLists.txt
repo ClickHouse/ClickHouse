@@ -4,7 +4,6 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include/)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libsparsehash)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
 include_directories (${ODBC_INCLUDE_DIRECTORIES})
 
