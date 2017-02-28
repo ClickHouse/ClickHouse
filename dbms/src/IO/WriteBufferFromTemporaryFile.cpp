@@ -70,7 +70,7 @@ public:
 };
 
 
-ReadBufferPtr WriteBufferFromTemporaryFile::getReadBuffer()
+ReadBufferPtr WriteBufferFromTemporaryFile::getReadBufferImpl()
 {
 	/// ignore buffer, write all data to file and reread it from disk
 	sync();

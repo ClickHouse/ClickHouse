@@ -119,6 +119,40 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
 	return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
 }
 
+void HTTPHandler::pushDelayedResults(Output & used_output)
+{
+	std::vector<WriteBufferPtr> write_buffers;
+	std::vector<ReadBufferPtr> read_buffers;
+	std::vector<ReadBuffer *> read_buffers_raw_ptr;
+
+	auto cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed.get());
+	if (!cascade_buffer)
+		throw Exception("Expected CascadeWriteBuffer", ErrorCodes::LOGICAL_ERROR);
+
+	cascade_buffer->getResultBuffers(write_buffers);
+
+	if (write_buffers.size() != 2)
+		throw Exception("Exactly 2 buffers are required to overwrite result into HTTP response", ErrorCodes::LOGICAL_ERROR);
+
+	for (auto & write_buf : write_buffers)
+	{
+		IReadableWriteBuffer * write_buf_concrete;
+		ReadBufferPtr reread_buf;
+
+		if (write_buf
+			&& (write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
+			&& (reread_buf = write_buf_concrete->tryGetReadBuffer()))
+		{
+			read_buffers.emplace_back(reread_buf);
+			read_buffers_raw_ptr.emplace_back(reread_buf.get());
+		}
+	}
+
+	ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
+	copyData(concat_read_buffer, *used_output.out);
+}
+
+
 HTTPHandler::HTTPHandler(Server & server_)
 	: server(server_)
 	, log(&Logger::get("HTTPHandler"))
@@ -194,19 +228,18 @@ void HTTPHandler::processQuery(
 	size_t response_buffer_size = params.getParsed<size_t>("buffer_size", DBMS_DEFAULT_BUFFER_SIZE);
 	response_buffer_size = response_buffer_size ? response_buffer_size : DBMS_DEFAULT_BUFFER_SIZE;
 
-	auto response_raw = std::make_shared<WriteBufferFromHTTPServerResponse>(
-		response, client_supports_http_compression, http_response_compression_method, response_buffer_size);
-
-	WriteBufferPtr response_maybe_compressed;
-
-	size_t result_buffer_memory_size = params.getParsed<size_t>("result_buffer_size", 0);
-	bool use_memory_buffer = result_buffer_memory_size;
-
 	bool result_buffer_overflow_to_disk = params.get("result_buffer_on_overflow", "http") == "disk";
 
-	if (use_memory_buffer)
+	used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
+		response, client_supports_http_compression, http_response_compression_method, response_buffer_size);
+	if (internal_compression)
+		used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
+	else
+		used_output.out_maybe_compressed = used_output.out;
+
+	if (response_buffer_size > 0)
 	{
-		CascadeWriteBuffer::WriteBufferPtrs concat_buffers1{ std::make_shared<MemoryWriteBuffer>(result_buffer_memory_size) };
+		CascadeWriteBuffer::WriteBufferPtrs concat_buffers1{ std::make_shared<MemoryWriteBuffer>(response_buffer_size) };
 		CascadeWriteBuffer::WriteBufferConstructors concat_buffers2{};
 
 		if (result_buffer_overflow_to_disk)
@@ -222,37 +255,26 @@ void HTTPHandler::processQuery(
 		}
 		else
 		{
-			auto rewrite_memory_buffer_to_http_and_continue = [response_raw] (const WriteBufferPtr & prev_buf)
+			auto rewrite_memory_buffer_and_forward = [next_buffer = used_output.out_maybe_compressed] (const WriteBufferPtr & prev_buf)
 			{
-				auto memory_write_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
+				auto prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
+				if (!prev_memory_buffer)
+					throw Exception("Expected MemoryWriteBuffer", ErrorCodes::LOGICAL_ERROR);
 
-				if (!memory_write_buffer)
-					throw Exception("Memory buffer was not allocated", ErrorCodes::LOGICAL_ERROR);
+				copyData(*prev_memory_buffer->tryGetReadBuffer(), *next_buffer);
 
-				auto memory_read_buffer = memory_write_buffer->getReadBuffer();
-				copyData(*memory_read_buffer, *response_raw);
-
-				return response_raw;
+				return next_buffer;
 			};
 
-			concat_buffers2.emplace_back(rewrite_memory_buffer_to_http_and_continue);
+			concat_buffers2.emplace_back(rewrite_memory_buffer_and_forward);
 		}
 
-		used_output.out = response_raw;
-		used_output.delayed_out_raw = std::make_shared<CascadeWriteBuffer>(std::move(concat_buffers1), std::move(concat_buffers2));
-		if (internal_compression)
-			used_output.delayed_out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.delayed_out_raw);
-		else
-			used_output.delayed_out_maybe_compressed = used_output.delayed_out_raw;
-		used_output.out_maybe_compressed = used_output.delayed_out_maybe_compressed;
+		used_output.out_maybe_delayed_and_compressed = std::make_shared<CascadeWriteBuffer>(
+			std::move(concat_buffers1), std::move(concat_buffers2));
 	}
 	else
 	{
-		used_output.out = response_raw;
-		if (internal_compression)
-			used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*response_raw);
-		else
-			used_output.out_maybe_compressed = response_raw;
+		used_output.out_maybe_delayed_and_compressed = used_output.out_maybe_compressed;
 	}
 
 	std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query_param);
@@ -409,48 +431,11 @@ void HTTPHandler::processQuery(
 	if (settings.send_progress_in_http_headers)
 		context.setProgressCallback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
 
-	executeQuery(*in, *used_output.out_maybe_compressed, /* allow_into_outfile = */ false, context,
+	executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
 		[&response] (const String & content_type) { response.setContentType(content_type); });
 
-	if (use_memory_buffer)
-	{
-		std::vector<WriteBufferPtr> write_buffers;
-		used_output.delayed_out_raw->getResultBuffers(write_buffers);
-
-		std::vector<ReadBufferPtr> read_buffers;
-		ConcatReadBuffer::ReadBuffers read_buffers_raw_ptr;
-		for (auto & write_buf : write_buffers)
-		{
-			IReadableWriteBuffer * write_buf_concrete;
-			if (write_buf && (write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get())))
-			{
-				read_buffers.emplace_back(write_buf_concrete->getReadBuffer());
-				read_buffers_raw_ptr.emplace_back(read_buffers.back().get());
-			}
-		}
-
-		if (result_buffer_overflow_to_disk)
-		{
-			/// All results in concat buffer
-			if (read_buffers_raw_ptr.empty())
-				throw Exception("There are no buffers to overwrite result into response", ErrorCodes::LOGICAL_ERROR);
-
-			ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
-			copyData(concat_read_buffer, *used_output.out);
-		}
-		else
-		{
-			/// Results could be either in the first buffer, or they could be already pushed to response
-			if (!write_buffers.at(1))
-			{
-				/// Results was not pushed to reponse
-				copyData(*read_buffers.at(0), *used_output.out);
-			}
-		}
-
-		used_output.delayed_out_raw.reset();
-		used_output.delayed_out_maybe_compressed.reset();
-	}
+	if (used_output.hasDelayed())
+		pushDelayedResults(used_output);
 
 	/// Send HTTP headers with code 200 if no exception happened and the data is still not sent to
 	/// the client.
@@ -496,8 +481,10 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 			/// Note that the error message will possibly be sent after some data.
 			/// Also HTTP code 200 could have already been sent.
 
-			/** If buffer has data, and that data wasn't sent yet, then no need to send that data */
-			if (used_output.out->count() - used_output.out->offset() == 0)
+			/// If buffer has data, and that data wasn't sent yet, then no need to send that data
+			bool data_sent = used_output.out->count() != used_output.out->offset();
+
+			if (!data_sent)
 			{
 				used_output.out_maybe_compressed->position() = used_output.out_maybe_compressed->buffer().begin();
 				used_output.out->position() = used_output.out->buffer().begin();
@@ -511,7 +498,7 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 	}
 	catch (...)
 	{
-		LOG_ERROR(log, "Cannot send exception to client");
+		tryLogCurrentException(log, "Cannot send exception to client");
 	}
 }
 
@@ -532,7 +519,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 			response.setChunkedTransferEncoding(true);
 
 		HTMLForm params(request);
-		with_stacktrace = parse<bool>(params.get("stacktrace", "0"));
+		with_stacktrace = params.getParsed<bool>("stacktrace", false);
 
 		processQuery(request, params, response, used_output);
 		LOG_INFO(log, "Done processing query");

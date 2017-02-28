@@ -23,11 +23,11 @@ public:
 
 	void nextImpl() override;
 
-	std::shared_ptr<ReadBuffer> getReadBuffer() override;
-
 	~MemoryWriteBuffer() override;
 
 protected:
+
+	std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
 
 	const size_t max_total_size;
 	const size_t initial_chunk_size;

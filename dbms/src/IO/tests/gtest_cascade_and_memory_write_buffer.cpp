@@ -21,6 +21,7 @@ static std::string makeTestArray(size_t size)
 	return res;
 }
 
+
 static void testCascadeBufferRedability(
 	std::string data,
 	CascadeWriteBuffer::WriteBufferPtrs && arg1,
@@ -44,7 +45,7 @@ static void testCascadeBufferRedability(
 		auto wbuf_readable = dynamic_cast<IReadableWriteBuffer *>(wbuf.get());
 		ASSERT_FALSE(!wbuf_readable);
 
-		auto rbuf = wbuf_readable->getReadBuffer();
+		auto rbuf = wbuf_readable->tryGetReadBuffer();
 		ASSERT_FALSE(!rbuf);
 
 		read_buffers.emplace_back(rbuf);
@@ -116,14 +117,49 @@ try
 		);
 	}
 }
-catch (const DB::Exception & e)
+catch (...)
 {
 	std::cerr << getCurrentExceptionMessage(true) << "\n";
 	throw;
 }
-catch (...)
+
+
+static void checkMemoryWriteBuffer(std::string data, MemoryWriteBuffer && buf)
 {
-	throw;
+	buf.write(&data[0], data.size());
+	ASSERT_EQ(buf.count(), data.size());
+
+	auto rbuf = buf.tryGetReadBuffer();
+	ASSERT_TRUE(rbuf != nullptr);
+	ASSERT_TRUE(buf.tryGetReadBuffer() == nullptr);
+
+	String res;
+	{
+		WriteBufferFromString res_buf(res);
+		copyData(*rbuf, res_buf);
+	}
+
+	ASSERT_EQ(data, res);
+}
+
+
+TEST(MemoryWriteBuffer, WriteAndReread)
+{
+	for (size_t s = 0; s < 2500000; s += 500000)
+	{
+		std::string data = makeTestArray(s);
+		size_t min_s = std::max(s, 1ul);
+
+		checkMemoryWriteBuffer(data, MemoryWriteBuffer(min_s));
+		checkMemoryWriteBuffer(data, MemoryWriteBuffer(min_s * 2, min_s));
+		checkMemoryWriteBuffer(data, MemoryWriteBuffer(min_s * 4, min_s));
+
+		if (s > 1)
+		{
+			MemoryWriteBuffer buf(s - 1);
+			EXPECT_THROW(buf.write(&data[0], data.size()), DB::Exception);
+		}
+	}
 }
 
 
@@ -141,7 +177,7 @@ try
 		std::string tmp_filename = buf->getFileName();
 		ASSERT_EQ(tmp_template.size(), tmp_filename.size());
 
-		auto reread_buf = buf->getReadBuffer();
+		auto reread_buf = buf->tryGetReadBuffer();
 		std::string decoded_data;
 		{
 			WriteBufferFromString wbuf_decode(decoded_data);
