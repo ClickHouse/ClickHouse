@@ -15,11 +15,11 @@ public:
 	/// path_template examle "/opt/clickhouse/tmp/data.XXXXXX"
 	static Ptr create(const std::string & path_template_);
 
-	std::shared_ptr<ReadBuffer> getReadBuffer() override;
-
 	~WriteBufferFromTemporaryFile() override;
 
 protected:
+
+	std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
 
 	WriteBufferFromTemporaryFile(int fd, const std::string & tmp_path)
 	: WriteBufferFromFile(fd, tmp_path)

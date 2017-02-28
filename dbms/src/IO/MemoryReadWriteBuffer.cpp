@@ -49,11 +49,8 @@ private:
 		{
 			internalBuffer() = *chunk_head;
 
-			auto next_chunk = chunk_head;
-			++next_chunk;
-
 			/// It is last chunk, it should be truncated
-			if (next_chunk != chunk_list.end())
+			if (std::next(chunk_head) != chunk_list.end())
 				buffer() = internalBuffer();
 			else
 				buffer() = Buffer(internalBuffer().begin(), end_pos);
@@ -123,7 +120,7 @@ void MemoryWriteBuffer::addChunk()
 	set(chunk_tail->begin(), chunk_tail->size());
 }
 
-std::shared_ptr<ReadBuffer> MemoryWriteBuffer::getReadBuffer()
+std::shared_ptr<ReadBuffer> MemoryWriteBuffer::getReadBufferImpl()
 {
 	auto res = std::make_shared<ReadBufferFromMemoryWriteBuffer>(std::move(*this));
 
