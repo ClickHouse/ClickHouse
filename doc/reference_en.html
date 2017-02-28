@@ -2022,6 +2022,25 @@ If external aggregation is turned on and total memory consumption was less than 
 If you have an ORDER BY clause with some small LIMIT after a GROUP BY, then ORDER BY will not consume significant amount of memory. But if no LIMIT is provided, don't forget to turn on external sorting (%%max_bytes_before_external_sort%%).
 
 
+<h5>LIMIT N BY modifier</h5>
+
+LIMIT %%N%% BY %%COLUMN%% allows you to restrict top %%N%% rows per each group of %%COLUMN%%
+
+Example:
+
+%%SELECT
+    domainWithoutWWW(URL) AS domain,
+    domainWithoutWWW(REFERRER_URL) AS referrer,
+    count() cnt
+FROM hits
+GROUP BY domain, referrer
+ORDER BY cnt DESC
+LIMIT 5 BY domain
+%%
+
+will select top 5 referrers for each domain.
+
+
 <h4>HAVING clause</h4>
 
 Allows filtering the result received after GROUP BY, similar to the WHERE clause.
