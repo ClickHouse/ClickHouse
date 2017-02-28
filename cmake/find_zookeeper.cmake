@@ -1,4 +1,4 @@
-﻿option (USE_INTERNAL_ZOOKEEPER_LIBRARY "Set to FALSE to use system zookeeper library instead of bundled" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_ZOOKEEPER_LIBRARY "Set to FALSE to use system zookeeper library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_ZOOKEEPER_LIBRARY)
 	find_library (ZOOKEEPER_LIBRARY zookeeper_mt)

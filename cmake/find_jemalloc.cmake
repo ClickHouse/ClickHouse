@@ -1,4 +1,4 @@
-﻿option (ENABLE_JEMALLOC "Set to TRUE to use jemalloc instead of tcmalloc" OFF)
+option (ENABLE_JEMALLOC "Set to TRUE to use jemalloc instead of tcmalloc" OFF)
 
 if (ENABLE_JEMALLOC)
 	find_package(JeMalloc)

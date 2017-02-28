@@ -1,4 +1,4 @@
-﻿option (USE_INTERNAL_BOOST_LIBRARY "Set to FALSE to use system boost library instead of bundled" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_BOOST_LIBRARY "Set to FALSE to use system boost library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
 	set (Boost_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})

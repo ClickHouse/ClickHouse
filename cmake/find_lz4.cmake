@@ -1,4 +1,4 @@
-﻿option (USE_INTERNAL_LZ4_LIBRARY "Set to FALSE to use system lz4 library instead of bundled" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_LZ4_LIBRARY "Set to FALSE to use system lz4 library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_LZ4_LIBRARY)
 	find_library (LZ4_LIBRARY lz4)

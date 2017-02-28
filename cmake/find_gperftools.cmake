@@ -1,4 +1,4 @@
-﻿if (CMAKE_SYSTEM MATCHES "FreeBSD")
+if (CMAKE_SYSTEM MATCHES "FreeBSD")
 	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" OFF)
 else ()
 	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ${NOT_UNBUNDLED})

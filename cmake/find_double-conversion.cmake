@@ -1,4 +1,4 @@
-﻿option (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY "Set to FALSE to use system double-conversion library instead of bundled" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY "Set to FALSE to use system double-conversion library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
 	find_library (DOUBLE_CONVERSION_LIBRARY double-conversion)

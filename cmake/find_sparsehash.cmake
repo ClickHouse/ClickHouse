@@ -1,4 +1,4 @@
-﻿option (USE_INTERNAL_SPARCEHASH_LIBRARY "Set to FALSE to use system sparsehash library instead of bundled" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_SPARCEHASH_LIBRARY "Set to FALSE to use system sparsehash library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_SPARCEHASH_LIBRARY)
 	find_path (SPARCEHASH_INCLUDE_DIR NAMES sparsehash/sparse_hash_map PATHS ${SPARCEHASH_INCLUDE_PATHS})
