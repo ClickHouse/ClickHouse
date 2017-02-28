@@ -1,3 +1,5 @@
+﻿option (USE_INTERNAL_LZ4_LIBRARY "Set to FALSE to use system lz4 library instead of bundled" ${NOT_UNBUNDLED})
+
 if (NOT USE_INTERNAL_LZ4_LIBRARY)
 	find_library (LZ4_LIBRARY lz4)
 	find_path (LZ4_INCLUDE_DIR NAMES lz4.h PATHS ${LZ4_INCLUDE_PATHS})

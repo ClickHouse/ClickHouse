@@ -1,3 +1,5 @@
+﻿option (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY "Set to FALSE to use system double-conversion library instead of bundled" ${NOT_UNBUNDLED})
+
 if (NOT USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
 	find_library (DOUBLE_CONVERSION_LIBRARY double-conversion)
 	find_path (DOUBLE_CONVERSION_INCLUDE_DIR NAMES double-conversion/double-conversion.h PATHS ${DOUBLE_CONVERSION_INCLUDE_PATHS})

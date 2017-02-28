@@ -1,3 +1,6 @@
+﻿#TODO: option (USE_INTERNAL_RE2_LIBRARY "Set to FALSE to use system re2 library instead of bundled" ${NOT_UNBUNDLED})
+set (USE_INTERNAL_RE2_LIBRARY ON)
+
 if (NOT USE_INTERNAL_RE2_LIBRARY)
 	# TODO! re2_st
 	find_library (RE2_LIBRARY re2)
