@@ -20,7 +20,7 @@ CascadeWriteBuffer::CascadeWriteBuffer(WriteBufferPtrs && prepared_sources_, Wri
 	prepared_sources.resize(num_sources);
 
 	curr_buffer_num = 0;
-	curr_buffer = getNextBuffer();
+	curr_buffer = setNextBuffer();
 	set(curr_buffer->buffer().begin(), curr_buffer->buffer().size());
 }
 
@@ -41,7 +41,7 @@ void CascadeWriteBuffer::nextImpl()
 
 			/// good situation, fetch next WriteBuffer
 			++curr_buffer_num;
-			curr_buffer = getNextBuffer();
+			curr_buffer = setNextBuffer();
 		}
 		else
 			throw;
@@ -61,7 +61,7 @@ void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
 }
 
 
-WriteBuffer * CascadeWriteBuffer::getNextBuffer()
+WriteBuffer * CascadeWriteBuffer::setNextBuffer()
 {
 	if (first_lazy_source_num <= curr_buffer_num && curr_buffer_num < num_sources)
 	{

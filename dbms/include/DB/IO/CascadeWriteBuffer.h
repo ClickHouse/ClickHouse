@@ -27,9 +27,14 @@ public:
 	/// Should be called once
 	void getResultBuffers(WriteBufferPtrs & res);
 
+	const WriteBuffer * getCurrentBuffer() const
+	{
+		return curr_buffer;
+	}
+
 private:
 
-	WriteBuffer * getNextBuffer();
+	WriteBuffer * setNextBuffer();
 
 	WriteBufferPtrs prepared_sources;
 	WriteBufferConstructors lazy_sources;
