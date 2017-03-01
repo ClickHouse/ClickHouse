@@ -9,10 +9,11 @@ RUN apt-get update && \
     apt-get install --allow-unauthenticated -y clickhouse-server-common && \
     rm -rf /var/lib/apt/lists/* /var/cache/
 
-RUN chown -R metrika /etc/clickhouse-server/
+RUN chown -R clickhouse /etc/clickhouse-server/
 
-USER metrika
+USER clickhouse
 EXPOSE 9000 8123 9009
+VOLUME /var/lib/clickhouse
 
 ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
 
