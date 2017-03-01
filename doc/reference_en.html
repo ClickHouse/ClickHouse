@@ -2024,21 +2024,23 @@ If you have an ORDER BY clause with some small LIMIT after a GROUP BY, then ORDE
 
 <h5>LIMIT N BY modifier</h5>
 
-LIMIT %%N%% BY %%COLUMN%% allows you to restrict top %%N%% rows per each group of %%COLUMN%%
+LIMIT %%N%% BY %%COLUMNS%% allows you to restrict top %%N%% rows per each group of %%COLUMNS%%. %%LIMIT N BY COLUMNS%% is unrelated to %%LIMIT BY%% clause. Key for %%LIMIT N BY%% could contain arbitrary number of columns and expressions.
 
 Example:
 
 %%SELECT
     domainWithoutWWW(URL) AS domain,
     domainWithoutWWW(REFERRER_URL) AS referrer,
+    device_type,
     count() cnt
 FROM hits
-GROUP BY domain, referrer
+GROUP BY domain, referrer, device_type
 ORDER BY cnt DESC
-LIMIT 5 BY domain
+LIMIT 5 BY domain, device_type
+LIMIT 100
 %%
 
-will select top 5 referrers for each domain.
+will select top 5 referrers for each domain - device type pair, total number of rows - 100.
 
 
 <h4>HAVING clause</h4>
