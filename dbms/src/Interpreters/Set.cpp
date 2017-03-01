@@ -100,12 +100,18 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 			materialized_columns.emplace_back(converted);
 			key_columns.back() = materialized_columns.back().get();
 		}
+	}
 
-		/** Flatten tuples. For case when written
-		  *  (a, b) IN (SELECT (a, b) FROM table)
-		  * instead of more typical
-		  *  (a, b) IN (SELECT a, b FROM table)
-		  */
+	/** Flatten tuples. For case when written
+	  *  (a, b) IN (SELECT (a, b) FROM table)
+	  * instead of more typical
+	  *  (a, b) IN (SELECT a, b FROM table)
+	  *
+	  * Avoid flatten in case then we have more than one column:
+	  * Ex.: 1, (2, 3) become just 1, 2, 3
+	  */
+	if (keys_size == 1)
+	{
 		if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(key_columns.back()))
 		{
 			key_columns.pop_back();
@@ -229,7 +235,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 				if (value.isNull())
 					break;
 
-				tuple_values[j] = value;	/// TODO Сделать move семантику для Field.
+				tuple_values[j] = value;
 			}
 
 			if (j == tuple_size)
