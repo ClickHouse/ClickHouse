@@ -1259,10 +1259,10 @@ active - учитывать только активные куски. Неакт
 %%
 $ ls -l /opt/clickhouse/data/test/visits/
 total 48
-drwxrwxrwx 2 metrika metrika 20480 мая   13 02:58 20140317_20140323_2_2_0
-drwxrwxrwx 2 metrika metrika 20480 мая   13 02:58 20140317_20140323_4_4_0
-drwxrwxrwx 2 metrika metrika  4096 мая   13 02:55 detached
--rw-rw-rw- 1 metrika metrika     2 мая   13 02:58 increment.txt
+drwxrwxrwx 2 clickhouse clickhouse 20480 мая   13 02:58 20140317_20140323_2_2_0
+drwxrwxrwx 2 clickhouse clickhouse 20480 мая   13 02:58 20140317_20140323_4_4_0
+drwxrwxrwx 2 clickhouse clickhouse  4096 мая   13 02:55 detached
+-rw-rw-rw- 1 clickhouse clickhouse     2 мая   13 02:58 increment.txt
 %%
 
 Здесь 20140317_20140323_2_2_0, 20140317_20140323_4_4_0 - директории кусков.
@@ -3033,7 +3033,7 @@ min_bytes, max_bytes - условие на количество байт в бу
 Если обнаруживается, что локальный набор данных слишком сильно отличается от ожидаемого, то срабатывает защитный механизм - сервер сообщает об этом в лог и отказывается запускаться. Это сделано, так как такой случай может свидетельствовать об ошибке конфигурации - например, если реплика одного шарда была случайно сконфигурирована, как реплика другого шарда. Тем не менее, пороги защитного механизма поставлены довольно низкими, и такая ситуация может возникнуть и при обычном восстановлении после сбоя. В этом случае, восстановление делается полуавтоматически - "по кнопке".
 
 Для запуска восстановления, создайте в ZooKeeper узел <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> с любым содержимым или выполните команду для восстановления всех реплицируемых таблиц:
-%%sudo -u metrika touch /opt/clickhouse/flags/force_restore_data%%
+%%sudo -u clickhouse touch /opt/clickhouse/flags/force_restore_data%%
 Затем запустите сервер. При старте, сервер удалит эти флаги и запустит восстановление.
 
 
@@ -3049,7 +3049,7 @@ min_bytes, max_bytes - условие на количество байт в бу
 (Альтернативный вариант - запустить сервер и сделать самостоятельно все запросы ATTACH TABLE, которые должны были бы быть в соответствующих .sql файлах в %%/opt/clickhouse/metadata/%%.)
 
 4. Создайте в ZooKeeper узел <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> с любым содержимым или выполните команду для восстановления всех реплицируемых таблиц:
-%%sudo -u metrika touch /opt/clickhouse/flags/force_restore_data%%
+%%sudo -u clickhouse touch /opt/clickhouse/flags/force_restore_data%%
 Затем запустите сервер (перезапустите, если уже запущен). Данные будут скачаны с реплик.
 
 В качестве альтернативного варианта восстановления, вы можете удалить из ZooKeeper информацию о потерянной реплике - <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i></span>, и затем создать реплику заново, как написано в разделе "Создание реплицируемых таблиц".
@@ -6649,7 +6649,7 @@ regions_names_*.txt: TabSeparated (без заголовка), столбцы:
             &lt;mysql&gt;
                 &lt;!- - Эти параметры могут быть указаны как снаружи (общие для всех реплик), так и внутри конкретной реплики - -&gt;
                 &lt;port&gt;3306&lt;/port&gt;
-                &lt;user&gt;metrika&lt;/user&gt;
+                &lt;user&gt;clickhouse&lt;/user&gt;
                 &lt;password&gt;qwerty&lt;/password&gt;
                 &lt;!- - Можно указать от одной до произвольного количества реплик для отказоустойчивости. - -&gt;
                 &lt;replica&gt;
