@@ -451,8 +451,8 @@ Server: src/dbms/src/Server/
 For the server, create a catalog with data, such as:
 
 %%
-/opt/clickhouse/data/default/
-/opt/clickhouse/metadata/default/
+/var/lib/clickhouse/data/default/
+/var/lib/clickhouse/metadata/default/
 %%
 
 (Configured in the server config.)
@@ -1233,11 +1233,11 @@ active - Only count active parts. Inactive parts are, for example, source parts 
 
 Another way to view a set of parts and partitions is to go into the directory with table data.
 The directory with data is
-/opt/clickhouse/data/<i>database</i>/<i>table</i>/,
-where /opt/clickhouse/ is the path to ClickHouse data, &#39;database&#39; is the database name, and &#39;table&#39; is the table name. Example:
+/var/lib/clickhouse/data/<i>database</i>/<i>table</i>/,
+where /var/lib/clickhouse/ is the path to ClickHouse data, &#39;database&#39; is the database name, and &#39;table&#39; is the table name. Example:
 
 %%
-$ ls -l /opt/clickhouse/data/test/visits/
+$ ls -l /var/lib/clickhouse/data/test/visits/
 total 48
 drwxrwxrwx 2 clickhouse clickhouse 20480 may   13 02:58 20140317_20140323_2_2_0
 drwxrwxrwx 2 clickhouse clickhouse 20480 may   13 02:58 20140317_20140323_4_4_0
@@ -1292,25 +1292,25 @@ So you can put data in the &#39;detached&#39; directory on one replica, and use 
 
 Creates a local backup of one or multiple partitions. The name can be the full name of the partition (for example, 201403), or its prefix (for example, 2014) - then the backup will be created for all the corresponding partitions.
 
-The query does the following: for a data snapshot at the time of execution, it creates hardlinks to table data in the directory /opt/clickhouse/shadow/N/...
-/opt/clickhouse/ is the working ClickHouse directory from the config.
+The query does the following: for a data snapshot at the time of execution, it creates hardlinks to table data in the directory /var/lib/clickhouse/shadow/N/...
+/var/lib/clickhouse/ is the working ClickHouse directory from the config.
 N is the incremental number of the backup.
-The same structure of directories is created inside the backup as inside /opt/clickhouse/.
+The same structure of directories is created inside the backup as inside /var/lib/clickhouse/.
 It also performs &#39;chmod&#39; for all files, forbidding writes to them.
 
 The backup is created almost instantly (but first it waits for current queries to the corresponding table to finish running). At first, the backup doesn&#39;t take any space on the disk. As the system works, the backup can take disk space, as data is modified. If the backup is made for old enough data, it won&#39;t take space on the disk.
 
-After creating the backup, data from /opt/clickhouse/shadow/ can be copied to the remote server and then deleted on the local server. The entire backup process is performed without stopping the server.
+After creating the backup, data from /var/lib/clickhouse/shadow/ can be copied to the remote server and then deleted on the local server. The entire backup process is performed without stopping the server.
 
 The ALTER ... FREEZE PARTITION query is not replicated. A local backup is only created on the local server.
 
-As an alternative, you can manually copy data from the /opt/clickhouse/data/database/table directory. But if you do this while the server is running, race conditions are possible when copying directories with files being added or changed, and the backup may be inconsistent. You can do this if the server isn&#39;t running - then the resulting data will be the same as after the ALTER TABLE t FREEZE PARTITION query.
+As an alternative, you can manually copy data from the /var/lib/clickhouse/data/database/table directory. But if you do this while the server is running, race conditions are possible when copying directories with files being added or changed, and the backup may be inconsistent. You can do this if the server isn&#39;t running - then the resulting data will be the same as after the ALTER TABLE t FREEZE PARTITION query.
 
-ALTER TABLE ... FREEZE PARTITION only copies data, not table metadata. To make a backup of table metadata, copy the file  /opt/clickhouse/metadata/database/table.sql
+ALTER TABLE ... FREEZE PARTITION only copies data, not table metadata. To make a backup of table metadata, copy the file  /var/lib/clickhouse/metadata/database/table.sql
 
 To restore from a backup:
 - Use the CREATE query to create the table if it doesn&#39;t exist. The query can be taken from an .sql file (replace ATTACH in it with CREATE).
-- Copy data from the data/database/table/ directory inside the backup to the /opt/clickhouse/data/database/table/detached/ directory.
+- Copy data from the data/database/table/ directory inside the backup to the /var/lib/clickhouse/data/database/table/detached/ directory.
 - Run ALTER TABLE ... ATTACH PARTITION YYYYMM queries where YYYYMM is the month, for every month.
 
 In this way, data from the backup will be added to the table.
@@ -1322,7 +1322,7 @@ Replication provides protection from device failures. If all data disappeared on
 
 For protection from device failures, you must use replication. For more information about replication, see the section &quot;Data replication&quot;.
 
-Backups protect against human error (accidentally deleting data, deleting the wrong data or in the wrong cluster, or corrupting data). For high-volume databases, it can be difficult to copy backups to remote servers. In such cases, to protect from human error, you can keep a backup on the same server (it will reside in /opt/clickhouse/shadow/).
+Backups protect against human error (accidentally deleting data, deleting the wrong data or in the wrong cluster, or corrupting data). For high-volume databases, it can be difficult to copy backups to remote servers. In such cases, to protect from human error, you can keep a backup on the same server (it will reside in /var/lib/clickhouse/shadow/).
 
 
 %%ALTER TABLE [db.]table FETCH PARTITION &#39;name&#39; FROM &#39;path-in-zookeeper&#39;%%
@@ -2043,7 +2043,7 @@ When floating point numbers are sorted, NaNs are separate from the other values.
 
 Less RAM is used if a small enough LIMIT is specified in addition to ORDER BY. Otherwise, the amount of memory spent is proportional to the volume of data for sorting. For distributed query processing, if GROUP BY is omitted, sorting is partially done on remote servers, and the results are merged on the requestor server. This means that for distributed sorting, the volume of data to sort can be greater than the amount of memory on a single server.
 
-If there is not enough RAM, it is possible to perform sorting in external memory (creating temporary files on a disk). Use the setting %%max_bytes_before_external_sort%% for this purpose. If it is set to 0 (the default), external sorting is disabled. If it is enabled, when the volume of data to sort reaches the specified number of bytes, the collected data is sorted and dumped into a temporary file. After all data is read, all the sorted files are merged and the results are output. Files are written to the /opt/clickhouse/tmp/ directory in the config (by default, but you can use the &#39;tmp_path&#39; parameter to change this setting).
+If there is not enough RAM, it is possible to perform sorting in external memory (creating temporary files on a disk). Use the setting %%max_bytes_before_external_sort%% for this purpose. If it is set to 0 (the default), external sorting is disabled. If it is enabled, when the volume of data to sort reaches the specified number of bytes, the collected data is sorted and dumped into a temporary file. After all data is read, all the sorted files are merged and the results are output. Files are written to the /var/lib/clickhouse/tmp/ directory in the config (by default, but you can use the &#39;tmp_path&#39; parameter to change this setting).
 
 Running a query may use more memory than &#39;max_bytes_before_external_sort&#39;. For this reason, this setting must have a value significantly smaller than &#39;max_memory_usage&#39;. As an example, if your server has 128 GB of RAM and you need to run a single query, set &#39;max_memory_usage&#39; to 100 GB, and &#39;max_bytes_before_external_sort&#39; to 80 GB.
 
@@ -2528,7 +2528,7 @@ You should be concerned about the sharding scheme in the following cases:
 - A large number of servers is used (hundreds or more) with a large number of small queries (queries of individual clients - websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, as we&#39;ve done in Yandex.Metrica, you can set up bi-level sharding: divide the entire cluster into &quot;layers&quot;, where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. Distributed tables are created for each layer, and a single shared distributed table is created for global queries.
 
 Data is written asynchronously. For an INSERT to a Distributed table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory:
-/opt/clickhouse/data/<i>database</i>/<i>table</i>/.
+/var/lib/clickhouse/data/<i>database</i>/<i>table</i>/.
 
 If the server ceased to exist or had a rough restart (for example, after a device failure) after an INSERT to a Distributed table, the inserted data might be lost. If a damaged data part is detected in the table directory, it is transferred to the &#39;broken&#39; subdirectory and no longer used.
 
@@ -2974,7 +2974,7 @@ When the server starts (or establishes a new session with ZooKeeper), it only ch
 If the local set of data differs too much from the expected one, a safety mechanism is triggered. The server enters this in the log and refuses to launch. The reason for this is that this case may indicate a configuration error, such as if a replica on a shard was accidentally configured like a replica on a different shard. However, the thresholds for this mechanism are set fairly low, and this situation might occur during normal failure recovery. In this case, data is restored semi-automatically - by &quot;pushing a button&quot;.
 
 To start recovery, create the node <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> in ZooKeeper with any content or run command to recover all replicated tables:
-%%sudo -u clickhouse touch /opt/clickhouse/flags/force_restore_data%%
+%%sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data%%
 Then launch the server. On start, the server deletes these flags and starts recovery.
 
 
@@ -2984,12 +2984,12 @@ If all data and metadata disappeared from one of the servers, follow these steps
 
 1. Install ClickHouse on the server. Define substitutions correctly in the config file that contains the shard identifier and replicas, if you use them.
 
-2. If you had unreplicated tables that must be manually duplicated on the servers, copy their data from a replica (in the directory <span class="inline-example">/opt/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>).
+2. If you had unreplicated tables that must be manually duplicated on the servers, copy their data from a replica (in the directory <span class="inline-example">/var/lib/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>).
 
-3. Copy table definitions located in %%/opt/clickhouse/metadata/%% from a replica. If a shard or replica identifier is defined explicitly in the table definitions, correct it so that it corresponds to this replica. (Alternatively, launch the server and make all the ATTACH TABLE queries that should have been in the .sql files in %%/opt/clickhouse/metadata/%%.)
+3. Copy table definitions located in %%/var/lib/clickhouse/metadata/%% from a replica. If a shard or replica identifier is defined explicitly in the table definitions, correct it so that it corresponds to this replica. (Alternatively, launch the server and make all the ATTACH TABLE queries that should have been in the .sql files in %%/var/lib/clickhouse/metadata/%%.)
 
 4. Create the <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> node in ZooKeeper with any content or run command to recover all replicated tables:
-%%sudo -u clickhouse touch /opt/clickhouse/flags/force_restore_data%%
+%%sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data%%
 Then launch the server (restart it if it is already running). Data will be downloaded from replicas.
 
 An alternative recovery option is to delete information about the lost replica from ZooKeeper ( <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i></span>), then create the replica again as described in &quot;Creating replicated tables&quot;.
@@ -3006,7 +3006,7 @@ If you had a MergeTree table that was manually replicated, you can convert it to
 If the data differs on various replicas, first sync it, or delete this data on all the replicas except one.
 
 Rename the existing MergeTree table, then create a ReplicatedMergeTree table with the old name.
-Move the data from the old table to the &#39;detached&#39; subdirectory inside the directory with the new table data (<span class="inline-example">/opt/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>).
+Move the data from the old table to the &#39;detached&#39; subdirectory inside the directory with the new table data (<span class="inline-example">/var/lib/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>).
 Then run ALTER TABLE ATTACH PART on one of the replicas to add these data parts to the working set.
 
 If exactly the same parts exist on the other replicas, they are added to the working set on them. If not, the parts are downloaded from the replica that has them.
@@ -3017,7 +3017,7 @@ If exactly the same parts exist on the other replicas, they are added to the wor
 Create a MergeTree table with a different name. Move all the data from the directory with the ReplicatedMergeTree table data to the new table&#39;s data directory. Then delete the ReplicatedMergeTree table and restart the server.
 
 If you want to get rid of a ReplicatedMergeTree table without launching the server:
-- Delete the corresponding .sql file in the metadata directory (%%/opt/clickhouse/metadata/%%).
+- Delete the corresponding .sql file in the metadata directory (%%/var/lib/clickhouse/metadata/%%).
 - Delete the corresponding path in ZooKeeper (<span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i></span>).
 After this, you can launch the server, create a MergeTree table, move the data to its directory, and then restart the server.
 
