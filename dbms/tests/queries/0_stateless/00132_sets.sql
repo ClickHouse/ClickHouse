@@ -19,3 +19,8 @@ SELECT ['Hello', 'world'] IN ('world');
 SELECT ['Hello', 'world'] NOT IN ('world');
 SELECT ['Hello', 'world'] NOT IN ('Hello', 'world');
 SELECT ['Hello', 'world'] NOT IN ('hello', 'world');
+SELECT number, tuple FROM (SELECT 1 AS number, (2, 3) AS tuple) WHERE (number, tuple) IN (((1, (2, 3)), (4, (5, 6))));
+SELECT number, tuple FROM (SELECT 2 AS number, (2, 3) AS tuple) WHERE (number, tuple) IN ((2, (2, 3)));
+SELECT number, tuple FROM (SELECT 3 AS number, (2, 3) AS tuple) WHERE (number, tuple) IN (3, (2, 3));
+SELECT number, tuple FROM (SELECT 4 AS number, (2, 3) AS tuple) WHERE (number, tuple) IN (SELECT (4, (2, 3)));
+SELECT number, tuple FROM (SELECT 5 AS number, (2, 3) AS tuple) WHERE (number, tuple) IN (SELECT 5, (2, 3));
