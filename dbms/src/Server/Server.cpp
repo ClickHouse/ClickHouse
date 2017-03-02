@@ -392,7 +392,7 @@ int Server::main(const std::vector<std::string> & args)
 	);
 
 	{
-		const std::string listen_host_string = config().getString("listen_host", "::");
+		const std::string listen_host_string = config().getString("listen_host", "::1 127.0.0.1");
 
 		std::vector<std::string> listen_hosts;
 		boost::split(listen_hosts, listen_host_string, boost::algorithm::is_any_of(",; \t\r\n"), boost::algorithm::token_compress_on);
