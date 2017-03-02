@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Storages/IStorage.h>
+#include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/IInterpreter.h>
 #include <DB/Storages/ColumnDefault.h>
@@ -55,6 +56,10 @@ public:
 private:
 	void createDatabase(ASTCreateQuery & create);
 	BlockIO createTable(ASTCreateQuery & create);
+	BlockIO createTableOnCluster(ASTCreateQuery & create);
+
+	ASTPtr createQueryWithoutCluster(ASTCreateQuery & create) const;
+	void writeToZookeeper(ASTPtr query, const std::vector<Cluster::Address>& addrs);
 
 	/// Calculate list of columns of table and return it.
 	ColumnsInfo setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
