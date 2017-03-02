@@ -26,6 +26,7 @@ def draw():
             max_coord += dx
             place[name] = [1, max_coord, 1, dx]
             max_coord += dx
+            plt.plot([max_coord - 2 * dx, max_coord], [1, 1])
     for line in open(TMP_FILE):
         numbers = line.split('\t')
         if len(numbers) <= 2:
