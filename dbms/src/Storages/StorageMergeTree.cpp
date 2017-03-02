@@ -346,7 +346,7 @@ bool StorageMergeTree::merge(
 
 	elem.merged_from.reserve(merging_tagger->parts.size());
 	for (const auto & part : merging_tagger->parts)
-	  elem.merged_from.push_back(part->name);
+		elem.merged_from.push_back(part->name);
 
 	auto new_part = merger.mergePartsToTemporaryPart(
 		merging_tagger->parts, merged_name, *merge_entry_ptr, aio_threshold, time(0), merging_tagger->reserved_space.get());
