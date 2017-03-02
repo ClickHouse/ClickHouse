@@ -411,8 +411,8 @@ struct ExtractWWW
 struct ExtractURLParameterImpl
 {
 	static void vector(const ColumnString::Chars_t & data,
-					    const ColumnString::Offsets_t & offsets,
-					    std::string pattern,
+						const ColumnString::Offsets_t & offsets,
+						std::string pattern,
 						ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size()  / 5);
@@ -484,8 +484,8 @@ struct ExtractURLParameterImpl
 struct CutURLParameterImpl
 {
 	static void vector(const ColumnString::Chars_t & data,
-					    const ColumnString::Offsets_t & offsets,
-					    std::string pattern,
+						const ColumnString::Offsets_t & offsets,
+						std::string pattern,
 						ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.reserve(data.size());
@@ -1042,7 +1042,7 @@ struct NamePathFull						{ static constexpr auto name = "pathFull"; };
 struct NameQueryString					{ static constexpr auto name = "queryString"; };
 struct NameFragment 					{ static constexpr auto name = "fragment"; };
 struct NameQueryStringAndFragment		{ static constexpr auto name = "queryStringAndFragment"; };
-struct NameDecodeURLComponent           { static constexpr auto name = "decodeURLComponent"; };
+struct NameDecodeURLComponent		   { static constexpr auto name = "decodeURLComponent"; };
 
 struct NameCutToFirstSignificantSubdomain { static constexpr auto name = "cutToFirstSignificantSubdomain"; };
 

@@ -121,7 +121,7 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
 	using ColumnToSize = std::map<std::string, size_t>;
 
 	/** Блокируется на запись при изменении columns, checksums или любых файлов куска.
-		* Блокируется на чтение при    чтении columns, checksums или любых файлов куска.
+		* Блокируется на чтение при	чтении columns, checksums или любых файлов куска.
 		*/
 	mutable Poco::RWLock columns_lock;
 

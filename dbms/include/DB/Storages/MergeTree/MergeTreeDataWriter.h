@@ -57,7 +57,7 @@ public:
 
 private:
 	MergeTreeData & data;
-    Context & context;
+	Context & context;
 
 	Logger * log;
 };

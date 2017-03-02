@@ -515,7 +515,7 @@ StoragePtr StorageFactory::get(
 		  *  - (для Replicated) Имя реплики в ZooKeeper
 		  *  - имя столбца с датой;
 		  *  - (не обязательно) выражение для семплирования
-		  *     (запрос с SAMPLE x будет выбирать строки, у которых в этом столбце значение меньше, чем x * UINT32_MAX);
+		  *	 (запрос с SAMPLE x будет выбирать строки, у которых в этом столбце значение меньше, чем x * UINT32_MAX);
 		  *  - выражение для сортировки (либо скалярное выражение, либо tuple из нескольких);
 		  *  - index_granularity;
 		  *  - (для Collapsing) имя столбца типа Int8, содержащего тип строчки с изменением "визита" (принимающего значения 1 и -1).
@@ -543,8 +543,8 @@ MergeTrees is different in two ways:
 - it may do different actions on merge: nothing; sign collapse; sum; apply aggregete functions.
 
 So we have 14 combinations:
-    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, UnsortedMergeTree, GraphiteMergeTree
-    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedUnsortedMergeTree, ReplicatedGraphiteMergeTree
+	MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, UnsortedMergeTree, GraphiteMergeTree
+	ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedUnsortedMergeTree, ReplicatedGraphiteMergeTree
 
 In most of cases, you need MergeTree or ReplicatedMergeTree.
 

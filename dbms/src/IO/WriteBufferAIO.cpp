@@ -214,16 +214,16 @@ void WriteBufferAIO::prepare()
 		:
 		:
 		+---------------+
-		|               |
-		|               |
-		|               |
-		|               |
-		|               |
-		|               |
+		|			   |
+		|			   |
+		|			   |
+		|			   |
+		|			   |
+		|			   |
 		+---------------+
 		<--------------->
-		        :
-		        :
+				:
+				:
 		DEFAULT_AIO_FILE_BLOCK_SIZE
 
 	*/
@@ -234,28 +234,28 @@ void WriteBufferAIO::prepare()
 		XXX : данные, которые хотим записать
 		ZZZ : данные, которые уже на диске или нули, если отсутствуют данные
 
-		region_aligned_begin                                           region_aligned_end
-		:   region_begin                                          region_end            :
-		:   :                                                              :            :
-		:   :                                                              :            :
+		region_aligned_begin										   region_aligned_end
+		:   region_begin										  region_end			:
+		:   :															  :			:
+		:   :															  :			:
 		+---:-----------+---------------+---------------+---------------+--:------------+
-		|   :           |               |               |               |  :            |
-		|   +-----------+---------------+---------------+---------------+--+            |
+		|   :		   |			   |			   |			   |  :			|
+		|   +-----------+---------------+---------------+---------------+--+			|
 		|ZZZ|XXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XX|ZZZZZZZZZZZZ|
 		|ZZZ|XXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XX|ZZZZZZZZZZZZ|
-		|   +-----------+---------------+---------------+---------------+--+            |
-		|               |               |               |               |               |
+		|   +-----------+---------------+---------------+---------------+--+			|
+		|			   |			   |			   |			   |			   |
 		+---------------+---------------+---------------+---------------+---------------+
 
 		<--><--------------------------------------------------------------><----------->
-		 :                                    :                                   :
-		 :                                    :                                   :
-		region_left_padding             region_size                  region_right_padding
+		 :									:								   :
+		 :									:								   :
+		region_left_padding			 region_size				  region_right_padding
 
 		<------------------------------------------------------------------------------->
-		                                      :
-		                                      :
-		                              region_aligned_size
+											  :
+											  :
+									  region_aligned_size
 	*/
 
 	/// Регион диска, в который хотим записать данные.
@@ -287,22 +287,22 @@ void WriteBufferAIO::prepare()
 
 		XXX : данные, которые хотим записать
 
-		buffer_begin                                         buffer_end
-		:                                                             :
-		:                                                             :
+		buffer_begin										 buffer_end
+		:															 :
+		:															 :
 		+---------------+---------------+---------------+-------------:-+
-		|               |               |               |             : |
+		|			   |			   |			   |			 : |
 		+---------------+---------------+---------------+-------------+ |
 		|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXX| |
 		|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXX| |
 		+---------------+---------------+---------------+-------------+ |
-		|               |               |               |               |
+		|			   |			   |			   |			   |
 		+---------------+---------------+---------------+---------------+
 
 		<------------------------------------------------------------->
-		                                :
-		                                :
-		                            buffer_size
+										:
+										:
+									buffer_size
 	*/
 
 	/// Буфер данных, которые хотим записать на диск.
@@ -318,27 +318,27 @@ void WriteBufferAIO::prepare()
 		XXX : данные, которые хотим записать
 		ZZZ : данные из диска или нули, если отсутствуют данные
 
-		buffer_begin                                              buffer_end   дополнительная страница
-		:                                                                  :       :
-		:                                                                  :       :
+		buffer_begin											  buffer_end   дополнительная страница
+		:																  :	   :
+		:																  :	   :
 		+---:-----------+---------------+---------------+---------------+--:------------+
-		|               |               |               |               |  :            |
-		|   +-----------+---------------+---------------+---------------+--+            |
+		|			   |			   |			   |			   |  :			|
+		|   +-----------+---------------+---------------+---------------+--+			|
 		|ZZZ|XXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XX|ZZZZZZZZZZZZ|
 		|ZZZ|XXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XX|ZZZZZZZZZZZZ|
-		|   +-----------+---------------+---------------+---------------+--+            |
-		|               |               |               |               |               |
+		|   +-----------+---------------+---------------+---------------+--+			|
+		|			   |			   |			   |			   |			   |
 		+---------------+---------------+---------------+---------------+---------------+
 
 		<--><--------------------------------------------------------------><----------->
-		 :                                  :                                     :
-		 :                                  :                                     :
-		region_left_padding             region_size                  region_right_padding
+		 :								  :									 :
+		 :								  :									 :
+		region_left_padding			 region_size				  region_right_padding
 
 		<------------------------------------------------------------------------------->
-		                                    :
-		                                    :
-		                             region_aligned_size
+											:
+											:
+									 region_aligned_size
 	*/
 
 	if ((region_left_padding > 0) || (region_right_padding > 0))

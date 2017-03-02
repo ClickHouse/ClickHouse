@@ -44,7 +44,7 @@ struct Stream
 {
 public:
 	Stream(const String & path, const String & name, const DataTypePtr & type,
-	       const std::string & extension_, const std::string & mrk_extension_)
+		   const std::string & extension_, const std::string & mrk_extension_)
 		: path(path), name(name), type(type),
 		extension{extension_}, mrk_extension{mrk_extension_},
 		file_buf(path + name + extension), compressed_hashing_buf(file_buf),

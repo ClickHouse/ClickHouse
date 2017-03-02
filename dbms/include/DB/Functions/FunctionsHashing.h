@@ -358,7 +358,7 @@ public:
 	{
 		IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
-		if      (typeid_cast<const DataTypeUInt8 *		>(from_type)) executeType<UInt8	>(block, arguments, result);
+		if	  (typeid_cast<const DataTypeUInt8 *		>(from_type)) executeType<UInt8	>(block, arguments, result);
 		else if (typeid_cast<const DataTypeUInt16 *	>(from_type)) executeType<UInt16>(block, arguments, result);
 		else if (typeid_cast<const DataTypeUInt32 *	>(from_type)) executeType<UInt32>(block, arguments, result);
 		else if (typeid_cast<const DataTypeUInt64 *	>(from_type)) executeType<UInt64>(block, arguments, result);
@@ -537,7 +537,7 @@ private:
 	template <bool first>
 	void executeAny(const IDataType * from_type, const IColumn * icolumn, ColumnUInt64::Container_t & vec_to)
 	{
-		if      (typeid_cast<const DataTypeUInt8 *		>(from_type)) executeIntType<UInt8,		first>(icolumn, vec_to);
+		if	  (typeid_cast<const DataTypeUInt8 *		>(from_type)) executeIntType<UInt8,		first>(icolumn, vec_to);
 		else if (typeid_cast<const DataTypeUInt16 *		>(from_type)) executeIntType<UInt16,	first>(icolumn, vec_to);
 		else if (typeid_cast<const DataTypeUInt32 *		>(from_type)) executeIntType<UInt32,	first>(icolumn, vec_to);
 		else if (typeid_cast<const DataTypeUInt64 *		>(from_type)) executeIntType<UInt64,	first>(icolumn, vec_to);

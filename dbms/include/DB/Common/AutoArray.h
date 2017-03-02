@@ -84,7 +84,7 @@ public:
 
 	/** Премещение.
 	  */
-    AutoArray(AutoArray && src)
+	AutoArray(AutoArray && src)
 	{
 		if (this == &src)
 			return;

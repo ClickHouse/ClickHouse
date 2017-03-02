@@ -11,7 +11,7 @@ namespace DB
 /** Поддерживает множество названий активных кусков данных.
   * Повторяет часть функциональности MergeTreeData.
   * TODO: обобщить с MergeTreeData. Можно этот класс оставить примерно как есть и использовать его из MergeTreeData.
-  *       Тогда в MergeTreeData можно сделать map<String, DataPartPtr> data_parts и all_data_parts.
+  *	   Тогда в MergeTreeData можно сделать map<String, DataPartPtr> data_parts и all_data_parts.
   */
 class ActiveDataPartSet
 {

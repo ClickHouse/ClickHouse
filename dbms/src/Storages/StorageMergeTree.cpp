@@ -40,11 +40,11 @@ StorageMergeTree::StorageMergeTree(
 	const MergeTreeData::MergingParams & merging_params_,
 	bool has_force_restore_data_flag,
 	const MergeTreeSettings & settings_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
+	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
 	context(context_), background_pool(context_.getBackgroundPool()),
 	data(database_name, table_name,
-         full_path, columns_,
+		 full_path, columns_,
 		 materialized_columns_, alias_columns_, column_defaults_,
 		 context_, primary_expr_ast_, date_column_name_,
 		 sampling_expression_, index_granularity_, merging_params_,
@@ -343,33 +343,33 @@ bool StorageMergeTree::merge(
 
 	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
 
-    /// Logging
-    PartLogElement elem;
-    Stopwatch stopwatch;
-    stopwatch.restart();
+	/// Logging
+	PartLogElement elem;
+	Stopwatch stopwatch;
+	stopwatch.restart();
 
-    elem.event_type = PartLogElement::MERGE_PARTS;
-    elem.event_time = time(0);
+	elem.event_type = PartLogElement::MERGE_PARTS;
+	elem.event_time = time(0);
 
-    elem.merged_from.reserve(merging_tagger->parts.size());
-    for (const auto & part : merging_tagger->parts)
-      elem.merged_from.push_back(part->name);
+	elem.merged_from.reserve(merging_tagger->parts.size());
+	for (const auto & part : merging_tagger->parts)
+	  elem.merged_from.push_back(part->name);
 
 	auto new_part = merger.mergePartsToTemporaryPart(
 		merging_tagger->parts, merged_name, *merge_entry, aio_threshold, time(0), merging_tagger->reserved_space.get());
 
 	merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
 
-    elem.size_in_bytes = new_part->size_in_bytes;
-    
-    elem.database_name = new_part->storage.getDatabaseName();
-    elem.table_name = new_part->storage.getTableName();
-    elem.part_name = new_part->name;
-    
-    stopwatch.stop();
-    elem.act_time_ms = stopwatch.elapsed() / 1000000;
+	elem.size_in_bytes = new_part->size_in_bytes;
+	
+	elem.database_name = new_part->storage.getDatabaseName();
+	elem.table_name = new_part->storage.getTableName();
+	elem.part_name = new_part->name;
+	
+	stopwatch.stop();
+	elem.act_time_ms = stopwatch.elapsed() / 1000000;
 
-    context.getPartLog().add(elem);
+	context.getPartLog().add(elem);
 
 	return true;
 }

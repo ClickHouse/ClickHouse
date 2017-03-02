@@ -13,11 +13,11 @@ namespace DB
   * Following properties depend on it:
   *
   * 1. Number of data parts at some moment in time.
-  *    If parts are merged frequently, then data will be represented by lower number of parts, in average,
-  *     but with cost of higher write amplification.
+  *	If parts are merged frequently, then data will be represented by lower number of parts, in average,
+  *	 but with cost of higher write amplification.
   *
   * 2. Write amplification ratio: how much times, on average, source data was written
-  *     (during initial writes and followed merges).
+  *	 (during initial writes and followed merges).
   *
   * Number of parallel merges are controlled outside of scope of this interface.
   */

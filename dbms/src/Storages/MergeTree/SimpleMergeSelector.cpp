@@ -74,11 +74,11 @@ struct Estimator
 
 
 /**
- * 1       _____
- *        /
+ * 1	   _____
+ *		/
  * 0_____/
- *      ^  ^
- *     min max
+ *	  ^  ^
+ *	 min max
  */
 double mapPiecewiseLinearToUnit(double value, double min, double max)
 {

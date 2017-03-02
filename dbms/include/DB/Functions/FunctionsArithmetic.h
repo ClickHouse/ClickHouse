@@ -384,7 +384,7 @@ template <> struct IsDateOrDateTime<DataTypeDateTime> { static constexpr auto va
 /** Returns appropriate result type for binary operator on dates (or datetimes):
  *  Date + Integral -> Date
  *  Integral + Date -> Date
- *  Date - Date     -> Int32
+ *  Date - Date	 -> Int32
  *  Date - Integral -> Date
  *  least(Date, Date) -> Date
  *  greatest(Date, Date) -> Date

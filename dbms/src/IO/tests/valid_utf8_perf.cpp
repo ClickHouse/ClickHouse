@@ -15,7 +15,7 @@ int main(int argc, char ** argv)
 			repeats = atoi(argv[1]);
 		
 		std::string text((std::istreambuf_iterator<char>(std::cin)),
-		                  std::istreambuf_iterator<char>());
+						  std::istreambuf_iterator<char>());
 		
 		std::cout << "Text length: " << text.size() << std::endl;
 		

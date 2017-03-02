@@ -206,7 +206,7 @@ int main(int argc, char ** argv)
 		}
 
 		std::cerr << std::fixed << std::setprecision(2)
-			<< "Vector:    Elapsed: " << watch.elapsedSeconds()
+			<< "Vector:	Elapsed: " << watch.elapsedSeconds()
 			<< " (" << map_size / watch.elapsedSeconds() << " rows/sec., "
 			<< "sizeof(Map::value_type) = " << sizeof(Map::value_type)
 			<< std::endl;

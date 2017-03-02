@@ -32,7 +32,7 @@ struct ReplicatedMergeTreeLogEntryData
 	enum Type
 	{
 		EMPTY,		 /// Не используется.
-		GET_PART,    /// Получить кусок с другой реплики.
+		GET_PART,	/// Получить кусок с другой реплики.
 		MERGE_PARTS, /// Слить куски.
 		DROP_RANGE,  /// Удалить куски в указанном месяце в указанном диапазоне номеров.
 		ATTACH_PART, /// Перенести кусок из директории detached или unreplicated.

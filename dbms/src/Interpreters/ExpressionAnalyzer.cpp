@@ -1421,7 +1421,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 
 	/** NOTE If tuple in left hand side specified non-explicitly
 	  * Example: identity((a, b)) IN ((1, 2), (3, 4))
-	  *  instead of        (a, b)) IN ((1, 2), (3, 4))
+	  *  instead of		(a, b)) IN ((1, 2), (3, 4))
 	  * then set creation of set doesn't work correctly.
 	  */
 	if (left_arg_tuple && left_arg_tuple->name == "tuple")
@@ -2705,7 +2705,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
 		if (!typeid_cast<ASTSelectQuery *>(child.get())
 			&& !typeid_cast<ASTArrayJoin *>(child.get()))
 			getRequiredColumnsImpl(child, required_columns, ignored_names, available_joined_columns, required_joined_columns);
-    }
+	}
 }
 
 }

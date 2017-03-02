@@ -1131,9 +1131,9 @@ void writeIntTextTable(T x, DB::WriteBuffer & buf)
 
 UInt64 rdtsc()
 {
-    UInt64 val;
-    __asm__ __volatile__("rdtsc" : "=A" (val) : );
-    return val;
+	UInt64 val;
+	__asm__ __volatile__("rdtsc" : "=A" (val) : );
+	return val;
 }
 
 

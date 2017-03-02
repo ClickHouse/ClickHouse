@@ -83,14 +83,14 @@ public:
 	{
 	}
 
-    ~ColumnAggregateFunction()
+	~ColumnAggregateFunction()
 	{
 		if (!func->hasTrivialDestructor() && !src)
 			for (auto val : data)
 				func->destroy(val);
 	}
 
-    void set(const AggregateFunctionPtr & func_)
+	void set(const AggregateFunctionPtr & func_)
 	{
 		func = func_;
 	}

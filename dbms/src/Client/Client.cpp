@@ -293,7 +293,7 @@ private:
 		/** Будем работать в batch режиме, если выполнено одно из следующих условий:
 		  * - задан параметр -e (--query)
 		  *   (в этом случае - запрос или несколько запросов берём оттуда;
-		  *    а если при этом stdin не терминал, то берём оттуда данные для INSERT-а первого запроса).
+		  *	а если при этом stdin не терминал, то берём оттуда данные для INSERT-а первого запроса).
 		  * - stdin - не терминал (в этом случае, считываем оттуда запросы);
 		  */
 		stdin_is_not_tty = !isatty(STDIN_FILENO);
@@ -1241,8 +1241,8 @@ public:
 			("database,d", 		boost::program_options::value<std::string>(), 	"database")
 			("multiline,m",														"multiline")
 			("multiquery,n",													"multiquery")
-			("format,f",        boost::program_options::value<std::string>(), 	"default output format")
-			("vertical,E",      "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
+			("format,f",		boost::program_options::value<std::string>(), 	"default output format")
+			("vertical,E",	  "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 			("time,t",			"print query execution time to stderr in non-interactive mode (for benchmarks)")
 			("stacktrace",		"print stack traces of exceptions")
 			("progress",		"print progress even in non-interactive mode")

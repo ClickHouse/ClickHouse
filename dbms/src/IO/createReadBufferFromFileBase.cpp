@@ -17,7 +17,7 @@ namespace DB
 #ifdef __APPLE__
 namespace ErrorCodes
 {
-        extern const int NOT_IMPLEMENTED;
+		extern const int NOT_IMPLEMENTED;
 }
 #endif
 

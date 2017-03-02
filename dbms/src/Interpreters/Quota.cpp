@@ -62,13 +62,13 @@ String QuotaForInterval::toString() const
 	std::stringstream res;
 
 	res << std::fixed << std::setprecision(3)
-		<< "Interval:       " << LocalDateTime(rounded_time) << " - " << LocalDateTime(rounded_time + duration) << ".\n"
-		<< "Queries:        " << used.queries 		<< ".\n"
-		<< "Errors:         " << used.errors 		<< ".\n"
-		<< "Result rows:    " << used.result_rows 	<< ".\n"
+		<< "Interval:	   " << LocalDateTime(rounded_time) << " - " << LocalDateTime(rounded_time + duration) << ".\n"
+		<< "Queries:		" << used.queries 		<< ".\n"
+		<< "Errors:		 " << used.errors 		<< ".\n"
+		<< "Result rows:	" << used.result_rows 	<< ".\n"
 		<< "Result bytes:   " << used.result_bytes 	<< ".\n"
-		<< "Read rows:      " << used.read_rows 	<< ".\n"
-		<< "Read bytes:     " << used.read_bytes 	<< ".\n"
+		<< "Read rows:	  " << used.read_rows 	<< ".\n"
+		<< "Read bytes:	 " << used.read_bytes 	<< ".\n"
 		<< "Execution time: " << used.execution_time_usec / 1000000.0 << " sec.\n";
 
 	return res.str();

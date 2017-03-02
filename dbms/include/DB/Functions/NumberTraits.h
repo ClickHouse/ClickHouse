@@ -79,18 +79,18 @@ struct Traits<Nullable<T>>
 	using Nullity = HasNull;
 };
 
-template <> struct Traits<void>        { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits0 Bits;     typedef HasNoNull Nullity; };
+template <> struct Traits<void>		{ typedef Unsigned Sign;		typedef Integer Floatness;	  typedef Bits0 Bits;	 typedef HasNoNull Nullity; };
 template <> struct Traits<Null> : Traits<Nullable<void>> {};
-template <> struct Traits<UInt8>       { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits8 Bits;     typedef HasNoNull Nullity; };
-template <> struct Traits<UInt16>      { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits16 Bits;    typedef HasNoNull Nullity; };
-template <> struct Traits<UInt32>      { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits32 Bits;    typedef HasNoNull Nullity; };
-template <> struct Traits<UInt64>      { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits64 Bits;    typedef HasNoNull Nullity; };
-template <> struct Traits<Int8>        { typedef Signed Sign;          typedef Integer Floatness;      typedef Bits8 Bits;     typedef HasNoNull Nullity; };
-template <> struct Traits<Int16>       { typedef Signed Sign;          typedef Integer Floatness;      typedef Bits16 Bits;    typedef HasNoNull Nullity; };
-template <> struct Traits<Int32>       { typedef Signed Sign;          typedef Integer Floatness;      typedef Bits32 Bits;    typedef HasNoNull Nullity; };
-template <> struct Traits<Int64>       { typedef Signed Sign;          typedef Integer Floatness;      typedef Bits64 Bits;    typedef HasNoNull Nullity; };
-template <> struct Traits<Float32>     { typedef Signed Sign;          typedef Floating Floatness;     typedef Bits32 Bits;    typedef HasNoNull Nullity; };
-template <> struct Traits<Float64>     { typedef Signed Sign;          typedef Floating Floatness;     typedef Bits64 Bits;    typedef HasNoNull Nullity; };
+template <> struct Traits<UInt8>	   { typedef Unsigned Sign;		typedef Integer Floatness;	  typedef Bits8 Bits;	 typedef HasNoNull Nullity; };
+template <> struct Traits<UInt16>	  { typedef Unsigned Sign;		typedef Integer Floatness;	  typedef Bits16 Bits;	typedef HasNoNull Nullity; };
+template <> struct Traits<UInt32>	  { typedef Unsigned Sign;		typedef Integer Floatness;	  typedef Bits32 Bits;	typedef HasNoNull Nullity; };
+template <> struct Traits<UInt64>	  { typedef Unsigned Sign;		typedef Integer Floatness;	  typedef Bits64 Bits;	typedef HasNoNull Nullity; };
+template <> struct Traits<Int8>		{ typedef Signed Sign;		  typedef Integer Floatness;	  typedef Bits8 Bits;	 typedef HasNoNull Nullity; };
+template <> struct Traits<Int16>	   { typedef Signed Sign;		  typedef Integer Floatness;	  typedef Bits16 Bits;	typedef HasNoNull Nullity; };
+template <> struct Traits<Int32>	   { typedef Signed Sign;		  typedef Integer Floatness;	  typedef Bits32 Bits;	typedef HasNoNull Nullity; };
+template <> struct Traits<Int64>	   { typedef Signed Sign;		  typedef Integer Floatness;	  typedef Bits64 Bits;	typedef HasNoNull Nullity; };
+template <> struct Traits<Float32>	 { typedef Signed Sign;		  typedef Floating Floatness;	 typedef Bits32 Bits;	typedef HasNoNull Nullity; };
+template <> struct Traits<Float64>	 { typedef Signed Sign;		  typedef Floating Floatness;	 typedef Bits64 Bits;	typedef HasNoNull Nullity; };
 
 template <typename Sign, typename Floatness, typename Bits, typename Nullity> struct Construct;
 
@@ -264,13 +264,13 @@ template <typename A> struct ResultOfBitNot
 };
 
 /** Приведение типов для функции if:
-	* 1)     void,      Type ->  Type
+	* 1)	 void,	  Type ->  Type
 	* 2)  UInt<x>,   UInt<y> ->  UInt<max(x,y)>
-	* 3)   Int<x>,    Int<y> ->   Int<max(x,y)>
+	* 3)   Int<x>,	Int<y> ->   Int<max(x,y)>
 	* 4) Float<x>,  Float<y> -> Float<max(x, y)>
-	* 5)  UInt<x>,    Int<y> ->   Int<max(x*2, y)>
+	* 5)  UInt<x>,	Int<y> ->   Int<max(x*2, y)>
 	* 6) Float<x>, [U]Int<y> -> Float<max(x, y*2)>
-	* 7)  UInt64 ,    Int<x> -> Error
+	* 7)  UInt64 ,	Int<x> -> Error
 	* 8) Float<x>, [U]Int64  -> Error
 	*/
 template <typename A, typename B>
@@ -398,11 +398,11 @@ template <typename A> struct ToInteger
 /// Then there exists a unique map K' : E x E ----> E, that makes the diagram below
 /// commutative:
 ///
-///        K
+///		K
 /// T x T ----> A
-///   |         |
-///   | ψ       | φ
-///   ↓    L    ↓
+///   |		 |
+///   | ψ	   | φ
+///   ↓	L	↓
 /// E x E ----> E
 ///
 /// L is exactly the same map as K, the sole difference being that L takes as

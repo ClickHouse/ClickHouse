@@ -51,8 +51,8 @@ extern "C"
 
 RETCODE SQL_API
 SQLAllocHandle(SQLSMALLINT handle_type,
-               SQLHANDLE input_handle,
-               SQLHANDLE * output_handle)
+			   SQLHANDLE input_handle,
+			   SQLHANDLE * output_handle)
 {
 	LOG(__FUNCTION__);
 

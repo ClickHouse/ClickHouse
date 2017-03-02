@@ -19,9 +19,9 @@ namespace
 /// auto action = NullDeserializer<NullSymbol::XXX>::execute(col, istr);
 ///
 /// if (action == Action::NONE) /// eof
-///    return;
+///	return;
 /// else if (action == Action::ADD_ORDINARY) /// add an ordinary value
-///    ... deserialize the nested column ...
+///	... deserialize the nested column ...
 ///
 /// updateNullMap(col, action);
 ///

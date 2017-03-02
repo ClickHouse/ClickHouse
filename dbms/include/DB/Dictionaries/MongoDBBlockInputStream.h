@@ -28,7 +28,7 @@ public:
 		const Block & sample_block,
 		const size_t max_block_size);
 
-    ~MongoDBBlockInputStream() override;
+	~MongoDBBlockInputStream() override;
 
 	String getName() const override { return "MongoDB"; }
 

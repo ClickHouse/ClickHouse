@@ -32,7 +32,7 @@ namespace DB
 namespace detail
 {
 	/// NOTE Probably
-	///    http://www.pcg-random.org/
+	///	http://www.pcg-random.org/
 	/// or http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/SFMT/
 	/// or http://docs.yeppp.info/c/group__yep_random___w_e_l_l1024a.html
 	/// could go better.

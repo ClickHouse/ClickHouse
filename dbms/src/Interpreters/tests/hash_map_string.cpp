@@ -81,8 +81,8 @@ struct DefaultHash<CompactStringRef>
 };
 
 
-#define mix(h) ({                   \
-	(h) ^= (h) >> 23;               \
+#define mix(h) ({				   \
+	(h) ^= (h) >> 23;			   \
 	(h) *= 0x2127599bf4325c37ULL;   \
 	(h) ^= (h) >> 47; })
 
@@ -93,7 +93,7 @@ struct FastHash64
 		const char * buf = x.data();
 		size_t len = x.size;
 
-		const UInt64    m = 0x880355f21e6d1965ULL;
+		const UInt64	m = 0x880355f21e6d1965ULL;
 		const UInt64 *pos = reinterpret_cast<const UInt64 *>(buf);
 		const UInt64 *end = pos + (len / 8);
 		const unsigned char *pos2;
@@ -135,63 +135,63 @@ struct CrapWow
 		size_t seed = 0;
 
 		const UInt64 m = 0x95b47aa3355ba1a1, n = 0x8a970be7488fda55;
-	    UInt64 hash;
-	    // 3 = m, 4 = n
-	    // r12 = h, r13 = k, ecx = seed, r12 = key
-	    asm(
-	        "leaq (%%rcx,%4), %%r13\n"
-	        "movq %%rdx, %%r14\n"
-	        "movq %%rcx, %%r15\n"
-	        "movq %%rcx, %%r12\n"
-	        "addq %%rax, %%r13\n"
-	        "andq $0xfffffffffffffff0, %%rcx\n"
-	        "jz QW%=\n"
-	        "addq %%rcx, %%r14\n\n"
-	        "negq %%rcx\n"
-	    "XW%=:\n"
-	        "movq %4, %%rax\n"
-	        "mulq (%%r14,%%rcx)\n"
-	        "xorq %%rax, %%r12\n"
-	        "xorq %%rdx, %%r13\n"
-	        "movq %3, %%rax\n"
-	        "mulq 8(%%r14,%%rcx)\n"
-	        "xorq %%rdx, %%r12\n"
-	        "xorq %%rax, %%r13\n"
-	        "addq $16, %%rcx\n"
-	        "jnz XW%=\n"
-	    "QW%=:\n"
-	        "movq %%r15, %%rcx\n"
-	        "andq $8, %%r15\n"
-	        "jz B%=\n"
-	        "movq %4, %%rax\n"
-	        "mulq (%%r14)\n"
-	        "addq $8, %%r14\n"
-	        "xorq %%rax, %%r12\n"
-	        "xorq %%rdx, %%r13\n"
-	    "B%=:\n"
-	        "andq $7, %%rcx\n"
-	        "jz F%=\n"
-	        "movq $1, %%rdx\n"
-	        "shlq $3, %%rcx\n"
-	        "movq %3, %%rax\n"
-	        "shlq %%cl, %%rdx\n"
-	        "addq $-1, %%rdx\n"
-	        "andq (%%r14), %%rdx\n"
-	        "mulq %%rdx\n"
-	        "xorq %%rdx, %%r12\n"
-	        "xorq %%rax, %%r13\n"
-	    "F%=:\n"
-	        "leaq (%%r13,%4), %%rax\n"
-	        "xorq %%r12, %%rax\n"
-	        "mulq %4\n"
-	        "xorq %%rdx, %%rax\n"
-	        "xorq %%r12, %%rax\n"
-	        "xorq %%r13, %%rax\n"
-	        : "=a"(hash), "=c"(key), "=d"(key)
-	        : "r"(m), "r"(n), "a"(seed), "c"(len), "d"(key)
-	        : "%r12", "%r13", "%r14", "%r15", "cc"
-	    );
-	    return hash;
+		UInt64 hash;
+		// 3 = m, 4 = n
+		// r12 = h, r13 = k, ecx = seed, r12 = key
+		asm(
+			"leaq (%%rcx,%4), %%r13\n"
+			"movq %%rdx, %%r14\n"
+			"movq %%rcx, %%r15\n"
+			"movq %%rcx, %%r12\n"
+			"addq %%rax, %%r13\n"
+			"andq $0xfffffffffffffff0, %%rcx\n"
+			"jz QW%=\n"
+			"addq %%rcx, %%r14\n\n"
+			"negq %%rcx\n"
+		"XW%=:\n"
+			"movq %4, %%rax\n"
+			"mulq (%%r14,%%rcx)\n"
+			"xorq %%rax, %%r12\n"
+			"xorq %%rdx, %%r13\n"
+			"movq %3, %%rax\n"
+			"mulq 8(%%r14,%%rcx)\n"
+			"xorq %%rdx, %%r12\n"
+			"xorq %%rax, %%r13\n"
+			"addq $16, %%rcx\n"
+			"jnz XW%=\n"
+		"QW%=:\n"
+			"movq %%r15, %%rcx\n"
+			"andq $8, %%r15\n"
+			"jz B%=\n"
+			"movq %4, %%rax\n"
+			"mulq (%%r14)\n"
+			"addq $8, %%r14\n"
+			"xorq %%rax, %%r12\n"
+			"xorq %%rdx, %%r13\n"
+		"B%=:\n"
+			"andq $7, %%rcx\n"
+			"jz F%=\n"
+			"movq $1, %%rdx\n"
+			"shlq $3, %%rcx\n"
+			"movq %3, %%rax\n"
+			"shlq %%cl, %%rdx\n"
+			"addq $-1, %%rdx\n"
+			"andq (%%r14), %%rdx\n"
+			"mulq %%rdx\n"
+			"xorq %%rdx, %%r12\n"
+			"xorq %%rax, %%r13\n"
+		"F%=:\n"
+			"leaq (%%r13,%4), %%rax\n"
+			"xorq %%r12, %%rax\n"
+			"mulq %4\n"
+			"xorq %%rdx, %%rax\n"
+			"xorq %%r12, %%rax\n"
+			"xorq %%r13, %%rax\n"
+			: "=a"(hash), "=c"(key), "=d"(key)
+			: "r"(m), "r"(n), "a"(seed), "c"(len), "d"(key)
+			: "%r12", "%r13", "%r14", "%r15", "cc"
+		);
+		return hash;
 	}
 };
 

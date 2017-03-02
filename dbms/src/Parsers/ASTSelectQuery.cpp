@@ -147,8 +147,8 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_n
 	select_expression_list = result;
 
 	/** NOTE: Может показаться, что мы могли испортить запрос, выбросив выражение с алиасом, который используется где-то еще.
-		*       Такого произойти не может, потому что этот метод вызывается всегда для запроса, на котором хоть раз создавали
-		*       ExpressionAnalyzer, что гарантирует, что в нем все алиасы уже подставлены. Не совсем очевидная логика.
+		*	   Такого произойти не может, потому что этот метод вызывается всегда для запроса, на котором хоть раз создавали
+		*	   ExpressionAnalyzer, что гарантирует, что в нем все алиасы уже подставлены. Не совсем очевидная логика.
 		*/
 }
 
@@ -271,7 +271,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 	}
 
 	if (group_by_with_totals)
-		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH TOTALS" << (s.hilite ? hilite_none : "");
+		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "	") << "WITH TOTALS" << (s.hilite ? hilite_none : "");
 
 	if (having_expression)
 	{

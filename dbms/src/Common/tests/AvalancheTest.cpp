@@ -10,27 +10,27 @@ void PrintAvalancheDiagram ( int x, int y, int reps, double scale, int * bins )
 
   for(int i = 0; i < y; i++)
   {
-    printf("[");
-    for(int j = 0; j < x; j++)
-    {
-      int k = (y - i) -1;
+	printf("[");
+	for(int j = 0; j < x; j++)
+	{
+	  int k = (y - i) -1;
 
-      int bin = bins[k + (j*y)];
+	  int bin = bins[k + (j*y)];
 
-      double b = double(bin) / double(reps);
-      b = fabs(b*2 - 1);
+	  double b = double(bin) / double(reps);
+	  b = fabs(b*2 - 1);
 
-      b *= scale;
+	  b *= scale;
 
-      int s = static_cast<int>(floor(b*10));
+	  int s = static_cast<int>(floor(b*10));
 
-      if(s > 10) s = 10;
-      if(s < 0) s = 0;
+	  if(s > 10) s = 10;
+	  if(s < 0) s = 0;
 
-      printf("%c",symbols[s]);
-    }
+	  printf("%c",symbols[s]);
+	}
 
-    printf("]\n");
+	printf("]\n");
   }
 }
 
@@ -42,14 +42,14 @@ double maxBias ( std::vector<int> & counts, int reps )
 
   for(int i = 0; i < static_cast<int>(counts.size()); i++)
   {
-    double c = static_cast<double>(counts[i]) / static_cast<double>(reps);
+	double c = static_cast<double>(counts[i]) / static_cast<double>(reps);
 
-    double d = fabs(c * 2 - 1);
+	double d = fabs(c * 2 - 1);
 
-    if(d > worst)
-    {
-      worst = d;
-    }
+	if(d > worst)
+	{
+	  worst = d;
+	}
   }
 
   return worst;

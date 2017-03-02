@@ -17,8 +17,8 @@ namespace DB
   *
   * Пример использования:
   *
-  *     DB::WriteBufferFromFileDescriptor buf(STDOUT_FILENO);
-  *     buf << DB::double_quote << "Hello, world!" << '\n' << DB::flush;
+  *	 DB::WriteBufferFromFileDescriptor buf(STDOUT_FILENO);
+  *	 buf << DB::double_quote << "Hello, world!" << '\n' << DB::flush;
   *
   * Выводит тип char (как правило, он же Int8) как символ, а не как число.
   */

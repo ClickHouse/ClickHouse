@@ -187,7 +187,7 @@ static inline UInt128 ALWAYS_INLINE hash128(
 		hash.update(keys[j].data, keys[j].size);
 	}
 
-    hash.get128(key.first, key.second);
+	hash.get128(key.first, key.second);
 
 	return key;
 }
@@ -203,7 +203,7 @@ static inline UInt128 ALWAYS_INLINE hash128(
 	for (size_t j = 0; j < keys_size; ++j)
 		key_columns[j]->updateHashWithValue(i, hash);
 
-    hash.get128(key.first, key.second);
+	hash.get128(key.first, key.second);
 
 	return key;
 }
@@ -260,12 +260,12 @@ static StringRef extractKeysAndPlaceInPoolContiguous(
 /// Subsequently append StringRef objects referring to each key.
 ///
 /// [key1][key2]...[keyN][ref1][ref2]...[refN]
-///   ^     ^        :     |     |
-///   +-----|--------:-----+     |
-///   :     +--------:-----------+
-///   :              :
+///   ^	 ^		:	 |	 |
+///   +-----|--------:-----+	 |
+///   :	 +--------:-----------+
+///   :			  :
 ///   <-------------->
-///        (1)
+///		(1)
 ///
 /// Return a StringRef object, referring to the area (1) of the memory
 /// chunk that contains the keys. In other words, we ignore their StringRefs.
@@ -303,12 +303,12 @@ inline StringRef ALWAYS_INLINE extractKeysAndPlaceInPoolContiguous<false>(
 /// StringRef objects referring to each key, even those who contain a null.
 ///
 /// [bitmap][key1][key2][key4]...[keyN][ref1][ref2][ref3 (null)]...[refN]
-///   :       ^     ^              :     |     |
-///   :       +-----|--------------:-----+     |
-///   :             +--------------:-----------+
-///   :                            :
+///   :	   ^	 ^			  :	 |	 |
+///   :	   +-----|--------------:-----+	 |
+///   :			 +--------------:-----------+
+///   :							:
 ///   <---------------------------->
-///                  (1)
+///				  (1)
 ///
 /// Return a StringRef object, referring to the area (1) of the memory
 /// chunk that contains the bitmap and the keys. In other words, we ignore

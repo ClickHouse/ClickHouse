@@ -14,15 +14,15 @@ namespace DB
 StorageSystemClusters::StorageSystemClusters(const std::string & name_, Context & context_)
 	: name(name_)
 	, columns{
-		{ "cluster",      std::make_shared<DataTypeString>() },
-		{ "shard_num",    std::make_shared<DataTypeUInt32>() },
+		{ "cluster",	  std::make_shared<DataTypeString>() },
+		{ "shard_num",	std::make_shared<DataTypeUInt32>() },
 		{ "shard_weight", std::make_shared<DataTypeUInt32>() },
 		{ "replica_num",  std::make_shared<DataTypeUInt32>() },
-		{ "host_name",    std::make_shared<DataTypeString>() },
+		{ "host_name",	std::make_shared<DataTypeString>() },
 		{ "host_address", std::make_shared<DataTypeString>() },
-		{ "port",         std::make_shared<DataTypeUInt16>() },
-		{ "is_local",     std::make_shared<DataTypeUInt8>() },
-		{ "user",         std::make_shared<DataTypeString>() },
+		{ "port",		 std::make_shared<DataTypeUInt16>() },
+		{ "is_local",	 std::make_shared<DataTypeUInt8>() },
+		{ "user",		 std::make_shared<DataTypeString>() },
 		{ "default_database", std::make_shared<DataTypeString>() }
 	}
 	, context(context_)

@@ -31,7 +31,7 @@ struct Memory : boost::noncopyable, Allocator<false>
 	char * m_data = nullptr;
 	size_t alignment = 0;
 
-    Memory() {}
+	Memory() {}
 
 	/// If alignment != 0, then allocate memory aligned to specified value.
 	Memory(size_t size_, size_t alignment_ = 0) : m_capacity(size_), m_size(m_capacity), alignment(alignment_)

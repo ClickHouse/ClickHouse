@@ -35,9 +35,9 @@ void setAffinity()
 
 static inline __attribute__((__always_inline__)) UInt64 rdtsc()
 {
-    UInt32 a, d;
-    __asm__ volatile ("rdtsc" : "=a" (a), "=d" (d));
-    return static_cast<UInt64>(a) | (static_cast<UInt64>(d) << 32);
+	UInt32 a, d;
+	__asm__ volatile ("rdtsc" : "=a" (a), "=d" (d));
+	return static_cast<UInt64>(a) | (static_cast<UInt64>(d) << 32);
 }
 
 

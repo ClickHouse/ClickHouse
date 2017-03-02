@@ -19,19 +19,19 @@ namespace DB
   * We have to output blocks in specific order: by bucket number:
   *
   *  o o o o ... o
-  *  0 1 2 3     255
+  *  0 1 2 3	 255
   *
   * Each block is the result of merge of blocks with same bucket number from several sources:
   *
   *  src1   o o ...
-  *         | |
+  *		 | |
   *  src2   o o
   *
-  *         | |
-  *         v v
+  *		 | |
+  *		 v v
   *
   *  result o o
-  *         0 1
+  *		 0 1
   *
   * (we must merge 0th block from src1 with 0th block from src2 to form 0th result block and so on)
   *
@@ -40,7 +40,7 @@ namespace DB
   *
   * Also, we may do merges for different buckets in parallel.
   * For example, we may
-  *      merge 1th block from src1 with 1th block from src2 in one thread
+  *	  merge 1th block from src1 with 1th block from src2 in one thread
   *  and merge 2nd block from src1 with 2nd block from src2 in other thread.
   * Number of threads is 'merging_threads'
   * And we must keep only 'merging_threads' buckets of blocks in memory simultaneously,
@@ -52,11 +52,11 @@ namespace DB
   * Example:
   *
   *  src1   . . o o . . .
-  *             | |
-  *  src2       o o
+  *			 | |
+  *  src2	   o o
   *
-  *             | |
-  *             v v
+  *			 | |
+  *			 v v
   *
   *  result . . o o . . .
   *
@@ -316,8 +316,8 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 
 			/** Synchronously:
 			  * - fetch next blocks from sources,
-			  *    wait for space in 'merged_blocks'
-			  *    and reserve a place in 'merged_blocks' to do merge of them;
+			  *	wait for space in 'merged_blocks'
+			  *	and reserve a place in 'merged_blocks' to do merge of them;
 			  * - or, if no next blocks, set 'exhausted' flag.
 			  */
 			{

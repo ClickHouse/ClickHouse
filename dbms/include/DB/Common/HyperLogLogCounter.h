@@ -250,10 +250,10 @@ struct RankWidth<UInt64>
   */
 enum class HyperLogLogMode
 {
-	Raw,            /// Применить алгоритм HyperLogLog без исправления погрешности
+	Raw,			/// Применить алгоритм HyperLogLog без исправления погрешности
 	LinearCounting, /// Исправить погрешность по алгоритму LinearCounting
 	BiasCorrected,  /// Исправить погрешность по алгоритму HyperLogLog++
-	FullFeatured    /// Исправить погрешность по алгоритму LinearCounting или HyperLogLog++
+	FullFeatured	/// Исправить погрешность по алгоритму LinearCounting или HyperLogLog++
 };
 
 /** Подсчёт уникальных значений алгоритмом HyperLogLog.

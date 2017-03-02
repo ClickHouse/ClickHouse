@@ -37,7 +37,7 @@ public:
 
 	MongoDBDictionarySource(const MongoDBDictionarySource & other);
 
-    ~MongoDBDictionarySource() override;
+	~MongoDBDictionarySource() override;
 
 	BlockInputStreamPtr loadAll() override;
 

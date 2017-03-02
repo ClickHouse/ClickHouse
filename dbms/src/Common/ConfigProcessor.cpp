@@ -370,14 +370,14 @@ XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
 	}
 
 	std::stringstream comment;
-	comment <<     " This file was generated automatically.\n";
-	comment << "     Do not edit it: it is likely to be discarded and generated again before it's read next time.\n";
-	comment << "     Files used to generate this file:";
+	comment <<	 " This file was generated automatically.\n";
+	comment << "	 Do not edit it: it is likely to be discarded and generated again before it's read next time.\n";
+	comment << "	 Files used to generate this file:";
 	for (const std::string & path : contributing_files)
 	{
-		comment << "\n       " << path;
+		comment << "\n	   " << path;
 	}
-	comment<<"      ";
+	comment<<"	  ";
 	NodePtr new_node = config->createTextNode("\n\n");
 	config->insertBefore(new_node, config->firstChild());
 	new_node = config->createComment(comment.str());

@@ -361,7 +361,7 @@ private:
 	void moveValue(Field && x)
 	{
 		T * __attribute__((__may_alias__)) ptr_this = reinterpret_cast<T*>(storage);
-		T * __attribute__((__may_alias__)) ptr_x    = reinterpret_cast<T*>(x.storage);
+		T * __attribute__((__may_alias__)) ptr_x	= reinterpret_cast<T*>(x.storage);
 
 		new (ptr_this) T(std::move(*ptr_x));
 	}

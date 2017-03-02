@@ -305,16 +305,16 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	  * Пример: SAMPLE 0.4 OFFSET 0.3:
 	  *
 	  * [------********------]
-	  *        ^ - offset
-	  *        <------> - size
+	  *		^ - offset
+	  *		<------> - size
 	  *
 	  * Если интервал переходит через конец юнивёрсума, то срезаем его правую часть.
 	  *
 	  * Пример: SAMPLE 0.4 OFFSET 0.8:
 	  *
 	  * [----------------****]
-	  *                  ^ - offset
-	  *                  <------> - size
+	  *				  ^ - offset
+	  *				  <------> - size
 	  *
 	  * Далее, если выставлены настройки parallel_replicas_count, parallel_replica_offset,
 	  *  то необходимо разбить полученный интервал ещё на кусочки в количестве parallel_replicas_count,
@@ -323,9 +323,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	  * Пример: SAMPLE 0.4 OFFSET 0.3, parallel_replicas_count = 2, parallel_replica_offset = 1:
 	  *
 	  * [----------****------]
-	  *        ^ - offset
-	  *        <------> - size
-	  *        <--><--> - кусочки для разных parallel_replica_offset, выбираем второй.
+	  *		^ - offset
+	  *		<------> - size
+	  *		<--><--> - кусочки для разных parallel_replica_offset, выбираем второй.
 	  *
 	  * Очень важно, чтобы интервалы для разных parallel_replica_offset покрывали весь диапазон без пропусков и перекрытий.
 	  * Также важно, чтобы весь юнивёрсум можно было покрыть, используя SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 и похожие десятичные дроби.

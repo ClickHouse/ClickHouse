@@ -25,8 +25,8 @@ namespace ErrorCodes
 class WriteBuffer : public BufferBase
 {
 public:
-    WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
-    void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
+	WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
+	void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
 
 	/** записать данные, находящиеся в буфере (от начала буфера до текущей позиции);
 	  * переместить позицию в начало; кинуть исключение, если что-то не так

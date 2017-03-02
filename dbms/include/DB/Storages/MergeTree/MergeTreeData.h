@@ -67,11 +67,11 @@ namespace ErrorCodes
   *   пары записей с разными значениями sign_column для одного значения первичного ключа.
   *   (см. CollapsingSortedBlockInputStream.h)
   * - Replacing - при склейке кусков, при совпадении PK, оставлять только одну строчку
-  *             - последнюю, либо, если задан столбец "версия" - последнюю среди строчек с максимальной версией.
+  *			 - последнюю, либо, если задан столбец "версия" - последнюю среди строчек с максимальной версией.
   * - Summing - при склейке кусков, при совпадении PK суммировать все числовые столбцы, не входящие в PK.
   * - Aggregating - при склейке кусков, при совпадении PK, делается слияние состояний столбцов-агрегатных функций.
   * - Unsorted - при склейке кусков, данные не упорядочиваются, а всего лишь конкатенируются;
-  *            - это позволяет читать данные ровно такими пачками, какими они были записаны.
+  *			- это позволяет читать данные ровно такими пачками, какими они были записаны.
   * - Graphite - выполняет загрубление исторических данных для таблицы Графита - системы количественного мониторинга.
   */
 
@@ -236,7 +236,7 @@ public:
 	  * require_part_metadata - обязательно ли в директории с куском должны быть checksums.txt и columns.txt
 	  */
 	MergeTreeData(	const String & database_, const String & table_,
-                    const String & full_path_, NamesAndTypesListPtr columns_,
+					const String & full_path_, NamesAndTypesListPtr columns_,
 					const NamesAndTypesList & materialized_columns_,
 					const NamesAndTypesList & alias_columns_,
 					const ColumnDefaults & column_defaults_,
@@ -289,9 +289,9 @@ public:
 			|| column_name == "_sample_factor";
 	}
 
-    String getDatabaseName() const { return database_name; }
+	String getDatabaseName() const { return database_name; }
 
-    String getTableName() const override { return table_name; }
+	String getTableName() const override { return table_name; }
 
 	String getFullPath() const { return full_path; }
 
@@ -484,8 +484,8 @@ private:
 	SortDescription sort_descr;
 
 	String database_name;
-    String table_name;
-    String full_path;
+	String table_name;
+	String full_path;
 
 	NamesAndTypesListPtr columns;
 	/// Актуальные размеры столбцов в сжатом виде

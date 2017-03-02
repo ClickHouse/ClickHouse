@@ -17,11 +17,11 @@ namespace DB
 StorageSystemColumns::StorageSystemColumns(const std::string & name_)
 	: name(name_)
 	, columns{
-		{ "database",           std::make_shared<DataTypeString>() },
-		{ "table",              std::make_shared<DataTypeString>() },
-		{ "name",               std::make_shared<DataTypeString>() },
-		{ "type",               std::make_shared<DataTypeString>() },
-		{ "default_type",       std::make_shared<DataTypeString>() },
+		{ "database",		   std::make_shared<DataTypeString>() },
+		{ "table",			  std::make_shared<DataTypeString>() },
+		{ "name",			   std::make_shared<DataTypeString>() },
+		{ "type",			   std::make_shared<DataTypeString>() },
+		{ "default_type",	   std::make_shared<DataTypeString>() },
 		{ "default_expression", std::make_shared<DataTypeString>() },
 		{ "bytes",				std::make_shared<DataTypeUInt64>() },
 	}

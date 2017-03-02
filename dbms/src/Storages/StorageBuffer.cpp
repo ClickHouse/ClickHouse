@@ -387,7 +387,7 @@ bool StorageBuffer::checkThresholds(const Buffer & buffer, time_t current_time, 
 bool StorageBuffer::checkThresholdsImpl(size_t rows, size_t bytes, time_t time_passed) const
 {
 	return
-	       (time_passed > min_thresholds.time && rows > min_thresholds.rows && bytes > min_thresholds.bytes)
+		   (time_passed > min_thresholds.time && rows > min_thresholds.rows && bytes > min_thresholds.bytes)
 		|| (time_passed > max_thresholds.time || rows > max_thresholds.rows || bytes > max_thresholds.bytes);
 }
 

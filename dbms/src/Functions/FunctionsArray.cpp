@@ -1508,7 +1508,7 @@ bool FunctionArrayUniq::execute128bit(
 	/// Suppose that, for a given row, each of the N columns has an array whose length is M.
 	/// Denote arr_i each of these arrays (1 <= i <= N). Then the following is performed:
 	///
-	/// col1      ...  colN
+	/// col1	  ...  colN
 	///
 	/// arr_1[1], ..., arr_N[1] -> pack into a binary blob b1
 	/// .

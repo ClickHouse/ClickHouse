@@ -21,7 +21,7 @@
   * - there are multiple threads, that could simultaneously read blocks from different sources;
   * - "available" sources (that are not read in any thread right now) are put in queue of sources;
   * - when thread take a source to read from, it removes source from queue of sources,
-  *    then read block from source and then put source back to queue of available sources.
+  *	then read block from source and then put source back to queue of available sources.
   */
 
 namespace CurrentMetrics

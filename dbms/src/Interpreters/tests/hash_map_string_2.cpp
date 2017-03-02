@@ -32,13 +32,13 @@ for file in MobilePhoneModel PageCharset Params URLDomain UTMSource Referer URL 
    for i in {0..1000}; do
 	TOTAL_ELEMS=$(( $TOTAL_ELEMS + $size ))
 	if [[ $TOTAL_ELEMS -gt 25000000 ]]; then break; fi
-    ./hash_map_string_2 $size $method < ${file}.bin 2>&1 |
-     grep HashMap | grep -oE '[0-9\.]+ elem';
+	./hash_map_string_2 $size $method < ${file}.bin 2>&1 |
+	 grep HashMap | grep -oE '[0-9\.]+ elem';
    done | awk -W interactive '{ if ($1 > x) { x = $1 }; printf(".") } END { print x }' | tee /tmp/hash_map_string_2_res;
    CUR_RESULT=$(cat /tmp/hash_map_string_2_res | tr -d '.')
    if [[ $CUR_RESULT -gt $BEST_RESULT ]]; then
-    BEST_METHOD=$method
-    BEST_RESULT=$CUR_RESULT
+	BEST_METHOD=$method
+	BEST_RESULT=$CUR_RESULT
    fi;
   done;
   echo Best: $BEST_METHOD - $BEST_RESULT
@@ -449,7 +449,7 @@ inline bool memequal_sse_wide(const char * p1, const char * p2, size_t size)
 {
 	while (size >= 64)
 	{
-		if (   compare_byIntSSE(p1,      p2)
+		if (   compare_byIntSSE(p1,	  p2)
 			&& compare_byIntSSE(p1 + 16, p2 + 16)
 			&& compare_byIntSSE(p1 + 32, p2 + 32)
 			&& compare_byIntSSE(p1 + 48, p2 + 48))
@@ -466,7 +466,7 @@ inline bool memequal_sse_wide(const char * p1, const char * p2, size_t size)
 	{
 		case 3: if (!compare_byIntSSE(p1 + 32, p2 + 32)) return false;
 		case 2: if (!compare_byIntSSE(p1 + 16, p2 + 16)) return false;
-		case 1: if (!compare_byIntSSE(p1     , p2     )) return false;
+		case 1: if (!compare_byIntSSE(p1	 , p2	 )) return false;
 	}
 
 	p1 += (size % 64) / 16 * 16;

@@ -26,10 +26,10 @@
 /** Server provides three interfaces:
   * 1. HTTP - simple interface for any applications.
   * 2. TCP - interface for native clickhouse-client and for server to server internal communications.
-  *    More rich and efficient, but less compatible
-  *     - data is transferred by columns;
-  *     - data is transferred compressed;
-  *    Allows to get more information in response.
+  *	More rich and efficient, but less compatible
+  *	 - data is transferred by columns;
+  *	 - data is transferred compressed;
+  *	Allows to get more information in response.
   * 3. Interserver HTTP - for replication.
   */
 

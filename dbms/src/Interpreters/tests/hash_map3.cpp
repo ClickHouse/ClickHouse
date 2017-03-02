@@ -36,7 +36,7 @@ public:
 		for (size_t i = 0; i < this->grower.bufSize(); ++i)
 		{
 			if (this->buf[i].isZero(*this))
-				std::cerr << "[    ]";
+				std::cerr << "[	]";
 			else
 				std::cerr << '[' << this->buf[i].getValue().first.data << ", " << this->buf[i].getValue().second << ']';
 		}

@@ -418,9 +418,9 @@ void InterpreterSelectQuery::executeSingleQuery()
 	if (to_stage > QueryProcessingStage::FetchColumns)
 	{
 		bool has_join		= false;
-		bool has_where      = false;
+		bool has_where	  = false;
 		bool need_aggregate = false;
-		bool has_having     = false;
+		bool has_having	 = false;
 		bool has_order_by   = false;
 
 		ExpressionActionsPtr before_join;	/// включая JOIN

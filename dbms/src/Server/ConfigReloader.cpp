@@ -29,7 +29,7 @@ ConfigReloader::ConfigReloader(const std::string & main_config_path_, const std:
 	if (users_config_path.empty() || users_config_path[0] != '/')
 	{
 		std::string config_dir = Poco::Path(main_config_path).parent().toString();
-        if (Poco::File(config_dir + users_config_path).exists())
+		if (Poco::File(config_dir + users_config_path).exists())
 			users_config_path = config_dir + users_config_path;
 	}
 

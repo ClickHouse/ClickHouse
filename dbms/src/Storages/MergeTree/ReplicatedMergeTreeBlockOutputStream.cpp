@@ -134,7 +134,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
 		/// Если в запросе не указан ID, возьмем в качестве ID хеш от данных. То есть, не вставляем одинаковые данные дважды.
 		/// NOTE: Если такая дедупликация не нужна, можно вместо этого оставлять block_id пустым.
-		///       Можно для этого сделать настройку или синтаксис в запросе (например, ID=null).
+		///	   Можно для этого сделать настройку или синтаксис в запросе (например, ID=null).
 		if (block_id.empty())
 		{
 			block_id = toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
