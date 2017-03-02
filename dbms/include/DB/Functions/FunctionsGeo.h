@@ -190,10 +190,17 @@ private:
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() < 6 || arguments.size()%4 != 2)  {
+		if (arguments.size() < 6 || arguments.size() % 4 != 2)
+		{
 			throw Exception(
-				"Incorrect number of arguments of function " + getName() + ". Must be 2 for your point plus 4 * N for ellipses (x_i, y_i, a_i, b_i)."
-			);
+				"Incorrect number of arguments of function " + getName() + ". Must be 2 for your point plus 4 * N for ellipses (x_i, y_i, a_i, b_i).");
+		}
+		
+		/// For array on stack, see below.
+		if (arguments.size() > 10000)
+		{
+			throw Exception(
+				"Number of arguments of function " + getName() + " is too large.");
 		}
 
 		for (const auto arg_idx : ext::range(0, arguments.size()))
@@ -214,12 +221,13 @@ private:
 	{
 		const auto size = block.rows();
 
-		int ellipses_count = (arguments.size() - 2)/4;
+		/// Prepare array of ellipses.
+		size_t ellipses_count = (arguments.size() - 2) / 4;
 		Ellipse ellipses[ellipses_count];
-		Float64 ellipse_data[4];
 
 		for (const auto ellipse_idx : ext::range(0, ellipses_count))
 		{
+			Float64 ellipse_data[4];
 			for (const auto idx : ext::range(0, 4))
 			{
 				int arg_idx = 2 + 4 * ellipse_idx + idx;
@@ -265,7 +273,7 @@ private:
 				auto & dst_data = dst->getData();
 				dst_data.resize(size);
 
-				unsigned int start_index = 0;
+				size_t start_index = 0;
 				for (const auto row : ext::range(0, size))
 				{
 					dst_data[row] = isPointInEllipses(col_vec_x->getData()[row], col_vec_y->getData()[row], ellipses, ellipses_count, start_index);
@@ -275,7 +283,7 @@ private:
 			{
 				const auto col_const_x = static_cast<const ColumnConst<Float64> *> (col_x);
 				const auto col_const_y = static_cast<const ColumnConst<Float64> *> (col_y);
-				unsigned int start_index = 0;
+				size_t start_index = 0;
 				UInt8 res = isPointInEllipses(col_const_x->getData(), col_const_y->getData(), ellipses, ellipses_count, start_index);
 				block.safeGetByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(size, res);
 			}
@@ -287,28 +295,28 @@ private:
 			}
 	}
 
-	UInt8 isPointInEllipses(Float64 x, Float64 y, const Ellipse * ellipses, size_t ellipses_count, unsigned int & start_index)
+	static bool isPointInEllipses(Float64 x, Float64 y, const Ellipse * ellipses, size_t ellipses_count, size_t & start_index)
 	{
-		unsigned int index = 0 + start_index;
-		for (unsigned int i = 0; i < ellipses_count; i++)
+		size_t index = 0 + start_index;
+		for (size_t i = 0; i < ellipses_count; ++i)
 		{
 			Ellipse el = ellipses[index];
 			double p1 = ((x - el.x) / el.a);
 			double p2 = ((y - el.y) / el.b);
-			if (x <= el.x + el.a && x >= el.x - el.a && y <= el.y + el.b && y >= el.y - el.b && p1 * p1  + p2 * p2  <= 1.0)
+			if (x <= el.x + el.a && x >= el.x - el.a && y <= el.y + el.b && y >= el.y - el.b /// Bounding box check
+				&& p1 * p1 + p2 * p2 <= 1.0)	/// Precise check
 			{
 				start_index = index;
-				return 1;
+				return true;
 			}
 			++index;
 			if (index == ellipses_count)
 			{
-					index = 0;
+				index = 0;
 			}
 		}
-		return 0;
+		return false;
 	}
-
 };
 
 }
