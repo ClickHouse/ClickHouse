@@ -73,6 +73,7 @@ private:
 	Position end_pos;
 };
 
+
 MemoryWriteBuffer::MemoryWriteBuffer(size_t max_total_size_, size_t initial_chunk_size_, double growth_rate_)
 : WriteBuffer(nullptr, 0), max_total_size(max_total_size_), initial_chunk_size(initial_chunk_size_), growth_rate(growth_rate_)
 {
@@ -110,7 +111,10 @@ void MemoryWriteBuffer::addChunk()
 			next_chunk_size = max_total_size - total_chunks_size;
 
 		if (0 == next_chunk_size)
+		{
+			set(position(), 0);
 			throw Exception("MemoryWriteBuffer limit is exhausted", ErrorCodes::CURRENT_WRITE_BUFFER_IS_EXHAUSTED);
+		}
 	}
 
 	Position begin = reinterpret_cast<Position>(Allocator<false>().alloc(next_chunk_size));
@@ -118,6 +122,8 @@ void MemoryWriteBuffer::addChunk()
 	total_chunks_size += next_chunk_size;
 
 	set(chunk_tail->begin(), chunk_tail->size());
+// 	std::cerr << "MemoryWriteBuffer a count=" << count() << " bytes=" << bytes << " bytes+size=" << bytes + buffer().size() << " total_chunks_size="
+// 	<< total_chunks_size << "\n";
 }
 
 std::shared_ptr<ReadBuffer> MemoryWriteBuffer::getReadBufferImpl()
