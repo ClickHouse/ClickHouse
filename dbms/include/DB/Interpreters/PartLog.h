@@ -22,9 +22,9 @@ struct PartLogElement
 	UInt64 size_in_bytes{};
 	UInt64 act_time_ms{};
 
-    String database_name;
-    String table_name;
-    String part_name;
+	String database_name;
+	String table_name;
+	String part_name;
 	Strings merged_from;
 
 	static std::string name() { return "PartLog"; }

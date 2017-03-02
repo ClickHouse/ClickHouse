@@ -206,13 +206,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const MergeTreeData::MergingParams & merging_params_,
 	bool has_force_restore_data_flag,
 	const MergeTreeSettings & settings_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
+	: IStorage{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
 	current_zookeeper(context.getZooKeeper()), database_name(database_name_),
 	table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
 	zookeeper_path(context.getMacros().expand(zookeeper_path_)),
 	replica_name(context.getMacros().expand(replica_name_)),
 	data(database_name, table_name,
-        full_path, columns_,
+		full_path, columns_,
 		materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, merging_params_,
@@ -292,8 +292,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	if (Poco::File(unreplicated_path).exists())
 	{
 		unreplicated_data = std::make_unique<MergeTreeData>(
-            database_name, table_name,
-            unreplicated_path, columns_,
+			database_name, table_name,
+			unreplicated_path, columns_,
 			materialized_columns_, alias_columns_, column_defaults_,
 			context_, primary_expr_ast_,
 			date_column_name_, sampling_expression_, index_granularity_, merging_params_, settings_,
@@ -509,7 +509,7 @@ namespace
 			in >> read_primary_key;
 
 			/// NOTE: Можно сделать менее строгую проверку совпадения выражений, чтобы таблицы не ломались от небольших изменений
-			///       в коде formatAST.
+			///	   в коде formatAST.
 			if (read_primary_key != local_primary_key)
 				throw Exception("Existing table metadata in ZooKeeper differs in primary key."
 					" Stored in ZooKeeper: " + read_primary_key + ", local: " + local_primary_key,
@@ -712,9 +712,9 @@ void StorageReplicatedMergeTree::createReplica()
 
 		/** Если эталонная реплика еще не до конца создана, подождем.
 		  * NOTE: Если при ее создании что-то пошло не так, можем провисеть тут вечно.
-		  *       Можно создавать на время создания эфемерную ноду, чтобы быть уверенным, что реплика создается, а не заброшена.
-		  *       То же можно делать и для таблицы. Можно автоматически удалять ноду реплики/таблицы,
-		  *        если видно, что она создана не до конца, а создающий ее умер.
+		  *	   Можно создавать на время создания эфемерную ноду, чтобы быть уверенным, что реплика создается, а не заброшена.
+		  *	   То же можно делать и для таблицы. Можно автоматически удалять ноду реплики/таблицы,
+		  *		если видно, что она создана не до конца, а создающий ее умер.
 		  */
 		while (!zookeeper->exists(source_path + "/columns"))
 		{
@@ -1669,7 +1669,7 @@ bool StorageReplicatedMergeTree::canMergeParts(
 		}
 		else
 		{
-			String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
+			String path1 = zookeeper_path +	             "/block_numbers/" + month_name + "/block-" + padIndex(number);
 			String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
 
 			if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
@@ -1804,7 +1804,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
 		/// Уберем больше не нужные отметки о несуществующих блоках.
 		for (Int64 number = std::max(RESERVED_BLOCK_NUMBERS, parts[i]->right + 1); number <= parts[i + 1]->left - 1; ++number)
 		{
-			zookeeper->tryRemove(zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number));
+			zookeeper->tryRemove(zookeeper_path +	           "/block_numbers/" + month_name + "/block-" + padIndex(number));
 			zookeeper->tryRemove(zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number));
 		}
 	}
@@ -2037,24 +2037,24 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 	ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
 
-    Stopwatch stopwatch;
-    stopwatch.restart();
+	Stopwatch stopwatch;
+	stopwatch.restart();
 
 	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(
 		part_name, replica_path, address.host, address.replication_port, to_detached);
-    
-    stopwatch.stop();
-    PartLogElement elem;
 
-    elem.event_type = PartLogElement::DOWNLOAD_PART;
-    elem.event_time = time(0);
-    elem.size_in_bytes = part->size_in_bytes;
-    elem.act_time_ms = stopwatch.elapsed() / 10000000;
-    elem.database_name = part->storage.getDatabaseName();
-    elem.table_name = part->storage.getTableName();
-    elem.part_name = part->name;
+	stopwatch.stop();
+	PartLogElement elem;
 
-    context.getPartLog().add(elem);
+	elem.event_type = PartLogElement::DOWNLOAD_PART;
+	elem.event_time = time(0);
+	elem.size_in_bytes = part->size_in_bytes;
+	elem.act_time_ms = stopwatch.elapsed() / 10000000;
+	elem.database_name = part->storage.getDatabaseName();
+	elem.table_name = part->storage.getTableName();
+	elem.part_name = part->name;
+
+	context.getPartLog().add(elem);
 
 	if (!to_detached)
 	{
@@ -2658,7 +2658,7 @@ void StorageReplicatedMergeTree::dropPartition(
 	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
 	  * Инвариант: в логе не появятся слияния удаляемых кусков с другими кусками.
 	  * NOTE: Если понадобится аналогично поддержать запрос DROP PART, для него придется придумать какой-нибудь новый механизм,
-	  *        чтобы гарантировать этот инвариант.
+	  *	    чтобы гарантировать этот инвариант.
 	  */
 	Int64 right;
 
