@@ -131,8 +131,8 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
 	cascade_buffer->getResultBuffers(write_buffers);
 
-	if (write_buffers.size() != 2)
-		throw Exception("Exactly 2 buffers are required to overwrite result into HTTP response", ErrorCodes::LOGICAL_ERROR);
+	if (write_buffers.empty())
+		throw Exception("At least one buffer is expected to overwrite result into HTTP response", ErrorCodes::LOGICAL_ERROR);
 
 	for (auto & write_buf : write_buffers)
 	{
@@ -225,24 +225,33 @@ void HTTPHandler::processQuery(
 	/// compressed using internal algorithm. This is not reflected in HTTP headers.
 	bool internal_compression = params.getParsed<bool>("compress", false);
 
-	size_t response_buffer_size = params.getParsed<size_t>("buffer_size", DBMS_DEFAULT_BUFFER_SIZE);
-	response_buffer_size = response_buffer_size ? response_buffer_size : DBMS_DEFAULT_BUFFER_SIZE;
+	/// At least, we should postpone sending of first buffer_size result bytes
+	size_t buffer_size_total = std::max(
+		params.getParsed<size_t>("buffer_size", DBMS_DEFAULT_BUFFER_SIZE), static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
 
-	bool result_buffer_overflow_to_disk = params.get("result_buffer_on_overflow", "http") == "disk";
+	/// If it is specified, the whole result will be buffered.
+	///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
+	bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", false);
+
+	size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
+	size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
 	used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-		response, client_supports_http_compression, http_response_compression_method, response_buffer_size);
+		response, client_supports_http_compression, http_response_compression_method, buffer_size_http);
 	if (internal_compression)
 		used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
 	else
 		used_output.out_maybe_compressed = used_output.out;
 
-	if (response_buffer_size > 0)
+	if (buffer_size_memory > 0 || buffer_until_eof)
 	{
-		CascadeWriteBuffer::WriteBufferPtrs concat_buffers1{ std::make_shared<MemoryWriteBuffer>(response_buffer_size) };
-		CascadeWriteBuffer::WriteBufferConstructors concat_buffers2{};
+		CascadeWriteBuffer::WriteBufferPtrs cascade_buffer1;
+		CascadeWriteBuffer::WriteBufferConstructors cascade_buffer2;
 
-		if (result_buffer_overflow_to_disk)
+		if (buffer_size_memory > 0)
+			cascade_buffer1.emplace_back(std::make_shared<MemoryWriteBuffer>(buffer_size_memory));
+
+		if (buffer_until_eof)
 		{
 			std::string tmp_path_template = context.getTemporaryPath() + "http_buffers/" + escapeForFileName(user) + ".XXXXXX";
 
@@ -251,26 +260,27 @@ void HTTPHandler::processQuery(
 				return WriteBufferFromTemporaryFile::create(tmp_path_template);
 			};
 
-			concat_buffers2.emplace_back(std::move(create_tmp_disk_buffer));
+			cascade_buffer2.emplace_back(std::move(create_tmp_disk_buffer));
 		}
 		else
 		{
-			auto rewrite_memory_buffer_and_forward = [next_buffer = used_output.out_maybe_compressed] (const WriteBufferPtr & prev_buf)
+			auto push_memory_buffer_and_continue = [next_buffer = used_output.out_maybe_compressed] (const WriteBufferPtr & prev_buf)
 			{
 				auto prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
 				if (!prev_memory_buffer)
 					throw Exception("Expected MemoryWriteBuffer", ErrorCodes::LOGICAL_ERROR);
 
-				copyData(*prev_memory_buffer->tryGetReadBuffer(), *next_buffer);
+				auto rdbuf = prev_memory_buffer->tryGetReadBuffer();
+				copyData(*rdbuf , *next_buffer);
 
 				return next_buffer;
 			};
 
-			concat_buffers2.emplace_back(rewrite_memory_buffer_and_forward);
+			cascade_buffer2.emplace_back(push_memory_buffer_and_continue);
 		}
 
 		used_output.out_maybe_delayed_and_compressed = std::make_shared<CascadeWriteBuffer>(
-			std::move(concat_buffers1), std::move(concat_buffers2));
+			std::move(cascade_buffer1), std::move(cascade_buffer2));
 	}
 	else
 	{
@@ -307,7 +317,7 @@ void HTTPHandler::processQuery(
 	/// 'decompress' query parameter.
 	std::unique_ptr<ReadBuffer> in_post_maybe_compressed;
 	bool in_post_compressed = false;
-	if (parse<bool>(params.get("decompress", "0")))
+	if (params.getParsed<bool>("decompress", false))
 	{
 		in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post);
 		in_post_compressed = true;
@@ -360,7 +370,7 @@ void HTTPHandler::processQuery(
 	auto readonly_before_query = limits.readonly;
 
 	NameSet reserved_param_names{"query", "compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
-		"buffer_size", "result_buffer_size", "result_buffer_on_overflow"
+		"buffer_size", "wait_end_of_query"
 	};
 
 	for (auto it = params.begin(); it != params.end(); ++it)
@@ -435,7 +445,10 @@ void HTTPHandler::processQuery(
 		[&response] (const String & content_type) { response.setContentType(content_type); });
 
 	if (used_output.hasDelayed())
+	{
+		/// TODO: set Content-Length if possible (?)
 		pushDelayedResults(used_output);
+	}
 
 	/// Send HTTP headers with code 200 if no exception happened and the data is still not sent to
 	/// the client.

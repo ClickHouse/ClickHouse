@@ -32,6 +32,8 @@ public:
 		return curr_buffer;
 	}
 
+	~CascadeWriteBuffer();
+
 private:
 
 	WriteBuffer * setNextBuffer();
