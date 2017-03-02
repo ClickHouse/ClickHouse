@@ -55,7 +55,7 @@ private:
 	};
 
 	/// Separate converter is created for each thread.
-	using Pool = ObjectPool<IConv, CharsetsFromTo>;
+	using Pool = ObjectPoolMap<IConv, CharsetsFromTo>;
 
 	Pool::Pointer getConverter(const CharsetsFromTo & charsets)
 	{
@@ -141,13 +141,10 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 3; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 3)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 3.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		for (size_t i : ext::range(0, 3))
 			if (!typeid_cast<const DataTypeString *>(&*arguments[i]))
 				throw Exception("Illegal type " + arguments[i]->getName() + " of argument of function " + getName()
@@ -158,10 +155,10 @@ public:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnWithTypeAndName & arg_from = block.unsafeGetByPosition(arguments[0]);
-		const ColumnWithTypeAndName & arg_charset_from = block.unsafeGetByPosition(arguments[1]);
-		const ColumnWithTypeAndName & arg_charset_to = block.unsafeGetByPosition(arguments[2]);
-		ColumnWithTypeAndName & res = block.unsafeGetByPosition(result);
+		const ColumnWithTypeAndName & arg_from = block.getByPosition(arguments[0]);
+		const ColumnWithTypeAndName & arg_charset_from = block.getByPosition(arguments[1]);
+		const ColumnWithTypeAndName & arg_charset_to = block.getByPosition(arguments[2]);
+		ColumnWithTypeAndName & res = block.getByPosition(result);
 
 		const ColumnConstString * col_charset_from = typeid_cast<const ColumnConstString *>(arg_charset_from.column.get());
 		const ColumnConstString * col_charset_to = typeid_cast<const ColumnConstString *>(arg_charset_to.column.get());

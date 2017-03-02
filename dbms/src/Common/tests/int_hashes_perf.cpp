@@ -1,4 +1,4 @@
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <sched.h>
 #endif
 
@@ -18,7 +18,7 @@
 
 void setAffinity()
 {
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
 	CPU_SET(0, &mask);
@@ -35,9 +35,14 @@ void setAffinity()
 
 static inline __attribute__((__always_inline__)) UInt64 rdtsc()
 {
+#if __x86_64__
     UInt32 a, d;
     __asm__ volatile ("rdtsc" : "=a" (a), "=d" (d));
     return static_cast<UInt64>(a) | (static_cast<UInt64>(d) << 32);
+#else
+    // TODO: make for arm64
+    return 0;
+#endif
 }
 
 
@@ -110,7 +115,9 @@ static inline size_t murmurMix(UInt64 x)
 static inline size_t crc32Hash(UInt64 x)
 {
 	UInt64 crc = -1ULL;
+#if __x86_64__
 	asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x));
+#endif
 	return crc;
 }
 
@@ -266,6 +273,11 @@ static inline void test(size_t n, const UInt64 * data, const char * name)
 
 int main(int argc, char ** argv)
 {
+
+#if !__x86_64__
+	std::cerr << "Only for x86_64 arch" << std::endl;
+#endif
+
 	const size_t BUF_SIZE = 1024;
 
 	size_t n = (atoi(argv[1]) + (BUF_SIZE - 1)) / BUF_SIZE * BUF_SIZE;

@@ -18,7 +18,7 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Interpreters/AggregationCommon.h>
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 	#include <smmintrin.h>
 #endif
 
@@ -139,7 +139,7 @@ struct FastHash64
 };
 
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 
 struct CrapWow
 {
@@ -229,7 +229,9 @@ struct SimpleHash
 
 		if (size < 8)
 		{
+#if __SSE4_1__
 			return hashLessThan8(x.data, x.size);
+#endif
 		}
 
 		while (pos + 8 < end)
@@ -264,7 +266,9 @@ struct VerySimpleHash
 
 		if (size < 8)
 		{
+#if __SSE4_1__
 			return hashLessThan8(x.data, x.size);
+#endif
 		}
 
 		while (pos + 8 < end)
@@ -312,7 +316,7 @@ struct MetroHash64
 };
 
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 
 /*struct CRC32Hash
 {
@@ -462,7 +466,7 @@ int main(int argc, char ** argv)
 	if (!m || m == 2) bench<StringRef_CompareMemcmp, FastHash64>	(data, "StringRef_FastHash64");
 	if (!m || m == 3) bench<StringRef_CompareMemcmp, SimpleHash>	(data, "StringRef_SimpleHash");
 
-#if defined(__x86_64__)
+#if __SSE4_1__
 	if (!m || m == 4) bench<StringRef_CompareMemcmp, CrapWow>		(data, "StringRef_CrapWow");
 	if (!m || m == 5) bench<StringRef_CompareMemcmp, CRC32Hash>		(data, "StringRef_CRC32Hash");
 	if (!m || m == 6) bench<StringRef_CompareMemcmp, CRC32ILPHash>	(data, "StringRef_CRC32ILPHash");

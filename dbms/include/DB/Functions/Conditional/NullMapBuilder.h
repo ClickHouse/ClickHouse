@@ -23,7 +23,7 @@ public:
 	/// This constructor takes the block that contains the original data received
 	/// by multiIf, i.e. they have not been processed.
 	NullMapBuilder(Block & block_)
-		: block{block_}, row_count{block.rowsInFirstColumn()}
+		: block{block_}, row_count{block.rows()}
 	{
 	}
 

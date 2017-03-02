@@ -20,7 +20,7 @@ try
 	{
 		std::cerr << ".";
 
-		Poco::Net::SocketAddress address("127.0.0.1", 9000);
+		Poco::Net::SocketAddress address("localhost", 9000);
 
 		int fd = socket(PF_INET, SOCK_STREAM, IPPROTO_IP);
 

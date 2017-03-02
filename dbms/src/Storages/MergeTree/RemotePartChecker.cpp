@@ -4,6 +4,8 @@
 #include <DB/IO/ReadBufferFromHTTP.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <Poco/File.h>
+
 
 namespace DB
 {

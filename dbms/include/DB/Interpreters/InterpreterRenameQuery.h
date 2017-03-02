@@ -8,7 +8,8 @@ namespace DB
 {
 
 
-/** Переименовать одну или несколько таблиц.
+/** Rename one table
+  *  or rename many tables at once.
   */
 class InterpreterRenameQuery : public IInterpreter
 {

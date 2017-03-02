@@ -1,7 +1,3 @@
-#if defined(__x86_64__)
-	#include <emmintrin.h>
-#endif
-
 #include <sstream>
 
 #include <mysqlxx/Manip.h>
@@ -50,7 +46,7 @@ bool checkString(const char * s, ReadBuffer & buf)
 }
 
 
-static bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf)
+bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf)
 {
 	for (; *s; ++s)
 	{
@@ -58,7 +54,7 @@ static bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf)
 			return false;
 
 		char c = *buf.position();
-		if (!(*s == c || (isAlphaASCII(*s) && alternateCaseIfAlphaASCII(*s) == c)))
+		if (!equalsCaseInsensitive(*s, c))
 			return false;
 
 		++buf.position();
@@ -87,6 +83,36 @@ void assertEOF(ReadBuffer & buf)
 {
 	if (!buf.eof())
 		throwAtAssertionFailed("eof", buf);
+}
+
+
+void assertStringCaseInsensitive(const char * s, ReadBuffer & buf)
+{
+	if (!checkStringCaseInsensitive(s, buf))
+		throwAtAssertionFailed(s, buf);
+}
+
+
+bool checkStringByFirstCharacterAndAssertTheRest(const char * s, ReadBuffer & buf)
+{
+	if (buf.eof() || *buf.position() != *s)
+		return false;
+
+	assertString(s, buf);
+	return true;
+}
+
+bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, ReadBuffer & buf)
+{
+	if (buf.eof())
+		return false;
+
+	char c = *buf.position();
+	if (!equalsCaseInsensitive(*s, c))
+		return false;
+
+	assertStringCaseInsensitive(s, buf);
+	return true;
 }
 
 
@@ -173,6 +199,11 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 		readPODBinary(c1, buf);
 		readPODBinary(c2, buf);
 		s.push_back(static_cast<char>(unhex(c1) * 16 + unhex(c2)));
+	}
+	else if (*buf.position() == 'N')
+	{
+		/// Support for NULLs: \N sequence must be parsed as empty string.
+		++buf.position();
 	}
 	else
 	{
@@ -300,7 +331,7 @@ void readEscapedStringInto(Vector & s, ReadBuffer & buf)
 		const char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
 
 		appendToStringOrVector(s, buf.position(), next_pos);
-		buf.position() += next_pos - buf.position();
+		buf.position() += next_pos - buf.position();	/// Code looks complicated, because "buf.position() = next_pos" doens't work due to const-ness.
 
 		if (!buf.hasPendingData())
 			continue;
@@ -527,7 +558,7 @@ template void readJSONStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & 
 template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 
 
-void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)
+void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
 	static constexpr auto DATE_TIME_BROKEN_DOWN_LENGTH = 19;
 	static constexpr auto UNIX_TIMESTAMP_MAX_LENGTH = 10;
@@ -565,7 +596,7 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)
 		if (unlikely(year == 0))
 			datetime = 0;
 		else
-			datetime = DateLUT::instance().makeDateTime(year, month, day, hour, minute, second);
+			datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 	}
 	else
 		datetime = parse<time_t>(s, s_pos - s);
@@ -719,6 +750,56 @@ void assertNaN(ReadBuffer & buf)
 {
 	if (!parseNaN(buf))
 		throw Exception("Cannot parse NaN.", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+}
+
+
+void skipToNextLineOrEOF(ReadBuffer & buf)
+{
+	while (!buf.eof())
+	{
+		const char * next_pos = find_first_symbols<'\n'>(buf.position(), buf.buffer().end());
+		buf.position() += next_pos - buf.position();
+
+		if (!buf.hasPendingData())
+			continue;
+
+		if (*buf.position() == '\n')
+		{
+			++buf.position();
+			return;
+		}
+	}
+}
+
+
+void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
+{
+	while (!buf.eof())
+	{
+		const char * next_pos = find_first_symbols<'\n', '\\'>(buf.position(), buf.buffer().end());
+		buf.position() += next_pos - buf.position();
+
+		if (!buf.hasPendingData())
+			continue;
+
+		if (*buf.position() == '\n')
+		{
+			++buf.position();
+			return;
+		}
+
+		if (*buf.position() == '\\')
+		{
+			++buf.position();
+			if (buf.eof())
+				return;
+
+			/// Skip escaped character. We do not consider escape sequences with more than one charater after backslash (\x01).
+			/// It's ok for the purpose of this function, because we are interested only in \n and \\.
+			++buf.position();
+			continue;
+		}
+	}
 }
 
 }

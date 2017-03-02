@@ -26,7 +26,7 @@ public:
 	void write(const Block & block) override;
 
 private:
-	std::vector<IColumn::Filter> createFilters(Block block);
+	IColumn::Selector createSelector(Block block);
 
 	void writeSplit(const Block & block);
 

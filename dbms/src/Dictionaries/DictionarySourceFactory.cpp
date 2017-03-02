@@ -1,5 +1,6 @@
-#include <DB/Core/Block.h>
 #include <DB/Dictionaries/DictionarySourceFactory.h>
+
+#include <DB/Core/Block.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/FileDictionarySource.h>
 #include <DB/Dictionaries/MySQLDictionarySource.h>
@@ -11,8 +12,9 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/Core/FieldVisitors.h>
-
+#include <DB/IO/HTTPCommon.h>
 #include <memory>
+#include <mutex>
 #include <Poco/Data/ODBC/Connector.h>
 
 
@@ -129,10 +131,14 @@ DictionarySourcePtr DictionarySourceFactory::create(
 	}
 	else if ("http" == source_type)
 	{
+
 		if (dict_struct.has_expressions)
 			throw Exception{
 				"Dictionary source of type `http` does not support attribute expressions",
 				ErrorCodes::LOGICAL_ERROR};
+
+		// Used for https queries
+		std::call_once(client_ssl_init_once, clientSSLInit);
 
 		return std::make_unique<HTTPDictionarySource>(dict_struct, config, config_prefix + ".http", sample_block, context);
 	}

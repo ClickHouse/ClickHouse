@@ -3,6 +3,7 @@
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/LimitBlockInputStream.h>
+#include <DB/DataStreams/LimitByBlockInputStream.h>
 #include <DB/DataStreams/PartialSortingBlockInputStream.h>
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
@@ -25,10 +26,14 @@
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTOrderByElement.h>
+#include <DB/Parsers/ASTTablesInSelectQuery.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterSetQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+
+#include <DB/Storages/IStorage.h>
+
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
 
@@ -190,19 +195,25 @@ void InterpreterSelectQuery::initQueryAnalyzer()
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
 	size_t subquery_depth_, BlockInputStreamPtr input_)
-	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
-	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_),
-	is_first_select_inside_union_all(query.isUnionAllHead()),
-	log(&Logger::get("InterpreterSelectQuery"))
+	: query_ptr(query_ptr_)
+	, query(typeid_cast<ASTSelectQuery &>(*query_ptr))
+	, context(context_)
+	, to_stage(to_stage_)
+	, subquery_depth(subquery_depth_)
+	, is_first_select_inside_union_all(query.isUnionAllHead())
+	, log(&Logger::get("InterpreterSelectQuery"))
 {
 	init(input_);
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, ASTPtr query_ptr_, const Context & context_)
-	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
-	context(context_), to_stage(QueryProcessingStage::Complete), subquery_depth(0),
-	is_first_select_inside_union_all(false), only_analyze(true),
-	log(&Logger::get("InterpreterSelectQuery"))
+	: query_ptr(query_ptr_)
+	, query(typeid_cast<ASTSelectQuery &>(*query_ptr))
+	, context(context_)
+	, to_stage(QueryProcessingStage::Complete)
+	, subquery_depth(0)
+	, is_first_select_inside_union_all(false), only_analyze(true)
+	, log(&Logger::get("InterpreterSelectQuery"))
 {
 	init({});
 }
@@ -217,10 +228,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
 	const Names & required_column_names_,
 	const NamesAndTypesList & table_column_names_, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
-	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
-	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_), table_column_names(table_column_names_),
-	is_first_select_inside_union_all(query.isUnionAllHead()),
-	log(&Logger::get("InterpreterSelectQuery"))
+	: query_ptr(query_ptr_)
+	, query(typeid_cast<ASTSelectQuery &>(*query_ptr))
+	, context(context_)
+	, to_stage(to_stage_)
+	, subquery_depth(subquery_depth_)
+	, table_column_names(table_column_names_)
+	, is_first_select_inside_union_all(query.isUnionAllHead())
+	, log(&Logger::get("InterpreterSelectQuery"))
 {
 	init(input_, required_column_names_);
 }
@@ -305,7 +320,7 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 DataTypes InterpreterSelectQuery::getReturnTypes()
 {
 	DataTypes res;
-	NamesAndTypesList columns = query_analyzer->getSelectSampleBlock().getColumnsList();
+	const NamesAndTypesList & columns = query_analyzer->getSelectSampleBlock().getColumnsList();
 	for (auto & column : columns)
 		res.push_back(column.type);
 
@@ -320,7 +335,7 @@ Block InterpreterSelectQuery::getSampleBlock()
 	/// писать (читать) с помощью BlockOut(In)putStream'ов
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		ColumnWithTypeAndName & col = block.getByPosition(i);
+		ColumnWithTypeAndName & col = block.safeGetByPosition(i);
 		col.column = col.type->createColumn();
 	}
 	return block;
@@ -553,8 +568,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 			  *  но есть ORDER или LIMIT,
 			  *  то выполним предварительную сортировку и LIMIT на удалёном сервере.
 			  */
-			if (!second_stage
-				&& !need_aggregate && !has_having)
+			if (!second_stage && !need_aggregate && !has_having)
 			{
 				if (has_order_by)
 					executeOrder();
@@ -569,7 +583,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 		if (second_stage)
 		{
-			bool need_second_distinct_pass = query.distinct;
+			bool need_second_distinct_pass;
 
 			if (need_aggregate)
 			{
@@ -587,9 +601,12 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 				need_second_distinct_pass = query.distinct && hasMoreThanOneStream();
 			}
-			else if (query.group_by_with_totals && !aggregate_final)
+			else
 			{
-				executeTotalsAndHaving(false, nullptr, aggregate_overflow_row);
+				need_second_distinct_pass = query.distinct && hasMoreThanOneStream();
+
+				if (query.group_by_with_totals && !aggregate_final)
+					executeTotalsAndHaving(false, nullptr, aggregate_overflow_row);
 			}
 
 			if (has_order_by)
@@ -619,21 +636,28 @@ void InterpreterSelectQuery::executeSingleQuery()
 			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
 				* ограничивающий число записей в каждом до offset + limit.
 				*/
-			if (query.limit_length && hasMoreThanOneStream() && !query.distinct)
+			if (query.limit_length && hasMoreThanOneStream() && !query.distinct && !query.limit_by_expression_list)
 				executePreLimit();
 
-			if (need_second_distinct_pass)
+			if (union_within_single_query || stream_with_non_joined_data || need_second_distinct_pass)
 				union_within_single_query = true;
 
-			if (union_within_single_query || stream_with_non_joined_data)
+			/// To execute LIMIT BY we should merge all streams together.
+			if (query.limit_by_expression_list && hasMoreThanOneStream())
+				union_within_single_query = true;
+
+			if (union_within_single_query)
 				executeUnion();
 
 			if (streams.size() == 1)
 			{
-				/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
+				/** If there was more than one stream,
+				  * then DISTINCT needs to be performed once again after merging all streams.
+				  */
 				if (need_second_distinct_pass)
 					executeDistinct(false, Names());
 
+				executeLimitBy();
 				executeLimit();
 			}
 		}
@@ -770,7 +794,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 	size_t limit_offset = 0;
 	getLimitLengthAndOffset(query, limit_length, limit_offset);
 
-	/** Оптимизация - если не указаны DISTINCT, WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
+	/** Оптимизация - если не указаны DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY но указан LIMIT, и limit + offset < max_block_size,
 	 *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено),
 	 *  а также установим количество потоков в 1.
 	 */
@@ -780,6 +804,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 		&& !query.group_expression_list
 		&& !query.having_expression
 		&& !query.order_expression_list
+		&& !query.limit_by_expression_list
 		&& query.limit_length
 		&& !query_analyzer->hasAggregation()
 		&& limit_length + limit_offset < settings.max_block_size)
@@ -1024,9 +1049,9 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
 
 static size_t getLimitForSorting(ASTSelectQuery & query)
 {
-	/// Если есть LIMIT и нет DISTINCT - можно делать частичную сортировку.
+	/// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY.
 	size_t limit = 0;
-	if (!query.distinct)
+	if (!query.distinct && !query.limit_by_expression_list)
 	{
 		size_t limit_length = 0;
 		size_t limit_offset = 0;
@@ -1156,12 +1181,34 @@ void InterpreterSelectQuery::executePreLimit()
 	{
 		transformStreams([&](auto & stream)
 		{
-			stream = std::make_shared<LimitBlockInputStream>(stream, limit_length + limit_offset, 0);
+			stream = std::make_shared<LimitBlockInputStream>(stream, limit_length + limit_offset, false);
 		});
 
 		if (hasMoreThanOneStream())
 			union_within_single_query = true;
 	}
+}
+
+
+void InterpreterSelectQuery::executeLimitBy()
+{
+	if (!query.limit_by_value || !query.limit_by_expression_list)
+		return;
+
+	Names columns;
+	size_t value = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_by_value).value);
+
+	for (const auto & elem : query.limit_by_expression_list->children)
+	{
+		columns.emplace_back(elem->getAliasOrColumnName());
+	}
+
+	transformStreams([&](auto & stream)
+	{
+		stream = std::make_shared<LimitByBlockInputStream>(
+			stream, value, columns
+		);
+	});
 }
 
 

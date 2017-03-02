@@ -19,6 +19,8 @@
 #include <DB/Interpreters/convertFieldToType.h>
 #include <DB/Interpreters/evaluateConstantExpression.h>
 
+#include <DB/Storages/MergeTree/PKCondition.h>
+
 
 namespace DB
 {
@@ -88,22 +90,28 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 	/// Запоминаем столбцы, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
 	{
-		key_columns.emplace_back(block.getByPosition(i).column.get());
+		key_columns.emplace_back(block.safeGetByPosition(i).column.get());
 
 		if (empty())
-			data_types.emplace_back(block.getByPosition(i).type);
+			data_types.emplace_back(block.safeGetByPosition(i).type);
 
 		if (auto converted = key_columns.back()->convertToFullColumnIfConst())
 		{
 			materialized_columns.emplace_back(converted);
 			key_columns.back() = materialized_columns.back().get();
 		}
+	}
 
-		/** Flatten tuples. For case when written
-		  *  (a, b) IN (SELECT (a, b) FROM table)
-		  * instead of more typical
-		  *  (a, b) IN (SELECT a, b FROM table)
-		  */
+	/** Flatten tuples. For case when written
+	  *  (a, b) IN (SELECT (a, b) FROM table)
+	  * instead of more typical
+	  *  (a, b) IN (SELECT a, b FROM table)
+	  *
+	  * Avoid flatten in case then we have more than one column:
+	  * Ex.: 1, (2, 3) become just 1, 2, 3
+	  */
+	if (keys_size == 1)
+	{
 		if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(key_columns.back()))
 		{
 			key_columns.pop_back();
@@ -116,7 +124,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 				data_types.pop_back();
 				const Block & tuple_block = tuple->getData();
 				for (size_t i = 0, size = tuple_block.columns(); i < size; ++i)
-					data_types.push_back(tuple_block.unsafeGetByPosition(i).type);
+					data_types.push_back(tuple_block.getByPosition(i).type);
 			}
 		}
 	}
@@ -166,9 +174,14 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 static Field extractValueFromNode(ASTPtr & node, const IDataType & type, const Context & context)
 {
 	if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(node.get()))
+	{
 		return convertFieldToType(lit->value, type);
+	}
 	else if (typeid_cast<ASTFunction *>(node.get()))
-		return convertFieldToType(evaluateConstantExpression(node, context), type);
+	{
+		std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(node, context);
+		return convertFieldToType(value_raw.first, type, value_raw.second.get());
+	}
 	else
 		throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 }
@@ -199,7 +212,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 			Field value = extractValueFromNode(*it, *data_types[0], context);
 
 			if (!value.isNull())
-				block.getByPosition(0).column->insert(value);
+				block.safeGetByPosition(0).column->insert(value);
 		}
 		else if (ASTFunction * func = typeid_cast<ASTFunction *>(it->get()))
 		{
@@ -222,12 +235,12 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 				if (value.isNull())
 					break;
 
-				tuple_values[j] = value;	/// TODO Сделать move семантику для Field.
+				tuple_values[j] = value;
 			}
 
 			if (j == tuple_size)
 				for (j = 0; j < tuple_size; ++j)
-					block.getByPosition(j).column->insert(tuple_values[j]);
+					block.safeGetByPosition(j).column->insert(tuple_values[j]);
 		}
 		else
 			throw Exception("Incorrect element of set", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
@@ -255,7 +268,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
 	auto res = std::make_shared<ColumnUInt8>();
 	ColumnUInt8::Container_t & vec_res = res->getData();
-	vec_res.resize(block.getByPosition(0).column->size());
+	vec_res.resize(block.safeGetByPosition(0).column->size());
 
 	Poco::ScopedReadRWLock lock(rwlock);
 
@@ -269,7 +282,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 		return res;
 	}
 
-	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(block.getByPosition(0).type.get());
+	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(block.safeGetByPosition(0).type.get());
 
 	if (array_type)
 	{
@@ -281,7 +294,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 				" on the right, " + array_type->getNestedType()->getName() + " on the left.",
 				ErrorCodes::TYPE_MISMATCH);
 
-		const IColumn * in_column = block.getByPosition(0).column.get();
+		const IColumn * in_column = block.safeGetByPosition(0).column.get();
 
 		/// Константный столбец слева от IN поддерживается не напрямую. Для этого, он сначала материализуется.
 		ColumnPtr materialized_column = in_column->convertToFullColumnIfConst();
@@ -312,12 +325,12 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
 		for (size_t i = 0; i < num_key_columns; ++i)
 		{
-			key_columns.push_back(block.getByPosition(i).column.get());
+			key_columns.push_back(block.safeGetByPosition(i).column.get());
 
 			if (DataTypeTraits::removeNullable(data_types[i])->getName() !=
-				DataTypeTraits::removeNullable(block.getByPosition(i).type)->getName())
+				DataTypeTraits::removeNullable(block.safeGetByPosition(i).type)->getName())
 				throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
-					+ data_types[i]->getName() + " on the right, " + block.getByPosition(i).type->getName() +
+					+ data_types[i]->getName() + " on the right, " + block.safeGetByPosition(i).type->getName() +
 					" on the left.", ErrorCodes::TYPE_MISMATCH);
 
 			if (auto converted = key_columns.back()->convertToFullColumnIfConst())
@@ -522,7 +535,7 @@ std::string Set::describe() const
 	ss << "{";
 	for (const Field & f : *ordered_set_elements)
 	{
-		ss << (first ? "" : ", ") << apply_visitor(FieldVisitorToString(), f);
+		ss << (first ? "" : ", ") << applyVisitor(FieldVisitorToString(), f);
 		first = false;
 	}
 	ss << "}";

@@ -1,8 +1,7 @@
 #pragma once
 
 #include <sstream>
-#include <mysql.h>
-
+#include <mysqlxx/Types.h>
 #include <Poco/Exception.h>
 
 
@@ -48,28 +47,10 @@ struct CannotParseValue : public Exception
 };
 
 
-inline std::string errorMessage(MYSQL * driver)
-{
-	std::stringstream res;
-	res << mysql_error(driver) << " (" << driver->host << ":" << driver->port << ")";
-	return res.str();
-}
+std::string errorMessage(MYSQL * driver);
 
-
-/// Для внутренних нужд библиотеки.
-inline void checkError(MYSQL * driver)
-{
-	unsigned num = mysql_errno(driver);
-
-	if (num)
-		throw Exception(errorMessage(driver), num);
-}
-
-
-/// Для внутренних нужд библиотеки.
-inline void onError(MYSQL * driver)
-{
-	throw Exception(errorMessage(driver), mysql_errno(driver));
-}
+/// For internal need of library.
+void checkError(MYSQL * driver);
+void onError(MYSQL * driver);
 
 }

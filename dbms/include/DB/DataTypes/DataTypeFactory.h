@@ -1,18 +1,15 @@
 #pragma once
 
 #include <map>
-
 #include <common/singleton.h>
-
 #include <Poco/RegularExpression.h>
-
 #include <DB/DataTypes/IDataType.h>
 
 
 namespace DB
 {
 
-/** Позволяет создать тип данных по его имени.
+/** Creates data type by its name (possibly name contains parameters in parens).
   */
 class DataTypeFactory : public Singleton<DataTypeFactory>
 {

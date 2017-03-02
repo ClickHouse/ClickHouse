@@ -1,4 +1,5 @@
 find_path(MYSQL_INCLUDE_DIR mysql.h
+		PATHS
 		/usr/include/mysql
 		/usr/local/include/mysql
 		/opt/mysql/mysql/include

@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 
 LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(ASTFunction * or_function_,
-	const std::string & expression_, const std::string & alias_)
+	const IAST::Hash & expression_, const std::string & alias_)
 	: or_function(or_function_), expression(expression_), alias(alias_)
 {
 }
@@ -39,16 +39,20 @@ void LogicalExpressionsOptimizer::perform()
 {
 	if (select_query == nullptr)
 		return;
-	if (select_query->attributes & IAST::IsVisited)
+	if (visited_nodes.count(select_query))
 		return;
 
 	size_t position = 0;
 	for (auto & column : select_query->select_expression_list->children)
 	{
 		bool inserted = column_to_position.emplace(column.get(), position).second;
+
+		/// Do not run, if AST was already converted to DAG.
+		/// TODO This is temporary solution. We must completely eliminate conversion of AST to DAG.
+		/// (see ExpressionAnalyzer::normalizeTree)
 		if (!inserted)
-			throw Exception("LogicalExpressionsOptimizer: corrupted SELECT query",
-				ErrorCodes::LOGICAL_ERROR);
+			return;
+
 		++position;
 	}
 
@@ -90,7 +94,7 @@ void LogicalExpressionsOptimizer::reorderColumns()
 
 void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 {
-	if (select_query->attributes & IAST::IsVisited)
+	if (visited_nodes.count(select_query))
 		return;
 
 	using Edge = std::pair<IAST *, IAST *>;
@@ -126,7 +130,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 							auto literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
 							if (literal != nullptr)
 							{
-								auto expr_lhs = equals_expression_list->children[0]->getTreeID();
+								auto expr_lhs = equals_expression_list->children[0]->getTreeHash();
 								OrWithExpression or_with_expression{function, expr_lhs, function->tryGetAlias()};
 								disjunctive_equality_chains_map[or_with_expression].functions.push_back(equals);
 								found_chain = true;
@@ -137,7 +141,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 			}
 		}
 
-		to_node->attributes |= IAST::IsVisited;
+		visited_nodes.insert(to_node);
 
 		if (found_chain)
 		{
@@ -153,9 +157,9 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 		{
 			for (auto & child : to_node->children)
 			{
-				if (typeid_cast<ASTSelectQuery *>(&*child) == nullptr)
+				if (typeid_cast<ASTSelectQuery *>(child.get()) == nullptr)
 				{
-					if (!(child->attributes & IAST::IsVisited))
+					if (!visited_nodes.count(child.get()))
 						to_visit.push_back(Edge(to_node, &*child));
 					else
 					{

@@ -101,17 +101,17 @@ ClickHouse is a columnar DBMS for OLAP.
 
 In a &quot;normal&quot; row-oriented DBMS, data is stored in this order:
 
-%%
+<pre class="text-example" style="white-space: pre; overflow-x: scroll">
 5123456789123456789     1       Eurobasket - Greece - Bosnia and Herzegovina - example.com      1       2011-09-01 01:03:02     6274717   1294101174      11409   612345678912345678      0       33      6       http://www.example.com/basketball/team/123/match/456789.html http://www.example.com/basketball/team/123/match/987654.html       0       1366    768     32      10      3183      0       0       13      0\0     1       1       0       0                       2011142 -1      0               0       01321     613     660     2011-09-01 08:01:17     0       0       0       0       utf-8   1466    0       0       0       5678901234567890123               277789954       0       0       0       0       0
 5234985259563631958     0       Consulting, Tax assessment, Accounting, Law       1       2011-09-01 01:03:02     6320881   2111222333      213     6458937489576391093     0       3       2       http://www.example.ru/         0       800     600       16      10      2       153.1   0       0       10      63      1       1       0       0                       2111678 000       0       588     368     240     2011-09-01 01:03:17     4       0       60310   0       windows-1251    1466    0       000               778899001       0       0       0       0       0
 ...
-%%
+</pre>
 
 In other words, all the values related to a row are stored next to each other. Examples of a row-oriented DBMS are MySQL, Postgres, MS SQL Server, and others.
 
 In a column-oriented DBMS, data is stored like this:
 
-<pre class="text-example" style="white-space: pre; overflow-x: hidden">
+<pre class="text-example" style="white-space: pre; overflow-x: scroll">
 <b>WatchID:</b>    5385521489354350662     5385521490329509958     5385521489953706054     5385521490476781638     5385521490583269446     5385521490218868806     5385521491437850694   5385521491090174022      5385521490792669254     5385521490420695110     5385521491532181574     5385521491559694406     5385521491459625030     5385521492275175494   5385521492781318214      5385521492710027334     5385521492955615302     5385521493708759110     5385521494506434630     5385521493104611398
 <b>JavaEnable:</b> 1       0       1       0       0       0       1       0       1       1       1       1       1       1       0       1       0       0       1       1
 <b>Title:</b>      Yandex  Announcements - Investor Relations - Yandex     Yandex — Contact us — Moscow    Yandex — Mission        Ru      Yandex — History — History of Yandex    Yandex Financial Releases - Investor Relations - Yandex Yandex — Locations      Yandex Board of Directors - Corporate Governance - Yandex       Yandex — Technologies
@@ -328,7 +328,7 @@ To remove the limitations of OLAPServer and solve the problem of working with no
 
 ==Usage in Yandex.Metrica and other Yandex services==
 
-ClickHouse is used for multiple purposes in Yandex.Metrica. Its main task is to build reports in online mode using non-aggregated data. It uses a cluster of 374 servers, which store over 8 trillion rows (more than a quadrillion values) in the database. The volume of compressed data, without counting duplication and replication, is about 800 TB. The volume of uncompressed data (in TSV format) would be approximately 7 PB.
+ClickHouse is used for multiple purposes in Yandex.Metrica. Its main task is to build reports in online mode using non-aggregated data. It uses a cluster of 374 servers, which store over 20.3 trillion rows in the database. The volume of compressed data, without counting duplication and replication, is about 2 PB. The volume of uncompressed data (in TSV format) would be approximately 17 PB.
 
 ClickHouse is also used for:
 - Storing WebVisor data.
@@ -451,8 +451,8 @@ Server: src/dbms/src/Server/
 For the server, create a catalog with data, such as:
 
 %%
-/opt/clickhouse/data/default/
-/opt/clickhouse/metadata/default/
+/var/lib/clickhouse/data/default/
+/var/lib/clickhouse/metadata/default/
 %%
 
 (Configured in the server config.)
@@ -546,7 +546,7 @@ Otherwise, you could use one of available public datasets, described <a href="ht
 If you are Yandex employee, use internal ClickHouse maillist.
 You can subscribe to this list to get announcements, information on new developments, and questions that other users have.
 
-Otherwise, you could ask questions on <a href="https://stackoverflow.com/">Stackoverflow</a>; discuss in <a href="https://groups.google.com/group/clickhouse">Google Groups</a>; or send private message to developers to address <a href="mailto:clickhouse-feedback@yandex-team.com">clickhouse-feedback@yandex-team.com</a>.
+Otherwise, you could ask questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse">Stack Overflow</a>; discuss in <a href="https://groups.google.com/group/clickhouse">Google Groups</a>; or send private message to developers to address <a href="mailto:clickhouse-feedback@yandex-team.com">clickhouse-feedback@yandex-team.com</a>.
 
 
 
@@ -694,7 +694,7 @@ echo &#39;DROP TABLE t&#39; | POST &#39;http://localhost:8123/&#39;
 
 For successful requests that don&#39;t return a data table, an empty response body is returned.
 
-You can use compression when transmitting data. The compressed data has a non-standard format, and you will need to use a special compressor program to work with it (%%sudo apt-get install compressor-metrika-yandex%%).
+You can use compression when transmitting data. The compressed data has a non-standard format, and you will need to use a special compressor program to work with it (%%sudo apt-get install clickhouse-compressor%%).
 
 If you specified &#39;compress=1&#39; in the URL, the server will compress the data it sends you.
 If you specified &#39;decompress=1&#39; in the URL, the server will decompress the same data that you pass in the POST method.
@@ -773,7 +773,7 @@ There is official JDBC driver for ClickHouse. See <a href="https://github.com/ya
 
 ==Third-party client libraries==
 
-There exist third-party client libraries for Python (<a href="https://github.com/Infinidat/infi.clickhouse_orm">1</a>), PHP (<a href="https://github.com/8bitov/clickhouse-php-client">1</a>, <a href="https://github.com/SevaCode/PhpClickHouseClient">2</a>, <a href="https://github.com/smi2/phpClickHouse">3</a>), Go (<a href="https://github.com/roistat/go-clickhouse">1</a>), Node.js (<a href="https://github.com/TimonKK/clickhouse">1</a>, <a href="https://github.com/apla/node-clickhouse">2</a>), Perl (<a href="https://github.com/elcamlost/perl-DBD-ClickHouse">1</a>, <a href="https://metacpan.org/release/HTTP-ClickHouse">2</a>, <a href="https://metacpan.org/release/AnyEvent-ClickHouse">3</a>), Ruby (<a href="https://github.com/archan937/clickhouse">1</a>), R (<a href="https://github.com/hannesmuehleisen/clickhouse-r">1</a>).
+There exist third-party client libraries for Python (<a href="https://github.com/Infinidat/infi.clickhouse_orm">1</a>, <a href="https://github.com/cloudflare/sqlalchemy-clickhouse">2</a>), PHP (<a href="https://github.com/8bitov/clickhouse-php-client">1</a>, <a href="https://github.com/SevaCode/PhpClickHouseClient">2</a>, <a href="https://github.com/smi2/phpClickHouse">3</a>), Go (<a href="https://github.com/kshvakov/clickhouse/">1</a>, <a href="https://github.com/roistat/go-clickhouse">2</a>), Node.js (<a href="https://github.com/TimonKK/clickhouse">1</a>, <a href="https://github.com/apla/node-clickhouse">2</a>), Perl (<a href="https://github.com/elcamlost/perl-DBD-ClickHouse">1</a>, <a href="https://metacpan.org/release/HTTP-ClickHouse">2</a>, <a href="https://metacpan.org/release/AnyEvent-ClickHouse">3</a>), Ruby (<a href="https://github.com/archan937/clickhouse">1</a>), R (<a href="https://github.com/hannesmuehleisen/clickhouse-r">1</a>).
 
 Libraries was not tested by us. Ordering is arbitrary.
 
@@ -1198,7 +1198,7 @@ There is no support for changing the column type in arrays and nested data struc
 
 The ALTER query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like &#39;name.nested_name&#39; and the type &#39;Array(<i>T</i>)&#39;. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 
-There is no support for deleting or changing the type for columns in the primary key or the sampling key (columns that are in the ENGINE expression).
+There is no support for deleting of columns in the primary key or the sampling key (columns that are in the ENGINE expression). Changing the type of columns in the primary key is allowed only if such change doesn't entail changing the actual data (e.g. adding the value to an Enum or changing the type from DateTime to UInt32 is allowed).
 
 If the ALTER query is not sufficient for making the table changes you need, you can create a new table, copy the data to it using the INSERT SELECT query, then switch the tables using the RENAME query and delete the old table.
 
@@ -1233,16 +1233,16 @@ active - Only count active parts. Inactive parts are, for example, source parts 
 
 Another way to view a set of parts and partitions is to go into the directory with table data.
 The directory with data is
-/opt/clickhouse/data/<i>database</i>/<i>table</i>/,
-where /opt/clickhouse/ is the path to ClickHouse data, &#39;database&#39; is the database name, and &#39;table&#39; is the table name. Example:
+/var/lib/clickhouse/data/<i>database</i>/<i>table</i>/,
+where /var/lib/clickhouse/ is the path to ClickHouse data, &#39;database&#39; is the database name, and &#39;table&#39; is the table name. Example:
 
 %%
-$ ls -l /opt/clickhouse/data/test/visits/
+$ ls -l /var/lib/clickhouse/data/test/visits/
 total 48
-drwxrwxrwx 2 metrika metrika 20480 may   13 02:58 20140317_20140323_2_2_0
-drwxrwxrwx 2 metrika metrika 20480 may   13 02:58 20140317_20140323_4_4_0
-drwxrwxrwx 2 metrika metrika  4096 may   13 02:55 detached
--rw-rw-rw- 1 metrika metrika     2 may   13 02:58 increment.txt
+drwxrwxrwx 2 clickhouse clickhouse 20480 may   13 02:58 20140317_20140323_2_2_0
+drwxrwxrwx 2 clickhouse clickhouse 20480 may   13 02:58 20140317_20140323_4_4_0
+drwxrwxrwx 2 clickhouse clickhouse  4096 may   13 02:55 detached
+-rw-rw-rw- 1 clickhouse clickhouse     2 may   13 02:58 increment.txt
 %%
 
 Here 20140317_20140323_2_2_0 and 20140317_20140323_4_4_0 are directories of parts.
@@ -1292,25 +1292,25 @@ So you can put data in the &#39;detached&#39; directory on one replica, and use 
 
 Creates a local backup of one or multiple partitions. The name can be the full name of the partition (for example, 201403), or its prefix (for example, 2014) - then the backup will be created for all the corresponding partitions.
 
-The query does the following: for a data snapshot at the time of execution, it creates hardlinks to table data in the directory /opt/clickhouse/shadow/N/...
-/opt/clickhouse/ is the working ClickHouse directory from the config.
+The query does the following: for a data snapshot at the time of execution, it creates hardlinks to table data in the directory /var/lib/clickhouse/shadow/N/...
+/var/lib/clickhouse/ is the working ClickHouse directory from the config.
 N is the incremental number of the backup.
-The same structure of directories is created inside the backup as inside /opt/clickhouse/.
+The same structure of directories is created inside the backup as inside /var/lib/clickhouse/.
 It also performs &#39;chmod&#39; for all files, forbidding writes to them.
 
 The backup is created almost instantly (but first it waits for current queries to the corresponding table to finish running). At first, the backup doesn&#39;t take any space on the disk. As the system works, the backup can take disk space, as data is modified. If the backup is made for old enough data, it won&#39;t take space on the disk.
 
-After creating the backup, data from /opt/clickhouse/shadow/ can be copied to the remote server and then deleted on the local server. The entire backup process is performed without stopping the server.
+After creating the backup, data from /var/lib/clickhouse/shadow/ can be copied to the remote server and then deleted on the local server. The entire backup process is performed without stopping the server.
 
 The ALTER ... FREEZE PARTITION query is not replicated. A local backup is only created on the local server.
 
-As an alternative, you can manually copy data from the /opt/clickhouse/data/database/table directory. But if you do this while the server is running, race conditions are possible when copying directories with files being added or changed, and the backup may be inconsistent. You can do this if the server isn&#39;t running - then the resulting data will be the same as after the ALTER TABLE t FREEZE PARTITION query.
+As an alternative, you can manually copy data from the /var/lib/clickhouse/data/database/table directory. But if you do this while the server is running, race conditions are possible when copying directories with files being added or changed, and the backup may be inconsistent. You can do this if the server isn&#39;t running - then the resulting data will be the same as after the ALTER TABLE t FREEZE PARTITION query.
 
-ALTER TABLE ... FREEZE PARTITION only copies data, not table metadata. To make a backup of table metadata, copy the file  /opt/clickhouse/metadata/database/table.sql
+ALTER TABLE ... FREEZE PARTITION only copies data, not table metadata. To make a backup of table metadata, copy the file  /var/lib/clickhouse/metadata/database/table.sql
 
 To restore from a backup:
 - Use the CREATE query to create the table if it doesn&#39;t exist. The query can be taken from an .sql file (replace ATTACH in it with CREATE).
-- Copy data from the data/database/table/ directory inside the backup to the /opt/clickhouse/data/database/table/detached/ directory.
+- Copy data from the data/database/table/ directory inside the backup to the /var/lib/clickhouse/data/database/table/detached/ directory.
 - Run ALTER TABLE ... ATTACH PARTITION YYYYMM queries where YYYYMM is the month, for every month.
 
 In this way, data from the backup will be added to the table.
@@ -1322,7 +1322,7 @@ Replication provides protection from device failures. If all data disappeared on
 
 For protection from device failures, you must use replication. For more information about replication, see the section &quot;Data replication&quot;.
 
-Backups protect against human error (accidentally deleting data, deleting the wrong data or in the wrong cluster, or corrupting data). For high-volume databases, it can be difficult to copy backups to remote servers. In such cases, to protect from human error, you can keep a backup on the same server (it will reside in /opt/clickhouse/shadow/).
+Backups protect against human error (accidentally deleting data, deleting the wrong data or in the wrong cluster, or corrupting data). For high-volume databases, it can be difficult to copy backups to remote servers. In such cases, to protect from human error, you can keep a backup on the same server (it will reside in /var/lib/clickhouse/shadow/).
 
 
 %%ALTER TABLE [db.]table FETCH PARTITION &#39;name&#39; FROM &#39;path-in-zookeeper&#39;%%
@@ -1352,29 +1352,29 @@ Possible values: 0 - do not wait, 1 - wait for own completion (default), 2 - wai
 
 ===SHOW DATABASES===
 
-%%SHOW DATABASES [FORMAT format]%%
+%%SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]%%
 
 Prints a list of all databases.
-This query is identical to the query SELECT name FROM system.databases [FORMAT format]
+This query is identical to the query SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]
 See the section &quot;Formats&quot;.
 
 
 ===SHOW TABLES===
 
-%%SHOW TABLES [FROM db] [LIKE &#39;pattern&#39;] [FORMAT format]%%
+%%SHOW TABLES [FROM db] [LIKE &#39;pattern&#39;] [INTO OUTFILE filename] [FORMAT format]%%
 
 Outputs a list of
 - tables from the current database, or from the &#39;db&#39; database if &quot;FROM db&quot; is specified.
 - all tables, or tables whose name matches the pattern, if &quot;LIKE &#39;pattern&#39;&quot; is specified.
 
 The query is identical to the query  SELECT name FROM system.tables
-WHERE database = &#39;db&#39; [AND name LIKE &#39;pattern&#39;] [FORMAT format]
+WHERE database = &#39;db&#39; [AND name LIKE &#39;pattern&#39;] [INTO OUTFILE filename] [FORMAT format]
 See the section &quot;LIKE operator&quot;.
 
 
 ===SHOW PROCESSLIST===
 
-%%SHOW PROCESSLIST [FORMAT format]%%
+%%SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]%%
 
 Outputs a list of queries currently being processed, other than SHOW PROCESSLIST queries.
 
@@ -1394,7 +1394,7 @@ Prints a table containing the columns:
 
 <b>query_id</b> - The query identifier. Non-empty only if it was explicitly defined by the user. For distributed processing, the query ID is not passed to remote servers.
 
-This query is exactly the same as: SELECT * FROM system.processes [FORMAT format].
+This query is exactly the same as: SELECT * FROM system.processes [INTO OUTFILE filename] [FORMAT format].
 
 Tip (execute in the console):
 %%watch -n1 &quot;clickhouse-client --query=&#39;SHOW PROCESSLIST&#39;&quot;%%
@@ -1402,14 +1402,14 @@ Tip (execute in the console):
 
 ===SHOW CREATE TABLE===
 
-%%SHOW CREATE TABLE [db.]table [FORMAT format]%%
+%%SHOW CREATE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]%%
 
 Returns a single String-type &#39;statement&#39; column, which contains a single value - the CREATE query used for creating the specified table.
 
 
 ===DESCRIBE TABLE===
 
-%%DESC|DESCRIBE TABLE [db.]table [FORMAT format]%%
+%%DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]%%
 
 Returns two String-type columns: &#39;name&#39; and &#39;type&#39;, which indicate the names and types of columns in the specified table.
 
@@ -1418,7 +1418,7 @@ Nested data structures are output in &quot;expanded&quot; format. Each column is
 
 ===EXISTS===
 
-%%EXISTS TABLE [db.]name [FORMAT format]%%
+%%EXISTS TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]%%
 
 Returns a single UInt8-type column, which contains the single value 0 if the table or database doesn&#39;t exist, or 1 if the table exists in the specified database.
 
@@ -1447,12 +1447,12 @@ To make settings that persist after a server restart, you can only use the serve
 
 ===OPTIMIZE===
 
-%%OPTIMIZE TABLE [db.]name%%
+%%OPTIMIZE TABLE [db.]name [PARTITION partition] [FINAL]%%
 
 Asks the table engine to do something for optimization.
 Supported only by *MergeTree engines, in which this query initializes a non-scheduled merge of data parts.
-
-For replicated tables, the OPTIMIZE query is only applied to non-replicated data (this data exists only after converting non-replicated tables to replicated ones). If there isn&#39;t any, the query doesn&#39;t do anything.
+If PARTITION is specified, then only specified partition will be optimized.
+If FINAL is specified, then optimization will be performed even if data inside the partition already optimized (i. e. all data is in single part).
 
 
 ===INSERT===
@@ -1513,13 +1513,14 @@ His Highness, the SELECT query.
     [ORDER BY expr_list]
     [LIMIT [n, ]m]
     [UNION ALL ...]
+    [INTO OUTFILE filename]
     [FORMAT format]%%
 
 All the clauses are optional, except for the required list of expressions immediately after SELECT.
 The clauses below are described in almost the same order as in the query execution conveyor.
 
 If the query omits the DISTINCT, GROUP BY, and ORDER BY clauses and the IN and JOIN subqueries, the query will be completely stream processed, using O(1) amount of RAM.
-Otherwise, the query may consume too much RAM, if appropriate restrictions are not defined (max_memory_usage, max_rows_to_group_by, max_rows_to_sort, max_rows_in_distinct, max_bytes_in_distinct, max_rows_in_set, max_bytes_in_set, max_rows_in_join, max_bytes_in_join, max_bytes_before_external_sort). For more information, see the section &quot;Settings&quot;. It is possible to use external sorting (saving temporary tables to a disk). The system does not have external aggregation or merge join.
+Otherwise, the query may consume too much RAM, if appropriate restrictions are not defined (max_memory_usage, max_rows_to_group_by, max_rows_to_sort, max_rows_in_distinct, max_bytes_in_distinct, max_rows_in_set, max_bytes_in_set, max_rows_in_join, max_bytes_in_join, max_bytes_before_external_sort, max_bytes_before_external_group_by). For more information, see the section &quot;Settings&quot;. It is possible to use external sorting (saving temporary tables to a disk) and external aggregation. Merge join is not implemented.
 
 <h4>FROM clause</h4>
 
@@ -2006,6 +2007,42 @@ If &#39;max_rows_to_group_by&#39; and &#39;group_by_overflow_mode = &#39;any&#39
 You can use WITH TOTALS in subqueries, including subqueries in the JOIN clause. In this case, the respective total values are combined.
 
 
+<h5>external memory GROUP BY</h5>
+
+It is possible to turn on spilling temporary data to disk to limit memory consumption during the execution of GROUP BY. Value of %%max_bytes_before_external_group_by%% setting determines the maximum memory consumption before temporary data is dumped to the file system. If it is 0 (the default value), the feature is turned off.
+
+When using %%max_bytes_before_external_group_by%% it is advisable to set %%max_memory_usage%% to an approximately twice greater value. The reason for this is that aggregation is executed in two stages: reading and generation of intermediate data (1) and merging of intermediate data (2). Spilling data to the filesystem can be performed only on stage 1. If the spilling did not happen, then stage 2 could consume up to the same amount of memory as stage 1.
+
+For example: if %%max_memory_usage%% is equal to 10000000000 and you want to use external aggregation, it makes sense to set %%max_bytes_before_external_group_by%% to 10000000000 and %%max_memory_usage%% to 20000000000. If dumping data to the file system happened at least once during the execution, maximum memory consumption would be just a little bit higher than %%max_bytes_before_external_group_by%%.
+
+During distributed query execution external aggregation is performed on the remote servers. If you want the memory consumption on the originating server to be small, set %%distributed_aggregation_memory_efficient%% to 1. If %%distributed_aggregation_memory_efficient%% is turned on then during merging of the dumped data and also during merging of the query results from the remote servers, total memory consumption is no more than 1/256 * number of threads of the total amount of memory.
+
+If external aggregation is turned on and total memory consumption was less than %%max_bytes_before_external_group_by%% (meaning that no spilling took place), the query performance is the same as when external aggregation is turned off. If some data was dumped, then execution time will be several times longer (approximately 3x).
+
+If you have an ORDER BY clause with some small LIMIT after a GROUP BY, then ORDER BY will not consume significant amount of memory. But if no LIMIT is provided, don't forget to turn on external sorting (%%max_bytes_before_external_sort%%).
+
+
+<h5>LIMIT N BY modifier</h5>
+
+LIMIT %%N%% BY %%COLUMNS%% allows you to restrict top %%N%% rows per each group of %%COLUMNS%%. %%LIMIT N BY%% is unrelated to %%LIMIT%% clause. Key for %%LIMIT N BY%% could contain arbitrary number of columns or expressions.
+
+Example:
+
+%%SELECT
+    domainWithoutWWW(URL) AS domain,
+    domainWithoutWWW(REFERRER_URL) AS referrer,
+    device_type,
+    count() cnt
+FROM hits
+GROUP BY domain, referrer, device_type
+ORDER BY cnt DESC
+LIMIT 5 BY domain, device_type
+LIMIT 100
+%%
+
+will select top 5 referrers for each domain - device type pair, total number of rows - 100.
+
+
 <h4>HAVING clause</h4>
 
 Allows filtering the result received after GROUP BY, similar to the WHERE clause.
@@ -2027,7 +2064,7 @@ When floating point numbers are sorted, NaNs are separate from the other values.
 
 Less RAM is used if a small enough LIMIT is specified in addition to ORDER BY. Otherwise, the amount of memory spent is proportional to the volume of data for sorting. For distributed query processing, if GROUP BY is omitted, sorting is partially done on remote servers, and the results are merged on the requestor server. This means that for distributed sorting, the volume of data to sort can be greater than the amount of memory on a single server.
 
-If there is not enough RAM, it is possible to perform sorting in external memory (creating temporary files on a disk). Use the setting %%max_bytes_before_external_sort%% for this purpose. If it is set to 0 (the default), external sorting is disabled. If it is enabled, when the volume of data to sort reaches the specified number of bytes, the collected data is sorted and dumped into a temporary file. After all data is read, all the sorted files are merged and the results are output. Files are written to the /opt/clickhouse/tmp/ directory in the config (by default, but you can use the &#39;tmp_path&#39; parameter to change this setting).
+If there is not enough RAM, it is possible to perform sorting in external memory (creating temporary files on a disk). Use the setting %%max_bytes_before_external_sort%% for this purpose. If it is set to 0 (the default), external sorting is disabled. If it is enabled, when the volume of data to sort reaches the specified number of bytes, the collected data is sorted and dumped into a temporary file. After all data is read, all the sorted files are merged and the results are output. Files are written to the /var/lib/clickhouse/tmp/ directory in the config (by default, but you can use the &#39;tmp_path&#39; parameter to change this setting).
 
 Running a query may use more memory than &#39;max_bytes_before_external_sort&#39;. For this reason, this setting must have a value significantly smaller than &#39;max_memory_usage&#39;. As an example, if your server has 128 GB of RAM and you need to run a single query, set &#39;max_memory_usage&#39; to 100 GB, and &#39;max_bytes_before_external_sort&#39; to 80 GB.
 
@@ -2083,6 +2120,14 @@ The structure of results (the number and type of columns) must match for the que
 
 Queries that are parts of UNION ALL can&#39;t be enclosed in brackets. ORDER BY and LIMIT are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with UNION ALL in a subquery in the FROM clause.
 
+
+<h4>INTO OUTFILE clause</h4>
+
+Add %%INTO OUTFILE filename%% clause (where filename is a string literal) to redirect query output to a file filename.
+In contrast to MySQL the file is created on a client host. The query will fail if a file with the same filename already exists.
+INTO OUTFILE is available in the command-line client and clickhouse-local (a query sent via HTTP interface will fail).
+
+Default output format is TabSeparated (the same as in the batch mode of command-line client).
 
 <h4>FORMAT clause</h4>
 
@@ -2472,7 +2517,7 @@ The Distributed engine allows working with a cluster like a local server. Howeve
 
 There is no support for Distributed tables that look at other Distributed tables (except in cases when a Distributed table only has one shard). As an alternative, make the Distributed table look at the &quot;final&quot; tables.
 
-The Distributed engine requires writing clusters to the config file. Adding clusters and servers requires restarting. If you need to send a query to an unknown set of shards and replicas each time, you don&#39;t need to create a Distributed table - use the &#39;remote&#39; table function instead. See the section &quot;Table functions&quot;.
+The Distributed engine requires writing clusters to the config file. Clusters from config are updated on the fly, it does not require server restart. If you need to send a query to an unknown set of shards and replicas each time, you don&#39;t need to create a Distributed table - use the &#39;remote&#39; table function instead. See the section &quot;Table functions&quot;.
 
 There are two methods for writing data to a cluster:
 
@@ -2504,7 +2549,7 @@ You should be concerned about the sharding scheme in the following cases:
 - A large number of servers is used (hundreds or more) with a large number of small queries (queries of individual clients - websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, as we&#39;ve done in Yandex.Metrica, you can set up bi-level sharding: divide the entire cluster into &quot;layers&quot;, where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. Distributed tables are created for each layer, and a single shared distributed table is created for global queries.
 
 Data is written asynchronously. For an INSERT to a Distributed table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory:
-/opt/clickhouse/data/<i>database</i>/<i>table</i>/.
+/var/lib/clickhouse/data/<i>database</i>/<i>table</i>/.
 
 If the server ceased to exist or had a rough restart (for example, after a device failure) after an INSERT to a Distributed table, the inserted data might be lost. If a damaged data part is detected in the table directory, it is transferred to the &#39;broken&#39; subdirectory and no longer used.
 
@@ -2714,6 +2759,23 @@ ORDER BY StartDate;
 You can create a materialized view like this and assign a normal view to it that finishes data aggregation.
 
 Note that in most cases, using AggregatingMergeTree is not justified, since queries can be run efficiently enough on non-aggregated data.
+
+
+==ReplacingMergeTree==
+
+This engine differs from MergeTree in that it can deduplicate data by primary key while merging.
+
+For ReplacingMergeTree mode, last parameter is optional name of 'version' column. While merging, for all rows with same primary key, only one row is selected: last row, if version column was not specified, or last row with maximum version value, if specified.
+
+Version column must have type of UInt family or Date or DateTime.
+
+%%ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, ver)%%
+
+Please note, that data is deduplicated only while merging process. Merges are processed in background. Exact time of merge is unspecified and you could not rely on it. Some part of data could be not merged at all. While you could trigger extra merge with OPTIMIZE query, it is not recommended, as OPTIMIZE will read and write vast amount of data.
+
+This table engine is suitable for background removal of duplicate data to save space, but not suitable to guarantee of deduplication.
+
+Developed for special purposes of not Yandex.Metrica department.
 
 
 ==Null==
@@ -2933,7 +2995,7 @@ When the server starts (or establishes a new session with ZooKeeper), it only ch
 If the local set of data differs too much from the expected one, a safety mechanism is triggered. The server enters this in the log and refuses to launch. The reason for this is that this case may indicate a configuration error, such as if a replica on a shard was accidentally configured like a replica on a different shard. However, the thresholds for this mechanism are set fairly low, and this situation might occur during normal failure recovery. In this case, data is restored semi-automatically - by &quot;pushing a button&quot;.
 
 To start recovery, create the node <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> in ZooKeeper with any content or run command to recover all replicated tables:
-%%sudo -u metrika touch /opt/clickhouse/flags/force_restore_data%%
+%%sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data%%
 Then launch the server. On start, the server deletes these flags and starts recovery.
 
 
@@ -2943,12 +3005,12 @@ If all data and metadata disappeared from one of the servers, follow these steps
 
 1. Install ClickHouse on the server. Define substitutions correctly in the config file that contains the shard identifier and replicas, if you use them.
 
-2. If you had unreplicated tables that must be manually duplicated on the servers, copy their data from a replica (in the directory <span class="inline-example">/opt/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>).
+2. If you had unreplicated tables that must be manually duplicated on the servers, copy their data from a replica (in the directory <span class="inline-example">/var/lib/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>).
 
-3. Copy table definitions located in %%/opt/clickhouse/metadata/%% from a replica. If a shard or replica identifier is defined explicitly in the table definitions, correct it so that it corresponds to this replica. (Alternatively, launch the server and make all the ATTACH TABLE queries that should have been in the .sql files in %%/opt/clickhouse/metadata/%%.)
+3. Copy table definitions located in %%/var/lib/clickhouse/metadata/%% from a replica. If a shard or replica identifier is defined explicitly in the table definitions, correct it so that it corresponds to this replica. (Alternatively, launch the server and make all the ATTACH TABLE queries that should have been in the .sql files in %%/var/lib/clickhouse/metadata/%%.)
 
 4. Create the <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i>/flags/force_restore_data</span> node in ZooKeeper with any content or run command to recover all replicated tables:
-%%sudo -u metrika touch /opt/clickhouse/flags/force_restore_data%%
+%%sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data%%
 Then launch the server (restart it if it is already running). Data will be downloaded from replicas.
 
 An alternative recovery option is to delete information about the lost replica from ZooKeeper ( <span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i></span>), then create the replica again as described in &quot;Creating replicated tables&quot;.
@@ -2965,7 +3027,7 @@ If you had a MergeTree table that was manually replicated, you can convert it to
 If the data differs on various replicas, first sync it, or delete this data on all the replicas except one.
 
 Rename the existing MergeTree table, then create a ReplicatedMergeTree table with the old name.
-Move the data from the old table to the &#39;detached&#39; subdirectory inside the directory with the new table data (<span class="inline-example">/opt/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>).
+Move the data from the old table to the &#39;detached&#39; subdirectory inside the directory with the new table data (<span class="inline-example">/var/lib/clickhouse/data/<i>db_name</i>/<i>table_name</i>/</span>).
 Then run ALTER TABLE ATTACH PART on one of the replicas to add these data parts to the working set.
 
 If exactly the same parts exist on the other replicas, they are added to the working set on them. If not, the parts are downloaded from the replica that has them.
@@ -2976,7 +3038,7 @@ If exactly the same parts exist on the other replicas, they are added to the wor
 Create a MergeTree table with a different name. Move all the data from the directory with the ReplicatedMergeTree table data to the new table&#39;s data directory. Then delete the ReplicatedMergeTree table and restart the server.
 
 If you want to get rid of a ReplicatedMergeTree table without launching the server:
-- Delete the corresponding .sql file in the metadata directory (%%/opt/clickhouse/metadata/%%).
+- Delete the corresponding .sql file in the metadata directory (%%/var/lib/clickhouse/metadata/%%).
 - Delete the corresponding path in ZooKeeper (<span class="inline-example">/<i>path_to_table</i>/<i>replica_name</i></span>).
 After this, you can launch the server, create a MergeTree table, move the data to its directory, and then restart the server.
 
@@ -3137,6 +3199,11 @@ query_id String          - Query ID, if defined.
 Contains information about the number of events that have occurred in the system. This is used for profiling and monitoring purposes.
 Example: The number of processed SELECT queries.
 Columns: &#39;event String&#39; - the event name, and &#39;value UInt64&#39; - the quantity.
+
+==system.metrics==
+==system.asynchronous_metrics==
+Like system.events, but show info about currently executing events or consuming resources.
+Example: The number of currently executing SELECT queries; memory consumption of the system.
 
 ==system.clusters==
 
@@ -4100,7 +4167,7 @@ Using ALTER, it is possible to change an %%Enum8%% to an %%Enum16%% or vice vers
 ==Array(T)==
 
 Array of T-type items. The T type can be any type, including an array.
-We don&#39;t recommend using multidimensional arrays, because they are not well supported (for example, you can&#39;t store multidimensional arrays in any tables except Memory tables).
+We don&#39;t recommend using multidimensional arrays, because they are not well supported (for example, you can&#39;t store multidimensional arrays in tables with engines from MergeTree family).
 
 
 ==Tuple(T1, T2, ...)==
@@ -4143,7 +4210,7 @@ CREATE TABLE test.visits
 
 This example declares the &#39;Goals&#39; nested data structure, which contains data about conversions (goals reached). Each row in the &#39;visits&#39; table can correspond to zero or any number of conversions.
 
-Only a single nesting level is supported.
+Only a single nesting level is supported. Nested structure columns with array type are equivalent to multidimensional arrays and thus their support is limited (storing such columns in tables with engines from MergeTree family is not supported).
 
 In most cases, when working with a nested data structure, its individual columns are specified. To do this, the column names are separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
 
@@ -4493,7 +4560,7 @@ For example, you can&#39;t compare a date with a string. You have to use a funct
 
 Strings are compared by bytes. A shorter string is smaller than all strings that start with it and that contain at least one more character.
 
-Signed and unsigned numbers are compared the same way as in C++. That is, you can get an incorrect result in some cases. Example: SELECT 9223372036854775807 > -1
+Note: before version 1.1.54134 signed and unsigned numbers were compared the same way as in C++. That is, you could got an incorrect result in such cases: SELECT 9223372036854775807 > -1. From version 1.1.54134, the behavior has changed and numbers are compared mathematically correct.
 
 
 ===equals, a = b and a == b operator===
@@ -4656,6 +4723,9 @@ Converts a date with time to a UInt8 number containing the number of the minute 
 Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
 
+===toStartOfDay===
+Rounds down a date with time to the start of the day.
+
 ===toMonday===
 Rounds down a date or date with time to the nearest Monday.
 Returns the date.
@@ -4675,11 +4745,14 @@ Returns the date.
 ===toStartOfMinute===
 Rounds down a date with time to the start of the minute.
 
+===toStartOfFiveMinute===
+Rounds down a date with time to the start of the 5 minute (00:00, 00:05, 00:10...).
+
 ===toStartOfHour===
 Rounds down a date with time to the start of the hour.
 
 ===toTime===
-Converts a date with time to the date of the start of the Unix Epoch, while preserving the time.
+Converts a date with time to some fixed date, while preserving the time.
 
 ===toRelativeYearNum===
 Converts a date with time or date to the number of the year, starting from a certain fixed point in the past.
@@ -5036,6 +5109,15 @@ SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 
 This is necessary when using ARRAY JOIN with a nested data structure and further aggregation across multiple elements in this structure.
 
+
+===arrayUniq(arr, ...)===
+
+If a single array is passed, returns a number of unique elements in that array.
+If multiple arrays of the same size are passed as arguments to the function, returns a number of unique tuples of elements in the same positions in all the arrays.
+
+If you need an array of the unique elements, you can use %%arrayReduce('groupUniqArray', arr)%%.
+
+
 ===arrayJoin(arr)===
 A special function. See the section &quot;arrayJoin function&quot;.
 
@@ -5190,6 +5272,18 @@ URLPathHierarchy(&#39;https://example.com/browse/CONV-6788&#39;) =
     &#39;/browse/&#39;,
     &#39;/browse/CONV-6788&#39;
 ]
+%%
+
+<h4>decodeURLComponent(URL)</h4>
+Returns a URL-decoded URL.
+
+Example:
+%%
+:) SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
+
+┌─DecodedURL─────────────────────────────┐
+│ http://127.0.0.1:8123/?query=SELECT 1; │
+└────────────────────────────────────────┘
 %%
 
 ===Functions that remove part of a URL.===
@@ -6454,7 +6548,7 @@ The dictionary config file has the following format:
 			&lt;mysql>
 				&lt;!- - These parameters can be specified outside (common for all replicas) or inside a specific replica - ->
 				&lt;port>3306&lt;/port>
-				&lt;user>metrika&lt;/user>
+				&lt;user>clickhouse&lt;/user>
 				&lt;password>qwerty&lt;/password>
 				&lt;!- - Specify from one to any number of replicas for fault tolerance. - ->
 				&lt;replica>
@@ -6813,9 +6907,11 @@ any (only for group_by_overflow_mode) - Continuing aggregation for the keys that
 
 ===readonly===
 
-If set to 1, run only queries that don&#39;t change data or settings.
-As an example, SELECT and SHOW queries are allowed, but INSERT and SET are forbidden.
-After you write %%SET readonly = 1%%, you can&#39;t disable readonly mode in the current session.
+If set to 0, allows to run any queries.
+If set to 1, allows to run only queries that don&#39;t change data or settings (e.g. SELECT or SHOW). INSERT and SET are forbidden.
+If set to 2, allows to run queries that don&#39;t change data (SELECT, SHOW) and allows to change settings (SET).
+
+After you set the read-only mode, you won&#39;t be able to disable it in the current session.
 
 When using the GET method in the HTTP interface, &#39;readonly = 1&#39; is set automatically. In other words, for queries that modify data, you can only use the POST method. You can send the query itself either in the POST body, or in the URL parameter.
 

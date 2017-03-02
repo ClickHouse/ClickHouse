@@ -13,7 +13,7 @@ CSVRowOutputStream::CSVRowOutputStream(WriteBuffer & ostr_, const Block & sample
 	size_t columns = sample.columns();
 	data_types.resize(columns);
 	for (size_t i = 0; i < columns; ++i)
-		data_types[i] = sample.getByPosition(i).type;
+		data_types[i] = sample.safeGetByPosition(i).type;
 }
 
 
@@ -31,7 +31,7 @@ void CSVRowOutputStream::writePrefix()
 	{
 		for (size_t i = 0; i < columns; ++i)
 		{
-			writeCSVString(sample.getByPosition(i).name, ostr);
+			writeCSVString(sample.safeGetByPosition(i).name, ostr);
 			writeChar(i == columns - 1 ? '\n' : ',', ostr);
 		}
 	}
@@ -40,7 +40,7 @@ void CSVRowOutputStream::writePrefix()
 	{
 		for (size_t i = 0; i < columns; ++i)
 		{
-			writeCSVString(sample.getByPosition(i).type->getName(), ostr);
+			writeCSVString(sample.safeGetByPosition(i).type->getName(), ostr);
 			writeChar(i == columns - 1 ? '\n' : ',', ostr);
 		}
 	}
@@ -85,7 +85,7 @@ void CSVRowOutputStream::writeTotals()
 		{
 			if (j != 0)
 				writeFieldDelimiter();
-			writeField(*totals.unsafeGetByPosition(j).column.get(), *totals.unsafeGetByPosition(j).type.get(), 0);
+			writeField(*totals.getByPosition(j).column.get(), *totals.getByPosition(j).type.get(), 0);
 		}
 
 		writeRowEndDelimiter();
@@ -113,7 +113,7 @@ void CSVRowOutputStream::writeExtremes()
 			{
 				if (j != 0)
 					writeFieldDelimiter();
-				writeField(*extremes.unsafeGetByPosition(j).column.get(), *extremes.unsafeGetByPosition(j).type.get(), i);
+				writeField(*extremes.getByPosition(j).column.get(), *extremes.getByPosition(j).type.get(), i);
 			}
 
 			writeRowEndDelimiter();

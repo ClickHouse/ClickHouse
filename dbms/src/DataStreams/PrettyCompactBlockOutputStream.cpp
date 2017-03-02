@@ -1,6 +1,5 @@
-#include <sys/ioctl.h>
-#include <unistd.h>
-
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 #include <DB/DataStreams/PrettyCompactBlockOutputStream.h>
 
 
@@ -26,7 +25,7 @@ void PrettyCompactBlockOutputStream::writeHeader(
 		if (i != 0)
 			writeCString("─┬─", ostr);
 
-		const ColumnWithTypeAndName & col = block.getByPosition(i);
+		const ColumnWithTypeAndName & col = block.safeGetByPosition(i);
 
 		if (col.type->isNumeric())
 		{
@@ -88,11 +87,11 @@ void PrettyCompactBlockOutputStream::writeRow(
 		if (j != 0)
 			writeCString(" │ ", ostr);
 
-		const ColumnWithTypeAndName & col = block.getByPosition(j);
+		const ColumnWithTypeAndName & col = block.safeGetByPosition(j);
 
 		if (col.type->isNumeric())
 		{
-			size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[row_id]);
+			size_t width = get<UInt64>((*block.safeGetByPosition(columns + j).column)[row_id]);
 			for (size_t k = 0; k < max_widths[j] - width; ++k)
 				writeChar(' ', ostr);
 
@@ -102,7 +101,7 @@ void PrettyCompactBlockOutputStream::writeRow(
 		{
 			col.type->serializeTextEscaped(*col.column.get(), row_id, ostr);
 
-			size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[row_id]);
+			size_t width = get<UInt64>((*block.safeGetByPosition(columns + j).column)[row_id]);
 			for (size_t k = 0; k < max_widths[j] - width; ++k)
 				writeChar(' ', ostr);
 		}

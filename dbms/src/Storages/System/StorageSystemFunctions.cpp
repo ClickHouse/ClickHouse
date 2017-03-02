@@ -1,5 +1,6 @@
 #include <DB/Storages/System/StorageSystemFunctions.h>
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnsNumber.h>

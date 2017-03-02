@@ -71,7 +71,7 @@ public:
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+		level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
 	}
 
 	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const

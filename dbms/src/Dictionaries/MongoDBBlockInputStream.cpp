@@ -1,3 +1,7 @@
+#include <vector>
+#include <string>
+#include <sstream>
+
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Element.h>
@@ -10,8 +14,6 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/Columns/ColumnString.h>
 #include <ext/range.hpp>
-#include <vector>
-#include <string>
 #include <DB/Core/FieldVisitors.h>
 
 
@@ -34,8 +36,9 @@ MongoDBBlockInputStream::~MongoDBBlockInputStream() = default;
 
 String MongoDBBlockInputStream::getID() const
 {
-	using stream = std::ostringstream;
-	return "MongoDB(@" + static_cast<stream &>(stream{} << cursor.get()).str() + ")";
+	std::ostringstream stream;
+	stream << cursor.get();
+	return "MongoDB(@" + stream.str() + ")";
 }
 
 
@@ -142,7 +145,7 @@ Block MongoDBBlockInputStream::readImpl()
 	const size_t size = columns.size();
 
 	for (const auto i : ext::range(0, size))
-		columns[i] = block.getByPosition(i).column.get();
+		columns[i] = block.safeGetByPosition(i).column.get();
 
 	size_t num_rows = 0;
 	while (num_rows < max_block_size)

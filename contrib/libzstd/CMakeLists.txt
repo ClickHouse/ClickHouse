@@ -40,7 +40,7 @@ endfunction()
 
 # Define library directory, where sources and header files are located
 SET(LIBRARY_DIR include/zstd)
-INCLUDE_DIRECTORIES(${LIBRARY_DIR} ${LIBRARY_DIR}/common)
+INCLUDE_DIRECTORIES(BEFORE ${LIBRARY_DIR} ${LIBRARY_DIR}/common)
 
 # Read file content
 FILE(READ ${LIBRARY_DIR}/zstd.h HEADER_CONTENT)
@@ -80,7 +80,7 @@ SET(ZSTD_LEGACY_SUPPORT true)
 
 IF (ZSTD_LEGACY_SUPPORT)
     SET(LIBRARY_LEGACY_DIR ${LIBRARY_DIR}/legacy)
-    INCLUDE_DIRECTORIES(${LIBRARY_LEGACY_DIR})
+    INCLUDE_DIRECTORIES(BEFORE ${LIBRARY_LEGACY_DIR})
     ADD_DEFINITIONS(-D ZSTD_LEGACY_SUPPORT=1)
 
     SET(Sources ${Sources}

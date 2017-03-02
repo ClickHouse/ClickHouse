@@ -1,4 +1,5 @@
 #include <DB/Core/Defines.h>
+#include <DB/Core/Block.h>
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/VarInt.h>
@@ -61,8 +62,8 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 		const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*full_column.get());
 		const ColumnPtr & nested_col = nullable_col.getNestedColumn();
 
-		const IColumn & null_map = *nullable_col.getNullValuesByteMap();
-		DataTypeUInt8{}.serializeBinary(null_map, ostr, offset, limit);
+		const IColumn & null_map = nullable_col.getNullMapConcreteColumn();
+		DataTypeUInt8{}.serializeBinaryBulk(null_map, ostr, offset, limit);
 
 		writeData(nested_type, nested_col, ostr, offset, limit);
 	}
@@ -71,7 +72,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 		/** Для массивов требуется сначала сериализовать смещения, а потом значения.
 		  */
 		const ColumnArray & column_array = typeid_cast<const ColumnArray &>(*full_column);
-		type_arr->getOffsetsType()->serializeBinary(*column_array.getOffsetsColumn(), ostr, offset, limit);
+		type_arr->getOffsetsType()->serializeBinaryBulk(*column_array.getOffsetsColumn(), ostr, offset, limit);
 
 		if (!typeid_cast<const ColumnArray &>(*full_column).getData().empty())
 		{
@@ -111,7 +112,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 		}
 	}
 	else
-		type.serializeBinary(*full_column, ostr, offset, limit);
+		type.serializeBinaryBulk(*full_column, ostr, offset, limit);
 }
 
 
@@ -149,7 +150,7 @@ void NativeBlockOutputStream::write(const Block & block)
 			mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
 		}
 
-		const ColumnWithTypeAndName & column = block.getByPosition(i);
+		const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
 
 		/// Name
 		writeStringBinary(column.name, ostr);

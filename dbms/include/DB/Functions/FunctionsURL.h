@@ -562,13 +562,10 @@ public:
 	static constexpr auto name = "extractURLParameters";
 	static String getName() { return name; }
 
+	static size_t getNumberOfArguments() { return 1; }
+
 	static void checkArguments(const DataTypes & arguments)
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -650,13 +647,10 @@ public:
 	static constexpr auto name = "extractURLParameterNames";
 	static String getName() { return name; }
 
+	static size_t getNumberOfArguments() { return 1; }
+
 	static void checkArguments(const DataTypes & arguments)
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -730,13 +724,10 @@ public:
 	static constexpr auto name = "URLHierarchy";
 	static String getName() { return name; }
 
+	static size_t getNumberOfArguments() { return 1; }
+
 	static void checkArguments(const DataTypes & arguments)
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -829,13 +820,10 @@ public:
 	static constexpr auto name = "URLPathHierarchy";
 	static String getName() { return name; }
 
+	static size_t getNumberOfArguments() { return 1; }
+
 	static void checkArguments(const DataTypes & arguments)
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

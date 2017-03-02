@@ -31,7 +31,7 @@ private:
 	static PaddedPODArray<ResultType> & result_vector(Block & block, size_t result, size_t size)
 	{
 		auto col_res = std::make_shared<ColumnVector<ResultType>>();
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 
 		typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 		vec_res.resize(size);
@@ -429,7 +429,7 @@ struct NumArrayIfImpl
 	{
 		auto col_res_vec = std::make_shared<ColumnVector<ResultType>>();
 		auto col_res_array = std::make_shared<ColumnArray>(col_res_vec);
-		block.getByPosition(result).column = col_res_array;
+		block.safeGetByPosition(result).column = col_res_array;
 
 		*c_data = &col_res_vec->getData();
 		*c_offsets = &col_res_array->getOffsets();
@@ -865,8 +865,8 @@ private:
 		size_t result,
 		const ColumnVector<T0> * col_left)
 	{
-		const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(block.getByPosition(arguments[2]).column.get());
-		const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(block.getByPosition(arguments[2]).column.get());
+		const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(block.safeGetByPosition(arguments[2]).column.get());
+		const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(block.safeGetByPosition(arguments[2]).column.get());
 
 		if (!col_right_vec && !col_right_const)
 			return false;
@@ -889,8 +889,8 @@ private:
 		size_t result,
 		const ColumnConst<T0> * col_left)
 	{
-		const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(block.getByPosition(arguments[2]).column.get());
-		const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(block.getByPosition(arguments[2]).column.get());
+		const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(block.safeGetByPosition(arguments[2]).column.get());
+		const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(block.safeGetByPosition(arguments[2]).column.get());
 
 		if (!col_right_vec && !col_right_const)
 			return false;
@@ -914,7 +914,7 @@ private:
 		const ColumnArray * col_left_array,
 		const ColumnVector<T0> * col_left)
 	{
-		const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
+		const IColumn * col_right_untyped = block.safeGetByPosition(arguments[2]).column.get();
 
 		const ColumnArray * col_right_array = typeid_cast<const ColumnArray *>(col_right_untyped);
 		const ColumnConstArray * col_right_const_array = typeid_cast<const ColumnConstArray *>(col_right_untyped);
@@ -961,7 +961,7 @@ private:
 		size_t result,
 		const ColumnConstArray * col_left_const_array)
 	{
-		const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
+		const IColumn * col_right_untyped = block.safeGetByPosition(arguments[2]).column.get();
 
 		const ColumnArray * col_right_array = typeid_cast<const ColumnArray *>(col_right_untyped);
 		const ColumnConstArray * col_right_const_array = typeid_cast<const ColumnConstArray *>(col_right_untyped);
@@ -1003,7 +1003,7 @@ private:
 	template <typename T0>
 	bool executeLeftType(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const IColumn * col_left_untyped = block.getByPosition(arguments[1]).column.get();
+		const IColumn * col_left_untyped = block.safeGetByPosition(arguments[1]).column.get();
 
 		const ColumnVector<T0> * col_left = nullptr;
 		const ColumnConst<T0> * col_const_left = nullptr;
@@ -1040,7 +1040,7 @@ private:
 				||	executeRightType<T0, Float64>(cond_col, block, arguments, result, col_left))
 				return true;
 			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
 					+ " of third argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
@@ -1058,7 +1058,7 @@ private:
 				||	executeConstRightType<T0, Float64>(cond_col, block, arguments, result, col_const_left))
 				return true;
 			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
 					+ " of third argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
@@ -1076,7 +1076,7 @@ private:
 				||	executeRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems))
 				return true;
 			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
 					+ " of third argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
@@ -1096,7 +1096,7 @@ private:
 				||	executeConstRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_const_arr_left))
 				return true;
 			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
 					+ " of third argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
@@ -1106,8 +1106,8 @@ private:
 
 	bool executeString(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		const IColumn * col_then_untyped = block.getByPosition(arguments[1]).column.get();
-		const IColumn * col_else_untyped = block.getByPosition(arguments[2]).column.get();
+		const IColumn * col_then_untyped = block.safeGetByPosition(arguments[1]).column.get();
+		const IColumn * col_else_untyped = block.safeGetByPosition(arguments[2]).column.get();
 
 		const ColumnString * col_then = typeid_cast<const ColumnString *>(col_then_untyped);
 		const ColumnString * col_else = typeid_cast<const ColumnString *>(col_else_untyped);
@@ -1128,7 +1128,7 @@ private:
 				size_t N = col_then_fixed->getN();
 
 				auto col_res = std::make_shared<ColumnFixedString>(N);
-				block.getByPosition(result).column = col_res;
+				block.safeGetByPosition(result).column = col_res;
 
 				ColumnFixedString::Chars_t & res_vec = col_res->getChars();
 
@@ -1143,7 +1143,7 @@ private:
 			{
 				/// Результат - String.
 				std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-				block.getByPosition(result).column = col_res;
+				block.safeGetByPosition(result).column = col_res;
 
 				ColumnString::Chars_t & res_vec = col_res->getChars();
 				ColumnString::Offsets_t & res_offsets = col_res->getOffsets();
@@ -1215,7 +1215,7 @@ private:
 		{
 			auto col_res_elements = std::make_shared<ColumnString>();
 			auto col_res = std::make_shared<ColumnArray>(col_res_elements);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & res_chars = col_res_elements->getChars();
 			ColumnString::Offsets_t & res_string_offsets = col_res_elements->getOffsets();
@@ -1258,8 +1258,8 @@ private:
 	{
 		/// Calculate function for each corresponding elements of tuples.
 
-		const ColumnWithTypeAndName & arg1 = block.getByPosition(arguments[1]);
-		const ColumnWithTypeAndName & arg2 = block.getByPosition(arguments[2]);
+		const ColumnWithTypeAndName & arg1 = block.safeGetByPosition(arguments[1]);
+		const ColumnWithTypeAndName & arg2 = block.safeGetByPosition(arguments[2]);
 
 		ColumnPtr col1_holder;
 		ColumnPtr col2_holder;
@@ -1285,7 +1285,7 @@ private:
 		const DataTypeTuple & type2 = static_cast<const DataTypeTuple &>(*arg2.type);
 
 		Block temporary_block;
-		temporary_block.insert(block.getByPosition(arguments[0]));
+		temporary_block.insert(block.safeGetByPosition(arguments[0]));
 
 		size_t tuple_size = type1.getElements().size();
 
@@ -1295,8 +1295,8 @@ private:
 				getReturnType({std::make_shared<DataTypeUInt8>(), type1.getElements()[i], type2.getElements()[i]}),
 				{}});
 
-			temporary_block.insert({col1->getData().getByPosition(i).column, type1.getElements()[i], {}});
-			temporary_block.insert({col2->getData().getByPosition(i).column, type2.getElements()[i], {}});
+			temporary_block.insert({col1->getData().safeGetByPosition(i).column, type1.getElements()[i], {}});
+			temporary_block.insert({col2->getData().safeGetByPosition(i).column, type2.getElements()[i], {}});
 
 			/// temporary_block will be: cond, res_0, ..., res_i, then_i, else_i
 			execute(temporary_block, {0, i + 2, i + 3}, i + 1);
@@ -1307,7 +1307,7 @@ private:
 		/// temporary_block is: cond, res_0, res_1, res_2...
 
 		temporary_block.erase(0);
-		block.getByPosition(result).column = std::make_shared<ColumnTuple>(temporary_block);
+		block.safeGetByPosition(result).column = std::make_shared<ColumnTuple>(temporary_block);
 		return true;
 	}
 
@@ -1318,14 +1318,11 @@ public:
 		return name;
 	}
 
+	size_t getNumberOfArguments() const override { return 3; }
+
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 3)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 3.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		if (!typeid_cast<const DataTypeUInt8 *>(&*arguments[0]))
 			throw Exception("Illegal type of first argument (condition) of function if. Must be UInt8.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1406,18 +1403,18 @@ public:
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(block.getByPosition(arguments[0]).column.get());
-		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(block.getByPosition(arguments[0]).column.get());
+		const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(block.safeGetByPosition(arguments[0]).column.get());
+		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(block.safeGetByPosition(arguments[0]).column.get());
 		ColumnPtr materialized_cond_col;
 
-		const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
-		const ColumnWithTypeAndName & arg_else = block.getByPosition(arguments[2]);
+		const ColumnWithTypeAndName & arg_then = block.safeGetByPosition(arguments[1]);
+		const ColumnWithTypeAndName & arg_else = block.safeGetByPosition(arguments[2]);
 
 		if (cond_const_col)
 		{
 			if (arg_then.type->getName() == arg_else.type->getName())
 			{
-				block.getByPosition(result).column = cond_const_col->getData()
+				block.safeGetByPosition(result).column = cond_const_col->getData()
 					? arg_then.column
 					: arg_else.column;
 				return;
@@ -1486,6 +1483,8 @@ public:
 
 public:
 	String getName() const override;
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 	bool hasSpecialSupportForNulls() const override;
 	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
 	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
@@ -1515,6 +1514,8 @@ public:
 
 public:
 	FunctionCaseWithExpr(const Context & context_);
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 	String getName() const override;
 	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
 	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
@@ -1533,6 +1534,8 @@ public:
 
 public:
 	String getName() const override;
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 	bool hasSpecialSupportForNulls() const override;
 	DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
 	void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;

@@ -2,10 +2,14 @@
 
 #include <set>
 #include <memory>
+#include <ostream>
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
 #include <DB/Parsers/StringRange.h>
+
+
+class SipHash;
 
 
 namespace DB
@@ -14,8 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int NOT_A_COLUMN;
-	extern const int TOO_BIG_AST;
-	extern const int TOO_DEEP_AST;
 	extern const int UNKNOWN_TYPE_OF_AST_NODE;
 	extern const int UNKNOWN_ELEMENT_IN_AST;
 }
@@ -26,6 +28,8 @@ class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 using ASTs = std::vector<ASTPtr>;
 
+class WriteBuffer;
+
 
 /** Элемент синтаксического дерева (в дальнейшем - направленного ациклического графа с элементами семантики)
   */
@@ -34,36 +38,6 @@ class IAST
 public:
 	ASTs children;
 	StringRange range;
-
-	/// Указатель на начало секции [NOT]IN или JOIN в которой включен этот узел,
-	/// если имеется такая секция.
-	IAST * enclosing_in_or_join = nullptr;
-
-	/// Атрибуты, которые нужны для некоторых алгоритмов на синтаксических деревьях.
-	using Attributes = UInt32;
-	Attributes attributes = 0;
-
-	/// TODO Grabage. Need to throw away.
-	/// Был ли узел посещён? (см. класс LogicalExpressionsOptimizer)
-	static constexpr Attributes IsVisited = 1U;
-	/// Был ли узел обработан? (см. класс InJoinSubqueriesPreprocessor)
-	static constexpr Attributes IsPreprocessedForInJoinSubqueries = 1U << 1;
-	/// Является ли узел секцией IN?
-	static constexpr Attributes IsIn = 1U << 2;
-	/// Является ли узел секцией NOT IN?
-	static constexpr Attributes IsNotIn = 1U << 3;
-	/// Является ли узел секцией JOIN?
-	static constexpr Attributes IsJoin = 1U << 4;
-	/// Имеет ли секция IN/NOT IN/JOIN атрибут GLOBAL?
-	static constexpr Attributes IsGlobal = 1U << 5;
-
-	/** Глубина одного узла N - это глубина того запроса SELECT, которому принадлежит N.
-	 *  Дальше глубина одного запроса SELECT определяется следующим образом:
-	 *  - если запрос Q корневой, то select_query_depth(Q) = 0
-	 *  - если запрос S является непосредственным подзапросом одного запроса R,
-	 *  то select_query_depth(S) = select_query_depth(R) + 1
-	 */
-	UInt32 select_query_depth = 0;
 
 	/** Строка с полным запросом.
 	  * Этот указатель не дает ее удалить, пока range в нее ссылается.
@@ -95,18 +69,17 @@ public:
 	/** Получить глубокую копию дерева. */
 	virtual ASTPtr clone() const = 0;
 
-	/// Рекурсивно установить атрибуты в поддереве, корнем которого является текущий узел.
-	void setAttributes(Attributes attributes_)
-	{
-		attributes |= attributes_;
-		for (auto it : children)
-			it->setAttributes(attributes_);
-	}
-
-	/** Получить текст, который идентифицирует этот элемент и всё поддерево.
-	  * Обычно он содержит идентификатор элемента и getTreeID от всех детей.
+	/** Get text, describing and identifying this element and its subtree.
+	  * Usually it consist of element's id and getTreeID of all children.
 	  */
 	String getTreeID() const;
+	void getTreeIDImpl(WriteBuffer & out) const;
+
+	/** Get hash code, identifying this element and its subtree.
+	  */
+	using Hash = std::pair<UInt64, UInt64>;
+	Hash getTreeHash() const;
+	void getTreeHashImpl(SipHash & hash_state) const;
 
 	void dumpTree(std::ostream & ostr, size_t indent = 0) const
 	{

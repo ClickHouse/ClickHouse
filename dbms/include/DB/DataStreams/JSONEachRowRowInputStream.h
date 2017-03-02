@@ -22,6 +22,8 @@ public:
 	JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & sample_, bool skip_unknown_);
 
 	bool read(Block & block) override;
+	bool allowSyncAfterError() const override { return true; };
+	void syncAfterError() override;
 
 private:
 	ReadBuffer & istr;

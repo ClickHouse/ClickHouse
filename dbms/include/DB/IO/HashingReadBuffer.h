@@ -1,6 +1,5 @@
 #pragma once
 
-#include <city.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/HashingWriteBuffer.h>
 

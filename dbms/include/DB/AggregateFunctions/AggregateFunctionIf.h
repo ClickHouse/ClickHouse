@@ -77,10 +77,10 @@ public:
 		return nested_func->alignOfData();
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
 	{
 		if (static_cast<const ColumnUInt8 &>(*columns[num_agruments - 1]).getData()[row_num])
-			nested_func->add(place, columns, row_num, nullptr);
+			nested_func->add(place, columns, row_num, arena);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -101,6 +101,16 @@ public:
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		nested_func->insertResultInto(place, to);
+	}
+
+	bool allocatesMemoryInArena() const override
+	{
+		return nested_func->allocatesMemoryInArena();
+	}
+
+	bool isState() const override
+	{
+		return nested_func->isState();
 	}
 
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)

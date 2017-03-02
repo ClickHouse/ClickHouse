@@ -16,6 +16,16 @@
 #include <utility>
 #include <string>
 
+
+namespace DB
+{
+	namespace ErrorCodes
+	{
+		extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
+	}
+}
+
+
 /// Упрощённый вариант класса StorageDistributed.
 class StorageDistributedFake : private ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
 {
@@ -49,6 +59,33 @@ private:
 	DB::NamesAndTypesList names_and_types;
 };
 
+
+class InJoinSubqueriesPreprocessorMock : public DB::InJoinSubqueriesPreprocessor
+{
+public:
+	using DB::InJoinSubqueriesPreprocessor::InJoinSubqueriesPreprocessor;
+
+	bool hasAtLeastTwoShards(const DB::IStorage & table) const override
+	{
+		if (!table.isRemote())
+			return false;
+
+		const StorageDistributedFake * distributed = typeid_cast<const StorageDistributedFake *>(&table);
+		if (!distributed)
+			return false;
+
+		return distributed->getShardCount() >= 2;
+	}
+
+	std::pair<std::string, std::string>
+	getRemoteDatabaseAndTableName(const DB::IStorage & table) const override
+	{
+		const StorageDistributedFake & distributed = typeid_cast<const StorageDistributedFake &>(table);
+		return { distributed.getRemoteDatabaseName(), distributed.getRemoteTableName() };
+	}
+};
+
+
 struct TestEntry
 {
 	unsigned int line_num;
@@ -66,6 +103,7 @@ TestResult check(const TestEntry & entry);
 bool parse(DB::ASTPtr  & ast, const std::string & query);
 bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs);
 void reorder(DB::IAST * ast);
+
 
 TestEntries entries =
 {
@@ -643,15 +681,6 @@ TestEntries entries =
 	{
 		__LINE__,
 		"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
-		"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
-		2,
-		DB::DistributedProductMode::GLOBAL,
-		true
-	},
-
-	{
-		__LINE__,
-		"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
 		"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)))",
 		2,
 		DB::DistributedProductMode::LOCAL,
@@ -749,15 +778,6 @@ TestEntries entries =
 		"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 		2,
 		DB::DistributedProductMode::DENY,
-		true
-	},
-
-	{
-		__LINE__,
-		"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
-		"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID GLOBAL IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
-		2,
-		DB::DistributedProductMode::GLOBAL,
 		true
 	},
 
@@ -941,15 +961,6 @@ TestEntries entries =
 	{
 		__LINE__,
 		"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
-		"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
-		2,
-		DB::DistributedProductMode::GLOBAL,
-		true
-	},
-
-	{
-		__LINE__,
-		"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 		"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits WHERE OtherID IN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2)) USING UserID",
 		2,
 		DB::DistributedProductMode::LOCAL,
@@ -1022,15 +1033,6 @@ TestEntries entries =
 	},
 
 	/// Секция IN / глубина 2 / две распределённые таблицы
-
-	{
-		__LINE__,
-		"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.hits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
-		"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.hits_all WHERE BrowserID GLOBAL IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
-		2,
-		DB::DistributedProductMode::GLOBAL,
-		true
-	},
 
 	{
 		__LINE__,
@@ -1196,8 +1198,7 @@ TestResult check(const TestEntry & entry)
 
 		try
 		{
-			DB::InJoinSubqueriesPreprocessor<StorageDistributedFake> preprocessor(select_query, context, storage_distributed_visits);
-			preprocessor.perform();
+			InJoinSubqueriesPreprocessorMock(context).process(select_query);
 		}
 		catch (const DB::Exception & ex)
 		{
@@ -1249,7 +1250,7 @@ bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
 	DB::ASTPtr rhs_reordered = rhs->clone();
 	reorder(&*rhs_reordered);
 
-	return lhs_reordered->getTreeID() == rhs_reordered->getTreeID();
+	return lhs_reordered->getTreeHash() == rhs_reordered->getTreeHash();
 }
 
 void reorder(DB::IAST * ast)
@@ -1266,7 +1267,7 @@ void reorder(DB::IAST * ast)
 
 	std::sort(children.begin(), children.end(), [](const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
 	{
-		return lhs->getTreeID() < rhs->getTreeID();
+		return lhs->getTreeHash() < rhs->getTreeHash();
 	});
 }
 

@@ -46,6 +46,8 @@
 	M(ReplicatedPartChecksFailed) \
 	M(ReplicatedDataLoss) \
 	\
+	M(InsertedRows) \
+	M(InsertedBytes) \
 	M(DelayedInserts) \
 	M(RejectedInserts) \
 	M(DelayedInsertsMilliseconds) \
@@ -86,7 +88,7 @@
 	\
 	M(MergedRows) \
 	M(MergedUncompressedBytes) \
-	M(MergesTime)\
+	M(MergesTimeMilliseconds)\
 	\
 	M(MergeTreeDataWriterRows) \
 	M(MergeTreeDataWriterUncompressedBytes) \
@@ -102,6 +104,18 @@
 	M(ContextLock) \
 	\
 	M(StorageBufferErrorOnFlush) \
+	\
+	M(DictCacheKeysRequested) \
+	M(DictCacheKeysRequestedMiss) \
+	M(DictCacheKeysRequestedFound) \
+	M(DictCacheKeysExpired) \
+	M(DictCacheKeysNotFound) \
+	M(DictCacheKeysHit) \
+	M(DictCacheRequestTimeNs) \
+	M(DictCacheRequests) \
+	M(DictCacheLockWriteNs) \
+	M(DictCacheLockReadNs) \
+
 
 namespace ProfileEvents
 {

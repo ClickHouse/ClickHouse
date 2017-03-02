@@ -11,7 +11,7 @@ struct DictionaryStructure;
 class WriteBuffer;
 
 
-/** Генерирует запрос для загрузки данных из внешней БД.
+/** Builds a query to load data from external database.
   */
 struct ExternalQueryBuilder
 {
@@ -20,21 +20,33 @@ struct ExternalQueryBuilder
 	const std::string & table;
 	const std::string & where;
 
+	/// Method to quote identifiers.
+	/// NOTE There could be differences in escaping rules inside quotes. Escaping rules may not match that required by specific external DBMS.
+	enum QuotingStyle
+	{
+		None,			/// Write as-is, without quotes.
+		Backticks,		/// `mysql` style
+		DoubleQuotes	/// "postgres" style
+	};
+
+	QuotingStyle quoting_style;
+
 
 	ExternalQueryBuilder(
 		const DictionaryStructure & dict_struct,
 		const std::string & db,
 		const std::string & table,
-		const std::string & where);
+		const std::string & where,
+		QuotingStyle quoting_style);
 
-	/** Получить запрос на загрузку всех данных. */
+	/** Generate a query to load all data. */
 	std::string composeLoadAllQuery() const;
 
-	/** Получить запрос на загрузку данных по множеству простых ключей. */
+	/** Generate a query to load data by set of UInt64 keys. */
 	std::string composeLoadIdsQuery(const std::vector<UInt64> & ids);
 
-	/** Получить запрос на загрузку данных по множеству сложных ключей.
-	  * Есть два метода их указания в секции WHERE:
+	/** Generate a query to load data by set of composite keys.
+	  * There are two methods of specification of composite keys in WHERE:
 	  * 1. (x = c11 AND y = c12) OR (x = c21 AND y = c22) ...
 	  * 2. (x, y) IN ((c11, c12), (c21, c22), ...)
 	  */
@@ -51,14 +63,17 @@ struct ExternalQueryBuilder
 
 
 private:
-	/// Выражение вида (x = c1 AND y = c2 ...)
+	/// Expression in form (x = c1 AND y = c2 ...)
 	void composeKeyCondition(const ConstColumnPlainPtrs & key_columns, const size_t row, WriteBuffer & out) const;
 
-	/// Выражение вида (x, y, ...)
+	/// Expression in form (x, y, ...)
 	std::string composeKeyTupleDefinition() const;
 
-	/// Выражение вида (c1, c2, ...)
+	/// Expression in form (c1, c2, ...)
 	void composeKeyTuple(const ConstColumnPlainPtrs & key_columns, const size_t row, WriteBuffer & out) const;
+
+	/// Write string with specified quoting style.
+	void writeQuoted(const std::string & s, WriteBuffer & out) const;
 };
 
 }

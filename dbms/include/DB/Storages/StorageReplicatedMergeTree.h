@@ -156,7 +156,10 @@ public:
 
 	bool supportsIndexForIn() const override { return true; }
 
+	bool checkTableCanBeDropped() const override;
+
 	MergeTreeData & getData() { return data; }
+	const MergeTreeData & getData() const { return data; }
 	MergeTreeData * getUnreplicatedData() { return unreplicated_data.get(); }
 
 

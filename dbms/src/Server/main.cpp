@@ -1,3 +1,7 @@
+#include <common/config_common.h>
+#if USE_TCMALLOC
+#include <gperftools/malloc_extension.h>
+#endif
 #include "Server.h"
 #include "LocalServer.h"
 #include <DB/Common/StringUtils.h>
@@ -33,6 +37,10 @@ static bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> 
 
 int main(int argc_, char ** argv_)
 {
+#if USE_TCMALLOC
+	MallocExtension::instance()->SetNumericProperty("tcmalloc.aggressive_memory_decommit", false);
+#endif
+
 	std::vector<char *> argv(argv_, argv_ + argc_);
 
 	auto main_func = mainEntryClickHouseServer;

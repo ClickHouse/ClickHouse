@@ -7,6 +7,7 @@
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Functions/NumberTraits.h>
 
 namespace DB
 {
@@ -255,7 +256,7 @@ public:
 		auto type_name = br.type->getName();
 		if (TypeName<TType>::get() == type_name)
 		{
-			const IColumn * col = block.getByPosition(args[br.index]).column.get();
+			const IColumn * col = block.safeGetByPosition(args[br.index]).column.get();
 			const ColumnArray * col_array = typeid_cast<const ColumnArray *>(col);
 			const ColumnConstArray * col_const_array = typeid_cast<const ColumnConstArray *>(col);
 
@@ -293,7 +294,7 @@ public:
 		auto type_name = br.type->getName();
 		if (TypeName<Null>::get() == type_name)
 		{
-			const IColumn * col = block.getByPosition(args[br.index]).column.get();
+			const IColumn * col = block.safeGetByPosition(args[br.index]).column.get();
 			const ColumnNull * null_col = typeid_cast<const ColumnNull *>(col);
 			if (null_col == nullptr)
 				throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
@@ -424,7 +425,7 @@ private:
 
 		auto col_res_vec = std::make_shared<ColumnVector<TResult>>();
 		auto col_res_array = std::make_shared<ColumnArray>(col_res_vec);
-		block.getByPosition(result).column = col_res_array;
+		block.safeGetByPosition(result).column = col_res_array;
 
 		return ArraySink<TResult>{col_res_vec->getData(), col_res_array->getOffsets(),
 			data_size, offsets_size};

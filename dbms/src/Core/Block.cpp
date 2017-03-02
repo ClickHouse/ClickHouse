@@ -8,6 +8,7 @@
 
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNullable.h>
+#include <DB/Columns/ColumnTuple.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -81,11 +82,30 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 			  */
 			column_to_add.column = dynamic_cast<IColumnConst &>(
 				*column_to_add.type->createConstColumn(
-					rowsInFirstColumn(), column_to_add.type->getDefault())).convertToFullColumn();
+					rows(), column_to_add.type->getDefault())).convertToFullColumn();
 		}
 
 		insert(std::move(column_to_add));
 	}
+}
+
+
+Block::Block(std::initializer_list<ColumnWithTypeAndName> il) : data{il}
+{
+	initializeIndexByName();
+}
+
+
+Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
+{
+	initializeIndexByName();
+}
+
+
+void Block::initializeIndexByName()
+{
+	for (size_t i = 0, size = data.size(); i < size; ++i)
+		index_by_name[data[i].name] = i;
 }
 
 
@@ -186,14 +206,14 @@ void Block::erase(const String & name)
 }
 
 
-ColumnWithTypeAndName & Block::getByPosition(size_t position)
+ColumnWithTypeAndName & Block::safeGetByPosition(size_t position)
 {
 	if (data.empty())
 		throw Exception("Block is empty", ErrorCodes::POSITION_OUT_OF_BOUND);
 
 	if (position >= data.size())
 		throw Exception("Position " + toString(position)
-			+ " is out of bound in Block::getByPosition(), max position = "
+			+ " is out of bound in Block::safeGetByPosition(), max position = "
 			+ toString(data.size() - 1)
 			+ ", there are columns: " + dumpNames(), ErrorCodes::POSITION_OUT_OF_BOUND);
 
@@ -201,14 +221,14 @@ ColumnWithTypeAndName & Block::getByPosition(size_t position)
 }
 
 
-const ColumnWithTypeAndName & Block::getByPosition(size_t position) const
+const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 {
 	if (data.empty())
 		throw Exception("Block is empty", ErrorCodes::POSITION_OUT_OF_BOUND);
 
 	if (position >= data.size())
 		throw Exception("Position " + toString(position)
-			+ " is out of bound in Block::getByPosition(), max position = "
+			+ " is out of bound in Block::safeGetByPosition(), max position = "
 			+ toString(data.size() - 1)
 			+ ", there are columns: " + dumpNames(), ErrorCodes::POSITION_OUT_OF_BOUND);
 
@@ -255,30 +275,30 @@ size_t Block::getPositionByName(const std::string & name) const
 }
 
 
-size_t Block::rows() const
+void Block::checkNumberOfRows() const
 {
-	size_t res = 0;
+	ssize_t rows = -1;
 	for (const auto & elem : data)
 	{
-		size_t size = elem.column->size();
-
-		if (res != 0 && size != res)
-			throw Exception("Sizes of columns doesn't match: "
-				+ data.begin()->name + ": " + toString(res)
-				+ ", " + elem.name + ": " + toString(size)
+		if (!elem.column)
+			throw Exception("Column " + elem.name + " in block is nullptr, in method checkNumberOfRows."
 				, ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		res = size;
-	}
+		ssize_t size = elem.column->size();
 
-	return res;
+		if (rows == -1)
+			rows = size;
+		else if (rows != size)
+			throw Exception("Sizes of columns doesn't match: "
+				+ data.front().name + ": " + toString(rows)
+				+ ", " + elem.name + ": " + toString(size)
+				, ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+	}
 }
 
 
-size_t Block::rowsInFirstColumn() const
+size_t Block::rows() const
 {
-	if (data.empty())
-		return 0;
 	for (const auto & elem : data)
 		if (elem.column)
 			return elem.column->size();
@@ -359,7 +379,7 @@ Block Block::sortColumns() const
 
 ColumnsWithTypeAndName Block::getColumns() const
 {
-	return ColumnsWithTypeAndName(data.begin(), data.end());
+	return data;
 }
 
 
@@ -453,8 +473,8 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 
 	for (size_t i = 0; i < columns; ++i)
 	{
-		const IDataType & lhs_type = *lhs.getByPosition(i).type;
-		const IDataType & rhs_type = *rhs.getByPosition(i).type;
+		const IDataType & lhs_type = *lhs.safeGetByPosition(i).type;
+		const IDataType & rhs_type = *rhs.safeGetByPosition(i).type;
 
 		if (lhs_type.getName() != rhs_type.getName())
 			return false;
@@ -477,7 +497,7 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
 	{
 		for (size_t j = 1; j <= rhs.columns(); ++j)
 		{
-			if (lhs.getByPosition(i - 1) == rhs.getByPosition(j - 1))
+			if (lhs.safeGetByPosition(i - 1) == rhs.safeGetByPosition(j - 1))
 				lcs[i][j] = lcs[i - 1][j - 1] + 1;
 			else
 				lcs[i][j] = std::max(lcs[i - 1][j], lcs[i][j - 1]);
@@ -491,7 +511,7 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
 	size_t r = rhs.columns();
 	while (l > 0 && r > 0)
 	{
-		if (lhs.getByPosition(l - 1) == rhs.getByPosition(r - 1))
+		if (lhs.safeGetByPosition(l - 1) == rhs.safeGetByPosition(r - 1))
 		{
 			/// Данный элемент в обеих последовательностях, значит, в diff не попадает.
 			--l;
@@ -503,16 +523,16 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
 			/// Поэтому предпочтение будем отдавать полю, которое есть в левом блоке (expected_block), поэтому
 			/// в diff попадет столбец из actual_block.
 			if (lcs[l][r - 1] >= lcs[l - 1][r])
-				right_columns.push_back(rhs.getByPosition(--r));
+				right_columns.push_back(rhs.safeGetByPosition(--r));
 			else
-				left_columns.push_back(lhs.getByPosition(--l));
+				left_columns.push_back(lhs.safeGetByPosition(--l));
 		}
 	}
 
 	while (l > 0)
-		left_columns.push_back(lhs.getByPosition(--l));
+		left_columns.push_back(lhs.safeGetByPosition(--l));
 	while (r > 0)
-		right_columns.push_back(rhs.getByPosition(--r));
+		right_columns.push_back(rhs.safeGetByPosition(--r));
 
 	WriteBufferFromString lhs_diff_writer(out_lhs_diff);
 	WriteBufferFromString rhs_diff_writer(out_rhs_diff);
@@ -560,6 +580,35 @@ void Block::unshareColumns()
 			ColumnPtr & offsets = arr->getOffsetsColumn();
 			if (!pointers.insert(offsets.get()).second)
 				offsets = offsets->clone();
+
+			ColumnPtr & nested = arr->getDataPtr();
+			if (!pointers.insert(nested.get()).second)
+				nested = nested->clone();
+		}
+		else if (ColumnTuple * tuple = typeid_cast<ColumnTuple *>(elem.column.get()))
+		{
+			Block & tuple_block = tuple->getData();
+			Columns & tuple_columns = tuple->getColumns();
+
+			size_t size = tuple_block.columns();
+			for (size_t i = 0; i < size; ++i)
+			{
+				if (!pointers.insert(tuple_columns[i].get()).second)
+				{
+					tuple_columns[i] = tuple_columns[i]->clone();
+					tuple_block.getByPosition(i).column = tuple_columns[i];
+				}
+			}
+		}
+		else if (ColumnNullable * nullable = typeid_cast<ColumnNullable *>(elem.column.get()))
+		{
+			ColumnPtr & null_map = nullable->getNullMapColumn();
+			if (!pointers.insert(null_map.get()).second)
+				null_map = null_map->clone();
+
+			ColumnPtr & nested = nullable->getNestedColumn();
+			if (!pointers.insert(nested.get()).second)
+				nested = nested->clone();
 		}
 	}
 }

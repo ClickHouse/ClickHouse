@@ -20,7 +20,7 @@ JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const B
 
 	size_t columns = sample.columns();
 	for (size_t i = 0; i < columns; ++i)
-		name_map[sample.getByPosition(i).name] = i;		/// NOTE Можно было бы расположить имена более кэш-локально.
+		name_map[sample.safeGetByPosition(i).name] = i;		/// NOTE Можно было бы расположить имена более кэш-локально.
 }
 
 
@@ -119,7 +119,7 @@ bool JSONEachRowRowInputStream::read(Block & block)
 
 		read_columns[index] = true;
 
-		auto & col = block.unsafeGetByPosition(index);
+		auto & col = block.getByPosition(index);
 		col.type.get()->deserializeTextJSON(*col.column.get(), istr);
 	}
 
@@ -130,9 +130,15 @@ bool JSONEachRowRowInputStream::read(Block & block)
 	/// Заполняем не встретившиеся столбцы значениями по-умолчанию.
 	for (size_t i = 0; i < columns; ++i)
 		if (!read_columns[i])
-			block.unsafeGetByPosition(i).column.get()->insertDefault();
+			block.getByPosition(i).column.get()->insertDefault();
 
 	return true;
+}
+
+
+void JSONEachRowRowInputStream::syncAfterError()
+{
+	skipToUnescapedNextLineOrEOF(istr);
 }
 
 }

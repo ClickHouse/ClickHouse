@@ -29,7 +29,7 @@ Block ReplacingSortedBlockInputStream::readImpl()
 	if (merged_columns.empty())
 		return Block();
 
-	/// Дополнительная инициализация.
+	/// Additional initialization.
 	if (selected_row.empty())
 	{
 		selected_row.columns.resize(num_columns);

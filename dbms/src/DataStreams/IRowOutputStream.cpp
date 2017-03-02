@@ -16,7 +16,7 @@ void IRowOutputStream::write(const Block & block, size_t row_num)
 		if (i != 0)
 			writeFieldDelimiter();
 
-		auto & col = block.unsafeGetByPosition(i);
+		auto & col = block.getByPosition(i);
 		writeField(*col.column.get(), *col.type.get(), row_num);
 	}
 

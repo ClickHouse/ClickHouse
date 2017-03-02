@@ -2,6 +2,7 @@
 #include <cstdlib>
 
 #include <DB/IO/ReadHelpers.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTExpressionList.h>
@@ -9,6 +10,7 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTAsterisk.h>
+#include <DB/Parsers/ASTQualifiedAsterisk.h>
 #include <DB/Parsers/ASTOrderByElement.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTSubquery.h>
@@ -138,7 +140,7 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 	/// Идентификатор в обратных кавычках
 	if (pos != end && *pos == '`')
 	{
-		ReadBuffer buf(const_cast<char *>(pos), end - pos, 0);
+		ReadBufferFromMemory buf(pos, end - pos);
 		String s;
 		readBackQuotedString(s, buf);
 
@@ -417,7 +419,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 bool ParserNull::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
-	ParserString nested_parser("NULL", true);
+	ParserString nested_parser("NULL", true, true);
 	if (nested_parser.parse(pos, end, node, max_parsed_pos, expected))
 	{
 		node = std::make_shared<ASTLiteral>(StringRange(StringRange(begin, pos)), Null());
@@ -497,7 +499,7 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 		return false;
 
 	UInt64 x = 0;
-	ReadBuffer in(const_cast<char *>(pos), end - pos, 0);
+	ReadBufferFromMemory in(pos, end - pos);
 	if (!tryReadIntText(x, in) || in.count() == 0)
 	{
 		expected = "unsigned integer";
@@ -522,7 +524,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
 		return false;
 	}
 
-	ReadBuffer in(const_cast<char *>(pos), end - pos, 0);
+	ReadBufferFromMemory in(pos, end - pos);
 
 	try
 	{
@@ -640,6 +642,7 @@ const char * ParserAliasBase::restricted_keywords[] =
 	"SETTINGS",
 	"FORMAT",
 	"UNION",
+	"INTO",
 	nullptr
 };
 
@@ -680,10 +683,44 @@ template class ParserAliasImpl<ParserIdentifier>;
 template class ParserAliasImpl<ParserTypeInCastExpression>;
 
 
-bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserAsterisk::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+{
+	Pos begin = pos;
+	if (ParserString("*").parse(pos, end, node, max_parsed_pos, expected))
+	{
+		node = std::make_shared<ASTAsterisk>(StringRange(begin, pos));
+		return true;
+	}
+	return false;
+}
+
+
+bool ParserQualifiedAsterisk::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
+	if (!ParserCompoundIdentifier().parse(pos, end, node, max_parsed_pos, expected))
+		return false;
+
+	ParserWhiteSpaceOrComments().ignore(pos, end);
+
+	if (!ParserString(".").ignore(pos, end, max_parsed_pos, expected))
+		return false;
+
+	ParserWhiteSpaceOrComments().ignore(pos, end);
+
+	if (!ParserString("*").ignore(pos, end, max_parsed_pos, expected))
+		return false;
+
+	auto res = std::make_shared<ASTQualifiedAsterisk>(StringRange(begin, pos));
+	res->children.push_back(node);
+	node = std::move(res);
+	return true;
+}
+
+
+bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+{
 	ParserParenthesisExpression paren_p;
 	ParserSubquery subquery_p;
 	ParserArray array_p;
@@ -691,7 +728,8 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 	ParserLiteral lit_p;
 	ParserCastExpression fun_p;
 	ParserCompoundIdentifier id_p;
-	ParserString asterisk_p("*");
+	ParserAsterisk asterisk_p;
+	ParserQualifiedAsterisk qualified_asterisk_p;
 
 	if (subquery_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
@@ -711,14 +749,14 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 	if (fun_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 
-	if (id_p.parse(pos, end, node, max_parsed_pos, expected))
+	if (qualified_asterisk_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 
 	if (asterisk_p.parse(pos, end, node, max_parsed_pos, expected))
-	{
-		node = std::make_shared<ASTAsterisk>(StringRange(begin, pos));
 		return true;
-	}
+
+	if (id_p.parse(pos, end, node, max_parsed_pos, expected))
+		return true;
 
 	if (!expected)
 		expected = "expression element: one of array, literal, function, identifier, asterisk, parenthesised expression, subquery";

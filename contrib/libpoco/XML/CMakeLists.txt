@@ -32,6 +32,8 @@ else()
 add_definitions(-DXML_NS -DXML_DTD -DHAVE_EXPAT_CONFIG_H)
 endif()
 
+include_directories (BEFORE include)
+
 add_library( "${LIBNAME}" ${LIB_MODE} ${SRCS} )
 set_target_properties( "${LIBNAME}"
     PROPERTIES

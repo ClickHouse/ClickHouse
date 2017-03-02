@@ -3,7 +3,7 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Interpreters/evaluateMissingDefaults.h>
 #include <DB/Columns/ColumnConst.h>
-
+#include <DB/Interpreters/Context.h>
 #include <DB/Storages/ColumnDefault.h>
 
 

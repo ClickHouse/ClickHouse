@@ -21,7 +21,7 @@ TabSeparatedRowInputStream::TabSeparatedRowInputStream(ReadBuffer & istr_, const
 	size_t columns = sample.columns();
 	data_types.resize(columns);
 	for (size_t i = 0; i < columns; ++i)
-		data_types[i] = sample.getByPosition(i).type;
+		data_types[i] = sample.safeGetByPosition(i).type;
 }
 
 
@@ -77,65 +77,58 @@ bool TabSeparatedRowInputStream::read(Block & block)
 
 	size_t size = data_types.size();
 
-	try
+	if (istr.eof())
+		return false;
+
+	for (size_t i = 0; i < size; ++i)
 	{
-		if (istr.eof())
-			return false;
+		data_types[i].get()->deserializeTextEscaped(*block.getByPosition(i).column.get(), istr);
 
-		for (size_t i = 0; i < size; ++i)
+		/// пропускаем разделители
+		if (i + 1 == size)
 		{
-			data_types[i].get()->deserializeTextEscaped(*block.unsafeGetByPosition(i).column.get(), istr);
-
-			/// пропускаем разделители
-			if (i + 1 == size)
+			if (!istr.eof())
 			{
-				if (!istr.eof())
-				{
-					if (unlikely(row_num == 1))
-						checkForCarriageReturn(istr);
+				if (unlikely(row_num == 1))
+					checkForCarriageReturn(istr);
 
-					assertChar('\n', istr);
-				}
+				assertChar('\n', istr);
 			}
-			else
-				assertChar('\t', istr);
 		}
-	}
-	catch (Exception & e)
-	{
-		String verbose_diagnostic;
-		{
-			WriteBufferFromString diagnostic_out(verbose_diagnostic);
-			printDiagnosticInfo(block, diagnostic_out);
-		}
-
-		e.addMessage("\n" + verbose_diagnostic);
-		throw;
+		else
+			assertChar('\t', istr);
 	}
 
 	return true;
 }
 
 
-void TabSeparatedRowInputStream::printDiagnosticInfo(Block & block, WriteBuffer & out)
+String TabSeparatedRowInputStream::getDiagnosticInfo()
 {
+	if (istr.eof())		/// Buffer has gone, cannot extract information about what has been parsed.
+		return {};
+
+	String res;
+	WriteBufferFromString out(res);
+	Block block = sample.cloneEmpty();
+
 	/// Вывести подробную диагностику возможно лишь если последняя и предпоследняя строка ещё находятся в буфере для чтения.
 	size_t bytes_read_at_start_of_buffer = istr.count() - istr.offset();
 	if (bytes_read_at_start_of_buffer != bytes_read_at_start_of_buffer_on_prev_row)
 	{
 		out << "Could not print diagnostic info because two last rows aren't in buffer (rare case)\n";
-		return;
+		return res;
 	}
 
 	size_t max_length_of_column_name = 0;
 	for (size_t i = 0; i < sample.columns(); ++i)
-		if (sample.getByPosition(i).name.size() > max_length_of_column_name)
-			max_length_of_column_name = sample.getByPosition(i).name.size();
+		if (sample.safeGetByPosition(i).name.size() > max_length_of_column_name)
+			max_length_of_column_name = sample.safeGetByPosition(i).name.size();
 
 	size_t max_length_of_data_type_name = 0;
 	for (size_t i = 0; i < sample.columns(); ++i)
-		if (sample.getByPosition(i).type->getName().size() > max_length_of_data_type_name)
-			max_length_of_data_type_name = sample.getByPosition(i).type->getName().size();
+		if (sample.safeGetByPosition(i).type->getName().size() > max_length_of_data_type_name)
+			max_length_of_data_type_name = sample.safeGetByPosition(i).type->getName().size();
 
 	/// Откатываем курсор для чтения на начало предыдущей или текущей строки и парсим всё заново. Но теперь выводим подробную информацию.
 
@@ -145,14 +138,14 @@ void TabSeparatedRowInputStream::printDiagnosticInfo(Block & block, WriteBuffer 
 
 		out << "\nRow " << (row_num - 1) << ":\n";
 		if (!parseRowAndPrintDiagnosticInfo(block, out, max_length_of_column_name, max_length_of_data_type_name))
-			return;
+			return res;
 	}
 	else
 	{
 		if (!pos_of_current_row)
 		{
 			out << "Could not print diagnostic info because parsing of data hasn't started.\n";
-			return;
+			return res;
 		}
 
 		istr.position() = pos_of_current_row;
@@ -161,6 +154,8 @@ void TabSeparatedRowInputStream::printDiagnosticInfo(Block & block, WriteBuffer 
 	out << "\nRow " << row_num << ":\n";
 	parseRowAndPrintDiagnosticInfo(block, out, max_length_of_column_name, max_length_of_data_type_name);
 	out << "\n";
+
+	return res;
 }
 
 
@@ -177,7 +172,7 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
 		}
 
 		out << "Column " << i << ", " << std::string((i < 10 ? 2 : i < 100 ? 1 : 0), ' ')
-			<< "name: " << sample.getByPosition(i).name << ", " << std::string(max_length_of_column_name - sample.getByPosition(i).name.size(), ' ')
+			<< "name: " << sample.safeGetByPosition(i).name << ", " << std::string(max_length_of_column_name - sample.safeGetByPosition(i).name.size(), ' ')
 			<< "type: " << data_types[i]->getName() << ", " << std::string(max_length_of_data_type_name - data_types[i]->getName().size(), ' ');
 
 		auto prev_position = istr.position();
@@ -185,7 +180,7 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
 
 		try
 		{
-			data_types[i]->deserializeTextEscaped(*block.getByPosition(i).column, istr);
+			data_types[i]->deserializeTextEscaped(*block.safeGetByPosition(i).column, istr);
 		}
 		catch (...)
 		{
@@ -304,6 +299,12 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
 	}
 
 	return true;
+}
+
+
+void TabSeparatedRowInputStream::syncAfterError()
+{
+	skipToUnescapedNextLineOrEOF(istr);
 }
 
 }

@@ -1,4 +1,5 @@
 #include <DB/Storages/MergeTree/PKCondition.h>
+#include <DB/Storages/MergeTree/BoolMask.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
@@ -10,12 +11,31 @@
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/Parsers/ASTSet.h>
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Interpreters/convertFieldToType.h>
+#include <DB/Interpreters/Set.h>
 
 
 namespace DB
 {
+
+String Range::toString() const
+{
+	std::stringstream str;
+
+	if (!left_bounded)
+		str << "(-inf, ";
+	else
+		str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
+
+	if (!right_bounded)
+		str << "+inf)";
+	else
+		str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
+
+	return str.str();
+}
 
 
 /// Пример: для строки Hello\_World%... возвращает Hello_World, а для строки %test% возвращает пустую строку.
@@ -75,7 +95,9 @@ static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & pr
 }
 
 
-const PKCondition::AtomMap PKCondition::atom_map{
+/// Словарь, содержащий действия к соответствующим функциям по превращению их в RPNElement
+const PKCondition::AtomMap PKCondition::atom_map
+{
 	{
 		"notEquals",
 		[] (RPNElement & out, const Field & value, ASTPtr &)
@@ -172,10 +194,13 @@ const PKCondition::AtomMap PKCondition::atom_map{
 };
 
 
-inline bool Range::equals(const Field & lhs, const Field & rhs) { return apply_visitor(FieldVisitorAccurateEquals(), lhs, rhs); }
-inline bool Range::less(const Field & lhs, const Field & rhs) { return apply_visitor(FieldVisitorAccurateLess(), lhs, rhs); }
+inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
+inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
 
 
+/** Calculate expressions, that depend only on constants.
+  * For index to work when something like "WHERE Date = toDate(now())" is written.
+  */
 Block PKCondition::getBlockWithConstants(
 	const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns)
 {
@@ -249,6 +274,12 @@ static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field
 
 	if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(expr.get()))
 	{
+		/// By default block_with_constants has only one column named "_dummy".
+		/// If block contains only constants it's may not be preprocessed by
+		//  ExpressionAnalyzer, so try to look up in the default column.
+		if (!block_with_constants.has(column_name))
+			column_name = "_dummy";
+
 		/// Simple literal
 		out_value = lit->value;
 		out_type = block_with_constants.getByName(column_name).type;
@@ -368,7 +399,7 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 
 static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const ASTPtr & node)
 {
-	if (desired_type->getName() == src_type->getName())
+	if (desired_type->equals(*src_type))
 		return;
 
 	try
@@ -532,7 +563,7 @@ static void applyFunction(
 
 	func->execute(block, {0}, 1);
 
-	block.getByPosition(1).column->get(0, res_value);
+	block.safeGetByPosition(1).column->get(0, res_value);
 }
 
 
@@ -666,13 +697,13 @@ bool PKCondition::mayBeTrueInRange(
 
 /*	std::cerr << "Checking for: [";
 	for (size_t i = 0; i != used_key_size; ++i)
-		std::cerr << (i != 0 ? ", " : "") << apply_visitor(FieldVisitorToString(), left_pk[i]);
+		std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_pk[i]);
 	std::cerr << " ... ";
 
 	if (right_bounded)
 	{
 		for (size_t i = 0; i != used_key_size; ++i)
-			std::cerr << (i != 0 ? ", " : "") << apply_visitor(FieldVisitorToString(), right_pk[i]);
+			std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_pk[i]);
 		std::cerr << "]\n";
 	}
 	else
@@ -726,8 +757,8 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
 				/*	std::cerr << "Function " << func->getName() << " is " << (monotonicity.is_monotonic ? "" : "not ")
 						<< "monotonic " << (monotonicity.is_monotonic ? (monotonicity.is_positive ? "(positive) " : "(negative) ") : "")
 						<< "in range "
-						<< "[" << apply_visitor(FieldVisitorToString(), key_range_transformed.left)
-						<< ", " << apply_visitor(FieldVisitorToString(), key_range_transformed.right) << "]\n";*/
+						<< "[" << applyVisitor(FieldVisitorToString(), key_range_transformed.left)
+						<< ", " << applyVisitor(FieldVisitorToString(), key_range_transformed.right) << "]\n";*/
 
 					if (!monotonicity.is_monotonic)
 					{

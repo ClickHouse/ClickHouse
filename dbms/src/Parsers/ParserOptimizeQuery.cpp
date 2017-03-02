@@ -79,7 +79,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
 	if (table)
 		query->table = typeid_cast<const ASTIdentifier &>(*table).name;
 	if (partition)
-		query->partition = apply_visitor(FieldVisitorToString(), typeid_cast<const ASTLiteral &>(*partition).value);
+		query->partition = applyVisitor(FieldVisitorToString(), typeid_cast<const ASTLiteral &>(*partition).value);
 	query->final = final;
 
 	return true;

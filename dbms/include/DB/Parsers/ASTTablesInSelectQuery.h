@@ -135,7 +135,7 @@ struct ASTTablesInSelectQueryElement : public IAST
 	  * For former elements, either table_join and table_expression are both non-nullptr, or array_join is non-nullptr.
 	  */
 	ASTPtr table_join;			/// How to JOIN a table, if table_expression is non-nullptr.
-	ASTPtr table_expression;	/// Table, first in list or JOINed.
+	ASTPtr table_expression;	/// Table.
 	ASTPtr array_join;			/// Arrays to JOIN.
 
 	using IAST::IAST;

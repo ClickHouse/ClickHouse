@@ -5,11 +5,7 @@
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Common/ArenaWithFreeLists.h>
 #include <DB/Columns/ColumnString.h>
-#include <ext/scope_guard.hpp>
 #include <ext/bit_cast.hpp>
-#include <ext/range.hpp>
-#include <ext/size.hpp>
-#include <ext/map.hpp>
 #include <Poco/RWLock.h>
 #include <cmath>
 #include <atomic>
@@ -19,6 +15,24 @@
 #include <tuple>
 #include <random>
 
+namespace ProfileEvents
+{
+	extern const Event DictCacheKeysRequested;
+	extern const Event DictCacheKeysRequestedMiss;
+	extern const Event DictCacheKeysRequestedFound;
+	extern const Event DictCacheKeysExpired;
+	extern const Event DictCacheKeysNotFound;
+	extern const Event DictCacheKeysHit;
+	extern const Event DictCacheRequestTimeNs;
+	extern const Event DictCacheRequests;
+	extern const Event DictCacheLockWriteNs;
+	extern const Event DictCacheLockReadNs;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric DictCacheRequests;
+}
 
 namespace DB
 {
@@ -215,13 +229,31 @@ private:
 
 	Attribute & getAttribute(const std::string & attribute_name) const;
 
+	struct FindResult
+	{
+		const size_t cell_idx;
+		const bool valid;
+		const bool outdated;
+	};
+
+	FindResult findCellIdx(const Key & id, const CellMetadata::time_point_t now) const;
+
 	const std::string name;
 	const DictionaryStructure dict_struct;
 	const DictionarySourcePtr source_ptr;
 	const DictionaryLifetime dict_lifetime;
 
 	mutable Poco::RWLock rw_lock;
+
+	/// Actual size will be increased to match power of 2
 	const std::size_t size;
+
+	/// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
+	const std::size_t size_overlap_mask;
+
+	/// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
+	static constexpr std::size_t max_collision_length = 10;
+
 	const UInt64 zero_cell_idx{getCellIdx(0)};
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	mutable std::vector<Attribute> attributes;

@@ -56,7 +56,7 @@ bool ValuesRowInputStream::read(Block & block)
 		char * prev_istr_position = istr.position();
 		size_t prev_istr_bytes = istr.count() - istr.offset();
 
-		auto & col = block.unsafeGetByPosition(i);
+		auto & col = block.getByPosition(i);
 
 		bool rollback_on_exception = false;
 		try
@@ -83,8 +83,7 @@ bool ValuesRowInputStream::read(Block & block)
 				|| e.code() == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
 				|| e.code() == ErrorCodes::CANNOT_PARSE_DATE
 				|| e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
-				|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
-				|| e.code() == ErrorCodes::CANNOT_PARSE_DATE)
+				|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT)
 			{
 				/// TODO Работоспособность, если выражение не помещается целиком до конца буфера.
 
@@ -95,7 +94,7 @@ bool ValuesRowInputStream::read(Block & block)
 				if (rollback_on_exception)
 					col.column.get()->popBack(1);
 
-				IDataType & type = *block.getByPosition(i).type;
+				IDataType & type = *block.safeGetByPosition(i).type;
 
 				IParser::Pos pos = prev_istr_position;
 
@@ -110,7 +109,8 @@ bool ValuesRowInputStream::read(Block & block)
 
 				istr.position() = const_cast<char *>(max_parsed_pos);
 
-				Field value = convertFieldToType(evaluateConstantExpression(ast, context), type);
+				std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
+				Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
 
 				if (value.isNull())
 				{
@@ -134,7 +134,7 @@ bool ValuesRowInputStream::read(Block & block)
 					}
 
 					if (!is_null_allowed)
-						throw Exception{"Expression returns value " + apply_visitor(FieldVisitorToString(), value)
+						throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
 							+ ", that is out of range of type " + type.getName()
 							+ ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
 							ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};

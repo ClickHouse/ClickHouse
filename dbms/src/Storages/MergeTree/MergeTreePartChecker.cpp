@@ -14,6 +14,7 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Common/CurrentMetrics.h>
 #include <DB/Common/escapeForFileName.h>
+#include <Poco/File.h>
 
 
 namespace CurrentMetrics
@@ -36,9 +37,9 @@ namespace
 {
 
 constexpr auto DATA_FILE_EXTENSION = ".bin";
-constexpr auto NULL_MAP_FILE_EXTENSION = ".null";
+constexpr auto NULL_MAP_FILE_EXTENSION = ".null.bin";
 constexpr auto MARKS_FILE_EXTENSION = ".mrk";
-constexpr auto NULL_MARKS_FILE_EXTENSION = ".null_mrk";
+constexpr auto NULL_MARKS_FILE_EXTENSION = ".null.mrk";
 
 struct Stream
 {
@@ -72,7 +73,7 @@ public:
 	size_t read(size_t rows)
 	{
 		ColumnPtr column = type->createColumn();
-		type->deserializeBinary(*column, uncompressed_hashing_buf, rows, 0);
+		type->deserializeBinaryBulk(*column, uncompressed_hashing_buf, rows, 0);
 		return column->size();
 	}
 

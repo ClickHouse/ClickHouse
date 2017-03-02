@@ -51,7 +51,7 @@ static ColumnWithTypeAndName getFilteredDatabases(ASTPtr query, const Context & 
 
 	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 
-	return block.getByPosition(0);
+	return block.safeGetByPosition(0);
 }
 
 

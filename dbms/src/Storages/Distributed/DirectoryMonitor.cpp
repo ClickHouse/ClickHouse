@@ -42,29 +42,36 @@ namespace
 		for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
 		{
 			const auto address = boost::copy_range<std::string>(*it);
+			const char * address_begin = static_cast<const char*>(address.data());
+			const char * address_end = address_begin + address.size();
 
-			const auto user_pw_end = strchr(address.data(), '@');
-			const auto colon = strchr(address.data(), ':');
+			const char * user_pw_end = strchr(address.data(), '@');
+			const char * colon = strchr(address.data(), ':');
 			if (!user_pw_end || !colon)
 				throw Exception{
-					"Shard address '" + address + "' does not match to 'user[:password]@host:port' pattern",
+					"Shard address '" + address + "' does not match to 'user[:password]@host:port#default_database' pattern",
 					ErrorCodes::INCORRECT_FILE_NAME
 				};
 
-			const auto has_pw = colon < user_pw_end;
-			const auto host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
+			const bool has_pw = colon < user_pw_end;
+			const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
 			if (!host_end)
 				throw Exception{
 					"Shard address '" + address + "' does not contain port",
 					ErrorCodes::INCORRECT_FILE_NAME
 				};
 
-			const auto user = unescapeForFileName({address.data(), has_pw ? static_cast<const char *>(colon) : user_pw_end});
-			const auto password = has_pw ? unescapeForFileName({colon + 1, user_pw_end}) : std::string{};
-			const auto host = unescapeForFileName({user_pw_end + 1, host_end});
-			const auto port = parse<UInt16>(host_end + 1);
+			const char * has_db = strchr(address.data(), '#');
+			const char * port_end = has_db ? has_db : address_end;
 
-			pools.emplace_back(factory(host, port, user, password));
+			const auto user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
+			const auto password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
+			const auto host = unescapeForFileName(std::string(user_pw_end + 1, host_end));
+			const auto port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
+			const auto database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end))
+			                             : std::string();
+
+			pools.emplace_back(factory(host, port, user, password, database));
 		}
 
 		return pools;
@@ -80,6 +87,7 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(StorageDi
 {
 }
 
+
 StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
 {
 	{
@@ -89,6 +97,7 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
 	cond.notify_one();
 	thread.join();
 }
+
 
 void StorageDistributedDirectoryMonitor::run()
 {
@@ -128,12 +137,15 @@ void StorageDistributedDirectoryMonitor::run()
 	}
 }
 
+
 ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name)
 {
 	const auto pool_factory = [this, &name] (const std::string & host, const UInt16 port,
-												const std::string & user, const std::string & password) {
+											 const std::string & user, const std::string & password,
+											 const std::string & default_database)
+	{
 		return std::make_shared<ConnectionPool>(
-			1, host, port, "",
+			1, host, port, default_database,
 			user, password,
 			storage.getName() + '_' + name);
 	};
@@ -142,6 +154,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 
 	return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM);
 }
+
 
 bool StorageDistributedDirectoryMonitor::findFiles()
 {
@@ -170,6 +183,7 @@ bool StorageDistributedDirectoryMonitor::findFiles()
 
 	return true;
 }
+
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
@@ -219,6 +233,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
 	LOG_TRACE(log, "Finished processing `" << file_path << '`');
 }
+
 
 std::string StorageDistributedDirectoryMonitor::getLoggerName() const
 {

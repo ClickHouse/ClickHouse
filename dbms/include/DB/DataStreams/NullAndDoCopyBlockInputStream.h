@@ -7,6 +7,10 @@
 namespace DB
 {
 
+class IBlockOutputStream;
+using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
+
+
 /** Пустой поток блоков.
   * Но при первой попытке чтения, копирует данные из переданного input-а в переданный output.
   * Это нужно для выполнения запроса INSERT SELECT - запрос копирует данные, но сам ничего не возвращает.

@@ -8,7 +8,6 @@ namespace DB
 {
 
 class ReadBuffer;
-class WriteBuffer;
 
 /** Поток для ввода данных в формате csv.
   * Не соответствует https://tools.ietf.org/html/rfc4180 потому что пропускает пробелы и табы между значениями.
@@ -23,6 +22,10 @@ public:
 
 	bool read(Block & block) override;
 	void readPrefix() override;
+	bool allowSyncAfterError() const override { return true; };
+	void syncAfterError() override;
+
+	std::string getDiagnosticInfo() override;
 
 private:
 	ReadBuffer & istr;
@@ -42,11 +45,6 @@ private:
 
 	char * pos_of_current_row = nullptr;
 	char * pos_of_prev_row = nullptr;
-
-	/** В случае исключения при парсинге, вызывается эта функция.
-	  * Она выполняет заново парсинг последних двух строк и выводит подробную информацию о том, что происходит.
-	  */
-	void printDiagnosticInfo(Block & block, WriteBuffer & out);
 
 	void updateDiagnosticInfo()
 	{

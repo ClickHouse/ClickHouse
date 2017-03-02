@@ -33,7 +33,7 @@ https://github.com/yandex/ClickHouse/blob/master/doc/build.md
 
 Install required packages. After that let's run the following command from directory with source code of ClickHouse:
 ```
-~/ClickHouse$ ENABLE_MONGODB=0 ./release --standalone
+~/ClickHouse$ ./release --standalone
 ```
 
 The build successfully completed:

@@ -13,10 +13,14 @@
 #include <DB/Columns/ColumnTuple.h>
 
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/Dictionaries.h>
+#include <DB/Interpreters/EmbeddedDictionaries.h>
 #include <DB/Interpreters/ExternalDictionaries.h>
 
 #include <DB/Functions/IFunction.h>
+#include <DB/Dictionaries/Embedded/RegionsHierarchy.h>
+#include <DB/Dictionaries/Embedded/RegionsHierarchies.h>
+#include <DB/Dictionaries/Embedded/RegionsNames.h>
+#include <DB/Dictionaries/Embedded/TechDataHierarchy.h>
 #include <DB/Dictionaries/FlatDictionary.h>
 #include <DB/Dictionaries/HashedDictionary.h>
 #include <DB/Dictionaries/CacheDictionary.h>
@@ -203,6 +207,9 @@ public:
 		return name;
 	}
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -232,10 +239,10 @@ public:
 
 		if (arguments.size() == 2)
 		{
-			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[1]).column.get());
+			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get());
 
 			if (!key_col)
-				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
 					+ " of second ('point of view') argument of function " + name
 					+ ". Must be constant string.",
 					ErrorCodes::ILLEGAL_COLUMN);
@@ -245,10 +252,10 @@ public:
 
 		const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get()))
+		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnVector<T>>();
-			block.getByPosition(result).column = col_to;
+			block.safeGetByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
 			typename ColumnVector<T>::Container_t & vec_to = col_to->getData();
@@ -258,13 +265,13 @@ public:
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = Transform::apply(vec_from[i], dict);
 		}
-		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get()))
+		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
-			block.getByPosition(result).column = std::make_shared<ColumnConst<T>>(
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<T>>(
 				col_from->size(), Transform::apply(col_from->getData(), dict));
 		}
 		else
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 					+ " of first argument of function " + name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -295,6 +302,9 @@ public:
 	{
 		return name;
 	}
+
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -330,10 +340,10 @@ public:
 
 		if (arguments.size() == 3)
 		{
-			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[2]).column.get());
+			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[2]).column.get());
 
 			if (!key_col)
-				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
 				+ " of third ('point of view') argument of function " + name
 				+ ". Must be constant string.",
 				ErrorCodes::ILLEGAL_COLUMN);
@@ -343,15 +353,15 @@ public:
 
 		const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-		const ColumnVector<T> * col_vec1 = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get());
-		const ColumnVector<T> * col_vec2 = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[1]).column.get());
-		const ColumnConst<T> * col_const1 = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get());
-		const ColumnConst<T> * col_const2 = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[1]).column.get());
+		const ColumnVector<T> * col_vec1 = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get());
+		const ColumnVector<T> * col_vec2 = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[1]).column.get());
+		const ColumnConst<T> * col_const1 = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get());
+		const ColumnConst<T> * col_const2 = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[1]).column.get());
 
 		if (col_vec1 && col_vec2)
 		{
 			auto col_to = std::make_shared<ColumnUInt8>();
-			block.getByPosition(result).column = col_to;
+			block.safeGetByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
 			const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
@@ -365,7 +375,7 @@ public:
 		else if (col_vec1 && col_const2)
 		{
 			auto col_to = std::make_shared<ColumnUInt8>();
-			block.getByPosition(result).column = col_to;
+			block.safeGetByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
 			const T const_from2 = col_const2->getData();
@@ -379,7 +389,7 @@ public:
 		else if (col_const1 && col_vec2)
 		{
 			auto col_to = std::make_shared<ColumnUInt8>();
-			block.getByPosition(result).column = col_to;
+			block.safeGetByPosition(result).column = col_to;
 
 			const T const_from1 = col_const1->getData();
 			const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
@@ -392,12 +402,12 @@ public:
 		}
 		else if (col_const1 && col_const2)
 		{
-			block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(col_const1->size(),
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(col_const1->size(),
 				Transform::apply(col_const1->getData(), col_const2->getData(), dict));
 		}
 		else
-			throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()
-					+ " and " + block.getByPosition(arguments[1]).column->getName()
+			throw Exception("Illegal columns " + block.safeGetByPosition(arguments[0]).column->getName()
+					+ " and " + block.safeGetByPosition(arguments[1]).column->getName()
 					+ " of arguments of function " + name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -429,6 +439,9 @@ public:
 		return name;
 	}
 
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
@@ -458,10 +471,10 @@ public:
 
 		if (arguments.size() == 2)
 		{
-			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[1]).column.get());
+			const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get());
 
 			if (!key_col)
-				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
 				+ " of second ('point of view') argument of function " + name
 				+ ". Must be constant string.",
 				ErrorCodes::ILLEGAL_COLUMN);
@@ -471,11 +484,11 @@ public:
 
 		const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get()))
+		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			auto col_values = std::make_shared<ColumnVector<T>>();
 			auto col_array = std::make_shared<ColumnArray>(col_values);
-			block.getByPosition(result).column = col_array;
+			block.safeGetByPosition(result).column = col_array;
 
 			ColumnArray::Offsets_t & res_offsets = col_array->getOffsets();
 			typename ColumnVector<T>::Container_t & res_values = col_values->getData();
@@ -496,7 +509,7 @@ public:
 				res_offsets[i] = res_values.size();
 			}
 		}
-		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get()))
+		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			Array res;
 
@@ -507,13 +520,13 @@ public:
 				cur = Transform::toParent(cur, dict);
 			}
 
-			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(
 				col_from->size(),
 				res,
 				std::make_shared<DataTypeArray>(std::make_shared<typename DataTypeFromFieldType<T>::Type>()));
 		}
 		else
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 			+ " of first argument of function " + name,
 							ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -544,7 +557,7 @@ struct FunctionRegionToCity :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -553,7 +566,7 @@ struct FunctionRegionToArea :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -562,7 +575,7 @@ struct FunctionRegionToDistrict :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -571,7 +584,7 @@ struct FunctionRegionToCountry :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -580,7 +593,7 @@ struct FunctionRegionToContinent :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -589,7 +602,7 @@ struct FunctionRegionToTopContinent :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -598,7 +611,7 @@ struct FunctionRegionToPopulation :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -607,7 +620,7 @@ struct FunctionOSToRoot :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -616,7 +629,7 @@ struct FunctionSEToRoot :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -625,7 +638,7 @@ struct FunctionRegionIn :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -634,7 +647,7 @@ struct FunctionOSIn :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -643,7 +656,7 @@ struct FunctionSEIn :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -652,7 +665,7 @@ struct FunctionRegionHierarchy :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getRegionsHierarchies());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
 	}
 };
 
@@ -661,7 +674,7 @@ struct FunctionOSHierarchy :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -670,7 +683,7 @@ struct FunctionSEHierarchy :
 {
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<base_type>(context.getDictionaries().getTechDataHierarchy());
+		return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
 	}
 };
 
@@ -682,7 +695,7 @@ public:
 	static constexpr auto name = "regionToName";
 	static FunctionPtr create(const Context & context)
 	{
-		return std::make_shared<FunctionRegionToName>(context.getDictionaries().getRegionsNames());
+		return std::make_shared<FunctionRegionToName>(context.getEmbeddedDictionaries().getRegionsNames());
 	}
 
 private:
@@ -701,6 +714,13 @@ public:
 	{
 		return name;
 	}
+
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
+	/// For the purpose of query optimization, we assume this function to be injective
+	///  even in face of fact that there are many different cities named Moscow.
+	bool isInjective(const Block &) override { return true; }
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -731,20 +751,20 @@ public:
 		/// Если указан язык результата
 		if (arguments.size() == 2)
 		{
-			if (const ColumnConstString * col_language = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[1]).column.get()))
+			if (const ColumnConstString * col_language = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get()))
 				language = RegionsNames::getLanguageEnum(col_language->getData());
 			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+				throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
 						+ " of the second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
 
 		const RegionsNames & dict = *owned_dict;
 
-		if (const ColumnUInt32 * col_from = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
+		if (const ColumnUInt32 * col_from = typeid_cast<const ColumnUInt32 *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = col_to;
+			block.safeGetByPosition(result).column = col_to;
 
 			const ColumnUInt32::Container_t & region_ids = col_from->getData();
 
@@ -754,15 +774,15 @@ public:
 				col_to->insertDataWithTerminatingZero(name_ref.data, name_ref.size + 1);
 			}
 		}
-		else if (const ColumnConst<UInt32> * col_from = typeid_cast<const ColumnConst<UInt32> *>(block.getByPosition(arguments[0]).column.get()))
+		else if (const ColumnConst<UInt32> * col_from = typeid_cast<const ColumnConst<UInt32> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			UInt32 region_id = col_from->getData();
 			const StringRef & name_ref = dict.getRegionName(region_id, language);
 
-			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), name_ref.toString());
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), name_ref.toString());
 		}
 		else
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 					+ " of the first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -784,14 +804,10 @@ public:
 	String getName() const override { return name; }
 
 private:
+	size_t getNumberOfArguments() const override { return 2; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 2)
-			throw Exception{
-				"Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 			throw Exception{
 				"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -810,7 +826,7 @@ private:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
+		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[0]).column.get());
 		if (!dict_name_col)
 			throw Exception{
 				"First argument of function " + getName() + " must be a constant string",
@@ -837,19 +853,13 @@ private:
 		if (!dict)
 			return false;
 
-		if (arguments.size() != 2)
-			throw Exception{
-				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
-					" requires exactly 2 arguments",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-		const auto id_col_untyped = block.getByPosition(arguments[1]).column.get();
+		const auto id_col_untyped = block.safeGetByPosition(arguments[1]).column.get();
 		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 		{
 			const auto & ids = id_col->getData();
 
 			const auto out = std::make_shared<ColumnUInt8>(ext::size(ids));
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			dict->has(ids, out->getData());
 		}
@@ -860,7 +870,7 @@ private:
 
 			dict->has(ids, out);
 
-			block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(id_col->size(), out.front());
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(id_col->size(), out.front());
 		}
 		else
 			throw Exception{
@@ -878,13 +888,7 @@ private:
 		if (!dict)
 			return false;
 
-		if (arguments.size() != 2)
-			throw Exception{
-				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
-					" requires exactly 2 arguments",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-		const auto key_col_with_type = block.getByPosition(arguments[1]);
+		const auto key_col_with_type = block.safeGetByPosition(arguments[1]);
 		if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
 			|| typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
 		{
@@ -898,7 +902,7 @@ private:
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
 			const auto out = std::make_shared<ColumnUInt8>(key_col_with_type.column->size());
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			dict->has(key_columns, key_types, out->getData());
 		}
@@ -912,6 +916,27 @@ private:
 
 	const ExternalDictionaries & dictionaries;
 };
+
+
+static bool isDictGetFunctionInjective(const ExternalDictionaries & dictionaries, const Block & sample_block)
+{
+	if (sample_block.columns() != 3 && sample_block.columns() != 4)
+		throw Exception{"Function dictGet... takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+	const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(sample_block.getByPosition(0).column.get());
+	if (!dict_name_col)
+		throw Exception{
+			"First argument of function dictGet... must be a constant string",
+			ErrorCodes::ILLEGAL_COLUMN};
+
+	const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(sample_block.getByPosition(1).column.get());
+	if (!attr_name_col)
+		throw Exception{
+			"Second argument of function dictGet... must be a constant string",
+			ErrorCodes::ILLEGAL_COLUMN};
+
+	return dictionaries.getDictionary(dict_name_col->getData())->isInjective(attr_name_col->getData());
+}
 
 
 class FunctionDictGetString final : public IFunction
@@ -929,6 +954,14 @@ public:
 	String getName() const override { return name; }
 
 private:
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
+	bool isInjective(const Block & sample_block) override
+	{
+		return isDictGetFunctionInjective(dictionaries, sample_block);
+	}
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3 && arguments.size() != 4)
@@ -975,7 +1008,7 @@ private:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
+		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[0]).column.get());
 		if (!dict_name_col)
 			throw Exception{
 				"First argument of function " + getName() + " must be a constant string",
@@ -1009,7 +1042,7 @@ private:
 				" requires exactly 3 arguments",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
 			throw Exception{
 				"Second argument of function " + getName() + " must be a constant string",
@@ -1017,11 +1050,11 @@ private:
 
 		const auto & attr_name = attr_name_col->getData();
 
-		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
+		const auto id_col_untyped = block.safeGetByPosition(arguments[2]).column.get();
 		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 		{
 			const auto out = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 			dict->getString(attr_name, id_col->getData(), out.get());
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
@@ -1030,7 +1063,7 @@ private:
 			auto out = std::make_unique<ColumnString>();
 			dict->getString(attr_name, ids, out.get());
 
-			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<String>>(
 				id_col->size(), out->getDataAt(0).toString());
 		}
 		else
@@ -1057,7 +1090,7 @@ private:
 					" requires exactly 3 arguments",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
 			throw Exception{
 				"Second argument of function " + getName() + " must be a constant string",
@@ -1065,7 +1098,7 @@ private:
 
 		const auto & attr_name = attr_name_col->getData();
 
-		const auto key_col_with_type = block.getByPosition(arguments[2]);
+		const auto key_col_with_type = block.safeGetByPosition(arguments[2]);
 		if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
 			|| typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
 		{
@@ -1078,7 +1111,7 @@ private:
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
 			const auto out = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			dict->getString(attr_name, key_columns, key_types, out.get());
 		}
@@ -1104,7 +1137,7 @@ private:
 				" requires exactly 4 arguments",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
 			throw Exception{
 				"Second argument of function " + getName() + " must be a constant string",
@@ -1112,8 +1145,8 @@ private:
 
 		const auto & attr_name = attr_name_col->getData();
 
-		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
-		const auto date_col_untyped = block.getByPosition(arguments[3]).column.get();
+		const auto id_col_untyped = block.safeGetByPosition(arguments[2]).column.get();
+		const auto date_col_untyped = block.safeGetByPosition(arguments[3]).column.get();
 		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
@@ -1136,13 +1169,13 @@ private:
 		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
 			const auto out = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 			dictionary->getString(attr_name, id_col->getData(), date_col->getData(), out.get());
 		}
 		else if (const auto date_col = typeid_cast<const ColumnConst<UInt16> *>(date_col_untyped))
 		{
 			auto out = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			const PaddedPODArray<UInt16> dates(id_col->size(), date_col->getData());
 			dictionary->getString(attr_name, id_col->getData(), dates, out.get());
@@ -1163,7 +1196,7 @@ private:
 		if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
 		{
 			const auto out = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			const PaddedPODArray<UInt64> ids(date_col->size(), id_col->getData());
 			dictionary->getString(attr_name, ids, date_col->getData(), out.get());
@@ -1176,7 +1209,7 @@ private:
 			auto out = std::make_unique<ColumnString>();
 			dictionary->getString(attr_name, ids, dates, out.get());
 
-			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<String>>(
 				id_col->size(), out->getDataAt(0).toString());
 		}
 		else
@@ -1206,14 +1239,10 @@ public:
 	String getName() const override { return name; }
 
 private:
+	size_t getNumberOfArguments() const override { return 4; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 4)
-			throw Exception{
-				"Number of arguments for function " + getName() + " doesn't match: passed " +
-					toString(arguments.size()) + ", should be 4.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 			throw Exception{
 				"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() +
@@ -1246,7 +1275,7 @@ private:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
+		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[0]).column.get());
 		if (!dict_name_col)
 			throw Exception{
 				"First argument of function " + getName() + " must be a constant string",
@@ -1273,13 +1302,7 @@ private:
 		if (!dict)
 			return false;
 
-		if (arguments.size() != 4)
-			throw Exception{
-				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
-					" requires exactly 4 arguments",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
 			throw Exception{
 				"Second argument of function " + getName() + " must be a constant string",
@@ -1287,7 +1310,7 @@ private:
 
 		const auto & attr_name = attr_name_col->getData();
 
-		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
+		const auto id_col_untyped = block.safeGetByPosition(arguments[2]).column.get();
 		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 			executeDispatch(block, arguments, result, dict, attr_name, id_col);
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
@@ -1305,13 +1328,13 @@ private:
 		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * const dictionary,
 		const std::string & attr_name, const ColumnUInt64 * const id_col)
 	{
-		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
+		const auto default_col_untyped = block.safeGetByPosition(arguments[3]).column.get();
 
 		if (const auto default_col = typeid_cast<const ColumnString *>(default_col_untyped))
 		{
 			/// vector ids, vector defaults
 			const auto out = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
 
@@ -1321,7 +1344,7 @@ private:
 		{
 			/// vector ids, const defaults
 			const auto out = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
 			const auto & def = default_col->getData();
@@ -1339,7 +1362,7 @@ private:
 		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * const dictionary,
 		const std::string & attr_name, const ColumnConst<UInt64> * const id_col)
 	{
-		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
+		const auto default_col_untyped = block.safeGetByPosition(arguments[3]).column.get();
 
 		if (const auto default_col = typeid_cast<const ColumnString *>(default_col_untyped))
 		{
@@ -1347,7 +1370,7 @@ private:
 			/// @todo avoid materialization
 			const PaddedPODArray<UInt64> ids(id_col->size(), id_col->getData());
 			const auto out = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			dictionary->getString(attr_name, ids, default_col, out.get());
 		}
@@ -1361,7 +1384,7 @@ private:
 
 			dictionary->getString(attr_name, ids, def, out.get());
 
-			block.getByPosition(result).column = std::make_shared<ColumnConst<String>>(
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<String>>(
 				id_col->size(), out->getDataAt(0).toString());
 		}
 		else
@@ -1378,13 +1401,7 @@ private:
 		if (!dict)
 			return false;
 
-		if (arguments.size() != 4)
-			throw Exception{
-				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
-					" requires exactly 4 arguments",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
 			throw Exception{
 				"Second argument of function " + getName() + " must be a constant string",
@@ -1392,7 +1409,7 @@ private:
 
 		const auto & attr_name = attr_name_col->getData();
 
-		const auto key_col_with_type = block.getByPosition(arguments[2]);
+		const auto key_col_with_type = block.safeGetByPosition(arguments[2]);
 		const auto & key_col = typeid_cast<const ColumnTuple &>(*key_col_with_type.column);
 
 		const ColumnPtr key_col_materialized = key_col.convertToFullColumnIfConst();
@@ -1403,9 +1420,9 @@ private:
 		const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
 		const auto out = std::make_shared<ColumnString>();
-		block.getByPosition(result).column = out;
+		block.safeGetByPosition(result).column = out;
 
-		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
+		const auto default_col_untyped = block.safeGetByPosition(arguments[3]).column.get();
 		if (const auto default_col = typeid_cast<const ColumnString *>(default_col_untyped))
 		{
 			dict->getString(attr_name, key_columns, key_types, default_col, out.get());
@@ -1499,13 +1516,18 @@ public:
 	String getName() const override { return name; }
 
 private:
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
+	bool isInjective(const Block & sample_block) override
+	{
+		return isDictGetFunctionInjective(dictionaries, sample_block);
+	}
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3 && arguments.size() != 4)
-			throw Exception{
-				"Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 3 or 4.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+			throw Exception{"Function " + getName() + " takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		{
@@ -1545,7 +1567,7 @@ private:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
+		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[0]).column.get());
 		if (!dict_name_col)
 			throw Exception{
 				"First argument of function " + getName() + " must be a constant string",
@@ -1579,7 +1601,7 @@ private:
 				" requires exactly 3 arguments.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
 			throw Exception{
 				"Second argument of function " + getName() + " must be a constant string",
@@ -1587,11 +1609,11 @@ private:
 
 		const auto & attr_name = attr_name_col->getData();
 
-		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
+		const auto id_col_untyped = block.safeGetByPosition(arguments[2]).column.get();
 		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 		{
 			const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
 			auto & data = out->getData();
@@ -1604,7 +1626,7 @@ private:
 			PaddedPODArray<Type> data(1);
 			DictGetTraits<DataType>::get(dict, attr_name, ids, data);
 
-			block.getByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
 		}
 		else
 		{
@@ -1630,7 +1652,7 @@ private:
 					" requires exactly 3 arguments",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
 			throw Exception{
 				"Second argument of function " + getName() + " must be a constant string",
@@ -1638,7 +1660,7 @@ private:
 
 		const auto & attr_name = attr_name_col->getData();
 
-		const auto key_col_with_type = block.getByPosition(arguments[2]);
+		const auto key_col_with_type = block.safeGetByPosition(arguments[2]);
 		if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
 			|| typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
 		{
@@ -1651,7 +1673,7 @@ private:
 			const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
 			const auto out = std::make_shared<ColumnVector<Type>>(key_columns.front()->size());
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			auto & data = out->getData();
 
@@ -1679,7 +1701,7 @@ private:
 				" requires exactly 4 arguments",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
 			throw Exception{
 				"Second argument of function " + getName() + " must be a constant string",
@@ -1687,8 +1709,8 @@ private:
 
 		const auto & attr_name = attr_name_col->getData();
 
-		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
-		const auto date_col_untyped = block.getByPosition(arguments[3]).column.get();
+		const auto id_col_untyped = block.safeGetByPosition(arguments[2]).column.get();
+		const auto date_col_untyped = block.safeGetByPosition(arguments[3]).column.get();
 		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
@@ -1715,7 +1737,7 @@ private:
 			const auto & dates = date_col->getData();
 
 			const auto out = std::make_shared<ColumnVector<Type>>(size);
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			auto & data = out->getData();
 			DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
@@ -1727,7 +1749,7 @@ private:
 			const PaddedPODArray<UInt16> dates(size, date_col->getData());
 
 			const auto out = std::make_shared<ColumnVector<Type>>(size);
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			auto & data = out->getData();
 			DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
@@ -1752,7 +1774,7 @@ private:
 			const auto & dates = date_col->getData();
 
 			const auto out = std::make_shared<ColumnVector<Type>>(size);
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			auto & data = out->getData();
 			DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
@@ -1764,7 +1786,7 @@ private:
 			PaddedPODArray<Type> data(1);
 			DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
 
-			block.getByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
 		}
 		else
 		{
@@ -1813,14 +1835,10 @@ public:
 	String getName() const override { return name; }
 
 private:
+	size_t getNumberOfArguments() const override { return 4; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 4)
-			throw Exception{
-				"Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 4.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		{
 			throw Exception{
@@ -1859,7 +1877,7 @@ private:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
+		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[0]).column.get());
 		if (!dict_name_col)
 			throw Exception{
 				"First argument of function " + getName() + " must be a constant string",
@@ -1886,13 +1904,7 @@ private:
 		if (!dict)
 			return false;
 
-		if (arguments.size() != 4)
-			throw Exception{
-				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
-				" requires exactly 4 arguments.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
 			throw Exception{
 				"Second argument of function " + getName() + " must be a constant string",
@@ -1900,7 +1912,7 @@ private:
 
 		const auto & attr_name = attr_name_col->getData();
 
-		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
+		const auto id_col_untyped = block.safeGetByPosition(arguments[2]).column.get();
 		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 			executeDispatch(block, arguments, result, dict, attr_name, id_col);
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
@@ -1918,13 +1930,13 @@ private:
 		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * const dictionary,
 		const std::string & attr_name, const ColumnUInt64 * const id_col)
 	{
-		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
+		const auto default_col_untyped = block.safeGetByPosition(arguments[3]).column.get();
 
 		if (const auto default_col = typeid_cast<const ColumnVector<Type> *>(default_col_untyped))
 		{
 			/// vector ids, vector defaults
 			const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
 			auto & data = out->getData();
@@ -1936,7 +1948,7 @@ private:
 		{
 			/// vector ids, const defaults
 			const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			const auto & ids = id_col->getData();
 			auto & data = out->getData();
@@ -1955,7 +1967,7 @@ private:
 		Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * const dictionary,
 		const std::string & attr_name, const ColumnConst<UInt64> * const id_col)
 	{
-		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
+		const auto default_col_untyped = block.safeGetByPosition(arguments[3]).column.get();
 
 		if (const auto default_col = typeid_cast<const ColumnVector<Type> *>(default_col_untyped))
 		{
@@ -1964,7 +1976,7 @@ private:
 			const PaddedPODArray<UInt64> ids(id_col->size(), id_col->getData());
 
 			const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			auto & data = out->getData();
 			const auto & defs = default_col->getData();
@@ -1980,7 +1992,7 @@ private:
 
 			DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
 
-			block.getByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
 		}
 		else
 			throw Exception{
@@ -1996,13 +2008,7 @@ private:
 		if (!dict)
 			return false;
 
-		if (arguments.size() != 4)
-			throw Exception{
-				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
-					" requires exactly 4 arguments",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
 			throw Exception{
 				"Second argument of function " + getName() + " must be a constant string",
@@ -2010,7 +2016,7 @@ private:
 
 		const auto & attr_name = attr_name_col->getData();
 
-		const auto key_col_with_type = block.getByPosition(arguments[2]);
+		const auto key_col_with_type = block.safeGetByPosition(arguments[2]);
 		const auto & key_col = typeid_cast<const ColumnTuple &>(*key_col_with_type.column);
 
 		const ColumnPtr key_col_materialized = key_col.convertToFullColumnIfConst();
@@ -2023,10 +2029,10 @@ private:
 		/// @todo detect when all key columns are constant
 		const auto rows = key_col.size();
 		const auto out = std::make_shared<ColumnVector<Type>>(rows);
-		block.getByPosition(result).column = out;
+		block.safeGetByPosition(result).column = out;
 		auto & data = out->getData();
 
-		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
+		const auto default_col_untyped = block.safeGetByPosition(arguments[3]).column.get();
 		if (const auto default_col = typeid_cast<const ColumnVector<Type> *>(default_col_untyped))
 		{
 			/// const defaults
@@ -2084,14 +2090,11 @@ public:
 	String getName() const override { return name; }
 
 private:
+	size_t getNumberOfArguments() const override { return 2; }
+	bool isInjective(const Block & sample_block) override { return true; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 2)
-			throw Exception{
-				"Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		{
 			throw Exception{
@@ -2113,7 +2116,7 @@ private:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
+		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[0]).column.get());
 		if (!dict_name_col)
 			throw Exception{
 				"First argument of function " + getName() + " must be a constant string",
@@ -2195,13 +2198,13 @@ private:
 			}
 		};
 
-		const auto id_col_untyped = block.getByPosition(arguments[1]).column.get();
+		const auto id_col_untyped = block.safeGetByPosition(arguments[1]).column.get();
 		if (const auto id_col = typeid_cast<const ColumnUInt64 *>(id_col_untyped))
 		{
 			const auto & in = id_col->getData();
 			const auto backend = std::make_shared<ColumnUInt64>();
 			const auto array = std::make_shared<ColumnArray>(backend);
-			block.getByPosition(result).column = array;
+			block.safeGetByPosition(result).column = array;
 
 			get_hierarchies(in, backend->getData(), array->getOffsets());
 		}
@@ -2213,7 +2216,7 @@ private:
 
 			get_hierarchies(in, backend->getData(), array->getOffsets());
 
-			block.getByPosition(result).column = std::make_shared<ColumnConstArray>(
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(
 				id_col->size(),
 				(*array)[0].get<Array>(),
 				std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()));
@@ -2247,14 +2250,10 @@ public:
 	String getName() const override { return name; }
 
 private:
+	size_t getNumberOfArguments() const override { return 3; }
+
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 3)
-			throw Exception{
-				"Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 3.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		{
 			throw Exception{
@@ -2284,7 +2283,7 @@ private:
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
+		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.safeGetByPosition(arguments[0]).column.get());
 		if (!dict_name_col)
 			throw Exception{
 				"First argument of function " + getName() + " must be a constant string",
@@ -2314,8 +2313,8 @@ private:
 				"Dictionary does not have a hierarchy",
 				ErrorCodes::UNSUPPORTED_METHOD};
 
-		const auto child_id_col_untyped = block.getByPosition(arguments[1]).column.get();
-		const auto ancestor_id_col_untyped = block.getByPosition(arguments[2]).column.get();
+		const auto child_id_col_untyped = block.safeGetByPosition(arguments[1]).column.get();
+		const auto ancestor_id_col_untyped = block.safeGetByPosition(arguments[2]).column.get();
 
 		if (const auto child_id_col = typeid_cast<const ColumnUInt64 *>(child_id_col_untyped))
 			execute(block, result, dict, child_id_col, ancestor_id_col_untyped);
@@ -2337,7 +2336,7 @@ private:
 		if (const auto ancestor_id_col = typeid_cast<const ColumnUInt64 *>(ancestor_id_col_untyped))
 		{
 			const auto out = std::make_shared<ColumnUInt8>();
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			const auto & child_ids = child_id_col->getData();
 			const auto & ancestor_ids = ancestor_id_col->getData();
@@ -2351,7 +2350,7 @@ private:
 		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<UInt64> *>(ancestor_id_col_untyped))
 		{
 			const auto out = std::make_shared<ColumnUInt8>();
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			const auto & child_ids = child_id_col->getData();
 			const auto ancestor_id = ancestor_id_col->getData();
@@ -2380,7 +2379,7 @@ private:
 		if (const auto ancestor_id_col = typeid_cast<const ColumnUInt64 *>(ancestor_id_col_untyped))
 		{
 			const auto out = std::make_shared<ColumnUInt8>();
-			block.getByPosition(result).column = out;
+			block.safeGetByPosition(result).column = out;
 
 			const auto child_id = child_id_col->getData();
 			const auto & ancestor_ids = ancestor_id_col->getData();
@@ -2393,7 +2392,7 @@ private:
 		}
 		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<UInt64> *>(ancestor_id_col_untyped))
 		{
-			block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(
 				child_id_col->size(),
 				dictionary->in(child_id_col->getData(), ancestor_id_col->getData()));
 		}

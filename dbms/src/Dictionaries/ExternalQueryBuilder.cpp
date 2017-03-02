@@ -21,9 +21,29 @@ ExternalQueryBuilder::ExternalQueryBuilder(
 	const DictionaryStructure & dict_struct,
 	const std::string & db,
 	const std::string & table,
-	const std::string & where)
-	: dict_struct(dict_struct), db(db), table(table), where(where)
+	const std::string & where,
+	QuotingStyle quoting_style)
+	: dict_struct(dict_struct), db(db), table(table), where(where), quoting_style(quoting_style)
 {
+}
+
+
+void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out) const
+{
+	switch (quoting_style)
+	{
+		case None:
+			writeString(s, out);
+			break;
+
+		case Backticks:
+			writeBackQuotedString(s, out);
+			break;
+
+		case DoubleQuotes:
+			writeDoubleQuotedString(s, out);
+			break;
+	}
 }
 
 
@@ -43,7 +63,7 @@ std::string ExternalQueryBuilder::composeLoadAllQuery() const
 				writeString(" AS ", out);
 			}
 
-			writeProbablyBackQuotedString(dict_struct.id.value().name, out);
+			writeQuoted(dict_struct.id.value().name, out);
 
 			if (dict_struct.range_min && dict_struct.range_max)
 			{
@@ -55,7 +75,7 @@ std::string ExternalQueryBuilder::composeLoadAllQuery() const
 					writeString(" AS ", out);
 				}
 
-				writeProbablyBackQuotedString(dict_struct.range_min.value().name, out);
+				writeQuoted(dict_struct.range_min.value().name, out);
 
 				writeString(", ", out);
 
@@ -65,7 +85,7 @@ std::string ExternalQueryBuilder::composeLoadAllQuery() const
 					writeString(" AS ", out);
 				}
 
-				writeProbablyBackQuotedString(dict_struct.range_max.value().name, out);
+				writeQuoted(dict_struct.range_max.value().name, out);
 			}
 		}
 		else if (dict_struct.key)
@@ -84,7 +104,7 @@ std::string ExternalQueryBuilder::composeLoadAllQuery() const
 					writeString(" AS ", out);
 				}
 
-				writeProbablyBackQuotedString(key.name, out);
+				writeQuoted(key.name, out);
 			}
 		}
 
@@ -98,16 +118,16 @@ std::string ExternalQueryBuilder::composeLoadAllQuery() const
 				writeString(" AS ", out);
 			}
 
-			writeProbablyBackQuotedString(attr.name, out);
+			writeQuoted(attr.name, out);
 		}
 
 		writeString(" FROM ", out);
 		if (!db.empty())
 		{
-			writeProbablyBackQuotedString(db, out);
+			writeQuoted(db, out);
 			writeChar('.', out);
 		}
-		writeProbablyBackQuotedString(table, out);
+		writeQuoted(table, out);
 
 		if (!where.empty())
 		{
@@ -139,7 +159,7 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
 			writeString(" AS ", out);
 		}
 
-		writeProbablyBackQuotedString(dict_struct.id.value().name, out);
+		writeQuoted(dict_struct.id.value().name, out);
 
 		for (const auto & attr : dict_struct.attributes)
 		{
@@ -151,16 +171,16 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
 				writeString(" AS ", out);
 			}
 
-			writeProbablyBackQuotedString(attr.name, out);
+			writeQuoted(attr.name, out);
 		}
 
 		writeString(" FROM ", out);
 		if (!db.empty())
 		{
-			writeProbablyBackQuotedString(db, out);
+			writeQuoted(db, out);
 			writeChar('.', out);
 		}
-		writeProbablyBackQuotedString(table, out);
+		writeQuoted(table, out);
 
 		writeString(" WHERE ", out);
 
@@ -170,7 +190,7 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
 			writeString(" AND ", out);
 		}
 
-		writeProbablyBackQuotedString(dict_struct.id.value().name, out);
+		writeQuoted(dict_struct.id.value().name, out);
 		writeString(" IN (", out);
 
 		auto first = true;
@@ -218,16 +238,16 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
 				writeString(" AS ", out);
 			}
 
-			writeProbablyBackQuotedString(key_or_attribute.name, out);
+			writeQuoted(key_or_attribute.name, out);
 		}
 
 		writeString(" FROM ", out);
 		if (!db.empty())
 		{
-			writeProbablyBackQuotedString(db, out);
+			writeQuoted(db, out);
 			writeChar('.', out);
 		}
-		writeProbablyBackQuotedString(table, out);
+		writeQuoted(table, out);
 
 		writeString(" WHERE ", out);
 

@@ -12,6 +12,7 @@ namespace DB
 class ASTFunction : public ASTWithAlias
 {
 public:
+	/// TODO This is semantic, not syntax. Remove it.
 	enum FunctionKind
 	{
 		UNKNOWN,

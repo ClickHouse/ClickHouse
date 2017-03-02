@@ -130,11 +130,13 @@ struct CrapWow
 {
 	size_t operator() (CompactStringRef x) const
 	{
+#if __x86_64__
 		const char * key = x.data();
 		size_t len = x.size;
 		size_t seed = 0;
 
 		const UInt64 m = 0x95b47aa3355ba1a1, n = 0x8a970be7488fda55;
+
 	    UInt64 hash;
 	    // 3 = m, 4 = n
 	    // r12 = h, r13 = k, ecx = seed, r12 = key
@@ -192,6 +194,9 @@ struct CrapWow
 	        : "%r12", "%r13", "%r14", "%r15", "cc"
 	    );
 	    return hash;
+#else
+	    return 0;
+#endif
 	}
 };
 

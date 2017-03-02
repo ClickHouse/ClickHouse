@@ -189,7 +189,7 @@ NameSet MergeTreeBlockInputStream::injectRequiredColumns(Names & columns) const
 	/// If all files are missing read at least one column to determine correct column sizes
 	if (all_column_files_missing)
 	{
-		const auto minimum_size_column_name = owned_data_part->getMinimumSizeColumnName();
+		const auto minimum_size_column_name = owned_data_part->getColumnNameWithMinumumCompressedSize();
 		columns.push_back(minimum_size_column_name);
 		injected_columns.insert(std::move(minimum_size_column_name));
 	}
@@ -249,7 +249,7 @@ Block MergeTreeBlockInputStream::readImpl()
 			if (!res)
 				return res;
 
-			progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
+			progressImpl(Progress(res.rows(), res.bytes()));
 			pre_reader->fillMissingColumns(res, ordered_names, should_reorder);
 
 			/// Вычислим выражение в PREWHERE.
@@ -348,7 +348,7 @@ Block MergeTreeBlockInputStream::readImpl()
 				size_t rows = 0;
 				for (size_t i = 0; i < res.columns(); ++i)
 				{
-					ColumnWithTypeAndName & column = res.getByPosition(i);
+					ColumnWithTypeAndName & column = res.safeGetByPosition(i);
 					if (column.name == prewhere_column && res.columns() > 1)
 						continue;
 					column.column = column.column->filter(column_name_set.count(column.name) ? post_filter : pre_filter, -1);
@@ -387,7 +387,7 @@ Block MergeTreeBlockInputStream::readImpl()
 		if (!res)
 			return res;
 
-		progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
+		progressImpl(Progress(res.rows(), res.bytes()));
 		reader->fillMissingColumns(res, ordered_names);
 	}
 

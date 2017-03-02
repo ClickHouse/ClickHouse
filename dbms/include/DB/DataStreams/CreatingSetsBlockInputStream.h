@@ -1,8 +1,11 @@
 #pragma once
 
+#include <Poco/Logger.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 
+
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -69,6 +72,7 @@ private:
 	size_t rows_to_transfer = 0;
 	size_t bytes_to_transfer = 0;
 
+	using Logger = Poco::Logger;
 	Logger * log = &Logger::get("CreatingSetsBlockInputStream");
 
 	void createAll();

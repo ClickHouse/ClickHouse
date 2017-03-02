@@ -40,7 +40,7 @@ void loop(time_t begin, time_t end, int step)
 	for (time_t t = begin; t < end; t += step)
 	{
 		time_t t2 = date_lut.makeDateTime(date_lut.toYear(t), date_lut.toMonth(t), date_lut.toDayOfMonth(t),
-			date_lut.toHourInaccurate(t), date_lut.toMinute(t), date_lut.toSecond(t));
+			date_lut.toHour(t), date_lut.toMinute(t), date_lut.toSecond(t));
 
 		std::string s1 = toString(t);
 		std::string s2 = toString(t2);

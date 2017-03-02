@@ -17,14 +17,18 @@
 #include <DB/Common/Stopwatch.h>
 
 #include <stdlib.h>
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
+#endif
 
 #include <fcntl.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <linux/aio_abi.h>
+#endif
 #include <sys/syscall.h>
 
 using DB::throwFromErrno;

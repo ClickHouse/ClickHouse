@@ -1,10 +1,12 @@
 #pragma once
 
 #include <DB/Storages/AlterCommands.h>
+#include <DB/Storages/IStorage.h>
 #include <string>
 
 namespace DB
 {
+
 
 class StorageReplicatedMergeTree;
 

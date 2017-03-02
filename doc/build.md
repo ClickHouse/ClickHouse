@@ -68,7 +68,7 @@ export CXX=g++-6
 ## Install required libraries from packages
 
 ```
-sudo apt-get install libicu-dev libglib2.0-dev libreadline-dev libmysqlclient-dev libssl-dev unixodbc-dev
+sudo apt-get install libicu-dev libreadline-dev libmysqlclient-dev libssl-dev unixodbc-dev
 ```
 
 # Checkout ClickHouse sources
@@ -159,3 +159,8 @@ cmake ..
 make -j $THREADS
 cd ..
 ```
+To create an executable, run
+```
+make clickhouse
+```
+This will create the dbms/src/Server/clickhouse executable, which can be used with --client or --server.

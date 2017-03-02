@@ -39,7 +39,14 @@ public:
 	const char * deserializeAndInsertFromArena(const char * pos) override;
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;;
 	void insert(const Field & x) override;
-	void insertDefault() override;
+	void insertFrom(const IColumn & src, size_t n) override;
+
+	void insertDefault() override
+	{
+		nested_column->insertDefault();
+		getNullMap().push_back(1);
+	}
+
 	void popBack(size_t n) override;
 	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 	ColumnPtr permute(const Permutation & perm, size_t limit) const override;
@@ -47,18 +54,30 @@ public:
 	void getPermutation(bool reverse, size_t limit, Permutation & res) const override;
 	void reserve(size_t n) override;
 	size_t byteSize() const override;
+	size_t allocatedSize() const override;
 	ColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
 	ColumnPtr convertToFullColumnIfConst() const override;
 	void updateHashWithValue(size_t n, SipHash & hash) const override;
 	void getExtremes(Field & min, Field & max) const override;
+
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		return scatterImpl<ColumnNullable>(num_columns, selector);
+	}
 
 	/// Return the column that represents values.
 	ColumnPtr & getNestedColumn() { return nested_column; }
 	const ColumnPtr & getNestedColumn() const { return nested_column; }
 
 	/// Return the column that represents the byte map.
-	ColumnPtr & getNullValuesByteMap() { return null_map; }
-	const ColumnPtr & getNullValuesByteMap() const { return null_map; }
+	ColumnPtr & getNullMapColumn() { return null_map; }
+	const ColumnPtr & getNullMapColumn() const { return null_map; }
+
+	ColumnUInt8 & getNullMapConcreteColumn() { return static_cast<ColumnUInt8 &>(*null_map); }
+	const ColumnUInt8 & getNullMapConcreteColumn() const { return static_cast<const ColumnUInt8 &>(*null_map); }
+
+	ColumnUInt8::Container_t & getNullMap() { return getNullMapConcreteColumn().getData(); }
+	const ColumnUInt8::Container_t & getNullMap() const { return getNullMapConcreteColumn().getData(); }
 
 	/// Apply the null byte map of a specified nullable column onto the
 	/// null byte map of the current column by performing an element-wise OR
@@ -66,11 +85,6 @@ public:
 	/// map of the result column of a function taking one or more nullable
 	/// columns.
 	void applyNullValuesByteMap(const ColumnNullable & other);
-
-private:
-	/// Convenience methods which make the implementation easier to read.
-	ColumnUInt8 & getNullMapContent() { return static_cast<ColumnUInt8 &>(*null_map); }
-	const ColumnUInt8 & getNullMapContent() const { return static_cast<const ColumnUInt8 &>(*null_map); }
 
 private:
 	ColumnPtr nested_column;

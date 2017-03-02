@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/** Интерфейс для агрегатных функций, принимающих одно значение. Это почти все агрегатные функции.
+/** Interface for aggregate functions, that take single argument. These are almost all aggregate functions.
   */
 template <typename T, typename Derived>
 class IUnaryAggregateFunction : public IAggregateFunctionHelper<T>
@@ -26,7 +26,7 @@ public:
 		getDerived().setArgument(arguments[0]);
 	}
 
-	/// Добавить значение.
+	/// Accumulate a value.
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override final
 	{
 		getDerived().addImpl(place, *columns[0], row_num, arena);
@@ -39,8 +39,8 @@ public:
 
 	IAggregateFunction::AddFunc getAddressOfAddFunction() const override { return &addFree; }
 
-	/** Реализуйте это в классе-наследнике:
-	  * void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const;
+	/** Implement the following in descendant class:
+	  * void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const;
 	  * void setArgument(const DataTypePtr & argument);
 	  */
 };

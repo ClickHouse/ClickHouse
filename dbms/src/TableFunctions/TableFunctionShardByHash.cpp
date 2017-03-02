@@ -2,8 +2,10 @@
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Interpreters/evaluateConstantExpression.h>
 #include <DB/Interpreters/Cluster.h>
+#include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/getClusterName.h>
 #include <DB/Common/SipHash.h>
 #include <DB/TableFunctions/TableFunctionShardByHash.h>

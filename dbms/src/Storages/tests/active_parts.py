@@ -2,7 +2,7 @@
 # coding=UTF-8
 
 # Выводит список активных кусков - кусков, не покрытых никаким другим куском.
-# Использование: `ls /opt/clickhouse/data/merge/visits | active_parts.py`
+# Usage: `ls /var/lib/clickhouse/data/merge/visits | active_parts.py`
 
 import sys
 import re

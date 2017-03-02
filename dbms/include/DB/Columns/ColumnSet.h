@@ -1,11 +1,14 @@
 #pragma once
 
 #include <DB/Columns/IColumnDummy.h>
-#include <DB/Interpreters/Set.h>
 
 
 namespace DB
 {
+
+class Set;
+using ConstSetPtr = std::shared_ptr<const Set>;
+
 
 /** Столбец, содержащий множество значений в секции IN.
   * Ведёт себя как столбец-константа (так как множество одно, а не своё на каждую строку).

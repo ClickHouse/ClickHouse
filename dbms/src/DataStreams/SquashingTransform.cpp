@@ -16,7 +16,7 @@ SquashingTransform::Result SquashingTransform::add(Block && block)
 		return Result(std::move(accumulated_block));
 
 	/// Just read block is alredy enough.
-	if (isEnoughSize(block.rowsInFirstColumn(), block.bytes()))
+	if (isEnoughSize(block.rows(), block.bytes()))
 	{
 		/// If no accumulated data, return just read block.
 		if (!accumulated_block)
@@ -29,7 +29,7 @@ SquashingTransform::Result SquashingTransform::add(Block && block)
 	}
 
 	/// Accumulated block is already enough.
-	if (accumulated_block && isEnoughSize(accumulated_block.rowsInFirstColumn(), accumulated_block.bytes()))
+	if (accumulated_block && isEnoughSize(accumulated_block.rows(), accumulated_block.bytes()))
 	{
 		/// Return accumulated data and place new block to accumulated data.
 		accumulated_block.swap(block);
@@ -39,7 +39,7 @@ SquashingTransform::Result SquashingTransform::add(Block && block)
 
 	append(std::move(block));
 
-	if (isEnoughSize(accumulated_block.rowsInFirstColumn(), accumulated_block.bytes()))
+	if (isEnoughSize(accumulated_block.rows(), accumulated_block.bytes()))
 	{
 		Block res;
 		res.swap(accumulated_block);
@@ -61,11 +61,11 @@ void SquashingTransform::append(Block && block)
 	}
 
 	size_t columns = block.columns();
-	size_t rows = block.rowsInFirstColumn();
+	size_t rows = block.rows();
 
 	for (size_t i = 0; i < columns; ++i)
-		accumulated_block.unsafeGetByPosition(i).column->insertRangeFrom(
-			*block.unsafeGetByPosition(i).column, 0, rows);
+		accumulated_block.getByPosition(i).column->insertRangeFrom(
+			*block.getByPosition(i).column, 0, rows);
 }
 
 

@@ -1,11 +1,16 @@
 #pragma once
 
+#include <unordered_map>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
-#include <DB/DataTypes/IDataType.h>
-#include <boost/iterator/transform_iterator.hpp>
+
 
 namespace DB
 {
+
+class IDataType;
+using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypes = std::vector<DataTypePtr>;
+
 
 /** Creates an aggregate function by name.
   */

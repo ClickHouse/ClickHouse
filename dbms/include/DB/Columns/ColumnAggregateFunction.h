@@ -160,11 +160,21 @@ public:
 		insertMergeFrom(src, n);
 	}
 
+	void insertFrom(ConstAggregateDataPtr place)
+	{
+		insertDefault();
+		insertMergeFrom(place);
+	}
+
 	/// Merge state at last row with specified state in another column.
+	void insertMergeFrom(ConstAggregateDataPtr place)
+	{
+		func->merge(getData().back(), place, &createOrGetArena());
+	}
+
 	void insertMergeFrom(const IColumn & src, size_t n)
 	{
-		Arena & arena = createOrGetArena();
-		func->merge(getData().back(), static_cast<const ColumnAggregateFunction &>(src).getData()[n], &arena);
+		insertMergeFrom(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
 	}
 
 	Arena & createOrGetArena()
@@ -206,47 +216,13 @@ public:
 		throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void updateHashWithValue(size_t n, SipHash & hash) const override
-	{
-		throw Exception("Method updateHashWithValue is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
+	void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-	size_t byteSize() const override
-	{
-		size_t res = getData().size() * sizeof(getData()[0]);
+	size_t byteSize() const override;
 
-		for (const auto & arena : arenas)
-			res += arena.get()->size();
+	size_t allocatedSize() const override;
 
-		return res;
-	}
-
-	void insertRangeFrom(const IColumn & from, size_t start, size_t length) override
-	{
-		const ColumnAggregateFunction & from_concrete = static_cast<const ColumnAggregateFunction &>(from);
-
-		if (start + length > from_concrete.getData().size())
-			throw Exception("Parameters start = "
-				+ toString(start) + ", length = "
-				+ toString(length) + " are out of bound in ColumnAggregateFunction::insertRangeFrom method"
-				" (data.size() = " + toString(from_concrete.getData().size()) + ").",
-				ErrorCodes::PARAMETER_OUT_OF_BOUND);
-
-		if (src && src.get() != &from_concrete)
-		{
-			throw Exception("ColumnAggregateFunction could have only one source that owns aggregation states", ErrorCodes::BAD_ARGUMENTS);
-		}
-		else
-		{
-			/// Keep shared ownership of aggregation states.
-			src = from_concrete.shared_from_this();
-		}
-
-		auto & data = getData();
-		size_t old_size = data.size();
-		data.resize(old_size + length);
-		memcpy(&data[old_size], &from_concrete.getData()[start], length * sizeof(data[0]));
-	}
+	void insertRangeFrom(const IColumn & from, size_t start, size_t length) override;
 
 	void popBack(size_t n) override
 	{
@@ -260,57 +236,36 @@ public:
 		data.resize_assume_reserved(new_size);
 	}
 
-	ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override
-	{
-		size_t size = getData().size();
-		if (size != filter.size())
-			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+	ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
 
-		std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
-
-		if (size == 0)
-			return res;
-
-		auto & res_data = res->getData();
-
-		if (result_size_hint)
-			res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
-
-		for (size_t i = 0; i < size; ++i)
-			if (filter[i])
-				res_data.push_back(getData()[i]);
-
-		/// Для экономии оперативки в случае слишком сильной фильтрации.
-		if (res_data.size() * 2 < res_data.capacity())
-			res_data = Container_t(res_data.cbegin(), res_data.cend());
-
-		return res;
-	}
-
-	ColumnPtr permute(const Permutation & perm, size_t limit) const override
-	{
-		size_t size = getData().size();
-
-		if (limit == 0)
-			limit = size;
-		else
-			limit = std::min(size, limit);
-
-		if (perm.size() < limit)
-			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-		std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
-
-		res->getData().resize(limit);
-		for (size_t i = 0; i < limit; ++i)
-			res->getData()[i] = getData()[perm[i]];
-
-		return res;
-	}
+	ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
 	ColumnPtr replicate(const Offsets_t & offsets) const override
 	{
 		throw Exception("Method replicate is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		/// Columns with scattered values will point to this column as the owner of values.
+		Columns columns(num_columns);
+		for (auto & column : columns)
+			column = std::make_shared<ColumnAggregateFunction>(*this);
+
+		size_t num_rows = size();
+
+		{
+			size_t reserve_size = num_rows / num_columns * 1.1;	/// 1.1 is just a guess. Better to use n-sigma rule.
+
+			if (reserve_size > 1)
+				for (auto & column : columns)
+					column->reserve(reserve_size);
+		}
+
+		for (size_t i = 0; i < num_rows; ++i)
+			static_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
+
+		return columns;
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override

@@ -1,3 +1,4 @@
+#include <DB/Core/Block.h>
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 
 
@@ -26,7 +27,7 @@ void BlockOutputStreamFromRowOutputStream::write(const Block & block)
 			if (j != 0)
 				row_output->writeFieldDelimiter();
 
-			auto & col = block.unsafeGetByPosition(j);
+			auto & col = block.getByPosition(j);
 			row_output->writeField(*col.column.get(), *col.type.get(), i);
 		}
 

@@ -39,7 +39,7 @@ namespace ErrorCodes
 }
 
 
-/// Позволяет проверить соответствие адреса шаблону.
+/// Allow to check that address matches a pattern.
 class IAddressPattern
 {
 public:
@@ -56,13 +56,13 @@ public:
 };
 
 
-/// IP-адрес или маска подсети. Например, 213.180.204.3 или 10.0.0.1/8 или 2a02:6b8::3 или 2a02:6b8::3/64.
+/// IP-address or subnet mask. Example: 213.180.204.3 or 10.0.0.1/8 or 2a02:6b8::3 or 2a02:6b8::3/64.
 class IPAddressPattern : public IAddressPattern
 {
 private:
-	/// Адрес маски. Всегда переводится в IPv6.
+	/// Address of mask. Always transformed to IPv6.
 	Poco::Net::IPAddress mask_address;
-	/// Количество бит в маске.
+	/// Number of bits in mask.
 	UInt8 prefix_bits;
 
 public:
@@ -115,7 +115,7 @@ private:
 };
 
 
-/// Проверяет соответствие адреса одному из адресов хоста.
+/// Check that address equals to one of hostname addresses.
 class HostExactPattern : public IAddressPattern
 {
 private:
@@ -125,7 +125,7 @@ private:
 	{
 		Poco::Net::IPAddress addr_v6 = toIPv6(addr);
 
-		/// Резолвим вручную, потому что в Poco не используется флаг AI_ALL, а он важен.
+		/// Resolve by hand, because Poco don't use AI_ALL flag but we need it.
 		addrinfo * ai = nullptr;
 
 		addrinfo hints;
@@ -184,7 +184,7 @@ public:
 };
 
 
-/// Проверяет соответствие PTR-записи для адреса регекспу (и дополнительно проверяет, что PTR-запись резолвится обратно в адрес клиента).
+/// Check that PTR record for address match the regexp (and in addition, check that PTR record is resolved back to client address).
 class HostRegexpPattern : public IAddressPattern
 {
 private:
@@ -194,7 +194,7 @@ private:
 	{
 		Poco::Net::SocketAddress sock_addr(addr, 0);
 
-		/// Резолвим вручную, потому что в Poco нет такой функциональности.
+		/// Resolve by hand, because Poco library doesn't have such functionality.
 		char domain[1024];
 		int gai_errno = getnameinfo(sock_addr.addr(), sock_addr.length(), domain, sizeof(domain), nullptr, 0, NI_NAMEREQD);
 		if (0 != gai_errno)
@@ -233,7 +233,7 @@ public:
 	{
 		for (size_t i = 0, size = patterns.size(); i < size; ++i)
 		{
-			/// если хост не резолвится, то пропустим его и попробуем другой
+			/// If host cannot be resolved, skip it and try next.
 			try
 			{
 				if (patterns[i]->contains(addr))
@@ -281,13 +281,13 @@ public:
 };
 
 
-/** Пользователь и ACL.
+/** User and ACL.
   */
 struct User
 {
 	String name;
 
-	/// Требуемый пароль. Может храниться либо в открытом виде, либо в виде SHA256.
+	/// Required password. Could be stored in plaintext or in SHA256.
 	String password;
 	String password_sha256_hex;
 
@@ -296,7 +296,7 @@ struct User
 
 	AddressPatterns addresses;
 
-	/// Список разрешённых баз данных.
+	/// List of allowed databases.
 	using DatabaseSet = std::unordered_set<std::string>;
 	DatabaseSet databases;
 
@@ -328,7 +328,7 @@ struct User
 
 		addresses.addFromConfig(config_elem + ".networks", config);
 
-		/// Заполнить список разрешённых баз данных.
+		/// Fill list of allowed databases.
 		const auto config_sub_elem = config_elem + ".allow_databases";
 		if (config.has(config_sub_elem))
 		{
@@ -344,12 +344,12 @@ struct User
 		}
 	}
 
-	/// Для вставки в контейнер.
+	/// For insertion to containers.
 	User() {}
 };
 
 
-/// Известные пользователи.
+/// Known users.
 class Users
 {
 private:
@@ -415,7 +415,7 @@ public:
 		return it->second;
 	}
 
-	/// Проверить, имеет ли заданный клиент доступ к заданной базе данных.
+	/// Check if the user has access to the database.
 	bool isAllowedDatabase(const std::string & user_name, const std::string & database_name) const
 	{
 		auto it = cont.find(user_name);

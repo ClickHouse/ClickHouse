@@ -1,7 +1,9 @@
 #include <DB/Dictionaries/ComplexKeyCacheDictionary.h>
 #include <DB/Common/BitHelpers.h>
 #include <DB/Common/randomSeed.h>
-
+#include <DB/Common/Stopwatch.h>
+#include <DB/Common/ProfilingScopedRWLock.h>
+#include <ext/range.hpp>
 
 namespace DB
 {
@@ -17,7 +19,7 @@ namespace ErrorCodes
 inline UInt64 ComplexKeyCacheDictionary::getCellIdx(const StringRef key) const
 {
 	const auto hash = StringRefHash{}(key);
-	const auto idx = hash & (size - 1);
+	const auto idx = hash & size_overlap_mask;
 	return idx;
 }
 
@@ -26,7 +28,9 @@ ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(const std::string & name, c
 	DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime,
 	const size_t size)
 	: name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-	size{roundUpToPowerOfTwoOrZero(size)}, rnd_engine{randomSeed()}
+	size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(max_collision_length)))},
+	size_overlap_mask{this->size - 1},
+	rnd_engine{randomSeed()}
 {
 	if (!this->source_ptr->supportsSelectiveLoad())
 		throw Exception{
@@ -171,6 +175,52 @@ void ComplexKeyCacheDictionary::getString(
 	getItemsString(attribute, key_columns, out, [&] (const size_t) { return StringRef{def}; });
 }
 
+
+
+/// returns cell_idx (always valid for replacing), 'cell is valid' flag, 'cell is outdated' flag,
+/// true  false   found and valid
+/// false true    not found (something outdated, maybe our cell)
+/// false false   not found (other id stored with valid data)
+/// true  true    impossible
+///
+/// todo: split this func to two: find_for_get and find_for_set
+ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx(const StringRef & key, const CellMetadata::time_point_t now, const size_t hash) const
+{
+	auto pos = hash;
+	auto oldest_id = pos;
+	auto oldest_time = CellMetadata::time_point_t::max();
+	const auto stop = pos + max_collision_length;
+
+	for (; pos < stop; ++pos)
+	{
+		const auto cell_idx = pos & size_overlap_mask;
+		const auto & cell = cells[cell_idx];
+
+		if (cell.hash != hash || cell.key != key)
+		{
+			/// maybe we already found nearest expired cell
+			if (oldest_time > now && oldest_time > cell.expiresAt())
+			{
+				oldest_time = cell.expiresAt();
+				oldest_id = cell_idx;
+			}
+
+			continue;
+		}
+
+		if (cell.expiresAt() < now)
+		{
+			return {cell_idx, false, true};
+		}
+
+		return {cell_idx, true, false};
+	}
+
+	oldest_id &= size_overlap_mask;
+	return {oldest_id, false, false};
+}
+
+
 void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
 {
 	dict_struct.validateKeyTypes(key_types);
@@ -178,38 +228,51 @@ void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, co
 	/// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }
 	MapType<std::vector<size_t>> outdated_keys;
 
-	const auto rows = key_columns.front()->size();
+
+	const auto rows_num = key_columns.front()->size();
 	const auto keys_size = dict_struct.key.value().size();
 	StringRefs keys(keys_size);
 	Arena temporary_keys_pool;
-	PODArray<StringRef> keys_array(rows);
+	PODArray<StringRef> keys_array(rows_num);
 
+	size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
 	{
-		const Poco::ScopedReadRWLock read_lock{rw_lock};
+		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
 		const auto now = std::chrono::system_clock::now();
 		/// fetch up-to-date values, decide which ones require update
-		for (const auto row : ext::range(0, rows))
+		for (const auto row : ext::range(0, rows_num))
 		{
 			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			keys_array[row] = key;
-			const auto hash = StringRefHash{}(key);
-			const size_t cell_idx = hash & (size - 1);
-			const auto & cell = cells[cell_idx];
-
+			const auto find_result = findCellIdx(key, now);
+			const auto & cell_idx = find_result.cell_idx;
 			/** cell should be updated if either:
 				*	1. keys (or hash) do not match,
 				*	2. cell has expired,
 				*	3. explicit defaults were specified and cell was set default. */
-			if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
+			if (!find_result.valid)
+			{
 				outdated_keys[key].push_back(row);
+				if (find_result.outdated)
+					++cache_expired;
+				else
+					++cache_not_found;
+			}
 			else
+			{
+				++cache_hit;
+				const auto & cell = cells[cell_idx];
 				out[row] = !cell.isDefault();
+			}
 		}
 	}
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
-	query_count.fetch_add(rows, std::memory_order_relaxed);
-	hit_count.fetch_add(rows - outdated_keys.size(), std::memory_order_release);
+	query_count.fetch_add(rows_num, std::memory_order_relaxed);
+	hit_count.fetch_add(rows_num - outdated_keys.size(), std::memory_order_release);
 
 	if (outdated_keys.empty())
 		return;
@@ -358,38 +421,51 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 	MapType<std::vector<size_t>> outdated_keys;
 	auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
 
-	const auto rows = key_columns.front()->size();
+	const auto rows_num = key_columns.front()->size();
 	const auto keys_size = dict_struct.key.value().size();
 	StringRefs keys(keys_size);
 	Arena temporary_keys_pool;
-	PODArray<StringRef> keys_array(rows);
+	PODArray<StringRef> keys_array(rows_num);
 
+	size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
 	{
-		const Poco::ScopedReadRWLock read_lock{rw_lock};
+		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
 		const auto now = std::chrono::system_clock::now();
 		/// fetch up-to-date values, decide which ones require update
-		for (const auto row : ext::range(0, rows))
+		for (const auto row : ext::range(0, rows_num))
 		{
 			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			keys_array[row] = key;
-			const auto hash = StringRefHash{}(key);
-			const size_t cell_idx = hash & (size - 1);
-			const auto & cell = cells[cell_idx];
+			const auto find_result = findCellIdx(key, now);
 
 			/** cell should be updated if either:
 				*	1. keys (or hash) do not match,
 				*	2. cell has expired,
 				*	3. explicit defaults were specified and cell was set default. */
-			if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
+
+			if (!find_result.valid)
+			{
 				outdated_keys[key].push_back(row);
+				if (find_result.outdated)
+					++cache_expired;
+				else
+					++cache_not_found;
+			}
 			else
+			{
+				++cache_hit;
+				const auto & cell_idx = find_result.cell_idx;
+				const auto & cell = cells[cell_idx];
 				out[row] =  cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
+			}
 		}
 	}
-
-	query_count.fetch_add(rows, std::memory_order_relaxed);
-	hit_count.fetch_add(rows - outdated_keys.size(), std::memory_order_release);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
+	query_count.fetch_add(rows_num, std::memory_order_relaxed);
+	hit_count.fetch_add(rows_num - outdated_keys.size(), std::memory_order_release);
 
 	if (outdated_keys.empty())
 		return;
@@ -418,9 +494,9 @@ void ComplexKeyCacheDictionary::getItemsString(
 	Attribute & attribute, const ConstColumnPlainPtrs & key_columns, ColumnString * out,
 	DefaultGetter && get_default) const
 {
-	const auto rows = key_columns.front()->size();
+	const auto rows_num = key_columns.front()->size();
 	/// save on some allocations
-	out->getOffsets().reserve(rows);
+	out->getOffsets().reserve(rows_num);
 
 	const auto keys_size = dict_struct.key.value().size();
 	StringRefs keys(keys_size);
@@ -432,25 +508,25 @@ void ComplexKeyCacheDictionary::getItemsString(
 
 	/// perform optimistic version, fallback to pessimistic if failed
 	{
-		const Poco::ScopedReadRWLock read_lock{rw_lock};
+		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
 		const auto now = std::chrono::system_clock::now();
 		/// fetch up-to-date values, discard on fail
-		for (const auto row : ext::range(0, rows))
+		for (const auto row : ext::range(0, rows_num))
 		{
 			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			SCOPE_EXIT(temporary_keys_pool.rollback(key.size));
-			const auto hash = StringRefHash{}(key);
-			const size_t cell_idx = hash & (size - 1);
-			const auto & cell = cells[cell_idx];
+			const auto find_result = findCellIdx(key, now);
 
-			if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
+			if (!find_result.valid)
 			{
 				found_outdated_values = true;
 				break;
 			}
 			else
 			{
+				const auto & cell_idx = find_result.cell_idx;
+				const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 				out->insertData(string_ref.data, string_ref.size);
 			}
@@ -460,8 +536,8 @@ void ComplexKeyCacheDictionary::getItemsString(
 	/// optimistic code completed successfully
 	if (!found_outdated_values)
 	{
-		query_count.fetch_add(rows, std::memory_order_relaxed);
-		hit_count.fetch_add(rows, std::memory_order_release);
+		query_count.fetch_add(rows_num, std::memory_order_relaxed);
+		hit_count.fetch_add(rows_num, std::memory_order_release);
 		return;
 	}
 
@@ -473,25 +549,33 @@ void ComplexKeyCacheDictionary::getItemsString(
 	MapType<std::vector<size_t>> outdated_keys;
 	/// we are going to store every string separately
 	MapType<StringRef> map;
-	PODArray<StringRef> keys_array(rows);
+	PODArray<StringRef> keys_array(rows_num);
 
 	size_t total_length = 0;
+	size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
 	{
-		const Poco::ScopedReadRWLock read_lock{rw_lock};
+		const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
 		const auto now = std::chrono::system_clock::now();
-		for (const auto row : ext::range(0, rows))
+		for (const auto row : ext::range(0, rows_num))
 		{
 			const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
 			keys_array[row] = key;
-			const auto hash = StringRefHash{}(key);
-			const size_t cell_idx = hash & (size - 1);
-			const auto & cell = cells[cell_idx];
+			const auto find_result = findCellIdx(key, now);
 
-			if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
+			if (!find_result.valid)
+			{
 				outdated_keys[key].push_back(row);
+				if (find_result.outdated)
+					++cache_expired;
+				else
+					++cache_not_found;
+			}
 			else
 			{
+				++cache_hit;
+				const auto & cell_idx = find_result.cell_idx;
+				const auto & cell = cells[cell_idx];
 				const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 
 				if (!cell.isDefault())
@@ -501,9 +585,12 @@ void ComplexKeyCacheDictionary::getItemsString(
 			}
 		}
 	}
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
-	query_count.fetch_add(rows, std::memory_order_relaxed);
-	hit_count.fetch_add(rows - outdated_keys.size(), std::memory_order_release);
+	query_count.fetch_add(rows_num, std::memory_order_relaxed);
+	hit_count.fetch_add(rows_num - outdated_keys.size(), std::memory_order_release);
 
 	/// request new values
 	if (!outdated_keys.empty())
@@ -558,94 +645,112 @@ void ComplexKeyCacheDictionary::update(
 		dict_lifetime.max_sec
 	};
 
-	const Poco::ScopedWriteRWLock write_lock{rw_lock};
-
-	auto stream = source_ptr->loadKeys(in_key_columns, in_requested_rows);
-	stream->readPrefix();
-
-	const auto keys_size = dict_struct.key.value().size();
-	StringRefs keys(keys_size);
-
-	const auto attributes_size = attributes.size();
-
-	while (const auto block = stream->read())
+	const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 	{
-		/// cache column pointers
-		const auto key_columns = ext::map<ConstColumnPlainPtrs>(
-			ext::range(0, keys_size),
-			[&] (const size_t attribute_idx)
-			{
-				return block.getByPosition(attribute_idx).column.get();
-			});
+		Stopwatch watch;
+		auto stream = source_ptr->loadKeys(in_key_columns, in_requested_rows);
+		stream->readPrefix();
 
-		const auto attribute_columns = ext::map<ConstColumnPlainPtrs>(
-			ext::range(0, attributes_size),
-			[&] (const size_t attribute_idx)
-			{
-				return block.getByPosition(keys_size + attribute_idx).column.get();
-			});
+		const auto keys_size = dict_struct.key.value().size();
+		StringRefs keys(keys_size);
 
-		const auto rows = block.rowsInFirstColumn();
+		const auto attributes_size = attributes.size();
+		const auto now = std::chrono::system_clock::now();
 
-		for (const auto row : ext::range(0, rows))
+		while (const auto block = stream->read())
 		{
-			auto key = allocKey(row, key_columns, keys);
-			const auto hash = StringRefHash{}(key);
-			const size_t cell_idx = hash & (size - 1);
-			auto & cell = cells[cell_idx];
+			/// cache column pointers
+			const auto key_columns = ext::map<ConstColumnPlainPtrs>(
+				ext::range(0, keys_size),
+				[&] (const size_t attribute_idx)
+				{
+					return block.safeGetByPosition(attribute_idx).column.get();
+				});
 
-			for (const auto attribute_idx : ext::range(0, attributes.size()))
+			const auto attribute_columns = ext::map<ConstColumnPlainPtrs>(
+				ext::range(0, attributes_size),
+				[&] (const size_t attribute_idx)
+				{
+					return block.safeGetByPosition(keys_size + attribute_idx).column.get();
+				});
+
+			const auto rows_num = block.rows();
+
+			for (const auto row : ext::range(0, rows_num))
 			{
-				const auto & attribute_column = *attribute_columns[attribute_idx];
-				auto & attribute = attributes[attribute_idx];
+				auto key = allocKey(row, key_columns, keys);
+				const auto hash = StringRefHash{}(key);
+				const auto find_result = findCellIdx(key, now, hash);
+				const auto & cell_idx = find_result.cell_idx;
+				auto & cell = cells[cell_idx];
 
-				setAttributeValue(attribute, cell_idx, attribute_column[row]);
+				for (const auto attribute_idx : ext::range(0, attributes.size()))
+				{
+					const auto & attribute_column = *attribute_columns[attribute_idx];
+					auto & attribute = attributes[attribute_idx];
+
+					setAttributeValue(attribute, cell_idx, attribute_column[row]);
+				}
+
+				/// if cell id is zero and zero does not map to this cell, then the cell is unused
+				if (cell.key == StringRef{} && cell_idx != zero_cell_idx)
+					element_count.fetch_add(1, std::memory_order_relaxed);
+
+				/// handle memory allocated for old key
+				if (key == cell.key)
+				{
+					freeKey(key);
+					key = cell.key;
+				}
+				else
+				{
+					/// new key is different from the old one
+					if (cell.key.data)
+						freeKey(cell.key);
+
+					cell.key = key;
+				}
+
+				cell.hash = hash;
+
+				if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
+					cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
+				else
+					cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
+
+				/// inform caller
+				on_cell_updated(key, cell_idx);
+				/// mark corresponding id as found
+				remaining_keys[key] = true;
 			}
-
-			/// if cell id is zero and zero does not map to this cell, then the cell is unused
-			if (cell.key == StringRef{} && cell_idx != zero_cell_idx)
-				element_count.fetch_add(1, std::memory_order_relaxed);
-
-			/// handle memory allocated for old key
-			if (key == cell.key)
-			{
-				freeKey(key);
-				key = cell.key;
-			}
-			else
-			{
-				/// new key is different from the old one
-				if (cell.key.data)
-					freeKey(cell.key);
-
-				cell.key = key;
-			}
-
-			cell.hash = hash;
-
-			if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-				cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
-			else
-				cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
-
-			/// inform caller
-			on_cell_updated(key, cell_idx);
-			/// mark corresponding id as found
-			remaining_keys[key] = true;
 		}
+
+		stream->readSuffix();
+
+		ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, in_requested_rows.size());
+		ProfileEvents::increment(ProfileEvents::DictCacheRequestTimeNs, watch.elapsed());
 	}
 
-	stream->readSuffix();
+	size_t found_num = 0;
+	size_t not_found_num = 0;
+
+	const auto now = std::chrono::system_clock::now();
 
 	/// Check which ids have not been found and require setting null_value
 	for (const auto key_found_pair : remaining_keys)
 	{
 		if (key_found_pair.second)
+		{
+			++found_num;
 			continue;
+		}
+
+		++not_found_num;
 
 		auto key = key_found_pair.first;
 		const auto hash = StringRefHash{}(key);
-		const size_t cell_idx = hash & (size - 1);
+		const auto find_result = findCellIdx(key, now, hash);
+		const auto & cell_idx = find_result.cell_idx;
 		auto & cell = cells[cell_idx];
 
 		/// Set null_value for each attribute
@@ -680,6 +785,10 @@ void ComplexKeyCacheDictionary::update(
 		/// inform caller that the cell has not been found
 		on_key_not_found(key, cell_idx);
 	}
+
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, found_num);
+	ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
+
 }
 
 
