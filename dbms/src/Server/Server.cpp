@@ -49,7 +49,6 @@
 #include "StatusFile.h"
 #include <boost/algorithm/string.hpp>
 
-
 namespace DB
 {
 
@@ -392,12 +391,6 @@ int Server::main(const std::vector<std::string> & args)
 	);
 
 	{
-		const std::string listen_host_string = config().getString("listen_host", "::1 127.0.0.1");
-
-		std::vector<std::string> listen_hosts;
-		boost::split(listen_hosts, listen_host_string, boost::algorithm::is_any_of(",; \t\r\n"), boost::algorithm::token_compress_on);
-		listen_hosts.erase(std::remove_if(listen_hosts.begin(), listen_hosts.end(), [](auto x){return x.empty();}), listen_hosts.end());
-
 		Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
 
 		Poco::ThreadPool server_pool(3, config().getInt("max_connections", 1024));
@@ -407,7 +400,24 @@ int Server::main(const std::vector<std::string> & args)
 
 		std::vector<std::unique_ptr<Poco::Net::TCPServer>> servers;
 
-		for (const auto & listen_host : listen_hosts) {
+		std::vector<std::string> listen_hosts;
+		Poco::Util::AbstractConfiguration::Keys config_keys;
+		config().keys("", config_keys);
+		for (const auto & key : config_keys)
+		{
+			if (!startsWith(key.data(), "listen_host"))
+				continue;
+			listen_hosts.emplace_back(config().getString(key));
+		}
+
+		if (listen_hosts.empty())
+		{
+			listen_hosts.emplace_back("::1");
+			listen_hosts.emplace_back("127.0.0.1");
+		}
+
+		for (const auto & listen_host : listen_hosts)
+		{
 
 		/// For testing purposes, user may omit tcp_port or http_port in configuration file.
 
