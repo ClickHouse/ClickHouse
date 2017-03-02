@@ -1,14 +1,20 @@
 #include <gtest/gtest.h>
 
+#include <stdexcept>
+
 #include <Poco/File.h>
 
 #include <DB/IO/CascadeWriteBuffer.h>
 #include <DB/IO/MemoryReadWriteBuffer.h>
 #include <DB/IO/WriteBufferFromTemporaryFile.h>
+#include <DB/IO/ReadBufferFromString.h>
+#include <DB/IO/WriteBufferFromString.h>
 
 #include <DB/IO/ConcatReadBuffer.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/copyData.h>
+
+#include <DB/Common/typeid_cast.h>
 
 using namespace DB;
 
@@ -20,7 +26,6 @@ static std::string makeTestArray(size_t size)
 		res[i] = i % 256;
 	return res;
 }
-
 
 static void testCascadeBufferRedability(
 	std::string data,
@@ -124,6 +129,51 @@ catch (...)
 }
 
 
+static void checkHTTPHandlerCase(size_t input_size, size_t memory_buffer_size)
+{
+	std::string src = makeTestArray(input_size);
+	std::string res_str(DBMS_DEFAULT_BUFFER_SIZE, '\0');
+
+	{
+		auto res_buf = std::make_shared<WriteBufferFromString>(res_str);
+
+		CascadeWriteBuffer cascade(
+			{
+				std::make_shared<MemoryWriteBuffer>(memory_buffer_size)
+			},
+			{
+				[res_buf] (const WriteBufferPtr & prev_buf)
+				{
+					auto prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
+					auto rdbuf = prev_memory_buffer->tryGetReadBuffer();
+					copyData(*rdbuf , *res_buf);
+					return res_buf;
+				}
+			});
+
+		cascade.write(&src[0], src.size());
+		EXPECT_EQ(cascade.count(), src.size());
+	}
+
+	ASSERT_EQ(src.size(), res_str.size());
+	ASSERT_TRUE(src == res_str);
+}
+
+TEST(CascadeWriteBuffer, HTTPHandlerCase)
+{
+	std::vector<size_t> sizes{1, 500000, DBMS_DEFAULT_BUFFER_SIZE, 1000000, 1451424, 1500000, 2000000, 2500000};
+
+	for (size_t input_size : sizes)
+	{
+		for (size_t memory_buffer_size : sizes)
+		{
+			if (input_size > memory_buffer_size)
+				checkHTTPHandlerCase(input_size, memory_buffer_size);
+		}
+	}
+}
+
+
 static void checkMemoryWriteBuffer(std::string data, MemoryWriteBuffer && buf)
 {
 	buf.write(&data[0], data.size());
@@ -160,6 +210,8 @@ TEST(MemoryWriteBuffer, WriteAndReread)
 			EXPECT_THROW(buf.write(&data[0], data.size()), DB::Exception);
 		}
 	}
+
+	checkMemoryWriteBuffer(makeTestArray(1451424), MemoryWriteBuffer(1451424));
 }
 
 

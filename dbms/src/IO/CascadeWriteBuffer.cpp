@@ -36,8 +36,7 @@ void CascadeWriteBuffer::nextImpl()
 	{
 		if (curr_buffer_num < num_sources && e.code() == ErrorCodes::CURRENT_WRITE_BUFFER_IS_EXHAUSTED)
 		{
-			/// actualize position of old buffer (it was reset by WriteBuffer::next)
-			curr_buffer->position() = position();
+			/// TODO: protocol should require set(position(), 0) before Exception
 
 			/// good situation, fetch next WriteBuffer
 			++curr_buffer_num;
@@ -47,13 +46,17 @@ void CascadeWriteBuffer::nextImpl()
 			throw;
 	}
 
-	set(curr_buffer->buffer().begin(), curr_buffer->buffer().size());
+	set(curr_buffer->position(), curr_buffer->buffer().end() - curr_buffer->position());
+// 	std::cerr << "CascadeWriteBuffer a count=" << count() << " bytes=" << bytes << " offset=" << offset()
+// 	<< " bytes+size=" << bytes + buffer().size() << "\n";
 }
 
 
 void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
 {
+	/// Sync position with underlying buffer before invalidating
 	curr_buffer->position() = position();
+
 	res = std::move(prepared_sources);
 
 	curr_buffer = nullptr;
@@ -78,7 +81,20 @@ WriteBuffer * CascadeWriteBuffer::setNextBuffer()
 	if (!res)
 		throw Exception("Required WriteBuffer is not created", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
 
+	/// Check that returned buffer isn't empty
+	if (!res->hasPendingData())
+		res->next();
+
 	return res;
 }
+
+
+CascadeWriteBuffer::~CascadeWriteBuffer()
+{
+	/// Sync position with underlying buffer before exit
+	if (curr_buffer)
+		curr_buffer->position() = position();
+}
+
 
 }
