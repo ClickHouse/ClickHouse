@@ -90,7 +90,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 {
 	/// For logging
 	Stopwatch stopwatch;
-	stopwatch.restart();
 
 	Block & block = block_with_dates.block;
 	UInt16 min_date = block_with_dates.min_date;
@@ -164,7 +163,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->size_in_bytes);
 
-	stopwatch.stop();
 	PartLogElement elem;
 
 	elem.event_type = PartLogElement::NEW_PART;
