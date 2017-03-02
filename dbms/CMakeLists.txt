@@ -14,6 +14,7 @@ if (NOT NO_WERROR)
 endif ()
 
 include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
+include (${ClickHouse_SOURCE_DIR}/cmake/find_re2.cmake)
 
 find_package (Threads)
 

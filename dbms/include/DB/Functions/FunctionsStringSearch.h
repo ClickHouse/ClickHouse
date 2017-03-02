@@ -1,10 +1,8 @@
 #pragma once
 
 #include <mutex>
-
 #include <DB/Common/OptimizedRegularExpression.h>
 #include <memory>
-
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
@@ -18,10 +16,15 @@
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <Poco/UTF8String.h>
-
 #include <mutex>
 #include <stack>
 #include <ext/range.hpp>
+#include <common/config_common.h>
+#include <re2/re2.h>
+#if USE_RE2_ST
+	#include <re2_st/re2.h>
+#endif
+
 
 
 namespace ProfileEvents
