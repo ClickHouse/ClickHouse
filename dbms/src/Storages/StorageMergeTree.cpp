@@ -339,7 +339,6 @@ bool StorageMergeTree::merge(
 	/// Logging
 	PartLogElement elem;
 	Stopwatch stopwatch;
-	stopwatch.restart();
 
 	elem.event_type = PartLogElement::MERGE_PARTS;
 	elem.event_time = time(0);
@@ -359,7 +358,6 @@ bool StorageMergeTree::merge(
 	elem.table_name = new_part->storage.getTableName();
 	elem.part_name = new_part->name;
 
-	stopwatch.stop();
 	elem.act_time_ms = stopwatch.elapsed() / 1000000;
 
 	context.getPartLog().add(elem);
