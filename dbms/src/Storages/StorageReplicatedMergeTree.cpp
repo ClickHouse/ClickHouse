@@ -2040,12 +2040,10 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
 
 	Stopwatch stopwatch;
-	stopwatch.restart();
 
 	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(
 		part_name, replica_path, address.host, address.replication_port, to_detached);
 
-	stopwatch.stop();
 	PartLogElement elem;
 
 	elem.event_type = PartLogElement::DOWNLOAD_PART;
