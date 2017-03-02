@@ -267,11 +267,6 @@ public:
 
 	Int64 getMaxDataPartIndex();
 
-	//std::string getTableName() const override
-	//{
-//		throw Exception("Logical error: calling method getTableName of not a table.", ErrorCodes::LOGICAL_ERROR);
-//	}
-
 	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 
 	NameAndTypePair getColumn(const String & column_name) const override
