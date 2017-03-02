@@ -171,6 +171,7 @@ include (cmake/find_rt.cmake)
 include (cmake/find_readline_edit.cmake)
 include (cmake/find_zookeeper.cmake)
 include (cmake/find_double-conversion.cmake)
+include (cmake/find_re2.cmake)
 include (cmake/find_gperftools.cmake)
 include (cmake/find_jemalloc.cmake)
 
