@@ -3,6 +3,9 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/IO/HashingWriteBuffer.h>
+#include <DB/Common/Stopwatch.h>
+#include <DB/Interpreters/PartLog.h>
+#include <DB/Interpreters/Context.h>
 #include <Poco/File.h>
 
 
@@ -85,6 +88,10 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 
 MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDateInterval & block_with_dates, Int64 temp_index)
 {
+	/// For logging
+	Stopwatch stopwatch;
+	stopwatch.restart();
+
 	Block & block = block_with_dates.block;
 	UInt16 min_date = block_with_dates.min_date;
 	UInt16 max_date = block_with_dates.max_date;
@@ -156,6 +163,20 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->size_in_bytes);
+
+	stopwatch.stop();
+	PartLogElement elem;
+
+	elem.event_type = PartLogElement::NEW_PART;
+	elem.event_time = time(0);
+	elem.size_in_bytes = new_data_part->size_in_bytes;
+	elem.act_time_ms = stopwatch.elapsed() / 1000000;
+
+	elem.database_name = new_data_part->storage.getDatabaseName();
+	elem.table_name = new_data_part->storage.getTableName();
+	elem.part_name = new_data_part->name;
+
+	context.getPartLog().add(elem);
 
 	return new_data_part;
 }
