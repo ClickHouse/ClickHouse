@@ -7,6 +7,9 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Poco/Net/SecureServerSocket.h>
+#include <Poco/Net/Context.h>
+#include <Poco/Version.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
 #include <ext/scope_guard.hpp>
@@ -446,7 +449,7 @@ int Server::main(const std::vector<std::string> & args)
 						)
 					{
 						LOG_ERROR(log,
-							"Cannot resolve listen_host (" << listen_host + "), error: " << e.message()
+							"Cannot resolve listen_host (" << listen_host << "), error: " << e.message()
 														   << ". "
 															  "If it is an IPv6 address and your host has disabled IPv6, then consider to "
 															  "specify IPv4 address to listen in <listen_host> element of configuration "
@@ -465,6 +468,60 @@ int Server::main(const std::vector<std::string> & args)
 
 				LOG_INFO(log, "Listening http://" + http_socket_address.toString());
 			}
+
+			/// HTTPS
+			if (config().has("https_port"))
+			{
+				Poco::Net::SocketAddress http_socket_address;
+
+				try
+				{
+					http_socket_address = Poco::Net::SocketAddress(listen_host, config().getInt("https_port"));
+				}
+				catch (const Poco::Net::DNSException & e)
+				{
+					/// Better message when IPv6 is disabled on host.
+					if (e.code() == EAI_FAMILY
+#if defined(EAI_ADDRFAMILY)
+						|| e.code() == EAI_ADDRFAMILY
+#endif
+						)
+					{
+						LOG_ERROR(log,
+							"Cannot resolve listen_host (" << listen_host << "), error: " << e.message()
+														   << ". "
+															  "If it is an IPv6 address and your host has disabled IPv6, then consider to "
+															  "specify IPv4 address to listen in <listen_host> element of configuration "
+															  "file. Example: <listen_host>0.0.0.0</listen_host>");
+					}
+
+					throw;
+				}
+
+	bool insecure = Poco::Util::Application::instance().config().getInt("https_server_insecure", false);
+	Poco::Net::Context::Ptr ptr_context(new Poco::Net::Context(Poco::Net::Context::SERVER_USE,
+		"",
+		"",
+		"",
+		insecure ? Poco::Net::Context::VERIFY_NONE : Poco::Net::Context::VERIFY_RELAXED,
+		9,
+		true));
+	ptr_context->enableSessionCache(true);
+#if POCO_VERSION >= 0x01070000
+	ptr_context->disableProtocols(Poco::Net::Context::PROTO_SSLV2 | Poco::Net::Context::PROTO_SSLV3);
+	ptr_context->preferServerCiphers();
+#endif
+
+				Poco::Net::SecureServerSocket http_socket(http_socket_address);
+				http_socket.setReceiveTimeout(settings.receive_timeout);
+				http_socket.setSendTimeout(settings.send_timeout);
+
+				servers.emplace_back(new Poco::Net::HTTPServer(
+					new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"), server_pool, http_socket, http_params));
+
+				LOG_INFO(log, "Listening https://" + http_socket_address.toString());
+			}
+
 
 			/// TCP
 			if (config().has("tcp_port"))
