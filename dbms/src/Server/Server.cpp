@@ -47,7 +47,6 @@
 #include "MetricsTransmitter.h"
 #include "ConfigReloader.h"
 #include "StatusFile.h"
-#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
