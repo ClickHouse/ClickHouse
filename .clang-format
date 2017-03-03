@@ -25,12 +25,14 @@ IncludeCategories:
     Priority:        1
   - Regex:           '^<[a-z_]+.h>'
     Priority:        2
-  - Regex:           '^["<](common|ext|mysqlxx|daemon)/'
+  - Regex:           '^["<](common|ext|mysqlxx|daemon|zkutil)/'
     Priority:        90
   - Regex:           '^["<](DB)/'
     Priority:        100
   - Regex:           '^["<](Poco)/'
     Priority:        50
+  - Regex:           '^"'
+    Priority:        110
   - Regex:           '/'
     Priority:        30
   - Regex:           '.*'
