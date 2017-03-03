@@ -18,7 +18,7 @@ namespace DB
 struct Range;
 
 
-/** Структура данных для реализации выражения IN.
+/** Data structure for implementation of IN expression.
   */
 class Set
 {
@@ -33,24 +33,24 @@ public:
 
 	bool empty() const { return data.empty(); }
 
-	/** Создать множество по выражению (для перечисления в самом запросе).
-	  * types - типы того, что стоит слева от IN.
-	  * node - это список значений: 1, 2, 3 или список tuple-ов: (1, 2), (3, 4), (5, 6).
-	  * create_ordered_set - создавать ли вектор упорядоченных элементов. Нужен для работы индекса
+	/** Create a Set from expression (specified literally in the query).
+	  * 'types' - types of what are on the left hand side of IN.
+	  * 'node' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
+	  * 'create_ordered_set' - if true, create ordered vector of elements. For primary key to work.
 	  */
 	void createFromAST(const DataTypes & types, ASTPtr node, const Context & context, bool create_ordered_set);
 
-	// Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
+	// Returns false, if some limit was exceeded and no need to insert more data.
 	bool insertFromBlock(const Block & block, bool create_ordered_set = false);
 
-	/** Для столбцов блока проверить принадлежность их значений множеству.
-	  * Записать результат в столбец в позиции result.
+	/** For columns of 'block', check belonging of corresponding rows to the set.
+	  * Return UInt8 column with the result.
 	  */
 	ColumnPtr execute(const Block & block, bool negative) const;
 
 	std::string describe() const;
 
-	/// проверяет есть ли в Set элементы для заданного диапазона индекса
+	/// Check, if the Set could possibly contain elements for specified range.
 	BoolMask mayBeTrueInRange(const Range & range) const;
 
 	size_t getTotalRowCount() const { return data.getTotalRowCount(); }
