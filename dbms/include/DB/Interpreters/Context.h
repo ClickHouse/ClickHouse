@@ -1,14 +1,13 @@
 #pragma once
 
-#include <functional>
-#include <memory>
-
-#include <DB/Core/Types.h>
 #include <DB/Core/NamesAndTypes.h>
-#include <DB/Interpreters/Settings.h>
+#include <DB/Core/Types.h>
 #include <DB/Interpreters/ClientInfo.h>
+#include <DB/Interpreters/Settings.h>
 #include <DB/IO/CompressedStream.h>
 
+#include <functional>
+#include <memory>
 
 namespace Poco
 {
@@ -60,7 +59,7 @@ class IBlockOutputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 class Block;
-
+class DDLWorker;
 
 /// (имя базы данных, имя таблицы)
 using DatabaseAndTableName = std::pair<String, String>;
@@ -266,6 +265,9 @@ public:
 
 	void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
 	ReshardingWorker & getReshardingWorker();
+
+	void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
+	DDLWorker & getDDLWorker();
 
 	/** Очистить кэши разжатых блоков и засечек.
 	  * Обычно это делается при переименовании таблиц, изменении типа столбцов, удалении таблицы.

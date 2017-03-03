@@ -1,49 +1,49 @@
-#include <map>
-#include <set>
-#include <chrono>
-
-#include <Poco/Mutex.h>
-#include <Poco/File.h>
-#include <Poco/UUIDGenerator.h>
-#include <Poco/Net/IPAddress.h>
-
-#include <common/logger_useful.h>
-
-#include <DB/Common/Macros.h>
-#include <DB/Common/escapeForFileName.h>
-#include <DB/Common/Stopwatch.h>
-#include <DB/Common/formatReadable.h>
-#include <DB/DataStreams/FormatFactory.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-#include <DB/TableFunctions/TableFunctionFactory.h>
-#include <DB/Storages/IStorage.h>
-#include <DB/Storages/MarkCache.h>
-#include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
-#include <DB/Storages/MergeTree/ReshardingWorker.h>
-#include <DB/Storages/MergeTree/MergeList.h>
-#include <DB/Storages/MergeTree/MergeTreeSettings.h>
-#include <DB/Storages/CompressionMethodSelector.h>
-#include <DB/Interpreters/Settings.h>
-#include <DB/Interpreters/Users.h>
-#include <DB/Interpreters/Quota.h>
+#include <DB/Databases/IDatabase.h>
+#include <DB/DataStreams/FormatFactory.h>
+#include <DB/Interpreters/Cluster.h>
+#include <DB/Interpreters/Compiler.h>
+#include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/DDLWorker.h>
 #include <DB/Interpreters/EmbeddedDictionaries.h>
 #include <DB/Interpreters/ExternalDictionaries.h>
-#include <DB/Interpreters/ProcessList.h>
-#include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/InterserverIOHandler.h>
-#include <DB/Interpreters/Compiler.h>
+#include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/QueryLog.h>
-#include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/Quota.h>
+#include <DB/Interpreters/Settings.h>
+#include <DB/Interpreters/Users.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/UncompressedCache.h>
 #include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/parseQuery.h>
-#include <DB/Databases/IDatabase.h>
+#include <DB/Parsers/ParserCreateQuery.h>
+#include <DB/Storages/CompressionMethodSelector.h>
+#include <DB/Storages/IStorage.h>
+#include <DB/Storages/MarkCache.h>
+#include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
+#include <DB/Storages/MergeTree/MergeList.h>
+#include <DB/Storages/MergeTree/MergeTreeSettings.h>
+#include <DB/Storages/MergeTree/ReshardingWorker.h>
+#include <DB/TableFunctions/TableFunctionFactory.h>
 
 #include <DB/Common/ConfigProcessor.h>
+#include <DB/Common/escapeForFileName.h>
+#include <DB/Common/formatReadable.h>
+#include <DB/Common/Macros.h>
+#include <DB/Common/Stopwatch.h>
+
+#include <common/logger_useful.h>
 #include <zkutil/ZooKeeper.h>
 
+#include <Poco/File.h>
+#include <Poco/Mutex.h>
+#include <Poco/Net/IPAddress.h>
+#include <Poco/UUIDGenerator.h>
+
+#include <chrono>
+#include <map>
+#include <set>
 
 namespace ProfileEvents
 {
@@ -55,7 +55,6 @@ namespace CurrentMetrics
 	extern const Metric ContextLockWait;
 	extern const Metric MemoryTrackingForMerges;
 }
-
 
 namespace DB
 {
@@ -121,6 +120,7 @@ struct ContextShared
 	Macros macros;											/// Substitutions extracted from config.
 	std::unique_ptr<Compiler> compiler;						/// Used for dynamic compilation of queries' parts if it necessary.
 	std::unique_ptr<QueryLog> query_log;					/// Used to log queries.
+	std::shared_ptr<DDLWorker> ddl_worker;					/// Process ddl commands from zk.
 	/// Правила для выбора метода сжатия в зависимости от размера куска.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
 	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Settings of MergeTree* engines.
@@ -924,6 +924,22 @@ ReshardingWorker & Context::getReshardingWorker()
 		throw Exception("Resharding background thread not initialized: resharding missing in configuration file.",
 			ErrorCodes::LOGICAL_ERROR);
 	return *shared->resharding_worker;
+}
+
+void Context::setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker)
+{
+	auto lock = getLock();
+	if (shared->ddl_worker)
+		throw Exception("DDL background thread has already been initialized.", ErrorCodes::LOGICAL_ERROR);
+	shared->ddl_worker = ddl_worker;
+}
+
+DDLWorker & Context::getDDLWorker()
+{
+	auto lock = getLock();
+	if (!shared->ddl_worker)
+		throw Exception("DDL background thread not initialized.", ErrorCodes::LOGICAL_ERROR);
+	return *shared->ddl_worker;
 }
 
 void Context::resetCaches() const

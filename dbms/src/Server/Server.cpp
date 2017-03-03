@@ -1,52 +1,57 @@
+#include "ConfigReloader.h"
+#include "HTTPHandler.h"
+#include "InterserverIOHTTPHandler.h"
+#include "MetricsTransmitter.h"
+#include "ReplicasStatusHandler.h"
 #include "Server.h"
+#include "StatusFile.h"
+#include "TCPHandler.h"
 
-#include <sys/resource.h>
+#include <DB/Databases/DatabaseOrdinary.h>
+#include <DB/Interpreters/AsynchronousMetrics.h>
+#include <DB/Interpreters/DDLWorker.h>
+#include <DB/Interpreters/loadMetadata.h>
+#include <DB/Interpreters/ProcessList.h>
+#include <DB/IO/HTTPCommon.h>
+#include <DB/Storages/MergeTree/ReshardingWorker.h>
+#include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
+#include <DB/Storages/System/StorageSystemBuildOptions.h>
+#include <DB/Storages/System/StorageSystemClusters.h>
+#include <DB/Storages/System/StorageSystemColumns.h>
+#include <DB/Storages/System/StorageSystemDatabases.h>
+#include <DB/Storages/System/StorageSystemDictionaries.h>
+#include <DB/Storages/System/StorageSystemEvents.h>
+#include <DB/Storages/System/StorageSystemFunctions.h>
+#include <DB/Storages/System/StorageSystemMerges.h>
+#include <DB/Storages/System/StorageSystemMetrics.h>
+#include <DB/Storages/System/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemOne.h>
+#include <DB/Storages/System/StorageSystemParts.h>
+#include <DB/Storages/System/StorageSystemProcesses.h>
+#include <DB/Storages/System/StorageSystemReplicas.h>
+#include <DB/Storages/System/StorageSystemReplicationQueue.h>
+#include <DB/Storages/System/StorageSystemSettings.h>
+#include <DB/Storages/System/StorageSystemTables.h>
+#include <DB/Storages/System/StorageSystemZooKeeper.h>
+
+#include <DB/Common/getFQDNOrHostName.h>
+#include <DB/Common/Macros.h>
+#include <DB/Common/StringUtils.h>
+
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DirectoryIterator.h>
+
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
 #include <ext/scope_guard.hpp>
-#include <memory>
-#include <DB/Common/Macros.h>
-#include <DB/Common/getFQDNOrHostName.h>
-#include <DB/Common/StringUtils.h>
-#include <DB/IO/HTTPCommon.h>
-#include <DB/Interpreters/loadMetadata.h>
-#include <DB/Interpreters/ProcessList.h>
-#include <DB/Interpreters/AsynchronousMetrics.h>
-#include <DB/Storages/System/StorageSystemNumbers.h>
-#include <DB/Storages/System/StorageSystemTables.h>
-#include <DB/Storages/System/StorageSystemParts.h>
-#include <DB/Storages/System/StorageSystemDatabases.h>
-#include <DB/Storages/System/StorageSystemProcesses.h>
-#include <DB/Storages/System/StorageSystemEvents.h>
-#include <DB/Storages/System/StorageSystemOne.h>
-#include <DB/Storages/System/StorageSystemMerges.h>
-#include <DB/Storages/System/StorageSystemSettings.h>
-#include <DB/Storages/System/StorageSystemZooKeeper.h>
-#include <DB/Storages/System/StorageSystemReplicas.h>
-#include <DB/Storages/System/StorageSystemReplicationQueue.h>
-#include <DB/Storages/System/StorageSystemDictionaries.h>
-#include <DB/Storages/System/StorageSystemColumns.h>
-#include <DB/Storages/System/StorageSystemFunctions.h>
-#include <DB/Storages/System/StorageSystemClusters.h>
-#include <DB/Storages/System/StorageSystemMetrics.h>
-#include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
-#include <DB/Storages/System/StorageSystemBuildOptions.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Storages/MergeTree/ReshardingWorker.h>
-#include <DB/Databases/DatabaseOrdinary.h>
+#include <sys/resource.h>
 #include <zkutil/ZooKeeper.h>
-#include "HTTPHandler.h"
-#include "ReplicasStatusHandler.h"
-#include "InterserverIOHTTPHandler.h"
-#include "TCPHandler.h"
-#include "MetricsTransmitter.h"
-#include "ConfigReloader.h"
-#include "StatusFile.h"
+
+#include <memory>
 
 namespace DB
 {
@@ -268,6 +273,12 @@ int Server::main(const std::vector<std::string> & args)
 	{
 		global_context->setZooKeeper(std::make_shared<zkutil::ZooKeeper>(config(), "zookeeper"));
 		has_zookeeper = true;
+	}
+
+	if (has_zookeeper && config().has("distributed_ddl"))
+	{
+		auto ddl_worker = std::make_shared<DDLWorker>(config(), "distributed_ddl", *global_context);
+		global_context->setDDLWorker(ddl_worker);
 	}
 
 	if (config().has("interserver_http_port"))

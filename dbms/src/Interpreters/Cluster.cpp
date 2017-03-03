@@ -116,7 +116,7 @@ Clusters::Clusters(Poco::Util::AbstractConfiguration & config, const Settings & 
 	config.keys(config_name, config_keys);
 
 	for (const auto & key : config_keys)
-		impl.emplace(key, std::make_shared<Cluster>(config, settings, config_name + "." + key));
+		cluster_map.emplace(key, std::make_shared<Cluster>(config, settings, config_name + "." + key));
 }
 
 
@@ -124,10 +124,37 @@ ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 {
 	std::lock_guard<std::mutex> lock(mutex);
 
-	auto it = impl.find(cluster_name);
-	return (it != impl.end()) ? it->second : nullptr;
+	auto it = cluster_map.find(cluster_name);
+	return (it != cluster_map.end()) ? it->second : nullptr;
 }
 
+Strings Clusters::getClustersForHost(const String & host) const
+{
+	std::lock_guard<std::mutex> lock(mutex);
+	Strings result;
+
+	for (auto ci = cluster_map.begin(); ci != cluster_map.end(); ++ci)
+	{
+		auto shards = ci->second->getShardsWithFailoverAddresses();
+
+		for (const auto & shard : shards)
+		{
+			for (const auto & addr : shard)
+			{
+				if (addr.host_name == host)
+				{
+					result.push_back(ci->first);
+					goto next_cluster;
+				}
+			}
+
+		}
+	next_cluster:
+		;
+	}
+
+	return result;
+}
 
 void Clusters::updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
 {
@@ -138,11 +165,11 @@ void Clusters::updateClusters(Poco::Util::AbstractConfiguration & config, const 
 
 	for (const auto & key : config_keys)
 	{
-		auto it = impl.find(key);
+		auto it = cluster_map.find(key);
 		auto new_cluster = std::make_shared<Cluster>(config, settings, config_name + "." + key);
 
-		if (it == impl.end())
-			impl.emplace(key, std::move(new_cluster));
+		if (it == cluster_map.end())
+			cluster_map.emplace(key, std::move(new_cluster));
 		else
 		{
 			//TODO: Check that cluster update is necessarily
@@ -151,11 +178,11 @@ void Clusters::updateClusters(Poco::Util::AbstractConfiguration & config, const 
 	}
 }
 
-Clusters::Impl Clusters::getContainer() const
+Clusters::ClusterMap Clusters::getContainer() const
 {
 	std::lock_guard<std::mutex> lock(mutex);
 	/// The following line copies container of shared_ptrs to return value under lock
-	return impl;
+	return cluster_map;
 }
 
 /// Реализация класса Cluster

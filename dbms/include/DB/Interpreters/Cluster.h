@@ -155,15 +155,18 @@ public:
 
 	ClusterPtr getCluster(const std::string & cluster_name) const;
 
+	/// Вернуть список кластеров, в которые входит заданный хост.
+	Strings getClustersForHost(const String & host) const;
+
 	void updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name = "remote_servers");
 
 public:
-	using Impl = std::map<String, ClusterPtr>;
+	using ClusterMap = std::map<String, ClusterPtr>;
 
-	Impl getContainer() const;
+	ClusterMap getContainer() const;
 
 protected:
-	Impl impl;
+	ClusterMap cluster_map;
 	mutable std::mutex mutex;
 };
 
