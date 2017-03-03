@@ -320,21 +320,22 @@ private:
 };
 
 
-/** Кладёт элемент в map, в деструкторе - удаляет.
-  * Если элемент уже есть - кидает исключение.
-  */
+/// Puts an element into the map, erases it in the destructor.
+/// If the element already exists in the map, throws an exception containing provided message.
 class DDLGuard
 {
-	/// Имя объекта -> сообщение.
-	using Map = std::unordered_map<String, String>;
+public:
+	/// Element name -> message.
+	/// NOTE: using std::map here (and not std::unordered_map) to avoid iterator invalidation on insertion.
+	using Map = std::map<String, String>;
 
+	DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && lock, const String & elem, const String & message);
+	~DDLGuard();
+
+private:
 	Map & map;
 	Map::iterator it;
 	std::mutex & mutex;
-
-public:
-	DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && lock, const String & elem, const String & message);
-	~DDLGuard();
 };
 
 }

@@ -26,6 +26,22 @@ public:
 	bool isConst() const override { return true; }
 	virtual ColumnPtr convertToFullColumn() const = 0;
 	ColumnPtr convertToFullColumnIfConst() const override { return convertToFullColumn(); }
+
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		if (size() != selector.size())
+			throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		std::vector<size_t> counts(num_columns);
+		for (auto idx : selector)
+			++counts[idx];
+
+		Columns res(num_columns);
+		for (size_t i = 0; i < num_columns; ++i)
+			res[i] = cloneResized(counts[i]);
+
+		return res;
+	}
 };
 
 

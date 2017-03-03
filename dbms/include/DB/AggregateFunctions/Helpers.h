@@ -6,6 +6,7 @@
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/AggregateFunctions/IAggregateFunction.h>
 
 
 namespace DB

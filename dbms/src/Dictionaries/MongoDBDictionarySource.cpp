@@ -1,11 +1,10 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
-
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Database.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Array.h>
-
+#include <Poco/Version.h>
 #include <DB/Dictionaries/MongoDBBlockInputStream.h>
 #include <DB/Dictionaries/MongoDBDictionarySource.h>
 #include <DB/Core/FieldVisitors.h>
@@ -116,14 +115,24 @@ static void authenticate(Poco::MongoDB::Connection & connection,
 MongoDBDictionarySource::MongoDBDictionarySource(
 	const DictionaryStructure & dict_struct, const std::string & host, UInt16 port,
 	const std::string & user, const std::string & password,
+	const std::string & method,
 	const std::string & db, const std::string & collection,
 	const Block & sample_block)
 	: dict_struct{dict_struct}, host{host}, port{port}, user{user}, password{password},
+		method{method},
 		db{db}, collection{collection}, sample_block{sample_block},
 		connection{std::make_shared<Poco::MongoDB::Connection>(host, port)}
 {
 	if (!user.empty())
+	{
+#if POCO_VERSION >= 0x01070800
+		Poco::MongoDB::Database poco_db(db);
+		poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method);
+#else
 		authenticate(*connection, db, user, password);
+#endif
+
+	}
 }
 
 
@@ -136,6 +145,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 		config.getUInt(config_prefix + ".port"),
 		config.getString(config_prefix + ".user", ""),
 		config.getString(config_prefix + ".password", ""),
+		config.getString(config_prefix + ".method", ""),
 		config.getString(config_prefix + ".db", ""),
 		config.getString(config_prefix + ".collection"),
 		sample_block)
@@ -146,6 +156,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource & other)
 	: MongoDBDictionarySource{
 		other.dict_struct, other.host, other.port, other.user, other.password,
+		other.method,
 		other.db, other.collection, other.sample_block}
 {
 }

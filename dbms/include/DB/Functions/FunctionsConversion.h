@@ -1498,6 +1498,14 @@ private:
 		};
 	}
 
+	WrapperType createIdentityWrapper(const DataTypePtr &)
+	{
+		return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
+		{
+			block.safeGetByPosition(result).column = block.safeGetByPosition(arguments.front()).column;
+		};
+	}
+
 	/// Actions to be taken when performing a conversion.
 	struct Action
 	{
@@ -1586,7 +1594,9 @@ private:
 
 	WrapperType prepareImpl(const DataTypePtr & from_type, const IDataType * const to_type)
 	{
-		if (const auto to_actual_type = typeid_cast<const DataTypeUInt8 *>(to_type))
+		if (from_type->equals(*to_type))
+			return createIdentityWrapper(from_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeUInt8 *>(to_type))
 			return createWrapper(from_type, to_actual_type);
 		else if (const auto to_actual_type = typeid_cast<const DataTypeUInt16 *>(to_type))
 			return createWrapper(from_type, to_actual_type);
@@ -1673,7 +1683,7 @@ private:
 			else if (const auto type = typeid_cast<const DataTypeEnum16 *>(to_type))
 				monotonicity_for_range = monotonicityForType(type);
 		}
-		/// other types like FixedString, Array and Tuple have no monotonicity defined
+		/// other types like Null, FixedString, Array and Tuple have no monotonicity defined
 	}
 
 public:
@@ -1704,7 +1714,7 @@ public:
 
 		if (from_type->isNullable())
 			action |= Action::UNWRAP_NULLABLE_INPUT;
-		else if (from_type->isNull())
+		else if (from_type->isNull() && !out_return_type->isNull())
 			action |= Action::CONVERT_NULL;
 
 		if (out_return_type->isNullable())

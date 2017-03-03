@@ -33,7 +33,7 @@ https://github.com/yandex/ClickHouse/blob/master/doc/build.md
 
 Установим необходимые пакеты. После этого выполним следующую команду из директории с исходными кодами ClickHouse:
 ```
-~/ClickHouse$ ENABLE_MONGODB=0 ./release --standalone
+~/ClickHouse$ ./release --standalone
 ```
 
 Сборка успешно завершена:

@@ -216,7 +216,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, merging_params_,
-		settings_, database_name_ + "." + table_name, true,
+		settings_, database_name_ + "." + table_name, true, attach,
 		[this] (const std::string & name) { enqueuePartForCheck(name); }),
 	reader(data), writer(data), merger(data, context.getBackgroundPool()), fetcher(data), sharded_partition_uploader_client(*this),
 	shutdown_event(false), part_check_thread(*this),
@@ -295,7 +295,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 			materialized_columns_, alias_columns_, column_defaults_,
 			context_, primary_expr_ast_,
 			date_column_name_, sampling_expression_, index_granularity_, merging_params_, settings_,
-			database_name_ + "." + table_name + "[unreplicated]", false);
+			database_name_ + "." + table_name + "[unreplicated]", /* require_part_metadata = */ false, /* attach = */ true);
 
 		unreplicated_data->loadDataParts(skip_sanity_checks);
 
@@ -2405,9 +2405,9 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 	LOG_DEBUG(log, "Updated columns in ZooKeeper. Waiting for replicas to apply changes.");
 
-	/// Ждем, пока все реплики обновят данные.
+	/// Wait until all replicas will apply ALTER.
 
-	/// Подпишемся на изменения столбцов, чтобы перестать ждать, если кто-то еще сделает ALTER.
+	/// Subscribe to change of columns, to finish waiting if someone will do another ALTER.
 	if (!getZooKeeper()->exists(zookeeper_path + "/columns", &stat, alter_query_event))
 		throw Exception(zookeeper_path + "/columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
@@ -2431,7 +2431,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 		while (!shutdown_called)
 		{
-			/// Реплика может быть неактивной.
+			/// Replica could be inactive.
 			if (!getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
 			{
 				LOG_WARNING(log, "Replica " << replica << " is not active during ALTER query."
@@ -2443,7 +2443,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 			String replica_columns_str;
 
-			/// Реплику могли успеть удалить.
+			/// Replica could has been removed.
 			if (!getZooKeeper()->tryGet(zookeeper_path + "/replicas/" + replica + "/columns", replica_columns_str, &stat))
 			{
 				LOG_WARNING(log, replica << " was removed");
@@ -2452,6 +2452,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 			int replica_columns_version = stat.version;
 
+			/// The ALTER has been successfully applied.
 			if (replica_columns_str == new_columns_str)
 				break;
 
@@ -2477,11 +2478,11 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 			if (!replication_alter_columns_timeout)
 			{
 				alter_query_event->wait();
-				/// Всё Ок.
+				/// Everything is fine.
 			}
 			else if (alter_query_event->tryWait(replication_alter_columns_timeout * 1000))
 			{
-				/// Всё Ок.
+				/// Everything is fine.
 			}
 			else
 			{
@@ -2489,6 +2490,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 					" ALTER will be done asynchronously.");
 
 				timed_out_replicas.emplace(replica);
+				break;
 			}
 		}
 
@@ -2806,7 +2808,7 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 bool StorageReplicatedMergeTree::checkTableCanBeDropped() const
 {
 	/// Consider only synchronized data
-	context.checkTableCanBeDropped(database_name, table_name, getData().getColumnsTotalSize());
+	context.checkTableCanBeDropped(database_name, table_name, getData().getTotalCompressedSize());
 	return true;
 }
 

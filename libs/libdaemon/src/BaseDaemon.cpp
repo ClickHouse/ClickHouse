@@ -56,6 +56,7 @@
 #include <DB/IO/WriteHelpers.h>
 
 #include <common/ClickHouseRevision.h>
+#include <daemon/OwnPatternFormatter.h>
 
 using Poco::Logger;
 using Poco::AutoPtr;
@@ -455,6 +456,20 @@ static std::string createDirectory(const std::string & _path)
 	return str;
 };
 
+static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path)
+{
+	try
+	{
+		Poco::File(path).createDirectories();
+		return true;
+	}
+	catch (...)
+	{
+		DB::tryLogCurrentException(logger, std::string(__PRETTY_FUNCTION__) + ": when creating " + path);
+	}
+	return false;
+}
+
 
 void BaseDaemon::reloadConfiguration()
 {
@@ -469,78 +484,6 @@ void BaseDaemon::reloadConfiguration()
 	config().add(processed_config.duplicate(), PRIO_DEFAULT, false);
 	log_to_console = !config().getBool("application.runAsDaemon", false) && log_command_line_option.empty();
 }
-
-
-/** Форматирует по своему.
-  * Некоторые детали невозможно получить, используя только Poco::PatternFormatter.
-  *
-  * Во-первых, используется номер потока не среди потоков Poco::Thread,
-  *  а среди всех потоков, для которых был получен номер (см. ThreadNumber.h)
-  *
-  * Во-вторых, корректно выводится локальная дата и время.
-  * Poco::PatternFormatter плохо работает с локальным временем,
-  *  в ситуациях, когда в ближайшем будущем намечается отмена или введение daylight saving time.
-  *  - см. исходники Poco и http://thread.gmane.org/gmane.comp.time.tz/8883
-  *
-  * Также сделан чуть более эффективным (что имеет мало значения).
-  */
-class OwnPatternFormatter : public Poco::PatternFormatter
-{
-public:
-	enum Options
-	{
-		ADD_NOTHING = 0,
-		ADD_LAYER_TAG = 1 << 0
-	};
-
-	OwnPatternFormatter(const BaseDaemon & daemon_, Options options_ = ADD_NOTHING) : Poco::PatternFormatter(""), daemon(daemon_), options(options_) {}
-
-	void format(const Message & msg, std::string & text) override
-	{
-		DB::WriteBufferFromString wb(text);
-
-		/// For syslog: tag must be before message and first whitespace.
-		if (options & ADD_LAYER_TAG)
-		{
-			auto layer = daemon.getLayer();
-			if (layer)
-			{
-				writeCString("layer[", wb);
-				DB::writeIntText(*layer, wb);
-				writeCString("]: ", wb);
-			}
-		}
-
-		/// Output time with microsecond resolution.
-		timeval tv;
-		if (0 != gettimeofday(&tv, nullptr))
-			DB::throwFromErrno("Cannot gettimeofday");
-
-		/// Change delimiters in date for compatibility with old logs.
-		DB::writeDateTimeText<'.', ':'>(tv.tv_sec, wb);
-
-		DB::writeChar('.', wb);
-		DB::writeChar('0' + ((tv.tv_usec / 100000) % 10), wb);
-		DB::writeChar('0' + ((tv.tv_usec / 10000) % 10), wb);
-		DB::writeChar('0' + ((tv.tv_usec / 1000) % 10), wb);
-		DB::writeChar('0' + ((tv.tv_usec / 100) % 10), wb);
-		DB::writeChar('0' + ((tv.tv_usec / 10) % 10), wb);
-		DB::writeChar('0' + ((tv.tv_usec / 1) % 10), wb);
-
-		writeCString(" [ ", wb);
-		DB::writeIntText(Poco::ThreadNumber::get(), wb);
-		writeCString(" ] <", wb);
-		DB::writeString(getPriorityName(static_cast<int>(msg.getPriority())), wb);
-		writeCString("> ", wb);
-		DB::writeString(msg.getSource(), wb);
-		writeCString(": ", wb);
-		DB::writeString(msg.getText(), wb);
-	}
-
-private:
-	const BaseDaemon & daemon;
-	Options options;
-};
 
 
 /// Для создания и уничтожения unique_ptr, который в заголовочном файле объявлен от incomplete type.
@@ -611,7 +554,7 @@ void BaseDaemon::buildLoggers()
 		Poco::AutoPtr<SplitterChannel> split = new SplitterChannel;
 
 		// set up two channel chains
-		Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(*this);
+		Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
 		pf->setProperty("times", "local");
 		Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
 		log_file = new FileChannel;
@@ -629,7 +572,7 @@ void BaseDaemon::buildLoggers()
 			std::cerr << "Should error logs to " << config().getString("logger.errorlog") << std::endl;
 			Poco::AutoPtr<Poco::LevelFilterChannel> level = new Poco::LevelFilterChannel;
 			level->setLevel(Message::PRIO_NOTICE);
-			Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(*this);
+			Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
 			pf->setProperty("times", "local");
 			Poco::AutoPtr<FormattingChannel> errorlog = new FormattingChannel(pf);
 			error_log_file = new FileChannel;
@@ -646,7 +589,7 @@ void BaseDaemon::buildLoggers()
 
 		if (config().getBool("logger.use_syslog", false) || config().getBool("dynamic_layer_selection", false))
 		{
-			Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(*this, OwnPatternFormatter::ADD_LAYER_TAG);
+			Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_LAYER_TAG);
 			pf->setProperty("times", "local");
 			Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
 			syslog_channel = new Poco::SyslogChannel(commandName(), Poco::SyslogChannel::SYSLOG_CONS | Poco::SyslogChannel::SYSLOG_PID, Poco::SyslogChannel::SYSLOG_DAEMON);
@@ -663,7 +606,7 @@ void BaseDaemon::buildLoggers()
 	{
 		// Выводим на консоль
 		Poco::AutoPtr<ConsoleChannel> file = new ConsoleChannel;
-		Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(*this);
+		Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
 		pf->setProperty("times", "local");
 		Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
 		log->setChannel(file);
@@ -701,7 +644,7 @@ void BaseDaemon::closeLogs()
 		logger().warning("Logging to console but received signal to close log file (ignoring).");
 }
 
-std::string BaseDaemon::getDefaultCorePath () const
+std::string BaseDaemon::getDefaultCorePath() const
 {
 	return "/opt/cores/";
 }
@@ -736,11 +679,12 @@ void BaseDaemon::initialize(Application& self)
 
 		if (setrlimit(RLIMIT_CORE, &rlim))
 		{
+			std::string message = "Cannot set max size of core file to " + std::to_string(rlim.rlim_cur);
 		#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER)
-			throw Poco::Exception("Cannot setrlimit");
+			throw Poco::Exception(message);
 		#else
 			/// Не работает под address/thread sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
-			std::cerr << "Cannot setrlimit\n";
+			std::cerr << message << std::endl;
 		#endif
 		}
 	}
@@ -793,13 +737,14 @@ void BaseDaemon::initialize(Application& self)
 		std::string core_path = config().getString("core_path", "");
 		if (core_path.empty())
 			core_path = getDefaultCorePath();
-		Poco::File(core_path).createDirectories();
+
+		tryCreateDirectories(&logger(), core_path);
 
 		Poco::File cores = core_path;
-		if (!( cores.exists() && cores.isDirectory() ))
+		if (!(cores.exists() && cores.isDirectory()))
 		{
 			core_path = !log_path.empty() ? log_path : "/opt/";
-			Poco::File(core_path).createDirectories();
+			tryCreateDirectories(&logger(), core_path);
 		}
 
 		if (0 != chdir(core_path.c_str()))

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <DB/DataStreams/IBlockOutputStream.h>
+#include <DB/Core/Types.h>
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -24,6 +26,7 @@ private:
 	size_t quorum_timeout_ms;
 	size_t block_index = 0;
 
+	using Logger = Poco::Logger;
 	Logger * log;
 };
 

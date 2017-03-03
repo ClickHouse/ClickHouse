@@ -1,5 +1,5 @@
 include_directories (include)
-include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 add_library (daemon
 	src/BaseDaemon.cpp
@@ -7,6 +7,7 @@ add_library (daemon
 
 	include/daemon/BaseDaemon.h
 	include/daemon/GraphiteWriter.h
+	include/daemon/OwnPatternFormatter.h
 )
 
 target_link_libraries (daemon dbms)

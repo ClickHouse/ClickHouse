@@ -272,7 +272,7 @@ MergeTreeDataPartChecksums MergeTreeDataPartChecksums::parse(const String & s)
 
 
 /// Returns the size of .bin file for column `name` if found, zero otherwise.
-std::size_t MergeTreeDataPart::getColumnSize(const String & name) const
+size_t MergeTreeDataPart::getColumnCompressedSize(const String & name) const
 {
 	if (checksums.empty())
 		return {};
@@ -289,18 +289,18 @@ std::size_t MergeTreeDataPart::getColumnSize(const String & name) const
 
 /** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
 	*	If no checksums are present returns the name of the first physically existing column. */
-String MergeTreeDataPart::getMinimumSizeColumnName() const
+String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 {
 	const auto & columns = storage.getColumnsList();
 	const std::string * minimum_size_column = nullptr;
-	auto minimum_size = std::numeric_limits<std::size_t>::max();
+	auto minimum_size = std::numeric_limits<size_t>::max();
 
 	for (const auto & column : columns)
 	{
 		if (!hasColumnFiles(column.name))
 			continue;
 
-		const auto size = getColumnSize(column.name);
+		const auto size = getColumnCompressedSize(column.name);
 		if (size < minimum_size)
 		{
 			minimum_size = size;
@@ -310,9 +310,8 @@ String MergeTreeDataPart::getMinimumSizeColumnName() const
 
 	if (!minimum_size_column)
 		throw Exception{
-				"Could not find a column of minimum size in MergeTree",
-				ErrorCodes::LOGICAL_ERROR
-		};
+			"Could not find a column of minimum size in MergeTree",
+			ErrorCodes::LOGICAL_ERROR};
 
 	return *minimum_size_column;
 }
@@ -389,7 +388,6 @@ void MergeTreeDataPart::remove() const
 	}
 	catch (const Poco::FileNotFoundException & e)
 	{
-		/// Если директория уже удалена. Такое возможно лишь при ручном вмешательстве.
 		LOG_WARNING(storage.log, "Directory " << from << " (part to remove) doesn't exist or one of nested files has gone."
 			" Most likely this is due to manual removing. This should be discouraged. Ignoring.");
 
@@ -605,7 +603,7 @@ bool MergeTreeDataPart::hasColumnFiles(const String & column) const
 	String prefix = storage.full_path + (is_sharded ? ("reshard/" + DB::toString(shard_no) + "/") : "") + name + "/";
 	String escaped_column = escapeForFileName(column);
 	return Poco::File(prefix + escaped_column + ".bin").exists() &&
-			Poco::File(prefix + escaped_column + ".mrk").exists();
+		Poco::File(prefix + escaped_column + ".mrk").exists();
 }
 
 

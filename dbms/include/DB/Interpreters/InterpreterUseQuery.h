@@ -7,6 +7,8 @@ namespace DB
 {
 
 class Context;
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
 
 /** Выбрать БД по-умолчанию для сессии.

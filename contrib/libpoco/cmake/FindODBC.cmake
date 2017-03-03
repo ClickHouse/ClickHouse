@@ -29,7 +29,7 @@ find_path(ODBC_INCLUDE_DIRECTORIES
 )
 
 find_library(ODBC_LIBRARIES 
-	NAMES libiodbc.a iodbc libodbc.a odbc odbcinst odbc32
+	NAMES iodbc odbc odbcinst odbc32
 	HINTS
 	/usr/lib
 	/usr/lib/odbc

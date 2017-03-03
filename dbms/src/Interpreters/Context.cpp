@@ -140,7 +140,7 @@ struct ContextShared
 	/// database -> table -> exception_message
 	/// На время выполнения операции, сюда помещается элемент, и возвращается объект, который в деструкторе удаляет элемент.
 	/// В случае, если элемент уже есть - кидается исключение. См. class DDLGuard ниже.
-	using DDLGuards = std::unordered_map<String, std::unordered_map<String, String>>;
+	using DDLGuards = std::unordered_map<String, DDLGuard::Map>;
 	DDLGuards ddl_guards;
 	/// Если вы захватываете mutex и ddl_guards_mutex, то захватывать их нужно строго в этом порядке.
 	mutable std::mutex ddl_guards_mutex;

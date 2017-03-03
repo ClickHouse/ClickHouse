@@ -160,11 +160,21 @@ public:
 		insertMergeFrom(src, n);
 	}
 
+	void insertFrom(ConstAggregateDataPtr place)
+	{
+		insertDefault();
+		insertMergeFrom(place);
+	}
+
 	/// Merge state at last row with specified state in another column.
+	void insertMergeFrom(ConstAggregateDataPtr place)
+	{
+		func->merge(getData().back(), place, &createOrGetArena());
+	}
+
 	void insertMergeFrom(const IColumn & src, size_t n)
 	{
-		Arena & arena = createOrGetArena();
-		func->merge(getData().back(), static_cast<const ColumnAggregateFunction &>(src).getData()[n], &arena);
+		insertMergeFrom(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
 	}
 
 	Arena & createOrGetArena()
@@ -206,10 +216,7 @@ public:
 		throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void updateHashWithValue(size_t n, SipHash & hash) const override
-	{
-		throw Exception("Method updateHashWithValue is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
+	void updateHashWithValue(size_t n, SipHash & hash) const override;
 
 	size_t byteSize() const override;
 
@@ -236,6 +243,29 @@ public:
 	ColumnPtr replicate(const Offsets_t & offsets) const override
 	{
 		throw Exception("Method replicate is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		/// Columns with scattered values will point to this column as the owner of values.
+		Columns columns(num_columns);
+		for (auto & column : columns)
+			column = std::make_shared<ColumnAggregateFunction>(*this);
+
+		size_t num_rows = size();
+
+		{
+			size_t reserve_size = num_rows / num_columns * 1.1;	/// 1.1 is just a guess. Better to use n-sigma rule.
+
+			if (reserve_size > 1)
+				for (auto & column : columns)
+					column->reserve(reserve_size);
+		}
+
+		for (size_t i = 0; i < num_rows; ++i)
+			static_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
+
+		return columns;
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override

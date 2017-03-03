@@ -1,20 +1,21 @@
-include(${CMAKE_SOURCE_DIR}/cmake/dbms_include.cmake)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include/)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libzstd/include/)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libsparsehash)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libre2/)
-include_directories (BEFORE ${ClickHouse_BINARY_DIR}/contrib/libre2/)
-include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include/)
+include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
+include_directories (${ODBC_INCLUDE_DIRECTORIES})
+include_directories (${ClickHouse_BINARY_DIR}/dbms/include)
 
 if (NOT NO_WERROR)
 	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
 	set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
+
+include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
+
+find_package (Threads)
 
 add_subdirectory (src)
 
@@ -70,7 +71,15 @@ if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
 		src/IO/WriteBufferAIO.cpp)
 endif()
 
-add_library(dbms ${dbms_headers} ${dbms_sources})
+include (${CMAKE_SOURCE_DIR}/libs/libcommon/cmake/version.cmake)
+
+if (USE_STATIC_LIBRARIES)
+	add_library(dbms ${dbms_headers} ${dbms_sources})
+else ()
+	add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
+	set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse)
+	install (TARGETS dbms LIBRARY DESTINATION lib COMPONENT clickhouse)
+endif ()
 
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -109,7 +118,6 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
 		PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
-
 if (NOT AARCH64)
 	set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 endif()
@@ -120,40 +128,29 @@ else()
     set(PLATFORM_LIBS "")
 endif()
 
-if (USE_STATIC_LIBRARIES)
-	set (Z_LIB zlibstatic)
-else()
-	set (Z_HINTS "/usr/local/opt/zlib/lib")
-	find_library (Z_LIB z HINTS ${Z_HINTS})
-endif ()
-
-include (${CMAKE_SOURCE_DIR}/cmake/find_iconv.cmake)
-find_package (Threads)
-
 target_link_libraries(dbms
 	common
 	zkutil
 	mysqlxx
 	cityhash farmhash metrohash
-	lz4 zstd
+	${LZ4_LIBRARY}
+	${ZSTD_LIBRARY}
 	string_utils
-	double-conversion
-	${Z_LIB}
+	${DOUBLE_CONVERSION_LIBRARY}
+	${ZLIB_LIBRARIES}
 	${LINK_LIBRARIES_ONLY_ON_X86_64}
-	re2 re2_st
+	${RE2_LIBRARY}
+	${RE2_ST_LIBRARY}
 	${OPENSSL_CRYPTO_LIBRARY}
 	${Boost_SYSTEM_LIBRARY}
 	${Poco_Data_LIBRARY}
 	${Poco_DataODBC_LIBRARY}
 	${Poco_MongoDB_LIBRARY}
 	${Poco_Foundation_LIBRARY}
+	${Poco_NetSSL_LIBRARY}
 	${ICONV_LIBRARY}
 	${PLATFORM_LIBS}
 	${CMAKE_DL_LIBS}
 	${LTDL_LIB}
 	${CMAKE_THREAD_LIBS_INIT}
 	)
-
-add_dependencies (dbms
-	common
-	zkutil)

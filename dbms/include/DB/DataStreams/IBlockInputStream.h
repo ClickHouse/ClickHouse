@@ -20,6 +20,7 @@ class TableStructureReadLock;
 
 using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
 using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
+using TableStructureReadLocksList = std::list<TableStructureReadLockPtr>;
 
 struct Progress;
 

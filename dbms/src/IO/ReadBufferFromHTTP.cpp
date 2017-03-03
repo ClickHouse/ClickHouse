@@ -1,3 +1,4 @@
+#include <Poco/Version.h>
 #include <Poco/URI.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/HTTPRequest.h>
