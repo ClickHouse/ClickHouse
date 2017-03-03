@@ -486,6 +486,8 @@ bool SocketImpl::poll(const Poco::Timespan& timeout, int mode)
 		}
 	}
 	while (rc < 0 && lastError() == POCO_EINTR);
+	if (rc < 0) error();
+	return rc > 0;
 
 #else
 
