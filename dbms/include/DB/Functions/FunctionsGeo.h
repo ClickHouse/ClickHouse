@@ -195,7 +195,7 @@ private:
 			throw Exception(
 				"Incorrect number of arguments of function " + getName() + ". Must be 2 for your point plus 4 * N for ellipses (x_i, y_i, a_i, b_i).");
 		}
-		
+
 		/// For array on stack, see below.
 		if (arguments.size() > 10000)
 		{
@@ -234,7 +234,7 @@ private:
 				const auto column = block.safeGetByPosition(arguments[arg_idx]).column.get();
 				if (const auto col = typeid_cast<const ColumnConst<Float64> *>(column))
 				{
-					ellipse_data[idx] = typeid_cast<const ColumnConst<Float64> *>(column)->getData();
+					ellipse_data[idx] = col->getData();
 				}
 				else
 				{
