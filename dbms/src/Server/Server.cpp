@@ -1,28 +1,22 @@
-#include <sys/resource.h>
+#include "Server.h"
 
+#include <sys/resource.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DirectoryIterator.h>
-
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
-
 #include <ext/scope_guard.hpp>
-
 #include <memory>
-#include <experimental/optional>
-
 #include <DB/Common/Macros.h>
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Common/StringUtils.h>
 #include <DB/IO/HTTPCommon.h>
-
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/AsynchronousMetrics.h>
-
 #include <DB/Storages/System/StorageSystemNumbers.h>
 #include <DB/Storages/System/StorageSystemTables.h>
 #include <DB/Storages/System/StorageSystemParts.h>
@@ -45,10 +39,7 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Databases/DatabaseOrdinary.h>
-
 #include <zkutil/ZooKeeper.h>
-
-#include "Server.h"
 #include "HTTPHandler.h"
 #include "ReplicasStatusHandler.h"
 #include "InterserverIOHTTPHandler.h"
@@ -56,7 +47,6 @@
 #include "MetricsTransmitter.h"
 #include "ConfigReloader.h"
 #include "StatusFile.h"
-
 
 namespace DB
 {
@@ -400,8 +390,6 @@ int Server::main(const std::vector<std::string> & args)
 	);
 
 	{
-		const std::string listen_host = config().getString("listen_host", "::");
-
 		Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
 
 		Poco::ThreadPool server_pool(3, config().getInt("max_connections", 1024));
@@ -409,89 +397,109 @@ int Server::main(const std::vector<std::string> & args)
 		http_params->setTimeout(settings.receive_timeout);
 		http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-		/// For testing purposes, user may omit tcp_port or http_port in configuration file.
+		std::vector<std::unique_ptr<Poco::Net::TCPServer>> servers;
 
-		/// HTTP
-		std::experimental::optional<Poco::Net::HTTPServer> http_server;
-		if (config().has("http_port"))
+		std::vector<std::string> listen_hosts;
+		Poco::Util::AbstractConfiguration::Keys config_keys;
+		config().keys("", config_keys);
+		for (const auto & key : config_keys)
 		{
-			Poco::Net::SocketAddress http_socket_address;
+			if (!startsWith(key.data(), "listen_host"))
+				continue;
+			listen_hosts.emplace_back(config().getString(key));
+		}
 
-			try
+		if (listen_hosts.empty())
+		{
+			listen_hosts.emplace_back("::1");
+			listen_hosts.emplace_back("127.0.0.1");
+		}
+
+		for (const auto & listen_host : listen_hosts)
+		{
+			/// For testing purposes, user may omit tcp_port or http_port in configuration file.
+
+			/// HTTP
+			if (config().has("http_port"))
 			{
-				http_socket_address = Poco::Net::SocketAddress(listen_host, config().getInt("http_port"));
-			}
-			catch (const Poco::Net::DNSException & e)
-			{
-				/// Better message when IPv6 is disabled on host.
-				if (e.code() == EAI_FAMILY
-#if defined(EAI_ADDRFAMILY)
-					|| e.code() == EAI_ADDRFAMILY
-#endif
-				)
+				Poco::Net::SocketAddress http_socket_address;
+
+				try
 				{
-					LOG_ERROR(log, "Cannot resolve listen_host (" << listen_host + "), error: " << e.message() << ". "
-						"If it is an IPv6 address and your host has disabled IPv6, then consider to specify IPv4 address to listen in <listen_host> element of configuration file. Example: <listen_host>0.0.0.0</listen_host>");
+					http_socket_address = Poco::Net::SocketAddress(listen_host, config().getInt("http_port"));
+				}
+				catch (const Poco::Net::DNSException & e)
+				{
+					/// Better message when IPv6 is disabled on host.
+					if (e.code() == EAI_FAMILY
+					#if defined(EAI_ADDRFAMILY)
+						|| e.code() == EAI_ADDRFAMILY
+					#endif
+					)
+					{
+						LOG_ERROR(log, "Cannot resolve listen_host (" << listen_host + "), error: " << e.message() << ". "
+							"If it is an IPv6 address and your host has disabled IPv6, then consider to specify IPv4 address to listen in <listen_host> element of configuration file. Example: <listen_host>0.0.0.0</listen_host>");
+					}
+
+					throw;
 				}
 
-				throw;
-			}
+				Poco::Net::ServerSocket http_socket(http_socket_address);
+				http_socket.setReceiveTimeout(settings.receive_timeout);
+				http_socket.setSendTimeout(settings.send_timeout);
 
-			Poco::Net::ServerSocket http_socket(http_socket_address);
-			http_socket.setReceiveTimeout(settings.receive_timeout);
-			http_socket.setSendTimeout(settings.send_timeout);
-			http_server.emplace(
-				new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"),
-				server_pool,
-				http_socket,
-				http_params);
+				servers.emplace_back(
+					new Poco::Net::HTTPServer(
+					new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"),
+					server_pool,
+					http_socket,
+					http_params));
 
 				LOG_INFO(log, "Listening http://" + http_socket_address.toString());
-		}
+			}
 
-		/// TCP
-		std::experimental::optional<Poco::Net::TCPServer> tcp_server;
-		if (config().has("tcp_port"))
-		{
-			Poco::Net::SocketAddress tcp_address(listen_host, config().getInt("tcp_port"));
-			Poco::Net::ServerSocket tcp_socket(tcp_address);
-			tcp_socket.setReceiveTimeout(settings.receive_timeout);
-			tcp_socket.setSendTimeout(settings.send_timeout);
-			tcp_server.emplace(
-				new TCPConnectionFactory(*this),
-				server_pool,
-				tcp_socket,
-				new Poco::Net::TCPServerParams);
+			/// TCP
+			if (config().has("tcp_port"))
+			{
+				Poco::Net::SocketAddress tcp_address(listen_host, config().getInt("tcp_port"));
+				Poco::Net::ServerSocket tcp_socket(tcp_address);
+				tcp_socket.setReceiveTimeout(settings.receive_timeout);
+				tcp_socket.setSendTimeout(settings.send_timeout);
+				servers.emplace_back(
+					new Poco::Net::TCPServer(
+					new TCPConnectionFactory(*this),
+					server_pool,
+					tcp_socket,
+					new Poco::Net::TCPServerParams));
 
 				LOG_INFO(log, "Listening tcp: " + tcp_address.toString());
-		}
+			}
 
-		/// At least one of TCP and HTTP servers must be created.
-		if (!http_server && !tcp_server)
-			throw Exception("No 'tcp_port' and 'http_port' is specified in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-		/// Interserver IO HTTP
-		std::experimental::optional<Poco::Net::HTTPServer> interserver_io_http_server;
-		if (config().has("interserver_http_port"))
-		{
-			Poco::Net::SocketAddress interserver_address(listen_host, config().getInt("interserver_http_port"));
-			Poco::Net::ServerSocket interserver_io_http_socket(interserver_address);
-			interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
-			interserver_io_http_socket.setSendTimeout(settings.send_timeout);
-			interserver_io_http_server.emplace(
-				new HTTPRequestHandlerFactory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
-				server_pool,
-				interserver_io_http_socket,
-				http_params);
+			/// At least one of TCP and HTTP servers must be created.
+			if (servers.empty())
+				throw Exception("No 'tcp_port' and 'http_port' is specified in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+			/// Interserver IO HTTP
+			if (config().has("interserver_http_port"))
+			{
+				Poco::Net::SocketAddress interserver_address(listen_host, config().getInt("interserver_http_port"));
+				Poco::Net::ServerSocket interserver_io_http_socket(interserver_address);
+				interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
+				interserver_io_http_socket.setSendTimeout(settings.send_timeout);
+				servers.emplace_back(
+					new Poco::Net::HTTPServer(
+					new HTTPRequestHandlerFactory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
+					server_pool,
+					interserver_io_http_socket,
+					http_params));
+
 				LOG_INFO(log, "Listening interserver: " + interserver_address.toString());
+			}
 		}
 
-		if (http_server)
-			http_server->start();
-		if (tcp_server)
-			tcp_server->start();
-		if (interserver_io_http_server)
-			interserver_io_http_server->start();
+		for (auto & server : servers)
+			server->start();
 
 		LOG_INFO(log, "Ready for connections.");
 
@@ -511,12 +519,8 @@ int Server::main(const std::vector<std::string> & args)
 
 			is_cancelled = true;
 
-			if (http_server)
-				http_server->stop();
-			if (tcp_server)
-				tcp_server->stop();
-			if (interserver_io_http_server)
-				interserver_io_http_server->stop();
+			for (auto & server : servers)
+				server->stop();
 
 			LOG_DEBUG(log, "Closed all connections.");
 
