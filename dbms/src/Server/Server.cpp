@@ -1,56 +1,55 @@
 #include "Server.h"
 
+#include <memory>
 #include <sys/resource.h>
-#include <Poco/Net/HTTPServerRequest.h>
+#include <zkutil/ZooKeeper.h>
+#include "ConfigReloader.h"
+#include "HTTPHandler.h"
+#include "InterserverIOHTTPHandler.h"
+#include "MetricsTransmitter.h"
+#include "ReplicasStatusHandler.h"
+#include "StatusFile.h"
+#include "TCPHandler.h"
+#include <Poco/DirectoryIterator.h>
 #include <Poco/Net/DNS.h>
+#include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include <Poco/DirectoryIterator.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
 #include <ext/scope_guard.hpp>
-#include <memory>
 #include <DB/Common/Macros.h>
-#include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/Common/getFQDNOrHostName.h>
+#include <DB/Databases/DatabaseOrdinary.h>
 #include <DB/IO/HTTPCommon.h>
-#include <DB/Interpreters/loadMetadata.h>
-#include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/AsynchronousMetrics.h>
-#include <DB/Storages/System/StorageSystemNumbers.h>
-#include <DB/Storages/System/StorageSystemTables.h>
-#include <DB/Storages/System/StorageSystemParts.h>
-#include <DB/Storages/System/StorageSystemDatabases.h>
-#include <DB/Storages/System/StorageSystemProcesses.h>
-#include <DB/Storages/System/StorageSystemEvents.h>
-#include <DB/Storages/System/StorageSystemOne.h>
-#include <DB/Storages/System/StorageSystemMerges.h>
-#include <DB/Storages/System/StorageSystemSettings.h>
-#include <DB/Storages/System/StorageSystemZooKeeper.h>
-#include <DB/Storages/System/StorageSystemReplicas.h>
-#include <DB/Storages/System/StorageSystemReplicationQueue.h>
-#include <DB/Storages/System/StorageSystemDictionaries.h>
-#include <DB/Storages/System/StorageSystemColumns.h>
-#include <DB/Storages/System/StorageSystemFunctions.h>
-#include <DB/Storages/System/StorageSystemClusters.h>
-#include <DB/Storages/System/StorageSystemMetrics.h>
+#include <DB/Interpreters/ProcessList.h>
+#include <DB/Interpreters/loadMetadata.h>
+#include <DB/Storages/MergeTree/ReshardingWorker.h>
+#include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <DB/Storages/System/StorageSystemBuildOptions.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Storages/MergeTree/ReshardingWorker.h>
-#include <DB/Databases/DatabaseOrdinary.h>
-#include <zkutil/ZooKeeper.h>
-#include "HTTPHandler.h"
-#include "ReplicasStatusHandler.h"
-#include "InterserverIOHTTPHandler.h"
-#include "TCPHandler.h"
-#include "MetricsTransmitter.h"
-#include "ConfigReloader.h"
-#include "StatusFile.h"
+#include <DB/Storages/System/StorageSystemClusters.h>
+#include <DB/Storages/System/StorageSystemColumns.h>
+#include <DB/Storages/System/StorageSystemDatabases.h>
+#include <DB/Storages/System/StorageSystemDictionaries.h>
+#include <DB/Storages/System/StorageSystemEvents.h>
+#include <DB/Storages/System/StorageSystemFunctions.h>
+#include <DB/Storages/System/StorageSystemMerges.h>
+#include <DB/Storages/System/StorageSystemMetrics.h>
+#include <DB/Storages/System/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemOne.h>
+#include <DB/Storages/System/StorageSystemParts.h>
+#include <DB/Storages/System/StorageSystemProcesses.h>
+#include <DB/Storages/System/StorageSystemReplicas.h>
+#include <DB/Storages/System/StorageSystemReplicationQueue.h>
+#include <DB/Storages/System/StorageSystemSettings.h>
+#include <DB/Storages/System/StorageSystemTables.h>
+#include <DB/Storages/System/StorageSystemZooKeeper.h>
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
 	extern const int NO_ELEMENTS_IN_CONFIG;
@@ -87,15 +86,15 @@ public:
 		{
 			response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
 			response.send() << "There is no handle " << request.getURI() << "\n\n"
-				<< "Use / or /ping for health checks.\n"
-				<< "Or /replicas_status for more sophisticated health checks.\n\n"
-				<< "Send queries from your program with POST method or GET /?query=...\n\n"
-				<< "Use clickhouse-client:\n\n"
-				<< "For interactive data analysis:\n"
-				<< "    clickhouse-client\n\n"
-				<< "For batch query processing:\n"
-				<< "    clickhouse-client --query='SELECT 1' > result\n"
-				<< "    clickhouse-client < query > result\n";
+							<< "Use / or /ping for health checks.\n"
+							<< "Or /replicas_status for more sophisticated health checks.\n\n"
+							<< "Send queries from your program with POST method or GET /?query=...\n\n"
+							<< "Use clickhouse-client:\n\n"
+							<< "For interactive data analysis:\n"
+							<< "    clickhouse-client\n\n"
+							<< "For batch query processing:\n"
+							<< "    clickhouse-client --query='SELECT 1' > result\n"
+							<< "    clickhouse-client < query > result\n";
 		}
 		catch (...)
 		{
@@ -114,20 +113,24 @@ private:
 	std::string name;
 
 public:
-	HTTPRequestHandlerFactory(Server & server_, const std::string & name_)
-		: server(server_), log(&Logger::get(name_)), name(name_) {}
+	HTTPRequestHandlerFactory(Server & server_, const std::string & name_) : server(server_), log(&Logger::get(name_)), name(name_)
+	{
+	}
 
 	Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override
 	{
-		LOG_TRACE(log, "HTTP Request for " << name << ". "
-			<< "Method: " << request.getMethod()
-			<< ", Address: " << request.clientAddress().toString()
-			<< ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none"));
+		LOG_TRACE(log,
+			"HTTP Request for " << name << ". "
+								<< "Method: "
+								<< request.getMethod()
+								<< ", Address: "
+								<< request.clientAddress().toString()
+								<< ", User-Agent: "
+								<< (request.has("User-Agent") ? request.get("User-Agent") : "none"));
 
 		const auto & uri = request.getURI();
 
-		if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
-			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
+		if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
 		{
 			if (uri == "/" || uri == "/ping")
 				return new PingRequestHandler;
@@ -135,14 +138,12 @@ public:
 				return new ReplicasStatusHandler(*server.global_context);
 		}
 
-		if (uri.find('?') != std::string::npos
-			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+		if (uri.find('?') != std::string::npos || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
 		{
 			return new HandlerType(server);
 		}
 
-		if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
-			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+		if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
 			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
 		{
 			return new NotFoundHandler;
@@ -160,11 +161,16 @@ private:
 	Logger * log;
 
 public:
-	TCPConnectionFactory(Server & server_) : server(server_), log(&Logger::get("TCPConnectionFactory")) {}
+	TCPConnectionFactory(Server & server_) : server(server_), log(&Logger::get("TCPConnectionFactory"))
+	{
+	}
 
 	Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override
 	{
-		LOG_TRACE(log, "TCP Request. " << "Address: " << socket.peerAddress().toString());
+		LOG_TRACE(log,
+			"TCP Request. "
+				<< "Address: "
+				<< socket.peerAddress().toString());
 
 		return new TCPHandler(server, socket);
 	}
@@ -224,7 +230,10 @@ int Server::main(const std::vector<std::string> & args)
 			rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
 			int rc = setrlimit(RLIMIT_NOFILE, &rlim);
 			if (rc != 0)
-				LOG_WARNING(log, std::string("Cannot set max number of file descriptors to ") + std::to_string(rlim.rlim_cur) + ". Try to specify max_open_files according to your system limits. error: " + strerror(errno));
+				LOG_WARNING(log,
+					std::string("Cannot set max number of file descriptors to ") + std::to_string(rlim.rlim_cur)
+						+ ". Try to specify max_open_files according to your system limits. error: "
+						+ strerror(errno));
 			else
 				LOG_DEBUG(log, "Set max number of file descriptors to " << rlim.rlim_cur << " (was " << old << ").");
 		}
@@ -277,7 +286,9 @@ int Server::main(const std::vector<std::string> & args)
 		if (this_host.empty())
 		{
 			this_host = getFQDNOrHostName();
-			LOG_DEBUG(log, "Configuration parameter 'interserver_http_host' doesn't exist or exists and empty. Will use '" + this_host + "' as replica host.");
+			LOG_DEBUG(log,
+				"Configuration parameter 'interserver_http_host' doesn't exist or exists and empty. Will use '" + this_host
+					+ "' as replica host.");
 		}
 
 		String port_str = config().getString("interserver_http_port");
@@ -340,24 +351,24 @@ int Server::main(const std::vector<std::string> & args)
 
 	DatabasePtr system_database = global_context->getDatabase("system");
 
-	system_database->attachTable("one",			StorageSystemOne::create("one"));
-	system_database->attachTable("numbers", 	StorageSystemNumbers::create("numbers"));
-	system_database->attachTable("numbers_mt", 	StorageSystemNumbers::create("numbers_mt", true));
-	system_database->attachTable("tables", 		StorageSystemTables::create("tables"));
-	system_database->attachTable("parts", 		StorageSystemParts::create("parts"));
-	system_database->attachTable("databases", 	StorageSystemDatabases::create("databases"));
-	system_database->attachTable("processes", 	StorageSystemProcesses::create("processes"));
-	system_database->attachTable("settings", 	StorageSystemSettings::create("settings"));
-	system_database->attachTable("events", 		StorageSystemEvents::create("events"));
-	system_database->attachTable("metrics", 	StorageSystemMetrics::create("metrics"));
-	system_database->attachTable("merges",		StorageSystemMerges::create("merges"));
-	system_database->attachTable("replicas",	StorageSystemReplicas::create("replicas"));
+	system_database->attachTable("one", StorageSystemOne::create("one"));
+	system_database->attachTable("numbers", StorageSystemNumbers::create("numbers"));
+	system_database->attachTable("numbers_mt", StorageSystemNumbers::create("numbers_mt", true));
+	system_database->attachTable("tables", StorageSystemTables::create("tables"));
+	system_database->attachTable("parts", StorageSystemParts::create("parts"));
+	system_database->attachTable("databases", StorageSystemDatabases::create("databases"));
+	system_database->attachTable("processes", StorageSystemProcesses::create("processes"));
+	system_database->attachTable("settings", StorageSystemSettings::create("settings"));
+	system_database->attachTable("events", StorageSystemEvents::create("events"));
+	system_database->attachTable("metrics", StorageSystemMetrics::create("metrics"));
+	system_database->attachTable("merges", StorageSystemMerges::create("merges"));
+	system_database->attachTable("replicas", StorageSystemReplicas::create("replicas"));
 	system_database->attachTable("replication_queue", StorageSystemReplicationQueue::create("replication_queue"));
 	system_database->attachTable("dictionaries", StorageSystemDictionaries::create("dictionaries"));
-	system_database->attachTable("columns",   	StorageSystemColumns::create("columns"));
-	system_database->attachTable("functions", 	StorageSystemFunctions::create("functions"));
-	system_database->attachTable("clusters", 	StorageSystemClusters::create("clusters", *global_context));
-	system_database->attachTable("build_options", 	StorageSystemBuildOptions::create("build_options"));
+	system_database->attachTable("columns", StorageSystemColumns::create("columns"));
+	system_database->attachTable("functions", StorageSystemFunctions::create("functions"));
+	system_database->attachTable("clusters", StorageSystemClusters::create("clusters", *global_context));
+	system_database->attachTable("build_options", StorageSystemBuildOptions::create("build_options"));
 
 	if (has_zookeeper)
 		system_database->attachTable("zookeeper", StorageSystemZooKeeper::create("zookeeper"));
@@ -377,17 +388,14 @@ int Server::main(const std::vector<std::string> & args)
 		  * It is important to do early, not in destructor of Context, because
 		  *  table engines could use Context on destroy.
 		  */
-		LOG_INFO(log, "Shutting down storages.");
-		global_context->shutdown();
-		LOG_DEBUG(log, "Shutted down storages.");
+		LOG_INFO(log, "Shutting down storages."); global_context->shutdown(); LOG_DEBUG(log, "Shutted down storages.");
 
 		/** Explicitly destroy Context. It is more convenient than in destructor of Server, becuase logger is still available.
 		  * At this moment, no one could own shared part of Context.
 		  */
 		global_context.reset();
 
-		LOG_DEBUG(log, "Destroyed global context.");
-	);
+		LOG_DEBUG(log, "Destroyed global context."););
 
 	{
 		Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
@@ -417,116 +425,105 @@ int Server::main(const std::vector<std::string> & args)
 
 		for (const auto & listen_host : listen_hosts)
 		{
+			/// For testing purposes, user may omit tcp_port or http_port in configuration file.
 
-		/// For testing purposes, user may omit tcp_port or http_port in configuration file.
-
-		/// HTTP
-		if (config().has("http_port"))
-		{
-			Poco::Net::SocketAddress http_socket_address;
-
-			try
+			/// HTTP
+			if (config().has("http_port"))
 			{
-				http_socket_address = Poco::Net::SocketAddress(listen_host, config().getInt("http_port"));
-			}
-			catch (const Poco::Net::DNSException & e)
-			{
-				/// Better message when IPv6 is disabled on host.
-				if (e.code() == EAI_FAMILY
-#if defined(EAI_ADDRFAMILY)
-					|| e.code() == EAI_ADDRFAMILY
-#endif
-				)
+				Poco::Net::SocketAddress http_socket_address;
+
+				try
 				{
-					LOG_ERROR(log, "Cannot resolve listen_host (" << listen_host + "), error: " << e.message() << ". "
-						"If it is an IPv6 address and your host has disabled IPv6, then consider to specify IPv4 address to listen in <listen_host> element of configuration file. Example: <listen_host>0.0.0.0</listen_host>");
+					http_socket_address = Poco::Net::SocketAddress(listen_host, config().getInt("http_port"));
+				}
+				catch (const Poco::Net::DNSException & e)
+				{
+					/// Better message when IPv6 is disabled on host.
+					if (e.code() == EAI_FAMILY
+#if defined(EAI_ADDRFAMILY)
+						|| e.code() == EAI_ADDRFAMILY
+#endif
+						)
+					{
+						LOG_ERROR(log,
+							"Cannot resolve listen_host (" << listen_host + "), error: " << e.message()
+														   << ". "
+															  "If it is an IPv6 address and your host has disabled IPv6, then consider to "
+															  "specify IPv4 address to listen in <listen_host> element of configuration "
+															  "file. Example: <listen_host>0.0.0.0</listen_host>");
+					}
+
+					throw;
 				}
 
-				throw;
-			}
-
-			Poco::Net::ServerSocket http_socket(http_socket_address);
-			http_socket.setReceiveTimeout(settings.receive_timeout);
-			http_socket.setSendTimeout(settings.send_timeout);
-
-			servers.emplace_back(
-				new Poco::Net::HTTPServer(
-				new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"),
-				server_pool,
-				http_socket,
-				http_params));
+				Poco::Net::ServerSocket http_socket(http_socket_address);
+				http_socket.setReceiveTimeout(settings.receive_timeout);
+				http_socket.setSendTimeout(settings.send_timeout);
+				servers.emplace_back(new Poco::Net::HTTPServer(
+					new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"), server_pool, http_socket, http_params));
 
 				LOG_INFO(log, "Listening http://" + http_socket_address.toString());
-		}
+			}
 
-		/// TCP
-		if (config().has("tcp_port"))
-		{
-			Poco::Net::SocketAddress tcp_address(listen_host, config().getInt("tcp_port"));
-			Poco::Net::ServerSocket tcp_socket(tcp_address);
-			tcp_socket.setReceiveTimeout(settings.receive_timeout);
-			tcp_socket.setSendTimeout(settings.send_timeout);
-			servers.emplace_back(
-				new Poco::Net::TCPServer(
-				new TCPConnectionFactory(*this),
-				server_pool,
-				tcp_socket,
-				new Poco::Net::TCPServerParams));
+			/// TCP
+			if (config().has("tcp_port"))
+			{
+				Poco::Net::SocketAddress tcp_address(listen_host, config().getInt("tcp_port"));
+				Poco::Net::ServerSocket tcp_socket(tcp_address);
+				tcp_socket.setReceiveTimeout(settings.receive_timeout);
+				tcp_socket.setSendTimeout(settings.send_timeout);
+				servers.emplace_back(
+					new Poco::Net::TCPServer(new TCPConnectionFactory(*this), server_pool, tcp_socket, new Poco::Net::TCPServerParams));
 
 				LOG_INFO(log, "Listening tcp: " + tcp_address.toString());
-		}
+			}
 
 
-		/// At least one of TCP and HTTP servers must be created.
-		if (servers.empty())
-			throw Exception("No 'tcp_port' and 'http_port' is specified in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+			/// At least one of TCP and HTTP servers must be created.
+			if (servers.empty())
+				throw Exception("No 'tcp_port' and 'http_port' is specified in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-		/// Interserver IO HTTP
-		if (config().has("interserver_http_port"))
-		{
-			Poco::Net::SocketAddress interserver_address(listen_host, config().getInt("interserver_http_port"));
-			Poco::Net::ServerSocket interserver_io_http_socket(interserver_address);
-			interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
-			interserver_io_http_socket.setSendTimeout(settings.send_timeout);
-			servers.emplace_back(
-				new Poco::Net::HTTPServer(
-				new HTTPRequestHandlerFactory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
-				server_pool,
-				interserver_io_http_socket,
-				http_params));
+			/// Interserver IO HTTP
+			if (config().has("interserver_http_port"))
+			{
+				Poco::Net::SocketAddress interserver_address(listen_host, config().getInt("interserver_http_port"));
+				Poco::Net::ServerSocket interserver_io_http_socket(interserver_address);
+				interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
+				interserver_io_http_socket.setSendTimeout(settings.send_timeout);
+				servers.emplace_back(new Poco::Net::HTTPServer(
+					new HTTPRequestHandlerFactory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
+					server_pool,
+					interserver_io_http_socket,
+					http_params));
 				LOG_INFO(log, "Listening interserver: " + interserver_address.toString());
+			}
 		}
-
-	}
 
 		for (auto & server : servers)
 			server->start();
 
 		LOG_INFO(log, "Ready for connections.");
 
-		SCOPE_EXIT(
-			LOG_DEBUG(log, "Received termination signal.");
+		SCOPE_EXIT(LOG_DEBUG(log, "Received termination signal.");
 
-			if (has_resharding_worker)
-			{
-				LOG_INFO(log, "Shutting down resharding thread");
-				auto & resharding_worker = global_context->getReshardingWorker();
-				if (resharding_worker.isStarted())
-					resharding_worker.shutdown();
-				LOG_DEBUG(log, "Shut down resharding thread");
-			}
+				   if (has_resharding_worker) {
+					   LOG_INFO(log, "Shutting down resharding thread");
+					   auto & resharding_worker = global_context->getReshardingWorker();
+					   if (resharding_worker.isStarted())
+						   resharding_worker.shutdown();
+					   LOG_DEBUG(log, "Shut down resharding thread");
+				   }
 
-			LOG_DEBUG(log, "Waiting for current connections to close.");
+				   LOG_DEBUG(log, "Waiting for current connections to close.");
 
-			is_cancelled = true;
+				   is_cancelled = true;
 
-			for (auto & server : servers)
-				server->stop();
+				   for (auto & server
+						: servers) server->stop();
 
-			LOG_DEBUG(log, "Closed all connections.");
+				   LOG_DEBUG(log, "Closed all connections.");
 
-			config_reloader.reset();
-		);
+				   config_reloader.reset(););
 
 		/// try to load dictionaries immediately, throw on error and die
 		try
@@ -546,18 +543,17 @@ int Server::main(const std::vector<std::string> & args)
 		/// This object will periodically calculate some metrics.
 		AsynchronousMetrics async_metrics(*global_context);
 
-		system_database->attachTable("asynchronous_metrics", StorageSystemAsynchronousMetrics::create("asynchronous_metrics", async_metrics));
+		system_database->attachTable(
+			"asynchronous_metrics", StorageSystemAsynchronousMetrics::create("asynchronous_metrics", async_metrics));
 
-		const auto metrics_transmitter = config().getBool("use_graphite", true)
-			? std::make_unique<MetricsTransmitter>(async_metrics)
-			: nullptr;
+		const auto metrics_transmitter
+			= config().getBool("use_graphite", true) ? std::make_unique<MetricsTransmitter>(async_metrics) : nullptr;
 
 		waitForTerminationRequest();
 	}
 
 	return Application::EXIT_OK;
 }
-
 }
 
 YANDEX_APP_SERVER_MAIN_FUNC(DB::Server, mainEntryClickHouseServer);
