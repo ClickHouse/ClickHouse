@@ -1,3 +1,5 @@
+option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
+
 if (NOT USE_INTERNAL_ZLIB_LIBRARY)
 	find_package (ZLIB)
 	if (ZLIB_FOUND)

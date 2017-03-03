@@ -56,6 +56,8 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 #endif
 
 	Poco::Net::HTTPRequest request(method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+	request.setHost(uri.getHost()); // use original, not resolved host name in header
+
 	if (out_stream_callback)
 		request.setChunkedTransferEncoding(true);
 

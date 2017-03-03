@@ -6,5 +6,5 @@ find_library (ICUDATA icudata PATHS ${ICU_PATHS})
 set (ICU_LIBS ${ICUI18N} ${ICUUC} ${ICUDATA})
 
 find_path (ICU_INCLUDE_DIR NAMES unicode/unistr.h PATHS ${ICU_INCLUDE_PATHS})
-message(STATUS "Using icu: ${ICU_INCLUDE_DIR} : ${ICU_LIBS}")
+message (STATUS "Using icu: ${ICU_INCLUDE_DIR} : ${ICU_LIBS}")
 include_directories (${ICU_INCLUDE_DIR})
