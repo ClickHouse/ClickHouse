@@ -54,10 +54,10 @@ void NO_INLINE Set::insertFromBlockImpl(
 	state.init(key_columns);
 	size_t keys_size = key_columns.size();
 
-	/// Для всех строчек
+	/// For all rows
 	for (size_t i = 0; i < rows; ++i)
 	{
-		/// Строим ключ
+		/// Obtain a key to insert to the set
 		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
 
 		typename Method::Data::iterator it = method.data.find(key);
@@ -131,7 +131,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 
 	size_t rows = block.rows();
 
-	/// Какую структуру данных для множества использовать?
+	/// Choose data structure to use for the set.
 	if (empty())
 		data.init(data.chooseMethod(key_columns, key_sizes));
 
@@ -149,7 +149,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 
 	if (create_ordered_set)
 		for (size_t i = 0; i < rows; ++i)
-			ordered_set_elements->push_back((*key_columns[0])[i]); /// ordered_set для индекса работает только если IN по одному ключу, а не кортажам
+			ordered_set_elements->push_back((*key_columns[0])[i]); /// ordered_set for index works only for single key, not for tuples
 
 	if (!checkSetSizeLimits())
 	{
@@ -191,7 +191,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 {
 	data_types = types;
 
-	/// Засунем множество в блок.
+	/// Will form a block with values from the set.
 	Block block;
 	for (size_t i = 0, size = data_types.size(); i < size; ++i)
 	{
@@ -272,7 +272,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
 	Poco::ScopedReadRWLock lock(rwlock);
 
-	/// Если множество пусто
+	/// If the set is empty.
 	if (data_types.empty())
 	{
 		if (negative)
