@@ -85,7 +85,7 @@ public:
 		{
 			setResponseDefaultHeaders(response);
 			response.setContentType("text/html; charset=UTF-8");
-			const std::string data = Poco::Util::Application::instance().config().getString("http_server_default_responce", "Ok.\n");
+			const std::string data = Poco::Util::Application::instance().config().getString("http_server_default_response", "Ok.\n");
 			response.sendBuffer(data.data(), data.size());
 		}
 		catch (...)
