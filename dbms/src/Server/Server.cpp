@@ -75,6 +75,26 @@ public:
 	}
 };
 
+/// Response with custom string. Can be used for browser.
+class RootRequestHandler : public Poco::Net::HTTPRequestHandler
+{
+public:
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
+	{
+		try
+		{
+			setResponseDefaultHeaders(response);
+			response.setContentType("text/html; charset=UTF-8");
+			const std::string data = Poco::Util::Application::instance().config().getString("http_server_default_response", "Ok.\n");
+			response.sendBuffer(data.data(), data.size());
+		}
+		catch (...)
+		{
+			tryLogCurrentException("RootRequestHandler");
+		}
+	}
+};
+
 
 /// Response with 404 and verbose description.
 class NotFoundHandler : public Poco::Net::HTTPRequestHandler
@@ -132,7 +152,9 @@ public:
 
 		if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
 		{
-			if (uri == "/" || uri == "/ping")
+			if (uri == "/")
+				return new RootRequestHandler;
+			if (uri == "/ping")
 				return new PingRequestHandler;
 			else if (startsWith(uri, "/replicas_status"))
 				return new ReplicasStatusHandler(*server.global_context);
