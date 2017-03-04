@@ -69,13 +69,10 @@ static std::vector<Pattern> readPatterns(const std::string & section)
 	config.keys(section, keys);
 
 	for (const auto & key : keys) {
-		const String key_path = section + "." + key;
-
-		/// Read custom patterns.
 		if (startsWith(key, "pattern") ||
 		    startsWith(key, "default"))
 		{
-			result.push_back(readOnePattern(config, key_path));
+			result.push_back(readOnePattern(config, section + "." + key));
 		}
 	}
 
