@@ -75,7 +75,7 @@ public:
 	}
 };
 
-/// Response with custom string. Can be used for browser
+/// Response with custom string. Can be used for browser.
 class RootRequestHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
