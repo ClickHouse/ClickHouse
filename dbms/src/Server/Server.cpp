@@ -29,6 +29,7 @@
 #include <DB/Storages/System/StorageSystemDictionaries.h>
 #include <DB/Storages/System/StorageSystemEvents.h>
 #include <DB/Storages/System/StorageSystemFunctions.h>
+#include <DB/Storages/System/StorageSystemGraphite.h>
 #include <DB/Storages/System/StorageSystemMerges.h>
 #include <DB/Storages/System/StorageSystemMetrics.h>
 #include <DB/Storages/System/StorageSystemNumbers.h>
@@ -391,6 +392,7 @@ int Server::main(const std::vector<std::string> & args)
 	system_database->attachTable("functions", StorageSystemFunctions::create("functions"));
 	system_database->attachTable("clusters", StorageSystemClusters::create("clusters", *global_context));
 	system_database->attachTable("build_options", StorageSystemBuildOptions::create("build_options"));
+	system_database->attachTable("graphite", StorageSystemGraphite::create("graphite"));
 
 	if (has_zookeeper)
 		system_database->attachTable("zookeeper", StorageSystemZooKeeper::create("zookeeper"));
