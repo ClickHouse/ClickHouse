@@ -456,7 +456,8 @@ bool SocketImpl::poll(const Poco::Timespan& timeout, int mode)
 	while (rc < 0 && lastError() == POCO_EINTR);
 
 	::close(epollfd);
-	if (rc < 0) error();
+	if (rc < 0)
+		error();
 	return rc > 0;
 
 #elif defined(POCO_HAVE_FD_POLL)
