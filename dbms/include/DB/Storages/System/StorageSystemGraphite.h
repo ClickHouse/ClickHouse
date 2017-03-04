@@ -6,6 +6,7 @@
 namespace DB
 {
 
+/// Provides information about graphite configuration.
 class StorageSystemGraphite
 	: private ext::shared_ptr_helper<StorageSystemGraphite>
 	, public IStorage
