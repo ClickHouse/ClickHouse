@@ -105,6 +105,7 @@
 	\
 	M(StorageBufferFlush) \
 	M(StorageBufferErrorOnFlush) \
+	M(StorageBufferPassedAllMinThresholds) \
 	M(StorageBufferPassedTimeMaxThreshold) \
 	M(StorageBufferPassedRowsMaxThreshold) \
 	M(StorageBufferPassedBytesMaxThreshold) \
