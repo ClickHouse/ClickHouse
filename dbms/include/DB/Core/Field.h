@@ -116,11 +116,6 @@ public:
 		create(data, size);
 	}
 
-	Field(const std::string & str)
-	{
-		create(str.data(), str.size());
-	}
-
 	Field(const unsigned char * data, size_t size)
 	{
 		create(data, size);
