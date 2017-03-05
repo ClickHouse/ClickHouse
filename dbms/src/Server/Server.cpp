@@ -392,7 +392,7 @@ int Server::main(const std::vector<std::string> & args)
 	system_database->attachTable("functions", StorageSystemFunctions::create("functions"));
 	system_database->attachTable("clusters", StorageSystemClusters::create("clusters", *global_context));
 	system_database->attachTable("build_options", StorageSystemBuildOptions::create("build_options"));
-	system_database->attachTable("graphite", StorageSystemGraphite::create("graphite"));
+	system_database->attachTable("graphite_retentions", StorageSystemGraphite::create("graphite_retentions"));
 
 	if (has_zookeeper)
 		system_database->attachTable("zookeeper", StorageSystemZooKeeper::create("zookeeper"));
