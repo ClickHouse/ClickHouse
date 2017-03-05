@@ -6434,7 +6434,7 @@ There are %%If%% and %%Array%% combinators. See the sections below.
 
 The suffix -%%If%% can be appended to the name of any aggregate function. In this case, the aggregate function accepts an extra argument - a condition (Uint8 type). The aggregate function processes only the rows that trigger the condition. If the condition was not triggered even once, it returns a default value (usually zeros or empty strings).
 
-Examples: %%countIf(cond)%%, %%avgIf(x, cond)%%, %%quantilesTimingIf(level1, level2)(x, cond)%%, %%argMinIf(arg, val, cond)%% and so on.
+Examples: %%sumIf(column, cond)%%, %%countIf(cond)%%, %%avgIf(x, cond)%%, %%quantilesTimingIf(level1, level2)(x, cond)%%, %%argMinIf(arg, val, cond)%% and so on.
 
 You can use aggregate functions to calculate aggregates for multiple conditions at once, without using subqueries and JOINs.
 For example, in Yandex.Metrica, we use conditional aggregate functions for implementing segment comparison functionality.
