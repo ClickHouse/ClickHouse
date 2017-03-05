@@ -27,6 +27,8 @@ struct Pattern
 	std::string regexp;
 	std::string function;
 	std::vector<Retention> retentions;
+	UInt16 priority;
+	UInt8 is_default;
 };
 
 static Pattern readOnePattern(
@@ -65,14 +67,24 @@ static std::vector<Pattern> readPatterns(const std::string & section)
 	const AbstractConfiguration & config = Application::instance().config();
 	AbstractConfiguration::Keys keys;
 	std::vector<Pattern> result;
+	size_t count = 0;
 
 	config.keys(section, keys);
 
 	for (const auto & key : keys) {
-		if (startsWith(key, "pattern") ||
-		    startsWith(key, "default"))
+		if (startsWith(key, "pattern"))
 		{
-			result.push_back(readOnePattern(config, section + "." + key));
+			Pattern pattern(readOnePattern(config, section + "." + key));
+			pattern.is_default = false;
+			pattern.priority = ++count;
+			result.push_back(pattern);
+		}
+		else if (startsWith(key, "default"))
+		{
+			Pattern pattern(readOnePattern(config, section + "." + key));
+			pattern.is_default = true;
+			pattern.priority = std::numeric_limits<UInt16>::max();
+			result.push_back(pattern);
 		}
 	}
 
@@ -101,11 +113,13 @@ static Strings getAllGraphiteSections()
 StorageSystemGraphite::StorageSystemGraphite(const std::string & name_)
 	: name(name_)
 	, columns {
-		{"conf_name", std::make_shared<DataTypeString>()},
-		{"regexp",    std::make_shared<DataTypeString>()},
-		{"function",  std::make_shared<DataTypeString>()},
-		{"age",		  std::make_shared<DataTypeUInt64>()},
-		{"precision", std::make_shared<DataTypeUInt64>()}}
+		{"config_name", std::make_shared<DataTypeString>()},
+		{"regexp",      std::make_shared<DataTypeString>()},
+		{"function",    std::make_shared<DataTypeString>()},
+		{"age",         std::make_shared<DataTypeUInt64>()},
+		{"precision",   std::make_shared<DataTypeUInt64>()},
+		{"priority",    std::make_shared<DataTypeUInt16>()},
+		{"is_default",  std::make_shared<DataTypeUInt8>()}}
 {
 }
 
@@ -129,7 +143,7 @@ BlockInputStreams StorageSystemGraphite::read(
 	Block block;
 
 	ColumnWithTypeAndName col_conf_name;
-	col_conf_name.name = "conf_name";
+	col_conf_name.name = "config_name";
 	col_conf_name.type = std::make_shared<DataTypeString>();
 	col_conf_name.column = std::make_shared<ColumnString>();
 	block.insert(col_conf_name);
@@ -158,6 +172,18 @@ BlockInputStreams StorageSystemGraphite::read(
 	col_precision.column = std::make_shared<ColumnUInt64>();
 	block.insert(col_precision);
 
+	ColumnWithTypeAndName col_priority;
+	col_priority.name = "priority";
+	col_priority.type = std::make_shared<DataTypeUInt16>();
+	col_priority.column = std::make_shared<ColumnUInt16>();
+	block.insert(col_priority);
+
+	ColumnWithTypeAndName col_is_default;
+	col_is_default.name = "is_default";
+	col_is_default.type = std::make_shared<DataTypeUInt8>();
+	col_is_default.column = std::make_shared<ColumnUInt8>();
+	block.insert(col_is_default);
+
 	Strings sections = getAllGraphiteSections();
 	for (const auto & section : sections)
 	{
@@ -171,6 +197,8 @@ BlockInputStreams StorageSystemGraphite::read(
 				col_function.column->insert(Field(pattern.function));
 				col_age.column->insert(nearestFieldType(ret.age));
 				col_precision.column->insert(nearestFieldType(ret.precision));
+				col_priority.column->insert(nearestFieldType(pattern.priority));
+				col_is_default.column->insert(nearestFieldType(pattern.is_default));
 			}
 		}
 	}
