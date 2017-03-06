@@ -1353,12 +1353,20 @@ private:
 		return false;
 	}
 
+	static const ColumnPtr materializeColumnIfConst(const ColumnPtr & column)
+	{
+		if (auto res = column->convertToFullColumnIfConst())
+			return res;
+		return column;
+	}
+
 	static const ColumnPtr makeNullableColumnIfNot(const ColumnPtr & column)
 	{
 		if (column->isNullable())
 			return column;
 
-		return std::make_shared<ColumnNullable>(column, ColumnConstUInt8(column->size(), 0).convertToFullColumn());
+		return std::make_shared<ColumnNullable>(
+			materializeColumnIfConst(column), ColumnConstUInt8(column->size(), 0).convertToFullColumn());
 	}
 
 	static const DataTypePtr makeNullableDataTypeIfNot(const DataTypePtr & type)
@@ -1411,7 +1419,8 @@ private:
 		{
 			if (cond_col)
 			{
-				block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(arg_else.column, arg_cond.column->clone());
+				block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(
+					materializeColumnIfConst(arg_else.column), arg_cond.column->clone());
 			}
 			else if (cond_const_col)
 			{
@@ -1441,7 +1450,8 @@ private:
 				for (size_t i = 0; i < size; ++i)
 					negated_null_map_data[i] = !null_map_data[i];
 
-				block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(arg_then.column, negated_null_map);
+				block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(
+					materializeColumnIfConst(arg_then.column), negated_null_map);
 			}
 			else if (cond_const_col)
 			{
