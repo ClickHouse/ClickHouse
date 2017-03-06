@@ -44,6 +44,9 @@ public:
 			if (!typeid_cast<ColumnOffsets_t *>(&*offsets_column))
 				throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::ILLEGAL_COLUMN);
 		}
+
+		if (nested_column->isConst())
+			throw Exception{"ColumnArray cannot have constant nested column", ErrorCodes::LOGICAL_ERROR};
 	}
 
 	std::string getName() const override { return "ColumnArray(" + getData().getName() + ")"; }
