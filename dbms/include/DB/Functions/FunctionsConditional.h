@@ -1550,9 +1550,19 @@ public:
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (typeid_cast<const DataTypeNull *>(arguments[0].get())
-			|| (typeid_cast<const DataTypeNull *>(arguments[1].get()) && typeid_cast<const DataTypeNull *>(arguments[2].get())))
+		bool cond_is_null = arguments[0]->isNull();
+		bool then_is_null = arguments[1]->isNull();
+		bool else_is_null = arguments[2]->isNull();
+
+		if (cond_is_null
+			|| (then_is_null && else_is_null))
 			return std::make_shared<DataTypeNull>();
+
+		if (then_is_null)
+			return makeNullableDataTypeIfNot(getNestedDataType(arguments[2]));
+
+		if (else_is_null)
+			return makeNullableDataTypeIfNot(getNestedDataType(arguments[1]));
 
 		bool cond_is_nullable = arguments[0]->isNullable();
 		bool then_is_nullable = arguments[1]->isNullable();
