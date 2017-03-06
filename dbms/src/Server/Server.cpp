@@ -3,12 +3,12 @@
 #include <memory>
 #include <sys/resource.h>
 #include <Poco/DirectoryIterator.h>
+#include <Poco/Net/Context.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/NetException.h>
-#include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Net/SecureServerSocket.h>
-#include <Poco/Net/Context.h>
+#include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Version.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
@@ -525,19 +525,17 @@ int Server::main(const std::vector<std::string> & args)
 					throw;
 				}
 
-	bool insecure = Poco::Util::Application::instance().config().getInt("https_server_insecure", false);
-	Poco::Net::Context::Params ssl_params;
-	ssl_params.loadDefaultCAs = true;
-	ssl_params.verificationMode = insecure ? Poco::Net::Context::VERIFY_NONE : Poco::Net::Context::VERIFY_RELAXED;
-	//dhParamsFile
-	//cipherList
-	Poco::Net::Context::Ptr ptr_context(new Poco::Net::Context(Poco::Net::Context::SERVER_USE,
-		ssl_params
-		));
-	ptr_context->enableSessionCache(true);
+				bool insecure = Poco::Util::Application::instance().config().getInt("https_server_insecure", false);
+				Poco::Net::Context::Params ssl_params;
+				ssl_params.loadDefaultCAs = true;
+				ssl_params.verificationMode = insecure ? Poco::Net::Context::VERIFY_NONE : Poco::Net::Context::VERIFY_RELAXED;
+				//dhParamsFile
+				//cipherList
+				Poco::Net::Context::Ptr ptr_context(new Poco::Net::Context(Poco::Net::Context::SERVER_USE, ssl_params));
+				ptr_context->enableSessionCache(true);
 #if POCO_VERSION >= 0x01070000
-	ptr_context->disableProtocols(Poco::Net::Context::PROTO_SSLV2 | Poco::Net::Context::PROTO_SSLV3);
-	ptr_context->preferServerCiphers();
+				ptr_context->disableProtocols(Poco::Net::Context::PROTO_SSLV2 | Poco::Net::Context::PROTO_SSLV3);
+				ptr_context->preferServerCiphers();
 #endif
 
 				Poco::Net::SecureServerSocket http_socket(http_socket_address);
