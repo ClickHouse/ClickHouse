@@ -1431,16 +1431,17 @@ private:
 		{
 			if (cond_col)
 			{
-				auto negated_null_map = std::make_shared<ColumnUInt8>();
 				size_t size = block.rows();
-				auto & null_map_data = static_cast<const ColumnUInt8 &>(*arg_cond.column).getData();
+				auto & null_map_data = cond_col->getData();
+
+				auto negated_null_map = std::make_shared<ColumnUInt8>();
 				auto & negated_null_map_data = negated_null_map->getData();
 				negated_null_map_data.resize(size);
 
 				for (size_t i = 0; i < size; ++i)
 					negated_null_map_data[i] = !null_map_data[i];
 
-				block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(arg_else.column, negated_null_map);
+				block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(arg_then.column, negated_null_map);
 			}
 			else if (cond_const_col)
 			{
