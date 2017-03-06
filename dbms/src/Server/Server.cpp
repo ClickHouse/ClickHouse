@@ -453,39 +453,42 @@ int Server::main(const std::vector<std::string> & args)
 			listen_hosts.emplace_back("127.0.0.1");
 		}
 
+		auto make_socket_address = [&](const std::string & host, std::uint16_t port) {
+			Poco::Net::SocketAddress socket_address;
+			try
+			{
+				socket_address = Poco::Net::SocketAddress(host, port);
+			}
+			catch (const Poco::Net::DNSException & e)
+			{
+				/// Better message when IPv6 is disabled on host.
+				if (e.code() == EAI_FAMILY
+#if defined(EAI_ADDRFAMILY)
+					|| e.code() == EAI_ADDRFAMILY
+#endif
+					)
+				{
+					LOG_ERROR(log,
+						"Cannot resolve listen_host (" << host << "), error: " << e.message()
+													   << ". "
+														  "If it is an IPv6 address and your host has disabled IPv6, then consider to "
+														  "specify IPv4 address to listen in <listen_host> element of configuration "
+														  "file. Example: <listen_host>0.0.0.0</listen_host>");
+				}
+
+				throw;
+			}
+			return socket_address;
+		};
+
 		for (const auto & listen_host : listen_hosts)
 		{
-			/// For testing purposes, user may omit tcp_port or http_port in configuration file.
+			/// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
 
 			/// HTTP
 			if (config().has("http_port"))
 			{
-				Poco::Net::SocketAddress http_socket_address;
-
-				try
-				{
-					http_socket_address = Poco::Net::SocketAddress(listen_host, config().getInt("http_port"));
-				}
-				catch (const Poco::Net::DNSException & e)
-				{
-					/// Better message when IPv6 is disabled on host.
-					if (e.code() == EAI_FAMILY
-#if defined(EAI_ADDRFAMILY)
-						|| e.code() == EAI_ADDRFAMILY
-#endif
-						)
-					{
-						LOG_ERROR(log,
-							"Cannot resolve listen_host (" << listen_host << "), error: " << e.message()
-														   << ". "
-															  "If it is an IPv6 address and your host has disabled IPv6, then consider to "
-															  "specify IPv4 address to listen in <listen_host> element of configuration "
-															  "file. Example: <listen_host>0.0.0.0</listen_host>");
-					}
-
-					throw;
-				}
-
+				Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("http_port"));
 				Poco::Net::ServerSocket http_socket(http_socket_address);
 				http_socket.setReceiveTimeout(settings.receive_timeout);
 				http_socket.setSendTimeout(settings.send_timeout);
@@ -499,32 +502,7 @@ int Server::main(const std::vector<std::string> & args)
 			/// HTTPS
 			if (config().has("https_port"))
 			{
-				Poco::Net::SocketAddress http_socket_address;
-
-				try
-				{
-					http_socket_address = Poco::Net::SocketAddress(listen_host, config().getInt("https_port"));
-				}
-				catch (const Poco::Net::DNSException & e)
-				{
-					/// Better message when IPv6 is disabled on host.
-					if (e.code() == EAI_FAMILY
-#if defined(EAI_ADDRFAMILY)
-						|| e.code() == EAI_ADDRFAMILY
-#endif
-						)
-					{
-						LOG_ERROR(log,
-							"Cannot resolve listen_host (" << listen_host << "), error: " << e.message()
-														   << ". "
-															  "If it is an IPv6 address and your host has disabled IPv6, then consider to "
-															  "specify IPv4 address to listen in <listen_host> element of configuration "
-															  "file. Example: <listen_host>0.0.0.0</listen_host>");
-					}
-
-					throw;
-				}
-
+				Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("https_port"));
 				bool insecure = Poco::Util::Application::instance().config().getInt("https_server_insecure", false);
 				Poco::Net::Context::Params ssl_params;
 				ssl_params.loadDefaultCAs = true;
@@ -550,7 +528,7 @@ int Server::main(const std::vector<std::string> & args)
 			/// TCP
 			if (config().has("tcp_port"))
 			{
-				Poco::Net::SocketAddress tcp_address(listen_host, config().getInt("tcp_port"));
+				Poco::Net::SocketAddress tcp_address = make_socket_address(listen_host, config().getInt("tcp_port"));
 				Poco::Net::ServerSocket tcp_socket(tcp_address);
 				tcp_socket.setReceiveTimeout(settings.receive_timeout);
 				tcp_socket.setSendTimeout(settings.send_timeout);
@@ -568,7 +546,7 @@ int Server::main(const std::vector<std::string> & args)
 			/// Interserver IO HTTP
 			if (config().has("interserver_http_port"))
 			{
-				Poco::Net::SocketAddress interserver_address(listen_host, config().getInt("interserver_http_port"));
+				Poco::Net::SocketAddress interserver_address = make_socket_address(listen_host, config().getInt("interserver_http_port"));
 				Poco::Net::ServerSocket interserver_io_http_socket(interserver_address);
 				interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
 				interserver_io_http_socket.setSendTimeout(settings.send_timeout);
