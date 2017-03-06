@@ -10,6 +10,18 @@
 
 
 	<http_port>8123</http_port>
+
+	<https_port>8443</https_port>
+	<openSSL>
+		<server>
+			<!-- openssl req -subj "/CN=localhost/O=My Company Name LTD./C=US" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout server.key -out server.crt -->
+			<certificateFile>server.crt</certificateFile>
+			<privateKeyFile>server.key</privateKeyFile>
+			<!-- openssl dhparam -out dhparam.pem 4096 -->
+			<dhParamsFile>dhparam.pem</dhParamsFile>
+		</server>
+	</openSSL>
+
 	<tcp_port>9000</tcp_port>
 
 	<!-- Port for communication between replicas. Used for data exchange. -->

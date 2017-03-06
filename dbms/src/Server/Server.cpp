@@ -529,8 +529,6 @@ int Server::main(const std::vector<std::string> & args)
 				Poco::Net::Context::Params ssl_params;
 				ssl_params.loadDefaultCAs = true;
 				ssl_params.verificationMode = insecure ? Poco::Net::Context::VERIFY_NONE : Poco::Net::Context::VERIFY_RELAXED;
-				//dhParamsFile
-				//cipherList
 				Poco::Net::Context::Ptr ptr_context(new Poco::Net::Context(Poco::Net::Context::SERVER_USE, ssl_params));
 				ptr_context->enableSessionCache(true);
 #if POCO_VERSION >= 0x01070000
