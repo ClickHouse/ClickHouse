@@ -17,7 +17,12 @@
 
 namespace ProfileEvents
 {
+	extern const Event StorageBufferFlush;
 	extern const Event StorageBufferErrorOnFlush;
+	extern const Event StorageBufferPassedAllMinThresholds;
+	extern const Event StorageBufferPassedTimeMaxThreshold;
+	extern const Event StorageBufferPassedRowsMaxThreshold;
+	extern const Event StorageBufferPassedBytesMaxThreshold;
 }
 
 namespace CurrentMetrics
@@ -390,9 +395,31 @@ bool StorageBuffer::checkThresholds(const Buffer & buffer, time_t current_time, 
 
 bool StorageBuffer::checkThresholdsImpl(size_t rows, size_t bytes, time_t time_passed) const
 {
-	return
-	       (time_passed > min_thresholds.time && rows > min_thresholds.rows && bytes > min_thresholds.bytes)
-		|| (time_passed > max_thresholds.time || rows > max_thresholds.rows || bytes > max_thresholds.bytes);
+	if (time_passed > min_thresholds.time && rows > min_thresholds.rows && bytes > min_thresholds.bytes)
+	{
+		ProfileEvents::increment(ProfileEvents::StorageBufferPassedAllMinThresholds);
+		return true;
+	}
+
+	if (time_passed > max_thresholds.time)
+	{
+		ProfileEvents::increment(ProfileEvents::StorageBufferPassedTimeMaxThreshold);
+		return true;
+	}
+
+	if (rows > max_thresholds.rows)
+	{
+		ProfileEvents::increment(ProfileEvents::StorageBufferPassedRowsMaxThreshold);
+		return true;
+	}
+
+	if (bytes > max_thresholds.bytes)
+	{
+		ProfileEvents::increment(ProfileEvents::StorageBufferPassedBytesMaxThreshold);
+		return true;
+	}
+
+	return false;
 }
 
 
@@ -438,6 +465,8 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 
 		CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_to_write.rows());
 		CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
+
+		ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
 
 		LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
 

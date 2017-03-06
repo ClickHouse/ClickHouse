@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" style="background-color: #FFF;">
+<head>
+	<title>ClickHouse meetup в Санкт-Петербурге</title>
+	<meta charset="utf-8">
+	<meta http-equiv="x-ua-compatible" content="ie=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="shower/themes/ribbon/styles/screen-16x10.css">
+</head>
+<body class="shower list">
+	<header class="caption">
+		<h1>ClickHouse meetup в Санкт-Петербурге</h1>
+	</header>
+
+	<section class="slide" id="cover">
+		<h1 style="margin-top: 200px">ClickHouse meetup<br/>в Санкт-Петербурге</h1>
+	</section>
+	
+	<section class="slide">
+		<h2>ClickHouse: настоящее и будущее</h2>
+	</section>
+
+	<section class="slide">
+		<h2>Команда</h2>
+		<p>Теперь 5 разработчиков.</p>
+		<p>
+			<img src="pictures/milovidov.jpg" style="height:150px;">
+			<img src="pictures/vludv.jpg" style="height:150px;">
+			<img src="pictures/ztlpn.jpg" style="height:150px;">
+			<img src="pictures/proller.jpg" style="height:150px;">
+			<img src="pictures/stanly.jpg" style="height:150px;">
+		</p>
+	</section>
+
+<section class="slide">
+	
+<h2>В предыдущих сериях</h2>
+
+<p>&mdash; HTTP и executable источники;</p>
+<p>&mdash; оптимизация мержей, вертикальный мерж;</p>
+<p>&mdash; трассировка распределённых запросов;</p>
+<p>&mdash; clickhouse-local;</p>
+<p>&mdash; операторы BETWEEN, ||;</p>
+<p>&mdash; функции UUID - text;</p>
+
+</section>
+<section class="slide">
+
+<h2>Новое в языке запросов</h2>
+
+<p>&mdash; KILL QUERY;</p>
+<p>&mdash; LIMIT BY;</p>
+<p>&mdash; SELECT INTO OUTFILE;</p>
+
+</section>
+<section class="slide">
+
+<h2>Интерфейсы</h2>
+
+<p>&mdash; возможность получить прогресс выполнения в HTTP заголовках;</p>
+<p>&mdash; возможность пропуска ошибок в текстовых форматах;</p>
+<p>&mdash; правильные коды ответа в HTTP интерфейсе;</p>
+
+</section>
+<section class="slide">
+
+<h2>Сборка</h2>
+
+<p>&mdash; &laquo;правильная&raquo; сборка и пакеты;</p>
+<p>&mdash; Таблица system.build_options;</p>
+
+</section>
+<section class="slide">
+
+<h2>Словари</h2>
+
+<p>&mdash; производительность кэшируемых внешних словарей;</p>
+<p>&mdash; инструментирование кэшируемых внешних словарей;</p>
+<p>&mdash; HTTPS словари;</p>
+
+</section>
+<section class="slide">
+
+<h2>Инструментирование</h2>
+
+<p>&mdash; информация об использовании памяти под индекс;</p>
+<p>&mdash; информация о размере столбцов в несжатом виде;</p>
+<p>&mdash; метрики по потреблению оперативки кэшами;</p>
+<p>&mdash; метрики про мержи;</p>
+
+</section>
+<section class="slide">
+
+<h2>Оптимизации</h2>
+
+<p>&mdash; оптимизация DISTINCT;</p>
+<p>&mdash; производительность gzip в HTTP интерфейсе;</p>
+<p>&mdash; оптимизация mark cache;</p>
+
+</section>
+<section class="slide">
+
+<h2>Функции</h2>
+
+<p>&mdash; правильная логика сравнений, least, greatest;</p>
+<p>&mdash; groupUniqArray для всех типов данных;</p>
+<p>&mdash; decodeURLComponent;</p>
+
+</section>
+<section class="slide">
+
+<h2>Что-то ещё</h2>
+
+<p>&mdash; защита от случайного DROP TABLE;</p>
+<p>&mdash; use_client_time_zone; timezone в конфиге;</p>
+<p>&mdash; fsync_metadata;</p>
+
+</section>
+<section class="slide">
+
+<h2>Сообщество</h2>
+
+<p>&mdash; интеграция с Grafana, Redash, Apache Zeppelin, Superset;</p>
+<p>&mdash; правильные пакеты для CentOS, RHEL, GosLinux;</p>
+<p>&mdash; драйвер native протокола для Go и C++;</p>
+<p>&mdash; возможность передавать заголовки X-ClickHouse-*;</p>
+<p>&mdash; бенчмарки NYC Taxi, Percona (Spark);</p>
+<p>&mdash; бенчмарк Greenplum;</p>
+<p>&mdash; англоязычный Telegram чат;</p>
+<p>&mdash; встречи и доклады (Брюссель, Париж);</p>
+
+</section>
+
+	<section class="slide">
+		<h2>ClickHouse vs. Spark</h2>
+		<p>https://www.percona.com/blog/2017/02/13/clickhouse-new-opensource-columnar-database/</p>
+		<img src="pictures/spark.png" style="height:60%"/>
+	</section>
+	
+	<section class="slide">
+		<h2>ClickHouse vs. Greenplum</h2>
+		<p><img src="pictures/greenplum.png" style="width:50%"/></p>
+	</section>
+
+<section class="slide">
+
+<h2>TODO (март-апрель 2017)</h2>
+
+<p>&mdash; распределённые DDL запросы;</p>
+<p>&mdash; конфиги в ZooKeeper;</p>
+<p>&mdash; полная поддержка NULL;</p>
+
+</section>
+<section class="slide">
+
+<h2>TODO (весна-лето 2017)</h2>
+
+<p>&mdash; работоспособность ODBC драйвера под Windows;</p>
+<p>&mdash; переделать анализ запроса: правильная поддержка JOIN;</p>
+
+</section>
+
+<section class="slide">
+
+<h2>Дополнительно</h2>
+
+<p>job-clickhouse@yandex-team.ru</p>
+
+</section>
+
+	<div class="progress"></div>
+	<script src="shower/shower.min.js"></script>
+</body>
+</html>

@@ -31,7 +31,7 @@ void clientSSLInit()
 {
 	// http://stackoverflow.com/questions/18315472/https-request-in-c-using-poco
 	Poco::Net::initializeSSL();
-	bool insecure = Poco::Util::Application::instance().config().getInt("https_client_insecure", false);
+	bool insecure = Poco::Util::Application::instance().config().getBool("https_client_insecure", false);
 	Poco::SharedPtr<Poco::Net::InvalidCertificateHandler> ptr_handler(insecure
 			? dynamic_cast<Poco::Net::InvalidCertificateHandler *>(new Poco::Net::AcceptCertificateHandler(true))
 			: dynamic_cast<Poco::Net::InvalidCertificateHandler *>(new Poco::Net::RejectCertificateHandler(true)));

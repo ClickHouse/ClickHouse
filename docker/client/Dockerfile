@@ -7,6 +7,7 @@ RUN apt-get update && \
          tee /etc/apt/sources.list.d/clickhouse.list && \
     apt-get update && \
     apt-get install --allow-unauthenticated -y clickhouse-client && \
-    rm -rf /var/lib/apt/lists/* /var/cache/
+    rm -rf /var/lib/apt/lists/* /var/cache/debconf && \
+    apt-get clean
 
 ENTRYPOINT ["/usr/bin/clickhouse-client"]
