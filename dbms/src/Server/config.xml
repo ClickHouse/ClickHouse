@@ -22,7 +22,22 @@
 			<privateKeyFile>server.key</privateKeyFile>
 			<!-- openssl dhparam -out dhparam.pem 4096 -->
 			<dhParamsFile>dhparam.pem</dhParamsFile>
+			<loadDefaultCAFile>true</loadDefaultCAFile>
+			<cacheSessions>true</cacheSessions>
+			<disableProtocols>sslv2,sslv3</disableProtocols>
+			<preferServerCiphers>true</preferServerCiphers>
 		</server>
+		<client>
+			<loadDefaultCAFile>true</loadDefaultCAFile>
+			<cacheSessions>true</cacheSessions>
+			<disableProtocols>sslv2,sslv3</disableProtocols>
+			<preferServerCiphers>true</preferServerCiphers>
+			<!-- Use for self-signed: <verificationMode>none</verificationMode> -->
+			<invalidCertificateHandler>
+				<!-- Use for self-signed: <name>AcceptCertificateHandler</name> -->
+				<name>RejectCertificateHandler</name>
+			</invalidCertificateHandler>
+		</client>
 	</openSSL>
 
 	<tcp_port>9000</tcp_port>
@@ -165,9 +180,6 @@
 		 https://clickhouse.yandex/reference_en.html#External%20Dictionaries
 	-->
 	<dictionaries_config>*_dictionary.xml</dictionaries_config>
-
-	<!-- Allow connect to self-signed https servers -->
-	<!-- <https_client_insecure>true</https_client_insecure> -->
 
 	<!-- Uncomment if you want data to be compressed 30-100% better.
 		 Don't do that if you just started using ClickHouse.

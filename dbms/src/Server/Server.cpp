@@ -502,18 +502,8 @@ int Server::main(const std::vector<std::string> & args)
 			/// HTTPS
 			if (config().has("https_port"))
 			{
+				std::call_once(ssl_init_once, SSLInit);
 				Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("https_port"));
-				bool insecure = Poco::Util::Application::instance().config().getInt("https_server_insecure", false);
-				Poco::Net::Context::Params ssl_params;
-				ssl_params.loadDefaultCAs = true;
-				ssl_params.verificationMode = insecure ? Poco::Net::Context::VERIFY_NONE : Poco::Net::Context::VERIFY_RELAXED;
-				Poco::Net::Context::Ptr ptr_context(new Poco::Net::Context(Poco::Net::Context::SERVER_USE, ssl_params));
-				ptr_context->enableSessionCache(true);
-#if POCO_VERSION >= 0x01070000
-				ptr_context->disableProtocols(Poco::Net::Context::PROTO_SSLV2 | Poco::Net::Context::PROTO_SSLV3);
-				ptr_context->preferServerCiphers();
-#endif
-
 				Poco::Net::SecureServerSocket http_socket(http_socket_address);
 				http_socket.setReceiveTimeout(settings.receive_timeout);
 				http_socket.setSendTimeout(settings.send_timeout);
