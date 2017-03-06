@@ -32,6 +32,7 @@
 #include <DB/Storages/System/StorageSystemDictionaries.h>
 #include <DB/Storages/System/StorageSystemEvents.h>
 #include <DB/Storages/System/StorageSystemFunctions.h>
+#include <DB/Storages/System/StorageSystemGraphite.h>
 #include <DB/Storages/System/StorageSystemMerges.h>
 #include <DB/Storages/System/StorageSystemMetrics.h>
 #include <DB/Storages/System/StorageSystemNumbers.h>
@@ -74,6 +75,26 @@ public:
 		catch (...)
 		{
 			tryLogCurrentException("PingRequestHandler");
+		}
+	}
+};
+
+/// Response with custom string. Can be used for browser.
+class RootRequestHandler : public Poco::Net::HTTPRequestHandler
+{
+public:
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
+	{
+		try
+		{
+			setResponseDefaultHeaders(response);
+			response.setContentType("text/html; charset=UTF-8");
+			const std::string data = Poco::Util::Application::instance().config().getString("http_server_default_response", "Ok.\n");
+			response.sendBuffer(data.data(), data.size());
+		}
+		catch (...)
+		{
+			tryLogCurrentException("RootRequestHandler");
 		}
 	}
 };
@@ -135,7 +156,9 @@ public:
 
 		if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
 		{
-			if (uri == "/" || uri == "/ping")
+			if (uri == "/")
+				return new RootRequestHandler;
+			if (uri == "/ping")
 				return new PingRequestHandler;
 			else if (startsWith(uri, "/replicas_status"))
 				return new ReplicasStatusHandler(*server.global_context);
@@ -372,6 +395,7 @@ int Server::main(const std::vector<std::string> & args)
 	system_database->attachTable("functions", StorageSystemFunctions::create("functions"));
 	system_database->attachTable("clusters", StorageSystemClusters::create("clusters", *global_context));
 	system_database->attachTable("build_options", StorageSystemBuildOptions::create("build_options"));
+	system_database->attachTable("graphite_retentions", StorageSystemGraphite::create("graphite_retentions"));
 
 	if (has_zookeeper)
 		system_database->attachTable("zookeeper", StorageSystemZooKeeper::create("zookeeper"));
@@ -385,20 +409,23 @@ int Server::main(const std::vector<std::string> & args)
 		has_resharding_worker = true;
 	}
 
-	SCOPE_EXIT(
+	SCOPE_EXIT({
 		/** Ask to cancel background jobs all table engines,
 		  *  and also query_log.
 		  * It is important to do early, not in destructor of Context, because
 		  *  table engines could use Context on destroy.
 		  */
-		LOG_INFO(log, "Shutting down storages."); global_context->shutdown(); LOG_DEBUG(log, "Shutted down storages.");
+		LOG_INFO(log, "Shutting down storages.");
+		global_context->shutdown();
+		LOG_DEBUG(log, "Shutted down storages.");
 
 		/** Explicitly destroy Context. It is more convenient than in destructor of Server, becuase logger is still available.
 		  * At this moment, no one could own shared part of Context.
 		  */
 		global_context.reset();
 
-		LOG_DEBUG(log, "Destroyed global context."););
+		LOG_DEBUG(log, "Destroyed global context.");
+	});
 
 	{
 		Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
@@ -563,26 +590,29 @@ int Server::main(const std::vector<std::string> & args)
 
 		LOG_INFO(log, "Ready for connections.");
 
-		SCOPE_EXIT(LOG_DEBUG(log, "Received termination signal.");
+		SCOPE_EXIT({
+			LOG_DEBUG(log, "Received termination signal.");
 
-				   if (has_resharding_worker) {
-					   LOG_INFO(log, "Shutting down resharding thread");
-					   auto & resharding_worker = global_context->getReshardingWorker();
-					   if (resharding_worker.isStarted())
-						   resharding_worker.shutdown();
-					   LOG_DEBUG(log, "Shut down resharding thread");
-				   }
+			if (has_resharding_worker)
+			{
+				LOG_INFO(log, "Shutting down resharding thread");
+				auto & resharding_worker = global_context->getReshardingWorker();
+				if (resharding_worker.isStarted())
+					resharding_worker.shutdown();
+				LOG_DEBUG(log, "Shut down resharding thread");
+			}
 
-				   LOG_DEBUG(log, "Waiting for current connections to close.");
+			LOG_DEBUG(log, "Waiting for current connections to close.");
 
-				   is_cancelled = true;
+			is_cancelled = true;
 
-				   for (auto & server
-						: servers) server->stop();
+			for (auto & server : servers)
+				server->stop();
 
-				   LOG_DEBUG(log, "Closed all connections.");
+			LOG_DEBUG(log, "Closed all connections.");
 
-				   config_reloader.reset(););
+			config_reloader.reset();
+		});
 
 		/// try to load dictionaries immediately, throw on error and die
 		try

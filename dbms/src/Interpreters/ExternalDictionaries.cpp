@@ -159,11 +159,11 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 				if (std::chrono::system_clock::now() < update_time)
 					continue;
 
-				SCOPE_EXIT(
+				SCOPE_EXIT({
 					/// calculate next update time
 					std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
 					update_time = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
-				);
+				});
 
 				/// check source modified
 				if (current->getSource()->isModified())
