@@ -526,13 +526,14 @@ int Server::main(const std::vector<std::string> & args)
 				}
 
 	bool insecure = Poco::Util::Application::instance().config().getInt("https_server_insecure", false);
+	Poco::Net::Context::Params ssl_params;
+	ssl_params.loadDefaultCAs = true;
+	ssl_params.verificationMode = insecure ? Poco::Net::Context::VERIFY_NONE : Poco::Net::Context::VERIFY_RELAXED;
+	//dhParamsFile
+	//cipherList
 	Poco::Net::Context::Ptr ptr_context(new Poco::Net::Context(Poco::Net::Context::SERVER_USE,
-		"",
-		"",
-		"",
-		insecure ? Poco::Net::Context::VERIFY_NONE : Poco::Net::Context::VERIFY_RELAXED,
-		9,
-		true));
+		ssl_params
+		));
 	ptr_context->enableSessionCache(true);
 #if POCO_VERSION >= 0x01070000
 	ptr_context->disableProtocols(Poco::Net::Context::PROTO_SSLV2 | Poco::Net::Context::PROTO_SSLV3);
