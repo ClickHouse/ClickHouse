@@ -52,7 +52,7 @@ build-stamp: configure-stamp
 	# последовательно запускаем make для каждой из целей.
 	# т.к. при параллельном запуске (make target1 target2) несколько раз одновременно создаются бинарники
 	# и возникает raise с custom_command, использующие эти бинарники
-	for target in ${BUILD_TARGETS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$target; done
+	for target in ${BUILD_TARGETS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$target || exit $$?; done
 	touch $@
 
 clean:

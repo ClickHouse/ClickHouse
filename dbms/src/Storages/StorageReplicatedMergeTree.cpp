@@ -2022,10 +2022,10 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	}
 
 	SCOPE_EXIT
-	(
+	({
 		std::lock_guard<std::mutex> lock(currently_fetching_parts_mutex);
 		currently_fetching_parts.erase(part_name);
-	);
+	});
 
 	LOG_DEBUG(log, "Fetching part " << part_name << " from " << replica_path);
 

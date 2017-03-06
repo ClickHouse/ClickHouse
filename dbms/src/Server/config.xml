@@ -151,6 +151,8 @@
 	-->
 	<dictionaries_config>*_dictionary.xml</dictionaries_config>
 
+	<!-- Allow connect to self-signed https servers -->
+	<!-- <https_client_insecure>true</https_client_insecure> -->
 
 	<!-- Uncomment if you want data to be compressed 30-100% better.
 		 Don't do that if you just started using ClickHouse.
