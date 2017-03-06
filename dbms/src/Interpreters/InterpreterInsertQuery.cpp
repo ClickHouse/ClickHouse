@@ -120,8 +120,8 @@ BlockIO InterpreterInsertQuery::execute()
 		InterpreterSelectQuery interpreter_select{query.select, context};
 		res.in_sample = interpreter_select.getSampleBlock();
 
-		BlockInputStreamPtr in = interpreter_select.execute().in;
-		res.in = std::make_shared<NullableAdapterBlockInputStream>(in, res.in_sample, res.out_sample, required_columns);
+		res.in = interpreter_select.execute().in;
+		res.in = std::make_shared<NullableAdapterBlockInputStream>(res.in, res.in_sample, res.out_sample);
 		res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out);
 	}
 
