@@ -82,6 +82,7 @@ else
 fi
 
 # ClickHouse
+openssl req -subj "/CN=localhost/O=My Company Name LTD./C=US" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout server.key -out server.crt
 clickhouse-server &> clickhouse.log &
 sleep 3
 result=$(clickhouse-client --port 9001 --query 'select 1')
