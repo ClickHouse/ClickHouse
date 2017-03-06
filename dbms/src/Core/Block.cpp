@@ -2,8 +2,6 @@
 
 #include <DB/Core/Block.h>
 
-#include <DB/Storages/ColumnDefault.h>
-
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNullable.h>
 #include <DB/Columns/ColumnTuple.h>
