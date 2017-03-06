@@ -9,7 +9,6 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SecureServerSocket.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include <Poco/Version.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
 #include <ext/scope_guard.hpp>
