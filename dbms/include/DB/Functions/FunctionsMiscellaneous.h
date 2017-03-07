@@ -381,16 +381,19 @@ public:
 
 template <bool negative, bool global>
 struct FunctionInName;
+
 template <>
 struct FunctionInName<false, false>
 {
 	static constexpr auto name = "in";
 };
+
 template <>
 struct FunctionInName<false, true>
 {
 	static constexpr auto name = "globalIn";
 };
+
 template <>
 struct FunctionInName<true, false>
 {
