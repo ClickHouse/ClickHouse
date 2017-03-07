@@ -1067,6 +1067,7 @@ PartLog * Context::getPartLog()
 {
 	auto lock = getLock();
 
+	auto & config = Poco::Util::Application::instance().config();
 	if (!config.has("part_log"))
 		return nullptr;
 
@@ -1078,9 +1079,6 @@ PartLog * Context::getPartLog()
 		if (!global_context)
 			throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
 
-		auto & config = Poco::Util::Application::instance().config();
-
-
 		String database = config.getString("part_log.database", "system");
 		String table = config.getString("part_log.table", "part_log");
 		size_t flush_interval_milliseconds = parse<size_t>(
@@ -1089,7 +1087,7 @@ PartLog * Context::getPartLog()
 			*global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
 	}
 
-	return shared->part_log;
+	return shared->part_log.get();
 }
 
 
