@@ -47,6 +47,7 @@ class Macros;
 struct Progress;
 class Clusters;
 class QueryLog;
+class PartLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
@@ -282,6 +283,7 @@ public:
 
 	Compiler & getCompiler();
 	QueryLog & getQueryLog();
+	PartLog * getPartLog();
 	const MergeTreeSettings & getMergeTreeSettings();
 
 	/// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)

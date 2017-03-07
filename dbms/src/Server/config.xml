@@ -135,6 +135,16 @@
 	</query_log>
 
 
+	<!-- Uncomment if use part_log
+	<part_log>
+		<database>system</database>
+		<table>part_log</table>
+
+		<flush_interval_milliseconds>7500</flush_interval_milliseconds>
+	</part_log>
+	-->
+
+
 	<!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
 		 See https://clickhouse.yandex/reference_en.html#Internal%20dictionaries
 	-->
