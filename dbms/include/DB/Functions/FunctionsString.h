@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
@@ -49,48 +49,19 @@ template <bool negative = false>
 struct EmptyImpl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		PaddedPODArray<UInt8> & res)
-	{
-		size_t size = offsets.size();
-		ColumnString::Offset_t prev_offset = 1;
-		for (size_t i = 0; i < size; ++i)
-		{
-			res[i] = negative ^ (offsets[i] == prev_offset);
-			prev_offset = offsets[i] + 1;
-		}
-	}
+		PaddedPODArray<UInt8> & res);
 
 	static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n,
-		UInt8 & res)
-	{
-		res = negative ^ (n == 0);
-	}
+		UInt8 & res);
 
 	static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n,
-		PaddedPODArray<UInt8> & res)
-	{
-	}
+		PaddedPODArray<UInt8> & res);
 
-	static void constant(const std::string & data, UInt8 & res)
-	{
-		res = negative ^ (data.empty());
-	}
+	static void constant(const std::string & data, UInt8 & res);
 
-	static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt8> & res)
-	{
-		size_t size = offsets.size();
-		ColumnString::Offset_t prev_offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			res[i] = negative ^ (offsets[i] == prev_offset);
-			prev_offset = offsets[i];
-		}
-	}
+	static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt8> & res);
 
-	static void constant_array(const Array & data, UInt8 & res)
-	{
-		res = negative ^ (data.empty());
-	}
+	static void constant_array(const Array & data, UInt8 & res);
 };
 
 
@@ -99,14 +70,7 @@ struct EmptyImpl
 struct LengthImpl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		PaddedPODArray<UInt64> & res)
-	{
-		size_t size = offsets.size();
-		for (size_t i = 0; i < size; ++i)
-			res[i] = i == 0
-				? (offsets[i] - 1)
-				: (offsets[i] - 1 - offsets[i - 1]);
-	}
+		PaddedPODArray<UInt64> & res);
 
 	static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n,
 		UInt64 & res)
@@ -115,28 +79,13 @@ struct LengthImpl
 	}
 
 	static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n,
-		PaddedPODArray<UInt64> & res)
-	{
-	}
+		PaddedPODArray<UInt64> & res);
 
-	static void constant(const std::string & data, UInt64 & res)
-	{
-		res = data.size();
-	}
+	static void constant(const std::string & data, UInt64 & res);
 
-	static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
-	{
-		size_t size = offsets.size();
-		for (size_t i = 0; i < size; ++i)
-			res[i] = i == 0
-				? (offsets[i])
-				: (offsets[i] - offsets[i - 1]);
-	}
+	static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res);
 
-	static void constant_array(const Array & data, UInt64 & res)
-	{
-		res = data.size();
-	}
+	static void constant_array(const Array & data, UInt64 & res);
 };
 
 
@@ -147,57 +96,19 @@ struct LengthImpl
 struct LengthUTF8Impl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		PaddedPODArray<UInt64> & res)
-	{
-		size_t size = offsets.size();
-
-		ColumnString::Offset_t prev_offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			res[i] = 0;
-			for (const UInt8 * c = &data[prev_offset]; c + 1 < &data[offsets[i]]; ++c)
-				if (*c <= 0x7F || *c >= 0xC0)
-					++res[i];
-			prev_offset = offsets[i];
-		}
-	}
+		PaddedPODArray<UInt64> & res);
 
 	static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n,
-		UInt64 & res)
-	{
-	}
+		UInt64 & res);
 
 	static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n,
-		PaddedPODArray<UInt64> & res)
-	{
-		size_t size = data.size() / n;
+		PaddedPODArray<UInt64> & res);
 
-		for (size_t i = 0; i < size; ++i)
-		{
-			res[i] = 0;
-			for (const UInt8 * c = &data[i * n]; c < &data[(i + 1) * n]; ++c)
-				if (*c <= 0x7F || *c >= 0xC0)
-					++res[i];
-		}
-	}
+	static void constant(const std::string & data, UInt64 & res);
 
-	static void constant(const std::string & data, UInt64 & res)
-	{
-		res = 0;
-		for (const UInt8 * c = reinterpret_cast<const UInt8 *>(data.data()); c < reinterpret_cast<const UInt8 *>(data.data() + data.size()); ++c)
-			if (*c <= 0x7F || *c >= 0xC0)
-				++res;
-	}
+	static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res);
 
-	static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
-	{
-		throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-
-	static void constant_array(const Array & data, UInt64 & res)
-	{
-		throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
+	static void constant_array(const Array & data, UInt64 & res);
 };
 
 
@@ -205,66 +116,15 @@ template <char not_case_lower_bound, char not_case_upper_bound>
 struct LowerUpperImpl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
-	{
-		res_data.resize(data.size());
-		res_offsets.assign(offsets);
-		array(data.data(), data.data() + data.size(), res_data.data());
-	}
+		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets);
 
 	static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
-							 ColumnString::Chars_t & res_data)
-	{
-		res_data.resize(data.size());
-		array(data.data(), data.data() + data.size(), res_data.data());
-	}
+							 ColumnString::Chars_t & res_data);
 
-	static void constant(const std::string & data, std::string & res_data)
-	{
-		res_data.resize(data.size());
-		array(reinterpret_cast<const UInt8 *>(data.data()), reinterpret_cast<const UInt8 *>(data.data() + data.size()),
-			  reinterpret_cast<UInt8 *>(&res_data[0]));
-	}
+	static void constant(const std::string & data, std::string & res_data);
 
 private:
-	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
-	{
-		const auto flip_case_mask = 'A' ^ 'a';
-
-#if __SSE2__
-		const auto bytes_sse = sizeof(__m128i);
-		const auto src_end_sse = src_end - (src_end - src) % bytes_sse;
-
-		const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
-		const auto v_not_case_upper_bound = _mm_set1_epi8(not_case_upper_bound + 1);
-		const auto v_flip_case_mask = _mm_set1_epi8(flip_case_mask);
-
-		for (; src < src_end_sse; src += bytes_sse, dst += bytes_sse)
-		{
-			/// load 16 sequential 8-bit characters
-			const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
-
-			/// find which 8-bit sequences belong to range [case_lower_bound, case_upper_bound]
-			const auto is_not_case = _mm_and_si128(_mm_cmpgt_epi8(chars, v_not_case_lower_bound),
-												   _mm_cmplt_epi8(chars, v_not_case_upper_bound));
-
-			/// keep `flip_case_mask` only where necessary, zero out elsewhere
-			const auto xor_mask = _mm_and_si128(v_flip_case_mask, is_not_case);
-
-			/// flip case by applying calculated mask
-			const auto cased_chars = _mm_xor_si128(chars, xor_mask);
-
-			/// store result back to destination
-			_mm_storeu_si128(reinterpret_cast<__m128i *>(dst), cased_chars);
-		}
-#endif
-
-		for (; src < src_end; ++src, ++dst)
-			if (*src >= not_case_lower_bound && *src <= not_case_upper_bound)
-				*dst = *src ^ flip_case_mask;
-			else
-				*dst = *src;
-	}
+	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst);
 };
 
 
@@ -274,45 +134,7 @@ template <> inline UInt8 xor_or_identity<false>(const UInt8 c, const int) { retu
 
 /// It is caller's responsibility to ensure the presence of a valid cyrillic sequence in array
 template <bool to_lower>
-inline void UTF8CyrillicToCase(const UInt8 * & src, const UInt8 * const src_end, UInt8 * & dst)
-{
-	if (src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0x8Fu))
-	{
-		/// ЀЁЂЃЄЅІЇЈЉЊЋЌЍЎЏ
-		*dst++ = xor_or_identity<to_lower>(*src++, 0x1);
-		*dst++ = xor_or_identity<to_lower>(*src++, 0x10);
-	}
-	else if (src[0] == 0xD1u && (src[1] >= 0x90u && src[1] <= 0x9Fu))
-	{
-		/// ѐёђѓєѕіїјљњћќѝўџ
-		*dst++ = xor_or_identity<!to_lower>(*src++, 0x1);
-		*dst++ = xor_or_identity<!to_lower>(*src++, 0x10);
-	}
-	else if (src[0] == 0xD0u && (src[1] >= 0x90u && src[1] <= 0x9Fu))
-	{
-		/// А-П
-		*dst++ = *src++;
-		*dst++ = xor_or_identity<to_lower>(*src++, 0x20);
-	}
-	else if (src[0] == 0xD0u && (src[1] >= 0xB0u && src[1] <= 0xBFu))
-	{
-		/// а-п
-		*dst++ = *src++;
-		*dst++ = xor_or_identity<!to_lower>(*src++, 0x20);
-	}
-	else if (src[0] == 0xD0u && (src[1] >= 0xA0u && src[1] <= 0xAFu))
-	{
-		///	Р-Я
-		*dst++ = xor_or_identity<to_lower>(*src++, 0x1);
-		*dst++ = xor_or_identity<to_lower>(*src++, 0x20);
-	}
-	else if (src[0] == 0xD1u && (src[1] >= 0x80u && src[1] <= 0x8Fu))
-	{
-		/// р-я
-		*dst++ = xor_or_identity<!to_lower>(*src++, 0x1);
-		*dst++ = xor_or_identity<!to_lower>(*src++, 0x20);
-	}
-};
+inline void UTF8CyrillicToCase(const UInt8 * & src, const UInt8 * const src_end, UInt8 * & dst);;
 
 /** Если строка содержит текст в кодировке UTF-8 - перевести его в нижний (верхний) регистр.
   * Замечание: предполагается, что после перевода символа в другой регистр,
@@ -324,67 +146,16 @@ template <char not_case_lower_bound, char not_case_upper_bound,
 struct LowerUpperUTF8Impl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-					   ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
-	{
-		res_data.resize(data.size());
-		res_offsets.assign(offsets);
-		array(data.data(), data.data() + data.size(), res_data.data());
-	}
+					   ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets);
 
 	static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
-							 ColumnString::Chars_t & res_data)
-	{
-		res_data.resize(data.size());
-		array(data.data(), data.data() + data.size(), res_data.data());
-	}
+							 ColumnString::Chars_t & res_data);
 
-	static void constant(const std::string & data, std::string & res_data)
-	{
-		res_data.resize(data.size());
-		array(reinterpret_cast<const UInt8 *>(data.data()), reinterpret_cast<const UInt8 *>(data.data() + data.size()),
-			  reinterpret_cast<UInt8 *>(&res_data[0]));
-	}
+	static void constant(const std::string & data, std::string & res_data);
 
 	/** Converts a single code point starting at `src` to desired case, storing result starting at `dst`.
 	 *	`src` and `dst` are incremented by corresponding sequence lengths. */
-	static void toCase(const UInt8 * & src, const UInt8 * const src_end, UInt8 * & dst)
-	{
-		if (src[0] <= ascii_upper_bound)
-		{
-			if (*src >= not_case_lower_bound && *src <= not_case_upper_bound)
-				*dst++ = *src++ ^ flip_case_mask;
-			else
-				*dst++ = *src++;
-		}
-		else if (src + 1 < src_end &&
-				 ((src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0xBFu)) ||
-				  (src[0] == 0xD1u && (src[1] >= 0x80u && src[1] <= 0x9Fu))))
-		{
-			cyrillic_to_case(src, src_end, dst);
-		}
-		else if (src + 1 < src_end && src[0] == 0xC2u)
-		{
-			/// Пунктуация U+0080 - U+00BF, UTF-8: C2 80 - C2 BF
-			*dst++ = *src++;
-			*dst++ = *src++;
-		}
-		else if (src + 2 < src_end && src[0] == 0xE2u)
-		{
-			/// Символы U+2000 - U+2FFF, UTF-8: E2 80 80 - E2 BF BF
-			*dst++ = *src++;
-			*dst++ = *src++;
-			*dst++ = *src++;
-		}
-		else
-		{
-			static const Poco::UTF8Encoding utf8;
-
-			if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end - src))
-				src += chars, dst += chars;
-			else
-				++src, ++dst;
-		}
-	}
+	static void toCase(const UInt8 * & src, const UInt8 * const src_end, UInt8 * & dst);
 
 private:
 	static constexpr auto ascii_upper_bound = '\x7f';
