@@ -2046,7 +2046,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(
 		part_name, replica_path, address.host, address.replication_port, to_detached);
 
-	bool part_log = context.getPartLog();
+	PartLog * part_log = context.getPartLog();
 	if (part_log)
 	{
 		elem.event_type = PartLogElement::DOWNLOAD_PART;

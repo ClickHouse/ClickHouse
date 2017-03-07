@@ -349,7 +349,7 @@ bool StorageMergeTree::merge(
 
 	merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
 
-	bool part_log = context.getPartLog();
+	PartLog * part_log = context.getPartLog();
 	if (part_log)
 	{
 		elem.event_type = PartLogElement::MERGE_PARTS;
