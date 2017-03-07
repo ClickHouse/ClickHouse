@@ -939,6 +939,7 @@ FunctionPtr ConcatImpl<Name, is_injective>::create(const Context & context)
 {
 	return std::make_shared<ConcatImpl>();
 }
+
 template <typename Name, bool is_injective>
 DataTypePtr ConcatImpl<Name, is_injective>::getReturnTypeImpl(const DataTypes & arguments) const
 {
@@ -957,6 +958,7 @@ DataTypePtr ConcatImpl<Name, is_injective>::getReturnTypeImpl(const DataTypes & 
 
 	return std::make_shared<DataTypeString>();
 }
+
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result)
 {
@@ -965,6 +967,7 @@ void ConcatImpl<Name, is_injective>::executeImpl(Block & block, const ColumnNumb
 	else
 		executeNAry(block, arguments, result);
 }
+
 template <typename Name, bool is_injective>
 typename ConcatImpl<Name, is_injective>::Instructions ConcatImpl<Name, is_injective>::getInstructions(
 	const Block & block, const ColumnNumbers & arguments, size_t & out_length, bool & out_const)
@@ -1017,6 +1020,7 @@ typename ConcatImpl<Name, is_injective>::Instructions ConcatImpl<Name, is_inject
 
 	return result;
 }
+
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::executeBinary(Block & block, const ColumnNumbers & arguments, const size_t result)
 {
@@ -1076,6 +1080,7 @@ void ConcatImpl<Name, is_injective>::executeBinary(Block & block, const ColumnNu
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 }
+
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::executeNAry(Block & block, const ColumnNumbers & arguments, const size_t result)
 {
@@ -1157,6 +1162,7 @@ void ConcatImpl<Name, is_injective>::executeNAry(Block & block, const ColumnNumb
 		}
 	}
 }
+
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::vector_vector(const ColumnString::Chars_t & a_data,
 	const IColumn::Offsets_t & a_offsets,
@@ -1185,6 +1191,7 @@ void ConcatImpl<Name, is_injective>::vector_vector(const ColumnString::Chars_t &
 		c_offsets[i] = offset;
 	}
 }
+
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::vector_fixed_vector(const ColumnString::Chars_t & a_data,
 	const IColumn::Offsets_t & a_offsets,
@@ -1215,6 +1222,7 @@ void ConcatImpl<Name, is_injective>::vector_fixed_vector(const ColumnString::Cha
 		c_offsets[i] = offset;
 	}
 }
+
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::vector_constant(const ColumnString::Chars_t & a_data,
 	const IColumn::Offsets_t & a_offsets,
@@ -1241,6 +1249,7 @@ void ConcatImpl<Name, is_injective>::vector_constant(const ColumnString::Chars_t
 		a_offset = a_offsets[i];
 	}
 }
+
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::fixed_vector_vector(const ColumnString::Chars_t & a_data,
 	IColumn::Offset_t a_n,
@@ -1269,6 +1278,7 @@ void ConcatImpl<Name, is_injective>::fixed_vector_vector(const ColumnString::Cha
 		c_offsets[i] = offset;
 	}
 }
+
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::fixed_vector_fixed_vector(const ColumnString::Chars_t & a_data,
 	IColumn::Offset_t a_n,
@@ -1294,6 +1304,7 @@ void ConcatImpl<Name, is_injective>::fixed_vector_fixed_vector(const ColumnStrin
 		c_offsets[i] = offset;
 	}
 }
+
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::fixed_vector_constant(const ColumnString::Chars_t & a_data,
 	IColumn::Offset_t a_n,
@@ -1319,6 +1330,7 @@ void ConcatImpl<Name, is_injective>::fixed_vector_constant(const ColumnString::C
 		c_offsets[i] = offset;
 	}
 }
+
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::constant_vector(const std::string & a,
 	const ColumnString::Chars_t & b_data,
@@ -1345,6 +1357,7 @@ void ConcatImpl<Name, is_injective>::constant_vector(const std::string & a,
 		b_offset = b_offsets[i];
 	}
 }
+
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::constant_fixed_vector(const std::string & a,
 	const ColumnString::Chars_t & b_data,
@@ -1370,6 +1383,7 @@ void ConcatImpl<Name, is_injective>::constant_fixed_vector(const std::string & a
 		c_offsets[i] = offset;
 	}
 }
+
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::constant_constant(const std::string & a, const std::string & b, std::string & c)
 {
@@ -1381,6 +1395,7 @@ FunctionPtr FunctionStringNumNumToString<Impl, Name>::create(const Context & con
 {
 	return std::make_shared<FunctionStringNumNumToString>();
 }
+
 template <typename Impl, typename Name>
 DataTypePtr FunctionStringNumNumToString<Impl, Name>::getReturnTypeImpl(const DataTypes & arguments) const
 {
@@ -1396,6 +1411,7 @@ DataTypePtr FunctionStringNumNumToString<Impl, Name>::getReturnTypeImpl(const Da
 
 	return std::make_shared<DataTypeString>();
 }
+
 template <typename Impl, typename Name>
 void FunctionStringNumNumToString<Impl, Name>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
@@ -1446,4 +1462,10 @@ void FunctionStringNumNumToString<Impl, Name>::executeImpl(Block & block, const 
 			"Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
 			ErrorCodes::ILLEGAL_COLUMN);
 }
+
+
+FunctionPtr FunctionAppendTrailingCharIfAbsent::create(const Context& context)
+	{
+		return std::make_shared<FunctionAppendTrailingCharIfAbsent>();
+	}
 }

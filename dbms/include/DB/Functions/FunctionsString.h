@@ -501,10 +501,7 @@ class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
 public:
 	static constexpr auto name = "appendTrailingCharIfAbsent";
-	static FunctionPtr create(const Context & context)
-	{
-		return std::make_shared<FunctionAppendTrailingCharIfAbsent>();
-	}
+	static FunctionPtr create(const Context & context);
 
 	String getName() const override;
 
