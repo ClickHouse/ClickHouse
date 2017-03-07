@@ -1344,7 +1344,7 @@ private:
 			else
 			{
 				block.getByPosition(result).column = std::make_shared<ColumnNullable>(
-					result_column, static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumn());
+					materializeColumnIfConst(result_column), static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumn());
 			}
 
 			return true;
@@ -1425,7 +1425,7 @@ private:
 			else if (cond_const_col)
 			{
 				block.safeGetByPosition(result).column = cond_const_col->getData()
-					? block.safeGetByPosition(result).type->createColumn()
+					? block.safeGetByPosition(result).type->createColumn()->cloneResized(block.rows())
 					: makeNullableColumnIfNot(arg_else.column);
 			}
 			else
@@ -1457,7 +1457,7 @@ private:
 			{
 				block.safeGetByPosition(result).column = cond_const_col->getData()
 					? makeNullableColumnIfNot(arg_then.column)
-					: block.safeGetByPosition(result).type->createColumn();
+					: block.safeGetByPosition(result).type->createColumn()->cloneResized(block.rows());
 			}
 			else
 				throw Exception("Illegal column " + cond_col->getName() + " of first argument of function " + getName()
@@ -1543,7 +1543,8 @@ private:
 			result_nested_column = temporary_block.getByPosition(3).column;
 		}
 
-		block.getByPosition(result).column = std::make_shared<ColumnNullable>(result_nested_column, result_null_mask);
+		block.getByPosition(result).column = std::make_shared<ColumnNullable>(
+			materializeColumnIfConst(result_nested_column), materializeColumnIfConst(result_null_mask));
 		return true;
 	}
 
