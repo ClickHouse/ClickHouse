@@ -1063,7 +1063,7 @@ QueryLog & Context::getQueryLog()
 }
 
 
-std::shared_ptr<PartLog> Context::getPartLog()
+PartLog * Context::getPartLog()
 {
 	auto lock = getLock();
 
