@@ -1,25 +1,23 @@
-#include <math.h>
-
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
-#include <DB/Functions/DataTypeTraits.h>
-#include <DB/DataTypes/DataTypeEnum.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/Storages/IStorage.h>
-#include <DB/Columns/ColumnNullable.h>
+
+#include <math.h>
 #include <common/ClickHouseRevision.h>
 #include <ext/enumerate.hpp>
+#include <DB/Columns/ColumnNullable.h>
+#include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/Functions/DataTypeTraits.h>
+#include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/FunctionsArithmetic.h>
+#include <DB/Storages/IStorage.h>
 
 
 namespace DB
 {
-
-
 static size_t widthOfUTF8String(const String & s)
 {
 	size_t res = 0;
-	for (auto c : s)	/// Skip UTF-8 continuation bytes.
+	for (auto c : s) /// Skip UTF-8 continuation bytes.
 		res += (UInt8(c) <= 0x7F || UInt8(c) >= 0xC0);
 	return res;
 }
@@ -63,9 +61,7 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
 
 
 void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
-	const ColumnsWithTypeAndName & arguments,
-	DataTypePtr & out_return_type,
-	ExpressionActions::Actions & out_prerequisites)
+	const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites)
 {
 	static const std::string arg_pos_description[] = {"First", "Second", "Third"};
 	for (size_t i = 0; i < getNumberOfArguments(); ++i)
@@ -75,8 +71,7 @@ void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
 		const ColumnConstString * column = typeid_cast<const ColumnConstString *>(argument.column.get());
 		if (!column)
 		{
-			throw Exception(
-				arg_pos_description[i] + " argument for function " + getName() + " must be const String.",
+			throw Exception(arg_pos_description[i] + " argument for function " + getName() + " must be const String.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
 	}
@@ -87,13 +82,11 @@ void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
 
 void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-	auto get_string_from_block =
-		[&](size_t column_pos) -> const String &
-		{
-			ColumnPtr column = block.safeGetByPosition(column_pos).column;
-			const ColumnConstString * const_column = typeid_cast<const ColumnConstString *>(column.get());
-			return const_column->getData();
-		};
+	auto get_string_from_block = [&](size_t column_pos) -> const String & {
+		ColumnPtr column = block.safeGetByPosition(column_pos).column;
+		const ColumnConstString * const_column = typeid_cast<const ColumnConstString *>(column.get());
+		return const_column->getData();
+	};
 
 	const String & database_name = get_string_from_block(arguments[0]);
 	const String & table_name = get_string_from_block(arguments[1]);
@@ -102,8 +95,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
 	const StoragePtr & table = global_context.getTable(database_name, table_name);
 	const bool has_column = table->hasColumn(column_name);
 
-	block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(
-		block.rows(), has_column);
+	block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rows(), has_column);
 }
 
 
@@ -155,5 +147,654 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 	factory.registerFunction<FunctionRunningDifference>();
 	factory.registerFunction<FunctionFinalizeAggregation>();
 }
+FunctionPtr FunctionCurrentDatabase::create(const Context & context)
+{
+	return std::make_shared<FunctionCurrentDatabase>(context.getCurrentDatabase());
+}
+void FunctionCurrentDatabase::executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result)
+{
+	block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(block.rows(), db_name);
+}
+DataTypePtr FunctionCurrentDatabase::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeString>();
+}
+FunctionPtr FunctionHostName::create(const Context & context)
+{
+	return std::make_shared<FunctionHostName>();
+}
+DataTypePtr FunctionHostName::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeString>();
+}
+void FunctionHostName::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	block.safeGetByPosition(result).column = ColumnConstString(block.rows(), Poco::Net::DNS::hostName()).convertToFullColumn();
+}
+FunctionPtr FunctionVisibleWidth::create(const Context & context)
+{
+	return std::make_shared<FunctionVisibleWidth>();
+}
+DataTypePtr FunctionVisibleWidth::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeUInt64>();
+}
+FunctionPtr FunctionToTypeName::create(const Context & context)
+{
+	return std::make_shared<FunctionToTypeName>();
+}
+DataTypePtr FunctionToTypeName::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeString>();
+}
+void FunctionToTypeName::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	block.safeGetByPosition(result).column
+		= std::make_shared<ColumnConstString>(block.rows(), block.safeGetByPosition(arguments[0]).type->getName());
+}
+FunctionPtr FunctionToColumnTypeName::create(const Context & context)
+{
+	return std::make_shared<FunctionToColumnTypeName>();
+}
+DataTypePtr FunctionToColumnTypeName::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeString>();
+}
+void FunctionToColumnTypeName::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	block.safeGetByPosition(result).column
+		= std::make_shared<ColumnConstString>(block.rows(), block.safeGetByPosition(arguments[0]).column->getName());
+}
+FunctionPtr FunctionBlockSize::create(const Context & context)
+{
+	return std::make_shared<FunctionBlockSize>();
+}
+DataTypePtr FunctionBlockSize::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeUInt64>();
+}
+void FunctionBlockSize::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	size_t size = block.rows();
+	block.safeGetByPosition(result).column = ColumnConstUInt64(size, size).convertToFullColumn();
+}
+FunctionPtr FunctionRowNumberInBlock::create(const Context & context)
+{
+	return std::make_shared<FunctionRowNumberInBlock>();
+}
+DataTypePtr FunctionRowNumberInBlock::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeUInt64>();
+}
+void FunctionRowNumberInBlock::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	size_t size = block.rows();
+	auto column = std::make_shared<ColumnUInt64>();
+	auto & data = column->getData();
+	data.resize(size);
+	for (size_t i = 0; i < size; ++i)
+		data[i] = i;
 
+	block.safeGetByPosition(result).column = column;
+}
+FunctionPtr FunctionBlockNumber::create(const Context & context)
+{
+	return std::make_shared<FunctionBlockNumber>();
+}
+DataTypePtr FunctionBlockNumber::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeUInt64>();
+}
+void FunctionBlockNumber::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	size_t current_block_number = block_number++;
+	block.safeGetByPosition(result).column = ColumnConstUInt64(block.rows(), current_block_number).convertToFullColumn();
+}
+FunctionPtr FunctionRowNumberInAllBlocks::create(const Context & context)
+{
+	return std::make_shared<FunctionRowNumberInAllBlocks>();
+}
+DataTypePtr FunctionRowNumberInAllBlocks::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeUInt64>();
+}
+void FunctionRowNumberInAllBlocks::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	size_t rows_in_block = block.rows();
+	size_t current_row_number = rows.fetch_add(rows_in_block);
+
+	auto column = std::make_shared<ColumnUInt64>();
+	auto & data = column->getData();
+	data.resize(rows_in_block);
+	for (size_t i = 0; i < rows_in_block; ++i)
+		data[i] = current_row_number + i;
+
+	block.safeGetByPosition(result).column = column;
+}
+FunctionPtr FunctionSleep::create(const Context & context)
+{
+	return std::make_shared<FunctionSleep>();
+}
+DataTypePtr FunctionSleep::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	if (!typeid_cast<const DataTypeFloat64 *>(&*arguments[0]) && !typeid_cast<const DataTypeFloat32 *>(&*arguments[0])
+		&& !typeid_cast<const DataTypeUInt64 *>(&*arguments[0])
+		&& !typeid_cast<const DataTypeUInt32 *>(&*arguments[0])
+		&& !typeid_cast<const DataTypeUInt16 *>(&*arguments[0])
+		&& !typeid_cast<const DataTypeUInt8 *>(&*arguments[0]))
+		throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected Float64",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+	return std::make_shared<DataTypeUInt8>();
+}
+void FunctionSleep::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	IColumn * col = block.safeGetByPosition(arguments[0]).column.get();
+	double seconds;
+	size_t size = col->size();
+
+	if (ColumnConst<Float64> * column = typeid_cast<ColumnConst<Float64> *>(col))
+		seconds = column->getData();
+
+	else if (ColumnConst<Float32> * column = typeid_cast<ColumnConst<Float32> *>(col))
+		seconds = static_cast<double>(column->getData());
+
+	else if (ColumnConst<UInt64> * column = typeid_cast<ColumnConst<UInt64> *>(col))
+		seconds = static_cast<double>(column->getData());
+
+	else if (ColumnConst<UInt32> * column = typeid_cast<ColumnConst<UInt32> *>(col))
+		seconds = static_cast<double>(column->getData());
+
+	else if (ColumnConst<UInt16> * column = typeid_cast<ColumnConst<UInt16> *>(col))
+		seconds = static_cast<double>(column->getData());
+
+	else if (ColumnConst<UInt8> * column = typeid_cast<ColumnConst<UInt8> *>(col))
+		seconds = static_cast<double>(column->getData());
+
+	else
+		throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+
+	/// Не спим, если блок пустой.
+	if (size > 0)
+		usleep(static_cast<unsigned>(seconds * 1e6));
+
+	/// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
+	block.safeGetByPosition(result).column = ColumnConst<UInt8>(size, 0).convertToFullColumn();
+}
+FunctionPtr FunctionMaterialize::create(const Context & context)
+{
+	return std::make_shared<FunctionMaterialize>();
+}
+size_t FunctionMaterialize::getNumberOfArguments() const
+{
+	return 1;
+}
+DataTypePtr FunctionMaterialize::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return arguments[0];
+}
+void FunctionMaterialize::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	const auto & src = block.safeGetByPosition(arguments[0]).column;
+	if (auto converted = src->convertToFullColumnIfConst())
+		block.safeGetByPosition(result).column = converted;
+	else
+		block.safeGetByPosition(result).column = src;
+}
+FunctionPtr FunctionTuple::create(const Context & context)
+{
+	return std::make_shared<FunctionTuple>();
+}
+DataTypePtr FunctionTuple::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	if (arguments.size() < 1)
+		throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+	return std::make_shared<DataTypeTuple>(arguments);
+}
+void FunctionTuple::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	Block tuple_block;
+
+	size_t num_constants = 0;
+	for (auto column_number : arguments)
+	{
+		const auto & elem = block.safeGetByPosition(column_number);
+		if (elem.column->isConst())
+			++num_constants;
+
+		tuple_block.insert(elem);
+	}
+
+	if (num_constants == arguments.size())
+	{
+		/** Return ColumnConstTuple rather than ColumnTuple of nested const columns.
+			  * (otherwise, ColumnTuple will not be understanded as constant in many places in code).
+			  */
+
+		TupleBackend tuple(arguments.size());
+		for (size_t i = 0, size = arguments.size(); i < size; ++i)
+			tuple_block.getByPosition(i).column->get(0, tuple[i]);
+
+		block.safeGetByPosition(result).column
+			= std::make_shared<ColumnConstTuple>(block.rows(), Tuple(tuple), block.safeGetByPosition(result).type);
+	}
+	else
+	{
+		ColumnPtr res = std::make_shared<ColumnTuple>(tuple_block);
+
+		/** If tuple is mixed of constant and not constant columns,
+			  *  convert all to non-constant columns,
+			  *  because many places in code expect all non-constant columns in non-constant tuple.
+			  */
+		if (num_constants != 0)
+			if (auto converted = res->convertToFullColumnIfConst())
+				res = converted;
+
+		block.safeGetByPosition(result).column = res;
+	}
+}
+FunctionPtr FunctionTupleElement::create(const Context & context)
+{
+	return std::make_shared<FunctionTupleElement>();
+}
+void FunctionTupleElement::getReturnTypeAndPrerequisitesImpl(
+	const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites)
+{
+	const ColumnConstUInt8 * index_col = typeid_cast<const ColumnConstUInt8 *>(&*arguments[1].column);
+	if (!index_col)
+		throw Exception("Second argument to " + getName() + " must be a constant UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+	size_t index = index_col->getData();
+
+	const DataTypeTuple * tuple = typeid_cast<const DataTypeTuple *>(&*arguments[0].type);
+	if (!tuple)
+		throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+	if (index == 0)
+		throw Exception("Indices in tuples are 1-based.", ErrorCodes::ILLEGAL_INDEX);
+
+	const DataTypes & elems = tuple->getElements();
+
+	if (index > elems.size())
+		throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
+
+	out_return_type = elems[index - 1]->clone();
+}
+void FunctionTupleElement::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.safeGetByPosition(arguments[0]).column.get());
+	const ColumnConstTuple * const_tuple_col = typeid_cast<const ColumnConstTuple *>(block.safeGetByPosition(arguments[0]).column.get());
+	const ColumnConstUInt8 * index_col = typeid_cast<const ColumnConstUInt8 *>(block.safeGetByPosition(arguments[1]).column.get());
+
+	if (!tuple_col && !const_tuple_col)
+		throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_COLUMN);
+
+	if (!index_col)
+		throw Exception("Second argument for function " + getName() + " must be UInt8 constant literal.", ErrorCodes::ILLEGAL_COLUMN);
+
+	size_t index = index_col->getData();
+	if (index == 0)
+		throw Exception("Indices in tuples is 1-based.", ErrorCodes::ILLEGAL_INDEX);
+
+	if (tuple_col)
+	{
+		const Block & tuple_block = tuple_col->getData();
+
+		if (index > tuple_block.columns())
+			throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
+
+		block.safeGetByPosition(result).column = tuple_block.safeGetByPosition(index - 1).column;
+	}
+	else
+	{
+		const TupleBackend & data = const_tuple_col->getData();
+		block.safeGetByPosition(result).column = static_cast<const DataTypeTuple &>(*block.safeGetByPosition(arguments[0]).type)
+													 .getElements()[index - 1]
+													 ->createConstColumn(block.rows(), data[index - 1]);
+	}
+}
+FunctionPtr FunctionIgnore::create(const Context & context)
+{
+	return std::make_shared<FunctionIgnore>();
+}
+DataTypePtr FunctionIgnore::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeUInt8>();
+}
+void FunctionIgnore::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rows(), 0);
+}
+FunctionPtr FunctionIndexHint::create(const Context & context)
+{
+	return std::make_shared<FunctionIndexHint>();
+}
+DataTypePtr FunctionIndexHint::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeUInt8>();
+}
+void FunctionIndexHint::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rows(), 1);
+}
+FunctionPtr FunctionIdentity::create(const Context & context)
+{
+	return std::make_shared<FunctionIdentity>();
+}
+DataTypePtr FunctionIdentity::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return arguments.front()->clone();
+}
+void FunctionIdentity::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	block.safeGetByPosition(result).column = block.safeGetByPosition(arguments.front()).column;
+}
+FunctionPtr FunctionArrayJoin::create(const Context & context)
+{
+	return std::make_shared<FunctionArrayJoin>();
+}
+DataTypePtr FunctionArrayJoin::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	const DataTypeArray * arr = typeid_cast<const DataTypeArray *>(&*arguments[0]);
+	if (!arr)
+		throw Exception("Argument for function " + getName() + " must be Array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+	return arr->getNestedType()->clone();
+}
+void FunctionArrayJoin::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	throw Exception("Function " + getName() + " must not be executed directly.", ErrorCodes::FUNCTION_IS_SPECIAL);
+}
+FunctionPtr FunctionReplicate::create(const Context & context)
+{
+	return std::make_shared<FunctionReplicate>();
+}
+DataTypePtr FunctionReplicate::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[1]);
+	if (!array_type)
+		throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+	return std::make_shared<DataTypeArray>(arguments[0]->clone());
+}
+void FunctionReplicate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	ColumnPtr first_column = block.safeGetByPosition(arguments[0]).column;
+
+	ColumnArray * array_column = typeid_cast<ColumnArray *>(block.safeGetByPosition(arguments[1]).column.get());
+	ColumnPtr temp_column;
+
+	if (!array_column)
+	{
+		ColumnConstArray * const_array_column = typeid_cast<ColumnConstArray *>(block.safeGetByPosition(arguments[1]).column.get());
+		if (!const_array_column)
+			throw Exception("Unexpected column for replicate", ErrorCodes::ILLEGAL_COLUMN);
+		temp_column = const_array_column->convertToFullColumn();
+		array_column = typeid_cast<ColumnArray *>(&*temp_column);
+	}
+
+	block.safeGetByPosition(result).column
+		= std::make_shared<ColumnArray>(first_column->replicate(array_column->getOffsets()), array_column->getOffsetsColumn());
+}
+FunctionPtr FunctionBar::create(const Context & context)
+{
+	return std::make_shared<FunctionBar>();
+}
+DataTypePtr FunctionBar::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	if (arguments.size() != 3 && arguments.size() != 4)
+		throw Exception("Function " + getName()
+				+ " requires from 3 or 4 parameters: value, min_value, max_value, [max_width_of_bar = 80]. Passed "
+				+ toString(arguments.size())
+				+ ".",
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+	if (!arguments[0]->isNumeric() || !arguments[1]->isNumeric() || !arguments[2]->isNumeric()
+		|| (arguments.size() == 4 && !arguments[3]->isNumeric()))
+		throw Exception("All arguments for function " + getName() + " must be numeric.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+	return std::make_shared<DataTypeString>();
+}
+void FunctionBar::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	Int64 min = extractConstant<Int64>(block, arguments, 1, "Second"); /// Уровень значения, при котором полоска имеет нулевую длину.
+	Int64 max = extractConstant<Int64>(block, arguments, 2, "Third"); /// Уровень значения, при котором полоска имеет максимальную длину.
+
+	/// Максимальная ширина полоски в символах, по-умолчанию.
+	Float64 max_width = arguments.size() == 4 ? extractConstant<Float64>(block, arguments, 3, "Fourth") : 80;
+
+	if (max_width < 1)
+		throw Exception("Max_width argument must be >= 1.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+	if (max_width > 1000)
+		throw Exception("Too large max_width.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+	const auto & src = *block.safeGetByPosition(arguments[0]).column;
+
+	if (src.isConst())
+	{
+		auto res_column = std::make_shared<ColumnConstString>(block.rows(), "");
+		block.safeGetByPosition(result).column = res_column;
+
+		if (executeConstNumber<UInt8>(src, *res_column, min, max, max_width)
+			|| executeConstNumber<UInt16>(src, *res_column, min, max, max_width)
+			|| executeConstNumber<UInt32>(src, *res_column, min, max, max_width)
+			|| executeConstNumber<UInt64>(src, *res_column, min, max, max_width)
+			|| executeConstNumber<Int8>(src, *res_column, min, max, max_width)
+			|| executeConstNumber<Int16>(src, *res_column, min, max, max_width)
+			|| executeConstNumber<Int32>(src, *res_column, min, max, max_width)
+			|| executeConstNumber<Int64>(src, *res_column, min, max, max_width)
+			|| executeConstNumber<Float32>(src, *res_column, min, max, max_width)
+			|| executeConstNumber<Float64>(src, *res_column, min, max, max_width))
+		{
+		}
+		else
+			throw Exception(
+				"Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+	else
+	{
+		auto res_column = std::make_shared<ColumnString>();
+		block.safeGetByPosition(result).column = res_column;
+
+		if (executeNumber<UInt8>(src, *res_column, min, max, max_width) || executeNumber<UInt16>(src, *res_column, min, max, max_width)
+			|| executeNumber<UInt32>(src, *res_column, min, max, max_width)
+			|| executeNumber<UInt64>(src, *res_column, min, max, max_width)
+			|| executeNumber<Int8>(src, *res_column, min, max, max_width)
+			|| executeNumber<Int16>(src, *res_column, min, max, max_width)
+			|| executeNumber<Int32>(src, *res_column, min, max, max_width)
+			|| executeNumber<Int64>(src, *res_column, min, max, max_width)
+			|| executeNumber<Float32>(src, *res_column, min, max, max_width)
+			|| executeNumber<Float64>(src, *res_column, min, max, max_width))
+		{
+		}
+		else
+			throw Exception(
+				"Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+}
+FunctionPtr FunctionVersion::create(const Context & context)
+{
+	return std::make_shared<FunctionVersion>();
+}
+DataTypePtr FunctionVersion::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeString>();
+}
+void FunctionVersion::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	static const std::string version = getVersion();
+	block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(block.rows(), version);
+}
+FunctionPtr FunctionUptime::create(const Context & context)
+{
+	return std::make_shared<FunctionUptime>(context.getUptimeSeconds());
+}
+DataTypePtr FunctionUptime::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeUInt32>();
+}
+void FunctionUptime::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt32>(block.rows(), uptime);
+}
+FunctionPtr FunctionTimeZone::create(const Context & context)
+{
+	return std::make_shared<FunctionTimeZone>();
+}
+DataTypePtr FunctionTimeZone::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeString>();
+}
+void FunctionTimeZone::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(block.rows(), DateLUT::instance().getTimeZone());
+}
+FunctionPtr FunctionRunningAccumulate::create(const Context & context)
+{
+	return std::make_shared<FunctionRunningAccumulate>();
+}
+DataTypePtr FunctionRunningAccumulate::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	const DataTypeAggregateFunction * type = typeid_cast<const DataTypeAggregateFunction *>(&*arguments[0]);
+	if (!type)
+		throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+	return type->getReturnType()->clone();
+}
+void FunctionRunningAccumulate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	const ColumnAggregateFunction * column_with_states
+		= typeid_cast<const ColumnAggregateFunction *>(&*block.safeGetByPosition(arguments.at(0)).column);
+	if (!column_with_states)
+		throw Exception(
+			"Illegal column " + block.safeGetByPosition(arguments.at(0)).column->getName() + " of first argument of function " + getName(),
+			ErrorCodes::ILLEGAL_COLUMN);
+
+	AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
+	const IAggregateFunction & agg_func = *aggregate_function_ptr;
+
+	auto deleter = [&agg_func](char * ptr) {
+		agg_func.destroy(ptr);
+		free(ptr);
+	};
+	std::unique_ptr<char, decltype(deleter)> place{reinterpret_cast<char *>(malloc(agg_func.sizeOfData())), deleter};
+
+	agg_func.create(place.get()); /// Немного не exception-safe. Если здесь выкинется исключение, то зря вызовется destroy.
+
+	std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
+
+	ColumnPtr result_column_ptr = agg_func.getReturnType()->createColumn();
+	block.safeGetByPosition(result).column = result_column_ptr;
+	IColumn & result_column = *result_column_ptr;
+	result_column.reserve(column_with_states->size());
+
+	const auto & states = column_with_states->getData();
+	for (const auto & state_to_add : states)
+	{
+		/// Will pass empty arena if agg_func does not allocate memory in arena
+		agg_func.merge(place.get(), state_to_add, arena.get());
+		agg_func.insertResultInto(place.get(), result_column);
+	}
+}
+DataTypePtr FunctionRunningDifference::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	DataTypePtr res;
+	dispatchForSourceType(*arguments[0], [&](auto field_type_tag) {
+		res = std::make_shared<typename DataTypeFromFieldType<DstFieldType<decltype(field_type_tag)>>::Type>();
+	});
+
+	return res;
+}
+FunctionPtr FunctionRunningDifference::create(const Context & context)
+{
+	return std::make_shared<FunctionRunningDifference>();
+}
+void FunctionRunningDifference::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	auto & src = block.safeGetByPosition(arguments.at(0));
+	auto & res = block.safeGetByPosition(result);
+
+	/// When column is constant, its difference is zero.
+	if (src.column->isConst())
+	{
+		res.column = res.type->createConstColumn(block.rows(), res.type->getDefault());
+		return;
+	}
+
+	res.column = res.type->createColumn();
+
+	dispatchForSourceType(*src.type, [&](auto field_type_tag) {
+		using SrcFieldType = decltype(field_type_tag);
+		process(static_cast<const ColumnVector<SrcFieldType> &>(*src.column).getData(),
+			static_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res.column).getData());
+	});
+}
+FunctionPtr FunctionFinalizeAggregation::create(const Context & context)
+{
+	return std::make_shared<FunctionFinalizeAggregation>();
+}
+DataTypePtr FunctionFinalizeAggregation::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	const DataTypeAggregateFunction * type = typeid_cast<const DataTypeAggregateFunction *>(&*arguments[0]);
+	if (!type)
+		throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+	return type->getReturnType()->clone();
+}
+void FunctionFinalizeAggregation::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	ColumnAggregateFunction * column_with_states
+		= typeid_cast<ColumnAggregateFunction *>(&*block.safeGetByPosition(arguments.at(0)).column);
+	if (!column_with_states)
+		throw Exception(
+			"Illegal column " + block.safeGetByPosition(arguments.at(0)).column->getName() + " of first argument of function " + getName(),
+			ErrorCodes::ILLEGAL_COLUMN);
+
+	block.safeGetByPosition(result).column = column_with_states->convertToValues();
+}
+FunctionPtr FunctionHasColumnInTable::create(const Context & context)
+{
+	return std::make_shared<FunctionHasColumnInTable>(context.getGlobalContext());
+}
+template <bool negative, bool global>
+FunctionPtr FunctionIn<negative, global>::create(const Context & context)
+{
+	return std::make_shared<FunctionIn>();
+}
+template <bool negative, bool global>
+DataTypePtr FunctionIn<negative, global>::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	return std::make_shared<DataTypeUInt8>();
+}
+template <bool negative, bool global>
+void FunctionIn<negative, global>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	/// Second argument must be ColumnSet.
+	ColumnPtr column_set_ptr = block.safeGetByPosition(arguments[1]).column;
+	const ColumnSet * column_set = typeid_cast<const ColumnSet *>(&*column_set_ptr);
+	if (!column_set)
+		throw Exception(
+			"Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
+
+	Block block_of_key_columns;
+
+	/// First argument may be tuple or single column.
+	const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(block.safeGetByPosition(arguments[0]).column.get());
+	const ColumnConstTuple * const_tuple = typeid_cast<const ColumnConstTuple *>(block.safeGetByPosition(arguments[0]).column.get());
+
+	if (tuple)
+		block_of_key_columns = tuple->getData();
+	else if (const_tuple)
+		block_of_key_columns = static_cast<const ColumnTuple &>(*const_tuple->convertToFullColumn()).getData();
+	else
+		block_of_key_columns.insert(block.safeGetByPosition(arguments[0]));
+
+	block.safeGetByPosition(result).column = column_set->getData()->execute(block_of_key_columns, negative);
+}
 }
