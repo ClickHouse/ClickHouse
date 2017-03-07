@@ -476,10 +476,7 @@ class FunctionStringNumNumToString : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static FunctionPtr create(const Context & context)
-	{
-		return std::make_shared<FunctionStringNumNumToString>();
-	}
+	static FunctionPtr create(const Context & context);
 
 	/// Получить имя функции.
 	String getName() const override
@@ -493,71 +490,10 @@ public:
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-	{
-		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
-			throw Exception(
-				"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		if (!arguments[1]->isNumeric() || !arguments[2]->isNumeric())
-			throw Exception("Illegal type " + (arguments[1]->isNumeric() ? arguments[2]->getName() : arguments[1]->getName())
-					+ " of argument of function "
-					+ getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return std::make_shared<DataTypeString>();
-	}
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
 	/// Выполнить функцию над блоком.
-	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
-	{
-		const ColumnPtr column_string = block.safeGetByPosition(arguments[0]).column;
-		const ColumnPtr column_start = block.safeGetByPosition(arguments[1]).column;
-		const ColumnPtr column_length = block.safeGetByPosition(arguments[2]).column;
-
-		if (!column_start->isConst() || !column_length->isConst())
-			throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
-
-		Field start_field = (*block.safeGetByPosition(arguments[1]).column)[0];
-		Field length_field = (*block.safeGetByPosition(arguments[2]).column)[0];
-
-		if (start_field.getType() != Field::Types::UInt64 || length_field.getType() != Field::Types::UInt64)
-			throw Exception("2nd and 3rd arguments of function " + getName() + " must be non-negative and must have UInt type.");
-
-		UInt64 start = start_field.get<UInt64>();
-		UInt64 length = length_field.get<UInt64>();
-
-		if (start == 0)
-			throw Exception("Second argument of function substring must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-		/// Otherwise may lead to overflow and pass bounds check inside inner loop.
-		if (start >= 0x8000000000000000ULL || length >= 0x8000000000000000ULL)
-			throw Exception("Too large values of 2nd or 3rd argument provided for function substring.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_string))
-		{
-			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-			block.safeGetByPosition(result).column = col_res;
-			Impl::vector(col->getChars(), col->getOffsets(), start, length, col_res->getChars(), col_res->getOffsets());
-		}
-		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_string))
-		{
-			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-			block.safeGetByPosition(result).column = col_res;
-			Impl::vector_fixed(col->getChars(), col->getN(), start, length, col_res->getChars(), col_res->getOffsets());
-		}
-		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column_string))
-		{
-			String res;
-			Impl::constant(col->getData(), start, length, res);
-			auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
-			block.safeGetByPosition(result).column = col_res;
-		}
-		else
-			throw Exception(
-				"Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN);
-	}
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
 

@@ -184,7 +184,7 @@ void EmptyImpl<negative>::vector_fixed_to_constant(const ColumnString::Chars_t &
 }
 
 template <bool negative>
-void EmptyImpl<negative>::constant(const std::__cxx11::string & data, UInt8 & res)
+void EmptyImpl<negative>::constant(const std::string & data, UInt8 & res)
 {
 	res = negative ^ (data.empty());
 }
@@ -224,7 +224,7 @@ void LengthImpl::vector_fixed_to_vector(const ColumnString::Chars_t & data, size
 {
 }
 
-void LengthImpl::constant(const std::__cxx11::string & data, UInt64 & res)
+void LengthImpl::constant(const std::string & data, UInt64 & res)
 {
 	res = data.size();
 }
@@ -273,7 +273,7 @@ void LengthUTF8Impl::vector_fixed_to_vector(const ColumnString::Chars_t & data, 
 				++res[i];
 	}
 }
-void LengthUTF8Impl::constant(const std::__cxx11::string & data, UInt64 & res)
+void LengthUTF8Impl::constant(const std::string & data, UInt64 & res)
 {
 	res = 0;
 	for (const UInt8 * c = reinterpret_cast<const UInt8 *>(data.data()); c < reinterpret_cast<const UInt8 *>(data.data() + data.size());
@@ -305,8 +305,7 @@ void LowerUpperImpl<not_case_lower_bound, not_case_upper_bound>::vector(const Co
 }
 
 template <char not_case_lower_bound, char not_case_upper_bound>
-void LowerUpperImpl<not_case_lower_bound, not_case_upper_bound>::constant(
-	const std::__cxx11::string & data, std::__cxx11::string & res_data)
+void LowerUpperImpl<not_case_lower_bound, not_case_upper_bound>::constant(const std::string & data, std::string & res_data)
 {
 	res_data.resize(data.size());
 	array(reinterpret_cast<const UInt8 *>(data.data()),
@@ -436,7 +435,7 @@ template <char not_case_lower_bound,
 	int to_case(int),
 	void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::constant(
-	const std::__cxx11::string & data, std::__cxx11::string & res_data)
+	const std::string & data, std::string & res_data)
 {
 	res_data.resize(data.size());
 	array(reinterpret_cast<const UInt8 *>(data.data()),
@@ -592,7 +591,7 @@ void ReverseImpl::vector_fixed(const ColumnString::Chars_t & data, size_t n, Col
 			res_data[j] = data[(i * 2 + 1) * n - j - 1];
 }
 
-void ReverseImpl::constant(const std::__cxx11::string & data, std::__cxx11::string & res_data)
+void ReverseImpl::constant(const std::string & data, std::string & res_data)
 {
 	res_data.resize(data.size());
 	for (size_t j = 0; j < data.size(); ++j)
@@ -647,7 +646,7 @@ void ReverseUTF8Impl::vector_fixed(const ColumnString::Chars_t & data, size_t n,
 	throw Exception("Cannot apply function reverseUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
 }
 
-void ReverseUTF8Impl::constant(const std::__cxx11::string & data, std::__cxx11::string & res_data)
+void ReverseUTF8Impl::constant(const std::string & data, std::string & res_data)
 {
 	res_data.resize(data.size());
 
@@ -738,7 +737,7 @@ void SubstringImpl::vector_fixed(const ColumnString::Chars_t & data,
 	}
 }
 
-void SubstringImpl::constant(const std::__cxx11::string & data, size_t start, size_t length, std::__cxx11::string & res_data)
+void SubstringImpl::constant(const std::string & data, size_t start, size_t length, std::string & res_data)
 {
 	if (start + length > data.size() + 1)
 		throw Exception("Index out of bound for function substring of fixed size value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -817,7 +816,7 @@ void SubstringUTF8Impl::vector_fixed(const ColumnString::Chars_t & data,
 	throw Exception("Cannot apply function substringUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
 }
 
-void SubstringUTF8Impl::constant(const std::__cxx11::string & data, size_t start, size_t length, std::__cxx11::string & res_data)
+void SubstringUTF8Impl::constant(const std::string & data, size_t start, size_t length, std::string & res_data)
 {
 	if (start + length > data.size() + 1)
 		throw Exception("Index out of bound for function substring of constant value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -1219,7 +1218,7 @@ void ConcatImpl<Name, is_injective>::vector_fixed_vector(const ColumnString::Cha
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::vector_constant(const ColumnString::Chars_t & a_data,
 	const IColumn::Offsets_t & a_offsets,
-	const std::__cxx11::string & b,
+	const std::string & b,
 	ColumnString::Chars_t & c_data,
 	IColumn::Offsets_t & c_offsets)
 {
@@ -1298,7 +1297,7 @@ void ConcatImpl<Name, is_injective>::fixed_vector_fixed_vector(const ColumnStrin
 template <typename Name, bool is_injective>
 void ConcatImpl<Name, is_injective>::fixed_vector_constant(const ColumnString::Chars_t & a_data,
 	IColumn::Offset_t a_n,
-	const std::__cxx11::string & b,
+	const std::string & b,
 	ColumnString::Chars_t & c_data,
 	IColumn::Offsets_t & c_offsets)
 {
@@ -1321,7 +1320,7 @@ void ConcatImpl<Name, is_injective>::fixed_vector_constant(const ColumnString::C
 	}
 }
 template <typename Name, bool is_injective>
-void ConcatImpl<Name, is_injective>::constant_vector(const std::__cxx11::string & a,
+void ConcatImpl<Name, is_injective>::constant_vector(const std::string & a,
 	const ColumnString::Chars_t & b_data,
 	const IColumn::Offsets_t & b_offsets,
 	ColumnString::Chars_t & c_data,
@@ -1347,7 +1346,7 @@ void ConcatImpl<Name, is_injective>::constant_vector(const std::__cxx11::string 
 	}
 }
 template <typename Name, bool is_injective>
-void ConcatImpl<Name, is_injective>::constant_fixed_vector(const std::__cxx11::string & a,
+void ConcatImpl<Name, is_injective>::constant_fixed_vector(const std::string & a,
 	const ColumnString::Chars_t & b_data,
 	IColumn::Offset_t b_n,
 	ColumnString::Chars_t & c_data,
@@ -1372,9 +1371,79 @@ void ConcatImpl<Name, is_injective>::constant_fixed_vector(const std::__cxx11::s
 	}
 }
 template <typename Name, bool is_injective>
-void ConcatImpl<Name, is_injective>::constant_constant(
-	const std::__cxx11::string & a, const std::__cxx11::string & b, std::__cxx11::string & c)
+void ConcatImpl<Name, is_injective>::constant_constant(const std::string & a, const std::string & b, std::string & c)
 {
 	c = a + b;
+}
+
+template <typename Impl, typename Name>
+FunctionPtr FunctionStringNumNumToString<Impl, Name>::create(const Context & context)
+{
+	return std::make_shared<FunctionStringNumNumToString>();
+}
+template <typename Impl, typename Name>
+DataTypePtr FunctionStringNumNumToString<Impl, Name>::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
+		throw Exception(
+			"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+	if (!arguments[1]->isNumeric() || !arguments[2]->isNumeric())
+		throw Exception("Illegal type " + (arguments[1]->isNumeric() ? arguments[2]->getName() : arguments[1]->getName())
+				+ " of argument of function "
+				+ getName(),
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+	return std::make_shared<DataTypeString>();
+}
+template <typename Impl, typename Name>
+void FunctionStringNumNumToString<Impl, Name>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	const ColumnPtr column_string = block.safeGetByPosition(arguments[0]).column;
+	const ColumnPtr column_start = block.safeGetByPosition(arguments[1]).column;
+	const ColumnPtr column_length = block.safeGetByPosition(arguments[2]).column;
+
+	if (!column_start->isConst() || !column_length->isConst())
+		throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
+
+	Field start_field = (*block.safeGetByPosition(arguments[1]).column)[0];
+	Field length_field = (*block.safeGetByPosition(arguments[2]).column)[0];
+
+	if (start_field.getType() != Field::Types::UInt64 || length_field.getType() != Field::Types::UInt64)
+		throw Exception("2nd and 3rd arguments of function " + getName() + " must be non-negative and must have UInt type.");
+
+	UInt64 start = start_field.get<UInt64>();
+	UInt64 length = length_field.get<UInt64>();
+
+	if (start == 0)
+		throw Exception("Second argument of function substring must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+	/// Otherwise may lead to overflow and pass bounds check inside inner loop.
+	if (start >= 0x8000000000000000ULL || length >= 0x8000000000000000ULL)
+		throw Exception("Too large values of 2nd or 3rd argument provided for function substring.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+	if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_string))
+	{
+		std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+		block.safeGetByPosition(result).column = col_res;
+		Impl::vector(col->getChars(), col->getOffsets(), start, length, col_res->getChars(), col_res->getOffsets());
+	}
+	else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_string))
+	{
+		std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+		block.safeGetByPosition(result).column = col_res;
+		Impl::vector_fixed(col->getChars(), col->getN(), start, length, col_res->getChars(), col_res->getOffsets());
+	}
+	else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column_string))
+	{
+		String res;
+		Impl::constant(col->getData(), start, length, res);
+		auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
+		block.safeGetByPosition(result).column = col_res;
+	}
+	else
+		throw Exception(
+			"Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+			ErrorCodes::ILLEGAL_COLUMN);
 }
 }
