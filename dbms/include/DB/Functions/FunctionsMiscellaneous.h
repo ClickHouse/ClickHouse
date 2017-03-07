@@ -579,69 +579,21 @@ public:
 
 private:
 	template <typename T>
-	T extractConstant(Block & block, const ColumnNumbers & arguments, size_t argument_pos, const char * which_argument) const
-	{
-		const auto & column = *block.safeGetByPosition(arguments[argument_pos]).column;
-
-		if (!column.isConst())
-			throw Exception(which_argument + String(" argument for function ") + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
-
-		return applyVisitor(FieldVisitorConvertToNumber<T>(), column[0]);
-	}
+	T extractConstant(Block & block, const ColumnNumbers & arguments, size_t argument_pos, const char * which_argument) const;
 
 	template <typename T>
 	static void fill(const PaddedPODArray<T> & src, ColumnString::Chars_t & dst_chars, ColumnString::Offsets_t & dst_offsets,
-		Int64 min, Int64 max, Float64 max_width)
-	{
-		size_t size = src.size();
-		size_t current_offset = 0;
-
-		dst_offsets.resize(size);
-		dst_chars.reserve(size * (UnicodeBar::getWidthInBytes(max_width) + 1));	/// строки 0-terminated.
-
-		for (size_t i = 0; i < size; ++i)
-		{
-			Float64 width = UnicodeBar::getWidth(src[i], min, max, max_width);
-			size_t next_size = current_offset + UnicodeBar::getWidthInBytes(width) + 1;
-			dst_chars.resize(next_size);
-			UnicodeBar::render(width, reinterpret_cast<char *>(&dst_chars[current_offset]));
-			current_offset = next_size;
-			dst_offsets[i] = current_offset;
-		}
-	}
+		Int64 min, Int64 max, Float64 max_width);
 
 	template <typename T>
 	static void fill(T src, String & dst_chars,
-		Int64 min, Int64 max, Float64 max_width)
-	{
-		Float64 width = UnicodeBar::getWidth(src, min, max, max_width);
-		dst_chars.resize(UnicodeBar::getWidthInBytes(width));
-		UnicodeBar::render(width, &dst_chars[0]);
-	}
+		Int64 min, Int64 max, Float64 max_width);
 
 	template <typename T>
-	static bool executeNumber(const IColumn & src, ColumnString & dst, Int64 min, Int64 max, Float64 max_width)
-	{
-		if (const ColumnVector<T> * col = typeid_cast<const ColumnVector<T> *>(&src))
-		{
-			fill(col->getData(), dst.getChars(), dst.getOffsets(), min, max, max_width);
-			return true;
-		}
-		else
-			return false;
-	}
+	static bool executeNumber(const IColumn & src, ColumnString & dst, Int64 min, Int64 max, Float64 max_width);
 
 	template <typename T>
-	static bool executeConstNumber(const IColumn & src, ColumnConstString & dst, Int64 min, Int64 max, Float64 max_width)
-	{
-		if (const ColumnConst<T> * col = typeid_cast<const ColumnConst<T> *>(&src))
-		{
-			fill(col->getData(), dst.getData(), min, max, max_width);
-			return true;
-		}
-		else
-			return false;
-	}
+	static bool executeConstNumber(const IColumn & src, ColumnConstString & dst, Int64 min, Int64 max, Float64 max_width);
 };
 
 
@@ -650,82 +602,18 @@ class FunctionNumericPredicate : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
-	static FunctionPtr create(const Context &) { return std::make_shared<FunctionNumericPredicate>(); }
+	static FunctionPtr create(const Context &);
 
 	String getName() const override { return name; }
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-	{
-		const auto arg = arguments.front().get();
-		if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
-			!typeid_cast<const DataTypeUInt16 *>(arg) &&
-			!typeid_cast<const DataTypeUInt32 *>(arg) &&
-			!typeid_cast<const DataTypeUInt64 *>(arg) &&
-			!typeid_cast<const DataTypeInt8 *>(arg) &&
-			!typeid_cast<const DataTypeInt16 *>(arg) &&
-			!typeid_cast<const DataTypeInt32 *>(arg) &&
-			!typeid_cast<const DataTypeInt64 *>(arg) &&
-			!typeid_cast<const DataTypeFloat32 *>(arg) &&
-			!typeid_cast<const DataTypeFloat64 *>(arg))
-			throw Exception{
-				"Argument for function " + getName() + " must be numeric",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-			};
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-		return std::make_shared<DataTypeUInt8>();
-	}
-
-	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
-	{
-		const auto in = block.safeGetByPosition(arguments.front()).column.get();
-
-		if (!execute<UInt8>(block, in, result) &&
-			!execute<UInt16>(block, in, result) &&
-			!execute<UInt32>(block, in, result) &&
-			!execute<UInt64>(block, in, result) &&
-			!execute<Int8>(block, in, result) &&
-			!execute<Int16>(block, in, result) &&
-			!execute<Int32>(block, in, result) &&
-			!execute<Int64>(block, in, result) &&
-			!execute<Float32>(block, in, result)  &&
-			!execute<Float64>(block, in, result))
-			throw Exception{
-				"Illegal column " + in->getName() + " of first argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN
-			};
-	}
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override;
 
 	template <typename T>
-	bool execute(Block & block, const IColumn * in_untyped, const size_t result)
-	{
-		if (const auto in = typeid_cast<const ColumnVector<T> *>(in_untyped))
-		{
-			const auto size = in->size();
-
-			const auto out = std::make_shared<ColumnUInt8>(size);
-			block.safeGetByPosition(result).column = out;
-
-			const auto & in_data = in->getData();
-			auto & out_data = out->getData();
-
-			for (const auto i : ext::range(0, size))
-				out_data[i] = Impl::execute(in_data[i]);
-
-			return true;
-		}
-		else if (const auto in = typeid_cast<const ColumnConst<T> *>(in_untyped))
-		{
-			block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(
-				in->size(),
-				Impl::execute(in->getData()));
-
-			return true;
-		}
-
-		return false;
-	}
+	bool execute(Block & block, const IColumn * in_untyped, const size_t result);
 };
 
 struct IsFiniteImpl
@@ -845,25 +733,7 @@ private:
 	/// It is possible to track value from previous block, to calculate continuously across all blocks. Not implemented.
 
 	template <typename Src, typename Dst>
-	static void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst)
-	{
-		size_t size = src.size();
-		dst.resize(size);
-
-		if (size == 0)
-			return;
-
-		/// It is possible to SIMD optimize this loop. By no need for that in practice.
-
-		dst[0] = 0;
-		Src prev = src[0];
-		for (size_t i = 1; i < size; ++i)
-		{
-			auto cur = src[i];
-			dst[i] = static_cast<Dst>(cur) - prev;
-			prev = cur;
-		}
-	}
+	static void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst);
 
 	/// Result type is same as result of subtraction of argument types.
 	template <typename SrcFieldType>
@@ -871,24 +741,7 @@ private:
 
 	/// Call polymorphic lambda with tag argument of concrete field type of src_type.
 	template <typename F>
-	void dispatchForSourceType(const IDataType & src_type, F && f) const
-	{
-			 if (typeid_cast<const DataTypeUInt8  *>(&src_type)) f(UInt8());
-		else if (typeid_cast<const DataTypeUInt16 *>(&src_type)) f(UInt16());
-		else if (typeid_cast<const DataTypeUInt32 *>(&src_type)) f(UInt32());
-		else if (typeid_cast<const DataTypeUInt64 *>(&src_type)) f(UInt64());
-		else if (typeid_cast<const DataTypeInt8 *>(&src_type)) f(Int8());
-		else if (typeid_cast<const DataTypeInt16 *>(&src_type)) f(Int16());
-		else if (typeid_cast<const DataTypeInt32 *>(&src_type)) f(Int32());
-		else if (typeid_cast<const DataTypeInt64 *>(&src_type)) f(Int64());
-		else if (typeid_cast<const DataTypeFloat32 *>(&src_type)) f(Float32());
-		else if (typeid_cast<const DataTypeFloat64 *>(&src_type)) f(Float64());
-		else if (typeid_cast<const DataTypeDate *>(&src_type)) f(DataTypeDate::FieldType());
-		else if (typeid_cast<const DataTypeDateTime *>(&src_type)) f(DataTypeDateTime::FieldType());
-		else
-			throw Exception("Argument for function " + getName() + " must have numeric type.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
+	void dispatchForSourceType(const IDataType & src_type, F && f) const;
 
 public:
 	static constexpr auto name = "runningDifference";
