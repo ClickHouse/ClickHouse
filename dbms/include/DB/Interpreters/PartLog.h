@@ -20,7 +20,7 @@ struct PartLogElement
 	time_t event_time{};
 
 	UInt64 size_in_bytes{};
-	UInt64 act_time_ms{};
+	UInt64 duration_ms{};
 
 	String database_name;
 	String table_name;

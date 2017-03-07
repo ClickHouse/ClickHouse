@@ -54,7 +54,6 @@ StorageMergeTree::StorageMergeTree(
 		 sampling_expression_, index_granularity_, merging_params_,
 		 settings_, database_name_ + "." + table_name, false, attach),
 	reader(data), writer(data, context), merger(data, context.getBackgroundPool()),
-	increment(0),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
 	data.loadDataParts(has_force_restore_data_flag);
@@ -358,7 +357,7 @@ bool StorageMergeTree::merge(
 	elem.table_name = new_part->storage.getTableName();
 	elem.part_name = new_part->name;
 
-	elem.act_time_ms = stopwatch.elapsed() / 1000000;
+	elem.duration_ms = stopwatch.elapsed() / 1000000;
 
 	context.getPartLog().add(elem);
 

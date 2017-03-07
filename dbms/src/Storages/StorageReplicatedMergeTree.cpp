@@ -2049,7 +2049,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	elem.event_type = PartLogElement::DOWNLOAD_PART;
 	elem.event_time = time(0);
 	elem.size_in_bytes = part->size_in_bytes;
-	elem.act_time_ms = stopwatch.elapsed() / 10000000;
+	elem.duration_ms = stopwatch.elapsed() / 10000000;
 	elem.database_name = part->storage.getDatabaseName();
 	elem.table_name = part->storage.getTableName();
 	elem.part_name = part->name;

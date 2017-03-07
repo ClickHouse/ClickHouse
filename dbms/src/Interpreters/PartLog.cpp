@@ -25,7 +25,7 @@ Block PartLogElement::createBlock()
 		{std::make_shared<ColumnUInt32>(),  std::make_shared<DataTypeDateTime>(),   "event_time"},
 
 		{std::make_shared<ColumnUInt64>(),  std::make_shared<DataTypeUInt64>(),	 "size_in_bytes"},
-		{std::make_shared<ColumnUInt64>(),  std::make_shared<DataTypeUInt64>(),	 "act_time_ms"},
+		{std::make_shared<ColumnUInt64>(),  std::make_shared<DataTypeUInt64>(),	 "duration_ms"},
 
 		{std::make_shared<ColumnString>(),  std::make_shared<DataTypeString>(),	 "database"},
 		{std::make_shared<ColumnString>(),  std::make_shared<DataTypeString>(),	 "table"},
@@ -45,7 +45,7 @@ void PartLogElement::appendToBlock(Block & block) const
 	block.getByPosition(i++).column->insert(UInt64(event_time));
 
 	block.getByPosition(i++).column->insert(UInt64(size_in_bytes));
-	block.getByPosition(i++).column->insert(UInt64(act_time_ms));
+	block.getByPosition(i++).column->insert(UInt64(duration_ms));
 
 	block.getByPosition(i++).column->insert(database_name);
 	block.getByPosition(i++).column->insert(table_name);
