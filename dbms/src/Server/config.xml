@@ -10,6 +10,36 @@
 
 
 	<http_port>8123</http_port>
+
+	<!--
+	<https_port>8443</https_port>
+	-->
+	<!-- Used only with https_port. Full ssl options list: https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
+	<openSSL>
+		<server>
+			<!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout server.key -out server.crt -->
+			<certificateFile>server.crt</certificateFile>
+			<privateKeyFile>server.key</privateKeyFile>
+			<!-- openssl dhparam -out dhparam.pem 4096 -->
+			<dhParamsFile>dhparam.pem</dhParamsFile>
+			<loadDefaultCAFile>true</loadDefaultCAFile>
+			<cacheSessions>true</cacheSessions>
+			<disableProtocols>sslv2,sslv3</disableProtocols>
+			<preferServerCiphers>true</preferServerCiphers>
+		</server>
+		<client>
+			<loadDefaultCAFile>true</loadDefaultCAFile>
+			<cacheSessions>true</cacheSessions>
+			<disableProtocols>sslv2,sslv3</disableProtocols>
+			<preferServerCiphers>true</preferServerCiphers>
+			<!-- Use for self-signed: <verificationMode>none</verificationMode> -->
+			<invalidCertificateHandler>
+				<!-- Use for self-signed: <name>AcceptCertificateHandler</name> -->
+				<name>RejectCertificateHandler</name>
+			</invalidCertificateHandler>
+		</client>
+	</openSSL>
+
 	<tcp_port>9000</tcp_port>
 
 	<!-- Port for communication between replicas. Used for data exchange. -->
@@ -160,9 +190,6 @@
 		 https://clickhouse.yandex/reference_en.html#External%20Dictionaries
 	-->
 	<dictionaries_config>*_dictionary.xml</dictionaries_config>
-
-	<!-- Allow connect to self-signed https servers -->
-	<!-- <https_client_insecure>true</https_client_insecure> -->
 
 	<!-- Uncomment if you want data to be compressed 30-100% better.
 		 Don't do that if you just started using ClickHouse.

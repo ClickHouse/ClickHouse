@@ -16,7 +16,7 @@ namespace DB
 
 void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response);
 
-extern std::once_flag client_ssl_init_once;
-void clientSSLInit();
+extern std::once_flag ssl_init_once;
+void SSLInit();
 
 }

@@ -44,8 +44,8 @@ class myHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 try:
     server = myHTTPServer(('', args.port), myHandler)
     if args.https:
-        os.system('openssl req -subj "/CN={host}/O=My Company Name LTD./C=US" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout server.key -out server.crt'.format(host=args.host))
-        server.socket = ssl.wrap_socket(server.socket, keyfile="server.key", certfile='server.crt', server_side=True)
+        os.system('openssl req -subj "/CN={host}" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout http_server.key -out http_server.crt'.format(host=args.host))
+        server.socket = ssl.wrap_socket(server.socket, keyfile="http_server.key", certfile='http_server.crt', server_side=True)
 
     print 'Started http' + ( 's' if args.https else '' ) + ' server on port' , args.port
     server.serve_forever()
