@@ -734,7 +734,7 @@ struct ReplaceRegexpImpl
 		const re2_st::StringPiece & input,
 		ColumnString::Chars_t & res_data,
 		ColumnString::Offset_t & res_offset,
-		RE2 & searcher, int num_captures,
+		re2_st::RE2 & searcher, int num_captures,
 		const Instructions & instructions)
 	{
 		re2_st::StringPiece matches[max_captures];
@@ -805,7 +805,7 @@ struct ReplaceRegexpImpl
 		size_t size = offsets.size();
 		res_offsets.resize(size);
 
-		RE2 searcher(needle);
+		re2_st::RE2 searcher(needle);
 		int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
 
 		Instructions instructions = createInstructions(replacement, num_captures);
@@ -830,7 +830,7 @@ struct ReplaceRegexpImpl
 		res_data.reserve(data.size());
 		res_offsets.resize(size);
 
-		RE2 searcher(needle);
+		re2_st::RE2 searcher(needle);
 		int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
 
 		Instructions instructions = createInstructions(replacement, num_captures);
