@@ -738,30 +738,21 @@ struct IsFiniteImpl
 {
 	static constexpr auto name = "isFinite";
 	template <typename T>
-	static bool execute(const T t)
-	{
-		return std::isfinite(t);
-	}
+	static bool execute(const T t);
 };
 
 struct IsInfiniteImpl
 {
 	static constexpr auto name = "isInfinite";
 	template <typename T>
-	static bool execute(const T t)
-	{
-		return std::isinf(t);
-	}
+	static bool execute(const T t);
 };
 
 struct IsNaNImpl
 {
 	static constexpr auto name = "isNaN";
 	template <typename T>
-	static bool execute(const T t)
-	{
-		return std::isnan(t);
-	}
+	static bool execute(const T t);
 };
 
 using FunctionIsFinite = FunctionNumericPredicate<IsFiniteImpl>;

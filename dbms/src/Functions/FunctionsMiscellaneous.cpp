@@ -1,5 +1,6 @@
 #include <DB/Functions/FunctionsMiscellaneous.h>
 
+#include <cmath>
 #include <Poco/Net/DNS.h>
 #include <common/ClickHouseRevision.h>
 #include <DB/Columns/ColumnSet.h>
@@ -1099,5 +1100,24 @@ void FunctionRunningDifference::dispatchForSourceType(const IDataType & src_type
 		f(DataTypeDateTime::FieldType());
 	else
 		throw Exception("Argument for function " + getName() + " must have numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
+
+
+template <typename T>
+bool IsFiniteImpl::execute(const T t)
+{
+	return std::isfinite(t);
+}
+
+template <typename T>
+bool IsNaNImpl::execute(const T t)
+{
+	return std::isnan(t);
+}
+
+template <typename T>
+bool IsInfiniteImpl::execute(const T t)
+{
+	return std::isinf(t);
 }
 }
