@@ -1,36 +1,12 @@
 #pragma once
 
-#include <Poco/Net/DNS.h>
-#include <ext/range.hpp>
 #include <DB/Columns/ColumnAggregateFunction.h>
-#include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnConst.h>
-#include <DB/Columns/ColumnFixedString.h>
-#include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnTuple.h>
-#include <DB/Columns/ColumnVector.h>
-#include <DB/Common/UnicodeBar.h>
-#include <DB/Core/Defines.h>
-#include <DB/Core/FieldVisitors.h>
-#include <DB/DataTypes/DataTypeAggregateFunction.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeTuple.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
-#include <DB/Functions/ObjectPool.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionActions.h>
-#include <DB/Interpreters/Set.h>
-
-#include <cmath>
-
 
 namespace DB
 {
