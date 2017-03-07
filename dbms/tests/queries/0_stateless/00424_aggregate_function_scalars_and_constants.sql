@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS test.agg_func_col;
 
 CREATE TABLE test.agg_func_col (p Date, k UInt8, d AggregateFunction(sum, UInt64) DEFAULT arrayReduce('sumState', [toUInt64(200)])) ENGINE = AggregatingMergeTree(p, k, 1);
 INSERT INTO test.agg_func_col (k) VALUES (0);
-INSERT INTO test.agg_func_col SELECT 1 AS k, arrayReduce('sumState', [toUInt64(100)]) AS d;
+INSERT INTO test.agg_func_col (k, d) SELECT 1 AS k, arrayReduce('sumState', [toUInt64(100)]) AS d;
 SELECT k, sumMerge(d) FROM test.agg_func_col GROUP BY k ORDER BY k;
 
 SELECT '';

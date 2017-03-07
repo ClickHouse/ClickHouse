@@ -1,10 +1,8 @@
 #pragma once
 
 #include <mutex>
-
 #include <DB/Common/OptimizedRegularExpression.h>
 #include <memory>
-
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
@@ -18,10 +16,14 @@
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <Poco/UTF8String.h>
-
 #include <mutex>
 #include <stack>
 #include <ext/range.hpp>
+#include <common/config_common.h>
+#if USE_RE2_ST
+	#include <re2_st/re2.h>
+#endif
+
 
 
 namespace ProfileEvents
@@ -729,13 +731,13 @@ struct ReplaceRegexpImpl
 
 
 	static void processString(
-		const re2::StringPiece & input,
+		const re2_st::StringPiece & input,
 		ColumnString::Chars_t & res_data,
 		ColumnString::Offset_t & res_offset,
-		RE2 & searcher, int num_captures,
+		re2_st::RE2 & searcher, int num_captures,
 		const Instructions & instructions)
 	{
-		re2::StringPiece matches[max_captures];
+		re2_st::StringPiece matches[max_captures];
 
 		int start_pos = 0;
 		while (start_pos < input.length())
@@ -743,7 +745,7 @@ struct ReplaceRegexpImpl
 			/// If no more replacements possible for current string
 			bool can_finish_current_string = false;
 
-			if (searcher.Match(input, start_pos, input.length(), re2::RE2::Anchor::UNANCHORED, matches, num_captures))
+			if (searcher.Match(input, start_pos, input.length(), re2_st::RE2::Anchor::UNANCHORED, matches, num_captures))
 			{
 				const auto & match = matches[0];
 				size_t bytes_to_copy = (match.data() - input.data()) - start_pos;
@@ -803,7 +805,7 @@ struct ReplaceRegexpImpl
 		size_t size = offsets.size();
 		res_offsets.resize(size);
 
-		RE2 searcher(needle);
+		re2_st::RE2 searcher(needle);
 		int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
 
 		Instructions instructions = createInstructions(replacement, num_captures);
@@ -812,7 +814,7 @@ struct ReplaceRegexpImpl
 		for (size_t i = 0; i < size; ++i)
 		{
 			int from = i > 0 ? offsets[i - 1] : 0;
-			re2::StringPiece input(reinterpret_cast<const char *>(&data[0] + from), offsets[i] - from - 1);
+			re2_st::StringPiece input(reinterpret_cast<const char *>(&data[0] + from), offsets[i] - from - 1);
 
 			processString(input, res_data, res_offset, searcher, num_captures, instructions);
 			res_offsets[i] = res_offset;
@@ -828,7 +830,7 @@ struct ReplaceRegexpImpl
 		res_data.reserve(data.size());
 		res_offsets.resize(size);
 
-		RE2 searcher(needle);
+		re2_st::RE2 searcher(needle);
 		int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
 
 		Instructions instructions = createInstructions(replacement, num_captures);
@@ -836,7 +838,7 @@ struct ReplaceRegexpImpl
 		for (size_t i = 0; i < size; ++i)
 		{
 			int from = i * n;
-			re2::StringPiece input(reinterpret_cast<const char*>(&data[0] + from), n);
+			re2_st::StringPiece input(reinterpret_cast<const char*>(&data[0] + from), n);
 
 			processString(input, res_data, res_offset, searcher, num_captures, instructions);
 			res_offsets[i] = res_offset;

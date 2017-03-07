@@ -13,7 +13,7 @@
 #include <DB/Core/StringRef.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Functions/IFunction.h>
-#include <DB/Functions/EnrichedDataTypePtr.h>
+#include <DB/DataTypes/EnrichedDataTypePtr.h>
 
 
 namespace DB

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <experimental/optional>
 
 namespace DB
 {
@@ -17,7 +18,7 @@ class NullableAdapterBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	NullableAdapterBlockInputStream(BlockInputStreamPtr input_, const Block & in_sample_,
-		const Block & out_sample_, const NamesAndTypesListPtr & required_columns_);
+		const Block & out_sample_);
 
 	String getName() const override { return "NullableAdapterBlockInputStream"; }
 
@@ -43,19 +44,17 @@ private:
 	using Actions = std::vector<Action>;
 
 private:
-	/// Return true if we must transform the blocks we read.
-	bool mustTransform() const;
-
 	/// Determine the actions to be taken using the source sample block,
 	/// which describes the columns from which we fetch data inside an INSERT
 	/// query, and the target sample block which contains the columns
 	/// we insert data into.
-	Actions getActions(const Block & in_sample, const Block & out_sample) const;
+	void buildActions(const Block & in_sample, const Block & out_sample);
 
 private:
 	NamesAndTypesListPtr required_columns;
-	const Actions actions;
-	const bool must_transform;
+	Actions actions;
+	std::vector<std::experimental::optional<String>> rename;
+	bool must_transform;
 };
 
 }
