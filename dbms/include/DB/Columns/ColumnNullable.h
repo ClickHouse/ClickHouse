@@ -86,10 +86,14 @@ public:
 	/// columns.
 	void applyNullValuesByteMap(const ColumnNullable & other);
 	void applyNullValuesByteMap(const ColumnUInt8 & map);
+	void applyNegatedNullValuesByteMap(const ColumnUInt8 & map);
 
 private:
 	ColumnPtr nested_column;
 	ColumnPtr null_map;
+
+	template <bool negative>
+	void applyNullValuesByteMapImpl(const ColumnUInt8 & map);
 };
 
 }

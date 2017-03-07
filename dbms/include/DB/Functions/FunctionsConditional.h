@@ -1462,7 +1462,7 @@ private:
 				if (arg_then.column->isNullable())
 				{
 					auto result_column = arg_then.column->clone();
-					static_cast<ColumnNullable &>(*result_column).applyNullValuesByteMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+					static_cast<ColumnNullable &>(*result_column).applyNegatedNullValuesByteMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
 					block.safeGetByPosition(result).column = result_column;
 				}
 				else
