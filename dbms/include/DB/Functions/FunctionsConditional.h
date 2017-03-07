@@ -1343,9 +1343,13 @@ private:
 			{
 				result_nullable->applyNullValuesByteMap(static_cast<const ColumnNullable &>(*arg_cond.column));
 			}
+			else if (result_column->isNull())
+			{
+				result_column = std::make_shared<ColumnNull>();
+			}
 			else
 			{
-				block.getByPosition(result).column = std::make_shared<ColumnNullable>(
+				result_column = std::make_shared<ColumnNullable>(
 					materializeColumnIfConst(result_column), static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumn());
 			}
 
