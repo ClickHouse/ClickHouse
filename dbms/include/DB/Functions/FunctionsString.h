@@ -161,75 +161,7 @@ private:
 	static constexpr auto ascii_upper_bound = '\x7f';
 	static constexpr auto flip_case_mask = 'A' ^ 'a';
 
-	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
-	{
-#if __SSE2__
-		const auto bytes_sse = sizeof(__m128i);
-		auto src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
-
-		/// SSE2 packed comparison operate on signed types, hence compare (c < 0) instead of (c > 0x7f)
-		const auto v_zero = _mm_setzero_si128();
-		const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
-		const auto v_not_case_upper_bound = _mm_set1_epi8(not_case_upper_bound + 1);
-		const auto v_flip_case_mask = _mm_set1_epi8(flip_case_mask);
-
-		while (src < src_end_sse)
-		{
-			const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
-
-			/// check for ASCII
-			const auto is_not_ascii = _mm_cmplt_epi8(chars, v_zero);
-			const auto mask_is_not_ascii = _mm_movemask_epi8(is_not_ascii);
-
-			/// ASCII
-			if (mask_is_not_ascii == 0)
-			{
-				const auto is_not_case = _mm_and_si128(_mm_cmpgt_epi8(chars, v_not_case_lower_bound),
-													   _mm_cmplt_epi8(chars, v_not_case_upper_bound));
-				const auto mask_is_not_case = _mm_movemask_epi8(is_not_case);
-
-				/// everything in correct case ASCII
-				if (mask_is_not_case == 0)
-					_mm_storeu_si128(reinterpret_cast<__m128i *>(dst), chars);
-				else
-				{
-					/// ASCII in mixed case
-					/// keep `flip_case_mask` only where necessary, zero out elsewhere
-					const auto xor_mask = _mm_and_si128(v_flip_case_mask, is_not_case);
-
-					/// flip case by applying calculated mask
-					const auto cased_chars = _mm_xor_si128(chars, xor_mask);
-
-					/// store result back to destination
-					_mm_storeu_si128(reinterpret_cast<__m128i *>(dst), cased_chars);
-				}
-
-				src += bytes_sse, dst += bytes_sse;
-			}
-			else
-			{
-				/// UTF-8
-				const auto expected_end = src + bytes_sse;
-
-				while (src < expected_end)
-					toCase(src, src_end, dst);
-
-				/// adjust src_end_sse by pushing it forward or backward
-				const auto diff = src - expected_end;
-				if (diff != 0)
-				{
-					if (src_end_sse + diff < src_end)
-						src_end_sse += diff;
-					else
-						src_end_sse -= bytes_sse - diff;
-				}
-			}
-		}
-#endif
-		/// handle remaining symbols
-		while (src < src_end)
-			toCase(src, src_end, dst);
-	}
+	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst);
 };
 
 
