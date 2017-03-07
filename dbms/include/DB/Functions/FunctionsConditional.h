@@ -1335,7 +1335,9 @@ private:
 			};
 
 			executeImpl(temporary_block, {0, 1, 2}, 3);
-			ColumnPtr & result_column = temporary_block.getByPosition(3).column;
+
+			block.getByPosition(result).column = temporary_block.getByPosition(3).column;
+			ColumnPtr & result_column = block.getByPosition(result).column;
 
 			if (ColumnNullable * result_nullable = typeid_cast<ColumnNullable *>(result_column.get()))
 			{
