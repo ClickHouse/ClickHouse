@@ -1,41 +1,39 @@
 #pragma once
 
 #include <Poco/Net/DNS.h>
-
+#include <ext/range.hpp>
+#include <DB/Columns/ColumnAggregateFunction.h>
+#include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnFixedString.h>
+#include <DB/Columns/ColumnSet.h>
+#include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnTuple.h>
+#include <DB/Columns/ColumnVector.h>
+#include <DB/Common/UnicodeBar.h>
 #include <DB/Core/Defines.h>
 #include <DB/Core/FieldVisitors.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeAggregateFunction.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeTuple.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeAggregateFunction.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnFixedString.h>
-#include <DB/Columns/ColumnConst.h>
-#include <DB/Columns/ColumnVector.h>
-#include <DB/Columns/ColumnSet.h>
-#include <DB/Columns/ColumnTuple.h>
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnAggregateFunction.h>
-#include <DB/Common/UnicodeBar.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/ObjectPool.h>
-#include <DB/Interpreters/ExpressionActions.h>
+#include <DB/IO/WriteBufferFromString.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Interpreters/Set.h>
-#include <ext/range.hpp>
 
 #include <cmath>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
 	extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -86,10 +84,18 @@ public:
 	static constexpr auto name = "currentDatabase";
 	static FunctionPtr create(const Context & context);
 
-	explicit FunctionCurrentDatabase(const String & db_name) : db_name{db_name} {}
+	explicit FunctionCurrentDatabase(const String & db_name) : db_name{db_name}
+	{
+	}
 
-	String getName() const override { return name; }
-	size_t getNumberOfArguments() const override { return 0; }
+	String getName() const override
+	{
+		return name;
+	}
+	size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -109,9 +115,15 @@ public:
 		return name;
 	}
 
-	bool isDeterministicInScopeOfQuery() override { return false; }
+	bool isDeterministicInScopeOfQuery() override
+	{
+		return false;
+	}
 
-	size_t getNumberOfArguments() const override { return 0; }
+	size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -140,7 +152,10 @@ public:
 		return name;
 	}
 
-	size_t getNumberOfArguments() const override { return 1; }
+	size_t getNumberOfArguments() const override
+	{
+		return 1;
+	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -167,7 +182,10 @@ public:
 		return true;
 	}
 
-	size_t getNumberOfArguments() const override { return 1; }
+	size_t getNumberOfArguments() const override
+	{
+		return 1;
+	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -194,7 +212,10 @@ public:
 		return true;
 	}
 
-	size_t getNumberOfArguments() const override { return 1; }
+	size_t getNumberOfArguments() const override
+	{
+		return 1;
+	}
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -214,9 +235,15 @@ public:
 		return name;
 	}
 
-	bool isDeterministicInScopeOfQuery() override { return false; }
+	bool isDeterministicInScopeOfQuery() override
+	{
+		return false;
+	}
 
-	size_t getNumberOfArguments() const override { return 0; }
+	size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -238,9 +265,15 @@ public:
 		return name;
 	}
 
-	size_t getNumberOfArguments() const override { return 0; }
+	size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
 
-	bool isDeterministicInScopeOfQuery() override { return false; }
+	bool isDeterministicInScopeOfQuery() override
+	{
+		return false;
+	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -254,7 +287,7 @@ public:
 class FunctionBlockNumber : public IFunction
 {
 private:
-	std::atomic<size_t> block_number {0};
+	std::atomic<size_t> block_number{0};
 
 public:
 	static constexpr auto name = "blockNumber";
@@ -266,9 +299,15 @@ public:
 		return name;
 	}
 
-	size_t getNumberOfArguments() const override { return 0; }
+	size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
 
-	bool isDeterministicInScopeOfQuery() override { return false; }
+	bool isDeterministicInScopeOfQuery() override
+	{
+		return false;
+	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -282,7 +321,7 @@ public:
 class FunctionRowNumberInAllBlocks : public IFunction
 {
 private:
-	std::atomic<size_t> rows {0};
+	std::atomic<size_t> rows{0};
 
 public:
 	static constexpr auto name = "rowNumberInAllBlocks";
@@ -294,9 +333,15 @@ public:
 		return name;
 	}
 
-	size_t getNumberOfArguments() const override { return 0; }
+	size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
 
-	bool isDeterministicInScopeOfQuery() override { return false; }
+	bool isDeterministicInScopeOfQuery() override
+	{
+		return false;
+	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -319,9 +364,15 @@ public:
 	}
 
 	/// Do not sleep during query analysis.
-	bool isSuitableForConstantFolding() const override { return false; }
+	bool isSuitableForConstantFolding() const override
+	{
+		return false;
+	}
 
-	size_t getNumberOfArguments() const override { return 1; }
+	size_t getNumberOfArguments() const override
+	{
+		return 1;
+	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -352,11 +403,28 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
-template <bool negative, bool global> struct FunctionInName;
-template <> struct FunctionInName<false, false>	{ static constexpr auto name = "in"; };
-template <> struct FunctionInName<false, true>	{ static constexpr auto name = "globalIn"; };
-template <> struct FunctionInName<true, false>	{ static constexpr auto name = "notIn"; };
-template <> struct FunctionInName<true, true>	{ static constexpr auto name = "globalNotIn"; };
+template <bool negative, bool global>
+struct FunctionInName;
+template <>
+struct FunctionInName<false, false>
+{
+	static constexpr auto name = "in";
+};
+template <>
+struct FunctionInName<false, true>
+{
+	static constexpr auto name = "globalIn";
+};
+template <>
+struct FunctionInName<true, false>
+{
+	static constexpr auto name = "notIn";
+};
+template <>
+struct FunctionInName<true, true>
+{
+	static constexpr auto name = "globalNotIn";
+};
 
 template <bool negative, bool global>
 class FunctionIn : public IFunction
@@ -370,7 +438,10 @@ public:
 		return name;
 	}
 
-	size_t getNumberOfArguments() const override { return 2; }
+	size_t getNumberOfArguments() const override
+	{
+		return 2;
+	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -391,11 +462,23 @@ public:
 		return name;
 	}
 
-	bool isVariadic() const override { return true; }
-	size_t getNumberOfArguments() const override { return 0; }
-	bool isInjective(const Block &) override { return true; }
+	bool isVariadic() const override
+	{
+		return true;
+	}
+	size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
+	bool isInjective(const Block &) override
+	{
+		return true;
+	}
 
-	bool hasSpecialSupportForNulls() const override { return true; }
+	bool hasSpecialSupportForNulls() const override
+	{
+		return true;
+	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -418,11 +501,13 @@ public:
 		return name;
 	}
 
-	size_t getNumberOfArguments() const override { return 2; }
+	size_t getNumberOfArguments() const override
+	{
+		return 2;
+	}
 
-	void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
-										DataTypePtr & out_return_type,
-										ExpressionActions::Actions & out_prerequisites) override;
+	void getReturnTypeAndPrerequisitesImpl(
+		const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites) override;
 
 	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
@@ -435,12 +520,24 @@ public:
 	static constexpr auto name = "ignore";
 	static FunctionPtr create(const Context & context);
 
-	bool isVariadic() const override { return true; }
-	size_t getNumberOfArguments() const override { return 0; }
+	bool isVariadic() const override
+	{
+		return true;
+	}
+	size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
 
-	bool hasSpecialSupportForNulls() const override { return true; }
+	bool hasSpecialSupportForNulls() const override
+	{
+		return true;
+	}
 
-	String getName() const override { return name; }
+	String getName() const override
+	{
+		return name;
+	}
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
 	/// Выполнить функцию над блоком.
@@ -466,12 +563,24 @@ public:
 	static constexpr auto name = "indexHint";
 	static FunctionPtr create(const Context & context);
 
-	bool isVariadic() const override { return true; }
-	size_t getNumberOfArguments() const override { return 0; }
+	bool isVariadic() const override
+	{
+		return true;
+	}
+	size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
 
-	bool hasSpecialSupportForNulls() const override { return true; }
+	bool hasSpecialSupportForNulls() const override
+	{
+		return true;
+	}
 
-	String getName() const override	{ return name; }
+	String getName() const override
+	{
+		return name;
+	}
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
 	/// Выполнить функцию над блоком.
@@ -491,7 +600,10 @@ public:
 		return name;
 	}
 
-	size_t getNumberOfArguments() const override { return 1; }
+	size_t getNumberOfArguments() const override
+	{
+		return 1;
+	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -514,10 +626,16 @@ public:
 		return name;
 	}
 
-	size_t getNumberOfArguments() const override { return 1; }
+	size_t getNumberOfArguments() const override
+	{
+		return 1;
+	}
 
 	/** It could return many different values for single argument. */
-	bool isDeterministicInScopeOfQuery() override { return false; }
+	bool isDeterministicInScopeOfQuery() override
+	{
+		return false;
+	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -526,7 +644,10 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 	/// Because of function cannot be executed directly.
-	bool isSuitableForConstantFolding() const override { return false; }
+	bool isSuitableForConstantFolding() const override
+	{
+		return false;
+	}
 };
 
 
@@ -545,7 +666,10 @@ public:
 		return name;
 	}
 
-	size_t getNumberOfArguments() const override { return 2; }
+	size_t getNumberOfArguments() const override
+	{
+		return 2;
+	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -568,8 +692,14 @@ public:
 		return name;
 	}
 
-	bool isVariadic() const override { return true; }
-	size_t getNumberOfArguments() const override { return 0; }
+	bool isVariadic() const override
+	{
+		return true;
+	}
+	size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -582,12 +712,15 @@ private:
 	T extractConstant(Block & block, const ColumnNumbers & arguments, size_t argument_pos, const char * which_argument) const;
 
 	template <typename T>
-	static void fill(const PaddedPODArray<T> & src, ColumnString::Chars_t & dst_chars, ColumnString::Offsets_t & dst_offsets,
-		Int64 min, Int64 max, Float64 max_width);
+	static void fill(const PaddedPODArray<T> & src,
+		ColumnString::Chars_t & dst_chars,
+		ColumnString::Offsets_t & dst_offsets,
+		Int64 min,
+		Int64 max,
+		Float64 max_width);
 
 	template <typename T>
-	static void fill(T src, String & dst_chars,
-		Int64 min, Int64 max, Float64 max_width);
+	static void fill(T src, String & dst_chars, Int64 min, Int64 max, Float64 max_width);
 
 	template <typename T>
 	static bool executeNumber(const IColumn & src, ColumnString & dst, Int64 min, Int64 max, Float64 max_width);
@@ -604,9 +737,15 @@ public:
 	static constexpr auto name = Impl::name;
 	static FunctionPtr create(const Context &);
 
-	String getName() const override { return name; }
+	String getName() const override
+	{
+		return name;
+	}
 
-	size_t getNumberOfArguments() const override { return 1; }
+	size_t getNumberOfArguments() const override
+	{
+		return 1;
+	}
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -619,19 +758,31 @@ public:
 struct IsFiniteImpl
 {
 	static constexpr auto name = "isFinite";
-	template <typename T> static bool execute(const T t) { return std::isfinite(t); }
+	template <typename T>
+	static bool execute(const T t)
+	{
+		return std::isfinite(t);
+	}
 };
 
 struct IsInfiniteImpl
 {
 	static constexpr auto name = "isInfinite";
-	template <typename T> static bool execute(const T t) { return std::isinf(t); }
+	template <typename T>
+	static bool execute(const T t)
+	{
+		return std::isinf(t);
+	}
 };
 
 struct IsNaNImpl
 {
 	static constexpr auto name = "isNaN";
-	template <typename T> static bool execute(const T t) { return std::isnan(t); }
+	template <typename T>
+	static bool execute(const T t)
+	{
+		return std::isnan(t);
+	}
 };
 
 using FunctionIsFinite = FunctionNumericPredicate<IsFiniteImpl>;
@@ -647,9 +798,15 @@ public:
 	static constexpr auto name = "version";
 	static FunctionPtr create(const Context & context);
 
-	String getName() const override { return name; }
+	String getName() const override
+	{
+		return name;
+	}
 
-	size_t getNumberOfArguments() const override { return 0; }
+	size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -668,11 +825,19 @@ public:
 	static constexpr auto name = "uptime";
 	static FunctionPtr create(const Context & context);
 
-	FunctionUptime(time_t uptime_) : uptime(uptime_) {}
+	FunctionUptime(time_t uptime_) : uptime(uptime_)
+	{
+	}
 
-	String getName() const override { return name; }
+	String getName() const override
+	{
+		return name;
+	}
 
-	size_t getNumberOfArguments() const override { return 0; }
+	size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -691,8 +856,14 @@ public:
 	static constexpr auto name = "timezone";
 	static FunctionPtr create(const Context & context);
 
-	String getName() const override { return name; }
-	size_t getNumberOfArguments() const override { return 0; }
+	String getName() const override
+	{
+		return name;
+	}
+	size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -712,11 +883,20 @@ public:
 	static constexpr auto name = "runningAccumulate";
 	static FunctionPtr create(const Context & context);
 
-	String getName() const override { return name; }
+	String getName() const override
+	{
+		return name;
+	}
 
-	size_t getNumberOfArguments() const override { return 1; }
+	size_t getNumberOfArguments() const override
+	{
+		return 1;
+	}
 
-	bool isDeterministicInScopeOfQuery() override { return false; }
+	bool isDeterministicInScopeOfQuery() override
+	{
+		return false;
+	}
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -747,11 +927,20 @@ public:
 	static constexpr auto name = "runningDifference";
 	static FunctionPtr create(const Context & context);
 
-	String getName() const override { return name; }
+	String getName() const override
+	{
+		return name;
+	}
 
-	size_t getNumberOfArguments() const override { return 1; }
+	size_t getNumberOfArguments() const override
+	{
+		return 1;
+	}
 
-	bool isDeterministicInScopeOfQuery() override { return false; }
+	bool isDeterministicInScopeOfQuery() override
+	{
+		return false;
+	}
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -767,9 +956,15 @@ public:
 	static constexpr auto name = "finalizeAggregation";
 	static FunctionPtr create(const Context & context);
 
-	String getName() const override { return name; }
+	String getName() const override
+	{
+		return name;
+	}
 
-	size_t getNumberOfArguments() const override { return 1; }
+	size_t getNumberOfArguments() const override
+	{
+		return 1;
+	}
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -785,25 +980,28 @@ class FunctionHasColumnInTable : public IFunction
 public:
 	static constexpr auto name = "hasColumnInTable";
 
-	size_t getNumberOfArguments() const override { return 3; }
+	size_t getNumberOfArguments() const override
+	{
+		return 3;
+	}
 
 	static FunctionPtr create(const Context & context);
 
-	FunctionHasColumnInTable(const Context & global_context_)
-		: global_context(global_context_)
+	FunctionHasColumnInTable(const Context & global_context_) : global_context(global_context_)
 	{
 	}
 
-	String getName() const override { return name; }
+	String getName() const override
+	{
+		return name;
+	}
 
-	void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
-		DataTypePtr & out_return_type,
-		ExpressionActions::Actions & out_prerequisites) override;
+	void getReturnTypeAndPrerequisitesImpl(
+		const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites) override;
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
 	const Context & global_context;
 };
-
 }

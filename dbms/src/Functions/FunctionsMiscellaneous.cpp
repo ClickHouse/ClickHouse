@@ -798,177 +798,181 @@ void FunctionIn<negative, global>::executeImpl(Block & block, const ColumnNumber
 	block.safeGetByPosition(result).column = column_set->getData()->execute(block_of_key_columns, negative);
 }
 template <typename T>
-T FunctionBar::extractConstant(Block& block, const ColumnNumbers& arguments, size_t argument_pos, const char* which_argument) const
-	{
-		const auto & column = *block.safeGetByPosition(arguments[argument_pos]).column;
+T FunctionBar::extractConstant(Block & block, const ColumnNumbers & arguments, size_t argument_pos, const char * which_argument) const
+{
+	const auto & column = *block.safeGetByPosition(arguments[argument_pos]).column;
 
-		if (!column.isConst())
-			throw Exception(which_argument + String(" argument for function ") + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+	if (!column.isConst())
+		throw Exception(which_argument + String(" argument for function ") + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
-		return applyVisitor(FieldVisitorConvertToNumber<T>(), column[0]);
-	}
+	return applyVisitor(FieldVisitorConvertToNumber<T>(), column[0]);
+}
 template <typename T>
-	void FunctionBar::fill(const PaddedPODArray< T >& src, ColumnString::Chars_t& dst_chars, IColumn::Offsets_t& dst_offsets, Int64 min, Int64 max, Float64 max_width)
+void FunctionBar::fill(const PaddedPODArray<T> & src,
+	ColumnString::Chars_t & dst_chars,
+	IColumn::Offsets_t & dst_offsets,
+	Int64 min,
+	Int64 max,
+	Float64 max_width)
+{
+	size_t size = src.size();
+	size_t current_offset = 0;
+
+	dst_offsets.resize(size);
+	dst_chars.reserve(size * (UnicodeBar::getWidthInBytes(max_width) + 1)); /// строки 0-terminated.
+
+	for (size_t i = 0; i < size; ++i)
 	{
-		size_t size = src.size();
-		size_t current_offset = 0;
-
-		dst_offsets.resize(size);
-		dst_chars.reserve(size * (UnicodeBar::getWidthInBytes(max_width) + 1));	/// строки 0-terminated.
-
-		for (size_t i = 0; i < size; ++i)
-		{
-			Float64 width = UnicodeBar::getWidth(src[i], min, max, max_width);
-			size_t next_size = current_offset + UnicodeBar::getWidthInBytes(width) + 1;
-			dst_chars.resize(next_size);
-			UnicodeBar::render(width, reinterpret_cast<char *>(&dst_chars[current_offset]));
-			current_offset = next_size;
-			dst_offsets[i] = current_offset;
-		}
+		Float64 width = UnicodeBar::getWidth(src[i], min, max, max_width);
+		size_t next_size = current_offset + UnicodeBar::getWidthInBytes(width) + 1;
+		dst_chars.resize(next_size);
+		UnicodeBar::render(width, reinterpret_cast<char *>(&dst_chars[current_offset]));
+		current_offset = next_size;
+		dst_offsets[i] = current_offset;
 	}
+}
 template <typename T>
-	void FunctionBar::fill(T src, String& dst_chars, Int64 min, Int64 max, Float64 max_width)
-	{
-		Float64 width = UnicodeBar::getWidth(src, min, max, max_width);
-		dst_chars.resize(UnicodeBar::getWidthInBytes(width));
-		UnicodeBar::render(width, &dst_chars[0]);
-	}
+void FunctionBar::fill(T src, String & dst_chars, Int64 min, Int64 max, Float64 max_width)
+{
+	Float64 width = UnicodeBar::getWidth(src, min, max, max_width);
+	dst_chars.resize(UnicodeBar::getWidthInBytes(width));
+	UnicodeBar::render(width, &dst_chars[0]);
+}
 template <typename T>
-	bool FunctionBar::executeNumber(const IColumn& src, ColumnString& dst, Int64 min, Int64 max, Float64 max_width)
+bool FunctionBar::executeNumber(const IColumn & src, ColumnString & dst, Int64 min, Int64 max, Float64 max_width)
+{
+	if (const ColumnVector<T> * col = typeid_cast<const ColumnVector<T> *>(&src))
 	{
-		if (const ColumnVector<T> * col = typeid_cast<const ColumnVector<T> *>(&src))
-		{
-			fill(col->getData(), dst.getChars(), dst.getOffsets(), min, max, max_width);
-			return true;
-		}
-		else
-			return false;
+		fill(col->getData(), dst.getChars(), dst.getOffsets(), min, max, max_width);
+		return true;
 	}
-template <typename T>
-	bool FunctionBar::executeConstNumber(const IColumn& src, ColumnConstString& dst, Int64 min, Int64 max, Float64 max_width)
-	{
-		if (const ColumnConst<T> * col = typeid_cast<const ColumnConst<T> *>(&src))
-		{
-			fill(col->getData(), dst.getData(), min, max, max_width);
-			return true;
-		}
-		else
-			return false;
-	}
-template <typename Impl>
-	FunctionPtr FunctionNumericPredicate<Impl>::create(const Context&){ return std::make_shared<FunctionNumericPredicate>(); }
-template <typename Impl>
-	DataTypePtr FunctionNumericPredicate<Impl>::getReturnTypeImpl(const DataTypes& arguments) const
-	{
-		const auto arg = arguments.front().get();
-		if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
-			!typeid_cast<const DataTypeUInt16 *>(arg) &&
-			!typeid_cast<const DataTypeUInt32 *>(arg) &&
-			!typeid_cast<const DataTypeUInt64 *>(arg) &&
-			!typeid_cast<const DataTypeInt8 *>(arg) &&
-			!typeid_cast<const DataTypeInt16 *>(arg) &&
-			!typeid_cast<const DataTypeInt32 *>(arg) &&
-			!typeid_cast<const DataTypeInt64 *>(arg) &&
-			!typeid_cast<const DataTypeFloat32 *>(arg) &&
-			!typeid_cast<const DataTypeFloat64 *>(arg))
-			throw Exception{
-				"Argument for function " + getName() + " must be numeric",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-			};
-
-		return std::make_shared<DataTypeUInt8>();
-	}
-template <typename Impl>
-	void FunctionNumericPredicate<Impl>::executeImpl(Block& block, const ColumnNumbers& arguments, const size_t result)
-	{
-		const auto in = block.safeGetByPosition(arguments.front()).column.get();
-
-		if (!execute<UInt8>(block, in, result) &&
-			!execute<UInt16>(block, in, result) &&
-			!execute<UInt32>(block, in, result) &&
-			!execute<UInt64>(block, in, result) &&
-			!execute<Int8>(block, in, result) &&
-			!execute<Int16>(block, in, result) &&
-			!execute<Int32>(block, in, result) &&
-			!execute<Int64>(block, in, result) &&
-			!execute<Float32>(block, in, result)  &&
-			!execute<Float64>(block, in, result))
-			throw Exception{
-				"Illegal column " + in->getName() + " of first argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN
-			};
-	}
-template <typename Impl>
-template <typename T>
-	bool FunctionNumericPredicate<Impl>::execute(Block& block, const IColumn* in_untyped, const size_t result)
-	{
-		if (const auto in = typeid_cast<const ColumnVector<T> *>(in_untyped))
-		{
-			const auto size = in->size();
-
-			const auto out = std::make_shared<ColumnUInt8>(size);
-			block.safeGetByPosition(result).column = out;
-
-			const auto & in_data = in->getData();
-			auto & out_data = out->getData();
-
-			for (const auto i : ext::range(0, size))
-				out_data[i] = Impl::execute(in_data[i]);
-
-			return true;
-		}
-		else if (const auto in = typeid_cast<const ColumnConst<T> *>(in_untyped))
-		{
-			block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(
-				in->size(),
-				Impl::execute(in->getData()));
-
-			return true;
-		}
-
+	else
 		return false;
-	}
-
-	template <typename Src, typename Dst>
-	void FunctionRunningDifference::process(const PaddedPODArray< Src >& src, PaddedPODArray< Dst >& dst)
+}
+template <typename T>
+bool FunctionBar::executeConstNumber(const IColumn & src, ColumnConstString & dst, Int64 min, Int64 max, Float64 max_width)
+{
+	if (const ColumnConst<T> * col = typeid_cast<const ColumnConst<T> *>(&src))
 	{
-		size_t size = src.size();
-		dst.resize(size);
-
-		if (size == 0)
-			return;
-
-		/// It is possible to SIMD optimize this loop. By no need for that in practice.
-
-		dst[0] = 0;
-		Src prev = src[0];
-		for (size_t i = 1; i < size; ++i)
-		{
-			auto cur = src[i];
-			dst[i] = static_cast<Dst>(cur) - prev;
-			prev = cur;
-		}
+		fill(col->getData(), dst.getData(), min, max, max_width);
+		return true;
 	}
-	template <typename F>
-	void FunctionRunningDifference::dispatchForSourceType(const IDataType & src_type, F && f) const
+	else
+		return false;
+}
+template <typename Impl>
+FunctionPtr FunctionNumericPredicate<Impl>::create(const Context &)
+{
+	return std::make_shared<FunctionNumericPredicate>();
+}
+template <typename Impl>
+DataTypePtr FunctionNumericPredicate<Impl>::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	const auto arg = arguments.front().get();
+	if (!typeid_cast<const DataTypeUInt8 *>(arg) && !typeid_cast<const DataTypeUInt16 *>(arg) && !typeid_cast<const DataTypeUInt32 *>(arg)
+		&& !typeid_cast<const DataTypeUInt64 *>(arg)
+		&& !typeid_cast<const DataTypeInt8 *>(arg)
+		&& !typeid_cast<const DataTypeInt16 *>(arg)
+		&& !typeid_cast<const DataTypeInt32 *>(arg)
+		&& !typeid_cast<const DataTypeInt64 *>(arg)
+		&& !typeid_cast<const DataTypeFloat32 *>(arg)
+		&& !typeid_cast<const DataTypeFloat64 *>(arg))
+		throw Exception{"Argument for function " + getName() + " must be numeric", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+	return std::make_shared<DataTypeUInt8>();
+}
+template <typename Impl>
+void FunctionNumericPredicate<Impl>::executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result)
+{
+	const auto in = block.safeGetByPosition(arguments.front()).column.get();
+
+	if (!execute<UInt8>(block, in, result) && !execute<UInt16>(block, in, result) && !execute<UInt32>(block, in, result)
+		&& !execute<UInt64>(block, in, result)
+		&& !execute<Int8>(block, in, result)
+		&& !execute<Int16>(block, in, result)
+		&& !execute<Int32>(block, in, result)
+		&& !execute<Int64>(block, in, result)
+		&& !execute<Float32>(block, in, result)
+		&& !execute<Float64>(block, in, result))
+		throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+}
+template <typename Impl>
+template <typename T>
+bool FunctionNumericPredicate<Impl>::execute(Block & block, const IColumn * in_untyped, const size_t result)
+{
+	if (const auto in = typeid_cast<const ColumnVector<T> *>(in_untyped))
 	{
-			 if (typeid_cast<const DataTypeUInt8  *>(&src_type)) f(UInt8());
-		else if (typeid_cast<const DataTypeUInt16 *>(&src_type)) f(UInt16());
-		else if (typeid_cast<const DataTypeUInt32 *>(&src_type)) f(UInt32());
-		else if (typeid_cast<const DataTypeUInt64 *>(&src_type)) f(UInt64());
-		else if (typeid_cast<const DataTypeInt8 *>(&src_type)) f(Int8());
-		else if (typeid_cast<const DataTypeInt16 *>(&src_type)) f(Int16());
-		else if (typeid_cast<const DataTypeInt32 *>(&src_type)) f(Int32());
-		else if (typeid_cast<const DataTypeInt64 *>(&src_type)) f(Int64());
-		else if (typeid_cast<const DataTypeFloat32 *>(&src_type)) f(Float32());
-		else if (typeid_cast<const DataTypeFloat64 *>(&src_type)) f(Float64());
-		else if (typeid_cast<const DataTypeDate *>(&src_type)) f(DataTypeDate::FieldType());
-		else if (typeid_cast<const DataTypeDateTime *>(&src_type)) f(DataTypeDateTime::FieldType());
-		else
-			throw Exception("Argument for function " + getName() + " must have numeric type.",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		const auto size = in->size();
+
+		const auto out = std::make_shared<ColumnUInt8>(size);
+		block.safeGetByPosition(result).column = out;
+
+		const auto & in_data = in->getData();
+		auto & out_data = out->getData();
+
+		for (const auto i : ext::range(0, size))
+			out_data[i] = Impl::execute(in_data[i]);
+
+		return true;
+	}
+	else if (const auto in = typeid_cast<const ColumnConst<T> *>(in_untyped))
+	{
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(in->size(), Impl::execute(in->getData()));
+
+		return true;
 	}
 
+	return false;
+}
 
+template <typename Src, typename Dst>
+void FunctionRunningDifference::process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst)
+{
+	size_t size = src.size();
+	dst.resize(size);
 
+	if (size == 0)
+		return;
+
+	/// It is possible to SIMD optimize this loop. By no need for that in practice.
+
+	dst[0] = 0;
+	Src prev = src[0];
+	for (size_t i = 1; i < size; ++i)
+	{
+		auto cur = src[i];
+		dst[i] = static_cast<Dst>(cur) - prev;
+		prev = cur;
+	}
+}
+template <typename F>
+void FunctionRunningDifference::dispatchForSourceType(const IDataType & src_type, F && f) const
+{
+	if (typeid_cast<const DataTypeUInt8 *>(&src_type))
+		f(UInt8());
+	else if (typeid_cast<const DataTypeUInt16 *>(&src_type))
+		f(UInt16());
+	else if (typeid_cast<const DataTypeUInt32 *>(&src_type))
+		f(UInt32());
+	else if (typeid_cast<const DataTypeUInt64 *>(&src_type))
+		f(UInt64());
+	else if (typeid_cast<const DataTypeInt8 *>(&src_type))
+		f(Int8());
+	else if (typeid_cast<const DataTypeInt16 *>(&src_type))
+		f(Int16());
+	else if (typeid_cast<const DataTypeInt32 *>(&src_type))
+		f(Int32());
+	else if (typeid_cast<const DataTypeInt64 *>(&src_type))
+		f(Int64());
+	else if (typeid_cast<const DataTypeFloat32 *>(&src_type))
+		f(Float32());
+	else if (typeid_cast<const DataTypeFloat64 *>(&src_type))
+		f(Float64());
+	else if (typeid_cast<const DataTypeDate *>(&src_type))
+		f(DataTypeDate::FieldType());
+	else if (typeid_cast<const DataTypeDateTime *>(&src_type))
+		f(DataTypeDateTime::FieldType());
+	else
+		throw Exception("Argument for function " + getName() + " must have numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
 }
