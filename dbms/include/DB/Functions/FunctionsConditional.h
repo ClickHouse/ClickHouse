@@ -1345,7 +1345,7 @@ private:
 			}
 			else if (result_column->isNull())
 			{
-				result_column = std::make_shared<ColumnNull>();
+				result_column = std::make_shared<ColumnNull>(block.rows(), Null());
 			}
 			else
 			{
