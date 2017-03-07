@@ -68,42 +68,47 @@ public:
 		return chars.allocated_size() + offsets.allocated_size() * sizeof(offsets[0]);
 	}
 
-	ColumnPtr cloneResized(size_t size) const override
+	ColumnPtr cloneResized(size_t to_size) const override
 	{
-		ColumnPtr new_col_holder = std::make_shared<ColumnString>();
+		auto res = std::make_shared<ColumnString>();
 
-		if (size > 0)
+		if (to_size == 0)
+			return res;
+
+		size_t from_size = size();
+
+		if (to_size <= from_size)
 		{
-			auto & new_col = static_cast<ColumnString &>(*new_col_holder);
-			size_t count = std::min(this->size(), size);
+			/// Just cut column.
 
-			/// First create the offsets.
-			new_col.offsets.resize(size);
-			new_col.offsets.assign(offsets.begin(), offsets.begin() + count);
+			res->offsets.assign(offsets.begin(), offsets.begin() + to_size);
+			res->chars.assign(chars.begin(), chars.begin() + offsets[to_size - 1]);
+		}
+		else
+		{
+			/// Copy column and append empty strings for extra elements.
 
-			size_t byte_count = new_col.offsets.back();
-
-			if (size > count)
+			Offset_t offset = 0;
+			if (from_size > 0)
 			{
-				/// Create offsets for the (size - count) new empty strings.
-				for (size_t i = count; i < size; ++i)
-					new_col.offsets[i] = new_col.offsets[i - 1] + 1;
+				res->offsets.assign(offsets.begin(), offsets.end());
+				res->chars.assign(chars.begin(), chars.end());
+				offset = offsets.back();
 			}
 
-			/// Then store the strings.
-			new_col.chars.resize(new_col.offsets.back());
-			new_col.chars.assign(chars.begin(), chars.begin() + byte_count);
+			/// Empty strings are just zero terminating bytes.
 
-			if (size > count)
+			res->chars.resize_fill(res->chars.size() + to_size - from_size);
+
+			res->offsets.resize(to_size);
+			for (size_t i = from_size; i < to_size; ++i)
 			{
-				/// Create (size - count) empty strings.
-				size_t from = new_col.offsets[count];
-				size_t n = new_col.offsets.back() - from;
-				memset(&new_col.chars[from], '\0', n);
+				++offset;
+				res->offsets[i] = offset;
 			}
 		}
 
-		return new_col_holder;
+		return res;
 	}
 
 	Field operator[](size_t n) const override
