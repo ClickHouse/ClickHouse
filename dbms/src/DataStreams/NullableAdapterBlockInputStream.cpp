@@ -10,7 +10,6 @@ namespace ErrorCodes
 
 extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
 extern const int NO_SUCH_COLUMN_IN_TABLE;
-extern const int LOGICAL_ERROR;
 
 }
 
@@ -47,38 +46,42 @@ Block NullableAdapterBlockInputStream::readImpl()
 		const auto & elem = block.getByPosition(i);
 		ColumnWithTypeAndName new_elem;
 
-		if (actions[i] == TO_ORDINARY)
+		switch (actions[i])
 		{
-			const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
-			const auto & nullable_type = static_cast<const DataTypeNullable &>(*elem.type);
+			case TO_ORDINARY:
+			{
+				const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
+				const auto & nullable_type = static_cast<const DataTypeNullable &>(*elem.type);
 
-			const auto & null_map = nullable_col.getNullMap();
-			bool has_nulls = std::any_of(null_map.begin(), null_map.end(), [](UInt8 val){ return val == 1; });
+				const auto & null_map = nullable_col.getNullMap();
+				bool has_nulls = std::any_of(null_map.begin(), null_map.end(), [](UInt8 val){ return val == 1; });
 
-			if (has_nulls)
-				throw Exception{"Cannot insert NULL value into non-nullable column",
-					ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
-			else
+				if (has_nulls)
+					throw Exception{"Cannot insert NULL value into non-nullable column",
+						ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+				else
+					res.insert({
+						nullable_col.getNestedColumn(),
+						nullable_type.getNestedType(),
+						elem.name
+					});
+				break;
+			}
+			case TO_NULLABLE:
+			{
+				auto null_map = std::make_shared<ColumnUInt8>(elem.column->size(), 0);
+
 				res.insert({
-					nullable_col.getNestedColumn(),
-					nullable_type.getNestedType(),
+					std::make_shared<ColumnNullable>(elem.column, null_map),
+					std::make_shared<DataTypeNullable>(elem.type),
 					elem.name
 				});
+				break;
+			}
+			case NONE:
+				res.insert(elem);
+				break;
 		}
-		else if (actions[i] == TO_NULLABLE)
-		{
-			auto null_map = std::make_shared<ColumnUInt8>(elem.column->size(), 0);
-
-			res.insert({
-				std::make_shared<ColumnNullable>(elem.column, null_map),
-				std::make_shared<DataTypeNullable>(elem.type),
-				elem.name
-			});
-		}
-		else if (actions[i] == NONE)
-			res.insert(elem);
-		else
-			throw Exception{"NullableAdapterBlockInputStream: internal error", ErrorCodes::LOGICAL_ERROR};
 	}
 
 	return res;
