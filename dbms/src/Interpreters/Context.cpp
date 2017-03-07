@@ -1063,9 +1063,12 @@ QueryLog & Context::getQueryLog()
 }
 
 
-PartLog & Context::getPartLog()
+std::shared_ptr<PartLog> Context::getPartLog()
 {
 	auto lock = getLock();
+
+	if (!config.has("part_log"))
+		return nullptr;
 
 	if (!shared->part_log)
 	{
@@ -1077,6 +1080,7 @@ PartLog & Context::getPartLog()
 
 		auto & config = Poco::Util::Application::instance().config();
 
+
 		String database = config.getString("part_log.database", "system");
 		String table = config.getString("part_log.table", "part_log");
 		size_t flush_interval_milliseconds = parse<size_t>(
@@ -1085,7 +1089,7 @@ PartLog & Context::getPartLog()
 			*global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
 	}
 
-	return *shared->part_log;
+	return shared->part_log;
 }
 
 

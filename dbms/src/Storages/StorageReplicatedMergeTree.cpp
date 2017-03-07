@@ -2040,21 +2040,25 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
 
 	Stopwatch stopwatch;
+	PartLogElement elem;
+	elem.event_time = time(0);
 
 	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(
 		part_name, replica_path, address.host, address.replication_port, to_detached);
 
-	PartLogElement elem;
+	bool part_log = context.getPartLog();
+	if (part_log)
+	{
+		elem.event_type = PartLogElement::DOWNLOAD_PART;
+		elem.size_in_bytes = part->size_in_bytes;
+		elem.duration_ms = stopwatch.elapsed() / 10000000;
 
-	elem.event_type = PartLogElement::DOWNLOAD_PART;
-	elem.event_time = time(0);
-	elem.size_in_bytes = part->size_in_bytes;
-	elem.duration_ms = stopwatch.elapsed() / 10000000;
-	elem.database_name = part->storage.getDatabaseName();
-	elem.table_name = part->storage.getTableName();
-	elem.part_name = part->name;
+		elem.database_name = part->storage.getDatabaseName();
+		elem.table_name = part->storage.getTableName();
+		elem.part_name = part->name;
 
-	context.getPartLog().add(elem);
+		part_log->add(elem);
+	}
 
 	if (!to_detached)
 	{

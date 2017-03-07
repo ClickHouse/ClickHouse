@@ -338,8 +338,6 @@ bool StorageMergeTree::merge(
 	/// Logging
 	PartLogElement elem;
 	Stopwatch stopwatch;
-
-	elem.event_type = PartLogElement::MERGE_PARTS;
 	elem.event_time = time(0);
 
 	elem.merged_from.reserve(merging_tagger->parts.size());
@@ -351,15 +349,20 @@ bool StorageMergeTree::merge(
 
 	merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
 
-	elem.size_in_bytes = new_part->size_in_bytes;
+	bool part_log = context.getPartLog();
+	if (part_log)
+	{
+		elem.event_type = PartLogElement::MERGE_PARTS;
+		elem.size_in_bytes = new_part->size_in_bytes;
 
-	elem.database_name = new_part->storage.getDatabaseName();
-	elem.table_name = new_part->storage.getTableName();
-	elem.part_name = new_part->name;
+		elem.database_name = new_part->storage.getDatabaseName();
+		elem.table_name = new_part->storage.getTableName();
+		elem.part_name = new_part->name;
 
-	elem.duration_ms = stopwatch.elapsed() / 1000000;
+		elem.duration_ms = stopwatch.elapsed() / 1000000;
 
-	context.getPartLog().add(elem);
+		part_log->add(elem);
+	}
 
 	return true;
 }
