@@ -64,9 +64,9 @@ private:
 			if (key == "timeout_ms") {
 				timeout_ms.value    = stopCriterionsView->getUInt64(priority + ".timeout_ms");
 				timeout_ms.priority = priority;
-			} else if (key == "read_rows") {
-				read_rows.value    = stopCriterionsView->getUInt64(priority + ".read_rows");
-				read_rows.priority = priority;
+			} else if (key == "rows_read") {
+				rows_read.value    = stopCriterionsView->getUInt64(priority + ".rows_read");
+				rows_read.priority = priority;
 			} else if (key == "bytes_read_uncompressed") {
 				bytes_read_uncompressed.value    = stopCriterionsView->getUInt64(priority + ".bytes_read_uncompressed");
 				bytes_read_uncompressed.priority = priority;
@@ -108,7 +108,7 @@ public:
 	}
 
 	struct CriterionWithPriority timeout_ms;
-	struct CriterionWithPriority read_rows;
+	struct CriterionWithPriority rows_read;
 	struct CriterionWithPriority bytes_read_uncompressed;
 	struct CriterionWithPriority iterations;
 	struct CriterionWithPriority min_time_not_changing_for_ms;
@@ -132,8 +132,8 @@ struct Stats
 	Stopwatch max_speed_watch;
 	Stopwatch average_speed_watch;
 	size_t queries;
-	size_t read_rows;
-	size_t read_bytes;
+	size_t rows_read;
+	size_t bytes_read;
 
 	using Sampler = ReservoirSampler<double>;
 	Sampler sampler {1 << 16};
@@ -179,12 +179,12 @@ struct Stats
 		}
 	}
 
-	void add(size_t read_rows_inc, size_t read_bytes_inc)
+	void add(size_t rows_read_inc, size_t bytes_read_inc)
 	{
-		read_rows  += read_rows_inc;
-		read_bytes += read_bytes_inc;
+		rows_read  += rows_read_inc;
+		bytes_read += bytes_read_inc;
 
-		double new_speed = read_rows_inc / watch_per_query.elapsedSeconds();
+		double new_speed = rows_read_inc / watch_per_query.elapsedSeconds();
 		update_max_speed(new_speed);
 		update_average_speed(new_speed);
 	}
@@ -212,8 +212,8 @@ struct Stats
 		sampler.clear();
 
 		queries    = 0;
-		read_rows  = 0;
-		read_bytes = 0;
+		rows_read  = 0;
+		bytes_read = 0;
 
 		min_time   = std::numeric_limits<UInt64>::max();
 		total_time = 0;
@@ -558,13 +558,13 @@ private:
 
 		info_total.add(progress.rows, progress.bytes);
 
-		size_t max_rows_to_read = stopCriterions.read_rows.value;
-		if (max_rows_to_read && info_total.read_rows >= max_rows_to_read) {
-			incFulfilledCriterions(read_rows);
+		size_t max_rows_to_read = stopCriterions.rows_read.value;
+		if (max_rows_to_read && info_total.rows_read >= max_rows_to_read) {
+			incFulfilledCriterions(rows_read);
 		}
 
 		size_t max_bytes_to_read = stopCriterions.bytes_read_uncompressed.value;
-		if (max_bytes_to_read && info_total.read_bytes >= max_bytes_to_read) {
+		if (max_bytes_to_read && info_total.bytes_read >= max_bytes_to_read) {
 			incFulfilledCriterions(bytes_read_uncompressed);
 		}
 
@@ -753,8 +753,8 @@ public:
 
 		    std::cout << "total_time: " << info_total.total_time << "s" << std::endl;
 		    std::cout << "queries_per_second: " << double(info_total.queries)    / info_total.total_time << std::endl;
-		    std::cout << "rows_per_second: "    << double(info_total.read_rows)  / info_total.total_time << std::endl;
-		    std::cout << "bytes_per_second: "   << double(info_total.read_bytes) / info_total.total_time << std::endl;
+		    std::cout << "rows_per_second: "    << double(info_total.rows_read)  / info_total.total_time << std::endl;
+		    std::cout << "bytes_per_second: "   << double(info_total.bytes_read) / info_total.total_time << std::endl;
         } else {
 		    std::cout << " max_rows_per_second: "  << info_total.max_speed << std::endl;
 		    // std::cout << " max_bytes_per_second: " <<  << std::endl;
