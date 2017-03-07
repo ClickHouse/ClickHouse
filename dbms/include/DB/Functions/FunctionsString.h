@@ -1,25 +1,14 @@
-﻿#pragma once
+#pragma once
 
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
-
-#include <DB/Core/FieldVisitors.h>
-
-#include <ext/range.hpp>
-#include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnString.h>
-#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Functions/IFunction.h>
-
-#if __SSE2__
-#include <emmintrin.h>
-#endif
-
 
 namespace DB
 {

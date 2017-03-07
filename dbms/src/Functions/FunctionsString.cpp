@@ -1,7 +1,14 @@
-﻿#include <DB/Functions/FunctionsString.h>
+#include <DB/Functions/FunctionsString.h>
 
+#include <ext/range.hpp>
+#include <DB/Columns/ColumnArray.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsArray.h>
+
+#if __SSE2__
+#include <emmintrin.h>
+#endif
 
 
 namespace DB
@@ -1464,8 +1471,8 @@ void FunctionStringNumNumToString<Impl, Name>::executeImpl(Block & block, const 
 }
 
 
-FunctionPtr FunctionAppendTrailingCharIfAbsent::create(const Context& context)
-	{
-		return std::make_shared<FunctionAppendTrailingCharIfAbsent>();
-	}
+FunctionPtr FunctionAppendTrailingCharIfAbsent::create(const Context & context)
+{
+	return std::make_shared<FunctionAppendTrailingCharIfAbsent>();
+}
 }
