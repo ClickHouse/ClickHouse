@@ -365,16 +365,22 @@ ColumnPtr ColumnNullable::replicate(const Offsets_t & offsets) const
 }
 
 
-void ColumnNullable::applyNullValuesByteMap(const ColumnNullable & other)
+void ColumnNullable::applyNullValuesByteMap(const ColumnUInt8 & map)
 {
 	NullValuesByteMap & arr1 = getNullMap();
-	const NullValuesByteMap & arr2 = other.getNullMap();
+	const NullValuesByteMap & arr2 = map.getData();
 
 	if (arr1.size() != arr2.size())
 		throw Exception{"Inconsistent sizes of ColumnNullable objects", ErrorCodes::LOGICAL_ERROR};
 
 	for (size_t i = 0, size = arr1.size(); i < size; ++i)
 		arr1[i] |= arr2[i];
+}
+
+
+void ColumnNullable::applyNullValuesByteMap(const ColumnNullable & other)
+{
+	applyNullValuesByteMap(other.getNullMapConcreteColumn());
 }
 
 }

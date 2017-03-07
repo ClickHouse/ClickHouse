@@ -85,6 +85,7 @@ public:
 	/// map of the result column of a function taking one or more nullable
 	/// columns.
 	void applyNullValuesByteMap(const ColumnNullable & other);
+	void applyNullValuesByteMap(const ColumnUInt8 & map);
 
 private:
 	ColumnPtr nested_column;

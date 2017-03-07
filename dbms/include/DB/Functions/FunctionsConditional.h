@@ -1315,8 +1315,8 @@ private:
 	bool executeForNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const ColumnWithTypeAndName & arg_cond = block.safeGetByPosition(arguments[0]);
-		bool cond_is_null = typeid_cast<const ColumnNull *>(arg_cond.column.get());
-		bool cond_is_nullable = typeid_cast<const ColumnNullable *>(arg_cond.column.get());
+		bool cond_is_null = arg_cond.column->isNull();
+		bool cond_is_nullable = arg_cond.column->isNullable();
 
 		if (cond_is_null)
 		{
@@ -1399,8 +1399,8 @@ private:
 		const ColumnWithTypeAndName & arg_then = block.safeGetByPosition(arguments[1]);
 		const ColumnWithTypeAndName & arg_else = block.safeGetByPosition(arguments[2]);
 
-		bool then_is_null = typeid_cast<const ColumnNull *>(arg_then.column.get());
-		bool else_is_null = typeid_cast<const ColumnNull *>(arg_else.column.get());
+		bool then_is_null = arg_then.column->isNull();
+		bool else_is_null = arg_else.column->isNull();
 
 		if (!then_is_null && !else_is_null)
 			return false;
@@ -1414,13 +1414,22 @@ private:
 		const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(arg_cond.column.get());
 		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(arg_cond.column.get());
 
-		/// If then is NULL, we create Nullable column with condition as null mask.
+		/// If then is NULL, we create Nullable column with null mask OR-ed with condition.
 		if (then_is_null)
 		{
 			if (cond_col)
 			{
-				block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(
-					materializeColumnIfConst(arg_else.column), arg_cond.column->clone());
+				if (arg_else.column->isNullable())
+				{
+					auto result_column = arg_else.column->clone();
+					static_cast<ColumnNullable &>(*result_column).applyNullValuesByteMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+					block.safeGetByPosition(result).column = result_column;
+				}
+				else
+				{
+					block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(
+						materializeColumnIfConst(arg_else.column), arg_cond.column->clone());
+				}
 			}
 			else if (cond_const_col)
 			{
@@ -1435,7 +1444,7 @@ private:
 			return true;
 		}
 
-		/// If else is NULL, we create Nullable column with negated condition as null mask.
+		/// If else is NULL, we create Nullable column with null mask OR-ed with negated condition.
 		if (else_is_null)
 		{
 			if (cond_col)
@@ -1450,8 +1459,17 @@ private:
 				for (size_t i = 0; i < size; ++i)
 					negated_null_map_data[i] = !null_map_data[i];
 
-				block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(
-					materializeColumnIfConst(arg_then.column), negated_null_map);
+				if (arg_then.column->isNullable())
+				{
+					auto result_column = arg_then.column->clone();
+					static_cast<ColumnNullable &>(*result_column).applyNullValuesByteMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+					block.safeGetByPosition(result).column = result_column;
+				}
+				else
+				{
+					block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(
+						materializeColumnIfConst(arg_then.column), negated_null_map);
+				}
 			}
 			else if (cond_const_col)
 			{
