@@ -6,7 +6,14 @@
 
 namespace DB
 {
-String FunctionReverse::getName() const
+
+  FunctionPtr FunctionReverse::create(const Context& context)
+	{
+		return std::make_shared<FunctionReverse>();
+	}
+
+
+  String FunctionReverse::getName() const
 {
 	return name;
 }
@@ -928,4 +935,420 @@ void FunctionStringOrArrayToT<Impl, Name, ResultType>::executeImpl(Block & block
 			"Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_COLUMN);
 }
+
+  template <typename Name, bool is_injective>
+  FunctionPtr ConcatImpl<Name, is_injective>::create(const Context& context)
+  	{
+  		return std::make_shared<ConcatImpl>();
+  	}
+  template <typename Name, bool is_injective>
+  DataTypePtr ConcatImpl<Name, is_injective>::getReturnTypeImpl(const DataTypes& arguments) const
+  	{
+  		if (arguments.size() < 2)
+  			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+  					+ ", should be at least 2.",
+  				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+  		for (const auto arg_idx : ext::range(0, arguments.size()))
+  		{
+  			const auto arg = arguments[arg_idx].get();
+  			if (!typeid_cast<const DataTypeString *>(arg) && !typeid_cast<const DataTypeFixedString *>(arg))
+  				throw Exception{
+  					"Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName(),
+  					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+  		}
+
+  		return std::make_shared<DataTypeString>();
+  	}
+  template <typename Name, bool is_injective>
+  void ConcatImpl<Name, is_injective>::executeImpl(Block& block, const ColumnNumbers& arguments, const size_t result)
+  	{
+  		if (arguments.size() == 2)
+  			executeBinary(block, arguments, result);
+  		else
+  			executeNAry(block, arguments, result);
+  	}
+  template <typename Name, bool is_injective>
+  typename ConcatImpl<Name, is_injective>::Instructions ConcatImpl<Name, is_injective>::getInstructions(const Block& block, const ColumnNumbers& arguments, size_t& out_length, bool& out_const)
+  	{
+  		Instructions result{};
+  		result.reserve(arguments.size());
+
+  		out_length = 0;
+  		out_const = true;
+
+  		size_t rows{};
+  		for (const auto arg_pos : arguments)
+  		{
+  			const auto column = block.safeGetByPosition(arg_pos).column.get();
+
+  			if (const auto col = typeid_cast<const ColumnString *>(column))
+  			{
+  				/** ColumnString stores strings with terminating null character
+  				  *  which should not be copied, therefore the decrease of total size by
+  				  *	the number of terminating nulls
+  				  */
+  				rows = col->size();
+  				out_length += col->getChars().size() - col->getOffsets().size();
+  				out_const = false;
+
+  				result.emplace_back(InstructionType::COPY_STRING, ColumnAndOffset{col, 0});
+  			}
+  			else if (const auto col = typeid_cast<const ColumnFixedString *>(column))
+  			{
+  				rows = col->size();
+  				out_length += col->getChars().size();
+  				out_const = false;
+
+  				result.emplace_back(InstructionType::COPY_FIXED_STRING, ColumnAndOffset{col, 0});
+  			}
+  			else if (const auto col = typeid_cast<const ColumnConstString *>(column))
+  			{
+  				rows = col->size();
+  				out_length += col->getData().size() * col->size();
+  				out_const = out_const && true;
+
+  				result.emplace_back(InstructionType::COPY_CONST_STRING, ColumnAndOffset{col, 0});
+  			}
+  			else
+  				throw Exception(
+  					"Illegal column " + column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+  		}
+
+  		if (out_const && rows)
+  			out_length /= rows;
+
+  		return result;
+  	}
+  template <typename Name, bool is_injective>
+  void ConcatImpl<Name, is_injective>::executeBinary(Block& block, const ColumnNumbers& arguments, const size_t result)
+  	{
+  		const IColumn * c0 = block.safeGetByPosition(arguments[0]).column.get();
+  		const IColumn * c1 = block.safeGetByPosition(arguments[1]).column.get();
+
+  		const ColumnString * c0_string = typeid_cast<const ColumnString *>(c0);
+  		const ColumnString * c1_string = typeid_cast<const ColumnString *>(c1);
+  		const ColumnFixedString * c0_fixed_string = typeid_cast<const ColumnFixedString *>(c0);
+  		const ColumnFixedString * c1_fixed_string = typeid_cast<const ColumnFixedString *>(c1);
+  		const ColumnConstString * c0_const = typeid_cast<const ColumnConstString *>(c0);
+  		const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
+
+  		/// Результат - const string
+  		if (c0_const && c1_const)
+  		{
+  			auto c_res = std::make_shared<ColumnConstString>(c0_const->size(), "");
+  			block.safeGetByPosition(result).column = c_res;
+  			constant_constant(c0_const->getData(), c1_const->getData(), c_res->getData());
+  		}
+  		else
+  		{
+  			auto c_res = std::make_shared<ColumnString>();
+  			block.safeGetByPosition(result).column = c_res;
+  			ColumnString::Chars_t & vec_res = c_res->getChars();
+  			ColumnString::Offsets_t & offsets_res = c_res->getOffsets();
+
+  			if (c0_string && c1_string)
+  				vector_vector(
+  					c0_string->getChars(), c0_string->getOffsets(), c1_string->getChars(), c1_string->getOffsets(), vec_res, offsets_res);
+  			else if (c0_string && c1_fixed_string)
+  				vector_fixed_vector(c0_string->getChars(),
+  					c0_string->getOffsets(),
+  					c1_fixed_string->getChars(),
+  					c1_fixed_string->getN(),
+  					vec_res,
+  					offsets_res);
+  			else if (c0_string && c1_const)
+  				vector_constant(c0_string->getChars(), c0_string->getOffsets(), c1_const->getData(), vec_res, offsets_res);
+  			else if (c0_fixed_string && c1_string)
+  				fixed_vector_vector(c0_fixed_string->getChars(),
+  					c0_fixed_string->getN(),
+  					c1_string->getChars(),
+  					c1_string->getOffsets(),
+  					vec_res,
+  					offsets_res);
+  			else if (c0_const && c1_string)
+  				constant_vector(c0_const->getData(), c1_string->getChars(), c1_string->getOffsets(), vec_res, offsets_res);
+  			else if (c0_fixed_string && c1_fixed_string)
+  				fixed_vector_fixed_vector(c0_fixed_string->getChars(),
+  					c0_fixed_string->getN(),
+  					c1_fixed_string->getChars(),
+  					c1_fixed_string->getN(),
+  					vec_res,
+  					offsets_res);
+  			else if (c0_fixed_string && c1_const)
+  				fixed_vector_constant(c0_fixed_string->getChars(), c0_fixed_string->getN(), c1_const->getData(), vec_res, offsets_res);
+  			else if (c0_const && c1_fixed_string)
+  				constant_fixed_vector(c0_const->getData(), c1_fixed_string->getChars(), c1_fixed_string->getN(), vec_res, offsets_res);
+  			else
+  				throw Exception("Illegal columns " + block.safeGetByPosition(arguments[0]).column->getName() + " and "
+  						+ block.safeGetByPosition(arguments[1]).column->getName()
+  						+ " of arguments of function "
+  						+ getName(),
+  					ErrorCodes::ILLEGAL_COLUMN);
+  		}
+  	}
+  template <typename Name, bool is_injective>
+  void ConcatImpl<Name, is_injective>::executeNAry(Block& block, const ColumnNumbers& arguments, const size_t result)
+  	{
+  		const auto size = block.rows();
+  		std::size_t result_length{};
+  		bool result_is_const{};
+  		auto instrs = getInstructions(block, arguments, result_length, result_is_const);
+
+  		if (result_is_const)
+  		{
+  			const auto out = std::make_shared<ColumnConstString>(size, "");
+  			block.safeGetByPosition(result).column = out;
+
+  			auto & data = out->getData();
+  			data.reserve(result_length);
+
+  			for (const auto & instr : instrs)
+  				data += static_cast<const ColumnConst<String> *>(instr.second.first)->getData();
+  		}
+  		else
+  		{
+  			const auto out = std::make_shared<ColumnString>();
+  			block.safeGetByPosition(result).column = out;
+
+  			auto & out_data = out->getChars();
+  			out_data.resize(result_length + size);
+
+  			auto & out_offsets = out->getOffsets();
+  			out_offsets.resize(size);
+
+  			std::size_t out_offset{};
+
+  			for (const auto row : ext::range(0, size))
+  			{
+  				for (auto & instr : instrs)
+  				{
+  					switch (instr.first)
+  					{
+  						case InstructionType::COPY_STRING:
+  						{
+  							auto & in_offset = instr.second.second;
+  							const auto col = static_cast<const ColumnString *>(instr.second.first);
+  							const auto offset = col->getOffsets()[row];
+  							const auto length = offset - in_offset - 1;
+
+  							memcpySmallAllowReadWriteOverflow15(&out_data[out_offset], &col->getChars()[in_offset], length);
+  							out_offset += length;
+  							in_offset = offset;
+  							break;
+  						}
+  						case InstructionType::COPY_FIXED_STRING:
+  						{
+  							auto & in_offset = instr.second.second;
+  							const auto col = static_cast<const ColumnFixedString *>(instr.second.first);
+  							const auto length = col->getN();
+
+  							memcpySmallAllowReadWriteOverflow15(&out_data[out_offset], &col->getChars()[in_offset], length);
+  							out_offset += length;
+  							in_offset += length;
+  							break;
+  						}
+  						case InstructionType::COPY_CONST_STRING:
+  						{
+  							const auto col = static_cast<const ColumnConst<String> *>(instr.second.first);
+  							const auto & data = col->getData();
+  							const auto length = data.size();
+
+  							memcpy(&out_data[out_offset], data.data(), length);
+  							out_offset += length;
+  							break;
+  						}
+  						default:
+  							throw Exception("Unknown InstructionType during execution of function 'concat'", ErrorCodes::LOGICAL_ERROR);
+  					}
+  				}
+
+  				out_data[out_offset] = '\0';
+  				out_offsets[row] = ++out_offset;
+  			}
+  		}
+  	}
+  template <typename Name, bool is_injective>
+  void ConcatImpl<Name, is_injective>::vector_vector(const ColumnString::Chars_t& a_data, const IColumn::Offsets_t& a_offsets, const ColumnString::Chars_t& b_data, const IColumn::Offsets_t& b_offsets, ColumnString::Chars_t& c_data, IColumn::Offsets_t& c_offsets)
+  	{
+  		size_t size = a_offsets.size();
+  		c_data.resize(a_data.size() + b_data.size() - size);
+  		c_offsets.resize(size);
+
+  		ColumnString::Offset_t offset = 0;
+  		ColumnString::Offset_t a_offset = 0;
+  		ColumnString::Offset_t b_offset = 0;
+  		for (size_t i = 0; i < size; ++i)
+  		{
+  			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
+  			offset += a_offsets[i] - a_offset - 1;
+  			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
+  			offset += b_offsets[i] - b_offset;
+
+  			a_offset = a_offsets[i];
+  			b_offset = b_offsets[i];
+
+  			c_offsets[i] = offset;
+  		}
+  	}
+  template <typename Name, bool is_injective>
+  void ConcatImpl<Name, is_injective>::vector_fixed_vector(const ColumnString::Chars_t& a_data, const IColumn::Offsets_t& a_offsets, const ColumnString::Chars_t& b_data, IColumn::Offset_t b_n, ColumnString::Chars_t& c_data, IColumn::Offsets_t& c_offsets)
+  	{
+  		size_t size = a_offsets.size();
+  		c_data.resize(a_data.size() + b_data.size());
+  		c_offsets.resize(size);
+
+  		ColumnString::Offset_t offset = 0;
+  		ColumnString::Offset_t a_offset = 0;
+  		ColumnString::Offset_t b_offset = 0;
+  		for (size_t i = 0; i < size; ++i)
+  		{
+  			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
+  			offset += a_offsets[i] - a_offset - 1;
+  			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[b_offset], b_n);
+  			offset += b_n;
+  			c_data[offset] = 0;
+  			offset += 1;
+
+  			a_offset = a_offsets[i];
+  			b_offset += b_n;
+
+  			c_offsets[i] = offset;
+  		}
+  	}
+  template <typename Name, bool is_injective>
+  void ConcatImpl<Name, is_injective>::vector_constant(const ColumnString::Chars_t& a_data, const IColumn::Offsets_t& a_offsets, const std::__cxx11::string& b, ColumnString::Chars_t& c_data, IColumn::Offsets_t& c_offsets)
+  	{
+  		size_t size = a_offsets.size();
+  		c_data.resize(a_data.size() + b.size() * size);
+  		c_offsets.assign(a_offsets);
+
+  		for (size_t i = 0; i < size; ++i)
+  			c_offsets[i] += b.size() * (i + 1);
+
+  		ColumnString::Offset_t offset = 0;
+  		ColumnString::Offset_t a_offset = 0;
+  		for (size_t i = 0; i < size; ++i)
+  		{
+  			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
+  			offset += a_offsets[i] - a_offset - 1;
+  			memcpy(&c_data[offset], b.data(), b.size() + 1);
+  			offset += b.size() + 1;
+
+  			a_offset = a_offsets[i];
+  		}
+  	}
+  template <typename Name, bool is_injective>
+  void ConcatImpl<Name, is_injective>::fixed_vector_vector(const ColumnString::Chars_t& a_data, IColumn::Offset_t a_n, const ColumnString::Chars_t& b_data, const IColumn::Offsets_t& b_offsets, ColumnString::Chars_t& c_data, IColumn::Offsets_t& c_offsets)
+  	{
+  		size_t size = b_offsets.size();
+  		c_data.resize(a_data.size() + b_data.size());
+  		c_offsets.resize(size);
+
+  		ColumnString::Offset_t offset = 0;
+  		ColumnString::Offset_t a_offset = 0;
+  		ColumnString::Offset_t b_offset = 0;
+  		for (size_t i = 0; i < size; ++i)
+  		{
+  			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[a_offset], a_n);
+  			offset += a_n;
+  			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
+  			offset += b_offsets[i] - b_offset;
+
+  			a_offset = a_n;
+  			b_offset = b_offsets[i];
+
+  			c_offsets[i] = offset;
+  		}
+  	}
+  template <typename Name, bool is_injective>
+  void ConcatImpl<Name, is_injective>::fixed_vector_fixed_vector(const ColumnString::Chars_t& a_data, IColumn::Offset_t a_n, const ColumnString::Chars_t& b_data, IColumn::Offset_t b_n, ColumnString::Chars_t& c_data, IColumn::Offsets_t& c_offsets)
+  	{
+  		size_t size = a_data.size() / a_n;
+  		c_data.resize(a_data.size() + b_data.size() + size);
+  		c_offsets.resize(size);
+
+  		ColumnString::Offset_t offset = 0;
+  		for (size_t i = 0; i < size; ++i)
+  		{
+  			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[i * a_n], a_n);
+  			offset += a_n;
+  			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[i * b_n], b_n);
+  			offset += b_n;
+  			c_data[offset] = 0;
+  			++offset;
+
+  			c_offsets[i] = offset;
+  		}
+  	}
+  template <typename Name, bool is_injective>
+  void ConcatImpl<Name, is_injective>::fixed_vector_constant(const ColumnString::Chars_t& a_data, IColumn::Offset_t a_n, const std::__cxx11::string& b, ColumnString::Chars_t& c_data, IColumn::Offsets_t& c_offsets)
+  	{
+  		size_t size = a_data.size() / a_n;
+  		ColumnString::Offset_t b_n = b.size();
+  		c_data.resize(a_data.size() + size * b_n + size);
+  		c_offsets.resize(size);
+
+  		ColumnString::Offset_t offset = 0;
+  		for (size_t i = 0; i < size; ++i)
+  		{
+  			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[i * a_n], a_n);
+  			offset += a_n;
+  			memcpy(&c_data[offset], b.data(), b_n);
+  			offset += b_n;
+  			c_data[offset] = 0;
+  			++offset;
+
+  			c_offsets[i] = offset;
+  		}
+  	}
+  template <typename Name, bool is_injective>
+  void ConcatImpl<Name, is_injective>::constant_vector(const std::__cxx11::string& a, const ColumnString::Chars_t& b_data, const IColumn::Offsets_t& b_offsets, ColumnString::Chars_t& c_data, IColumn::Offsets_t& c_offsets)
+  	{
+  		size_t size = b_offsets.size();
+  		c_data.resize(b_data.size() + a.size() * size);
+  		c_offsets.assign(b_offsets);
+
+  		for (size_t i = 0; i < size; ++i)
+  			c_offsets[i] += a.size() * (i + 1);
+
+  		ColumnString::Offset_t offset = 0;
+  		ColumnString::Offset_t b_offset = 0;
+  		for (size_t i = 0; i < size; ++i)
+  		{
+  			memcpy(&c_data[offset], a.data(), a.size());
+  			offset += a.size();
+  			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
+  			offset += b_offsets[i] - b_offset;
+
+  			b_offset = b_offsets[i];
+  		}
+  	}
+  template <typename Name, bool is_injective>
+  void ConcatImpl<Name, is_injective>::constant_fixed_vector(const std::__cxx11::string& a, const ColumnString::Chars_t& b_data, IColumn::Offset_t b_n, ColumnString::Chars_t& c_data, IColumn::Offsets_t& c_offsets)
+  	{
+  		size_t size = b_data.size() / b_n;
+  		ColumnString::Offset_t a_n = a.size();
+  		c_data.resize(size * a_n + b_data.size() + size);
+  		c_offsets.resize(size);
+
+  		ColumnString::Offset_t offset = 0;
+  		for (size_t i = 0; i < size; ++i)
+  		{
+  			memcpy(&c_data[offset], a.data(), a_n);
+  			offset += a_n;
+  			memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[i * b_n], b_n);
+  			offset += b_n;
+  			c_data[offset] = 0;
+  			++offset;
+
+  			c_offsets[i] = offset;
+  		}
+  	}
+  template <typename Name, bool is_injective>
+  void ConcatImpl<Name, is_injective>::constant_constant(const std::__cxx11::string& a, const std::__cxx11::string& b, std::__cxx11::string& c)
+  	{
+  		c = a + b;
+  	}
+
 }
