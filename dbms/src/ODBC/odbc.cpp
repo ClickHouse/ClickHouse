@@ -21,11 +21,11 @@
 #include "utils.h"
 
 
-/** Функции из ODBC интерфейса не могут напрямую вызывать другие функции.
-  * Потому что будет вызвана не функция из этой библиотеки, а обёртка из driver manager-а,
-  *  которая может неправильно работать, будучи вызванной изнутри другой функции.
-  * Неправильно - потому что driver manager оборачивает все handle в свои другие,
-  *  которые имеют уже другие адреса.
+/** Functions from the ODBC interface can not directly call other functions.
+  * Because not a function from this library will be called, but a wrapper from the driver manager,
+  * which can work incorrectly, being called from within another function.
+  * Wrong - because driver manager wraps all handle in its own,
+  * which already have other addresses.
   */
 
 extern "C"
@@ -532,7 +532,7 @@ impl_SQLGetDiagRec(SQLSMALLINT handle_type, SQLHANDLE handle,
 	if (diagnostic_record->native_error_code == 0)
 		return SQL_NO_DATA;
 
-	/// Пятибуквенный SQLSTATE и завершающий ноль.
+    /// The five-letter SQLSTATE and the trailing zero.
 	if (out_sqlstate)
 		strncpy(reinterpret_cast<char *>(out_sqlstate), diagnostic_record->sql_state.data(), 6);
 
@@ -798,7 +798,7 @@ SQLBrowseConnect(HDBC connection_handle,
 }
 
 
-/// Не реализовано.
+/// Not implemented.
 
 
 RETCODE SQL_API
@@ -832,7 +832,7 @@ SQLGetCursorName(HSTMT StatementHandle,
 
 
 /*
-/// Эта функция может быть реализована в driver manager-е.
+/// This function can be implemented in the driver manager.
 RETCODE SQL_API
 SQLGetFunctions(HDBC ConnectionHandle,
 				SQLUSMALLINT FunctionId, SQLUSMALLINT *Supported)

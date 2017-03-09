@@ -14,22 +14,22 @@ namespace ErrorCodes
 	extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/** Параметры разных функций quantilesSomething.
-  * - список уровней квантилей.
-  * Также необходимо вычислить массив индексов уровней, идущих по возрастанию.
+/** Parameters of different functions quantiles*.
+  * - list of levels of quantiles.
+  * It is also necessary to calculate an array of indices of levels that go in ascending order.
   *
-  * Пример: quantiles(0.5, 0.99, 0.95)(x).
+  * Example: quantiles(0.5, 0.99, 0.95)(x).
   * levels: 0.5, 0.99, 0.95
   * levels_permutation: 0, 2, 1
   */
-template <typename T>	/// float или double
+template <typename T>	/// float or double
 struct QuantileLevels
 {
 	using Levels = std::vector<T>;
 	using Permutation = std::vector<size_t>;
 
 	Levels levels;
-	Permutation permutation;	/// Индекс i-го по величине уровня в массиве levels.
+	Permutation permutation;	/// Index of the i-th level in `levels`.
 
 	size_t size() const { return levels.size(); }
 
