@@ -1,6 +1,16 @@
-#include <DB/Functions/FunctionsArray.h>
+﻿#include <DB/Functions/FunctionsString.h>
+
+#include <ext/range.hpp>
+#include <DB/Columns/ColumnArray.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsString.h>
+#include <DB/Functions/FunctionsArray.h>
+
+
+#if __SSE2__
+	#include <emmintrin.h>
+#endif
+
 
 namespace DB
 {
@@ -394,6 +404,163 @@ struct ReverseUTF8Impl
 		}
 	}
 };
+
+
+template <char not_case_lower_bound,
+	char not_case_upper_bound,
+	int to_case(int),
+	void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::vector(const ColumnString::Chars_t & data,
+	const IColumn::Offsets_t & offsets,
+	ColumnString::Chars_t & res_data,
+	IColumn::Offsets_t & res_offsets)
+{
+	res_data.resize(data.size());
+	res_offsets.assign(offsets);
+	array(data.data(), data.data() + data.size(), res_data.data());
+}
+
+template <char not_case_lower_bound,
+	char not_case_upper_bound,
+	int to_case(int),
+	void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::vector_fixed(
+	const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data)
+{
+	res_data.resize(data.size());
+	array(data.data(), data.data() + data.size(), res_data.data());
+}
+
+template <char not_case_lower_bound,
+	char not_case_upper_bound,
+	int to_case(int),
+	void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::constant(
+	const std::string & data, std::string & res_data)
+{
+	res_data.resize(data.size());
+	array(reinterpret_cast<const UInt8 *>(data.data()),
+		reinterpret_cast<const UInt8 *>(data.data() + data.size()),
+		reinterpret_cast<UInt8 *>(&res_data[0]));
+}
+
+template <char not_case_lower_bound,
+	char not_case_upper_bound,
+	int to_case(int),
+	void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::toCase(
+	const UInt8 *& src, const UInt8 * const src_end, UInt8 *& dst)
+{
+	if (src[0] <= ascii_upper_bound)
+	{
+		if (*src >= not_case_lower_bound && *src <= not_case_upper_bound)
+			*dst++ = *src++ ^ flip_case_mask;
+		else
+			*dst++ = *src++;
+	}
+	else if (src + 1 < src_end
+		&& ((src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0xBFu)) || (src[0] == 0xD1u && (src[1] >= 0x80u && src[1] <= 0x9Fu))))
+	{
+		cyrillic_to_case(src, src_end, dst);
+	}
+	else if (src + 1 < src_end && src[0] == 0xC2u)
+	{
+		/// Пунктуация U+0080 - U+00BF, UTF-8: C2 80 - C2 BF
+		*dst++ = *src++;
+		*dst++ = *src++;
+	}
+	else if (src + 2 < src_end && src[0] == 0xE2u)
+	{
+		/// Символы U+2000 - U+2FFF, UTF-8: E2 80 80 - E2 BF BF
+		*dst++ = *src++;
+		*dst++ = *src++;
+		*dst++ = *src++;
+	}
+	else
+	{
+		static const Poco::UTF8Encoding utf8;
+
+		if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end - src))
+			src += chars, dst += chars;
+		else
+			++src, ++dst;
+	}
+}
+
+template <char not_case_lower_bound,
+	char not_case_upper_bound,
+	int to_case(int),
+	void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::array(
+	const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
+{
+#if __SSE2__
+	const auto bytes_sse = sizeof(__m128i);
+	auto src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
+
+	/// SSE2 packed comparison operate on signed types, hence compare (c < 0) instead of (c > 0x7f)
+	const auto v_zero = _mm_setzero_si128();
+	const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
+	const auto v_not_case_upper_bound = _mm_set1_epi8(not_case_upper_bound + 1);
+	const auto v_flip_case_mask = _mm_set1_epi8(flip_case_mask);
+
+	while (src < src_end_sse)
+	{
+		const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
+
+		/// check for ASCII
+		const auto is_not_ascii = _mm_cmplt_epi8(chars, v_zero);
+		const auto mask_is_not_ascii = _mm_movemask_epi8(is_not_ascii);
+
+		/// ASCII
+		if (mask_is_not_ascii == 0)
+		{
+			const auto is_not_case
+				= _mm_and_si128(_mm_cmpgt_epi8(chars, v_not_case_lower_bound), _mm_cmplt_epi8(chars, v_not_case_upper_bound));
+			const auto mask_is_not_case = _mm_movemask_epi8(is_not_case);
+
+			/// everything in correct case ASCII
+			if (mask_is_not_case == 0)
+				_mm_storeu_si128(reinterpret_cast<__m128i *>(dst), chars);
+			else
+			{
+				/// ASCII in mixed case
+				/// keep `flip_case_mask` only where necessary, zero out elsewhere
+				const auto xor_mask = _mm_and_si128(v_flip_case_mask, is_not_case);
+
+				/// flip case by applying calculated mask
+				const auto cased_chars = _mm_xor_si128(chars, xor_mask);
+
+				/// store result back to destination
+				_mm_storeu_si128(reinterpret_cast<__m128i *>(dst), cased_chars);
+			}
+
+			src += bytes_sse, dst += bytes_sse;
+		}
+		else
+		{
+			/// UTF-8
+			const auto expected_end = src + bytes_sse;
+
+			while (src < expected_end)
+				toCase(src, src_end, dst);
+
+			/// adjust src_end_sse by pushing it forward or backward
+			const auto diff = src - expected_end;
+			if (diff != 0)
+			{
+				if (src_end_sse + diff < src_end)
+					src_end_sse += diff;
+				else
+					src_end_sse -= bytes_sse - diff;
+			}
+		}
+	}
+#endif
+	/// handle remaining symbols
+	while (src < src_end)
+		toCase(src, src_end, dst);
+}
 
 
 /** Выделяет подстроку в строке, как последовательности байт.
