@@ -16,8 +16,9 @@ ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
 	if (nested_column->isNullable())
 		throw Exception{"A nullable column cannot contain another nullable column", ErrorCodes::LOGICAL_ERROR};
 
-	if (nested_column->isConst())
-		throw Exception{"ColumnNullable cannot have constant nested column", ErrorCodes::LOGICAL_ERROR};
+	/// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
+	if (auto nested_column_materialized = nested_column->convertToFullColumnIfConst())
+		nested_column = nested_column_materialized;
 
 	if (null_map->isConst())
 		throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::LOGICAL_ERROR};
