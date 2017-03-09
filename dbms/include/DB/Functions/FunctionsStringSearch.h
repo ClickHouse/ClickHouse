@@ -13,6 +13,7 @@
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/ObjectPool.h>
 #include <DB/Common/StringSearcher.h>
+#include <DB/Functions/Regexps.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <Poco/UTF8String.h>
@@ -23,13 +24,6 @@
 #if USE_RE2_ST
 	#include <re2_st/re2.h>
 #endif
-
-
-
-namespace ProfileEvents
-{
-	extern const Event RegexpCreated;
-}
 
 
 namespace DB
@@ -333,64 +327,6 @@ struct PositionImpl
 	}
 };
 
-
-/// Переводит выражение LIKE в regexp re2. Например, abc%def -> ^abc.*def$
-inline String likePatternToRegexp(const String & pattern)
-{
-	String res;
-	res.reserve(pattern.size() * 2);
-	const char * pos = pattern.data();
-	const char * end = pos + pattern.size();
-
-	if (pos < end && *pos == '%')
-		++pos;
-	else
-		res = "^";
-
-	while (pos < end)
-	{
-		switch (*pos)
-		{
-			case '^': case '$': case '.': case '[': case '|': case '(': case ')': case '?': case '*': case '+': case '{':
-				res += '\\';
-				res += *pos;
-				break;
-			case '%':
-				if (pos + 1 != end)
-					res += ".*";
-				else
-					return res;
-				break;
-			case '_':
-				res += ".";
-				break;
-			case '\\':
-				++pos;
-				if (pos == end)
-					res += "\\\\";
-				else
-				{
-					if (*pos == '%' || *pos == '_')
-						res += *pos;
-					else
-					{
-						res += '\\';
-						res += *pos;
-					}
-				}
-				break;
-			default:
-				res += *pos;
-				break;
-		}
-		++pos;
-	}
-
-	res += '$';
-	return res;
-}
-
-
 /// Сводится ли выражение LIKE к поиску подстроки в строке?
 inline bool likePatternIsStrstr(const String & pattern, String & res)
 {
@@ -429,37 +365,6 @@ inline bool likePatternIsStrstr(const String & pattern, String & res)
 
 	return true;
 }
-
-
-namespace Regexps
-{
-	using Regexp = OptimizedRegularExpressionImpl<false>;
-	using Pool = ObjectPoolMap<Regexp, String>;
-
-	template <bool like>
-	inline Regexp createRegexp(const std::string & pattern, int flags) { return {pattern, flags}; }
-
-	template <>
-	inline Regexp createRegexp<true>(const std::string & pattern, int flags) { return {likePatternToRegexp(pattern), flags}; }
-
-	template <bool like, bool no_capture>
-	inline Pool::Pointer get(const std::string & pattern)
-	{
-		/// C++11 has thread-safe function-local statics on most modern compilers.
-		static Pool known_regexps;	/// Разные переменные для разных параметров шаблона.
-
-		return known_regexps.get(pattern, [&pattern]
-		{
-			int flags = OptimizedRegularExpression::RE_DOT_NL;
-			if (no_capture)
-				flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
-
-			ProfileEvents::increment(ProfileEvents::RegexpCreated);
-			return new Regexp{createRegexp<like>(pattern, flags)};
-		});
-	}
-}
-
 
 /** 'like' - if true, treat pattern as SQL LIKE; if false - treat pattern as re2 regexp.
   * NOTE: We want to run regexp search for whole block by one call (as implemented in function 'position')
