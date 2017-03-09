@@ -212,9 +212,9 @@ public:
 	{
 		const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
 
-		/** Для производительности, строки сравниваются до первого нулевого байта.
-		  * (если нулевой байт в середине строки, то то, что после него - игнорируется)
-		  * Замечу, что завершающий нулевой байт всегда есть.
+		/** For performance, the strings are compared to the first zero byte.
+		  * (if zero byte is in the middle of the line, then what is after it is ignored)
+		  * Note that the terminating zero byte is always present.
 		  */
 		return strcmp(
 			reinterpret_cast<const char *>(&chars[offsetAt(n)]),

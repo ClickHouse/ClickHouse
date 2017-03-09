@@ -23,28 +23,28 @@ using AggregateDataPtr = char *;
 using ConstAggregateDataPtr = const char *;
 
 
-/** Интерфейс для агрегатных функций.
-  * Экземпляры классов с этим интерфейсом не содержат самих данных для агрегации,
-  *  а содержат лишь метаданные (описание) агрегатной функции,
-  *  а также методы для создания, удаления и работы с данными.
-  * Данные, получающиеся во время агрегации (промежуточные состояния вычислений), хранятся в других объектах
-  *  (которые могут быть созданы в каком-нибудь пуле),
-  *  а IAggregateFunction - внешний интерфейс для манипулирования ими.
+/** Aggregate functions interface.
+  * Instances of classes with this interface do not contain the data itself for aggregation,
+  *  but contain only metadata (description) of the aggregate function,
+  *  as well as methods for creating, deleting and working with data.
+  * The data resulting from the aggregation (intermediate computing states) is stored in other objects
+  *  (which can be created in some pool),
+  *  and IAggregateFunction is the external interface for manipulating them.
   */
 class IAggregateFunction
 {
 public:
-	/// Получить основное имя функции.
+	/// Get main function name.
 	virtual String getName() const = 0;
 
-	/** Указать типы аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	  * Необходимо вызывать перед остальными вызовами.
+	/** Specify the types of arguments. If the function does not apply to these arguments throw an exception.
+	  * You must call before other calls.
 	  */
 	virtual void setArguments(const DataTypes & arguments) = 0;
 
-	/** Указать параметры - для параметрических агрегатных функций.
-	  * Если параметры не предусмотрены или переданные параметры недопустимы - кинуть исключение.
-	  * Если параметры есть - необходимо вызывать перед остальными вызовами, иначе - не вызывать.
+	/** Specify parameters for parametric aggregate functions.
+	  * If no parameters are provided, or the passed parameters are not valid, throw an exception.
+	  * If there are parameters - it is necessary to call before other calls, otherwise - do not call.
 	  */
 	virtual void setParameters(const Array & params)
 	{
@@ -52,29 +52,29 @@ public:
 			ErrorCodes::AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS);
 	}
 
-	/// Получить тип результата.
+	/// Get the result type.
 	virtual DataTypePtr getReturnType() const = 0;
 
 	virtual ~IAggregateFunction() {};
 
 
-	/** Функции по работе с данными. */
+	/** Data functions. */
 
-	/** Создать пустые данные для агрегации с помощью placement new в заданном месте.
-	  * Вы должны будете уничтожить их с помощью метода destroy.
+	/** Create empty data for aggregation with `placement new` at the specified location.
+	  * You will have to destroy them using the `destroy` method.
 	  */
 	virtual void create(AggregateDataPtr place) const = 0;
 
-	/// Уничтожить данные для агрегации.
+	/// Delete data for aggregation.
 	virtual void destroy(AggregateDataPtr place) const noexcept = 0;
 
-	/// Уничтожать данные не обязательно.
+	/// It is not necessary to delete data.
 	virtual bool hasTrivialDestructor() const = 0;
 
-	/// Получить sizeof структуры с данными.
+	/// Get `sizeof` of structure with data.
 	virtual size_t sizeOfData() const = 0;
 
-	/// Как должна быть выровнена структура с данными. NOTE: Сейчас не используется (структуры с состоянием агрегации кладутся без выравнивания).
+	/// How the data structure should be aligned. NOTE: Currently not used (structures with aggregation state are put without alignment).
 	virtual size_t alignOfData() const = 0;
 
 	/** Adds a value into aggregation data on which place points to.
@@ -102,24 +102,24 @@ public:
 	/// Inserts results into a column.
 	virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;
 
-	/** Возвращает true для агрегатных функций типа -State.
-	  * Они выполняются как другие агрегатные функции, но не финализируются (возвращают состояние агрегации, которое может быть объединено с другим).
+	/** Returns true for aggregate functions of type -State.
+	  * They are executed as other aggregate functions, but not finalized (return an aggregation state that can be combined with another).
 	  */
 	virtual bool isState() const { return false; }
 
 
-	/** Внутренний цикл, использующий указатель на функцию, получается лучше, чем использующий виртуальную функцию.
-	  * Причина в том, что в случае виртуальных функций, GCC 5.1.2 генерирует код,
-	  *  который на каждой итерации цикла заново грузит из памяти в регистр адрес функции (значение по смещению в таблице виртуальных функций).
-	  * Это даёт падение производительности на простых запросах в районе 12%.
-	  * После появления более хороших компиляторов, код можно будет убрать.
+	/** The inner loop that uses the function pointer is better than using the virtual function.
+	  * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
+	  *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.
+	  * This gives a performance drop on simple queries around 12%.
+	  * After the appearance of better compilers, the code can be removed.
 	  */
 	using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t, Arena *);
 	virtual AddFunc getAddressOfAddFunction() const = 0;
 };
 
 
-/// Реализует несколько методов. T - тип структуры с данными для агрегации.
+/// Implements several methods. T - type of structure with data for aggregation.
 template <typename T>
 class IAggregateFunctionHelper : public IAggregateFunction
 {
@@ -150,7 +150,7 @@ public:
 		return sizeof(Data);
 	}
 
-	/// NOTE: Сейчас не используется (структуры с состоянием агрегации кладутся без выравнивания).
+	/// NOTE: Currently not used (structures with aggregation state are put without alignment).
 	size_t alignOfData() const override
 	{
 		return __alignof__(Data);

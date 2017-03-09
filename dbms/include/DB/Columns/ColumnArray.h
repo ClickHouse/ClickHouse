@@ -14,17 +14,17 @@ namespace ErrorCodes
 	extern const int BAD_ARGUMENTS;
 }
 
-/** Cтолбeц значений типа массив.
-  * В памяти он представлен, как один столбец вложенного типа, размер которого равен сумме размеров всех массивов,
-  *  и как массив смещений в нём, который позволяет достать каждый элемент.
+/** A column of array values.
+  * In memory, it is represented as one column of a nested type, whose size is equal to the sum of the sizes of all arrays,
+  *  and as an array of offsets in it, which allows you to get each element.
   */
 class ColumnArray final : public IColumn
 {
 public:
-	/** По индексу i находится смещение до начала i + 1 -го элемента. */
+	/** On the index i there is an offset to the beginning of the i + 1 -th element. */
 	using ColumnOffsets_t = ColumnVector<Offset_t>;
 
-	/** Создать пустой столбец массивов, с типом значений, как в столбце nested_column */
+	/** Create an empty column of arrays with the type of values as in the column `nested_column` */
 	explicit ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column = nullptr);
 
 	std::string getName() const override;
@@ -55,7 +55,7 @@ public:
 
 	bool hasEqualOffsets(const ColumnArray & other) const;
 
-	/** Более эффективные методы манипуляции */
+	/** More efficient methods of manipulation */
 	IColumn & getData() { return *data.get(); }
 	const IColumn & getData() const { return *data.get(); }
 
@@ -82,28 +82,28 @@ public:
 
 private:
 	ColumnPtr data;
-	ColumnPtr offsets;	/// Смещения могут быть разделяемыми для нескольких столбцов - для реализации вложенных структур данных.
+	ColumnPtr offsets;  /// Displacements can be shared across multiple columns - to implement nested data structures.
 
 	size_t ALWAYS_INLINE offsetAt(size_t i) const	{ return i == 0 ? 0 : getOffsets()[i - 1]; }
 	size_t ALWAYS_INLINE sizeAt(size_t i) const		{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
 
 
-	/// Размножить значения, если вложенный столбец - ColumnVector<T>.
+	/// Multiply values if the nested column is ColumnVector<T>.
 	template <typename T>
 	ColumnPtr replicateNumber(const Offsets_t & replicate_offsets) const;
 
-	/// Размножить значения, если вложенный столбец - ColumnString. Код слишком сложный.
+	/// Multiply the values if the nested column is ColumnString. The code is too complicated.
 	ColumnPtr replicateString(const Offsets_t & replicate_offsets) const;
 
-	/** Неконстантные массивы константных значений - довольно редкое явление.
-	  * Большинство функций не умеет с ними работать, и не создаёт такие столбцы в качестве результата.
-	  * Исключение - функция replicate (см. FunctionsMiscellaneous.h), которая имеет служебное значение для реализации лямбда-функций.
-	  * Только ради неё сделана реализация метода replicate для ColumnArray(ColumnConst).
+	/** Non-constant arrays of constant values are quite rare.
+	  * Most functions can not work with them, and does not create such columns as a result.
+	  * An exception is the function `replicate`(see FunctionsMiscellaneous.h), which has service meaning for the implementation of lambda functions.
+	  * Only for its sake is the implementation of the `replicate` method for ColumnArray(ColumnConst).
 	  */
 	ColumnPtr replicateConst(const Offsets_t & replicate_offsets) const;
 
 
-	/// Специализации для функции filter.
+	/// Specializations for the filter function.
 	template <typename T>
 	ColumnPtr filterNumber(const Filter & filt, ssize_t result_size_hint) const;
 

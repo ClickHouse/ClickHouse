@@ -17,7 +17,7 @@ namespace DB
 #if defined(__APPLE__) || defined(__FreeBSD__)
 namespace ErrorCodes
 {
-        extern const int NOT_IMPLEMENTED;
+		extern const int NOT_IMPLEMENTED;
 }
 #endif
 

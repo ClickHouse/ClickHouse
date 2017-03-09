@@ -23,11 +23,11 @@ namespace ErrorCodes
 }
 
 
-/// Частный случай - реализация для числовых типов.
+/// A particular case is an implementation for numeric types.
 template <typename T>
 struct AggregateFunctionGroupArrayDataNumeric
 {
-	/// Сразу будет выделена память на несколько элементов так, чтобы состояние занимало 64 байта.
+	/// Memory is allocated to several elements immediately so that the state occupies 64 bytes.
 	static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<T>);
 
 	using Array = PODArray<T, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
@@ -100,14 +100,14 @@ public:
 
 
 
-/// Общий случай (неэффективно). NOTE Можно ещё реализовать частный случай для строк.
+/// General case (ineffective). NOTE You can also implement a special case for strings.
 struct AggregateFunctionGroupArrayDataGeneric
 {
-	Array value;	/// TODO Добавить MemoryTracker
+	Array value;    /// TODO Add MemoryTracker
 };
 
 
-/// Складывает все значения в массив, общий случай. Реализовано неэффективно.
+/// Puts all values to an array, general case. Implemented inefficiently.
 class AggregateFunctionGroupArrayGeneric final
 : public IUnaryAggregateFunction<AggregateFunctionGroupArrayDataGeneric, AggregateFunctionGroupArrayGeneric>
 {

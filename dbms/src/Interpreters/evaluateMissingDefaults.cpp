@@ -12,7 +12,7 @@ namespace DB
 {
 
 void evaluateMissingDefaults(Block & block,
-    const NamesAndTypesList & required_columns,
+	const NamesAndTypesList & required_columns,
 	const ColumnDefaults & column_defaults,
 	const Context & context)
 {

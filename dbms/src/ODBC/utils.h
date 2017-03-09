@@ -6,7 +6,7 @@
 #include "StringRef.h"
 
 
-/** Проверяет handle. Ловит исключения и засовывает их в DiagnosticRecord.
+/** Checks `handle`. Catches exceptions and puts them into the DiagnosticRecord.
   */
 template <typename Handle, typename F>
 RETCODE doWith(SQLHANDLE handle_opaque, F && f)
@@ -29,7 +29,7 @@ RETCODE doWith(SQLHANDLE handle_opaque, F && f)
 }
 
 
-/// Парсит строку вида key1=value1;key2=value2... TODO Парсинг значений в фигурных скобках.
+/// Parse a string of the form `key1=value1;key2=value2` ... TODO Parsing values in curly brackets.
 static const char * nextKeyValuePair(const char * data, const char * end, StringRef & out_key, StringRef & out_value)
 {
 	if (data >= end)
@@ -154,7 +154,7 @@ RETCODE fillOutputNumber(NUM num,
 }
 
 
-/// См. для примера info.cpp
+/// See for example info.cpp
 
 #define CASE_FALLTHROUGH(NAME) \
 	case NAME: \

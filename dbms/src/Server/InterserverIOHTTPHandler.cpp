@@ -23,7 +23,7 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
 	LOG_TRACE(log, "Request URI: " << request.getURI());
 
-	/// NOTE: Тут можно сделать аутентификацию, если понадобится.
+	/// NOTE: You can do authentication here if you need to.
 
 	String endpoint_name = params.get("endpoint");
 	bool compress = params.get("compress") == "true";
@@ -50,7 +50,7 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
 void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
-	/// Для того, чтобы работал keep-alive.
+	/// In order to work keep-alive.
 	if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
 		response.setChunkedTransferEncoding(true);
 

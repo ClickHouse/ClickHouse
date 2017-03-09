@@ -118,11 +118,11 @@ void ColumnArray::get(size_t n, Field & res) const
 
 StringRef ColumnArray::getDataAt(size_t n) const
 {
-	/** Возвращает диапазон памяти, покрывающий все элементы массива.
-		* Работает для массивов значений фиксированной длины.
-		* Для массивов строк и массивов массивов полученный кусок памяти может не взаимно-однозначно соответствовать элементам,
-		*  так как содержит лишь уложенные подряд данные, но не смещения.
-		*/
+	/** Returns the range of memory that covers all elements of the array.
+	  * Works for arrays of fixed length values.
+	  * For arrays of strings and arrays of arrays, the resulting chunk of memory may not be one-to-one correspondence with the elements,
+	  *  since it contains only the data laid in succession, but not the offsets.
+	  */
 
 	size_t array_size = sizeAt(n);
 	if (array_size == 0)
@@ -140,8 +140,8 @@ StringRef ColumnArray::getDataAt(size_t n) const
 
 void ColumnArray::insertData(const char * pos, size_t length)
 {
-	/** Аналогично - только для массивов значений фиксированной длины.
-		*/
+	/** Similarly - only for arrays of fixed length values.
+	  */
 	IColumn * data_ = data.get();
 	if (!data_->isFixed())
 		throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -280,7 +280,7 @@ namespace
 void ColumnArray::reserve(size_t n)
 {
 	getOffsets().reserve(n);
-	getData().reserve(n);		/// Средний размер массивов тут никак не учитывается. Или считается, что он не больше единицы.
+	getData().reserve(n);		/// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
 }
 
 

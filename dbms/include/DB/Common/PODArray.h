@@ -122,7 +122,7 @@ public:
 	struct const_iterator : public boost::iterator_adaptor<const_iterator, const T*>
 	{
 		const_iterator() {}
-        const_iterator(const T * ptr_) : const_iterator::iterator_adaptor_(ptr_) {}
+		const_iterator(const T * ptr_) : const_iterator::iterator_adaptor_(ptr_) {}
 	};
 
 

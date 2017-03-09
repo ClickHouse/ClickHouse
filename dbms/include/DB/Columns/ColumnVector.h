@@ -27,10 +27,10 @@ namespace ErrorCodes
 }
 
 
-/** Штука для сравнения чисел.
-  * Целые числа сравниваются как обычно.
-  * Числа с плавающей запятой сравниваются так, что NaN-ы всегда оказываются в конце
-  *  (если этого не делать, то сортировка не работала бы вообще).
+/** Stuff for comparing numbers.
+  * Integer values are compared as usual.
+  * Floating-point numbers are compared this way that NaNs always end up at the end
+  *  (if you don't do this, the sort would not work at all).
   */
 template <typename T>
 struct CompareHelper
@@ -38,11 +38,11 @@ struct CompareHelper
 	static bool less(T a, T b) { return a < b; }
 	static bool greater(T a, T b) { return a > b; }
 
-	/** Сравнивает два числа. Выдаёт число меньше нуля, равное нулю, или больше нуля, если a < b, a == b, a > b, соответственно.
-	  * Если одно из значений является NaN, то:
-	  * - если nan_direction_hint == -1 - NaN считаются меньше всех чисел;
-	  * - если nan_direction_hint == 1 - NaN считаются больше всех чисел;
-	  * По-сути: nan_direction_hint == -1 говорит, что сравнение идёт для сортировки по убыванию.
+	/** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
+	  * If one of the values is NaN, then
+	  * - if nan_direction_hint == -1 - NaN are considered less than all numbers;
+	  * - if nan_direction_hint == 1 - NaN are considered to be larger than all numbers;
+	  * Essentially: nan_direction_hint == -1 says that the comparison is for sorting in descending order.
 	  */
 	static int compare(T a, T b, int nan_direction_hint)
 	{
@@ -89,7 +89,7 @@ template <> struct CompareHelper<Float32> : public FloatCompareHelper<Float32> {
 template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {};
 
 
-/** Для реализации функции get64.
+/** To implement `get64` function.
   */
 template <typename T>
 inline UInt64 unionCastToUInt64(T x) { return x; }
@@ -141,7 +141,7 @@ typename std::enable_if<!std::is_floating_point<T>::value, T>::type NaNOrZero()
 }
 
 
-/** Шаблон столбцов, которые используют для хранения простой массив.
+/** A pattern of columns that use a simple array to store.
   */
 template <typename T>
 class ColumnVector final : public IColumn
@@ -358,10 +358,10 @@ public:
 		const T * data_pos = &data[0];
 
 #if __SSE2__
-		/** Чуть более оптимизированная версия.
-		 * Исходит из допущения, что часто куски последовательно идущих значений
-		 *  полностью проходят или полностью не проходят фильтр.
-		 * Поэтому, будем оптимистично проверять куски по SIMD_BYTES значений.
+		/** A slightly more optimized version.
+		 * Based on the assumption that often pieces of consecutive values
+		 *  completely pass or do not pass the filter completely.
+		 * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
 		 */
 
 		static constexpr size_t SIMD_BYTES = 16;
@@ -374,7 +374,7 @@ public:
 
 			if (0 == mask)
 			{
-				/// Ничего не вставляем.
+		/// Nothing is inserted.
 			}
 			else if (0xFFFF == mask)
 			{

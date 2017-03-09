@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/Functions/NumberTraits.h>
-#include <DB/Functions/EnrichedDataTypePtr.h>
+#include <DB/DataTypes/EnrichedDataTypePtr.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeNullable.h>
 
