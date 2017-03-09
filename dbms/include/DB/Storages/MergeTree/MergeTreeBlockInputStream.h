@@ -25,7 +25,7 @@ public:
 		size_t min_bytes_to_use_direct_io_, size_t max_read_buffer_size_,
 		bool save_marks_in_cache_, bool quiet = false);
 
-    ~MergeTreeBlockInputStream() override;
+	~MergeTreeBlockInputStream() override;
 
 	String getName() const override { return "MergeTree"; }
 

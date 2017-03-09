@@ -26,7 +26,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
 	{
 		HTMLForm params(request);
 
-        /// Even if lag is small, output detailed information about the lag.
+		/// Even if lag is small, output detailed information about the lag.
 		bool verbose = params.get("verbose", "") == "1";
 
 		const MergeTreeSettings & settings = context.getMergeTreeSettings();
@@ -36,7 +36,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
 
 		auto databases = context.getDatabases();
 
-        /// Iterate through all the replicated tables.
+		/// Iterate through all the replicated tables.
 		for (const auto & db : databases)
 		{
 			for (auto iterator = db.second->getIterator(); iterator->isValid(); iterator->next())
@@ -83,7 +83,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
 
 			if (!response.sent())
 			{
-                /// We have not sent anything yet and we don't even know if we need to compress response.
+		/// We have not sent anything yet and we don't even know if we need to compress response.
 				response.send() << getCurrentExceptionMessage(false) << std::endl;
 			}
 		}

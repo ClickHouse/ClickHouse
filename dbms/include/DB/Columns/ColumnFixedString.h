@@ -31,16 +31,16 @@ public:
 	using Chars_t = PaddedPODArray<UInt8>;
 
 private:
-    /// Bytes of rows, laid in succession. The strings are stored without a trailing zero byte.
-    /** NOTE It is required that the offset and type of chars in the object be the same as that of `data in ColumnUInt8`.
+	/// Bytes of rows, laid in succession. The strings are stored without a trailing zero byte.
+	/** NOTE It is required that the offset and type of chars in the object be the same as that of `data in ColumnUInt8`.
 	  * Used in `packFixed` function (AggregationCommon.h)
 	  */
 	Chars_t chars;
-    /// The size of the rows.
+	/// The size of the rows.
 	const size_t n;
 
 public:
-    /** Create an empty column of strings of fixed-length `n` */
+	/** Create an empty column of strings of fixed-length `n` */
 	ColumnFixedString(size_t n_) : n(n_) {}
 
 	std::string getName() const override { return "ColumnFixedString"; }

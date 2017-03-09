@@ -112,7 +112,7 @@ int test_vectors()
 
   for( i = 0; i < MAXLEN; ++i )
   {
-    in[i] = i;
+	in[i] = i;
 
 	size_t part = i == 0 ? 0 : (rand() % i);
 
@@ -126,11 +126,11 @@ int test_vectors()
 	uint64_t test_vector;
 	memcpy(&test_vector, vectors[i], 8);
 
-    if ((out64[0] ^ out64[1]) != test_vector)
-    {
-      std::cerr << "test vector failed for " << i << " bytes" << std::endl;
-      ok = 0;
-    }
+	if ((out64[0] ^ out64[1]) != test_vector)
+	{
+	  std::cerr << "test vector failed for " << i << " bytes" << std::endl;
+	  ok = 0;
+	}
   }
 
   return ok;

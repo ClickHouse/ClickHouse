@@ -97,7 +97,7 @@ public:
 		static_cast<ColumnAggregateFunction &>(to).getData().push_back(const_cast<AggregateDataPtr>(place));
 	}
 
-    /// Aggregate function or aggregate function state.
+	/// Aggregate function or aggregate function state.
 	bool isState() const override { return true; }
 
 	bool allocatesMemoryInArena() const override

@@ -100,7 +100,7 @@ public:
 	}
 
 	/** If T is not a numeric type, using this method causes a compilation error,
-      *  but use of error class does not. SFINAE.
+	  *  but use of error class does not. SFINAE.
 	  */
 	double quantileInterpolated(double level)
 	{
@@ -111,7 +111,7 @@ public:
 
 		double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
 
-        /// To get the value of a fractional index, we linearly interpolate between neighboring values.
+		/// To get the value of a fractional index, we linearly interpolate between neighboring values.
 		size_t left_index = static_cast<size_t>(index);
 		size_t right_index = left_index + 1;
 		if (right_index == samples.size())
@@ -189,7 +189,7 @@ private:
 	friend void qdigest_test(int normal_size, UInt64 value_limit, const std::vector<UInt64> & values, int queries_count, bool verbose);
 	friend void rs_perf_test();
 
-    /// We allocate a little memory on the stack - to avoid allocations when there are many objects with a small number of elements.
+	/// We allocate a little memory on the stack - to avoid allocations when there are many objects with a small number of elements.
 	static constexpr size_t bytes_on_stack = 64;
 	using Array = DB::PODArray<T, bytes_on_stack / sizeof(T), AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
 
@@ -202,7 +202,7 @@ private:
 
 	UInt64 genRandom(size_t lim)
 	{
-        /// With a large number of values, we will generate random numbers several times slower.
+		/// With a large number of values, we will generate random numbers several times slower.
 		if (lim <= static_cast<UInt64>(rng.max()))
 			return static_cast<UInt32>(rng()) % static_cast<UInt32>(lim);
 		else

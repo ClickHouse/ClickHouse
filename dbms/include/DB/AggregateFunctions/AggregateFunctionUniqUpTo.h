@@ -40,7 +40,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 	/// threshold - for how many elements there is room in a `data`.
 	void insert(T x, UInt8 threshold)
 	{
-        /// The state is already full - nothing needs to be done.
+		/// The state is already full - nothing needs to be done.
 		if (count > threshold)
 			return;
 
@@ -49,11 +49,11 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 			if (data[i] == x)
 				return;
 
-        /// Did not find the matching element. If there is room for one more element, insert it.
+		/// Did not find the matching element. If there is room for one more element, insert it.
 		if (count < threshold)
 			data[count] = x;
 
-        /// After increasing count, the state may be overflowed.
+		/// After increasing count, the state may be overflowed.
 		++count;
 	}
 
@@ -64,7 +64,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 
 		if (rhs.count > threshold)
 		{
-            /// If `rhs` is overflowed, then set `count` too also overflowed for the current state.
+		/// If `rhs` is overflowed, then set `count` too also overflowed for the current state.
 			count = rhs.count;
 			return;
 		}
@@ -77,7 +77,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 	{
 		writeBinary(count, wb);
 
-        /// Write values only if the state is not overflowed. Otherwise, they are not needed, and only the fact that the state is overflowed is important.
+		/// Write values only if the state is not overflowed. Otherwise, they are not needed, and only the fact that the state is overflowed is important.
 		if (count <= threshold)
 			wb.write(reinterpret_cast<const char *>(&data[0]), count * sizeof(data[0]));
 	}
@@ -117,7 +117,7 @@ template <typename T>
 class AggregateFunctionUniqUpTo final : public IUnaryAggregateFunction<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T> >
 {
 private:
-    UInt8 threshold = 5;    /// Default value if the parameter is not specified.
+	UInt8 threshold = 5;    /// Default value if the parameter is not specified.
 
 public:
 	size_t sizeOfData() const override
@@ -186,7 +186,7 @@ class AggregateFunctionUniqUpToVariadic final : public IAggregateFunctionHelper<
 {
 private:
 	size_t num_args = 0;
-    UInt8 threshold = 5;    /// Default value if the parameter is not specified.
+	UInt8 threshold = 5;    /// Default value if the parameter is not specified.
 
 public:
 	size_t sizeOfData() const override

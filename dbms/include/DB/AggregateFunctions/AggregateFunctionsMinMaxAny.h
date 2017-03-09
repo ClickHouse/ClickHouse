@@ -24,7 +24,7 @@ struct SingleValueDataFixed
 {
 	using Self = SingleValueDataFixed<T>;
 
-    bool has_value = false; /// You need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
+	bool has_value = false; /// You need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
 	T value;
 
 
@@ -171,14 +171,14 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
 {
 	using Self = SingleValueDataString;
 
-    Int32 size = -1;    /// -1 indicates that there is no value.
+	Int32 size = -1;    /// -1 indicates that there is no value.
 
 	static constexpr Int32 AUTOMATIC_STORAGE_SIZE = 64;
 	static constexpr Int32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size);
 
 	union __attribute__((__packed__, __aligned__(1)))
 	{
-        char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
+		char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
 		char * __attribute__((__packed__, __aligned__(1))) large_data;
 	};
 

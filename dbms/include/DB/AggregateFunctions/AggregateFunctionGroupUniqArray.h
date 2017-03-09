@@ -23,7 +23,7 @@ namespace DB
 template <typename T>
 struct AggregateFunctionGroupUniqArrayData
 {
-    /// When creating, the hash table must be small.
+	/// When creating, the hash table must be small.
 	using Set = HashSet<
 		T,
 		DefaultHash<T>,

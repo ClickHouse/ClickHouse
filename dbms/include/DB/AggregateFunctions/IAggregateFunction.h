@@ -37,14 +37,14 @@ public:
 	/// Get main function name.
 	virtual String getName() const = 0;
 
-    /** Specify the types of arguments. If the function does not apply to these arguments throw an exception.
-      * You must call before other calls.
+	/** Specify the types of arguments. If the function does not apply to these arguments throw an exception.
+	  * You must call before other calls.
 	  */
 	virtual void setArguments(const DataTypes & arguments) = 0;
 
-    /** Specify parameters for parametric aggregate functions.
-      * If no parameters are provided, or the passed parameters are not valid, throw an exception.
-      * If there are parameters - it is necessary to call before other calls, otherwise - do not call.
+	/** Specify parameters for parametric aggregate functions.
+	  * If no parameters are provided, or the passed parameters are not valid, throw an exception.
+	  * If there are parameters - it is necessary to call before other calls, otherwise - do not call.
 	  */
 	virtual void setParameters(const Array & params)
 	{
@@ -58,23 +58,23 @@ public:
 	virtual ~IAggregateFunction() {};
 
 
-    /** Data functions. */
+	/** Data functions. */
 
-    /** Create empty data for aggregation with `placement new` at the specified location.
-      * You will have to destroy them using the `destroy` method.
+	/** Create empty data for aggregation with `placement new` at the specified location.
+	  * You will have to destroy them using the `destroy` method.
 	  */
 	virtual void create(AggregateDataPtr place) const = 0;
 
-    /// Delete data for aggregation.
+	/// Delete data for aggregation.
 	virtual void destroy(AggregateDataPtr place) const noexcept = 0;
 
 	/// It is not necessary to delete data.
 	virtual bool hasTrivialDestructor() const = 0;
 
-    /// Get `sizeof` of structure with data.
+	/// Get `sizeof` of structure with data.
 	virtual size_t sizeOfData() const = 0;
 
-    /// How the data structure should be aligned. NOTE: Currently not used (structures with aggregation state are put without alignment).
+	/// How the data structure should be aligned. NOTE: Currently not used (structures with aggregation state are put without alignment).
 	virtual size_t alignOfData() const = 0;
 
 	/** Adds a value into aggregation data on which place points to.
@@ -102,16 +102,16 @@ public:
 	/// Inserts results into a column.
 	virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;
 
-    /** Returns true for aggregate functions of type -State.
+	/** Returns true for aggregate functions of type -State.
 	  * They are executed as other aggregate functions, but not finalized (return an aggregation state that can be combined with another).
 	  */
 	virtual bool isState() const { return false; }
 
 
-    /** The inner loop that uses the function pointer is better than using the virtual function.
-      * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
-      *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.
-      * This gives a performance drop on simple queries around 12%.
+	/** The inner loop that uses the function pointer is better than using the virtual function.
+	  * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
+	  *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.
+	  * This gives a performance drop on simple queries around 12%.
 	  * After the appearance of better compilers, the code can be removed.
 	  */
 	using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t, Arena *);

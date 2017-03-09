@@ -32,13 +32,13 @@ for file in MobilePhoneModel PageCharset Params URLDomain UTMSource Referer URL 
    for i in {0..1000}; do
 	TOTAL_ELEMS=$(( $TOTAL_ELEMS + $size ))
 	if [[ $TOTAL_ELEMS -gt 25000000 ]]; then break; fi
-    ./hash_map_string_2 $size $method < ${file}.bin 2>&1 |
-     grep HashMap | grep -oE '[0-9\.]+ elem';
+	./hash_map_string_2 $size $method < ${file}.bin 2>&1 |
+	 grep HashMap | grep -oE '[0-9\.]+ elem';
    done | awk -W interactive '{ if ($1 > x) { x = $1 }; printf(".") } END { print x }' | tee /tmp/hash_map_string_2_res;
    CUR_RESULT=$(cat /tmp/hash_map_string_2_res | tr -d '.')
    if [[ $CUR_RESULT -gt $BEST_RESULT ]]; then
-    BEST_METHOD=$method
-    BEST_RESULT=$CUR_RESULT
+	BEST_METHOD=$method
+	BEST_RESULT=$CUR_RESULT
    fi;
   done;
   echo Best: $BEST_METHOD - $BEST_RESULT

@@ -33,22 +33,22 @@ public:
 	using Chars_t = PaddedPODArray<UInt8>;
 
 private:
-    /// On the index i there is an offset to the beginning of the i + 1 -th element.
+	/// On the index i there is an offset to the beginning of the i + 1 -th element.
 	Offsets_t offsets;
 
-    /// Bytes of rows laid in succession. Strings are stored with the trailing zero byte.
+	/// Bytes of rows laid in succession. Strings are stored with the trailing zero byte.
 	Chars_t chars;
 
 	size_t __attribute__((__always_inline__)) offsetAt(size_t i) const	{ return i == 0 ? 0 : offsets[i - 1]; }
 
-    /// Size, including the trailing zero byte.
+	/// Size, including the trailing zero byte.
 	size_t __attribute__((__always_inline__)) sizeAt(size_t i) const	{ return i == 0 ? offsets[0] : (offsets[i] - offsets[i - 1]); }
 
 	template <bool positive>
 	friend struct lessWithCollation;
 
 public:
-    /** Create an empty column of rows */
+	/** Create an empty column of rows */
 	ColumnString() {}
 
 	std::string getName() const override { return "ColumnString"; }
@@ -347,16 +347,16 @@ public:
 	{
 		const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
 
-        /** For performance, the strings are compared to the first zero byte.
-          * (if zero byte is in the middle of the line, then what is after it is ignored)
-          * Note that the terminating zero byte is always present.
+		/** For performance, the strings are compared to the first zero byte.
+		  * (if zero byte is in the middle of the line, then what is after it is ignored)
+		  * Note that the terminating zero byte is always present.
 		  */
 		return strcmp(
 			reinterpret_cast<const char *>(&chars[offsetAt(n)]),
 			reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]));
 	}
 
-    /// Version `compareAt` for locale-sensitive string comparison
+	/// Version `compareAt` for locale-sensitive string comparison
 	int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const;
 
 	template <bool positive>
@@ -400,7 +400,7 @@ public:
 		}
 	}
 
-    /// Sorting with regard to `Collation`
+	/// Sorting with regard to `Collation`
 	void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const;
 
 	ColumnPtr replicate(const Offsets_t & replicate_offsets) const override

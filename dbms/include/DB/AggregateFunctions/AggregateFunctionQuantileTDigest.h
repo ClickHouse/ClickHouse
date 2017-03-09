@@ -96,7 +96,7 @@ class MergingDigest
 	using Params = tdigest::Params<Value>;
 	using Centroid = tdigest::Centroid<Value, CentroidCount>;
 
-    /// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
+	/// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
 	static constexpr size_t bytes_in_arena = 64 - sizeof(DB::PODArray<Centroid>) - sizeof(TotalCount) - sizeof(uint32_t);
 
 	using Summary = DB::PODArray<Centroid, bytes_in_arena / sizeof(Centroid), AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
@@ -105,7 +105,7 @@ class MergingDigest
 	TotalCount count = 0;
 	uint32_t unmerged = 0;
 
-    /** Linear interpolation at the point x on the line (x1, y1)..(x2, y2)
+	/** Linear interpolation at the point x on the line (x1, y1)..(x2, y2)
 	  */
 	static Value interpolate(Value x, Value x1, Value y1, Value x2, Value y2)
 	{
@@ -125,19 +125,19 @@ class MergingDigest
 		using Transform = RadixSortFloatTransform<KeyBits>;
 		using Allocator = RadixSortMallocAllocator;
 
-        /// The function to get the key from an array element.
+		/// The function to get the key from an array element.
 		static Key & extractKey(Element & elem) { return elem.mean; }
 	};
 
 public:
-    /** Adds to the digest a change in `x` with a weight of `cnt` (default 1)
+	/** Adds to the digest a change in `x` with a weight of `cnt` (default 1)
 	  */
 	void add(const Params & params, Value x, CentroidCount cnt = 1)
 	{
 		add(params, Centroid(x, cnt));
 	}
 
-    /** Adds a centroid `c` to the digest
+	/** Adds a centroid `c` to the digest
 	  */
 	void add(const Params & params, const Centroid & c)
 	{
@@ -148,9 +148,9 @@ public:
 			compress(params);
 	}
 
-    /** Performs compression of accumulated centroids
-      * When merging, the invariant is retained to the maximum size of each
-      * centroid that does not exceed `4 q (1 - q) \ delta N`.
+	/** Performs compression of accumulated centroids
+	  * When merging, the invariant is retained to the maximum size of each
+	  * centroid that does not exceed `4 q (1 - q) \ delta N`.
 	  */
 	void compress(const Params & params)
 	{
@@ -160,7 +160,7 @@ public:
 
 			if (summary.size() > 3)
 			{
-                /// A pair of consecutive bars of the histogram.
+		/// A pair of consecutive bars of the histogram.
 				auto l = summary.begin();
 				auto r = std::next(l);
 
@@ -169,11 +169,11 @@ public:
 				{
 					// we use quantile which gives us the smallest error
 
-                    /// The ratio of the part of the histogram to l, including the half l to the entire histogram. That is, what level quantile in position l.
+		/// The ratio of the part of the histogram to l, including the half l to the entire histogram. That is, what level quantile in position l.
 					Value ql = (sum + l->count * 0.5) / count;
 					Value err = ql * (1 - ql);
 
-                    /// The ratio of the portion of the histogram to l, including l and half r to the entire histogram. That is, what level is the quantile in position r.
+		/// The ratio of the portion of the histogram to l, including l and half r to the entire histogram. That is, what level is the quantile in position r.
 					Value qr = (sum + l->count + r->count * 0.5) / count;
 					Value err2 = qr * (1 - qr);
 
@@ -182,15 +182,15 @@ public:
 
 					Value k = 4 * count * err * params.epsilon;
 
-                    /** The ratio of the weight of the glued column pair to all values is not greater,
-                      *  than epsilon multiply by a certain quadratic coefficient, which in the median is 1 (4 * 1/2 * 1/2),
-                      *  and at the edges decreases and is approximately equal to the distance to the edge * 4.
+		/** The ratio of the weight of the glued column pair to all values is not greater,
+		  *  than epsilon multiply by a certain quadratic coefficient, which in the median is 1 (4 * 1/2 * 1/2),
+		  *  and at the edges decreases and is approximately equal to the distance to the edge * 4.
 					  */
 
 					if (l->count + r->count <= k)
 					{
 						// it is possible to merge left and right
-                        /// The left column "eats" the right.
+		/// The left column "eats" the right.
 						*l += *r;
 					}
 					else
@@ -199,14 +199,14 @@ public:
 						sum += l->count;
 						++l;
 
-                        /// We skip all the values "eaten" earlier.
+		/// We skip all the values "eaten" earlier.
 						if (l != r)
 							*l = *r;
 					}
 					++r;
 				}
 
-                /// At the end of the loop, all values to the right of l were "eaten".
+		/// At the end of the loop, all values to the right of l were "eaten".
 				summary.resize(l - summary.begin() + 1);
 			}
 
@@ -214,8 +214,8 @@ public:
 		}
 	}
 
-    /** Calculates the quantile q [0, 1] based on the digest.
-      * For an empty digest returns NaN.
+	/** Calculates the quantile q [0, 1] based on the digest.
+	  * For an empty digest returns NaN.
 	  */
 	Value getQuantile(const Params & params, Value q)
 	{
@@ -247,10 +247,10 @@ public:
 		return summary.back().mean;
 	}
 
-    /** Get multiple quantiles (`size` pieces).
-      * levels - an array of levels of the desired quantiles. They are in a random order.
-      * levels_permutation - array-permutation levels. The i-th position will be the index of the i-th ascending level in the `levels` array.
-      * result - the array where the results are added, in order of `levels`,
+	/** Get multiple quantiles (`size` pieces).
+	  * levels - an array of levels of the desired quantiles. They are in a random order.
+	  * levels_permutation - array-permutation levels. The i-th position will be the index of the i-th ascending level in the `levels` array.
+	  * result - the array where the results are added, in order of `levels`,
 	  */
 	template <typename ResultType>
 	void getManyQuantiles(const Params & params, const Value * levels, const size_t * levels_permutation, size_t size, ResultType * result)
@@ -310,7 +310,7 @@ public:
 			add(params, c);
 	}
 
-    /** Write to the stream.
+	/** Write to the stream.
 	  */
 	void write(const Params & params, DB::WriteBuffer & buf)
 	{
@@ -319,7 +319,7 @@ public:
 		buf.write(reinterpret_cast<const char *>(&summary[0]), summary.size() * sizeof(summary[0]));
 	}
 
-    /** Read from the stream.
+	/** Read from the stream.
 	  */
 	void read(const Params & params, DB::ReadBuffer & buf)
 	{

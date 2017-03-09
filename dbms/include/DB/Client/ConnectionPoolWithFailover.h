@@ -81,14 +81,14 @@ protected:
 	}
 
 private:
-    /** Allocates connection to work. */
+	/** Allocates connection to work. */
 	Entry doGet(const Settings * settings) override
 	{
 		applyLoadBalancing(settings);
 		return Base::get(settings);
 	}
 
-    /** Allocates up to the specified number of connections to work.
+	/** Allocates up to the specified number of connections to work.
 	  * Connections provide access to different replicas of one shard.
 	  */
 	std::vector<Entry> doGetMany(const Settings * settings, PoolMode pool_mode) override

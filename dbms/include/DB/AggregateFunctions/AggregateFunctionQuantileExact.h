@@ -25,7 +25,7 @@ namespace DB
 template <typename T>
 struct AggregateFunctionQuantileExactData
 {
-    /// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
+	/// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
 	static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<T>);
 
 	using Array = PODArray<T, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
@@ -99,7 +99,7 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
-        /// Sorting an array will not be considered a violation of constancy.
+		/// Sorting an array will not be considered a violation of constancy.
 		auto & array = const_cast<typename AggregateFunctionQuantileExactData<T>::Array &>(this->data(place).array);
 
 		T quantile = T();
@@ -110,7 +110,7 @@ public:
 				? level * array.size()
 				: (array.size() - 1);
 
-            std::nth_element(array.begin(), array.begin() + n, array.end());    /// NOTE You can think of the radix-select algorithm.
+		std::nth_element(array.begin(), array.begin() + n, array.end());    /// NOTE You can think of the radix-select algorithm.
 
 			quantile = array[n];
 		}
@@ -181,7 +181,7 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
-        /// Sorting an array will not be considered a violation of constancy.
+		/// Sorting an array will not be considered a violation of constancy.
 		auto & array = const_cast<typename AggregateFunctionQuantileExactData<T>::Array &>(this->data(place).array);
 
 		ColumnArray & arr_to = static_cast<ColumnArray &>(to);

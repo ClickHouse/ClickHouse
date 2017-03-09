@@ -94,9 +94,9 @@ public:
 		return samples[int_index].first;
 	}
 
-    /** If T is not a numeric type, using this method causes a compilation error,
-      *  but use of error class does not cause. SFINAE.
-      *  Not SFINAE. Functions members of type templates are simply not checked until they are used.
+	/** If T is not a numeric type, using this method causes a compilation error,
+	  *  but use of error class does not cause. SFINAE.
+	  *  Not SFINAE. Functions members of type templates are simply not checked until they are used.
 	  */
 	double quantileInterpolated(double level)
 	{
@@ -107,7 +107,7 @@ public:
 
 		const double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
 
-        /// To get a value from a fractional index, we linearly interpolate between adjacent values.
+		/// To get a value from a fractional index, we linearly interpolate between adjacent values.
 		size_t left_index = static_cast<size_t>(index);
 		size_t right_index = left_index + 1;
 		if (right_index == samples.size())
@@ -160,7 +160,7 @@ public:
 	}
 
 private:
-    /// We allocate some memory on the stack to avoid allocations when there are many objects with a small number of elements.
+	/// We allocate some memory on the stack to avoid allocations when there are many objects with a small number of elements.
 	static constexpr size_t bytes_on_stack = 64;
 	using Element = std::pair<T, UInt32>;
 	using Array = DB::PODArray<Element, bytes_on_stack / sizeof(Element), AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;

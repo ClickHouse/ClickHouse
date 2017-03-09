@@ -69,7 +69,7 @@ void TCPHandler::runImpl()
 	{
 		receiveHello();
 	}
-    catch (const Exception & e) /// Typical for an incorrect username, password, or address.
+	catch (const Exception & e) /// Typical for an incorrect username, password, or address.
 	{
 		if (e.code() == ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT)
 		{
@@ -85,7 +85,7 @@ void TCPHandler::runImpl()
 
 		try
 		{
-            /// We try to send error information to the client.
+		/// We try to send error information to the client.
 			sendException(e);
 		}
 		catch (...) {}
@@ -93,7 +93,7 @@ void TCPHandler::runImpl()
 		throw;
 	}
 
-    /// When connecting, the default database can be specified.
+	/// When connecting, the default database can be specified.
 	if (!default_database.empty())
 	{
 		if (!connection_context.isDatabaseExist(default_database))
@@ -114,43 +114,43 @@ void TCPHandler::runImpl()
 
 	while (1)
 	{
-        /// We are waiting for package from client. Thus, every `POLL_INTERVAL` seconds check whether you do not need to complete the work.
+		/// We are waiting for package from client. Thus, every `POLL_INTERVAL` seconds check whether you do not need to complete the work.
 		while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !BaseDaemon::instance().isCancelled())
 			;
 
-        /// If you need to quit, or client disconnects.
+		/// If you need to quit, or client disconnects.
 		if (BaseDaemon::instance().isCancelled() || in->eof())
 			break;
 
 		Stopwatch watch;
 		state.reset();
 
-        /** An exception during the execution of request (it must be sent over the network to the client).
-          * The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
+		/** An exception during the execution of request (it must be sent over the network to the client).
+		  * The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
 		  */
 		std::unique_ptr<Exception> exception;
 
 		try
 		{
-            /// Restore context of request.
+		/// Restore context of request.
 			query_context = connection_context;
 
-            /** If Query - process it. If Ping or Cancel - go back to the beginning.
+		/** If Query - process it. If Ping or Cancel - go back to the beginning.
 			  * There may come settings for a separate query that modify `query_context`.
 			  */
 			if (!receivePacket())
 				continue;
 
-            /// Get blocks of temporary tables
+		/// Get blocks of temporary tables
 			if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 				readData(global_settings);
 
-            /// We are clearing, as we received an empty block from the external table data.
-            /// So, stream is marked as cancelled and can not be read from it.
+		/// We are clearing, as we received an empty block from the external table data.
+		/// So, stream is marked as cancelled and can not be read from it.
 			state.block_in.reset();
-            state.maybe_compressed_in.reset();  /// For more accurate accounting of MemoryTracker.
+		state.maybe_compressed_in.reset();  /// For more accurate accounting of MemoryTracker.
 
-            /// Processing Query
+		/// Processing Query
 			state.io = executeQuery(state.query, query_context, false, state.stage);
 
 			if (state.io.out)
@@ -159,7 +159,7 @@ void TCPHandler::runImpl()
 			after_check_cancelled.restart();
 			after_send_progress.restart();
 
-            /// Does the request require receive data from client?
+		/// Does the request require receive data from client?
 			if (state.need_receive_data_for_insert)
 				processInsertQuery(global_settings);
 			else
@@ -179,11 +179,11 @@ void TCPHandler::runImpl()
 		}
 		catch (const Poco::Net::NetException & e)
 		{
-            /** We can get here if there was an error during connection to the client,
-              *  or in connection with a remote server that was used to process the request.
-              * It is not possible to distinguish between these two cases.
-              * Although in one of them, we have to send exception to the client, but in the other - we can not.
-              * We will try to send exception to the client in any case - see below.
+		/** We can get here if there was an error during connection to the client,
+		  *  or in connection with a remote server that was used to process the request.
+		  * It is not possible to distinguish between these two cases.
+		  * Although in one of them, we have to send exception to the client, but in the other - we can not.
+		  * We will try to send exception to the client in any case - see below.
 			  */
 			state.io.onException();
 			exception = std::make_unique<Exception>(e.displayText(), ErrorCodes::POCO_EXCEPTION);
@@ -213,7 +213,7 @@ void TCPHandler::runImpl()
 		}
 		catch (...)
 		{
-            /** Could not send exception information to the client. */
+		/** Could not send exception information to the client. */
 			network_error = true;
 			LOG_WARNING(log, "Client has gone away.");
 		}
@@ -224,9 +224,9 @@ void TCPHandler::runImpl()
 		}
 		catch (...)
 		{
-            /** During the processing of request, there was an exception that we caught and possibly sent to client.
-              * When destroying the request pipeline execution there was a second exception.
-              * For example, a pipeline could run in multiple threads, and an exception could occur in each of them.
+		/** During the processing of request, there was an exception that we caught and possibly sent to client.
+		  * When destroying the request pipeline execution there was a second exception.
+		  * For example, a pipeline could run in multiple threads, and an exception could occur in each of them.
 			  * Ignore it.
 			  */
 		}
@@ -248,18 +248,18 @@ void TCPHandler::readData(const Settings & global_settings)
 	{
 		Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
-        /// We are waiting for package from the client. Thus, every `POLL_INTERVAL` seconds check whether you do not need to complete the work.
+		/// We are waiting for package from the client. Thus, every `POLL_INTERVAL` seconds check whether you do not need to complete the work.
 		while (1)
 		{
 			if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000))
 				break;
 
-            /// If you need to shut down work.
+		/// If you need to shut down work.
 			if (BaseDaemon::instance().isCancelled())
 				return;
 
-            /** If we wait for data for too long.
-              * If we periodically poll, the receive_timeout of the socket itself does not work.
+		/** If we wait for data for too long.
+		  * If we periodically poll, the receive_timeout of the socket itself does not work.
 			  * Therefore, an additional check is added.
 			  */
 			if (watch.elapsedSeconds() > global_settings.receive_timeout.totalSeconds())
@@ -270,7 +270,7 @@ void TCPHandler::readData(const Settings & global_settings)
 		if (in->eof())
 			return;
 
-        /// We accept and process data. And if they are over, then we leave.
+		/// We accept and process data. And if they are over, then we leave.
 		if (!receivePacket())
 			break;
 	}
@@ -279,12 +279,12 @@ void TCPHandler::readData(const Settings & global_settings)
 
 void TCPHandler::processInsertQuery(const Settings & global_settings)
 {
-    /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
-      *  client receive exception before sending data.
+	/** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
+	  *  client receive exception before sending data.
 	  */
 	state.io.out->writePrefix();
 
-    /// Send block to the client - table structure.
+	/// Send block to the client - table structure.
 	Block block = state.io.out_sample;
 	sendData(block);
 
@@ -314,7 +314,7 @@ void TCPHandler::processOrdinaryQuery()
 			{
 				if (isQueryCancelled())
 				{
-                    /// A package was received requesting to stop execution of the request.
+		/// A package was received requesting to stop execution of the request.
 					async_in.cancel();
 					break;
 				}
@@ -336,12 +336,12 @@ void TCPHandler::processOrdinaryQuery()
 				}
 			}
 
-            /** If data has run out, we will send the profiling data and total values to
-              * the last zero block to be able to use
-              * this information in the suffix output of stream.
-              * If the request was interrupted, then `sendTotals` and other methods could not be called,
-              *  because we have not read all the data yet,
-              *  and there could be ongoing calculations in other threads at the same time.
+		/** If data has run out, we will send the profiling data and total values to
+		  * the last zero block to be able to use
+		  * this information in the suffix output of stream.
+		  * If the request was interrupted, then `sendTotals` and other methods could not be called,
+		  *  because we have not read all the data yet,
+		  *  and there could be ongoing calculations in other threads at the same time.
 			  */
 			if (!block && !isQueryCancelled())
 			{
@@ -429,7 +429,7 @@ void TCPHandler::receiveHello()
 	if (packet_type != Protocol::Client::Hello)
 	{
 		/** If you accidentally accessed the HTTP protocol for a port destined for an internal TCP protocol,
-          * Then instead of the package number, there will be G (GET) or P (POST), in most cases.
+		  * Then instead of the package number, there will be G (GET) or P (POST), in most cases.
 		  */
 		if (packet_type == 'G' || packet_type == 'P')
 		{
@@ -583,7 +583,7 @@ bool TCPHandler::receiveData()
 	if (block)
 	{
 		/// If there is an insert request, then the data should be written directly to `state.io.out`.
-        /// Otherwise, we write the blocks in the temporary `external_table_name` table.
+		/// Otherwise, we write the blocks in the temporary `external_table_name` table.
 		if (!state.need_receive_data_for_insert)
 		{
 			StoragePtr storage;

@@ -46,19 +46,19 @@ namespace DB
 namespace detail
 {
 	/** Helper structure for optimization in the case of a small number of values
-      * - flat array of a fixed size "on the stack" in which all encountered values placed in succession.
-      * Size - 64 bytes. Must be a POD-type (used in union).
+	  * - flat array of a fixed size "on the stack" in which all encountered values placed in succession.
+	  * Size - 64 bytes. Must be a POD-type (used in union).
 	  */
 	struct QuantileTimingTiny
 	{
 		mutable UInt16 elems[TINY_MAX_ELEMS];	/// mutable because array sorting is not considered a state change.
-        /// It's important that `count` be at the end of the structure, since the beginning of the structure will be subsequently rewritten by other objects.
-        /// You must initialize it by zero itself.
-        /// Why? `count` field is reused even in cases where the union contains other structures
-        ///  (the size of which falls short of this field.)
+		/// It's important that `count` be at the end of the structure, since the beginning of the structure will be subsequently rewritten by other objects.
+		/// You must initialize it by zero itself.
+		/// Why? `count` field is reused even in cases where the union contains other structures
+		///  (the size of which falls short of this field.)
 		UInt16 count;
 
-        /// Can only be used while `count < TINY_MAX_ELEMS`.
+		/// Can only be used while `count < TINY_MAX_ELEMS`.
 		void insert(UInt64 x)
 		{
 			if (unlikely(x > BIG_THRESHOLD))
@@ -68,7 +68,7 @@ namespace detail
 			++count;
 		}
 
-        /// Can only be used while `count + rhs.count <= TINY_MAX_ELEMS`.
+		/// Can only be used while `count + rhs.count <= TINY_MAX_ELEMS`.
 		void merge(const QuantileTimingTiny & rhs)
 		{
 			for (size_t i = 0; i < rhs.count; ++i)
@@ -90,7 +90,7 @@ namespace detail
 			buf.readStrict(reinterpret_cast<char *>(elems), count * sizeof(elems[0]));
 		}
 
-        /** This function must be called before get-functions. */
+		/** This function must be called before get-functions. */
 		void prepare() const
 		{
 			std::sort(elems, elems + count);
@@ -116,7 +116,7 @@ namespace detail
 			}
 		}
 
-        /// The same, but in the case of an empty state NaN is returned.
+		/// The same, but in the case of an empty state NaN is returned.
 		float getFloat(double level) const
 		{
 			return count
@@ -136,13 +136,13 @@ namespace detail
 
 
 	/** Auxiliary structure for optimization in case of average number of values
-      *  - a flat array, allocated separately, into which all found values are put in succession.
+	  *  - a flat array, allocated separately, into which all found values are put in succession.
 	  */
 	struct QuantileTimingMedium
 	{
-        /// sizeof - 24 bytes.
+		/// sizeof - 24 bytes.
 		using Array = PODArray<UInt16, 128>;
-        mutable Array elems;    /// mutable because array sorting is not considered a state change.
+		mutable Array elems;    /// mutable because array sorting is not considered a state change.
 
 		QuantileTimingMedium() {}
 		QuantileTimingMedium(const UInt16 * begin, const UInt16 * end) : elems(begin, end) {}
@@ -184,7 +184,7 @@ namespace detail
 					? level * elems.size()
 					: (elems.size() - 1);
 
-                /// Sorting an array will not be considered a violation of constancy.
+		/// Sorting an array will not be considered a violation of constancy.
 				auto & array = const_cast<Array &>(elems);
 				std::nth_element(array.begin(), array.begin() + n, array.end());
 				quantile = array[n];
@@ -214,7 +214,7 @@ namespace detail
 			}
 		}
 
-        /// Same, but in the case of an empty state, NaN is returned.
+		/// Same, but in the case of an empty state, NaN is returned.
 		float getFloat(double level) const
 		{
 			return !elems.empty()
@@ -240,30 +240,30 @@ namespace detail
 	#define SIZE_OF_LARGE_WITHOUT_COUNT ((SMALL_THRESHOLD + BIG_SIZE) * sizeof(UInt64))
 
 
-    /** For a large number of values. The size is about 22 680 bytes.
+	/** For a large number of values. The size is about 22 680 bytes.
 	  */
 	class QuantileTimingLarge
 	{
 	private:
-        /// Total number of values.
+		/// Total number of values.
 		UInt64 count;
 		/// Use of UInt64 is very wasteful.
-        /// But UInt32 is definitely not enough, and it's too hard to invent 6-byte values.
+		/// But UInt32 is definitely not enough, and it's too hard to invent 6-byte values.
 
-        /// Number of values for each value is smaller than `small_threshold`.
+		/// Number of values for each value is smaller than `small_threshold`.
 		UInt64 count_small[SMALL_THRESHOLD];
 
-        /// The number of values for each value from `small_threshold` to `big_threshold`, rounded to `big_precision`.
+		/// The number of values for each value from `small_threshold` to `big_threshold`, rounded to `big_precision`.
 		UInt64 count_big[BIG_SIZE];
 
-        /// Get value of quantile by index in array `count_big`.
+		/// Get value of quantile by index in array `count_big`.
 		static inline UInt16 indexInBigToValue(size_t i)
 		{
 			return (i * BIG_PRECISION) + SMALL_THRESHOLD
 				+ (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));	/// A small randomization so that it is not noticeable that all the values are even.
 		}
 
-        /// Lets you scroll through the histogram values, skipping zeros.
+		/// Lets you scroll through the histogram values, skipping zeros.
 		class Iterator
 		{
 		private:
@@ -340,12 +340,12 @@ namespace detail
 
 			if (count * 2 > SMALL_THRESHOLD + BIG_SIZE)
 			{
-                /// Simple serialization for a heavily dense case.
+		/// Simple serialization for a heavily dense case.
 				buf.write(reinterpret_cast<const char *>(this) + sizeof(count), SIZE_OF_LARGE_WITHOUT_COUNT);
 			}
 			else
 			{
-                /// More compact serialization for a sparse case.
+		/// More compact serialization for a sparse case.
 
 				for (size_t i = 0; i < SMALL_THRESHOLD; ++i)
 				{
@@ -365,7 +365,7 @@ namespace detail
 					}
 				}
 
-                /// Symbolizes end of data.
+		/// Symbolizes end of data.
 				writeBinary(UInt16(BIG_THRESHOLD), buf);
 			}
 		}
@@ -399,7 +399,7 @@ namespace detail
 		}
 
 
-        /// Get the value of the `level` quantile. The level must be between 0 and 1.
+		/// Get the value of the `level` quantile. The level must be between 0 and 1.
 		UInt16 get(double level) const
 		{
 			UInt64 pos = std::ceil(count * level);
@@ -420,8 +420,8 @@ namespace detail
 			return it.isValid() ? it.key() : BIG_THRESHOLD;
 		}
 
-        /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
-        /// indices - an array of index levels such that the corresponding elements will go in ascending order.
+		/// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
+		/// indices - an array of index levels such that the corresponding elements will go in ascending order.
 		template <typename ResultType>
 		void getMany(const double * levels, const size_t * indices, size_t size, ResultType * result) const
 		{
@@ -458,7 +458,7 @@ namespace detail
 			}
 		}
 
-        /// The same, but in the case of an empty state, NaN is returned.
+		/// The same, but in the case of an empty state, NaN is returned.
 		float getFloat(double level) const
 		{
 			return count
@@ -519,7 +519,7 @@ private:
 		if (current_memory_tracker)
 			current_memory_tracker->alloc(sizeof(detail::QuantileTimingLarge));
 
-        /// While the data is copied from medium, it is not possible to set `large` value (otherwise it will overwrite some data).
+		/// While the data is copied from medium, it is not possible to set `large` value (otherwise it will overwrite some data).
 		detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
 
 		for (const auto & elem : medium.elems)
@@ -535,7 +535,7 @@ private:
 		if (current_memory_tracker)
 			current_memory_tracker->alloc(sizeof(detail::QuantileTimingLarge));
 
-        /// While the data is copied from `medium` it is not possible to set `large` value (otherwise it will overwrite some data).
+		/// While the data is copied from `medium` it is not possible to set `large` value (otherwise it will overwrite some data).
 		detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
 
 		for (size_t i = 0; i < tiny.count; ++i)
@@ -644,7 +644,7 @@ public:
 				mediumToLarge();
 				kind = Kind::Large;
 			}
-            /// Case when two states are small, but when merged, they will turn into average.
+		/// Case when two states are small, but when merged, they will turn into average.
 			else if (kind == Kind::Tiny && rhs_kind == Kind::Tiny)
 			{
 				tinyToMedium();
@@ -676,8 +676,8 @@ public:
 			else
 				throw Exception("Logical error in QuantileTiming::merge function: not all cases are covered", ErrorCodes::LOGICAL_ERROR);
 
-            /// For determinism, we should always convert to `large` when size condition is reached
-            ///  - regardless of merge order.
+		/// For determinism, we should always convert to `large` when size condition is reached
+		///  - regardless of merge order.
 			if (kind == Kind::Medium && unlikely(mediumIsWorthToConvertToLarge()))
 			{
 				mediumToLarge();
@@ -698,7 +698,7 @@ public:
 			large->serialize(buf);
 	}
 
-    /// Called for an empty object.
+	/// Called for an empty object.
 	void deserialize(ReadBuffer & buf)
 	{
 		Kind kind;
@@ -720,7 +720,7 @@ public:
 		}
 	}
 
-    /// Get the value of the `level` quantile. The level must be between 0 and 1.
+	/// Get the value of the `level` quantile. The level must be between 0 and 1.
 	UInt16 get(double level) const
 	{
 		Kind kind = which();
@@ -740,7 +740,7 @@ public:
 		}
 	}
 
-    /// Get the size values of the quantiles of the `levels` levels. Record `size` results starting with `result` address.
+	/// Get the size values of the quantiles of the `levels` levels. Record `size` results starting with `result` address.
 	template <typename ResultType>
 	void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result) const
 	{

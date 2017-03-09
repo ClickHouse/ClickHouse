@@ -175,7 +175,7 @@ public:
 	  */
 	void disconnect();
 
-    /** Fill in the information that is needed when getting the block for some tasks
+	/** Fill in the information that is needed when getting the block for some tasks
 	  * (so far only for a DESCRIBE TABLE query with Distributed tables).
 	  */
 	void fillBlockExtraInfo(BlockExtraInfo & info) const;
@@ -195,7 +195,7 @@ private:
 	  */
 	Poco::Net::SocketAddress resolved_address;
 
-    /// For messages in log and in exceptions.
+	/// For messages in log and in exceptions.
 	String description;
 	void setDescription();
 

@@ -93,17 +93,17 @@ private:
 	Context query_context;
 
 	/// Streams for reading/writing from/to client connection socket.
-    std::shared_ptr<ReadBuffer> in;
+	std::shared_ptr<ReadBuffer> in;
 	std::shared_ptr<WriteBuffer> out;
 
 	/// Time after the last check to stop the request and send the progress.
-    Stopwatch after_check_cancelled;
+	Stopwatch after_check_cancelled;
 	Stopwatch after_send_progress;
 
 	String default_database;
 
 	/// At the moment, only one ongoing query in the connection is supported at a time.
-    QueryState state;
+	QueryState state;
 
 	CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
 

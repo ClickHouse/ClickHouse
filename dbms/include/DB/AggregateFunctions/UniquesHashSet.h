@@ -80,8 +80,8 @@ private:
 
 	UInt32 m_size;			/// Number of elements
 	UInt8 size_degree;		/// The size of the table as a power of 2
-    UInt8 skip_degree;      /// Skip elements not divisible by 2 ^ skip_degree
-    bool has_zero;          /// The hash table contains an element with a hash value of 0.
+	UInt8 skip_degree;      /// Skip elements not divisible by 2 ^ skip_degree
+	bool has_zero;          /// The hash table contains an element with a hash value of 0.
 
 	HashValue_t * buf;
 
@@ -133,7 +133,7 @@ private:
 			}
 		}
 
-        /** After removing the elements, there may have been room for items,
+		/** After removing the elements, there may have been room for items,
 		  * which were placed further than necessary, due to a collision.
 		  * You need to move them.
 		  */
@@ -165,12 +165,12 @@ private:
 		  * or move to the left of the collision resolution chain, because the elements to the left of it have been moved to the new "right" location.
 		  * There is also a special case
 		  *    if the element was to be at the end of the old buffer,                        [        x]
-          *    but is at the beginning because of the collision resolution chain,            [o       x]
-          *    then after resizing, it will first be out of place again,                     [        xo        ]
-          *    and in order to transfer it to where you need it,
-          *    will have to be after transferring all elements from the old half             [         o   x    ]
-          *    process another tail from the collision resolution chain immediately after it [        o    x    ]
-          * This is why || buf[i] below.
+		  *    but is at the beginning because of the collision resolution chain,            [o       x]
+		  *    then after resizing, it will first be out of place again,                     [        xo        ]
+		  *    and in order to transfer it to where you need it,
+		  *    will have to be after transferring all elements from the old half             [         o   x    ]
+		  *    process another tail from the collision resolution chain immediately after it [        o    x    ]
+		  * This is why || buf[i] below.
 		  */
 		for (size_t i = 0; i < old_size || buf[i]; ++i)
 		{
@@ -231,8 +231,8 @@ private:
 		++m_size;
 	}
 
-    /** Insert a value into the new buffer that was in the old buffer.
-      * Used when increasing the size of the buffer, as well as when reading from a file.
+	/** Insert a value into the new buffer that was in the old buffer.
+	  * Used when increasing the size of the buffer, as well as when reading from a file.
 	  */
 	void reinsertImpl(HashValue_t x)
 	{
@@ -251,7 +251,7 @@ private:
 	}
 
 	/** If the hash table is full enough, then do resize.
-      * If there are too many items, then throw half the pieces until they are small enough.
+	  * If there are too many items, then throw half the pieces until they are small enough.
 	  */
 	void shrinkIfNeed()
 	{
@@ -329,8 +329,8 @@ public:
 
 		size_t res = m_size * (1 << skip_degree);
 
-        /** Pseudo-random remainder - in order to be not visible,
-          * that the number is divided by the power of two.
+		/** Pseudo-random remainder - in order to be not visible,
+		  * that the number is divided by the power of two.
 		  */
 		res += (intHashCRC32(m_size) & ((1 << skip_degree) - 1));
 
@@ -338,7 +338,7 @@ public:
 		  * `fixed_res(res)` formula
 		  * - with how many different elements of fixed_res,
 		  *   when randomly scattered across 2^32 baskets,
-          *   filled baskets with average of res is obtained.
+		  *   filled baskets with average of res is obtained.
 		  */
 		size_t p32 = 1ULL << 32;
 		size_t fixed_res = round(p32 * (log(p32) - log(p32 - res)));

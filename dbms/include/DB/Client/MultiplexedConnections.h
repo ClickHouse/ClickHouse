@@ -19,18 +19,18 @@ namespace DB
 class MultiplexedConnections final : private boost::noncopyable
 {
 public:
-    /// Accepts ready connection.
+	/// Accepts ready connection.
 	MultiplexedConnections(Connection * connection_, const Settings * settings_, ThrottlerPtr throttler_);
 
 	/** Accepts a pool from which it will be necessary to get one or more connections.
-      * If the append_extra_info flag is set, additional information appended to each received block.
-      * If the get_all_replicas flag is set, all connections are selected.
+	  * If the append_extra_info flag is set, additional information appended to each received block.
+	  * If the get_all_replicas flag is set, all connections are selected.
 	  */
 	MultiplexedConnections(IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_,
 		bool append_extra_info = false, PoolMode pool_mode_ = PoolMode::GET_MANY);
 
-    /** Accepts pools, one for each shard, from which one will need to get one or more connections.
-      * If the append_extra_info flag is set, additional information appended to each received block.
+	/** Accepts pools, one for each shard, from which one will need to get one or more connections.
+	  * If the append_extra_info flag is set, additional information appended to each received block.
 	  * If the do_broadcast flag is set, all connections are received.
 	  */
 	MultiplexedConnections(ConnectionPools & pools_, const Settings * settings_, ThrottlerPtr throttler_,
@@ -39,7 +39,7 @@ public:
 	/// Send all content of external tables to replicas.
 	void sendExternalTablesData(std::vector<ExternalTablesData> & data);
 
-    /// Send request to replicas.
+	/// Send request to replicas.
 	void sendQuery(
 		const String & query,
 		const String & query_id = "",
@@ -56,24 +56,24 @@ public:
 	/// Break all active connections.
 	void disconnect();
 
-    /// Send a request to the replica to cancel the request
+	/// Send a request to the replica to cancel the request
 	void sendCancel();
 
-    /** On each replica, read and skip all packets to EndOfStream or Exception.
+	/** On each replica, read and skip all packets to EndOfStream or Exception.
 	  * Returns EndOfStream if no exception has been received. Otherwise
 	  * returns the last received packet of type Exception.
 	  */
 	Connection::Packet drain();
 
-    /// Get the replica addresses as a string.
+	/// Get the replica addresses as a string.
 	std::string dumpAddresses() const;
 
 	/// Returns the number of replicas.
-    /// Without locking, because sendCancel() does not change this number.
+	/// Without locking, because sendCancel() does not change this number.
 	size_t size() const { return replica_map.size(); }
 
 	/// Check if there are any valid replicas.
-    /// Without locking, because sendCancel() does not change the state of the replicas.
+	/// Without locking, because sendCancel() does not change the state of the replicas.
 	bool hasActiveConnections() const { return active_connection_total_count > 0; }
 
 private:
@@ -89,11 +89,11 @@ private:
 		size_t active_connection_count;
 	};
 
-    /// Description of a single replica.
+	/// Description of a single replica.
 	struct ReplicaState
 	{
 		size_t connection_index;
-        /// The owner of this replica.
+		/// The owner of this replica.
 		ShardState * shard_state;
 	};
 
@@ -106,10 +106,10 @@ private:
 private:
 	void initFromShard(IConnectionPool * pool);
 
-    /// Register shards.
+	/// Register shards.
 	void registerShards();
 
-    /// Register replicas of one shard.
+	/// Register replicas of one shard.
 	void registerReplicas(size_t index_begin, size_t index_end, ShardState & shard_state);
 
 	/// Interval version of `receivePacket` function without blocking.
@@ -118,7 +118,7 @@ private:
 	/// Interval version of `dumpAddresses` function without blocking.
 	std::string dumpAddressesUnlocked() const;
 
-    /// Get a replica where you can read the data.
+	/// Get a replica where you can read the data.
 	ReplicaMap::iterator getReplicaForReading();
 
 	/** Check if there are any data that can be read on any of the replicas.
@@ -136,21 +136,21 @@ private:
 	ReplicaMap replica_map;
 	ShardStates shard_states;
 
-    /// If not nullptr, then it is used to restrict network traffic.
+	/// If not nullptr, then it is used to restrict network traffic.
 	ThrottlerPtr throttler;
 
 	std::vector<ConnectionPool::Entry> pool_entries;
 
 	/// Connection that received last block.
 	Connection * current_connection;
-    /// Information about the last received block, if supported.
+	/// Information about the last received block, if supported.
 	std::unique_ptr<BlockExtraInfo> block_extra_info;
 
 	/// The current number of valid connections to replicas.
 	size_t active_connection_total_count = 0;
 	/// The query is run in parallel on multiple replicas.
 	bool supports_parallel_execution;
-    /// Send the request
+	/// Send the request
 	bool sent_query = false;
 	/// Cancel request
 	bool cancelled = false;

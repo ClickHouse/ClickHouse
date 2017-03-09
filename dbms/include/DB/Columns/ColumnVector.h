@@ -38,11 +38,11 @@ struct CompareHelper
 	static bool less(T a, T b) { return a < b; }
 	static bool greater(T a, T b) { return a > b; }
 
-    /** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
-      * If one of the values is NaN, then
-      * - if nan_direction_hint == -1 - NaN are considered less than all numbers;
-      * - if nan_direction_hint == 1 - NaN are considered to be larger than all numbers;
-      * Essentially: nan_direction_hint == -1 says that the comparison is for sorting in descending order.
+	/** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
+	  * If one of the values is NaN, then
+	  * - if nan_direction_hint == -1 - NaN are considered less than all numbers;
+	  * - if nan_direction_hint == 1 - NaN are considered to be larger than all numbers;
+	  * Essentially: nan_direction_hint == -1 says that the comparison is for sorting in descending order.
 	  */
 	static int compare(T a, T b, int nan_direction_hint)
 	{
@@ -358,10 +358,10 @@ public:
 		const T * data_pos = &data[0];
 
 #if __SSE2__
-        /** A slightly more optimized version.
-         * Based on the assumption that often pieces of consecutive values
-         *  completely pass or do not pass the filter completely.
-         * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+		/** A slightly more optimized version.
+		 * Based on the assumption that often pieces of consecutive values
+		 *  completely pass or do not pass the filter completely.
+		 * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
 		 */
 
 		static constexpr size_t SIMD_BYTES = 16;
@@ -374,7 +374,7 @@ public:
 
 			if (0 == mask)
 			{
-                /// Nothing is inserted.
+		/// Nothing is inserted.
 			}
 			else if (0xFFFF == mask)
 			{

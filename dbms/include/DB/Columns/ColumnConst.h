@@ -53,7 +53,7 @@ namespace ColumnConstDetails
 		return x == y;
 	}
 
-    /// Checks the bitwise identity of elements, even if they are NaNs.
+	/// Checks the bitwise identity of elements, even if they are NaNs.
 	template <>
 	inline bool equals(const Float32 & x, const Float32 & y)
 	{
@@ -193,7 +193,7 @@ public:
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 	{
 		const Derived & rhs = static_cast<const Derived &>(rhs_);
-        return getDataFromHolder() < rhs.getDataFromHolder()    /// TODO: correct comparison of NaNs in constant columns.
+		return getDataFromHolder() < rhs.getDataFromHolder()    /// TODO: correct comparison of NaNs in constant columns.
 			? -1
 			: (data == rhs.data
 				? 0
@@ -226,7 +226,7 @@ private:
 public:
 	/// For ColumnConst<Array> data_type_ must be not null.
 	/// For ColumnConst<Tuple> data_type_ must be not null.
-    /// For ColumnConst<String> data_type_ must be not null if data type is FixedString.
+	/// For ColumnConst<String> data_type_ must be not null if data type is FixedString.
 	ColumnConst(size_t s_, const T & data_, DataTypePtr data_type_ = DataTypePtr())
 		: ColumnConstBase<T, T, ColumnConst<T>>(s_, data_, data_type_) {}
 
@@ -235,11 +235,11 @@ public:
 	StringRef getDataAtWithTerminatingZero(size_t n) const override;
 	UInt64 get64(size_t n) const override;
 
-    /** More efficient methods of manipulation */
+	/** More efficient methods of manipulation */
 	T & getData() { return this->data; }
 	const T & getData() const { return this->data; }
 
-    /** Converting from a constant to a full-blown column */
+	/** Converting from a constant to a full-blown column */
 	ColumnPtr convertToFullColumn() const override;
 
 	void getExtremes(Field & min, Field & max) const override
@@ -271,10 +271,10 @@ public:
 	StringRef getDataAtWithTerminatingZero(size_t n) const override;
 	UInt64 get64(size_t n) const override;
 
-    /** More efficient methods of manipulation */
+	/** More efficient methods of manipulation */
 	const Array & getData() const { return *data; }
 
-    /** Converting from a constant to a full-blown column */
+	/** Converting from a constant to a full-blown column */
 	ColumnPtr convertToFullColumn() const override;
 
 	void getExtremes(Field & min, Field & max) const override
@@ -306,10 +306,10 @@ public:
 	StringRef getDataAtWithTerminatingZero(size_t n) const override;
 	UInt64 get64(size_t n) const override;
 
-    /** More efficient methods of manipulation */
+	/** More efficient methods of manipulation */
 	const Tuple & getData() const { return *data; }
 
-    /** Converting from a constant to a full-blown column */
+	/** Converting from a constant to a full-blown column */
 	ColumnPtr convertToFullColumn() const override;
 
 	/** Create ColumnTuple of constant columns as elements. */

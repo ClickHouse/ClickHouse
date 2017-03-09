@@ -28,10 +28,10 @@ namespace ErrorCodes
 class ColumnArray final : public IColumn
 {
 public:
-    /** On the index i there is an offset to the beginning of the i + 1 -th element. */
+	/** On the index i there is an offset to the beginning of the i + 1 -th element. */
 	using ColumnOffsets_t = ColumnVector<Offset_t>;
 
-    /** Create an empty column of arrays with the type of values as in the column `nested_column` */
+	/** Create an empty column of arrays with the type of values as in the column `nested_column` */
 	explicit ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column = nullptr)
 		: data(nested_column), offsets(offsets_column)
 	{
@@ -106,10 +106,10 @@ public:
 
 	StringRef getDataAt(size_t n) const override
 	{
-        /** Returns the range of memory that covers all elements of the array.
-          * Works for arrays of fixed length values.
-          * For arrays of strings and arrays of arrays, the resulting chunk of memory may not be one-to-one correspondence with the elements,
-          *  since it contains only the data laid in succession, but not the offsets.
+		/** Returns the range of memory that covers all elements of the array.
+		  * Works for arrays of fixed length values.
+		  * For arrays of strings and arrays of arrays, the resulting chunk of memory may not be one-to-one correspondence with the elements,
+		  *  since it contains only the data laid in succession, but not the offsets.
 		  */
 
 		size_t array_size = sizeAt(n);
@@ -127,7 +127,7 @@ public:
 
 	void insertData(const char * pos, size_t length) override
 	{
-        /** Similarly - only for arrays of fixed length values.
+		/** Similarly - only for arrays of fixed length values.
 		  */
 		IColumn * data_ = data.get();
 		if (!data_->isFixed())
@@ -226,7 +226,7 @@ public:
 	{
 		const ColumnArray & rhs = static_cast<const ColumnArray &>(rhs_);
 
-        /// Not optimal
+		/// Not optimal
 		size_t lhs_size = sizeAt(n);
 		size_t rhs_size = rhs.sizeAt(m);
 		size_t min_size = std::min(lhs_size, rhs_size);
@@ -262,7 +262,7 @@ public:
 	void reserve(size_t n) override
 	{
 		getOffsets().reserve(n);
-        getData().reserve(n);       /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
+		getData().reserve(n);       /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
 	}
 
 	size_t byteSize() const override
@@ -285,7 +285,7 @@ public:
 		return offsets1.size() == offsets2.size() && 0 == memcmp(&offsets1[0], &offsets2[0], sizeof(offsets1[0]) * offsets1.size());
 	}
 
-    /** More efficient methods of manipulation */
+	/** More efficient methods of manipulation */
 	IColumn & getData() { return *data.get(); }
 	const IColumn & getData() const { return *data.get(); }
 
@@ -339,23 +339,23 @@ public:
 
 private:
 	ColumnPtr data;
-    ColumnPtr offsets;  /// Displacements can be shared across multiple columns - to implement nested data structures.
+	ColumnPtr offsets;  /// Displacements can be shared across multiple columns - to implement nested data structures.
 
 	size_t ALWAYS_INLINE offsetAt(size_t i) const	{ return i == 0 ? 0 : getOffsets()[i - 1]; }
 	size_t ALWAYS_INLINE sizeAt(size_t i) const		{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
 
 
-    /// Multiply values if the nested column is ColumnVector<T>.
+	/// Multiply values if the nested column is ColumnVector<T>.
 	template <typename T>
 	ColumnPtr replicateNumber(const Offsets_t & replicate_offsets) const;
 
-    /// Multiply the values if the nested column is ColumnString. The code is too complicated.
+	/// Multiply the values if the nested column is ColumnString. The code is too complicated.
 	ColumnPtr replicateString(const Offsets_t & replicate_offsets) const;
 
-    /** Non-constant arrays of constant values are quite rare.
-      * Most functions can not work with them, and does not create such columns as a result.
-      * An exception is the function `replicate`(see FunctionsMiscellaneous.h), which has service meaning for the implementation of lambda functions.
-      * Only for its sake is the implementation of the `replicate` method for ColumnArray(ColumnConst).
+	/** Non-constant arrays of constant values are quite rare.
+	  * Most functions can not work with them, and does not create such columns as a result.
+	  * An exception is the function `replicate`(see FunctionsMiscellaneous.h), which has service meaning for the implementation of lambda functions.
+	  * Only for its sake is the implementation of the `replicate` method for ColumnArray(ColumnConst).
 	  */
 	ColumnPtr replicateConst(const Offsets_t & replicate_offsets) const;
 

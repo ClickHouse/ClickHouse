@@ -15,8 +15,8 @@ struct AggregateFunctionsArgMinMaxData
 	using ResultData_t = ResultData;
 	using ValueData_t = ValueData;
 
-    ResultData result;  // the argument at which the minimum/maximum value is reached.
-    ValueData value;    // value for which the minimum/maximum is calculated.
+	ResultData result;  // the argument at which the minimum/maximum value is reached.
+	ValueData value;    // value for which the minimum/maximum is calculated.
 };
 
 /// Returns the first arg value found for the minimum/maximum value. Example: argMax(arg, value).

@@ -27,7 +27,7 @@ namespace ErrorCodes
 template <typename T>
 struct AggregateFunctionGroupArrayDataNumeric
 {
-    /// Memory is allocated to several elements immediately so that the state occupies 64 bytes.
+	/// Memory is allocated to several elements immediately so that the state occupies 64 bytes.
 	static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<T>);
 
 	using Array = PODArray<T, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
@@ -103,7 +103,7 @@ public:
 /// General case (ineffective). NOTE You can also implement a special case for strings.
 struct AggregateFunctionGroupArrayDataGeneric
 {
-    Array value;    /// TODO Add MemoryTracker
+	Array value;    /// TODO Add MemoryTracker
 };
 
 

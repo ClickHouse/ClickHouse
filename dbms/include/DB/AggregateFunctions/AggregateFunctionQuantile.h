@@ -22,7 +22,7 @@ template <typename ArgumentFieldType>
 struct AggregateFunctionQuantileData
 {
 	using Sample = ReservoirSampler<ArgumentFieldType, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO>;
-    Sample sample;  /// TODO Add MemoryTracker
+	Sample sample;  /// TODO Add MemoryTracker
 };
 
 
@@ -90,7 +90,7 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
-        /// `Sample` can be sorted when a quantile is received, but in this context, you can not think of this as a violation of constancy.
+		/// `Sample` can be sorted when a quantile is received, but in this context, you can not think of this as a violation of constancy.
 		Sample & sample = const_cast<Sample &>(this->data(place).sample);
 
 		if (returns_float)
@@ -167,7 +167,7 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
-        /// `Sample` can be sorted when a quantile is received, but in this context, you can not think of this as a violation of constancy.
+		/// `Sample` can be sorted when a quantile is received, but in this context, you can not think of this as a violation of constancy.
 		Sample & sample = const_cast<Sample &>(this->data(place).sample);
 
 		ColumnArray & arr_to = static_cast<ColumnArray &>(to);

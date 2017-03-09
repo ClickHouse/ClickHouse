@@ -27,15 +27,15 @@ public:
 public:
 	virtual ~IConnectionPool() {}
 
-    /** Selects the connection to work. */
+	/** Selects the connection to work. */
 	Entry get(const Settings * settings = nullptr)
 	{
 		return doGet(settings);
 	}
 
-    /** Allocates up to the specified number of connections to work.
-      * Connections provide access to different replicas of one shard.
-      * If `get_all` flag is set, all connections are taken.
+	/** Allocates up to the specified number of connections to work.
+	  * Connections provide access to different replicas of one shard.
+	  * If `get_all` flag is set, all connections are taken.
 	  * Throws an exception if no connections can be selected.
 	  */
 	std::vector<Entry> getMany(const Settings * settings = nullptr,
@@ -106,7 +106,7 @@ public:
 	}
 
 protected:
-    /** Creates a new object to put in the pool. */
+	/** Creates a new object to put in the pool. */
 	ConnectionPtr allocObject() override
 	{
 		return std::make_shared<Connection>(
@@ -132,8 +132,8 @@ private:
 	String user;
 	String password;
 
-    /** The address can be resolved in advance and passed to the constructor. Then `host` and `port` fields are meaningful only for logging.
-      * Otherwise, address is resolved in constructor. That is, DNS balancing is not supported.
+	/** The address can be resolved in advance and passed to the constructor. Then `host` and `port` fields are meaningful only for logging.
+	  * Otherwise, address is resolved in constructor. That is, DNS balancing is not supported.
 	  */
 	Poco::Net::SocketAddress resolved_address;
 

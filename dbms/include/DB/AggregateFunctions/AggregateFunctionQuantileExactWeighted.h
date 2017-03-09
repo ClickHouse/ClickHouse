@@ -118,7 +118,7 @@ public:
 			return;
 		}
 
-        /// Copy the data to a temporary array to get the element you need in order.
+		/// Copy the data to a temporary array to get the element you need in order.
 		using Pair = typename AggregateFunctionQuantileExactWeightedData<ValueType>::Map::value_type;
 		std::unique_ptr<Pair[]> array_holder(new Pair[size]);
 		Pair * array = array_holder.get();
@@ -248,7 +248,7 @@ public:
 			return;
 		}
 
-        /// Copy the data to a temporary array to get the element you need in order.
+		/// Copy the data to a temporary array to get the element you need in order.
 		using Pair = typename AggregateFunctionQuantileExactWeightedData<ValueType>::Map::value_type;
 		std::unique_ptr<Pair[]> array_holder(new Pair[size]);
 		Pair * array = array_holder.get();
