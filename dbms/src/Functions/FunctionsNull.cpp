@@ -20,6 +20,7 @@ void registerFunctionsNull(FunctionFactory & factory)
 	factory.registerFunction<FunctionIfNull>();
 	factory.registerFunction<FunctionNullIf>();
 	factory.registerFunction<FunctionAssumeNotNull>();
+	factory.registerFunction<FunctionToNullable>();
 }
 
 /// Implementation of isNull.
@@ -320,6 +321,41 @@ void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arg
 	}
 	else
 		res_col = col;
+}
+
+/// Implementation of toNullable.
+
+FunctionPtr FunctionToNullable::create(const Context & context)
+{
+	return std::make_shared<FunctionToNullable>();
+}
+
+std::string FunctionToNullable::getName() const
+{
+	return name;
+}
+
+bool FunctionToNullable::hasSpecialSupportForNulls() const
+{
+	return true;
+}
+
+DataTypePtr FunctionToNullable::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	if (arguments[0]->isNull() || arguments[0]->isNullable())
+		return arguments[0];
+	return std::make_shared<DataTypeNullable>(arguments[0]);
+}
+
+void FunctionToNullable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	const ColumnPtr & col = block.safeGetByPosition(arguments[0]).column;
+
+	if (col->isNull() || col->isNullable())
+		block.getByPosition(result).column = col;
+	else
+		block.getByPosition(result).column = std::make_shared<ColumnNullable>(col,
+			std::make_shared<ColumnConstUInt8>(block.rows(), 0)->convertToFullColumn());
 }
 
 }
