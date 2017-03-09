@@ -259,7 +259,7 @@ private:
 	{
 		time_t current_time = time(0);
 
-		/// Плохо быть навязчивым.
+		/// It's bad to be intrusive.
 		if (current_time % 3 != 0)
 			return false;
 

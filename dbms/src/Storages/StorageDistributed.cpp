@@ -98,6 +98,7 @@ StorageDistributed::StorageDistributed(
 	createDirectoryMonitors();
 }
 
+
 StorageDistributed::StorageDistributed(
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
@@ -120,6 +121,7 @@ StorageDistributed::StorageDistributed(
 {
 	createDirectoryMonitors();
 }
+
 
 StoragePtr StorageDistributed::create(
 	const std::string & name_,
@@ -162,6 +164,7 @@ StoragePtr StorageDistributed::create(
 	return res;
 }
 
+
 BlockInputStreams StorageDistributed::read(
 	const Names & column_names,
 	ASTPtr query,
@@ -203,6 +206,7 @@ BlockInputStreams StorageDistributed::read(
 		context, settings, enable_shard_multiplexing}.execute();
 }
 
+
 BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & settings)
 {
 	auto cluster = context.getCluster(cluster_name);
@@ -214,13 +218,13 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & se
 		throw Exception{
 			"Method write is not supported by storage " + getName() +
 			" with more than one shard and no sharding key provided",
-			ErrorCodes::STORAGE_REQUIRES_PARAMETER
-		};
+			ErrorCodes::STORAGE_REQUIRES_PARAMETER};
 
 	/// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
 	return std::make_shared<DistributedBlockOutputStream>(
 		*this, rewriteInsertQuery(query, remote_database, remote_table), cluster);
 }
+
 
 void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
 {
@@ -236,10 +240,12 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
 		*columns, materialized_columns, alias_columns, column_defaults, {});
 }
 
+
 void StorageDistributed::shutdown()
 {
 	directory_monitors.clear();
 }
+
 
 void StorageDistributed::reshardPartitions(ASTPtr query, const String & database_name,
 	const Field & first_partition, const Field & last_partition,
@@ -383,6 +389,7 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 	}
 }
 
+
 BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)
 {
 	/// Создать запрос DESCRIBE TABLE.
@@ -406,6 +413,7 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 		context, settings, enable_shard_multiplexing}.execute();
 }
 
+
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 {
 	if (const auto & type = VirtualColumnFactory::tryGetType(column_name))
@@ -414,15 +422,18 @@ NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 	return getRealColumn(column_name);
 }
 
+
 bool StorageDistributed::hasColumn(const String & column_name) const
 {
 	return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
 }
 
+
 void StorageDistributed::createDirectoryMonitor(const std::string & name)
 {
 	directory_monitors.emplace(name, std::make_unique<StorageDistributedDirectoryMonitor>(*this, name));
 }
+
 
 void StorageDistributed::createDirectoryMonitors()
 {
@@ -437,6 +448,7 @@ void StorageDistributed::createDirectoryMonitors()
 			createDirectoryMonitor(it.name());
 }
 
+
 void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 {
 	if (!directory_monitors.count(name))
@@ -447,6 +459,7 @@ size_t StorageDistributed::getShardCount() const
 {
 	return getCluster()->getRemoteShardCount();
 }
+
 
 ClusterPtr StorageDistributed::getCluster() const
 {

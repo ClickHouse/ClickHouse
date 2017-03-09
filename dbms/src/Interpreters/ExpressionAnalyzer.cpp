@@ -2754,7 +2754,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
 		if (!typeid_cast<ASTSelectQuery *>(child.get())
 			&& !typeid_cast<ASTArrayJoin *>(child.get()))
 			getRequiredColumnsImpl(child, required_columns, ignored_names, available_joined_columns, required_joined_columns);
-    }
+	}
 }
 
 }

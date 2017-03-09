@@ -670,7 +670,6 @@ public:
 	size_t getNumberOfArguments() const override { return 0; }
 	bool isInjective(const Block &) override { return std::is_same<Name, NameToString>::value; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return getReturnTypeInternal(arguments);
@@ -891,7 +890,6 @@ public:
 	static constexpr auto name = "toFixedString";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToFixedString>(); };
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -919,7 +917,6 @@ public:
 		out_return_type = std::make_shared<DataTypeFixedString>(n);
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto n = getSize(block.safeGetByPosition(arguments[1]));

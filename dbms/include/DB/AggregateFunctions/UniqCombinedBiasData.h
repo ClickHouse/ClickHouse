@@ -5,34 +5,34 @@
 namespace DB
 {
 
-/** Данные для HyperLogLogBiasEstimator в функции uniqCombined.
-  * Схема разработки следующая:
-  * 1. Собрать ClickHouse.
-  * 2. Запустить скрипт src/dbms/scripts/gen-bias-data.py, который возвращает один массив для getRawEstimates()
-  *    и другой массив для getBiases().
-  * 3. Обновить массивы raw_estimates и biases. Также обновить размер массивов в InterpolatedData.
-  * 4. Собрать ClickHouse.
-  * 5. Запустить скрипт src/dbms/scripts/linear-counting-threshold.py, который создаёт 3 файла:
-  *    - raw_graph.txt (1-й столбец: настоящее количество уникальных значений;
-  *      2-й столбец: относительная погрешность в случае HyperLogLog без применения каких-либо поправок)
-  *    - linear_counting_graph.txt (1-й столбец: настоящее количество уникальных значений;
-  *      2-й столбец: относительная погрешность в случае HyperLogLog с применением LinearCounting)
-  *    - bias_corrected_graph.txt (1-й столбец: настоящее количество уникальных значений;
-  *      2-й столбец: относительная погрешность в случае HyperLogLog с применением поправок из алгортима HyperLogLog++)
-  * 6. Сгенерить график с gnuplot на основе этих данных.
-  * 7. Определить минимальное количество уникальных значений, при котором лучше исправить погрешность
-  *    с помощью её оценки (т.е. по алгоритму HyperLogLog++), чем применить алгоритм LinearCounting.
-  * 7. Соответственно обновить константу в функции getThreshold()
-  * 8. Собрать ClickHouse.
-  */
+/** Data for HyperLogLogBiasEstimator in the uniqCombined function.
+  * The development plan is as follows:
+  * 1. Assemble ClickHouse.
+  * 2. Run the script src/dbms/scripts/gen-bias-data.py, which returns one array for getRawEstimates()
+  *     and another array for getBiases().
+  * 3. Update `raw_estimates` and `biases` arrays. Also update the size of arrays in InterpolatedData.
+  * 4. Assemble ClickHouse.
+  * 5. Run the script src/dbms/scripts/linear-counting-threshold.py, which creates 3 files:
+  * - raw_graph.txt (1st column: the present number of unique values;
+  *    2nd column: relative error in the case of HyperLogLog without applying any corrections)
+  * - linear_counting_graph.txt (1st column: the present number of unique values;
+  *    2nd column: relative error in the case of HyperLogLog using LinearCounting)
+  * - bias_corrected_graph.txt (1st column: the present number of unique values;
+  *    2nd column: relative error in the case of HyperLogLog with the use of corrections from the algorithm HyperLogLog++)
+  * 6. Generate a graph with gnuplot based on this data.
+  * 7. Determine the minimum number of unique values at which it is better to correct the error
+  *     using its evaluation (ie, using the HyperLogLog++ algorithm) than applying the LinearCounting algorithm.
+  * 7. Accordingly, update the constant in the function getThreshold()
+  * 8. Assemble ClickHouse.
+  */
 struct UniqCombinedBiasData
 {
 	using InterpolatedData = std::array<double, 200>;
 
 	static double getThreshold();
-	/// Оценки количества уникальных значений по алгоритму HyperLogLog без применения каких-либо поправок.
+	/// Estimates of the number of unique values using the HyperLogLog algorithm without applying any corrections.
 	static const InterpolatedData & getRawEstimates();
-	/// Соответствующие оценки погрешности.
+	/// Corresponding error estimates.
 	static const InterpolatedData & getBiases();
 };
 

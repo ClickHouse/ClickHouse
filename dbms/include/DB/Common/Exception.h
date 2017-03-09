@@ -49,7 +49,7 @@ private:
 class ErrnoException : public Exception
 {
 public:
-    ErrnoException(int code = 0, int saved_errno_ = 0)
+	ErrnoException(int code = 0, int saved_errno_ = 0)
 		: Exception(code), saved_errno(saved_errno_) {}
 	ErrnoException(const std::string & msg, int code = 0, int saved_errno_ = 0)
 		: Exception(msg, code), saved_errno(saved_errno_) {}

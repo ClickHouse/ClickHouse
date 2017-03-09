@@ -26,9 +26,9 @@ namespace DB
 
 class ClientInfo;
 
-/// Поток блоков читающих из таблицы и ее имя
+/// The stream of blocks reading from the table and its name
 using ExternalTableData = std::pair<BlockInputStreamPtr, std::string>;
-/// Вектор пар, описывающих таблицы
+/// Vector of pairs describing tables
 using ExternalTablesData = std::vector<ExternalTableData>;
 
 class Connection;
@@ -175,8 +175,8 @@ public:
 	  */
 	void disconnect();
 
-	/** Заполнить информацию, которая необходима при получении блока для некоторых задач
-	  * (пока только для запроса DESCRIBE TABLE с Distributed-таблицами).
+	/** Fill in the information that is needed when getting the block for some tasks
+	  * (so far only for a DESCRIBE TABLE query with Distributed tables).
 	  */
 	void fillBlockExtraInfo(BlockExtraInfo & info) const;
 
@@ -195,7 +195,7 @@ private:
 	  */
 	Poco::Net::SocketAddress resolved_address;
 
-	/// Для сообщений в логе и в эксепшенах.
+	/// For messages in log and in exceptions.
 	String description;
 	void setDescription();
 

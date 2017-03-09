@@ -20,7 +20,7 @@ struct AggregateFunctionSumData
 };
 
 
-/// Считает сумму чисел.
+/// Counts the sum of the numbers.
 template <typename T>
 class AggregateFunctionSum final : public IUnaryAggregateFunction<AggregateFunctionSumData<typename NearestFieldType<T>::Type>, AggregateFunctionSum<T> >
 {

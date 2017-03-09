@@ -484,7 +484,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); };
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -493,7 +492,6 @@ public:
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() == 1)
@@ -523,7 +521,6 @@ public:
 		return std::make_shared<ToDataType>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		IDataType * from_type = block.safeGetByPosition(arguments[0]).type.get();
@@ -582,7 +579,6 @@ public:
 	static constexpr auto name = "now";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNow>(); };
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -590,13 +586,11 @@ public:
 
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeDateTime>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt32>(
@@ -612,7 +606,6 @@ public:
 	static constexpr auto name = "today";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToday>(); };
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -620,13 +613,11 @@ public:
 
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeDate>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt16>(
@@ -642,7 +633,6 @@ public:
 	static constexpr auto name = "yesterday";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionYesterday>(); };
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -650,13 +640,11 @@ public:
 
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeDate>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt16>(
@@ -672,7 +660,6 @@ public:
 	static constexpr auto name = "timeSlot";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTimeSlot>(); };
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -680,7 +667,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeDateTime *>(arguments[0].get()))
@@ -690,7 +676,6 @@ public:
 		return std::make_shared<DataTypeDateTime>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(block.safeGetByPosition(arguments[0]).column.get()))
@@ -805,7 +790,6 @@ public:
 	static constexpr auto name = "timeSlots";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTimeSlots>(); };
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -813,7 +797,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 2; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeDateTime *>(arguments[0].get()))
@@ -827,7 +810,6 @@ public:
 		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>());
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnUInt32 * starts = typeid_cast<const ColumnUInt32 *>(block.safeGetByPosition(arguments[0]).column.get());

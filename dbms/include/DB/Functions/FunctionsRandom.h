@@ -152,7 +152,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRandom>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -162,7 +161,6 @@ public:
 	size_t getNumberOfArguments() const override { return 0; }
 	bool isDeterministicInScopeOfQuery() override { return false; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() > 1)
@@ -173,7 +171,6 @@ public:
 		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ReturnType>::Type>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		auto col_to = std::make_shared<ColumnVector<ToType>>();
@@ -202,7 +199,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRandomConstant>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -211,7 +207,6 @@ public:
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() > 1)
@@ -222,7 +217,6 @@ public:
 		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ReturnType>::Type>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!is_initialized)

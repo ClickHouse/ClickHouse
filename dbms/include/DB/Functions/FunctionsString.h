@@ -279,7 +279,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context);
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -290,7 +289,6 @@ public:
 		return 1;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
 	/// Выполнить функцию над блоком.
@@ -308,7 +306,6 @@ public:
 		return std::make_shared<FunctionStringToString>();
 	}
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -323,7 +320,6 @@ public:
 		return is_injective;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
@@ -333,7 +329,6 @@ public:
 		return arguments[0]->clone();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
@@ -371,7 +366,6 @@ public:
 	static constexpr auto name = "reverse";
 	static FunctionPtr create(const Context & context);
 
-	/// Получить имя функции.
 	String getName() const override;
 
 	size_t getNumberOfArguments() const override
@@ -384,7 +378,6 @@ public:
 	}
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
@@ -396,7 +389,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context);
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -415,7 +407,6 @@ public:
 		return is_injective;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override;
@@ -506,7 +497,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context);
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -517,7 +507,6 @@ public:
 		return 3;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
 	/// Выполнить функцию над блоком.
