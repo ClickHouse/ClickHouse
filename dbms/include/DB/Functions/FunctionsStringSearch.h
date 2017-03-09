@@ -1,29 +1,10 @@
-#pragma once
+﻿#pragma once
 
-#include <mutex>
-#include <DB/Common/OptimizedRegularExpression.h>
-#include <memory>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnFixedString.h>
-#include <DB/Columns/ColumnConst.h>
-#include <DB/Common/Volnitsky.h>
 #include <DB/Functions/IFunction.h>
-#include <DB/Functions/ObjectPool.h>
-#include <DB/Common/StringSearcher.h>
-#include <DB/Functions/Regexps.h>
-#include <re2/re2.h>
-#include <re2/stringpiece.h>
-#include <Poco/UTF8String.h>
-#include <mutex>
-#include <stack>
-#include <ext/range.hpp>
-#include <common/config_common.h>
-#if USE_RE2_ST
-	#include <re2_st/re2.h>
-#endif
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnString.h>
+#include <DB/Functions/FunctionsArithmetic.h>
 
 
 namespace DB
