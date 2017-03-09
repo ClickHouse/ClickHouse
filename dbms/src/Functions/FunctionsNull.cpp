@@ -197,7 +197,7 @@ bool FunctionIfNull::hasSpecialSupportForNulls() const
 
 DataTypePtr FunctionIfNull::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	return FunctionMultiIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), arguments[0], arguments[1]});
+	return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), arguments[0], arguments[1]});
 }
 
 void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -210,7 +210,7 @@ void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments,
 	temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
 
 	FunctionIsNotNull{}.executeImpl(temp_block, {arguments[0]}, res_pos);
-	FunctionMultiIf{}.executeImpl(temp_block, {res_pos, arguments[0], arguments[1]}, result);
+	FunctionIf{}.executeImpl(temp_block, {res_pos, arguments[0], arguments[1]}, result);
 
 	block.safeGetByPosition(result).column = std::move(temp_block.safeGetByPosition(result).column);
 }
@@ -234,7 +234,7 @@ bool FunctionNullIf::hasSpecialSupportForNulls() const
 
 DataTypePtr FunctionNullIf::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	return FunctionMultiIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeNull>(), arguments[0]});
+	return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeNull>(), arguments[0]});
 }
 
 void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -259,7 +259,7 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
 
 	temp_block.insert(null_elem);
 
-	FunctionMultiIf{}.executeImpl(temp_block, {res_pos, null_pos, arguments[0]}, result);
+	FunctionIf{}.executeImpl(temp_block, {res_pos, null_pos, arguments[0]}, result);
 
 	block.safeGetByPosition(result).column = std::move(temp_block.safeGetByPosition(result).column);
 }

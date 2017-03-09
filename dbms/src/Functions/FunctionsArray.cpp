@@ -1068,7 +1068,6 @@ DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments)
 	return array_type->getNestedType();
 }
 
-/// Выполнить функцию над блоком.
 void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
 	/// Check nullability.
@@ -1599,7 +1598,6 @@ FunctionPtr FunctionArrayEnumerateUniq::create(const Context & context)
 	return std::make_shared<FunctionArrayEnumerateUniq>();
 }
 
-/// Получить имя функции.
 String FunctionArrayEnumerateUniq::getName() const
 {
 	return name;

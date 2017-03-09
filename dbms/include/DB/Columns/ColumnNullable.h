@@ -85,10 +85,15 @@ public:
 	/// map of the result column of a function taking one or more nullable
 	/// columns.
 	void applyNullValuesByteMap(const ColumnNullable & other);
+	void applyNullValuesByteMap(const ColumnUInt8 & map);
+	void applyNegatedNullValuesByteMap(const ColumnUInt8 & map);
 
 private:
 	ColumnPtr nested_column;
 	ColumnPtr null_map;
+
+	template <bool negative>
+	void applyNullValuesByteMapImpl(const ColumnUInt8 & map);
 };
 
 }

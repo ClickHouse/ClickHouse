@@ -15,6 +15,13 @@ ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
 {
 	if (nested_column->isNullable())
 		throw Exception{"A nullable column cannot contain another nullable column", ErrorCodes::LOGICAL_ERROR};
+
+	/// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
+	if (auto nested_column_materialized = nested_column->convertToFullColumnIfConst())
+		nested_column = nested_column_materialized;
+
+	if (null_map->isConst())
+		throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::LOGICAL_ERROR};
 }
 
 
@@ -359,16 +366,34 @@ ColumnPtr ColumnNullable::replicate(const Offsets_t & offsets) const
 }
 
 
-void ColumnNullable::applyNullValuesByteMap(const ColumnNullable & other)
+template <bool negative>
+void ColumnNullable::applyNullValuesByteMapImpl(const ColumnUInt8 & map)
 {
 	NullValuesByteMap & arr1 = getNullMap();
-	const NullValuesByteMap & arr2 = other.getNullMap();
+	const NullValuesByteMap & arr2 = map.getData();
 
 	if (arr1.size() != arr2.size())
 		throw Exception{"Inconsistent sizes of ColumnNullable objects", ErrorCodes::LOGICAL_ERROR};
 
 	for (size_t i = 0, size = arr1.size(); i < size; ++i)
-		arr1[i] |= arr2[i];
+		arr1[i] |= negative ^ arr2[i];
+}
+
+
+void ColumnNullable::applyNullValuesByteMap(const ColumnUInt8 & map)
+{
+	applyNullValuesByteMapImpl<false>(map);
+}
+
+void ColumnNullable::applyNegatedNullValuesByteMap(const ColumnUInt8 & map)
+{
+	applyNullValuesByteMapImpl<true>(map);
+}
+
+
+void ColumnNullable::applyNullValuesByteMap(const ColumnNullable & other)
+{
+	applyNullValuesByteMap(other.getNullMapConcreteColumn());
 }
 
 }
