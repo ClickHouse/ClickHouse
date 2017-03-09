@@ -11,10 +11,8 @@
 #include <DB/Functions/IFunction.h>
 
 
-
 namespace DB
 {
-
 /** Функции работы со строками:
   *
   * length, empty, notEmpty,
@@ -37,12 +35,20 @@ namespace DB
 
 
 /// xor or do nothing
-template <bool> UInt8 xor_or_identity(const UInt8 c, const int mask) { return c ^ mask; };
-template <> inline UInt8 xor_or_identity<false>(const UInt8 c, const int) { return c; }
+template <bool>
+UInt8 xor_or_identity(const UInt8 c, const int mask)
+{
+	return c ^ mask;
+};
+template <>
+inline UInt8 xor_or_identity<false>(const UInt8 c, const int)
+{
+	return c;
+}
 
 /// It is caller's responsibility to ensure the presence of a valid cyrillic sequence in array
 template <bool to_lower>
-inline void UTF8CyrillicToCase(const UInt8 * & src, const UInt8 * const src_end, UInt8 * & dst);
+inline void UTF8CyrillicToCase(const UInt8 *& src, const UInt8 * const src_end, UInt8 *& dst);
 
 
 /** Если строка содержит текст в кодировке UTF-8 - перевести его в нижний (верхний) регистр.
@@ -82,21 +88,30 @@ class FunctionStringToString : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringToString>(); }
+	static FunctionPtr create(const Context & context)
+	{
+		return std::make_shared<FunctionStringToString>();
+	}
 
 	String getName() const override
 	{
 		return name;
 	}
 
-	size_t getNumberOfArguments() const override { return 1; }
-	bool isInjective(const Block &) override { return is_injective; }
+	size_t getNumberOfArguments() const override
+	{
+		return 1;
+	}
+	bool isInjective(const Block &) override
+	{
+		return is_injective;
+	}
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
-			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception(
+				"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		return arguments[0]->clone();
 	}
@@ -108,15 +123,13 @@ public:
 		{
 			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
 			block.safeGetByPosition(result).column = col_res;
-			Impl::vector(col->getChars(), col->getOffsets(),
-				col_res->getChars(), col_res->getOffsets());
+			Impl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
 		}
 		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column))
 		{
 			auto col_res = std::make_shared<ColumnFixedString>(col->getN());
 			block.safeGetByPosition(result).column = col_res;
-			Impl::vector_fixed(col->getChars(), col->getN(),
-				col_res->getChars());
+			Impl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
 		}
 		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
 		{
@@ -126,22 +139,24 @@ public:
 			block.safeGetByPosition(result).column = col_res;
 		}
 		else
-		   throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
-				+ " of argument of function " + getName(),
+			throw Exception(
+				"Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
 
-struct NameLowerUTF8		{ static constexpr auto name = "lowerUTF8"; };
-struct NameUpperUTF8		{ static constexpr auto name = "upperUTF8"; };
+struct NameLowerUTF8
+{
+	static constexpr auto name = "lowerUTF8";
+};
+struct NameUpperUTF8
+{
+	static constexpr auto name = "upperUTF8";
+};
 
 
-typedef FunctionStringToString<
-	LowerUpperUTF8Impl<'A', 'Z', Poco::Unicode::toLower, UTF8CyrillicToCase<true>>,
-	NameLowerUTF8>	FunctionLowerUTF8;
-typedef FunctionStringToString<
-	LowerUpperUTF8Impl<'a', 'z', Poco::Unicode::toUpper, UTF8CyrillicToCase<false>>,
-	NameUpperUTF8>	FunctionUpperUTF8;
-
-
+typedef FunctionStringToString<LowerUpperUTF8Impl<'A', 'Z', Poco::Unicode::toLower, UTF8CyrillicToCase<true>>, NameLowerUTF8>
+	FunctionLowerUTF8;
+typedef FunctionStringToString<LowerUpperUTF8Impl<'a', 'z', Poco::Unicode::toUpper, UTF8CyrillicToCase<false>>, NameUpperUTF8>
+	FunctionUpperUTF8;
 }
