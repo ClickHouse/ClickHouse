@@ -1,4 +1,4 @@
-﻿#include <DB/Functions/FunctionsArray.h>
+#include <DB/Functions/FunctionsArray.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsString.h>
 
@@ -227,6 +227,47 @@ private:
 				*dst = *src;
 	}
 };
+
+template <bool to_lower>
+void UTF8CyrillicToCase(const UInt8*& src, const UInt8*const src_end, UInt8*& dst)
+{
+	if (src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0x8Fu))
+	{
+		/// ЀЁЂЃЄЅІЇЈЉЊЋЌЍЎЏ
+		*dst++ = xor_or_identity<to_lower>(*src++, 0x1);
+		*dst++ = xor_or_identity<to_lower>(*src++, 0x10);
+	}
+	else if (src[0] == 0xD1u && (src[1] >= 0x90u && src[1] <= 0x9Fu))
+	{
+		/// ѐёђѓєѕіїјљњћќѝўџ
+		*dst++ = xor_or_identity<!to_lower>(*src++, 0x1);
+		*dst++ = xor_or_identity<!to_lower>(*src++, 0x10);
+	}
+	else if (src[0] == 0xD0u && (src[1] >= 0x90u && src[1] <= 0x9Fu))
+	{
+		/// А-П
+		*dst++ = *src++;
+		*dst++ = xor_or_identity<to_lower>(*src++, 0x20);
+	}
+	else if (src[0] == 0xD0u && (src[1] >= 0xB0u && src[1] <= 0xBFu))
+	{
+		/// а-п
+		*dst++ = *src++;
+		*dst++ = xor_or_identity<!to_lower>(*src++, 0x20);
+	}
+	else if (src[0] == 0xD0u && (src[1] >= 0xA0u && src[1] <= 0xAFu))
+	{
+		///	Р-Я
+		*dst++ = xor_or_identity<to_lower>(*src++, 0x1);
+		*dst++ = xor_or_identity<to_lower>(*src++, 0x20);
+	}
+	else if (src[0] == 0xD1u && (src[1] >= 0x80u && src[1] <= 0x8Fu))
+	{
+		/// р-я
+		*dst++ = xor_or_identity<!to_lower>(*src++, 0x1);
+		*dst++ = xor_or_identity<!to_lower>(*src++, 0x20);
+	}
+}
 
 
 
