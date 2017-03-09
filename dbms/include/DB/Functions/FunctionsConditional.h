@@ -1573,7 +1573,6 @@ private:
 	}
 
 public:
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;

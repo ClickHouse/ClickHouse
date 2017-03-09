@@ -772,7 +772,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringOrArrayToT>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -780,7 +779,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0])
@@ -791,7 +789,6 @@ public:
 		return std::make_shared<typename DataTypeFromFieldType<ResultType>::Type>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
@@ -865,7 +862,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringToString>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -874,7 +870,6 @@ public:
 	size_t getNumberOfArguments() const override { return 1; }
 	bool isInjective(const Block &) override { return is_injective; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
@@ -884,7 +879,6 @@ public:
 		return arguments[0]->clone();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
@@ -924,14 +918,12 @@ public:
 	static constexpr auto name = "reverse";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionReverse>(); }
 
-	/// Получить имя функции.
 	String getName() const override;
 
 	size_t getNumberOfArguments() const override { return 1; }
 	bool isInjective(const Block &) override { return true; }
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
@@ -943,7 +935,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<ConcatImpl>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -953,7 +944,6 @@ public:
 	size_t getNumberOfArguments() const override { return 0; }
 	bool isInjective(const Block &) override { return is_injective; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() < 2)
@@ -1426,7 +1416,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringNumNumToString>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -1434,7 +1423,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 3; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
@@ -1448,7 +1436,6 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column_string = block.safeGetByPosition(arguments[0]).column;

@@ -699,7 +699,6 @@ private:
 	}
 
 public:
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -707,7 +706,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 2; }
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		DataTypePtr type_res;
@@ -730,7 +728,6 @@ public:
 		return type_res;
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!(  executeLeftType<DataTypeDate>(block, arguments, result)
@@ -809,7 +806,6 @@ private:
 	}
 
 public:
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -818,7 +814,6 @@ public:
 	size_t getNumberOfArguments() const override { return 1; }
 	bool isInjective(const Block &) override { return is_injective; }
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		DataTypePtr result;
@@ -839,7 +834,6 @@ public:
 		return result;
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!(	executeType<UInt8>(block, arguments, result)

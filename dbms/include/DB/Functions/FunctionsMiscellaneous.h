@@ -120,7 +120,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeString>();
@@ -149,7 +148,6 @@ public:
 		return true;
 	}
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -157,13 +155,11 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
@@ -187,13 +183,11 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeString>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(
@@ -240,7 +234,6 @@ public:
 	static constexpr auto name = "blockSize";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBlockSize>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -250,13 +243,11 @@ public:
 
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t size = block.rows();
@@ -271,7 +262,6 @@ public:
 	static constexpr auto name = "rowNumberInBlock";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRowNumberInBlock>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -281,13 +271,11 @@ public:
 
 	bool isDeterministicInScopeOfQuery() override { return false; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t size = block.rows();
@@ -312,7 +300,6 @@ public:
 	static constexpr auto name = "blockNumber";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBlockNumber>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -322,13 +309,11 @@ public:
 
 	bool isDeterministicInScopeOfQuery() override { return false; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t current_block_number = block_number++;
@@ -347,7 +332,6 @@ public:
 	static constexpr auto name = "rowNumberInAllBlocks";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRowNumberInAllBlocks>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -357,13 +341,11 @@ public:
 
 	bool isDeterministicInScopeOfQuery() override { return false; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t rows_in_block = block.rows();
@@ -386,7 +368,6 @@ public:
 	static constexpr auto name = "sleep";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionSleep>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -397,7 +378,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeFloat64 *>(&*arguments[0]) &&
@@ -412,7 +392,6 @@ public:
 		return std::make_shared<DataTypeUInt8>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		IColumn * col = block.safeGetByPosition(arguments[0]).column.get();
@@ -456,7 +435,6 @@ public:
 	static constexpr auto name = "materialize";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMaterialize>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -464,13 +442,11 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return arguments[0];
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const auto & src = block.safeGetByPosition(arguments[0]).column;
@@ -501,13 +477,11 @@ public:
 
 	size_t getNumberOfArguments() const override { return 2; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt8>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		/// Second argument must be ColumnSet.
@@ -552,7 +526,6 @@ public:
 
 	bool hasSpecialSupportForNulls() const override { return true; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() < 1)
@@ -561,7 +534,6 @@ public:
 		return std::make_shared<DataTypeTuple>(arguments);
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		Block tuple_block;
@@ -647,7 +619,6 @@ public:
 		out_return_type = elems[index - 1]->clone();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.safeGetByPosition(arguments[0]).column.get());
@@ -697,7 +668,6 @@ public:
 	String getName() const override { return name; }
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return std::make_shared<DataTypeUInt8>(); }
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rows(), 0);
@@ -731,7 +701,6 @@ public:
 	String getName() const override	{ return name; }
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return std::make_shared<DataTypeUInt8>(); }
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rows(), 1);
@@ -745,7 +714,6 @@ public:
 	static constexpr auto name = "identity";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIdentity>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -753,13 +721,11 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return arguments.front()->clone();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = block.safeGetByPosition(arguments.front()).column;
@@ -773,8 +739,6 @@ public:
 	static constexpr auto name = "arrayJoin";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayJoin>(); }
 
-
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -785,7 +749,6 @@ public:
 	/** It could return many different values for single argument. */
 	bool isDeterministicInScopeOfQuery() override { return false; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		const DataTypeArray * arr = typeid_cast<const DataTypeArray *>(&*arguments[0]);
@@ -795,7 +758,6 @@ public:
 		return arr->getNestedType()->clone();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		throw Exception("Function " + getName() + " must not be executed directly.", ErrorCodes::FUNCTION_IS_SPECIAL);
@@ -815,7 +777,6 @@ public:
 	static constexpr auto name = "replicate";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionReplicate>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -823,7 +784,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 2; }
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[1]);
@@ -833,7 +793,6 @@ public:
 		return std::make_shared<DataTypeArray>(arguments[0]->clone());
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		ColumnPtr first_column = block.safeGetByPosition(arguments[0]).column;
@@ -873,7 +832,6 @@ public:
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3 && arguments.size() != 4)
@@ -888,7 +846,6 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		Int64 min = extractConstant<Int64>(block, arguments, 1, "Second");	/// Уровень значения, при котором полоска имеет нулевую длину.

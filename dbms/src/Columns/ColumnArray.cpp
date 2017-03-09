@@ -1,9 +1,336 @@
+#include <string.h> // memcpy
+
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnsCommon.h>
+
+#include <DB/Common/Exception.h>
+#include <DB/Common/Arena.h>
+#include <DB/Common/SipHash.h>
+
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int ILLEGAL_COLUMN;
+	extern const int NOT_IMPLEMENTED;
+	extern const int BAD_ARGUMENTS;
+}
+
+
+ColumnArray::ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column)
+	: data(nested_column), offsets(offsets_column)
+{
+	if (!offsets_column)
+	{
+		offsets = std::make_shared<ColumnOffsets_t>();
+	}
+	else
+	{
+		if (!typeid_cast<ColumnOffsets_t *>(&*offsets_column))
+			throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::ILLEGAL_COLUMN);
+	}
+
+	/** NOTE
+	  * Arrays with constant value are possible and used in implementation of higher order functions and in ARRAY JOIN.
+	  * But in most cases, arrays with constant value are unexpected and code will work wrong. Use with caution.
+	  */
+}
+
+
+std::string ColumnArray::getName() const { return "ColumnArray(" + getData().getName() + ")"; }
+
+
+ColumnPtr ColumnArray::cloneResized(size_t to_size) const
+{
+	auto res = std::make_shared<ColumnArray>(getData().cloneEmpty());
+
+	if (to_size == 0)
+		return res;
+
+	size_t from_size = size();
+
+	if (to_size <= from_size)
+	{
+		/// Just cut column.
+
+		res->getOffsets().assign(getOffsets().begin(), getOffsets().begin() + to_size);
+		res->getData().insertRangeFrom(getData(), 0, getOffsets()[to_size - 1]);
+	}
+	else
+	{
+		/// Copy column and append empty arrays for extra elements.
+
+		Offset_t offset = 0;
+		if (from_size > 0)
+		{
+			res->getOffsets().assign(getOffsets().begin(), getOffsets().end());
+			res->getDataPtr() = getData().clone();
+			offset = getOffsets().back();
+		}
+
+		res->getOffsets().resize(to_size);
+		for (size_t i = from_size; i < to_size; ++i)
+		{
+			++offset;
+			res->getOffsets()[i] = offset;
+		}
+	}
+
+	return res;
+}
+
+
+size_t ColumnArray::size() const
+{
+	return getOffsets().size();
+}
+
+
+Field ColumnArray::operator[](size_t n) const
+{
+	size_t offset = offsetAt(n);
+	size_t size = sizeAt(n);
+	Array res(size);
+
+	for (size_t i = 0; i < size; ++i)
+		res[i] = getData()[offset + i];
+
+	return res;
+}
+
+
+void ColumnArray::get(size_t n, Field & res) const
+{
+	size_t offset = offsetAt(n);
+	size_t size = sizeAt(n);
+	res = Array(size);
+	Array & res_arr = DB::get<Array &>(res);
+
+	for (size_t i = 0; i < size; ++i)
+		getData().get(offset + i, res_arr[i]);
+}
+
+
+StringRef ColumnArray::getDataAt(size_t n) const
+{
+	/** Возвращает диапазон памяти, покрывающий все элементы массива.
+		* Работает для массивов значений фиксированной длины.
+		* Для массивов строк и массивов массивов полученный кусок памяти может не взаимно-однозначно соответствовать элементам,
+		*  так как содержит лишь уложенные подряд данные, но не смещения.
+		*/
+
+	size_t array_size = sizeAt(n);
+	if (array_size == 0)
+		return StringRef();
+
+	size_t offset_of_first_elem = offsetAt(n);
+	StringRef first = getData().getDataAtWithTerminatingZero(offset_of_first_elem);
+
+	size_t offset_of_last_elem = getOffsets()[n] - 1;
+	StringRef last = getData().getDataAtWithTerminatingZero(offset_of_last_elem);
+
+	return StringRef(first.data, last.data + last.size - first.data);
+}
+
+
+void ColumnArray::insertData(const char * pos, size_t length)
+{
+	/** Аналогично - только для массивов значений фиксированной длины.
+		*/
+	IColumn * data_ = data.get();
+	if (!data_->isFixed())
+		throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+
+	size_t field_size = data_->sizeOfField();
+
+	const char * end = pos + length;
+	size_t elems = 0;
+	for (; pos + field_size <= end; pos += field_size, ++elems)
+		data_->insertData(pos, field_size);
+
+	if (pos != end)
+		throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
+
+	getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + elems);
+}
+
+
+StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+	size_t array_size = sizeAt(n);
+	size_t offset = offsetAt(n);
+
+	char * pos = arena.allocContinue(sizeof(array_size), begin);
+	memcpy(pos, &array_size, sizeof(array_size));
+
+	size_t values_size = 0;
+	for (size_t i = 0; i < array_size; ++i)
+		values_size += getData().serializeValueIntoArena(offset + i, arena, begin).size;
+
+	return StringRef(begin, sizeof(array_size) + values_size);
+}
+
+
+const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
+{
+	size_t array_size = *reinterpret_cast<const size_t *>(pos);
+	pos += sizeof(array_size);
+
+	for (size_t i = 0; i < array_size; ++i)
+		pos = getData().deserializeAndInsertFromArena(pos);
+
+	getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + array_size);
+	return pos;
+}
+
+
+void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
+{
+	size_t array_size = sizeAt(n);
+	size_t offset = offsetAt(n);
+
+	hash.update(reinterpret_cast<const char *>(&array_size), sizeof(array_size));
+	for (size_t i = 0; i < array_size; ++i)
+		getData().updateHashWithValue(offset + i, hash);
+}
+
+
+void ColumnArray::insert(const Field & x)
+{
+	const Array & array = DB::get<const Array &>(x);
+	size_t size = array.size();
+	for (size_t i = 0; i < size; ++i)
+		getData().insert(array[i]);
+	getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
+}
+
+
+void ColumnArray::insertFrom(const IColumn & src_, size_t n)
+{
+	const ColumnArray & src = static_cast<const ColumnArray &>(src_);
+	size_t size = src.sizeAt(n);
+	size_t offset = src.offsetAt(n);
+
+	getData().insertRangeFrom(src.getData(), offset, size);
+	getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
+}
+
+
+void ColumnArray::insertDefault()
+{
+	getOffsets().push_back(getOffsets().size() == 0 ? 0 : getOffsets().back());
+}
+
+
+void ColumnArray::popBack(size_t n)
+{
+	auto & offsets = getOffsets();
+	size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
+	if (nested_n)
+		getData().popBack(nested_n);
+	offsets.resize_assume_reserved(offsets.size() - n);
+}
+
+
+int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+{
+	const ColumnArray & rhs = static_cast<const ColumnArray &>(rhs_);
+
+	/// Не оптимально
+	size_t lhs_size = sizeAt(n);
+	size_t rhs_size = rhs.sizeAt(m);
+	size_t min_size = std::min(lhs_size, rhs_size);
+	for (size_t i = 0; i < min_size; ++i)
+		if (int res = getData().compareAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get(), nan_direction_hint))
+			return res;
+
+	return lhs_size < rhs_size
+		? -1
+		: (lhs_size == rhs_size
+			? 0
+			: 1);
+}
+
+
+namespace
+{
+	template <bool positive>
+	struct less
+	{
+		const ColumnArray & parent;
+
+		less(const ColumnArray & parent_) : parent(parent_) {}
+
+		bool operator()(size_t lhs, size_t rhs) const
+		{
+			if (positive)
+				return parent.compareAt(lhs, rhs, parent, 1) < 0;
+			else
+				return parent.compareAt(lhs, rhs, parent, -1) > 0;
+		}
+	};
+}
+
+
+void ColumnArray::reserve(size_t n)
+{
+	getOffsets().reserve(n);
+	getData().reserve(n);		/// Средний размер массивов тут никак не учитывается. Или считается, что он не больше единицы.
+}
+
+
+size_t ColumnArray::byteSize() const
+{
+	return getData().byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);
+}
+
+
+size_t ColumnArray::allocatedSize() const
+{
+	return getData().allocatedSize() + getOffsets().allocated_size() * sizeof(getOffsets()[0]);
+}
+
+
+bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
+{
+	if (offsets == other.offsets)
+		return true;
+
+	const Offsets_t & offsets1 = getOffsets();
+	const Offsets_t & offsets2 = other.getOffsets();
+	return offsets1.size() == offsets2.size() && 0 == memcmp(&offsets1[0], &offsets2[0], sizeof(offsets1[0]) * offsets1.size());
+}
+
+
+ColumnPtr ColumnArray::convertToFullColumnIfConst() const
+{
+	ColumnPtr new_data;
+	ColumnPtr new_offsets;
+
+	if (auto full_column = getData().convertToFullColumnIfConst())
+		new_data = full_column;
+	else
+		new_data = data;
+
+	if (auto full_column = offsets.get()->convertToFullColumnIfConst())
+		new_offsets = full_column;
+	else
+		new_offsets = offsets;
+
+	return std::make_shared<ColumnArray>(new_data, new_offsets);
+}
+
+
+void ColumnArray::getExtremes(Field & min, Field & max) const
+{
+	min = Array();
+	max = Array();
+}
 
 
 void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t length)
