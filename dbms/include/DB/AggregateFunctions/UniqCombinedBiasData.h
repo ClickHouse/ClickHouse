@@ -20,7 +20,7 @@ namespace DB
   * - bias_corrected_graph.txt (1st column: the present number of unique values;
   *    2nd column: relative error in the case of HyperLogLog with the use of corrections from the algorithm HyperLogLog++)
   * 6. Generate a graph with gnuplot based on this data.
-  * 7. Determine the minimum number of unique values ​​at which it is better to correct the error
+  * 7. Determine the minimum number of unique values at which it is better to correct the error
   *     using its evaluation (ie, using the HyperLogLog++ algorithm) than applying the LinearCounting algorithm.
   * 7. Accordingly, update the constant in the function getThreshold()
   * 8. Assemble ClickHouse.

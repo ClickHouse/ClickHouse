@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 
 
-/** A column of values ​​of type `String`.
+/** A column of values of type `String`.
   */
 class ColumnString final : public IColumn
 {

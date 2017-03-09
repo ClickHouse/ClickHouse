@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 
 /** Stuff for comparing numbers.
-  * Integer values ​​are compared as usual.
+  * Integer values are compared as usual.
   * Floating-point numbers are compared this way that NaNs always end up at the end
   *  (if you don't do this, the sort would not work at all).
   */
@@ -39,7 +39,7 @@ struct CompareHelper
 	static bool greater(T a, T b) { return a > b; }
 
     /** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
-      * If one of the values ​​is NaN, then
+      * If one of the values is NaN, then
       * - if nan_direction_hint == -1 - NaN are considered less than all numbers;
       * - if nan_direction_hint == 1 - NaN are considered to be larger than all numbers;
       * Essentially: nan_direction_hint == -1 says that the comparison is for sorting in descending order.

@@ -35,7 +35,7 @@ struct AggregateFunctionGroupUniqArrayData
 };
 
 
-/// Puts all values ​​to the hash set. Returns an array of unique values. Implemented for numeric types.
+/// Puts all values to the hash set. Returns an array of unique values. Implemented for numeric types.
 template <typename T>
 class AggregateFunctionGroupUniqArray
 	: public IUnaryAggregateFunction<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T>>

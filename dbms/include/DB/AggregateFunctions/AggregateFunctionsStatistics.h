@@ -15,7 +15,7 @@ namespace DB
 namespace
 {
 
-/// This function returns true if both values ​​are large and comparable.
+/// This function returns true if both values are large and comparable.
 /// It is used to calculate the mean value by merging two sources.
 /// It means that if the sizes of both sources are large and comparable, then we must apply a special
 ///  formula guaranteeing more stability.

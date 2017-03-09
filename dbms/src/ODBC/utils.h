@@ -29,7 +29,7 @@ RETCODE doWith(SQLHANDLE handle_opaque, F && f)
 }
 
 
-/// Parse a string of the form `key1=value1;key2=value2` ... TODO Parsing values ​​in curly brackets.
+/// Parse a string of the form `key1=value1;key2=value2` ... TODO Parsing values in curly brackets.
 static const char * nextKeyValuePair(const char * data, const char * end, StringRef & out_key, StringRef & out_value)
 {
 	if (data >= end)

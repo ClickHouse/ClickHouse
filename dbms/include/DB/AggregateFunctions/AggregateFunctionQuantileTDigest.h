@@ -66,7 +66,7 @@ struct Centroid
 /** :param epsilon: value \delta from the article - error in the range
   *				    quantile 0.5 (default is 0.01, i.e. 1%)
   * :param max_unmerged: when accumulating count of new points beyond this
-  *                      value ​​centroid compression is triggered
+  *                      value centroid compression is triggered
   *                      (default is 2048, the higher the value - the
   *                      more memory is required, but amortization of execution time increases)
   */
@@ -182,7 +182,7 @@ public:
 
 					Value k = 4 * count * err * params.epsilon;
 
-                    /** The ratio of the weight of the glued column pair to all values ​​is not greater,
+                    /** The ratio of the weight of the glued column pair to all values is not greater,
                       *  than epsilon multiply by a certain quadratic coefficient, which in the median is 1 (4 * 1/2 * 1/2),
                       *  and at the edges decreases and is approximately equal to the distance to the edge * 4.
 					  */
@@ -199,14 +199,14 @@ public:
 						sum += l->count;
 						++l;
 
-                        /// We skip all the values ​​"eaten" earlier.
+                        /// We skip all the values "eaten" earlier.
 						if (l != r)
 							*l = *r;
 					}
 					++r;
 				}
 
-                /// At the end of the loop, all values ​​to the right of l were "eaten".
+                /// At the end of the loop, all values to the right of l were "eaten".
 				summary.resize(l - summary.begin() + 1);
 			}
 

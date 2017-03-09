@@ -22,7 +22,7 @@ SQLGetInfo(HDBC connection_handle,
 
 	LOG("GetInfo with info_type: " << info_type << ", out_value_max_length: " << out_value_max_length);
 
-    /** How are all these values ​​selected?
+    /** How are all these values selected?
 	  * Part of them provides true information about the capabilities of the DBMS.
       * But in most cases, the possibilities are declared "in reserve" to see,
       * what requests will be sent and what any software will do, meaning these features.

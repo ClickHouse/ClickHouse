@@ -8,7 +8,7 @@ namespace DB
 {
 
 
-/// For possible values ​​for template parameters, see AggregateFunctionsMinMaxAny.h
+/// For possible values for template parameters, see AggregateFunctionsMinMaxAny.h
 template <typename ResultData, typename ValueData>
 struct AggregateFunctionsArgMinMaxData
 {

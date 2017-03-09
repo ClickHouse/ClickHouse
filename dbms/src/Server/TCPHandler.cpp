@@ -336,7 +336,7 @@ void TCPHandler::processOrdinaryQuery()
 				}
 			}
 
-            /** If data has run out, we will send the profiling data and total values ​​to
+            /** If data has run out, we will send the profiling data and total values to
               * the last zero block to be able to use
               * this information in the suffix output of stream.
               * If the request was interrupted, then `sendTotals` and other methods could not be called,

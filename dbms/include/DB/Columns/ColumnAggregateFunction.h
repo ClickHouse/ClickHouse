@@ -30,21 +30,21 @@ namespace ErrorCodes
   * It can be in two variants:
   *
   * 1. Own its values - that is, be responsible for destroying them.
-  * The column consists of the values ​​"assigned to it" after the aggregation is performed (see Aggregator, convertToBlocks function),
-  *  or from values ​​created by itself (see `insert` method).
+  * The column consists of the values "assigned to it" after the aggregation is performed (see Aggregator, convertToBlocks function),
+  *  or from values created by itself (see `insert` method).
   * In this case, `src` will be `nullptr`, and the column itself will be destroyed (call `IAggregateFunction::destroy`)
   *  states of aggregate functions in the destructor.
   *
-  * 2. Do not own its values, but use values ​​taken from another ColumnAggregateFunction column.
+  * 2. Do not own its values, but use values taken from another ColumnAggregateFunction column.
   * For example, this is a column obtained by permutation/filtering or other transformations from another column.
-  * In this case, `src` will be `shared ptr` to the source column. Destruction of values ​​will be handled by this source column.
+  * In this case, `src` will be `shared ptr` to the source column. Destruction of values will be handled by this source column.
   *
   * This solution is somewhat limited:
-  * - the variant in which the column contains a part of "it's own" and a part of "another's" values ​​is not supported;
+  * - the variant in which the column contains a part of "it's own" and a part of "another's" values is not supported;
   * - the option of having multiple source columns is not supported, which may be necessary for a more optimal merge of the two columns.
   *
   * These restrictions can be removed if you add an array of flags or even refcount,
-  *  specifying which individual values ​​should be destroyed and which ones should not.
+  *  specifying which individual values should be destroyed and which ones should not.
   * Clearly, this method would have a substantially non-zero price.
   */
 class ColumnAggregateFunction final : public IColumn, public std::enable_shared_from_this<ColumnAggregateFunction>

@@ -16,7 +16,7 @@
 
 /** Approximate calculation of anything, as a rule, is constructed according to the following scheme:
   * - some data structure is used to calculate the value of X;
-  * - Not all values ​​are added to the data structure, but only selected ones (according to some selectivity criteria);
+  * - Not all values are added to the data structure, but only selected ones (according to some selectivity criteria);
   * - after processing all elements, the data structure is in some state S;
   * - as an approximate value of X, the value calculated according to the maximum likelihood principle is returned:
   *   at what real value X, the probability of finding the data structure in the obtained state S is maximal.
@@ -43,10 +43,10 @@
   * - there are methods for quick reading and writing in binary and text form.
   */
 
-/// The maximum degree of buffer size before the values ​​are discarded
+/// The maximum degree of buffer size before the values are discarded
 #define UNIQUES_HASH_MAX_SIZE_DEGREE 			17
 
-/// The maximum number of elements before the values ​​are discarded
+/// The maximum number of elements before the values are discarded
 #define UNIQUES_HASH_MAX_SIZE 					(1 << (UNIQUES_HASH_MAX_SIZE_DEGREE - 1))
 
 /** The number of least significant bits used for thinning. The remaining high-order bits are used to determine the position in the hash table.
@@ -121,7 +121,7 @@ private:
 		return Hash()(key);
 	}
 
-	/// Delete all values ​​whose hashes do not divide by 2 ^ skip_degree
+	/// Delete all values whose hashes do not divide by 2 ^ skip_degree
 	void rehash()
 	{
 		for (size_t i = 0; i < buf_size(); ++i)

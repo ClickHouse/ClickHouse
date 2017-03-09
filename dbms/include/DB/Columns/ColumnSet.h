@@ -10,7 +10,7 @@ class Set;
 using ConstSetPtr = std::shared_ptr<const Set>;
 
 
-/** A column containing multiple values ​​in the `IN` section.
+/** A column containing multiple values in the `IN` section.
   * Behaves like a constant-column (because the set is one, not its own for each line).
   * This column has a nonstandard value, so it can not be obtained via a normal interface.
   */

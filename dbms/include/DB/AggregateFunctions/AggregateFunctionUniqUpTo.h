@@ -11,7 +11,7 @@ namespace DB
 {
 
 
-/** Counts the number of unique values ​​up to no more than specified in the parameter.
+/** Counts the number of unique values up to no more than specified in the parameter.
   *
   * Example: uniqUpTo(3)(UserID)
   * - will count the number of unique visitors, return 1, 2, 3 or 4 if visitors > = 4.
@@ -22,10 +22,10 @@ namespace DB
 template <typename T>
 struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 {
-/** If count == threshold + 1 - this means that it is "overflowed" (values ​​greater than threshold).
+/** If count == threshold + 1 - this means that it is "overflowed" (values greater than threshold).
   * In this case (for example, after calling the merge function), the `data` array does not necessarily contain the initialized values
   * - example: combine a state in which there are few values, with another state that has overflowed;
-  *   then set count to `threshold + 1`, and values ​​from another state are not copied.
+  *   then set count to `threshold + 1`, and values from another state are not copied.
   */
 	UInt8 count = 0;
 
@@ -77,7 +77,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 	{
 		writeBinary(count, wb);
 
-        /// Write values ​​only if the state is not overflowed. Otherwise, they are not needed, and only the fact that the state is overflowed is important.
+        /// Write values only if the state is not overflowed. Otherwise, they are not needed, and only the fact that the state is overflowed is important.
 		if (count <= threshold)
 			wb.write(reinterpret_cast<const char *>(&data[0]), count * sizeof(data[0]));
 	}

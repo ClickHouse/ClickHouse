@@ -34,10 +34,10 @@ namespace DB
   *
   * Three different data structures are used:
   * - flat array (of all met values) of fixed length, allocated inplace, size 64 bytes; Stores 0..31 values;
-  * - flat array (of all values ​​encountered), allocated separately, increasing length;
+  * - flat array (of all values encountered), allocated separately, increasing length;
   * - a histogram (that is, value -> number), consisting of two parts
-  * -- for values ​​from 0 to 1023 - in increments of 1;
-  * -- for values ​​from 1024 to 30,000 - in increments of 16;
+  * -- for values from 0 to 1023 - in increments of 1;
+  * -- for values from 1024 to 30,000 - in increments of 16;
   */
 
 #define TINY_MAX_ELEMS 31
@@ -250,17 +250,17 @@ namespace detail
 		/// Use of UInt64 is very wasteful.
         /// But UInt32 is definitely not enough, and it's too hard to invent 6-byte values.
 
-        /// Number of values ​​for each value is smaller than `small_threshold`.
+        /// Number of values for each value is smaller than `small_threshold`.
 		UInt64 count_small[SMALL_THRESHOLD];
 
-        /// The number of values ​​for each value from `small_threshold` to `big_threshold`, rounded to `big_precision`.
+        /// The number of values for each value from `small_threshold` to `big_threshold`, rounded to `big_precision`.
 		UInt64 count_big[BIG_SIZE];
 
         /// Get value of quantile by index in array `count_big`.
 		static inline UInt16 indexInBigToValue(size_t i)
 		{
 			return (i * BIG_PRECISION) + SMALL_THRESHOLD
-				+ (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));	/// A small randomization so that it is not noticeable that all the values ​​are even.
+				+ (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));	/// A small randomization so that it is not noticeable that all the values are even.
 		}
 
         /// Lets you scroll through the histogram values, skipping zeros.
@@ -420,7 +420,7 @@ namespace detail
 			return it.isValid() ? it.key() : BIG_THRESHOLD;
 		}
 
-        /// Get the `size` values ​​of `levels` quantiles. Write `size` results starting with `result` address.
+        /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
         /// indices - an array of index levels such that the corresponding elements will go in ascending order.
 		template <typename ResultType>
 		void getMany(const double * levels, const size_t * indices, size_t size, ResultType * result) const
@@ -740,7 +740,7 @@ public:
 		}
 	}
 
-    /// Get the size values ​​of the quantiles of the `levels` levels. Record `size` results starting with `result` address.
+    /// Get the size values of the quantiles of the `levels` levels. Record `size` results starting with `result` address.
 	template <typename ResultType>
 	void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result) const
 	{

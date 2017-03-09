@@ -18,7 +18,7 @@ namespace DB
 {
 
 
-/** The state is an array, into which all values ​​are added.
+/** The state is an array, into which all values are added.
   * NOTE If there are few different values then this is not optimal.
   * For 8 and 16-bit values it might be better to use a lookup table.
   */

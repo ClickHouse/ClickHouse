@@ -345,14 +345,14 @@ private:
 	size_t ALWAYS_INLINE sizeAt(size_t i) const		{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
 
 
-    /// Multiply values ​​if the nested column is ColumnVector<T>.
+    /// Multiply values if the nested column is ColumnVector<T>.
 	template <typename T>
 	ColumnPtr replicateNumber(const Offsets_t & replicate_offsets) const;
 
-    /// Multiply the values ​​if the nested column is ColumnString. The code is too complicated.
+    /// Multiply the values if the nested column is ColumnString. The code is too complicated.
 	ColumnPtr replicateString(const Offsets_t & replicate_offsets) const;
 
-    /** Non-constant arrays of constant values ​​are quite rare.
+    /** Non-constant arrays of constant values are quite rare.
       * Most functions can not work with them, and does not create such columns as a result.
       * An exception is the function `replicate`(see FunctionsMiscellaneous.h), which has service meaning for the implementation of lambda functions.
       * Only for its sake is the implementation of the `replicate` method for ColumnArray(ColumnConst).

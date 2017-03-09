@@ -11,7 +11,7 @@ namespace DB
 /** Not an aggregate function, but an adapter of aggregate functions,
   * which any aggregate function `agg(x)` makes an aggregate function of the form `aggIf(x, cond)`.
   * The adapted aggregate function takes two arguments - a value and a condition,
-  * and calculates the nested aggregate function for the values ​​when the condition is satisfied.
+  * and calculates the nested aggregate function for the values when the condition is satisfied.
   * For example, avgIf(x, cond) calculates the average x if `cond`.
   */
 class AggregateFunctionIf final : public IAggregateFunction

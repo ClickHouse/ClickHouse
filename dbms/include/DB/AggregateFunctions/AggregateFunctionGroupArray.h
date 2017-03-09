@@ -107,7 +107,7 @@ struct AggregateFunctionGroupArrayDataGeneric
 };
 
 
-/// Puts all values ​​to an array, general case. Implemented inefficiently.
+/// Puts all values to an array, general case. Implemented inefficiently.
 class AggregateFunctionGroupArrayGeneric final
 : public IUnaryAggregateFunction<AggregateFunctionGroupArrayDataGeneric, AggregateFunctionGroupArrayGeneric>
 {

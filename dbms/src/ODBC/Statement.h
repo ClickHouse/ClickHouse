@@ -11,7 +11,7 @@
 #include "ResultSet.h"
 
 
-/// Information where and how to add values ​​when reading.
+/// Information where and how to add values when reading.
 struct Binding
 {
 	SQLSMALLINT target_type;

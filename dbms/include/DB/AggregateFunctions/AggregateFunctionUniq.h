@@ -97,7 +97,7 @@ struct AggregateFunctionUniqExactData
 	static String getName() { return "uniqExact"; }
 };
 
-/// For rows, we put the SipHash values ​​(128 bits) into the hash table.
+/// For rows, we put the SipHash values (128 bits) into the hash table.
 template <>
 struct AggregateFunctionUniqExactData<String>
 {
@@ -324,7 +324,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 }
 
 
-/// Calculates the number of different values ​​approximately or exactly.
+/// Calculates the number of different values approximately or exactly.
 template <typename T, typename Data>
 class AggregateFunctionUniq final : public IUnaryAggregateFunction<Data, AggregateFunctionUniq<T, Data> >
 {
