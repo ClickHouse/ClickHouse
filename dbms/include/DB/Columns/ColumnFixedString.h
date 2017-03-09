@@ -22,8 +22,8 @@ namespace ErrorCodes
 	extern const int PARAMETER_OUT_OF_BOUND;
 }
 
-/** Cтолбeц значений типа "строка фиксированной длины".
-  * Если вставить строку меньшей длины, то она будет дополнена нулевыми байтами.
+/** A column of values ​​of "fixed-length string" type.
+  * If you insert a smaller string, it will be padded with zero bytes.
   */
 class ColumnFixedString final : public IColumn
 {
@@ -31,16 +31,16 @@ public:
 	using Chars_t = PaddedPODArray<UInt8>;
 
 private:
-	/// Байты строк, уложенные подряд. Строки хранятся без завершающего нулевого байта.
-	/** NOTE Требуется, чтобы смещение и тип chars в объекте был таким же, как у data в ColumnUInt8.
-	  * Это используется в функции packFixed (AggregationCommon.h)
+    /// Bytes of rows, laid in succession. The strings are stored without a trailing zero byte.
+    /** NOTE It is required that the offset and type of chars in the object be the same as that of `data in ColumnUInt8`.
+	  * Used in `packFixed` function (AggregationCommon.h)
 	  */
 	Chars_t chars;
-	/// Размер строк.
+    /// The size of the rows.
 	const size_t n;
 
 public:
-	/** Создать пустой столбец строк фиксированной длины n */
+    /** Create an empty column of strings of fixed-length `n` */
 	ColumnFixedString(size_t n_) : n(n_) {}
 
 	std::string getName() const override { return "ColumnFixedString"; }
@@ -181,7 +181,7 @@ public:
 		less(const ColumnFixedString & parent_) : parent(parent_) {}
 		bool operator()(size_t lhs, size_t rhs) const
 		{
-			/// TODO: memcmp тормозит.
+			/// TODO: memcmp slows down.
 			int res = memcmp(&parent.chars[lhs * parent.n], &parent.chars[rhs * parent.n], parent.n);
 			return positive ? (res < 0) : (res > 0);
 		}

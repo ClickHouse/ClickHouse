@@ -23,7 +23,7 @@ namespace DB
 template <typename T>
 struct AggregateFunctionGroupUniqArrayData
 {
-	/// При создании, хэш-таблица должна быть небольшой.
+    /// When creating, the hash table must be small.
 	using Set = HashSet<
 		T,
 		DefaultHash<T>,
@@ -35,7 +35,7 @@ struct AggregateFunctionGroupUniqArrayData
 };
 
 
-/// Складывает все значения в хэш-множество. Возвращает массив уникальных значений. Реализована для числовых типов.
+/// Puts all values ​​to the hash set. Returns an array of unique values. Implemented for numeric types.
 template <typename T>
 class AggregateFunctionGroupUniqArray
 	: public IUnaryAggregateFunction<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T>>

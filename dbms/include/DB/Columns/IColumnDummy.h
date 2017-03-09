@@ -14,8 +14,8 @@ namespace ErrorCodes
 }
 
 
-/** Базовый класс для столбцов-констант, содержащих значение, не входящее в Field.
-  * Не является полноценым столбцом и используется особым образом.
+/** Base class for columns-constants that contain a value that is not in the `Field`.
+  * Not a full-fledged column and is used in a special way.
   */
 class IColumnDummy : public IColumn
 {

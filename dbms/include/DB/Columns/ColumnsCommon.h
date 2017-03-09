@@ -3,16 +3,16 @@
 #include <DB/Columns/IColumn.h>
 
 
-/// Общие вспомогательные методы для реализации разных столбцов.
+/// Common helper methods for implementation of different columns.
 
 namespace DB
 {
 
-/// Считает, сколько байт в filt больше нуля.
+/// Counts how many bytes of `filt` are greater than zero.
 size_t countBytesInFilter(const IColumn::Filter & filt);
 
 
-/// Общая реализация функции filter для ColumnArray и ColumnString.
+/// The general implementation of `filter` function for ColumnArray and ColumnString.
 template <typename T>
 void filterArraysImpl(
 	const PaddedPODArray<T> & src_elems, const IColumn::Offsets_t & src_offsets,

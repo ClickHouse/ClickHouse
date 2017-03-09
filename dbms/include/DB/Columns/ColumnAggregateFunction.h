@@ -23,29 +23,29 @@ namespace ErrorCodes
 }
 
 
-/** Столбец состояний агрегатных функций.
-  * Представлен в виде массива указателей на состояния агрегатных функций (data).
-  * Сами состояния хранятся в одном из пулов (arenas).
+/** State column of aggregate functions.
+  * Presented as an array of pointers to the states of aggregate functions (data).
+  * The states themselves are stored in one of the pools (arenas).
   *
-  * Может быть в двух вариантах:
+  * It can be in two variants:
   *
-  * 1. Владеть своими значениями - то есть, отвечать за их уничтожение.
-  * Столбец состоит из значений, "отданных ему на попечение" после выполнения агрегации (см. Aggregator, функция convertToBlocks),
-  *  или из значений, созданных им самим (см. метод insert).
-  * В этом случае, src будет равно nullptr, и столбец будет сам уничтожать (вызывать IAggregateFunction::destroy)
-  *  состояния агрегатных функций в деструкторе.
+  * 1. Own its values - that is, be responsible for destroying them.
+  * The column consists of the values ​​"assigned to it" after the aggregation is performed (see Aggregator, convertToBlocks function),
+  *  or from values ​​created by itself (see `insert` method).
+  * In this case, `src` will be `nullptr`, and the column itself will be destroyed (call `IAggregateFunction::destroy`)
+  *  states of aggregate functions in the destructor.
   *
-  * 2. Не владеть своими значениями, а использовать значения, взятые из другого столбца ColumnAggregateFunction.
-  * Например, это столбец, полученный перестановкой/фильтрацией или другими преобразованиями из другого столбца.
-  * В этом случае, в src будет shared ptr-ом на столбец-источник. Уничтожением значений будет заниматься этот столбец-источник.
+  * 2. Do not own its values, but use values ​​taken from another ColumnAggregateFunction column.
+  * For example, this is a column obtained by permutation/filtering or other transformations from another column.
+  * In this case, `src` will be `shared ptr` to the source column. Destruction of values ​​will be handled by this source column.
   *
-  * Это решение несколько ограничено:
-  * - не поддерживается вариант, в котором столбец содержит часть "своих" и часть "чужих" значений;
-  * - не поддерживается вариант наличия нескольких столбцов-источников, что может понадобиться для более оптимального слияния двух столбцов.
+  * This solution is somewhat limited:
+  * - the variant in which the column contains a part of "it's own" and a part of "another's" values ​​is not supported;
+  * - the option of having multiple source columns is not supported, which may be necessary for a more optimal merge of the two columns.
   *
-  * Эти ограничения можно снять, если добавить массив флагов или даже refcount-ов,
-  *  определяющий, какие отдельные значения надо уничтожать, а какие - нет.
-  * Ясно, что этот метод имел бы существенно ненулевую цену.
+  * These restrictions can be removed if you add an array of flags or even refcount,
+  *  specifying which individual values ​​should be destroyed and which ones should not.
+  * Clearly, this method would have a substantially non-zero price.
   */
 class ColumnAggregateFunction final : public IColumn, public std::enable_shared_from_this<ColumnAggregateFunction>
 {
@@ -281,7 +281,7 @@ public:
 			res[i] = i;
 	}
 
-	/** Более эффективные методы манипуляции */
+    /** More efficient manipulation methods */
 	Container_t & getData()
 	{
 		return data;

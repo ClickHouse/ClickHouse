@@ -8,11 +8,11 @@ namespace DB
 {
 
 
-/** Не агрегатная функция, а адаптер агрегатных функций,
-  *  который любую агрегатную функцию agg(x) делает агрегатной функцией вида aggIf(x, cond).
-  * Адаптированная агрегатная функция принимает два аргумента - значение и условие,
-  *  и вычисляет вложенную агрегатную функцию для значений при выполненном условии.
-  * Например, avgIf(x, cond) вычисляет среднее x при условии cond.
+/** Not an aggregate function, but an adapter of aggregate functions,
+  * which any aggregate function `agg(x)` makes an aggregate function of the form `aggIf(x, cond)`.
+  * The adapted aggregate function takes two arguments - a value and a condition,
+  * and calculates the nested aggregate function for the values ​​when the condition is satisfied.
+  * For example, avgIf(x, cond) calculates the average x if `cond`.
   */
 class AggregateFunctionIf final : public IAggregateFunction
 {

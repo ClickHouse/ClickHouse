@@ -139,7 +139,7 @@ SQLFreeStmt(HSTMT statement_handle,
 			case SQL_DROP:
 				return freeHandle<Statement>(statement_handle);
 
-			case SQL_CLOSE:				/// Закрыть курсор, проигнорировать оставшиеся результаты. Если курсора нет, то noop.
+            case SQL_CLOSE:             /// Close the cursor, ignore the remaining results. If there is no cursor, then noop.
 				statement.reset();
 
 			case SQL_UNBIND:
