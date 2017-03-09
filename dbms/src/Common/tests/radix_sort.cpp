@@ -1,4 +1,6 @@
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
+#endif
 #include <ext/bit_cast.hpp>
 #include <DB/Common/RadixSort.h>
 #include <DB/Common/Stopwatch.h>

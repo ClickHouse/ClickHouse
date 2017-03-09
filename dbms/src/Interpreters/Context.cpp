@@ -5,12 +5,14 @@
 #include <Poco/Mutex.h>
 #include <Poco/File.h>
 #include <Poco/UUIDGenerator.h>
+#include <Poco/Net/IPAddress.h>
 
 #include <common/logger_useful.h>
 
 #include <DB/Common/Macros.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/Stopwatch.h>
+#include <DB/Common/formatReadable.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
@@ -24,13 +26,14 @@
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/Users.h>
 #include <DB/Interpreters/Quota.h>
-#include <DB/Interpreters/Dictionaries.h>
+#include <DB/Interpreters/EmbeddedDictionaries.h>
 #include <DB/Interpreters/ExternalDictionaries.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/InterserverIOHandler.h>
 #include <DB/Interpreters/Compiler.h>
 #include <DB/Interpreters/QueryLog.h>
+#include <DB/Interpreters/PartLog.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/UncompressedCache.h>
@@ -43,6 +46,18 @@
 #include <zkutil/ZooKeeper.h>
 
 
+namespace ProfileEvents
+{
+	extern const Event ContextLock;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric ContextLockWait;
+	extern const Metric MemoryTrackingForMerges;
+}
+
+
 namespace DB
 {
 
@@ -52,42 +67,46 @@ namespace ErrorCodes
 	extern const int UNKNOWN_DATABASE;
 	extern const int UNKNOWN_TABLE;
 	extern const int TABLE_ALREADY_EXISTS;
+	extern const int TABLE_WAS_NOT_DROPPED;
 	extern const int DATABASE_ALREADY_EXISTS;
 	extern const int TABLE_METADATA_DOESNT_EXIST;
 	extern const int THERE_IS_NO_SESSION;
 	extern const int NO_ELEMENTS_IN_CONFIG;
 	extern const int DDL_GUARD_IS_ACTIVE;
+	extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
 }
 
 class TableFunctionFactory;
 
 
-/** Набор известных объектов, которые могут быть использованы в запросе.
-  * Разделяемая часть. Порядок членов (порядок их уничтожения) очень важен.
+/** Set of known objects (environment), that could be used in query.
+  * Shared (global) part. Order of members (especially, order of destruction) is very important.
   */
 struct ContextShared
 {
-	Logger * log = &Logger::get("Context");					/// Логгер.
+	Logger * log = &Logger::get("Context");
 
-	/// Для доступа и модификации разделяемых объектов. Рекурсивный mutex.
+	/// For access of most of shared objects. Recursive mutex.
 	mutable Poco::Mutex mutex;
-	/// Для доступа к внешним словарям. Отдельный мьютекс, чтобы избежать локов при обращении сервера к самому себе.
+	/// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
+	mutable std::mutex embedded_dictionaries_mutex;
 	mutable std::mutex external_dictionaries_mutex;
-	/// Отдельный mutex для переинициализации zookeeper-а. Эта операция может заблокироваться на существенное время и не должна мешать остальным.
+	/// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
 	mutable std::mutex zookeeper_mutex;
 
 	mutable zkutil::ZooKeeperPtr zookeeper;					/// Клиент для ZooKeeper.
 
-	String interserver_io_host;								/// Имя хоста         по которым это сервер доступен для других серверов.
-	int interserver_io_port;								///           и порт,
+	String interserver_io_host;								/// Имя хоста по которым это сервер доступен для других серверов.
+	int interserver_io_port;								///	и порт,
 
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	String tmp_path;										/// Путь ко временным файлам, возникающим при обработке запроса.
+	String flags_path;										///
 	Databases databases;									/// Список БД и таблиц в них.
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
 	FormatFactory format_factory;							/// Форматы.
-	mutable std::shared_ptr<Dictionaries> dictionaries;		/// Словари Метрики. Инициализируются лениво.
+	mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;	/// Словари Метрики. Инициализируются лениво.
 	mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
 	Users users;											/// Известные пользователи.
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
@@ -100,12 +119,14 @@ struct ContextShared
 	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
 	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
 	ReshardingWorkerPtr resharding_worker;
-	Macros macros;											/// Подстановки из конфига.
-	std::unique_ptr<Compiler> compiler;						/// Для динамической компиляции частей запроса, при необходимости.
-	std::unique_ptr<QueryLog> query_log;					/// Для логгирования запросов.
+	Macros macros;											/// Substitutions extracted from config.
+	std::unique_ptr<Compiler> compiler;						/// Used for dynamic compilation of queries' parts if it necessary.
+	std::unique_ptr<QueryLog> query_log;					/// Used to log queries.
+	std::unique_ptr<PartLog> part_log;						/// Used to log operations with parts
 	/// Правила для выбора метода сжатия в зависимости от размера куска.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
-	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Настройки для движка MergeTree.
+	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Settings of MergeTree* engines.
+	size_t max_table_size_to_drop = 50000000000lu;			/// Protects MergeTree tables from accidental DROP (50GB by default)
 
 	/// Clusters for distributed tables
 	/// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -121,12 +142,14 @@ struct ContextShared
 	/// database -> table -> exception_message
 	/// На время выполнения операции, сюда помещается элемент, и возвращается объект, который в деструкторе удаляет элемент.
 	/// В случае, если элемент уже есть - кидается исключение. См. class DDLGuard ниже.
-	using DDLGuards = std::unordered_map<String, std::unordered_map<String, String>>;
+	using DDLGuards = std::unordered_map<String, DDLGuard::Map>;
 	DDLGuards ddl_guards;
 	/// Если вы захватываете mutex и ddl_guards_mutex, то захватывать их нужно строго в этом порядке.
 	mutable std::mutex ddl_guards_mutex;
 
 	Stopwatch uptime_watch;
+
+	Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
 
 	~ContextShared()
@@ -188,7 +211,14 @@ Context::~Context() = default;
 const TableFunctionFactory & Context::getTableFunctionFactory() const			{ return shared->table_function_factory; }
 const AggregateFunctionFactory & Context::getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
 InterserverIOHandler & Context::getInterserverIOHandler()						{ return shared->interserver_io_handler; }
-std::unique_lock<Poco::Mutex> Context::getLock() const							{ return std::unique_lock<Poco::Mutex>(shared->mutex); }
+
+std::unique_lock<Poco::Mutex> Context::getLock() const
+{
+	ProfileEvents::increment(ProfileEvents::ContextLock);
+	CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
+	return std::unique_lock<Poco::Mutex>(shared->mutex);
+}
+
 ProcessList & Context::getProcessList()											{ return shared->process_list; }
 const ProcessList & Context::getProcessList() const								{ return shared->process_list; }
 MergeList & Context::getMergeList() 											{ return shared->merge_list; }
@@ -207,10 +237,20 @@ Databases Context::getDatabases()
 	return shared->databases;
 }
 
+
+static String resolveDatabase(const String & database_name, const String & current_database)
+{
+	String res = database_name.empty() ? current_database : database_name;
+	if (res.empty())
+		throw Exception("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
+	return res;
+}
+
+
 const DatabasePtr Context::getDatabase(const String & database_name) const
 {
 	auto lock = getLock();
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	assertDatabaseExists(db);
 	return shared->databases[db];
 }
@@ -218,7 +258,7 @@ const DatabasePtr Context::getDatabase(const String & database_name) const
 DatabasePtr Context::getDatabase(const String & database_name)
 {
 	auto lock = getLock();
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	assertDatabaseExists(db);
 	return shared->databases[db];
 }
@@ -226,7 +266,7 @@ DatabasePtr Context::getDatabase(const String & database_name)
 const DatabasePtr Context::tryGetDatabase(const String & database_name) const
 {
 	auto lock = getLock();
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	auto it = shared->databases.find(db);
 	if (it == shared->databases.end())
 		return {};
@@ -236,7 +276,7 @@ const DatabasePtr Context::tryGetDatabase(const String & database_name) const
 DatabasePtr Context::tryGetDatabase(const String & database_name)
 {
 	auto lock = getLock();
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	auto it = shared->databases.find(db);
 	if (it == shared->databases.end())
 		return {};
@@ -256,6 +296,17 @@ String Context::getTemporaryPath() const
 	return shared->tmp_path;
 }
 
+String Context::getFlagsPath() const
+{
+	auto lock = getLock();
+	if (!shared->flags_path.empty())
+		return shared->flags_path;
+
+	shared->flags_path = shared->path + "flags/";
+	Poco::File(shared->flags_path).createDirectories();
+	return shared->flags_path;
+}
+
 
 void Context::setPath(const String & path)
 {
@@ -267,6 +318,12 @@ void Context::setTemporaryPath(const String & path)
 {
 	auto lock = getLock();
 	shared->tmp_path = path;
+}
+
+void Context::setFlagsPath(const String & path)
+{
+	auto lock = getLock();
+	shared->flags_path = path;
 }
 
 
@@ -285,17 +342,19 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, UInt16 port, const String & quota_key)
+void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
 {
 	auto lock = getLock();
 
-	const User & user_props = shared->users.get(name, password, address);
+	const User & user_props = shared->users.get(name, password, address.host());
 	setSetting("profile", user_props.profile);
-	setQuota(user_props.quota, quota_key, name, address);
+	setQuota(user_props.quota, quota_key, name, address.host());
 
-	this->user = name;
-	this->ip_address = address;
-	this->port = port;
+	client_info.current_user = name;
+	client_info.current_address = address;
+
+	if (!quota_key.empty())
+		client_info.quota_key = quota_key;
 }
 
 
@@ -314,13 +373,13 @@ QuotaForIntervals & Context::getQuota()
 
 void Context::checkDatabaseAccessRights(const std::string & database_name) const
 {
-	if (user.empty() || (database_name == "system"))
+	if (client_info.current_user.empty() || (database_name == "system"))
 	{
 		/// Безымянный пользователь, т.е. сервер, имеет доступ ко всем БД.
 		/// Все пользователи имеют доступ к БД system.
 		return;
 	}
-	if (!shared->users.isAllowedDatabase(user, database_name))
+	if (!shared->users.isAllowedDatabase(client_info.current_user, database_name))
 		throw Exception("Access denied to database " + database_name, ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
@@ -344,7 +403,7 @@ Dependencies Context::getDependencies(const String & database_name, const String
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	checkDatabaseAccessRights(db);
 
 	ViewDependencies::const_iterator iter = shared->view_dependencies.find(DatabaseAndTableName(db, table_name));
@@ -358,7 +417,7 @@ bool Context::isTableExist(const String & database_name, const String & table_na
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	checkDatabaseAccessRights(db);
 
 	Databases::const_iterator it = shared->databases.find(db);
@@ -370,7 +429,7 @@ bool Context::isTableExist(const String & database_name, const String & table_na
 bool Context::isDatabaseExist(const String & database_name) const
 {
 	auto lock = getLock();
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	checkDatabaseAccessRights(db);
 	return shared->databases.end() != shared->databases.find(db);
 }
@@ -380,7 +439,7 @@ void Context::assertTableExists(const String & database_name, const String & tab
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	checkDatabaseAccessRights(db);
 
 	Databases::const_iterator it = shared->databases.find(db);
@@ -396,7 +455,7 @@ void Context::assertTableDoesntExist(const String & database_name, const String 
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	if (check_database_access_rights)
 		checkDatabaseAccessRights(db);
 
@@ -410,7 +469,7 @@ void Context::assertDatabaseExists(const String & database_name, bool check_data
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	if (check_database_access_rights)
 		checkDatabaseAccessRights(db);
 
@@ -423,7 +482,7 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	checkDatabaseAccessRights(db);
 
 	if (shared->databases.end() != shared->databases.find(db))
@@ -505,7 +564,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 			return res;
 	}
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	checkDatabaseAccessRights(db);
 
 	Databases::const_iterator it = shared->databases.find(db);
@@ -600,7 +659,7 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 {
 	auto lock = getLock();
 
-	String db = database_name.empty() ? current_database : database_name;
+	String db = resolveDatabase(database_name, current_database);
 	assertDatabaseExists(db);
 
 	return shared->databases[db]->getCreateQuery(table_name);
@@ -658,7 +717,7 @@ String Context::getCurrentDatabase() const
 String Context::getCurrentQueryId() const
 {
 	auto lock = getLock();
-	return current_query_id;
+	return client_info.current_query_id;
 }
 
 
@@ -672,7 +731,7 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
-	if (!current_query_id.empty())
+	if (!client_info.current_query_id.empty())
 		throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
 
 	String query_id_to_set = query_id;
@@ -680,7 +739,7 @@ void Context::setCurrentQueryId(const String & query_id)
 		query_id_to_set = shared->uuid_generator.createRandom().toString();
 
 	auto lock = getLock();
-	current_query_id = query_id_to_set;
+	client_info.current_query_id = query_id_to_set;
 }
 
 
@@ -708,6 +767,12 @@ void Context::setMacros(Macros && macros)
 	shared->macros = macros;
 }
 
+const Context & Context::getSessionContext() const
+{
+	if (!session_context)
+		throw Exception("There is no session", ErrorCodes::THERE_IS_NO_SESSION);
+	return *session_context;
+}
 
 Context & Context::getSessionContext()
 {
@@ -716,6 +781,12 @@ Context & Context::getSessionContext()
 	return *session_context;
 }
 
+const Context & Context::getGlobalContext() const
+{
+	if (!global_context)
+		throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
+	return *global_context;
+}
 
 Context & Context::getGlobalContext()
 {
@@ -725,9 +796,9 @@ Context & Context::getGlobalContext()
 }
 
 
-const Dictionaries & Context::getDictionaries() const
+const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
-	return getDictionariesImpl(false);
+	return getEmbeddedDictionariesImpl(false);
 }
 
 
@@ -737,14 +808,14 @@ const ExternalDictionaries & Context::getExternalDictionaries() const
 }
 
 
-const Dictionaries & Context::getDictionariesImpl(const bool throw_on_error) const
+const EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
 {
-	auto lock = getLock();
+	std::lock_guard<std::mutex> lock(shared->embedded_dictionaries_mutex);
 
-	if (!shared->dictionaries)
-		shared->dictionaries = std::make_shared<Dictionaries>(throw_on_error);
+	if (!shared->embedded_dictionaries)
+		shared->embedded_dictionaries = std::make_shared<EmbeddedDictionaries>(throw_on_error);
 
-	return *shared->dictionaries;
+	return *shared->embedded_dictionaries;
 }
 
 
@@ -763,9 +834,9 @@ const ExternalDictionaries & Context::getExternalDictionariesImpl(const bool thr
 }
 
 
-void Context::tryCreateDictionaries() const
+void Context::tryCreateEmbeddedDictionaries() const
 {
-	static_cast<void>(getDictionariesImpl(true));
+	static_cast<void>(getEmbeddedDictionariesImpl(true));
 }
 
 
@@ -984,10 +1055,39 @@ QueryLog & Context::getQueryLog()
 		size_t flush_interval_milliseconds = parse<size_t>(
 			config.getString("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
 
-		shared->query_log = std::make_unique<QueryLog>(*global_context, database, table, flush_interval_milliseconds);
+		shared->query_log = std::make_unique<QueryLog>(
+			*global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
 	}
 
 	return *shared->query_log;
+}
+
+
+PartLog * Context::getPartLog()
+{
+	auto lock = getLock();
+
+	auto & config = Poco::Util::Application::instance().config();
+	if (!config.has("part_log"))
+		return nullptr;
+
+	if (!shared->part_log)
+	{
+		if (shared->shutdown_called)
+			throw Exception("Will not get part_log because shutdown was called", ErrorCodes::LOGICAL_ERROR);
+
+		if (!global_context)
+			throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
+
+		String database = config.getString("part_log.database", "system");
+		String table = config.getString("part_log.table", "part_log");
+		size_t flush_interval_milliseconds = parse<size_t>(
+			config.getString("part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
+		shared->part_log = std::make_unique<PartLog>(
+			*global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+	}
+
+	return shared->part_log.get();
 }
 
 
@@ -1025,6 +1125,55 @@ const MergeTreeSettings & Context::getMergeTreeSettings()
 }
 
 
+void Context::setMaxTableSizeToDrop(size_t max_size)
+{
+	// Is initialized at server startup
+	shared->max_table_size_to_drop = max_size;
+}
+
+void Context::checkTableCanBeDropped(const String & database, const String & table, size_t table_size)
+{
+	size_t max_table_size_to_drop = shared->max_table_size_to_drop;
+
+	if (!max_table_size_to_drop || table_size <= max_table_size_to_drop)
+		return;
+
+	Poco::File force_file(getFlagsPath() + "force_drop_table");
+	bool force_file_exists = force_file.exists();
+
+	if (force_file_exists)
+	{
+		try
+		{
+			force_file.remove();
+			return;
+		}
+		catch (...)
+		{
+			/// User should recreate force file on each drop, it shouldn't be protected
+			tryLogCurrentException("Drop table check", "Can't remove force file to enable table drop");
+		}
+	}
+
+	String table_size_str = formatReadableSizeWithDecimalSuffix(table_size);
+	String max_table_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_table_size_to_drop);
+	std::stringstream ostr;
+
+	ostr << "Table " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
+		 << "Reason:\n"
+		 << "1. Table size (" << table_size_str << ") is greater than max_table_size_to_drop (" << max_table_size_to_drop_str << ")\n"
+		 << "2. File '" << force_file.path() << "' intedned to force DROP "
+			<< (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
+
+	ostr << "How to fix this:\n"
+		 << "1. Either increase (or set to zero) max_table_size_to_drop in server config and restart ClickHouse\n"
+		 << "2. Either create forcing file " << force_file.path() << " and make sure that ClickHouse has write permission for it.\n"
+		 << "Example:\nsudo touch '" << force_file.path() << "' && sudo chmod 666 '" << force_file.path() << "'";
+
+	throw Exception(ostr.str(), ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT);
+}
+
+
 BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const
 {
 	return shared->format_factory.getInput(name, buf, sample, *this, max_block_size);
@@ -1047,5 +1196,18 @@ void Context::shutdown()
 {
 	shared->shutdown();
 }
+
+
+Context::ApplicationType Context::getApplicationType() const
+{
+	return shared->application_type;
+}
+
+void Context::setApplicationType(ApplicationType type)
+{
+	/// Lock isn't required, you should set it at start
+	shared->application_type = type;
+}
+
 
 }

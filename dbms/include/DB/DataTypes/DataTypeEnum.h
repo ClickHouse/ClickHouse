@@ -16,9 +16,17 @@ namespace ErrorCodes
 	extern const int LOGICAL_ERROR;
 }
 
+class IDataTypeEnum : public IDataType
+{
+public:
+
+	virtual Field castToName(const Field & value_or_name) const = 0;
+
+	virtual Field castToValue(const Field & value_or_name) const = 0;
+};
 
 template <typename Type>
-class DataTypeEnum final : public IDataType
+class DataTypeEnum final : public IDataTypeEnum
 {
 public:
 	using FieldType = Type;
@@ -70,6 +78,10 @@ public:
 		return it->second;
 	}
 
+	Field castToName(const Field & value_or_name) const override;
+
+	Field castToValue(const Field & value_or_name) const override;
+
 	DataTypePtr clone() const override;
 
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
@@ -87,8 +99,8 @@ public:
 	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, const size_t offset = 0, size_t limit = 0) const override;
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, const size_t limit, const double avg_value_size_hint) const override;
+	void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, const size_t offset, size_t limit) const override;
+	void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, const size_t limit, const double avg_value_size_hint) const override;
 
 	size_t getSizeOfField() const override { return sizeof(FieldType); }
 

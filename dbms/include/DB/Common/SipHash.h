@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <DB/Core/Types.h>
 
 #define ROTL(x,b) static_cast<u64>( ((x) << (b)) | ( (x) >> (64 - (b))) )
 
@@ -29,8 +30,8 @@
 class SipHash
 {
 private:
-	using u64 = uint64_t;
-	using u8 = uint8_t;
+	using u64 = DB::UInt64;
+	using u8 = DB::UInt8;
 
 	/// Состояние.
 	u64 v0;
@@ -167,7 +168,7 @@ inline void sipHash128(const char * data, const size_t size, char * out)
 	hash.get128(out);
 }
 
-inline uint64_t sipHash64(const char * data, const size_t size)
+inline DB::UInt64 sipHash64(const char * data, const size_t size)
 {
 	SipHash hash;
 	hash.update(data, size);
@@ -176,7 +177,7 @@ inline uint64_t sipHash64(const char * data, const size_t size)
 
 #include <string>
 
-inline uint64_t sipHash64(const std::string & s)
+inline DB::UInt64 sipHash64(const std::string & s)
 {
 	return sipHash64(s.data(), s.size());
 }

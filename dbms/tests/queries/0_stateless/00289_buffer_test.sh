@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 clickhouse-client -n --query="
     DROP TABLE IF EXISTS test.dst;
@@ -31,9 +31,21 @@ seq 19001 20000 | sed -r -e 's/^(.+)$/INSERT INTO test.buffer (x) VALUES (\1);/'
 
 wait
 
-clickhouse-client --query="SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.buffer;";
+# To avoid race conditions (see comments in StorageBuffer.cpp)
+function retry()
+{
+	RES=$(clickhouse-client --query="$1")
+	if [[ $RES != "20000	1	20000	200010000	20000" ]]; then
+		sleep 10;
+		RES=$(clickhouse-client --query="$1");
+	fi;
+
+	echo $RES;
+}
+
+retry "SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.buffer;";
 clickhouse-client --query="OPTIMIZE TABLE test.buffer;";
-clickhouse-client --query="SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.dst;";
+retry "SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.dst;";
 
 clickhouse-client -n --query="
     DROP TABLE test.dst;

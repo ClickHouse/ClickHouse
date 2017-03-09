@@ -30,14 +30,12 @@ public:
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	virtual DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+	size_t getNumberOfArguments() const override { return 1; }
+	bool isInjective(const Block &) override { return true; }
 
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	virtual DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		const IDataType * type = &*arguments[0];
 
 		if (!typeid_cast<const DataTypeUInt8 *>(type) &&
@@ -54,7 +52,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!(	executeType<UInt8>(block, arguments, result)
 			||	executeType<UInt16>(block, arguments, result)
@@ -64,7 +62,7 @@ public:
 			||	executeType<Int16>(block, arguments, result)
 			||	executeType<Int32>(block, arguments, result)
 			||	executeType<Int64>(block, arguments, result)))
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 			+ " of argument of function " + getName(),
 							ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -89,10 +87,10 @@ private:
 	template <typename T>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get()))
+		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = col_to;
+			block.safeGetByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
 			ColumnString::Chars_t & data_to = col_to->getChars();
@@ -111,7 +109,7 @@ private:
 			}
 			data_to.resize(buf_to.count());
 		}
-		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get()))
+		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			std::string res;
 			{
@@ -119,7 +117,7 @@ private:
 				writeBitmask<T>(col_from->getData(), buf);
 			}
 
-			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), res);
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), res);
 		}
 		else
 		{
@@ -143,14 +141,11 @@ public:
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	virtual DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+	size_t getNumberOfArguments() const override { return 1; }
 
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	virtual DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		const IDataType & type = *arguments[0];
 
 		if (!type.behavesAsNumber())
@@ -160,7 +155,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!(	executeType<UInt8>(block, arguments, result)
 			||	executeType<UInt16>(block, arguments, result)
@@ -172,7 +167,7 @@ public:
 			||	executeType<Int64>(block, arguments, result)
 			||	executeType<Float32>(block, arguments, result)
 			||	executeType<Float64>(block, arguments, result)))
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 				+ " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -181,10 +176,10 @@ private:
 	template <typename T>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.getByPosition(arguments[0]).column.get()))
+		if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = col_to;
+			block.safeGetByPosition(result).column = col_to;
 
 			const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
 			ColumnString::Chars_t & data_to = col_to->getChars();
@@ -203,9 +198,9 @@ private:
 			}
 			data_to.resize(buf_to.count());
 		}
-		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.getByPosition(arguments[0]).column.get()))
+		else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
-			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), formatReadableSizeWithBinarySuffix(col_from->getData()));
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), formatReadableSizeWithBinarySuffix(col_from->getData()));
 		}
 		else
 		{

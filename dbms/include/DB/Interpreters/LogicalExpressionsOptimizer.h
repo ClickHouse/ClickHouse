@@ -6,6 +6,8 @@
 #include <vector>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -39,12 +41,12 @@ private:
 	*/
 	struct OrWithExpression
 	{
-		OrWithExpression(ASTFunction * or_function_, const std::string & expression_,
+		OrWithExpression(ASTFunction * or_function_, const IAST::Hash & expression_,
 			const std::string & alias_);
 		bool operator<(const OrWithExpression & rhs) const;
 
 		ASTFunction * or_function;
-		const std::string expression;
+		const IAST::Hash expression;
 		const std::string alias;
 	};
 
@@ -97,6 +99,8 @@ private:
 	FunctionParentMap or_parent_map;
 	/// Позиция каждого столбца.
 	ColumnToPosition column_to_position;
+	/// Set of nodes, that was visited.
+	std::unordered_set<void *> visited_nodes;
 };
 
 }

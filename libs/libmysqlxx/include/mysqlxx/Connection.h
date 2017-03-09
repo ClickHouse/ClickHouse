@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <boost/noncopyable.hpp>
 
 #include <Poco/Util/Application.h>
@@ -26,16 +27,8 @@ class LibrarySingleton : public Singleton<LibrarySingleton>
 {
 friend class Singleton<LibrarySingleton>;
 private:
-	LibrarySingleton()
-	{
-		if (mysql_library_init(0, nullptr, nullptr))
-			throw Exception("Cannot initialize MySQL library.");
-	}
-
-	~LibrarySingleton()
-	{
-		mysql_library_end();
-	}
+	LibrarySingleton();
+	~LibrarySingleton();
 };
 
 
@@ -49,7 +42,7 @@ private:
   *
   * Внимание! Рекомендуется использовать соединение в том потоке, в котором оно создано.
   * Если вы используете соединение, созданное в другом потоке, то вы должны перед использованием
-  *  вызвать функцию MySQL C API my_thread_init(), а после использования - my_thread_end().
+  *  вызвать функцию MySQL C API mysql_thread_init(), а после использования - mysql_thread_end().
   */
 class Connection : private boost::noncopyable
 {
@@ -70,11 +63,7 @@ public:
 	/** Конструктор-помошник. Создать соединение, считав все параметры из секции config_name конфигурации.
 	  * Можно использовать, если вы используете Poco::Util::Application из библиотеки Poco.
 	  */
-	Connection(const std::string & config_name)
-	{
-		is_connected = false;
-		connect(config_name);
-	}
+	Connection(const std::string & config_name);
 
 	virtual ~Connection();
 
@@ -126,7 +115,7 @@ public:
 	MYSQL * getDriver();
 
 private:
-	MYSQL driver;
+	std::unique_ptr<MYSQL> driver;
 	bool is_connected;
 };
 

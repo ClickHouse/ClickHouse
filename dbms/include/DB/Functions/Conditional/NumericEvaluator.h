@@ -2,6 +2,7 @@
 
 #include <DB/Functions/Conditional/CondException.h>
 #include <DB/Functions/Conditional/common.h>
+#include <DB/Functions/Conditional/NullMapBuilder.h>
 #include <DB/Functions/Conditional/CondSource.h>
 #include <DB/Functions/NumberTraits.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -53,7 +54,7 @@ public:
 	{
 		size_t index = br.index;
 
-		const ColumnPtr & col = block.getByPosition(args[index]).column;
+		const ColumnPtr & col = block.safeGetByPosition(args[index]).column;
 		const auto * const_col = typeid_cast<const ColumnConst<TType> *>(&*col);
 		if (const_col == nullptr)
 			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
@@ -100,7 +101,7 @@ private:
 		const ColumnNumbers & args, const Branch & br)
 	{
 		size_t index = br.index;
-		const ColumnPtr & col = block.getByPosition(args[index]).column;
+		const ColumnPtr & col = block.safeGetByPosition(args[index]).column;
 		const auto * vec_col = typeid_cast<const ColumnVector<TType> *>(&*col);
 		if (vec_col == nullptr)
 			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
@@ -141,12 +142,15 @@ template <typename TResult>
 class NumericEvaluator final
 {
 public:
-	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result)
+	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
 	{
 		const CondSources conds = createConds(block, args);
 		const NumericSources<TResult> sources = createNumericSources(block, args, branches);
 		size_t row_count = conds[0].getSize();
 		PaddedPODArray<TResult> & res = createSink(block, result, row_count);
+
+		if (builder)
+			builder.init(args);
 
 		for (size_t cur_row = 0; cur_row < row_count; ++cur_row)
 		{
@@ -158,6 +162,8 @@ public:
 				if (cond.get(cur_row))
 				{
 					res[cur_row] = sources[cur_source]->get(cur_row);
+					if (builder)
+						builder.update(args[branches[cur_source].index], cur_row);
 					has_triggered_cond = true;
 					break;
 				}
@@ -165,7 +171,11 @@ public:
 			}
 
 			if (!has_triggered_cond)
+			{
 				res[cur_row] = sources.back()->get(cur_row);
+				if (builder)
+					builder.update(args[branches.back().index], cur_row);
+			}
 		}
 	}
 
@@ -174,7 +184,7 @@ private:
 	static PaddedPODArray<TResult> & createSink(Block & block, size_t result, size_t size)
 	{
 		std::shared_ptr<ColumnVector<TResult>> col_res = std::make_shared<ColumnVector<TResult>>();
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 
 		typename ColumnVector<TResult>::Container_t & vec_res = col_res->getData();
 		vec_res.resize(size);
@@ -213,7 +223,8 @@ private:
 				|| NumericSourceCreator<TResult, Int32>::execute(source, block, args, br)
 				|| NumericSourceCreator<TResult, Int64>::execute(source, block, args, br)
 				|| NumericSourceCreator<TResult, Float32>::execute(source, block, args, br)
-				|| NumericSourceCreator<TResult, Float64>::execute(source, block, args, br)))
+				|| NumericSourceCreator<TResult, Float64>::execute(source, block, args, br)
+				|| NumericSourceCreator<TResult, Null>::execute(source, block, args, br)))
 				throw CondException{CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT, toString(br.index)};
 
 			sources.push_back(std::move(source));
@@ -228,7 +239,8 @@ template <>
 class NumericEvaluator<NumberTraits::Error>
 {
 public:
-	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result)
+	/// For the meaning of the builder parameter, see the FunctionMultiIf::perform() declaration.
+	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
 	{
 		throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 	}

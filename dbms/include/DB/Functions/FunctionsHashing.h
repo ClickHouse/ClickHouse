@@ -179,14 +179,11 @@ public:
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+	size_t getNumberOfArguments() const override { return 1; }
 
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -195,12 +192,12 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.getByPosition(arguments[0]).column.get()))
+		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnUInt64>();
-			block.getByPosition(result).column = col_to;
+			block.safeGetByPosition(result).column = col_to;
 
 			const typename ColumnString::Chars_t & data = col_from->getChars();
 			const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
@@ -213,14 +210,14 @@ public:
 					reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
 					i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
 		}
-		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[0]).column.get()))
+		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
-			block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt64>(
 				col_from->size(),
 				Impl::apply(col_from->getData().data(), col_from->getData().size()));
 		}
 		else
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 					+ " of first argument of function " + Name::name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -240,14 +237,11 @@ public:
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+	size_t getNumberOfArguments() const override { return 1; }
 
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -256,12 +250,12 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.getByPosition(arguments[0]).column.get()))
+		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnFixedString>(Impl::length);
-			block.getByPosition(result).column = col_to;
+			block.safeGetByPosition(result).column = col_to;
 
 			const typename ColumnString::Chars_t & data = col_from->getChars();
 			const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
@@ -275,20 +269,20 @@ public:
 					i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]),
 					&chars_to[i * Impl::length]);
 		}
-		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[0]).column.get()))
+		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			const auto & data = col_from->getData();
 
 			String hash(Impl::length, 0);
 			Impl::apply(data.data(), data.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
-			block.getByPosition(result).column = std::make_shared<ColumnConstString>(
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(
 				col_from->size(),
 				hash,
 				std::make_shared<DataTypeFixedString>(Impl::length));
 		}
 		else
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 					+ " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -308,10 +302,10 @@ private:
 	template <typename FromType>
 	void executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (ColumnVector<FromType> * col_from = typeid_cast<ColumnVector<FromType> *>(block.getByPosition(arguments[0]).column.get()))
+		if (ColumnVector<FromType> * col_from = typeid_cast<ColumnVector<FromType> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
 			auto col_to = std::make_shared<ColumnVector<ToType>>();
-			block.getByPosition(result).column = col_to;
+			block.safeGetByPosition(result).column = col_to;
 
 			const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
 			typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
@@ -321,12 +315,12 @@ private:
 			for (size_t i = 0; i < size; ++i)
 				vec_to[i] = Impl::apply(vec_from[i]);
 		}
-		else if (ColumnConst<FromType> * col_from = typeid_cast<ColumnConst<FromType> *>(block.getByPosition(arguments[0]).column.get()))
+		else if (ColumnConst<FromType> * col_from = typeid_cast<ColumnConst<FromType> *>(block.safeGetByPosition(arguments[0]).column.get()))
 		{
-			block.getByPosition(result).column = std::make_shared<ColumnConst<ToType>>(col_from->size(), Impl::apply(col_from->getData()));
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToType>>(col_from->size(), Impl::apply(col_from->getData()));
 		}
 		else
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 					+ " of first argument of function " + Name::name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -338,14 +332,11 @@ public:
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+	size_t getNumberOfArguments() const override { return 1; }
 
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		if (!arguments[0]->isNumeric())
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -354,9 +345,9 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+		IDataType * from_type = block.safeGetByPosition(arguments[0]).type.get();
 
 		if      (typeid_cast<const DataTypeUInt8 *		>(from_type)) executeType<UInt8	>(block, arguments, result);
 		else if (typeid_cast<const DataTypeUInt16 *	>(from_type)) executeType<UInt16>(block, arguments, result);
@@ -369,7 +360,7 @@ public:
 		else if (typeid_cast<const DataTypeDate *		>(from_type)) executeType<UInt16>(block, arguments, result);
 		else if (typeid_cast<const DataTypeDateTime *	>(from_type)) executeType<UInt32>(block, arguments, result);
 		else
-			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+			throw Exception("Illegal type " + block.safeGetByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 };
@@ -561,13 +552,13 @@ private:
 
 	void executeForArgument(const IDataType * type, const IColumn * column, ColumnUInt64::Container_t & vec_to, bool & is_first)
 	{
-		/// Раскрытие кортежей.
+		/// Flattening of tuples.
 		if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
 		{
 			const Block & tuple_data = tuple->getData();
 			for (size_t i = 0, size = tuple_data.columns(); i < size; ++i)
 			{
-				const ColumnWithTypeAndName & col = tuple_data.unsafeGetByPosition(i);
+				const ColumnWithTypeAndName & col = tuple_data.getByPosition(i);
 				executeForArgument(col.type.get(), col.column.get(), vec_to, is_first);
 			}
 		}
@@ -588,41 +579,56 @@ private:
 	}
 
 public:
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		size_t rows = block.rowsInFirstColumn();
+		size_t rows = block.rows();
 		auto col_to = std::make_shared<ColumnUInt64>(rows);
-		block.getByPosition(result).column = col_to;
+		block.safeGetByPosition(result).column = col_to;
 
 		ColumnUInt64::Container_t & vec_to = col_to->getData();
 
 		if (arguments.empty())
 		{
-			/// Случайное число из /dev/urandom используется как хеш пустого количества аргументов.
+			/// Constant random number from /dev/urandom is used as a hash value of empty list of arguments.
 			vec_to.assign(rows, 0xe28dbde7fe22e41c);
 		}
 
-		/// Функция поддерживает произвольное количество аргументов всевозможных типов.
+		/// The function supports arbitary number of arguments of arbitary types.
 
 		bool is_first_argument = true;
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
-			const ColumnWithTypeAndName & col = block.getByPosition(arguments[i]);
+			const ColumnWithTypeAndName & col = block.safeGetByPosition(arguments[i]);
 			executeForArgument(col.type.get(), col.column.get(), vec_to, is_first_argument);
 		}
+
+		/// If all arguments are constants, we should return constant result.
+
+		bool all_constants = true;
+		for (size_t arg_idx : arguments)
+		{
+			if (!block.getByPosition(arg_idx).column->isConst())
+			{
+				all_constants = false;
+				break;
+			}
+		}
+
+		if (all_constants && block.rows() > 0)
+			block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(1, (*block.getByPosition(result).column)[0]);
 	}
 };
 
@@ -708,7 +714,10 @@ public:
 
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	bool isVariadic() const override { return true; }
+	size_t getNumberOfArguments() const override { return 0; }
+
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		const auto arg_count = arguments.size();
 		if (arg_count != 1 && arg_count != 2)
@@ -745,7 +754,7 @@ public:
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto arg_count = arguments.size();
 
@@ -760,13 +769,13 @@ public:
 private:
 	void executeSingleArg(Block & block, const ColumnNumbers & arguments, const std::size_t result) const
 	{
-		const auto col_untyped = block.getByPosition(arguments.front()).column.get();
+		const auto col_untyped = block.safeGetByPosition(arguments.front()).column.get();
 
 		if (const auto col_from = typeid_cast<const ColumnString *>(col_untyped))
 		{
 			const auto size = col_from->size();
 			const auto col_to = std::make_shared<ColumnUInt64>(size);
-			block.getByPosition(result).column = col_to;
+			block.safeGetByPosition(result).column = col_to;
 
 			const auto & chars = col_from->getChars();
 			const auto & offsets = col_from->getOffsets();
@@ -779,20 +788,20 @@ private:
 		}
 		else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
 		{
-			block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt64>(
 				col_from->size(),
 				URLHashImpl::apply(col_from->getData().data(), col_from->getData().size()));
 		}
 		else
 			throw Exception{
-				"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
+				"Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() +
 				" of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN};
 	}
 
 	void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const std::size_t result) const
 	{
-		const auto level_col = block.getByPosition(arguments.back()).column.get();
+		const auto level_col = block.safeGetByPosition(arguments.back()).column.get();
 		if (!level_col->isConst())
 			throw Exception{
 				"Second argument of function " + getName() + " must be an integral constant",
@@ -801,12 +810,12 @@ private:
 
 		const auto level = level_col->get64(0);
 
-		const auto col_untyped = block.getByPosition(arguments.front()).column.get();
+		const auto col_untyped = block.safeGetByPosition(arguments.front()).column.get();
 		if (const auto col_from = typeid_cast<const ColumnString *>(col_untyped))
 		{
 			const auto size = col_from->size();
 			const auto col_to = std::make_shared<ColumnUInt64>(size);
-			block.getByPosition(result).column = col_to;
+			block.safeGetByPosition(result).column = col_to;
 
 			const auto & chars = col_from->getChars();
 			const auto & offsets = col_from->getOffsets();
@@ -819,13 +828,13 @@ private:
 		}
 		else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
 		{
-			block.getByPosition(result).column = std::make_shared<ColumnConstUInt64>(
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt64>(
 				col_from->size(),
 				URLHierarchyHashImpl::apply(level, col_from->getData().data(), col_from->getData().size()));
 		}
 		else
 			throw Exception{
-				"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
+				"Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() +
 				" of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN};
 	}
@@ -864,11 +873,11 @@ struct ImplMetroHash64
 	static auto Hash64(const char * const s, const std::size_t len)
 	{
 		union {
-			std::uint64_t u64;
-			std::uint8_t u8[sizeof(u64)];
+			UInt64 u64;
+			UInt8 u8[sizeof(u64)];
 		};
 
-		metrohash64_1(reinterpret_cast<const std::uint8_t *>(s), len, 0, u8);
+		metrohash64_1(reinterpret_cast<const UInt8 *>(s), len, 0, u8);
 
 		return u64;
 	}

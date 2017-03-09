@@ -6,6 +6,7 @@
 #include <DB/Storages/System/StorageSystemTables.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Databases/IDatabase.h>
+#include <DB/Interpreters/Context.h>
 
 
 namespace DB
@@ -50,7 +51,7 @@ static ColumnWithTypeAndName getFilteredDatabases(ASTPtr query, const Context & 
 
 	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 
-	return block.getByPosition(0);
+	return block.safeGetByPosition(0);
 }
 
 

@@ -136,7 +136,7 @@ void test2()
 
 	while (Block block = union_stream.read())
 	{
-		const auto & col = block.getByPosition(0);
+		const auto & col = block.safeGetByPosition(0);
 		auto extra_info = union_stream.getBlockExtraInfo();
 
 		ColumnPtr host_name_column = std::make_shared<ColumnString>();

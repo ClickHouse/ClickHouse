@@ -5,6 +5,8 @@
 #include <DB/Parsers/CommonParsers.h>
 #include <DB/Parsers/ParserSetQuery.h>
 
+#include <DB/Common/typeid_cast.h>
+
 
 namespace DB
 {

@@ -39,7 +39,7 @@ static void finalize(Block & block)
 {
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		ColumnWithTypeAndName & current = block.getByPosition(i);
+		ColumnWithTypeAndName & current = block.safeGetByPosition(i);
 		ColumnAggregateFunction * unfinalized_column = typeid_cast<ColumnAggregateFunction *>(&*current.column);
 		if (unfinalized_column)
 		{
@@ -111,7 +111,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 			expression->execute(finalized);
 
 			size_t filter_column_pos = finalized.getPositionByName(filter_column_name);
-			ColumnPtr filter_column_ptr = finalized.getByPosition(filter_column_pos).column;
+			ColumnPtr filter_column_ptr = finalized.safeGetByPosition(filter_column_pos).column;
 
 			ColumnConstUInt8 * column_const = typeid_cast<ColumnConstUInt8 *>(&*filter_column_ptr);
 			if (column_const)
@@ -120,7 +120,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 			ColumnUInt8 * filter_column = typeid_cast<ColumnUInt8 *>(&*filter_column_ptr);
 			if (!filter_column)
 				throw Exception("Filter column must have type UInt8, found " +
-					finalized.getByPosition(filter_column_pos).type->getName(),
+					finalized.safeGetByPosition(filter_column_pos).type->getName(),
 					ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
 			IColumn::Filter & filter = filter_column->getData();
@@ -136,7 +136,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 
 			for (size_t i = 0; i < columns; ++i)
 			{
-				ColumnWithTypeAndName & current_column = finalized.getByPosition(i);
+				ColumnWithTypeAndName & current_column = finalized.safeGetByPosition(i);
 				current_column.column = current_column.column->filter(filter, -1);
 				if (current_column.column->empty())
 				{
@@ -164,7 +164,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		const ColumnWithTypeAndName & current = block.getByPosition(i);
+		const ColumnWithTypeAndName & current = block.safeGetByPosition(i);
 		const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(&*current.column);
 
 		if (!column)
@@ -172,7 +172,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 			if (init)
 			{
 				ColumnPtr new_column = current.type->createColumn();
-				new_column->insertDefault();
+				new_column->insert(current.type->getDefault());
 				totals.insert(ColumnWithTypeAndName(new_column, current.type, current.name));
 			}
 			continue;
@@ -193,9 +193,9 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 		}
 		else
 		{
-			auto target = typeid_cast<ColumnAggregateFunction *>(totals.getByPosition(i).column.get());
+			auto target = typeid_cast<ColumnAggregateFunction *>(totals.safeGetByPosition(i).column.get());
 			if (!target)
-				throw Exception("Unexpected type of column: " + totals.getByPosition(i).column->getName(),
+				throw Exception("Unexpected type of column: " + totals.safeGetByPosition(i).column->getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 			function = target->getAggregateFunction().get();
 			data = target->getData()[0];

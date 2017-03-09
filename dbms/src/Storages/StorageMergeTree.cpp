@@ -9,8 +9,12 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Interpreters/PartLog.h>
 #include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTSelectQuery.h>
+
 #include <Poco/DirectoryIterator.h>
+#include <Poco/File.h>
 
 
 namespace DB
@@ -31,6 +35,7 @@ StorageMergeTree::StorageMergeTree(
 	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
+	bool attach,
 	Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_,
@@ -39,41 +44,22 @@ StorageMergeTree::StorageMergeTree(
 	const MergeTreeData::MergingParams & merging_params_,
 	bool has_force_restore_data_flag,
 	const MergeTreeSettings & settings_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
+	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
 	context(context_), background_pool(context_.getBackgroundPool()),
-	data(full_path, columns_,
+	data(database_name, table_name,
+		 full_path, columns_,
 		 materialized_columns_, alias_columns_, column_defaults_,
 		 context_, primary_expr_ast_, date_column_name_,
 		 sampling_expression_, index_granularity_, merging_params_,
-		 settings_, database_name_ + "." + table_name, false),
-	reader(data), writer(data), merger(data),
-	increment(0),
+		 settings_, database_name_ + "." + table_name, false, attach),
+	reader(data), writer(data, context), merger(data, context.getBackgroundPool()),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
 	data.loadDataParts(has_force_restore_data_flag);
 	data.clearOldParts();
 	data.clearOldTemporaryDirectories();
 	increment.set(data.getMaxDataPartIndex());
-
-	/** Если остался старый (не использующийся сейчас) файл increment.txt, то удалим его.
-	  * Это нужно сделать, чтобы избежать ситуации, когда из-за копирования данных
-	  *  от сервера с новой версией (но с оставшимся некорректным и неиспользуемым increment.txt)
-	  *  на сервер со старой версией (где increment.txt используется),
-	  * будет скопирован и использован некорректный increment.txt.
-	  *
-	  * Это - защита от очень редкого гипотетического случая.
-	  * Он может достигаться в БК, где довольно медленно обновляют ПО,
-	  *  но зато часто делают копирование данных rsync-ом.
-	  */
-	{
-		Poco::File obsolete_increment_txt(full_path + "increment.txt");
-		if (obsolete_increment_txt.exists())
-		{
-			LOG_INFO(log, "Removing obsolete file " << full_path << "increment.txt");
-			obsolete_increment_txt.remove();
-		}
-	}
 }
 
 StoragePtr StorageMergeTree::create(
@@ -82,6 +68,7 @@ StoragePtr StorageMergeTree::create(
 	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
+	bool attach,
 	Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_,
@@ -93,11 +80,11 @@ StoragePtr StorageMergeTree::create(
 {
 	auto res = make_shared(
 		path_, database_name_, table_name_,
-		columns_, materialized_columns_, alias_columns_, column_defaults_,
+		columns_, materialized_columns_, alias_columns_, column_defaults_, attach,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, merging_params_, has_force_restore_data_flag_, settings_
 	);
-	res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res.get(), std::placeholders::_1));
+	res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res.get()));
 
 	return res;
 }
@@ -139,6 +126,12 @@ BlockInputStreams StorageMergeTree::read(
 BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query, const Settings & settings)
 {
 	return std::make_shared<MergeTreeBlockOutputStream>(*this);
+}
+
+bool StorageMergeTree::checkTableCanBeDropped() const
+{
+	context.checkTableCanBeDropped(database_name, table_name, getData().getTotalCompressedSize());
+	return true;
 }
 
 void StorageMergeTree::drop()
@@ -242,8 +235,9 @@ void StorageMergeTree::alter(
 	if (primary_key_is_modified)
 	{
 		data.primary_expr_ast = new_primary_key_ast;
-		data.initPrimaryKey();
 	}
+	/// Reinitialize primary key because primary key column types might have changed.
+	data.initPrimaryKey();
 
 	for (auto & transaction : transactions)
 		transaction->commit();
@@ -293,13 +287,15 @@ struct CurrentlyMergingPartsTagger
 bool StorageMergeTree::merge(
 	size_t aio_threshold,
 	bool aggressive,
-	BackgroundProcessingPool::Context * pool_context,
 	const String & partition,
 	bool final)
 {
-	/// Удаляем старые куски.
-	data.clearOldParts();
-	data.clearOldTemporaryDirectories();	/// TODO Делать это реже.
+	/// Clear old parts. It does not matter to do it more frequently than each second.
+	if (auto lock = time_after_previous_cleanup.lockTestAndRestartAfter(1))
+	{
+		data.clearOldParts();
+		data.clearOldTemporaryDirectories();
+	}
 
 	auto structure_lock = lockStructure(true);
 
@@ -319,17 +315,11 @@ bool StorageMergeTree::merge(
 			return !currently_merging.count(left) && !currently_merging.count(right);
 		};
 
-		/// Если слияние запущено из пула потоков, и хотя бы половина потоков сливает большие куски,
-		///  не будем сливать большие куски.
-		size_t big_merges = background_pool.getCounter("big merges");
-		bool only_small = pool_context && big_merges * 2 >= background_pool.getNumberOfThreads();
-
 		bool selected = false;
 
 		if (partition.empty())
 		{
-			selected = merger.selectPartsToMerge(parts, merged_name, disk_space, false, aggressive, only_small, can_merge)
-				|| merger.selectPartsToMerge(parts, merged_name, disk_space,  true, aggressive, only_small, can_merge);
+			selected = merger.selectPartsToMerge(parts, merged_name, aggressive, merger.getMaxPartsSizeForMerge(), can_merge);
 		}
 		else
 		{
@@ -341,32 +331,43 @@ bool StorageMergeTree::merge(
 			return false;
 
 		merging_tagger.emplace(parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
-
-		/// Если собираемся сливать большие куски, увеличим счетчик потоков, сливающих большие куски.
-		if (pool_context)
-		{
-			for (const auto & part : parts)
-			{
-				if (part->size_in_bytes > data.settings.max_bytes_to_merge_parts_small)
-				{
-					pool_context->incrementCounter("big merges");
-					break;
-				}
-			}
-		}
 	}
 
-	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
+	MergeList::EntryPtr merge_entry_ptr = context.getMergeList().insert(database_name, table_name, merged_name, merging_tagger->parts);
+
+	/// Logging
+	PartLogElement elem;
+	Stopwatch stopwatch;
+	elem.event_time = time(0);
+
+	elem.merged_from.reserve(merging_tagger->parts.size());
+	for (const auto & part : merging_tagger->parts)
+		elem.merged_from.push_back(part->name);
 
 	auto new_part = merger.mergePartsToTemporaryPart(
-		merging_tagger->parts, merged_name, *merge_entry, aio_threshold, time(0), merging_tagger->reserved_space.get());
+		merging_tagger->parts, merged_name, *merge_entry_ptr, aio_threshold, time(0), merging_tagger->reserved_space.get());
 
 	merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
+
+	PartLog * part_log = context.getPartLog();
+	if (part_log)
+	{
+		elem.event_type = PartLogElement::MERGE_PARTS;
+		elem.size_in_bytes = new_part->size_in_bytes;
+
+		elem.database_name = new_part->storage.getDatabaseName();
+		elem.table_name = new_part->storage.getTableName();
+		elem.part_name = new_part->name;
+
+		elem.duration_ms = stopwatch.elapsed() / 1000000;
+
+		part_log->add(elem);
+	}
 
 	return true;
 }
 
-bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_processing_pool_context)
+bool StorageMergeTree::mergeTask()
 {
 	if (shutdown_called)
 		return false;
@@ -374,7 +375,7 @@ bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_
 	try
 	{
 		size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
-		return merge(aio_threshold, false, &background_processing_pool_context, {}, {});
+		return merge(aio_threshold, false, {}, {});
 	}
 	catch (Exception & e)
 	{
@@ -419,7 +420,7 @@ void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool
 			data.replaceParts({part}, {}, false);
 	}
 
-	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
+	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << applyVisitor(FieldVisitorToString(), partition) << ".");
 }
 
 

@@ -1,11 +1,15 @@
 #pragma once
 
 #include <string.h>
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
+#endif
+#include <cstdlib>
 #include <cstdint>
 #include <type_traits>
 
 #include <ext/bit_cast.hpp>
+#include <DB/Core/Types.h>
 #include <DB/Core/Defines.h>
 
 

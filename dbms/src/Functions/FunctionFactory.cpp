@@ -1,4 +1,5 @@
 #include <DB/Functions/FunctionFactory.h>
+#include <DB/Common/Exception.h>
 
 
 namespace DB
@@ -38,6 +39,7 @@ void registerFunctionsMath(FunctionFactory &);
 void registerFunctionsTransform(FunctionFactory &);
 void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsCharset(FunctionFactory &);
+void registerFunctionsNull(FunctionFactory &);
 
 
 FunctionFactory::FunctionFactory()
@@ -67,11 +69,12 @@ FunctionFactory::FunctionFactory()
 	registerFunctionsTransform(*this);
 	registerFunctionsGeo(*this);
 	registerFunctionsCharset(*this);
+	registerFunctionsNull(*this);
 }
 
 
 FunctionPtr FunctionFactory::get(
-	const String & name,
+	const std::string & name,
 	const Context & context) const
 {
 	auto res = tryGet(name, context);
@@ -82,7 +85,7 @@ FunctionPtr FunctionFactory::get(
 
 
 FunctionPtr FunctionFactory::tryGet(
-	const String & name,
+	const std::string & name,
 	const Context & context) const
 {
 	auto it = functions.find(name);

@@ -6,6 +6,7 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+#include <experimental/optional>
 
 #include <unordered_set>
 #include <algorithm>
@@ -25,12 +26,13 @@
 
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
+#include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
-#include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 
 #include <DB/Parsers/ParserQuery.h>
@@ -39,6 +41,7 @@
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTQueryWithOutput.h>
+#include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/parseQuery.h>
@@ -56,41 +59,17 @@
 
 #include <DB/Common/NetException.h>
 
-
-/// Могут использоваться разные библиотеки для редактирования строк в зависимости от окружения.
-#ifdef USE_READLINE
-	#include <readline/readline.h>
-	#include <readline/history.h>
-#elif USE_LIBEDIT
-	#include <editline/readline.h>
-	#include <editline/history.h>
-#else
-	char * readline(const char * prompt)
-	{
-		std::string s;
-		std::cout << prompt;
-		std::getline(std::cin, s);
-
-		if (!std::cin.good())
-			return nullptr;
-		return strdup(s.data());
-	}
-	#define add_history(...) do {} while (0);
-	#define rl_bind_key(...) do {} while (0);
-#endif
+#include <common/config_common.h>
+#include <common/readline_use.h>
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 #define SAVE_CURSOR_POSITION "\033[s"
 #define RESTORE_CURSOR_POSITION "\033[u"
 #define CLEAR_TO_END_OF_LINE "\033[K"
-/// Эти коды, возможно, поддерживаются не везде.
+/// This codes are possibly not supported everywhere.
 #define DISABLE_LINE_WRAPPING "\033[?7l"
 #define ENABLE_LINE_WRAPPING "\033[?7h"
-
-
-/** Клиент командной строки СУБД ClickHouse.
-  */
 
 
 namespace DB
@@ -127,62 +106,65 @@ private:
 		"q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
 	};
 
-	bool is_interactive = true;			/// Использовать readline интерфейс или batch режим.
-	bool need_render_progress = true;	/// Рисовать прогресс выполнения запроса.
+	bool is_interactive = true;			/// Use either readline interface or batch mode.
+	bool need_render_progress = true;	/// Render query execution progress.
 	bool echo_queries = false;			/// Print queries before execution in batch mode.
-	bool print_time_to_stderr = false;	/// В неинтерактивном режиме, выводить время выполнения в stderr.
-	bool stdin_is_not_tty = false;		/// stdin - не терминал.
+	bool print_time_to_stderr = false;	/// Output execution time to stderr in batch mode.
+	bool stdin_is_not_tty = false;		/// stdin is not a terminal.
 
-	winsize terminal_size {};			/// Размер терминала - для вывода прогресс-бара.
+	winsize terminal_size {};			/// Terminal size is needed to render progress bar.
 
-	std::unique_ptr<Connection> connection;	/// Соединение с БД.
-	String query;						/// Текущий запрос.
+	std::unique_ptr<Connection> connection;	/// Connection to DB.
+	String query;						/// Current query.
 
-	String format;						/// Формат вывода результата в консоль.
-	size_t format_max_block_size = 0;	/// Максимальный размер блока при выводе в консоль.
-	String insert_format;				/// Формат данных для INSERT-а при чтении их из stdin в batch режиме
-	size_t insert_format_max_block_size = 0; /// Максимальный размер блока при чтении данных INSERT-а.
+	String format;						/// Query results output format.
+	bool is_default_format = true;		/// false, if format is set in the config or command line.
+	size_t format_max_block_size = 0;	/// Max block size for console output.
+	String insert_format;				/// Format of INSERT data that is read from stdin in batch mode.
+	size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
 
-	bool has_vertical_output_suffix = false; /// \G указан в конце команды?
+	bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
 	Context context;
 
-	/// Чтение из stdin для batch режима
+	/// Buffer that reads from stdin in batch mode.
 	ReadBufferFromFileDescriptor std_in {STDIN_FILENO};
 
-	/// Вывод в консоль
+	/// Console output.
 	WriteBufferFromFileDescriptor std_out {STDOUT_FILENO};
-	BlockOutputStreamPtr block_std_out;
+	/// The user can specify to redirect query output to a file.
+	std::experimental::optional<WriteBufferFromFile> out_file_buf;
+	BlockOutputStreamPtr block_out_stream;
 
 	String home_path;
 
 	String current_profile;
 
-	/// Путь к файлу истории команд.
+	/// Path to a file containing command history.
 	String history_file;
 
-	/// Строк прочитано или записано.
+	/// How many rows have been read or written.
 	size_t processed_rows = 0;
 
-	/// Распарсенный запрос. Оттуда берутся некоторые настройки (формат).
+	/// Parsed query. Is used to determine some settings (e.g. format, output file).
 	ASTPtr parsed_query;
 
-	/// Последнее полученное от сервера исключение. Для кода возврата в неинтерактивном режиме.
+	/// The last exception that was received from the server. Is used for the return code in batch mode.
 	std::unique_ptr<Exception> last_exception;
 
-	/// Было ли в последнем запросе исключение.
+	/// If the last query resulted in exception.
 	bool got_exception = false;
 
 	Stopwatch watch;
 
-	/// С сервера периодически приходит информация, о том, сколько прочитано данных за прошедшее время.
+	/// The server periodically sends information about how much data was read since last time.
 	Progress progress;
 	bool show_progress_bar = false;
 
 	size_t written_progress_chars = 0;
 	bool written_first_block = false;
 
-	/// Информация о внешних таблицах
+	/// External tables info.
 	std::list<ExternalTable> external_tables;
 
 
@@ -203,7 +185,9 @@ private:
 		else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
 			loadConfiguration("/etc/clickhouse-client/config.xml");
 
-		/// settings и limits могли так же быть указаны в кофигурационном файле, но уже записанные настройки имеют больший приоритет.
+		context.setApplicationType(Context::ApplicationType::CLIENT);
+
+		/// settings and limits could be specified in config file, but passed settings has higher priority
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
 		if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
 			context.setSetting(#NAME, config().getString(#NAME));
@@ -240,8 +224,8 @@ private:
 
  			std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
 
-			/// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
-			/// Также не будем писать стек-трейс в случае сетевых ошибок.
+			/// Don't print the stack trace on the client if it was logged on the server.
+			/// Also don't print the stack trace in case of network errors.
 			if (print_stack_trace
 				&& e.code() != ErrorCodes::NETWORK_ERROR
 				&& std::string::npos == embedded_stack_trace_pos)
@@ -250,7 +234,7 @@ private:
 					<< e.getStackTrace().toString();
 			}
 
-			/// В случае нулевого кода исключения, надо всё-равно вернуть ненулевой код возврата.
+			/// If exception code isn't zero, we should return non-zero return code anyway.
 			return e.code() ? e.code() : -1;
 		}
 		catch (const Poco::Exception & e)
@@ -270,13 +254,12 @@ private:
 		}
 	}
 
-
-	/// Стоит ли сделать хоть что-нибудь ради праздника.
+	/// Should we celebrate a bit?
 	bool isNewYearMode()
 	{
 		time_t current_time = time(0);
 
-		/// Плохо быть навязчивым.
+        /// It's bad to be intrusive.
 		if (current_time % 3 != 0)
 			return false;
 
@@ -288,12 +271,11 @@ private:
 
 	int mainImpl(const std::vector<std::string> & args)
 	{
-		/** Будем работать в batch режиме, если выполнено одно из следующих условий:
-		  * - задан параметр -e (--query)
-		  *   (в этом случае - запрос или несколько запросов берём оттуда;
-		  *    а если при этом stdin не терминал, то берём оттуда данные для INSERT-а первого запроса).
-		  * - stdin - не терминал (в этом случае, считываем оттуда запросы);
-		  */
+		/// Batch mode is enabled if one of the following is true:
+		/// - -e (--query) command line option is present.
+		///   The value of the option is used as the text of query (or of multiple queries).
+		///   If stdin is not a terminal, INSERT data for the first query is read from it.
+		/// - stdin is not a terminal. In this case queries are read from it.
 		stdin_is_not_tty = !isatty(STDIN_FILENO);
 		if (stdin_is_not_tty || config().has("query"))
 			is_interactive = false;
@@ -302,11 +284,9 @@ private:
 		std::cerr << std::fixed << std::setprecision(3);
 
 		if (is_interactive)
-			std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
-				<< "." << DBMS_VERSION_MINOR
-				<< "." << ClickHouseRevision::get()
-				<< "." << std::endl;
+			showClientVersion();
 
+		is_default_format = !config().has("vertical") && !config().has("format");
 		if (config().has("vertical"))
 			format = config().getString("format", "Vertical");
 		else
@@ -325,15 +305,42 @@ private:
 
 		connect();
 
+		/// Initialize DateLUT here to avoid counting time spent here as query execution time.
+		DateLUT::instance();
+		if (!context.getSettingsRef().use_client_time_zone)
+		{
+			const auto & time_zone = connection->getServerTimezone();
+			if (!time_zone.empty())
+			{
+				try
+				{
+					DateLUT::setDefaultTimezone(time_zone);
+				}
+				catch (...)
+				{
+					std::cerr << "Warning: could not switch to server time zone: " << time_zone
+						<< ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
+						<< "Proceeding with local time zone."
+						<< std::endl << std::endl;
+				}
+			}
+			else
+			{
+				std::cerr << "Warning: could not determine server time zone. "
+					<< "Proceeding with local time zone."
+					<< std::endl << std::endl;
+			}
+		}
+
 		if (is_interactive)
 		{
 			if (print_time_to_stderr)
 				throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
-			/// Отключаем tab completion.
+			/// Turn tab completion off.
 			rl_bind_key('\t', rl_insert);
 
-			/// Загружаем историю команд, если есть.
+			/// Load command history if present.
 			if (config().has("history_file"))
 				history_file = config().getString("history_file");
 			else if (!home_path.empty())
@@ -343,18 +350,15 @@ private:
 			{
 				if (Poco::File(history_file).exists())
 				{
-#ifdef USE_READLINE
+#if USE_READLINE
 					int res = read_history(history_file.c_str());
 					if (res)
 						throwFromErrno("Cannot read history from file " + history_file, ErrorCodes::CANNOT_READ_HISTORY);
 #endif
 				}
-				else	/// Создаём файл с историей.
+				else	/// Create history file.
 					Poco::File(history_file).createFile();
 			}
-
-			/// Инициализируем DateLUT, чтобы потраченное время не отображалось, как время, потраченное на запрос.
-			DateLUT::instance();
 
 			loop();
 
@@ -422,9 +426,8 @@ private:
 	}
 
 
-	/** Проверка для случая, когда в терминал вставляется многострочный запрос из буфера обмена.
-	  * Позволяет не начинать выполнение одной строчки запроса, пока весь запрос не будет вставлен.
-	  */
+	/// Check if multi-line query is inserted from the paste buffer.
+	/// Allows delaying the start of query execution until the entirety of query is inserted.
 	static bool hasDataInSTDIN()
 	{
 		timeval timeout = { 0, 0 };
@@ -465,15 +468,15 @@ private:
 			{
 				if (query != prev_query)
 				{
-					// Заменяем переводы строк на пробелы, а то возникает следуцющая проблема.
-					// Каждая строчка многострочного запроса сохраняется в истории отдельно. Если
-					// выйти из клиента и войти заново, то при нажатии клавиши "вверх" выводится не
-					// весь многострочный запрос, а каждая его строчка по-отдельности.
+					/// Replace line breaks with spaces to prevent the following problem.
+					/// Every line of multi-line query is saved to history file as a separate line.
+					/// If the user restarts the client then after pressing the "up" button
+					/// every line of the query will be displayed separately.
 					std::string logged_query = query;
 					std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
 					add_history(logged_query.c_str());
 
-#ifdef USE_READLINE
+#if USE_READLINE && HAVE_READLINE_HISTORY
 					if (!history_file.empty() && append_history(1, history_file.c_str()))
 						throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
 #endif
@@ -486,7 +489,7 @@ private:
 
 				try
 				{
-					/// Выясняем размер терминала.
+					/// Determine the terminal size.
 					ioctl(0, TIOCGWINSZ, &terminal_size);
 
 					if (!process(query))
@@ -499,9 +502,9 @@ private:
 						<< "Code: " << e.code() << ". " << e.displayText() << std::endl
 						<< std::endl;
 
-					/** Эксепшен на клиенте в процессе обработки запроса может привести к рассинхронизации соединения.
-					  * Установим соединение заново и позволим ввести следующий запрос.
-					  */
+					/// Client-side exception during query execution can result in the loss of
+					/// sync in the connection protocol.
+					/// So we reconnect and allow to enter the next query.
 					connect();
 				}
 
@@ -522,10 +525,8 @@ private:
 			line = config().getString("query");
 		else
 		{
-			/** В случае, если параметр query не задан, то запрос будет читаться из stdin.
-			  * При этом, запрос будет читаться не потоково (целиком в оперативку).
-			  */
-
+			/// If 'query' parameter is not set, read a query from stdin.
+			/// The query is read entirely into memory (streaming is disabled).
 			ReadBufferFromFileDescriptor in(STDIN_FILENO);
 			readStringUntilEOF(line, in);
 		}
@@ -538,8 +539,8 @@ private:
 	{
 		if (config().has("multiquery"))
 		{
-			/// Несколько запросов, разделенных ';'.
-			/// Данные для INSERT заканчиваются переводом строки, а не ';'.
+			/// Several queries separated by ';'.
+			/// INSERT data is ended by the end of line, not ';'.
 
 			String query;
 
@@ -609,7 +610,8 @@ private:
 
 		query = line;
 
-		/// Некоторые части запроса выполняются на стороне клиента (форматирование результата). Поэтому, распарсим запрос.
+		/// Some parts of a query (result output and formatting) are executed client-side.
+		/// Thus we need to parse the query.
 		parsed_query = parsed_query_;
 
 		if (!parsed_query)
@@ -629,7 +631,7 @@ private:
 
 		const ASTSetQuery * set_query = typeid_cast<const ASTSetQuery *>(&*parsed_query);
 		const ASTUseQuery * use_query = typeid_cast<const ASTUseQuery *>(&*parsed_query);
-		/// Запрос INSERT (но только тот, что требует передачи данных - не INSERT SELECT), обрабатывается отдельным способом.
+		/// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
 		const ASTInsertQuery * insert = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
 
 		if (insert && !insert->select)
@@ -637,12 +639,12 @@ private:
 		else
 			processOrdinaryQuery();
 
-		/// В случае исключения, не будем менять контекст (текущая БД, настройки) на клиенте.
+		/// Do not change context (current DB, settings) in case of an exception.
 		if (!got_exception)
 		{
 			if (set_query)
 			{
-				/// Запоминаем все изменения в настройках, чтобы не потерять их при разрыве соединения.
+				/// Save all changes in settings to avoid losing them if the connection is lost.
 				for (ASTSetQuery::Changes::const_iterator it = set_query->changes.begin(); it != set_query->changes.end(); ++it)
 				{
 					if (it->name ==	"profile")
@@ -655,9 +657,9 @@ private:
 			if (use_query)
 			{
 				const String & new_database = use_query->database;
-				/// Если клиент инициирует пересоединение, он берет настройки из конфига
+				/// If the client initiates the reconnection, it takes the settings from the config.
 				config().setString("database", new_database);
-				/// Если connection инициирует пересоединение, он использует свою переменную
+				/// If the connection initiates the reconnection, it uses its variable.
 				connection->setDefaultDatabase(new_database);
 			}
 		}
@@ -681,7 +683,7 @@ private:
 	}
 
 
-	/// Преобразовать внешние таблицы к ExternalTableData и переслать через connection
+	/// Convert external tables to ExternalTableData and send them using the connection.
 	void sendExternalTables()
 	{
 		const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(&*parsed_query);
@@ -696,16 +698,16 @@ private:
 	}
 
 
-	/// Обработать запрос, который не требует передачи блоков данных на сервер.
+	/// Process the query that doesn't require transfering data blocks to the server.
 	void processOrdinaryQuery()
 	{
-		connection->sendQuery(query, "", QueryProcessingStage::Complete, &context.getSettingsRef(), true);
+		connection->sendQuery(query, "", QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
 		sendExternalTables();
 		receiveResult();
 	}
 
 
-	/// Process query, which require sending blocks of data to the server.
+	/// Process the query that requires transfering data blocks to the server.
 	void processInsertQuery()
 	{
 		/// Send part of query without data, because data will be sent separately.
@@ -717,7 +719,7 @@ private:
 		if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
 			throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &context.getSettingsRef(), true);
+		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
 		sendExternalTables();
 
 		/// Receive description of table structure.
@@ -764,20 +766,20 @@ private:
 
 	void sendData(Block & sample)
 	{
-		/// Если нужно отправить данные INSERT-а.
+		/// If INSERT data must be sent.
 		const ASTInsertQuery * parsed_insert_query = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
 		if (!parsed_insert_query)
 			return;
 
 		if (parsed_insert_query->data)
 		{
-			/// Отправляем данные из запроса.
-			ReadBuffer data_in(const_cast<char *>(parsed_insert_query->data), parsed_insert_query->end - parsed_insert_query->data, 0);
+			/// Send data contained in the query.
+			ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
 			sendDataFrom(data_in, sample);
 		}
 		else if (!is_interactive)
 		{
-			/// Отправляем данные из stdin.
+			/// Send data read from stdin.
 			sendDataFrom(std_in, sample);
 		}
 		else
@@ -789,7 +791,7 @@ private:
 	{
 		String current_format = insert_format;
 
-		/// Формат может быть указан в INSERT запросе.
+		/// Data format can be specified in the INSERT query.
 		if (ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*parsed_query))
 			if (!insert->format.empty())
 				current_format = insert->format;
@@ -815,17 +817,21 @@ private:
 	}
 
 
-	/** Сбросить все данные, что ещё остались в буферах. */
+	/// Flush all buffers.
 	void resetOutput()
 	{
-		block_std_out = nullptr;
+		block_out_stream = nullptr;
+		if (out_file_buf)
+		{
+			out_file_buf->next();
+			out_file_buf = std::experimental::nullopt;
+		}
 		std_out.next();
 	}
 
 
-	/** Получает и обрабатывает пакеты из сервера.
-	  * Также следит, не требуется ли прервать выполнение запроса.
-	  */
+	/// Receives and processes packets coming from server.
+	/// Also checks if query execution should be cancelled.
 	void receiveResult()
 	{
 		InterruptListener interrupt_listener;
@@ -833,10 +839,9 @@ private:
 
 		while (true)
 		{
-			/** Проверим, не требуется ли остановить выполнение запроса (Ctrl+C).
-			  * Если требуется - отправим об этом информацию на сервер.
-			  * После чего, получим оставшиеся пакеты с сервера (чтобы не было рассинхронизации).
-			  */
+			/// Has the Ctrl+C been pressed and thus the query should be cancelled?
+			/// If this is the case, inform the server about it and receive the remaining packets
+			/// to avoid losing sync.
 			if (!cancelled)
 			{
 				if (interrupt_listener.check())
@@ -846,11 +851,11 @@ private:
 					if (is_interactive)
 						std::cout << "Cancelling query." << std::endl;
 
-					/// Повторное нажатие Ctrl+C приведёт к завершению работы.
+					/// Pressing Ctrl+C twice results in shut down.
 					interrupt_listener.unblock();
 				}
 				else if (!connection->poll(1000000))
-					continue;	/// Если новых данных в ещё нет, то после таймаута продолжим проверять, не остановлено ли выполнение запроса.
+					continue;	/// If there is no new data, continue checking whether the query was cancelled after a timeout.
 			}
 
 			if (!receivePacket())
@@ -862,10 +867,8 @@ private:
 	}
 
 
-	/** Получить кусок результата или прогресс выполнения или эксепшен,
-	  *  и обработать пакет соответствующим образом.
-	  * Возвращает true, если нужно продолжать чтение пакетов.
-	  */
+	/// Receive a part of the result, or progress info or an exception and process it.
+	/// Returns true if one should continue receiving packets.
 	bool receivePacket()
 	{
 		Connection::Packet packet = connection->receivePacket();
@@ -907,8 +910,7 @@ private:
 	}
 
 
-	/** Получить блок - пример структуры таблицы, в которую будут вставляться данные.
-	  */
+	/// Receive the block that serves as an example of the structure of table where data will be inserted.
 	bool receiveSampleBlock(Block & out)
 	{
 		Connection::Packet packet = connection->receivePacket();
@@ -933,27 +935,39 @@ private:
 
 	void initBlockOutputStream(const Block & block)
 	{
-		if (!block_std_out)
+		if (!block_out_stream)
 		{
+			WriteBuffer * out_buf = &std_out;
 			String current_format = format;
 
-			/// Формат может быть указан в запросе.
+			/// The query can specify output format or output file.
 			if (ASTQueryWithOutput * query_with_output = dynamic_cast<ASTQueryWithOutput *>(&*parsed_query))
 			{
-				if (query_with_output->getFormat() != nullptr)
+				if (query_with_output->out_file != nullptr)
+				{
+					const auto & out_file_node = typeid_cast<const ASTLiteral &>(*query_with_output->out_file);
+					const auto & out_file = out_file_node.value.safeGet<std::string>();
+					out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
+					out_buf = &out_file_buf.value();
+
+					// We are writing to file, so default format is the same as in non-interactive mode.
+					if (is_interactive && is_default_format)
+						current_format = "TabSeparated";
+				}
+				if (query_with_output->format != nullptr)
 				{
 					if (has_vertical_output_suffix)
 						throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
-					if (const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(query_with_output->getFormat()))
-						current_format = id->name;
+					const auto & id = typeid_cast<const ASTIdentifier &>(*query_with_output->format);
+					current_format = id.name;
 				}
 			}
 
 			if (has_vertical_output_suffix)
 				current_format = "Vertical";
 
-			block_std_out = context.getOutputFormat(current_format, std_out, block);
-			block_std_out->writePrefix();
+			block_out_stream = context.getOutputFormat(current_format, *out_buf, block);
+			block_out_stream->writePrefix();
 		}
 	}
 
@@ -969,36 +983,35 @@ private:
 		processed_rows += block.rows();
 		initBlockOutputStream(block);
 
-		/// Заголовочный блок с нулем строк использовался для инициализации block_std_out,
-		/// выводить его не нужно
+		/// The header block containing zero rows was used to initialize block_out_stream, do not output it.
 		if (block.rows() != 0)
 		{
-			block_std_out->write(block);
+			block_out_stream->write(block);
 			written_first_block = true;
 		}
 
-		/// Полученный блок данных сразу выводится клиенту.
-		block_std_out->flush();
+		/// Received data block is immediately displayed to the user.
+		block_out_stream->flush();
 	}
 
 
 	void onTotals(Block & block)
 	{
 		initBlockOutputStream(block);
-		block_std_out->setTotals(block);
+		block_out_stream->setTotals(block);
 	}
 
 	void onExtremes(Block & block)
 	{
 		initBlockOutputStream(block);
-		block_std_out->setExtremes(block);
+		block_out_stream->setExtremes(block);
 	}
 
 
 	void onProgress(const Progress & value)
 	{
 		progress.incrementPiecewiseAtomically(value);
-		block_std_out->onProgress(value);
+		block_out_stream->onProgress(value);
 		writeProgress();
 	}
 
@@ -1053,10 +1066,9 @@ private:
 		written_progress_chars = message.str().size() - (increment % 8 == 7 ? 10 : 13);
 		std::cerr << DISABLE_LINE_WRAPPING << message.rdbuf();
 
-		/** Если известно приблизительное общее число строк, которых нужно обработать - можно вывести прогрессбар.
-		  * Чтобы не было "мерцания", выводим его только если с момента начала выполнения запроса прошло хотя бы пол секунды,
-		  *  и если к этому моменту запрос обработан менее чем наполовину.
-		  */
+		/// If the approximate number of rows to process is known, we can display a progressbar.
+		/// To avoid flicker, display it only if .5 seconds have passed since query execution start
+		/// and the query less than halfway done.
 		ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_size.ws_col) - written_progress_chars - strlen(" 99%");
 
 		if (show_progress_bar
@@ -1073,7 +1085,7 @@ private:
 			std::cerr << "\033[0;32m" << bar << "\033[0m";
 			if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
 				std::cerr << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
-			std::cerr << ' ' << (99 * progress.rows / total_rows_corrected) << '%';	/// Чуть-чуть занижаем процент, чтобы не показывать 100%.
+			std::cerr << ' ' << (99 * progress.rows / total_rows_corrected) << '%';	/// Underestimate percentage a bit to avoid displaying 100%.
 		}
 
 		std::cerr << ENABLE_LINE_WRAPPING;
@@ -1115,20 +1127,28 @@ private:
 
 	void onProfileInfo(const BlockStreamProfileInfo & profile_info)
 	{
-		if (profile_info.hasAppliedLimit() && block_std_out)
-			block_std_out->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
+		if (profile_info.hasAppliedLimit() && block_out_stream)
+			block_out_stream->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
 	}
 
 
 	void onEndOfStream()
 	{
-		if (block_std_out)
-			block_std_out->writeSuffix();
+		if (block_out_stream)
+			block_out_stream->writeSuffix();
 
 		resetOutput();
 
 		if (is_interactive && !written_first_block)
 			std::cout << "Ok." << std::endl;
+	}
+
+	void showClientVersion()
+	{
+		std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
+			<< "." << DBMS_VERSION_MINOR
+			<< "." << ClickHouseRevision::get()
+			<< "." << std::endl;
 	}
 
 public:
@@ -1158,14 +1178,33 @@ public:
 				in_external_group = true;
 				external_tables_arguments.emplace_back(Arguments{""});
 			}
+			/// Options with value after equal sign.
 			else if (in_external_group
-				&& (0 == strncmp(arg, "--file", 		strlen("--file"))	/// slightly inaccurate because --filesuffix is also matched.
-				 || 0 == strncmp(arg, "--name", 		strlen("--name"))
-				 || 0 == strncmp(arg, "--format", 		strlen("--format"))
-				 || 0 == strncmp(arg, "--structure", 	strlen("--structure"))
-				 || 0 == strncmp(arg, "--types", 		strlen("--types"))))
+				&& (0 == strncmp(arg, "--file=", 		strlen("--file="))
+				 || 0 == strncmp(arg, "--name=", 		strlen("--name="))
+				 || 0 == strncmp(arg, "--format=", 		strlen("--format="))
+				 || 0 == strncmp(arg, "--structure=", 	strlen("--structure="))
+				 || 0 == strncmp(arg, "--types=", 		strlen("--types="))))
 			{
 				external_tables_arguments.back().emplace_back(arg);
+			}
+			/// Options with value after whitespace.
+			else if (in_external_group
+				&& (0 == strcmp(arg, "--file")
+				 || 0 == strcmp(arg, "--name")
+				 || 0 == strcmp(arg, "--format")
+				 || 0 == strcmp(arg, "--structure")
+				 || 0 == strcmp(arg, "--types")))
+			{
+				if (arg_num + 1 < argc)
+				{
+					external_tables_arguments.back().emplace_back(arg);
+					++arg_num;
+					arg = argv[arg_num];
+					external_tables_arguments.back().emplace_back(arg);
+				}
+				else
+					break;
 			}
 			else
 			{
@@ -1177,8 +1216,7 @@ public:
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
 #define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
 
-		/// Перечисляем основные опции командной строки относящиеся к функциональности клиента,
-		/// а так же все параметры из Settings
+		/// Main commandline options related to client functionality and all parameters from Settings.
 		boost::program_options::options_description main_description("Main options");
 		main_description.add_options()
 			("help", "produce help message")
@@ -1187,7 +1225,7 @@ public:
 			("port", 			boost::program_options::value<int>()->default_value(9000), "server port")
 			("user,u", 			boost::program_options::value<std::string>(),	"user")
 			("password", 		boost::program_options::value<std::string>(),	"password")
-			("query,q,e", 		boost::program_options::value<std::string>(), 	"query")
+			("query,q", 		boost::program_options::value<std::string>(), 	"query")
 			("database,d", 		boost::program_options::value<std::string>(), 	"database")
 			("multiline,m",														"multiline")
 			("multiquery,n",													"multiquery")
@@ -1196,6 +1234,7 @@ public:
 			("time,t",			"print query execution time to stderr in non-interactive mode (for benchmarks)")
 			("stacktrace",		"print stack traces of exceptions")
 			("progress",		"print progress even in non-interactive mode")
+			("version,V",		"print version information and exit")
 			("echo",			"in batch mode, print query before execution")
 			("compression",		boost::program_options::value<bool>(),			"enable or disable compression")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
@@ -1204,7 +1243,7 @@ public:
 #undef DECLARE_SETTING
 #undef DECLARE_LIMIT
 
-		/// Перечисляем опции командной строки относящиеся к внешним таблицам
+		/// Commandline options related to external tables.
 		boost::program_options::options_description external_description("External tables options");
 		external_description.add_options()
 			("file", 		boost::program_options::value<std::string>(), 	"data file or - for stdin")
@@ -1214,11 +1253,17 @@ public:
 			("types", 		boost::program_options::value<std::string>(), "types")
 		;
 
-		/// Парсим основные опции командной строки
+		/// Parse main commandline options.
 		boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(
 			common_arguments.size(), common_arguments.data()).options(main_description).run();
 		boost::program_options::variables_map options;
 		boost::program_options::store(parsed, options);
+
+		if (options.count("version") || options.count("V"))
+		{
+			showClientVersion();
+			exit(0);
+		}
 
 		/// Output of help message.
 		if (options.count("help")
@@ -1232,7 +1277,7 @@ public:
 		size_t number_of_external_tables_with_stdin_source = 0;
 		for (size_t i = 0; i < external_tables_arguments.size(); ++i)
 		{
-			/// Парсим основные опции командной строки
+			/// Parse commandline options related to external tables.
 			boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(
 				external_tables_arguments[i].size(), external_tables_arguments[i].data()).options(external_description).run();
 			boost::program_options::variables_map external_options;
@@ -1255,7 +1300,7 @@ public:
 			}
 		}
 
-		/// Извлекаем settings and limits из полученных options
+		/// Extract settings and limits from the options.
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
 		if (options.count(#NAME)) \
 			context.setSetting(#NAME, options[#NAME].as<std::string>());
@@ -1263,17 +1308,17 @@ public:
 		APPLY_FOR_LIMITS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
-		/// Сохраняем полученные данные во внутренний конфиг
+		/// Save received data into the internal config.
 		if (options.count("config-file"))
 			config().setString("config-file", options["config-file"].as<std::string>());
-		if (options.count("host"))
+		if (options.count("host") && !options["host"].defaulted())
 			config().setString("host", options["host"].as<std::string>());
 		if (options.count("query"))
 			config().setString("query", options["query"].as<std::string>());
 		if (options.count("database"))
 			config().setString("database", options["database"].as<std::string>());
 
-		if (options.count("port"))
+		if (options.count("port") && !options["port"].defaulted())
 			config().setInt("port", options["port"].as<int>());
 		if (options.count("user"))
 			config().setString("user", options["user"].as<std::string>());
@@ -1304,7 +1349,7 @@ public:
 }
 
 
-int main(int argc, char ** argv)
+int mainEntryClickhouseClient(int argc, char ** argv)
 {
 	DB::Client client;
 

@@ -1,15 +1,15 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.hpp>
-
 #include <DB/Storages/IStorage.h>
-#include <DB/Interpreters/Context.h>
+
 
 namespace DB
 {
 
-/** Реализует системную таблицу columns, которая позволяет получить информацию
-  * о столбцах каждой таблицы для всех баз данных.
+class Context;
+
+/** Implements system table 'columns', that allows to get information about columns for every table.
   */
 class StorageSystemColumns : private ext::shared_ptr_helper<StorageSystemColumns>, public IStorage
 {

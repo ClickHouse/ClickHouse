@@ -2,6 +2,7 @@
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/Common/Stopwatch.h>
 #include <Poco/File.h>
+#include <iostream>
 #include <iomanip>
 #include <vector>
 #include <algorithm>

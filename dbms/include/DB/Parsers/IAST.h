@@ -1,18 +1,15 @@
 #pragma once
 
-#include <list>
 #include <set>
-#include <sstream>
-#include <iostream>
 #include <memory>
-#include <set>
-
-#include <common/Common.h>
+#include <ostream>
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
-#include <DB/IO/WriteHelpers.h>
 #include <DB/Parsers/StringRange.h>
+
+
+class SipHash;
 
 
 namespace DB
@@ -21,8 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int NOT_A_COLUMN;
-	extern const int TOO_BIG_AST;
-	extern const int TOO_DEEP_AST;
 	extern const int UNKNOWN_TYPE_OF_AST_NODE;
 	extern const int UNKNOWN_ELEMENT_IN_AST;
 }
@@ -33,6 +28,8 @@ class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 using ASTs = std::vector<ASTPtr>;
 
+class WriteBuffer;
+
 
 /** Элемент синтаксического дерева (в дальнейшем - направленного ациклического графа с элементами семантики)
   */
@@ -41,35 +38,6 @@ class IAST
 public:
 	ASTs children;
 	StringRange range;
-
-	/// Указатель на начало секции [NOT]IN или JOIN в которой включен этот узел,
-	/// если имеется такая секция.
-	IAST * enclosing_in_or_join = nullptr;
-
-	/// Атрибуты, которые нужны для некоторых алгоритмов на синтаксических деревьях.
-	using Attributes = UInt32;
-	Attributes attributes = 0;
-
-	/// Был ли узел посещён? (см. класс LogicalExpressionsOptimizer)
-	static constexpr Attributes IsVisited = 1U;
-	/// Был ли узел обработан? (см. класс InJoinSubqueriesPreprocessor)
-	static constexpr Attributes IsPreprocessedForInJoinSubqueries = 1U << 1;
-	/// Является ли узел секцией IN?
-	static constexpr Attributes IsIn = 1U << 2;
-	/// Является ли узел секцией NOT IN?
-	static constexpr Attributes IsNotIn = 1U << 3;
-	/// Является ли узел секцией JOIN?
-	static constexpr Attributes IsJoin = 1U << 4;
-	/// Имеет ли секция IN/NOT IN/JOIN атрибут GLOBAL?
-	static constexpr Attributes IsGlobal = 1U << 5;
-
-	/** Глубина одного узла N - это глубина того запроса SELECT, которому принадлежит N.
-	 *  Дальше глубина одного запроса SELECT определяется следующим образом:
-	 *  - если запрос Q корневой, то select_query_depth(Q) = 0
-	 *  - если запрос S является непосредственным подзапросом одного запроса R,
-	 *  то select_query_depth(S) = select_query_depth(R) + 1
-	 */
-	UInt32 select_query_depth = 0;
 
 	/** Строка с полным запросом.
 	  * Этот указатель не дает ее удалить, пока range в нее ссылается.
@@ -101,36 +69,17 @@ public:
 	/** Получить глубокую копию дерева. */
 	virtual ASTPtr clone() const = 0;
 
-	/// Рекурсивно установить атрибуты в поддереве, корнем которого является текущий узел.
-	void setAttributes(Attributes attributes_)
-	{
-		attributes |= attributes_;
-		for (auto it : children)
-			it->setAttributes(attributes_);
-	}
-
-	/** Получить текст, который идентифицирует этот элемент и всё поддерево.
-	  * Обычно он содержит идентификатор элемента и getTreeID от всех детей.
+	/** Get text, describing and identifying this element and its subtree.
+	  * Usually it consist of element's id and getTreeID of all children.
 	  */
-	String getTreeID() const
-	{
-		std::stringstream s;
-		s << getID();
+	String getTreeID() const;
+	void getTreeIDImpl(WriteBuffer & out) const;
 
-		if (!children.empty())
-		{
-			s << "(";
-			for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
-			{
-				if (it != children.begin())
-					s << ", ";
-				s << (*it)->getTreeID();
-			}
-			s << ")";
-		}
-
-		return s.str();
-	}
+	/** Get hash code, identifying this element and its subtree.
+	  */
+	using Hash = std::pair<UInt64, UInt64>;
+	Hash getTreeHash() const;
+	void getTreeHashImpl(SipHash & hash_state) const;
 
 	void dumpTree(std::ostream & ostr, size_t indent = 0) const
 	{
@@ -151,17 +100,7 @@ public:
 
 	/** То же самое для общего количества элементов дерева.
 	  */
-	size_t checkSize(size_t max_size) const
-	{
-		size_t res = 1;
-		for (const auto & child : children)
-			res += child->checkSize(max_size);
-
-		if (res > max_size)
-			throw Exception("AST is too big. Maximum: " + toString(max_size), ErrorCodes::TOO_BIG_AST);
-
-		return res;
-	}
+	size_t checkSize(size_t max_size) const;
 
 	/**  Получить set из имен индентификаторов
 	 */
@@ -234,18 +173,7 @@ protected:
 	static const char * hilite_none;
 
 private:
-	size_t checkDepthImpl(size_t max_depth, size_t level) const
-	{
-		size_t res = level + 1;
-		for (const auto & child : children)
-		{
-			if (level >= max_depth)
-				throw Exception("AST is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_AST);
-			res = std::max(res, child->checkDepthImpl(max_depth, level + 1));
-		}
-
-		return res;
-	}
+	size_t checkDepthImpl(size_t max_depth, size_t level) const;
 };
 
 

@@ -6,6 +6,8 @@
 #include <DB/Parsers/ParserShowTablesQuery.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
 
+#include <DB/Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -15,6 +17,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 {
 	Pos begin = pos;
 
+	ParserWhiteSpaceOrComments ws;
 	ParserString s_show("SHOW", true, true);
 	ParserString s_tables("TABLES", true, true);
 	ParserString s_databases("DATABASES", true, true);
@@ -76,18 +79,12 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 
 	ws.ignore(pos, end);
 
-	/// FORMAT format_name
-	if (!parseFormat(*query, pos, end, node, max_parsed_pos, expected))
-		return false;
-
 	query->range = StringRange(begin, pos);
 
 	if (database)
 		query->from = typeid_cast<ASTIdentifier &>(*database).name;
 	if (like)
 		query->like = safeGet<const String &>(typeid_cast<ASTLiteral &>(*like).value);
-	if (query->format)
-		query->children.push_back(query->format);
 
 	node = query;
 

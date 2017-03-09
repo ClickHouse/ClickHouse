@@ -73,9 +73,23 @@ StorageMaterializedView::StorageMaterializedView(
 
 		manual_create_query->children.push_back(manual_create_query->storage);
 
-		/// Выполним запрос.
-		InterpreterCreateQuery create_interpreter(manual_create_query, context);
-		create_interpreter.execute();
+		/// Execute the query.
+		try
+		{
+			InterpreterCreateQuery create_interpreter(manual_create_query, context);
+			create_interpreter.execute();
+		}
+		catch (...)
+		{
+			/// In case of any error we should remove dependency to the view
+			/// which was added in the constructor of StorageView.
+			if (!select_table_name.empty())
+				context.getGlobalContext().removeDependency(
+					DatabaseAndTableName(select_database_name, select_table_name),
+					DatabaseAndTableName(database_name, table_name));
+
+			throw;
+		}
 	}
 }
 

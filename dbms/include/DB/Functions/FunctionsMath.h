@@ -1,5 +1,7 @@
 #pragma once
 
+#include <common/exp10.h>
+
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Functions/IFunction.h>
 
@@ -22,28 +24,24 @@ public:
 private:
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 0)
-			throw Exception{
-				"Number of arguments for function " + getName() + "doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 0",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-			};
+	size_t getNumberOfArguments() const override { return 0; }
 
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		return std::make_shared<DataTypeFloat64>();
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(
-			block.rowsInFirstColumn(),
+		block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(
+			block.rows(),
 			Impl::value);
 	}
 };
 
 
-template <typename Impl> class FunctionMathUnaryFloat64 : public IFunction
+template <typename Impl>
+class FunctionMathUnaryFloat64 : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
@@ -53,15 +51,10 @@ public:
 private:
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 1)
-			throw Exception{
-				"Number of arguments for function " + getName() + "doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-			};
+	size_t getNumberOfArguments() const override { return 1; }
 
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		const auto check_argument_type = [this] (const IDataType * const arg) {
 			if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
 				!typeid_cast<const DataTypeUInt16 *>(arg) &&
@@ -92,7 +85,7 @@ private:
 		if (const auto col = typeid_cast<const ColumnVector<FieldType> *>(arg))
 		{
 			const auto dst = std::make_shared<ColumnVector<Float64>>();
-			block.getByPosition(result).column = dst;
+			block.safeGetByPosition(result).column = dst;
 
 			const auto & src_data = col->getData();
 			const auto src_size = src_data.size();
@@ -126,7 +119,7 @@ private:
 
 			Impl::execute(src, dst);
 
-			block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(col->size(), dst[0]);
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(col->size(), dst[0]);
 
 			return true;
 		}
@@ -134,9 +127,9 @@ private:
 		return false;
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const auto arg = block.getByPosition(arguments[0]).column.get();
+		const auto arg = block.safeGetByPosition(arguments[0]).column.get();
 
 		if (!execute<UInt8>(block, arg, result) &&
 			!execute<UInt16>(block, arg, result) &&
@@ -194,7 +187,8 @@ struct UnaryFunctionVectorized
 #endif
 
 
-template <typename Impl> class FunctionMathBinaryFloat64 : public IFunction
+template <typename Impl>
+class FunctionMathBinaryFloat64 : public IFunction
 {
 public:
 	static constexpr auto name = Impl::name;
@@ -204,15 +198,10 @@ public:
 private:
 	String getName() const override { return name; }
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 2)
-			throw Exception{
-				"Number of arguments for function " + getName() + "doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 2",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-			};
+	size_t getNumberOfArguments() const override { return 2; }
 
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		const auto check_argument_type = [this] (const IDataType * const arg) {
 			if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
 				!typeid_cast<const DataTypeUInt16 *>(arg) &&
@@ -227,8 +216,7 @@ private:
 			{
 				throw Exception{
 					"Illegal type " + arg->getName() + " of argument of function " + getName(),
-					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-				};
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 			}
 		};
 
@@ -245,7 +233,7 @@ private:
 		if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
 		{
 			const auto dst = std::make_shared<ColumnVector<Float64>>();
-			block.getByPosition(result).column = dst;
+			block.safeGetByPosition(result).column = dst;
 
 			LeftType left_src_data[Impl::rows_per_iteration];
 			std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->getData());
@@ -282,7 +270,7 @@ private:
 
 			Impl::execute(left_src, right_src, dst);
 
-			block.getByPosition(result).column = std::make_shared<ColumnConst<Float64>>(left_arg->size(), dst[0]);
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(left_arg->size(), dst[0]);
 
 			return true;
 		}
@@ -297,7 +285,7 @@ private:
 		if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
 		{
 			const auto dst = std::make_shared<ColumnVector<Float64>>();
-			block.getByPosition(result).column = dst;
+			block.safeGetByPosition(result).column = dst;
 
 			const auto & left_src_data = left_arg->getData();
 			const auto & right_src_data = right_arg_typed->getData();
@@ -331,7 +319,7 @@ private:
 		else if (const auto right_arg_typed = typeid_cast<const ColumnConst<RightType> *>(right_arg))
 		{
 			const auto dst = std::make_shared<ColumnVector<Float64>>();
-			block.getByPosition(result).column = dst;
+			block.safeGetByPosition(result).column = dst;
 
 			const auto & left_src_data = left_arg->getData();
 			RightType right_src_data[Impl::rows_per_iteration];
@@ -370,7 +358,7 @@ private:
 	{
 		if (const auto left_arg_typed = typeid_cast<const LeftColumnType<LeftType> *>(left_arg))
 		{
-			const auto right_arg = block.getByPosition(arguments[1]).column.get();
+			const auto right_arg = block.safeGetByPosition(arguments[1]).column.get();
 
 			if (executeRight<LeftType, UInt8>(block, result, left_arg_typed, right_arg) ||
 				executeRight<LeftType, UInt16>(block, result, left_arg_typed, right_arg) ||
@@ -388,7 +376,7 @@ private:
 			else
 			{
 				throw Exception{
-					"Illegal column " + block.getByPosition(arguments[1]).column->getName() +
+					"Illegal column " + block.safeGetByPosition(arguments[1]).column->getName() +
 					" of second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN
 				};
@@ -409,9 +397,9 @@ private:
 		return false;
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		const auto left_arg = block.getByPosition(arguments[0]).column.get();
+		const auto left_arg = block.safeGetByPosition(arguments[0]).column.get();
 
 		if (!executeLeft<UInt8>(block, arguments, result, left_arg) &&
 			!executeLeft<UInt16>(block, arguments, result, left_arg) &&

@@ -5,6 +5,12 @@
 #include <DB/Common/HashTable/HashTableAllocator.h>
 
 
+/** NOTE HashMap could only be used for memmoveable (position independent) types.
+  * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
+  * Also, key in hash table must be of type, that zero bytes is compared equals to zero key.
+  */
+
+
 struct NoInitTag {};
 
 /// Пара, которая не инициализирует элементы, если не нужно.

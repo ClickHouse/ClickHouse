@@ -1,58 +1,55 @@
 #pragma once
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/Common/HashTable/HashSet.h>
-#include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Interpreters/Limits.h>
-
+#include <DB/Interpreters/SetVariants.h>
 
 namespace DB
 {
 
-/** Из потока блоков оставляет только уникальные строки.
-  * Для реализации SELECT DISTINCT ... .
-  * Если указан ненулевой limit - прекращает выдавать строки после того, как накопилось limit строк
-  *  - для оптимизации SELECT DISTINCT ... LIMIT ... .
+/** This class is intended for implementation of SELECT DISTINCT clause and
+  * leaves only unique rows in the stream.
+  *
+  * To optimize the SELECT DISTINCT ... LIMIT clause we can
+  * set limit_hint to non zero value. So we stop emitting new rows after
+  * count of already emitted rows will reach the limit_hint.
   */
 class DistinctBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	/// Пустой columns_ значит все столбцы.
-	DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_, Names columns_);
+	/// Empty columns_ means all collumns.
+	DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_hint_, Names columns_);
 
 	String getName() const override { return "Distinct"; }
 
-	String getID() const override
-	{
-		std::stringstream res;
-		res << "Distinct(" << children.back()->getID() << ")";
-		return res.str();
-	}
+	String getID() const override;
 
 protected:
 	Block readImpl() override;
-private:
 
-	bool checkLimits() const
-	{
-		if (max_rows && set.size() > max_rows)
-			return false;
-		if (max_bytes && set.getBufferSizeInBytes() > max_bytes)
-			return false;
-		return true;
-	}
+private:
+	bool checkLimits() const;
+
+	ConstColumnPlainPtrs getKeyColumns(const Block & block) const;
+
+	template <typename Method>
+	void buildFilter(
+		Method & method,
+		const ConstColumnPlainPtrs & key_columns,
+		IColumn::Filter & filter,
+		size_t rows,
+		SetVariants & variants) const;
+
 
 	Names columns_names;
+	SetVariants data;
+	Sizes key_sizes;
+	size_t limit_hint;
 
-	size_t limit;
-
-	/// Ограничения на максимальный размер множества
+	/// Restrictions on the maximum size of the output data.
 	size_t max_rows;
 	size_t max_bytes;
 	OverflowMode overflow_mode;
-
-	using SetHashed = HashSet<UInt128, UInt128TrivialHash>;
-	SetHashed set;
 };
 
 }

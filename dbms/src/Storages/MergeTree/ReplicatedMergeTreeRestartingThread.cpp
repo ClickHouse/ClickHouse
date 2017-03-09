@@ -219,7 +219,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
 		if (!storage.queue_task_handle)
 			storage.queue_task_handle = storage.context.getBackgroundPool().addTask(
-				std::bind(&StorageReplicatedMergeTree::queueTask, &storage, std::placeholders::_1));
+				std::bind(&StorageReplicatedMergeTree::queueTask, &storage));
 
 		return true;
 	}
@@ -333,9 +333,9 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 
 	/// Одновременно объявим, что эта реплика активна, и обновим хост.
 	zkutil::Ops ops;
-	ops.push_back(new zkutil::Op::Create(is_active_path,
+	ops.emplace_back(std::make_unique<zkutil::Op::Create>(is_active_path,
 		active_node_identifier, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
-	ops.push_back(new zkutil::Op::SetData(storage.replica_path + "/host", address.toString(), -1));
+	ops.emplace_back(std::make_unique<zkutil::Op::SetData>(storage.replica_path + "/host", address.toString(), -1));
 
 	try
 	{

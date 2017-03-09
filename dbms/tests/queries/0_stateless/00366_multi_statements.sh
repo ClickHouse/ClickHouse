@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 clickhouse-client --query="SELECT 1"
 clickhouse-client --query="SELECT 1;"

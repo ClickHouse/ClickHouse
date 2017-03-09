@@ -33,13 +33,6 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
 }
 
 
-void ReplicatedMergeTreeBlockOutputStream::writePrefix()
-{
-	/// TODO Можно ли здесь не блокировать структуру таблицы?
-	storage.data.delayInsertIfNeeded(&storage.restarting_thread->getWakeupEvent());
-}
-
-
 /// Позволяет проверить, что сессия в ZooKeeper ещё жива.
 static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 {
@@ -53,6 +46,9 @@ static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 
 void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 {
+	/// TODO Можно ли здесь не блокировать структуру таблицы?
+	storage.data.delayInsertIfNeeded(&storage.restarting_thread->getWakeupEvent());
+
 	auto zookeeper = storage.getZooKeeper();
 
 	assertSessionIsNotExpired(zookeeper);
@@ -130,7 +126,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 		union
 		{
 			char bytes[16];
-			UInt64 lo, hi;
+			UInt64 words[2];
 		} hash_value;
 		hash.get128(hash_value.bytes);
 
@@ -141,7 +137,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 		///       Можно для этого сделать настройку или синтаксис в запросе (например, ID=null).
 		if (block_id.empty())
 		{
-			block_id = toString(hash_value.lo) + "_" + toString(hash_value.hi);
+			block_id = toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 
 			if (block_id.empty())
 				throw Exception("Logical error: block_id is empty.", ErrorCodes::LOGICAL_ERROR);
@@ -163,20 +159,20 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 		zkutil::Ops ops;
 		auto acl = zookeeper->getDefaultACL();
 
-		ops.push_back(
-			new zkutil::Op::Create(
+		ops.emplace_back(
+			std::make_unique<zkutil::Op::Create>(
 				storage.zookeeper_path + "/blocks/" + block_id,
 				"",
 				acl,
 				zkutil::CreateMode::Persistent));
-		ops.push_back(
-			new zkutil::Op::Create(
+		ops.emplace_back(
+			std::make_unique<zkutil::Op::Create>(
 				storage.zookeeper_path + "/blocks/" + block_id + "/checksum",
 				checksum,
 				acl,
 				zkutil::CreateMode::Persistent));
-		ops.push_back(
-			new zkutil::Op::Create(
+		ops.emplace_back(
+			std::make_unique<zkutil::Op::Create>(
 				storage.zookeeper_path + "/blocks/" + block_id + "/number",
 				toString(part_number),
 				acl,
@@ -186,7 +182,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 		storage.addNewPartToZooKeeper(part, ops, part_name);
 
 		/// Лог репликации.
-		ops.push_back(new zkutil::Op::Create(
+		ops.emplace_back(std::make_unique<zkutil::Op::Create>(
 			storage.zookeeper_path + "/log/log-",
 			log_entry.toString(),
 			acl,
@@ -213,24 +209,24 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 				*  что говорит о том, что кворум достигнут.
 				*/
 
-			ops.push_back(
-				new zkutil::Op::Create(
+			ops.emplace_back(
+				std::make_unique<zkutil::Op::Create>(
 					quorum_status_path,
 					quorum_entry.toString(),
 					acl,
 					zkutil::CreateMode::Persistent));
 
 			/// Удостоверяемся, что за время вставки, реплика не была переинициализирована или выключена (при завершении сервера).
-			ops.push_back(
-				new zkutil::Op::Check(
+			ops.emplace_back(
+				std::make_unique<zkutil::Op::Check>(
 					storage.replica_path + "/is_active",
 					is_active_node_version));
 
 			/// К сожалению, одной лишь проверки выше недостаточно, потому что узел is_active может удалиться и появиться заново с той же версией.
 			/// Но тогда изменится значение узла host. Будем проверять это.
 			/// Замечательно, что эти два узла меняются в одной транзакции (см. MergeTreeRestartingThread).
-			ops.push_back(
-				new zkutil::Op::Check(
+			ops.emplace_back(
+				std::make_unique<zkutil::Op::Check>(
 					storage.replica_path + "/host",
 					host_node_version));
 		}

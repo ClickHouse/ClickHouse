@@ -4,10 +4,15 @@
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ASTCheckQuery.h>
 
-using namespace DB;
+#include <DB/Common/typeid_cast.h>
+
+
+namespace DB
+{
 
 bool ParserCheckQuery::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
+	ParserWhiteSpaceOrComments ws;
 	ParserString s_check("CHECK", true, true);
 	ParserString s_table("TABLE", true, true);
 	ParserString s_dot(".");
@@ -36,21 +41,19 @@ bool ParserCheckQuery::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr & 
 		if (!table_parser.parse(pos, end, table, max_parsed_pos, expected))
 			return false;
 
-		query->database = typeid_cast<ASTIdentifier &>(*database).name;
-		query->table = typeid_cast<ASTIdentifier &>(*table).name;
+		query->database = typeid_cast<const ASTIdentifier &>(*database).name;
+		query->table = typeid_cast<const ASTIdentifier &>(*table).name;
 	}
 	else
 	{
 		table = database;
-		query->table = typeid_cast<ASTIdentifier &>(*table).name;
+		query->table = typeid_cast<const ASTIdentifier &>(*table).name;
 	}
 
 	ws.ignore(pos, end);
 
-	/// FORMAT format_name
-	if (!parseFormat(*query, pos, end, node, max_parsed_pos, expected))
-		return false;
-
 	node = query;
 	return true;
+}
+
 }

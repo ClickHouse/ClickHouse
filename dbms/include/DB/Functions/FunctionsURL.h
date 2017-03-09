@@ -3,10 +3,15 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Common/StringUtils.h>
+#include <DB/Common/StringView.h>
 #include <DB/Functions/FunctionsString.h>
 #include <DB/Functions/FunctionsStringSearch.h>
 #include <DB/Functions/FunctionsStringArray.h>
 
+#ifdef __APPLE__
+#include <common/apple_memrchr.h>
+#endif
 
 namespace DB
 {
@@ -54,26 +59,70 @@ namespace DB
 
 using Pos = const char *;
 
+
+/// Extracts scheme from given url.
+inline StringView getURLScheme(const StringView & url)
+{
+	// scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+	const char * p = url.data();
+	const char * end = url.data() + url.size();
+
+	if (isAlphaASCII(*p))
+	{
+		for (++p; p < end; ++p)
+		{
+			if (!(isAlphaNumericASCII(*p) || *p == '+' || *p == '-' || *p == '.'))
+			{
+				break;
+			}
+		}
+
+		return StringView(url.data(), p - url.data());
+	}
+
+	return StringView();
+}
+
+
+/// Extracts host from given url.
+inline StringView getURLHost(const StringView & url)
+{
+	StringView scheme = getURLScheme(url);
+	const char * p = url.data() + scheme.size();
+	const char * end = url.data() + url.size();
+
+	// Colon must follows after scheme.
+	if (p == end || *p != ':')
+		return StringView();
+	// Authority component must starts with "//".
+	if (end - p < 2 || (p[1] != '/' || p[2] != '/'))
+		return StringView();
+	else
+		p += 3;
+
+	const char * st = p;
+
+	for (; p < end; ++p)
+	{
+		if (*p == '@')
+		{
+			st = p + 1;
+		}
+		else if (*p == ':' || *p == '/' || *p == '?' || *p == '#')
+		{
+			break;
+		}
+	}
+
+	return (p == st) ? StringView() : StringView(st, p - st);
+}
+
+
 struct ExtractProtocol
 {
-	static size_t getReserveLengthForElement() { return strlen("https") + 1; }
+	static size_t getReserveLengthForElement();
 
-	static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
-	{
-		res_data = data;
-		res_size = 0;
-
-		Pos pos = data;
-
-		while (isAlphaNumericASCII(*pos))
-			++pos;
-
-		if (pos == data || pos + 3 >= data + size)
-			return;
-
-		if (pos[0] == ':')
-			res_size = pos - data;
-	}
+	static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size);
 };
 
 template <bool without_www>
@@ -83,33 +132,21 @@ struct ExtractDomain
 
 	static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
 	{
-		res_data = data;
-		res_size = 0;
+		StringView host = getURLHost(StringView(data, size));
 
-		Pos pos = data;
-		Pos end = pos + size;
+		if (host.empty())
+		{
+			res_data = data;
+			res_size = 0;
+		}
+		else
+		{
+			if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4))
+				host = host.substr(4);
 
-		Pos tmp;
-		size_t protocol_length;
-		ExtractProtocol::execute(data, size, tmp, protocol_length);
-		pos += protocol_length + 3;
-
-		if (pos[-1] != '/' || pos[-2] != '/')
-			return;
-
-		if (without_www && pos + 4 < end && !strncmp(pos, "www.", 4))
-			pos += 4;
-
-		Pos domain_begin = pos;
-
-		while (pos < end && *pos != '/' && *pos != ':' && *pos != '?' && *pos != '#')
-			++pos;
-
-		if (pos == domain_begin)
-			return;
-
-		res_data = domain_begin;
-		res_size = pos - domain_begin;
+			res_data = host.data();
+			res_size = host.size();
+		}
 	}
 };
 
@@ -207,39 +244,27 @@ struct ExtractTopLevelDomain
 
 	static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
 	{
+		StringView host = getURLHost(StringView(data, size));
+
 		res_data = data;
 		res_size = 0;
 
-		Pos pos = data;
-		Pos end = pos + size;
+		if (!host.empty())
+		{
+			if (host.back() == '.')
+				host = StringView(host.data(), host.size() - 1);
 
-		Pos tmp;
-		size_t protocol_length;
-		ExtractProtocol::execute(data, size, tmp, protocol_length);
-		pos += protocol_length + 3;
+			Pos last_dot = reinterpret_cast<Pos>(memrchr(host.data(), '.', host.size()));
 
-		if (pos[-1] != '/' || pos[-2] != '/')
-			return;
+			if (!last_dot)
+				return;
+			/// Для IPv4-адресов не выделяем ничего.
+			if (last_dot[1] <= '9')
+				return;
 
-		Pos domain_begin = pos;
-
-		while (pos < end && *pos != '/' && *pos != ':' && *pos != '?' && *pos != '#')
-			++pos;
-
-		if (pos == domain_begin)
-			return;
-
-		Pos last_dot = reinterpret_cast<Pos>(memrchr(domain_begin, '.', pos - domain_begin));
-
-		if (!last_dot)
-			return;
-
-		/// Для IPv4-адресов не выделяем ничего.
-		if (last_dot[1] <= '9')
-			return;
-
-		res_data = last_dot + 1;
-		res_size = pos - res_data;
+			res_data = last_dot + 1;
+			res_size = (host.data() + host.size()) - res_data;
+		}
 	}
 };
 
@@ -371,7 +396,7 @@ struct ExtractWWW
 		ExtractProtocol::execute(data, size, tmp, protocol_length);
 		pos += protocol_length + 3;
 
-		if (pos[-1] != '/' || pos[-2] != '/')
+		if (pos >= end || pos[-1] != '/' || pos[-2] != '/')
 			return;
 
 		if (pos + 4 < end && !strncmp(pos, "www.", 4))
@@ -537,13 +562,10 @@ public:
 	static constexpr auto name = "extractURLParameters";
 	static String getName() { return name; }
 
+	static size_t getNumberOfArguments() { return 1; }
+
 	static void checkArguments(const DataTypes & arguments)
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -625,13 +647,10 @@ public:
 	static constexpr auto name = "extractURLParameterNames";
 	static String getName() { return name; }
 
+	static size_t getNumberOfArguments() { return 1; }
+
 	static void checkArguments(const DataTypes & arguments)
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -705,13 +724,10 @@ public:
 	static constexpr auto name = "URLHierarchy";
 	static String getName() { return name; }
 
+	static size_t getNumberOfArguments() { return 1; }
+
 	static void checkArguments(const DataTypes & arguments)
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -804,13 +820,10 @@ public:
 	static constexpr auto name = "URLPathHierarchy";
 	static String getName() { return name; }
 
+	static size_t getNumberOfArguments() { return 1; }
+
 	static void checkArguments(const DataTypes & arguments)
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 1.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -993,6 +1006,20 @@ struct CutSubstringImpl
 };
 
 
+/// Percent decode of url data.
+struct DecodeURLComponentImpl
+{
+	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
+		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets);
+
+	static void constant(const std::string & data,
+		std::string & res_data);
+
+	static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
+		ColumnString::Chars_t & res_data);
+};
+
+
 struct NameProtocol 					{ static constexpr auto name = "protocol"; };
 struct NameDomain 						{ static constexpr auto name = "domain"; };
 struct NameDomainWithoutWWW 			{ static constexpr auto name = "domainWithoutWWW"; };
@@ -1003,6 +1030,7 @@ struct NamePathFull						{ static constexpr auto name = "pathFull"; };
 struct NameQueryString					{ static constexpr auto name = "queryString"; };
 struct NameFragment 					{ static constexpr auto name = "fragment"; };
 struct NameQueryStringAndFragment		{ static constexpr auto name = "queryStringAndFragment"; };
+struct NameDecodeURLComponent           { static constexpr auto name = "decodeURLComponent"; };
 
 struct NameCutToFirstSignificantSubdomain { static constexpr auto name = "cutToFirstSignificantSubdomain"; };
 
@@ -1024,6 +1052,7 @@ using FunctionPathFull = FunctionStringToString<ExtractSubstringImpl<ExtractPath
 using FunctionQueryString = FunctionStringToString<ExtractSubstringImpl<ExtractQueryString<true> >, 	NameQueryString>	;
 using FunctionFragment = FunctionStringToString<ExtractSubstringImpl<ExtractFragment<true> >, 		NameFragment>		;
 using FunctionQueryStringAndFragment = FunctionStringToString<ExtractSubstringImpl<ExtractQueryStringAndFragment<true> >, NameQueryStringAndFragment>;
+using FunctionDecodeURLComponent = FunctionStringToString<DecodeURLComponentImpl, NameDecodeURLComponent>;
 
 using FunctionCutToFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdomain>, NameCutToFirstSignificantSubdomain>;
 

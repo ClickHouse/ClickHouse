@@ -22,8 +22,8 @@ namespace ErrorCodes
 	extern const int PARAMETER_OUT_OF_BOUND;
 }
 
-/** Cтолбeц значений типа "строка фиксированной длины".
-  * Если вставить строку меньшей длины, то она будет дополнена нулевыми байтами.
+/** A column of values ​​of "fixed-length string" type.
+  * If you insert a smaller string, it will be padded with zero bytes.
   */
 class ColumnFixedString final : public IColumn
 {
@@ -31,23 +31,37 @@ public:
 	using Chars_t = PaddedPODArray<UInt8>;
 
 private:
-	/// Байты строк, уложенные подряд. Строки хранятся без завершающего нулевого байта.
-	/** NOTE Требуется, чтобы смещение и тип chars в объекте был таким же, как у data в ColumnUInt8.
-	  * Это используется в функции packFixed (AggregationCommon.h)
+    /// Bytes of rows, laid in succession. The strings are stored without a trailing zero byte.
+    /** NOTE It is required that the offset and type of chars in the object be the same as that of `data in ColumnUInt8`.
+	  * Used in `packFixed` function (AggregationCommon.h)
 	  */
 	Chars_t chars;
-	/// Размер строк.
+    /// The size of the rows.
 	const size_t n;
 
 public:
-	/** Создать пустой столбец строк фиксированной длины n */
+    /** Create an empty column of strings of fixed-length `n` */
 	ColumnFixedString(size_t n_) : n(n_) {}
 
 	std::string getName() const override { return "ColumnFixedString"; }
 
-	ColumnPtr cloneEmpty() const override
+	ColumnPtr cloneResized(size_t size) const override
 	{
-		return std::make_shared<ColumnFixedString>(n);
+		ColumnPtr new_col_holder = std::make_shared<ColumnFixedString>(n);
+
+		if (size > 0)
+		{
+			auto & new_col = static_cast<ColumnFixedString &>(*new_col_holder);
+			new_col.chars.resize(size * n);
+
+			size_t count = std::min(this->size(), size);
+			memcpy(&(new_col.chars[0]), &chars[0], count * n * sizeof(chars[0]));
+
+			if (size > count)
+				memset(&(new_col.chars[count * n]), '\0', (size - count) * n);
+		}
+
+		return new_col_holder;
 	}
 
 	size_t size() const override
@@ -68,6 +82,11 @@ public:
 	size_t byteSize() const override
 	{
 		return chars.size() + sizeof(n);
+	}
+
+	size_t allocatedSize() const override
+	{
+		return chars.allocated_size() + sizeof(n);
 	}
 
 	Field operator[](size_t index) const override
@@ -162,7 +181,7 @@ public:
 		less(const ColumnFixedString & parent_) : parent(parent_) {}
 		bool operator()(size_t lhs, size_t rhs) const
 		{
-			/// TODO: memcmp тормозит.
+			/// TODO: memcmp slows down.
 			int res = memcmp(&parent.chars[lhs * parent.n], &parent.chars[rhs * parent.n], parent.n);
 			return positive ? (res < 0) : (res > 0);
 		}
@@ -290,10 +309,9 @@ public:
 		return res;
 	}
 
-	void getExtremes(Field & min, Field & max) const override
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
 	{
-		min = String();
-		max = String();
+		return scatterImpl<ColumnFixedString>(num_columns, selector);
 	}
 
 	void reserve(size_t size) override
@@ -306,6 +324,12 @@ public:
 	const Chars_t & getChars() const { return chars; }
 
 	size_t getN() const { return n; }
+
+	void getExtremes(Field & min, Field & max) const override
+	{
+		min = String();
+		max = String();
+	}
 };
 
 

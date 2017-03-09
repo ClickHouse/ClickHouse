@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 clickhouse-client --query="DROP TABLE IF EXISTS test.csv";
 clickhouse-client --query="CREATE TABLE test.csv (s String, n UInt64, d Date) ENGINE = Memory";

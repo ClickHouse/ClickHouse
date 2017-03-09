@@ -6,12 +6,13 @@
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/AggregateFunctions/IAggregateFunction.h>
 
 
 namespace DB
 {
 
-/** Создать агрегатную функцию с числовым типом в параметре шаблона, в зависимости от типа аргумента.
+/** Create an aggregate function with a numeric type in the template parameter, depending on the type of the argument.
   */
 template <template <typename> class AggregateFunctionTemplate>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
@@ -72,7 +73,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 }
 
 
-/** Для шаблона с двумя аргументами.
+/** For template with two arguments.
   */
 template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate>
 static IAggregateFunction * createWithTwoNumericTypesSecond(const IDataType & second_type)

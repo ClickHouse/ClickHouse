@@ -4,6 +4,7 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Common/HTMLForm.h>
 #include <DB/Databases/IDatabase.h>
+#include <DB/IO/HTTPCommon.h>
 
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -25,7 +26,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
 	{
 		HTMLForm params(request);
 
-		/// Даже в случае, когда отставание небольшое, выводить подробную информацию об отставании.
+        /// Even if lag is small, output detailed information about the lag.
 		bool verbose = params.get("verbose", "") == "1";
 
 		const MergeTreeSettings & settings = context.getMergeTreeSettings();
@@ -35,7 +36,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
 
 		auto databases = context.getDatabases();
 
-		/// Перебираем все реплицируемые таблицы.
+        /// Iterate through all the replicated tables.
 		for (const auto & db : databases)
 		{
 			for (auto iterator = db.second->getIterator(); iterator->isValid(); iterator->next())
@@ -60,6 +61,8 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
 			}
 		}
 
+		setResponseDefaultHeaders(response);
+
 		if (ok && !verbose)
 		{
 			const char * data = "Ok.\n";
@@ -80,7 +83,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
 
 			if (!response.sent())
 			{
-				/// Ещё ничего не отправляли, и даже не знаем, нужно ли сжимать ответ.
+                /// We have not sent anything yet and we don't even know if we need to compress response.
 				response.send() << getCurrentExceptionMessage(false) << std::endl;
 			}
 		}

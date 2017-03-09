@@ -3,6 +3,10 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/IO/HashingWriteBuffer.h>
+#include <DB/Common/Stopwatch.h>
+#include <DB/Interpreters/PartLog.h>
+#include <DB/Interpreters/Context.h>
+#include <Poco/File.h>
 
 
 namespace ProfileEvents
@@ -23,6 +27,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 
 	const auto & date_lut = DateLUT::instance();
 
+	block.checkNumberOfRows();
 	size_t rows = block.rows();
 	size_t columns = block.columns();
 
@@ -33,7 +38,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 	/// Минимальная и максимальная дата.
 	UInt16 min_date = std::numeric_limits<UInt16>::max();
 	UInt16 max_date = std::numeric_limits<UInt16>::min();
-	for (ColumnUInt16::Container_t::const_iterator it = dates.begin(); it != dates.end(); ++it)
+	for (auto it = dates.begin(); it != dates.end(); ++it)
 	{
 		if (*it < min_date)
 			min_date = *it;
@@ -59,7 +64,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 
 	ColumnPlainPtrs src_columns(columns);
 	for (size_t i = 0; i < columns; ++i)
-		src_columns[i] = block.getByPosition(i).column.get();
+		src_columns[i] = block.safeGetByPosition(i).column.get();
 
 	for (size_t i = 0; i < rows; ++i)
 	{
@@ -75,7 +80,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 		block_for_month->updateDates(dates[i]);
 
 		for (size_t j = 0; j < columns; ++j)
-			block_for_month->block.unsafeGetByPosition(j).column->insertFrom(*src_columns[j], i);
+			block_for_month->block.getByPosition(j).column->insertFrom(*src_columns[j], i);
 	}
 
 	return res;
@@ -83,6 +88,11 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 
 MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDateInterval & block_with_dates, Int64 temp_index)
 {
+	/// For logging
+	Stopwatch stopwatch;
+	PartLogElement elem;
+	elem.event_time = time(0);
+
 	Block & block = block_with_dates.block;
 	UInt16 min_date = block_with_dates.min_date;
 	UInt16 max_date = block_with_dates.max_date;
@@ -151,9 +161,23 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	new_data_part->index.swap(out.getIndex());
 	new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(part_tmp_path);
 
-	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rowsInFirstColumn());
+	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->size_in_bytes);
+
+	PartLog * part_log = context.getPartLog();
+	if (part_log)
+	{
+		elem.event_type = PartLogElement::NEW_PART;
+		elem.size_in_bytes = new_data_part->size_in_bytes;
+		elem.duration_ms = stopwatch.elapsed() / 1000000;
+
+		elem.database_name = new_data_part->storage.getDatabaseName();
+		elem.table_name = new_data_part->storage.getTableName();
+		elem.part_name = new_data_part->name;
+
+		part_log->add(elem);
+	}
 
 	return new_data_part;
 }

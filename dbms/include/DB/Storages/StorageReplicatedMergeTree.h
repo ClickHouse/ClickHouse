@@ -156,7 +156,10 @@ public:
 
 	bool supportsIndexForIn() const override { return true; }
 
+	bool checkTableCanBeDropped() const override;
+
 	MergeTreeData & getData() { return data; }
+	const MergeTreeData & getData() const { return data; }
 	MergeTreeData * getUnreplicatedData() { return unreplicated_data.get(); }
 
 
@@ -384,7 +387,7 @@ private:
 	/** Выполнить действие из очереди. Бросает исключение, если что-то не так.
 	  * Возвращает, получилось ли выполнить. Если не получилось, запись нужно положить в конец очереди.
 	  */
-	bool executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context);
+	bool executeLogEntry(const LogEntry & entry);
 
 	void executeDropRange(const LogEntry & entry);
 	bool executeAttachPart(const LogEntry & entry); /// Возвращает false, если куска нет, и его нужно забрать с другой реплики.
@@ -395,7 +398,7 @@ private:
 
 	/** Выполняет действия из очереди.
 	  */
-	bool queueTask(BackgroundProcessingPool::Context & context);
+	bool queueTask();
 
 	/// Выбор кусков для слияния.
 

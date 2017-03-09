@@ -16,33 +16,17 @@ struct MergeTreeSettings
 {
 	/** Merge settings. */
 
-	/// Determines how unbalanced merges we could do.
-	/// Bigger values for more unbalanced merges. It is advisable to be more than 1 / max_parts_to_merge_at_once.
-	double size_ratio_coefficient_to_merge_parts = 0.25;
-
-	/// How many parts could be merges at once.
-	/// Labour coefficient of parts selection O(N * max_parts_to_merge_at_once).
-	size_t max_parts_to_merge_at_once = 10;
-
-	/// But while total size of parts is too small(less than this number of bytes), we could merge more parts at once.
-	/// This is intentionally to allow quicker merge of too small parts, which could be accumulated too quickly.
-	size_t merge_more_parts_if_sum_bytes_is_less_than = 100 * 1024 * 1024;
-	size_t max_parts_to_merge_at_once_if_small = 100;
-
-	/// Parts of more than this bytes couldn't be merged at all.
-	size_t max_bytes_to_merge_parts = 10ULL * 1024 * 1024 * 1024;
-
-	/// No more than half of threads could execute merge of parts, if at least one part more than this size in bytes.
-	size_t max_bytes_to_merge_parts_small = 250 * 1024 * 1024;
-
-	/// Parts more than this size in bytes deny to merge at all.
-	size_t max_sum_bytes_to_merge_parts = 25ULL * 1024 * 1024 * 1024;
-
-	/// How much times we increase the coefficient at night.
-	size_t merge_parts_at_night_inc = 10;
+	/// Maximum in total size of parts to merge, when there are maximum (minimum) free threads in background pool (or entries in replication queue).
+	size_t max_bytes_to_merge_at_max_space_in_pool = 100ULL * 1024 * 1024 * 1024;
+	size_t max_bytes_to_merge_at_min_space_in_pool = 1024 * 1024;
 
 	/// How many tasks of merging parts are allowed simultaneously in ReplicatedMergeTree queue.
-	size_t max_replicated_merges_in_queue = 6;
+	size_t max_replicated_merges_in_queue = 16;
+
+	/// When there is less than specified number of free entries in pool (or replicated queue),
+	///  start to lower maximum size of merge to process (or to put in queue).
+	/// This is to allow small merges to process - not filling the pool with long running merges.
+	size_t number_of_free_entries_in_pool_to_lower_max_size_of_merge = 8;
 
 	/// How many seconds to keep obsolete parts.
 	time_t old_parts_lifetime = 8 * 60;
@@ -81,9 +65,9 @@ struct MergeTreeSettings
 	size_t max_suspicious_broken_parts = 10;
 
 	/// Not apply ALTER if number of files for modification(deletion, addition) more than this.
-	size_t max_files_to_modify_in_alter_columns = 50;
+	size_t max_files_to_modify_in_alter_columns = 75;
 	/// Not apply ALTER, if number of files for deletion more than this.
-	size_t max_files_to_remove_in_alter_columns = 10;
+	size_t max_files_to_remove_in_alter_columns = 50;
 
 	/// Maximum number of errors during parts loading, while ReplicatedMergeTree still allowed to start.
 	size_t replicated_max_unexpected_parts = 3;
@@ -111,6 +95,15 @@ struct MergeTreeSettings
 	/// Minimal absolute delay to close, stop serving requests and not return Ok during status check.
 	size_t min_absolute_delay_to_close = 0;
 
+	/// Enable usage of Vertical merge algorithm.
+	size_t enable_vertical_merge_algorithm = 1;
+
+	/// Minimal (approximate) sum of rows in merging parts to activate Vertical merge algorithm
+	size_t vertical_merge_algorithm_min_rows_to_activate = 16 * DEFAULT_MERGE_BLOCK_SIZE;
+
+	/// Minimal amount of non-PK columns to activate Vertical merge algorithm
+	size_t vertical_merge_algorithm_min_columns_to_activate = 11;
+
 
 	void loadFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
 	{
@@ -120,14 +113,8 @@ struct MergeTreeSettings
 	#define SET_SIZE_T(NAME) \
 		if (config.has(config_elem + "." #NAME)) NAME = parse<size_t>(config.getString(config_elem + "." #NAME));
 
-		SET_DOUBLE(size_ratio_coefficient_to_merge_parts);
-		SET_SIZE_T(max_parts_to_merge_at_once);
-		SET_SIZE_T(merge_more_parts_if_sum_bytes_is_less_than);
-		SET_SIZE_T(max_parts_to_merge_at_once_if_small);
-		SET_SIZE_T(max_bytes_to_merge_parts);
-		SET_SIZE_T(max_bytes_to_merge_parts_small);
-		SET_SIZE_T(max_sum_bytes_to_merge_parts);
-		SET_SIZE_T(merge_parts_at_night_inc);
+		SET_SIZE_T(max_bytes_to_merge_at_max_space_in_pool);
+		SET_SIZE_T(max_bytes_to_merge_at_min_space_in_pool);
 		SET_SIZE_T(max_replicated_merges_in_queue);
 		SET_SIZE_T(old_parts_lifetime);
 		SET_SIZE_T(temporary_directories_lifetime);
@@ -151,6 +138,9 @@ struct MergeTreeSettings
 		SET_SIZE_T(min_relative_delay_to_yield_leadership);
 		SET_SIZE_T(min_relative_delay_to_close);
 		SET_SIZE_T(min_absolute_delay_to_close);
+		SET_SIZE_T(enable_vertical_merge_algorithm);
+		SET_SIZE_T(vertical_merge_algorithm_min_rows_to_activate);
+		SET_SIZE_T(vertical_merge_algorithm_min_columns_to_activate);
 
 	#undef SET_SIZE_T
 	#undef SET_DOUBLE

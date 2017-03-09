@@ -1,6 +1,8 @@
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
+#include <DB/Interpreters/Context.h>
 #include <DB/Parsers/ParserSelectQuery.h>
+#include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ExpressionListParsers.h>
@@ -32,7 +34,7 @@ int main(int argc, char ** argv)
 	}
 
 	ASTPtr root;
-	ParserPtr parsers[] = {ParserPtr(new ParserSelectQuery), ParserPtr(new ParserExpressionList(false))};
+	ParserPtr parsers[] = {std::make_unique<ParserSelectQuery>(), std::make_unique<ParserExpressionList>(false)};
 	for (size_t i = 0; i < sizeof(parsers)/sizeof(parsers[0]); ++i)
 	{
 		IParser & parser = *parsers[i];

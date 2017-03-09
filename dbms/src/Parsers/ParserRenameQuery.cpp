@@ -4,6 +4,8 @@
 #include <DB/Parsers/CommonParsers.h>
 #include <DB/Parsers/ParserRenameQuery.h>
 
+#include <DB/Common/typeid_cast.h>
+
 
 namespace DB
 {

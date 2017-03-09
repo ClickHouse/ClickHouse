@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<title>Evolution of data structures in Yandex.Metrica</title>
+	<meta charset="utf-8">
+	<meta http-equiv="x-ua-compatible" content="ie=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="shower/themes/ribbon/styles/screen-16x10.css">
+</head>
+<body class="shower list">
+	<header class="caption">
+		<h1>Evolution of data structures in Yandex.Metrica</h1>
+	</header>
+
+	<section class="slide" id="cover">
+		<h1 style="margin-top: 200px">Evolution of data structures<br/>in Yandex.Metrica</h1>
+	</section>
+
+	<section class="slide">
+		<h2>Introduction</h2>
+	</section>
+
+	<section class="slide">
+		<h2>About me</h2>
+		<p>Alexey, developer of ClickHouse.</p>
+		<p>I work on data processing engine of Yandex.Metrica since 2008.</p>
+	</section>
+
+	<section class="slide" style="background: url('pictures/yandex_office.jpg') no-repeat center center; background-size: 100% 100%;">
+		<h2><span style="padding: 10px; background: rgba(255, 255, 255, 0.75);">About Yandex</span></h2>
+		<p style="margin-top: 200px;"><span style="padding: 10px; line-height: 1.8; background: rgba(255, 255, 255, 0.75);">Yandex is one of the largest internet companies in Europe</span><br /><span style="padding: 10px; line-height: 1.8; background: rgba(255, 255, 255, 0.75);">operating Russia’s most popular search engine.</span></p>
+	</section>
+
+	<section class="slide">
+		<h2>About Yandex.Metrica</h2>
+		<p>Yandex.Metrica (https://metrica.yandex.com/) is a service for web analytics.</p>
+		<p>Largest in Russia, second largest in the world (just after Google Analytics).</p>
+		<p><img src="pictures/metrika_market_share.png"/></p>
+		<p>We are processing about ~25 billions of events (page views, conversions, etc).</p>
+		<p>We must generate and show reports in realtime.</p>
+	</section>
+
+	<section class="slide">
+		<img src="pictures/metrika2.png" style="height:100%"/>
+	</section>
+
+	<section class="slide">
+		<h2>History</h2>
+	</section>
+
+	<section class="slide">
+		<h2>How to store data?</h2>
+		<p>Big data processing is not a problem.</p>
+		<p>The challenge is how to store data in that way to allow both:</p>
+		<p>- efficient ingestion of click stream in realtime;</p>
+		<p>- efficient generation of reports;</p>
+		<p>&nbsp;</p>
+		<p>Let review our historical solutions first...</p>
+	</section>
+
+	<section class="slide">
+		<h2>MySQL (MyISAM) 2008-2011</h2>
+		<p>We have had about 50 predefined report types.</p>
+		<p>We create a table for each of them.</p>
+		<p>Each table has primary key in form of:</p>
+		<p>&nbsp;&nbsp;&nbsp;&nbsp;site_id, date, <i>key</i> -> aggregated statistics.</p>
+		<p>The data was inserted in mini-batches of aggregated deltas,<br/>using ON DUPLICATE KEY UPDATE.</p>
+		<p>&nbsp;</p>
+		<p>... but this just don't work.</p>
+	</section>
+
+	<section class="slide">
+		<h2>Data locality on disk (artistic view)</h2>
+		<p>The main concern is <b>data locality</b>.</p>
+		<img src="pictures/data_locality.png" style="width:100%"/>
+	</section>
+
+	<section class="slide">
+		<h2>MySQL (MyISAM) 2008-2011</h2>
+		<p>We use HDD (rotational drives).<br/>We cannot afford petabytes of SSDs.</p>
+		<p>Each seek is ~12 ms of latency,<br/> usually no more than 1000 random reads/second in RAID array.</p>
+
+		<p>Time to read data from disk array is dependent on:<br />- number of seeks;<br />- total amount of data;</p>
+
+		<p>Example: read 100&nbsp;000 rows, randomly scattered on disk:<br />- at least 100 seconds in worst case.<br />User won't wait hundred seconds for the report.</p>
+
+		<p>The only way to read data from disk array in appropriate amount of time is to minimize number of seek by maintaining data locality.</p>
+	</section>
+
+	<section class="slide">
+		<h2>MySQL (MyISAM) 2008-2011</h2>
+		<p>Fundamental problem:</p>
+
+		<p>Data is <b>inserted</b> almost in time order:
+		<br />- each second we have new portion data for this second;
+		<br />- but data for different web sites are comes in random order in a stream;</p>
+
+		<p>Data is <b>selected</b> by ranges for specified web site and date period:
+		<br />- in ranges of completely different order;</p>
+	</section>
+
+	<section class="slide">
+		<h2>MySQL (MyISAM) 2008-2011</h2>
+		<p>MyISAM stores data in MYD and MYI files.<br/>MYD contains data almost in order of insertion.<br/>MYI contains B-tree index that maps a key to offset in MYD file.</p>
+		<p>Insertion of data is almost fine.<br />But selecting of data by range of primary key was non-practical.</p>
+		<p>Nevertheless, we made it work by:</p>
+		<p>
+		- tricky partitioning;<br/>
+		- organizing data in few generations with different partitioning scheme;<br/>
+		- moving data between tables by scheduled scripts;<br/>
+		- report generation becomes ugly UNION ALL queries.</p>
+	</section>
+
+	<section class="slide">
+		<h2>MySQL (MyISAM) 2008-2011</h2>
+		<p>As of 2011 we was storing about 580 billion rows in MyISAM tables.</p>
+		<p>We were not satisfied by performance and maintenance cost:<br/>
+		Example: page title report loading time, 90% quantile was more than 10 seconds.</p>
+		<p>... After all, everything was converted and deleted.</p>
+	</section>
+
+	<section class="slide">
+		<h2>Metrage, 2010-2015</h2>
+		<p>(Specialized data structure, developed specially for aggregation of data and report generation).</p>
+		<p>To maintain data locality, we need<br/>to constantly reordering data by primary key.</p>
+		<p>We cannot maintain desired order at INSERT time, nor on SELECT time;<br/>we must do it in background.</p>
+		<p><i>Obviously</i>: we need an LSM-tree!</p>
+	</section>
+
+	<section class="slide">
+		<h2>Metrage, 2010-2015</h2>
+		<p>Metrage: <b>Metr</b>ica + <b>Ag</b>gregated statistics.</p>
+		<p>We have created custom data structure for that purpose.</p>
+		<p>In 2010, there was no LevelDB.<br />We just got some insights from article about TokuDB.</p>
+		<p>Metrage is designed for the purpose of realtime data aggregation:<br/>
+		- row in Metrage table is custom C++ struct with <i>update</i> and <i>merge</i> methods.</p>
+		<p>Example: a row in Metrage table could contain a HyperLogLog.</p>
+		<p>Data in Metrage is aggregated:<br/>- on insertion, in batches;<br/>- during background compaction;<br/>- on the fly, during report generation.</p>
+	</section>
+
+	<section class="slide">
+		<h2>Metrage, 2010-2015</h2>
+		<p>Everything was working fine.<br/>The problem of data locality was solved.<br/>Reports was loading quickly.</p>
+		<p>As of 2015 we stored 3.37 trillion rows in Metrage<br/>and used 39 * 2 servers for this.</p>
+		<p>But we have had just ~50 pre-defined reports.</p>
+		<p>No customization and drill down was possible.</p>
+		<p>The user wants to slice and dice every report by every dimension!</p>
+		<p>&nbsp;</p>
+		<p>... and we have developed just another custom data structure.</p>
+	</section>
+
+	<section class="slide">
+		<h2>The report builder, 2010</h2>
+		<p>We had quickly made a prototype of so-called "report&nbsp;builder".</p>
+		<p>This was 2010 year. It was just simple specialized column-oriented data structure.</p>
+		<p>It worked fine and we got understanding, what the right direction to go.</p>
+		<p>We need good column-oriented DBMS.</p>
+	</section>
+
+	<section class="slide">
+		<h2>Why column-oriented?</h2>
+		<p>This is how "traditional" row-oriented databases work:</p>
+		<p><img src="pictures/row_oriented.gif"/></p>
+	</section>
+
+	<section class="slide">
+		<h2>Why column-oriented?</h2>
+		<p>And this is how column-oriented databases work:</p>
+		<p><img src="pictures/column_oriented.gif"/></p>
+	</section>
+
+	<section class="slide">
+		<h2>Why column-oriented?</h2>
+		<p>Hypothesis:</p>
+		<p>If we have good enough column-oriented DBMS,<br/>we could store all our data in non-aggregated form<br/>(raw pageviews and sessions) and generate all the reports on the fly,<br />to allow infinite customization.</p>
+		<p>To check this hypothesis, we started to evaluate existing solutions.</p>
+		<p>MonetDB, InfiniDB, Infobright and so on...</p>
+		<p>No appropriate solutions were exist in 2010.</p>
+	</section>
+
+	<section class="slide">
+		<h2>ClickHouse</h2>
+		<p>As an experimental project, we started to develop<br />our own column-oriented DBMS: ClickHouse.</p>
+		<p>In 2012 it was in production state.</p>
+		<p>In 2014 we re-lauched Yandex.Metrica as Metrica 2.</p>
+		<p>All data is stored in ClickHouse and in non-aggregated form<br />and every report is generated on the fly.</p>
+		<p>In Metrika 2 the user could create it's own report with<br />
+		- custom dimensions, metrics, filters, user-centric segmentation...<br/>
+		- and to dig through data to the detail of individual visitors.</p>
+	</section>
+
+	<section class="slide">
+		<h2>ClickHouse</h2>
+		<p>The main target for ClickHouse is query execution speed.</p>
+		<p>In Yandex.Metrika, users could analyze data for their web sites of any volume.</p>
+		<p>Biggest classifieds and e-commerce sites with hundreds millions PV/day are using Yandex.Metrika (e.g. ru.aliexpress.com).</p>
+		<p>In contrast to GA*, in Yandex.Metrika, you could get data reports for large web sites without sampling.</p>
+		<p>As data is processed on the fly, ClickHouse must be able to crunch all that pageviews in sub second time.</p>
+		<p style="font-size:60%; margin-top:2em">* in Google Analytics you could get reports without sampling only in "premium" version.</p>
+	</section>
+
+	<section class="slide">
+		<h2>The main cluster of Yandex.Metrica</h2>
+		<ul style="font-size:30px;">
+			<li>20.6 trillions of rows (as of Feb 2017)</li>
+			<li>450 servers</li>
+			<li>total throughput of query processing is up to two terabytes per second</li>
+		</ul>
+		<p style="font-size:60%; margin-top:2em">* If you want to try ClickHouse, one server or VM is enough.</p>
+	</section>
+
+	<section class="slide">
+		<h2>ClickHouse</h2>
+		<ul>
+			<li>column-oriented</li>
+			<li>distributed</li>
+			<li>linearly scalable</li>
+			<li>fault-tolerant</li>
+			<li>data ingestion in realtime</li>
+			<li>realtime (sub-second) queries</li>
+			<li>support of SQL dialect + extensions<br/>(arrays, nested data types, domain-specific functions, approximate query execution)</li>
+		</ul>
+	</section>
+
+	<section class="slide">
+		<h2>Open-source (since June 2016)</h2>
+		<p>We think ClickHouse is too good to be used solely by Yandex.</p>
+		<p>We made it open-source. License: Apache 2.0.</p>
+		<p>https://github.com/yandex/ClickHouse/</p>
+	</section>
+
+	<section class="slide">
+		<h2>Open-source</h2>
+		<p>More than 100 companies is already using ClickHouse.</p>
+		<p>Examples: Mail.ru, Cloudflare, Kaspersky...</p>
+	</section>
+
+	<section class="slide">
+		<h2>When to use ClickHouse</h2>
+		<p>For well structured, clean, immutable events.</p>
+		<p>&nbsp;</p>
+		<p>Click stream. Web analytics. Adv. networks. RTB. E-commerce.</p>
+		<p>Analytics for online games. Sensor and monitoring data. Telecom&nbsp;data.</p>
+	</section>
+
+	<section class="slide">
+		<h2 style="font-size: 40px;">When <span style="color:red;">not</span> to use ClickHouse</h2>
+		<p><span style="font-size: 30px;color: #888;">OLTP</span><br/>ClickHouse doesn't have UPDATE statement and full-featured transactions.</p>
+		<p><span style="font-size: 30px;color: #888;">Key-Value</span><br/>If you want high load of small single-row queries, please use another system.</p>
+		<p><span style="font-size: 30px;color: #888;">Blob-store, document oriented</span><br/>ClickHouse is intended for vast amount of fine-grained data.</p>
+		<p><span style="font-size: 30px;color: #888;">Over-normalized data</span><br/>Better to make up single wide fact table with pre-joined dimensions.</p>
+	</section>
+
+	<section class="slide">
+		<h2>ClickHouse vs. Spark</h2>
+		<p>https://www.percona.com/blog/2017/02/13/clickhouse-new-opensource-columnar-database/</p>
+		<img src="pictures/spark.png" style="height:60%"/>
+	</section>
+
+	<section class="slide">
+		<h2>ClickHouse vs. PrestoDB</h2>
+		<p>Ömer Osman Koçak:<br /><br />
+		&laquo;When we evaluated ClickHouse the results were great compared to Prestodb. Even though the columnar storage optimizations for ORC and Clickhouse is quite similar, Clickhouse uses CPU and Memory resources more efficiently (Presto also uses vectorized execution but cannot take advantage of hardware level optimizations such as SIMD instruction sets because it's written in Java so that's fair) so we also wanted to add support for Clickhouse for our open-source analytics platform Rakam (https://github.com/rakam-io/rakam)&raquo;</p>
+	</section>
+
+	<section class="slide">
+		<h2>ClickHouse vs. InfiniDB</h2>
+		<p>&laquo;结论：clickhouse速度更快！&raquo;</p>
+		<p>&laquo;In conclusion, ClickHouse is faster!&raquo;</p>
+		<p><a href="http://verynull.com/2016/08/22/infinidb与clickhouse对比/">http://verynull.com/2016/08/22/infinidb与clickhouse对比/</a></p>
+		<p><img src="pictures/infinidb_cn.png" style="width:100%"/></p>
+	</section>
+
+	<section class="slide">
+		<h2>Why ClickHouse is so fast?</h2>
+		<p>&nbsp;</p>
+		<p style="font-size: 40px;">&mdash; we just cannot make it slower.</p>
+		<p style="font-size: 40px;">Yandex.Metrica must work.</p>
+	</section>
+
+	<section class="slide">
+		<h2>Why ClickHouse is so fast?</h2>
+		<p><b>Algorithmic optimizations.</b></p>
+		<p>MergeTree, locality of data on disk<br/>— fast range queries.</p>
+		<p>Example: uniqCombined function is a combination of three different data structures, used for different ranges of cardinalities.</p>
+		<p><b>Low-level optimizations.</b></p>
+		<p>Example: vectorized query execution.</p>
+		<p><b>Specialization and attention to detail.</b></p>
+		<p>Example: we have 17 different algorithms for GROUP BY. Best one is selected for your query.</p>
+	</section>
+
+	<section class="slide">
+		<h2>How to connect to ClickHouse</h2>
+		<p style="font-size: 30px;">HTTP REST</p>
+		<p style="font-size: 30px;">clickhouse-client</p>
+		<p style="font-size: 30px;">JDBC</p>
+		<p>&nbsp;</p>
+		<p>Python, PHP, Go, Perl, Ruby, Node.JS, R</p>
+		<p>&nbsp;</p>
+		<p>Web UI: <a href="https://github.com/smi2/clickhouse-frontend">https://github.com/smi2/clickhouse-frontend</a></p>
+		<p>Redash, Zeppelin, Superset, Grafana, PowerBI - somewhat works</p>
+	</section>
+
+	<section class="slide">
+		<h2>Community</h2>
+		<p>Web site: <a href="https://clickhouse.yandex/">https://clickhouse.yandex/</a></p>
+		<p>Google groups: <a href="https://groups.google.com/forum/#!forum/clickhouse">https://groups.google.com/forum/#!forum/clickhouse</a></p>
+		<p>Maillist: clickhouse-feedback@yandex-team.com</p>
+		<p>Telegram chat: <a href="https://telegram.me/clickhouse_en">https://telegram.me/clickhouse_en</a> and <a href="https://telegram.me/clickhouse_ru">https://telegram.me/clickhouse_ru</a> (now with 403 members)</p>
+		<p>GitHub: <a href="https://github.com/yandex/ClickHouse/">https://github.com/yandex/ClickHouse/</a></p>
+		<p>&nbsp;</p>
+		<p>+ meetups. Moscow, Saint-Petersburg... International meetups will be announced this year.</p>
+	</section>
+
+	<section class="slide">
+		<h2>&nbsp;</h2>
+		<p style="font-size: 40px;">Thank you. Questions.</p>
+	</section>
+
+	<section class="slide">
+		<h2>Bonus</h2>
+		<img src="pictures/example_french.png" style="height:70%"/>
+	</section>
+
+	<section class="slide">
+		<h2 style="font-size: 40px;">ClickHouse vs. typical row-oriented DBMS</h2>
+		<p>Itai Shirav:<br /><br />&laquo;I haven't made a rigorous comparison, but I did convert a time-series table with 9 million rows from Postgres to ClickHouse.</p>
+		<p>Under ClickHouse queries run about 100 times faster, and the table takes 20 times less disk space. Which is pretty amazing if you ask me&raquo;.</p>
+	</section>
+
+	<section class="slide">
+		<h2>ClickHouse for sensor data</h2>
+		<p><img src="pictures/kaspersky.png" style="width:100%"/></p>
+	</section>
+
+	<section class="slide">
+		<h2>ClickHouse vs. Greenplum</h2>
+		<p><img src="pictures/greenplum.png" style="width:50%"/></p>
+	</section>
+
+	<div class="progress"></div>
+	<script src="shower/shower.min.js"></script>
+</body>
+</html>

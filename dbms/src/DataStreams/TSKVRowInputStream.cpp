@@ -22,7 +22,7 @@ TSKVRowInputStream::TSKVRowInputStream(ReadBuffer & istr_, const Block & sample_
 
 	size_t columns = sample.columns();
 	for (size_t i = 0; i < columns; ++i)
-		name_map[sample.getByPosition(i).name] = i;		/// NOTE Можно было бы расположить имена более кэш-локально.
+		name_map[sample.safeGetByPosition(i).name] = i;		/// NOTE Можно было бы расположить имена более кэш-локально.
 }
 
 
@@ -133,7 +133,7 @@ bool TSKVRowInputStream::read(Block & block)
 
 					read_columns[index] = true;
 
-					auto & col = block.unsafeGetByPosition(index);
+					auto & col = block.getByPosition(index);
 					col.type.get()->deserializeTextEscaped(*col.column.get(), istr);
 				}
 			}
@@ -166,9 +166,15 @@ bool TSKVRowInputStream::read(Block & block)
 	/// Заполняем не встретившиеся столбцы значениями по-умолчанию.
 	for (size_t i = 0; i < columns; ++i)
 		if (!read_columns[i])
-			block.unsafeGetByPosition(i).column.get()->insertDefault();
+			block.getByPosition(i).column.get()->insertDefault();
 
 	return true;
+}
+
+
+void TSKVRowInputStream::syncAfterError()
+{
+	skipToUnescapedNextLineOrEOF(istr);
 }
 
 }

@@ -1,8 +1,7 @@
 #pragma once
 
-#include <DB/Columns/ColumnConst.h>
+#include <DB/Core/Block.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
-#include <ext/range.hpp>
 
 
 namespace DB
@@ -33,21 +32,7 @@ public:
 private:
 	BlockOutputStreamPtr output;
 
-	static Block materialize(const Block & original_block)
-	{
-		/// copy block to get rid of const
-		auto block = original_block;
-
-		for (const auto i : ext::range(0, block.columns()))
-		{
-			auto & src = block.getByPosition(i).column;
-			ColumnPtr converted = src->convertToFullColumnIfConst();
-			if (converted)
-				src = converted;
-		}
-
-		return block;
-	}
+	static Block materialize(const Block & original_block);
 };
 
 }

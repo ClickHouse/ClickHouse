@@ -6,7 +6,7 @@ CREATE TABLE test.merge (d Date, x UInt64) ENGINE = Merge(test, '^mt$');
 
 SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 SET max_block_size = 1000000;
-INSERT INTO test.mt SELECT number AS x FROM system.numbers LIMIT 100000;
+INSERT INTO test.mt (x) SELECT number AS x FROM system.numbers LIMIT 100000;
 
 SELECT *, b FROM test.mt WHERE x IN (12345, 67890) AND NOT ignore(blockSize() < 10 AS b) ORDER BY x;
 SELECT *, b FROM test.merge WHERE x IN (12345, 67890) AND NOT ignore(blockSize() < 10 AS b) ORDER BY x;

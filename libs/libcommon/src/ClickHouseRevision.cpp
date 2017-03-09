@@ -1,7 +1,7 @@
 #include <common/ClickHouseRevision.h>
-#include "revision.h"
+#include "common/config_version.h"
 
 namespace ClickHouseRevision
 {
-	unsigned get() { return REVISION; }
+	unsigned get() { return VERSION_REVISION; }
 }

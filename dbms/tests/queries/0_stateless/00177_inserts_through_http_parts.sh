@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 curl -sS 'http://localhost:8123/?query=DROP+TABLE' -d 'IF EXISTS test.insert'
 curl -sS 'http://localhost:8123/?query=CREATE' -d 'TABLE test.insert (x UInt8) ENGINE = Memory'

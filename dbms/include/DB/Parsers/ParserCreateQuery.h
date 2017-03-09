@@ -7,6 +7,7 @@
 #include <DB/Parsers/ASTColumnDeclaration.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/CommonParsers.h>
+#include <DB/Common/typeid_cast.h>
 #include <Poco/String.h>
 
 
@@ -37,8 +38,8 @@ protected:
 };
 
 
-/** Тип или Storage, возможно, параметрический. Например, UInt8 или примеры из ParserIdentifierWithParameters
-  * Результат парсинга - ASTFunction с параметрами или без.
+/** Data type or table engine, possibly with parameters. For example, UInt8 or see examples from ParserIdentifierWithParameters
+  * Parse result is ASTFunction, with or without arguments.
   */
 class ParserIdentifierWithOptionalParameters : public IParserBase
 {
@@ -83,7 +84,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 		&& type_parser.parse(pos, end, type, max_parsed_pos, expected))
 	{
 		auto name_type_pair = std::make_shared<ASTNameTypePair>(StringRange(begin, pos));
-		name_type_pair->name = typeid_cast<ASTIdentifier &>(*name).name;
+		name_type_pair->name = typeid_cast<const ASTIdentifier &>(*name).name;
 		name_type_pair->type = type;
 		name_type_pair->children.push_back(type);
 		node = name_type_pair;

@@ -57,7 +57,7 @@ public:
 		static_cast<ColumnType &>(column).getData().push_back(x);
 	}
 
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override
+	void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override
 	{
 		const typename ColumnType::Container_t & x = typeid_cast<const ColumnType &>(column).getData();
 
@@ -69,7 +69,7 @@ public:
 		ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnType::value_type) * limit);
 	}
 
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override
+	void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override
 	{
 		typename ColumnType::Container_t & x = typeid_cast<ColumnType &>(column).getData();
 		size_t initial_size = x.size();
@@ -114,12 +114,12 @@ public:
 		throw Exception{"Method deserializeBinary is not supported for DataTypeVoid", ErrorCodes::NOT_IMPLEMENTED};
 	}
 
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override
+	void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override
 	{
 		throw Exception{"Method serializeBinary is not supported for DataTypeVoid", ErrorCodes::NOT_IMPLEMENTED};
 	}
 
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override
+	void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override
 	{
 		throw Exception{"Method deserializeBinary is not supported for DataTypeVoid", ErrorCodes::NOT_IMPLEMENTED};
 	}

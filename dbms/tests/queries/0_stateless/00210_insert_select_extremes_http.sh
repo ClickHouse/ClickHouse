@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 curl -sS http://localhost:8123/?extremes=1 -d @- <<< "DROP TABLE IF EXISTS test.test"
 curl -sS http://localhost:8123/?extremes=1 -d @- <<< "CREATE TABLE test.test (x UInt8) ENGINE = Log"

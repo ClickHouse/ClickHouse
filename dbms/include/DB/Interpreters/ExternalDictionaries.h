@@ -55,7 +55,7 @@ private:
 	{
 		std::unique_ptr<IDictionaryBase> dict;
 		std::chrono::system_clock::time_point next_attempt_time;
-		std::uint64_t error_count;
+		UInt64 error_count;
 	};
 
 	/** name -> dictionary.
@@ -107,21 +107,7 @@ public:
 			/** During synchronous loading of external dictionaries at moment of query execution,
 			  *  we should not use per query memory limit.
 			  */
-			struct TemporarilyDisableMemoryTracker
-			{
-				MemoryTracker * memory_tracker;
-
-				TemporarilyDisableMemoryTracker()
-				{
-					memory_tracker = current_memory_tracker;
-					current_memory_tracker = nullptr;
-				}
-
-				~TemporarilyDisableMemoryTracker()
-				{
-					current_memory_tracker = memory_tracker;
-				}
-			} temporarily_disable_memory_tracker;
+			TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
 
 			reloadImpl(throw_on_error);
 		}

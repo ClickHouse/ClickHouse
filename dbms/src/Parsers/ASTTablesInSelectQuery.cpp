@@ -1,4 +1,7 @@
+#include <DB/Common/typeid_cast.h>
+#include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTTablesInSelectQuery.h>
+
 
 namespace DB
 {

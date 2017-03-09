@@ -7,12 +7,14 @@
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/HashingReadBuffer.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Common/CurrentMetrics.h>
 #include <DB/Common/escapeForFileName.h>
+#include <Poco/File.h>
 
 
 namespace CurrentMetrics
@@ -34,23 +36,23 @@ namespace ErrorCodes
 namespace
 {
 
+constexpr auto DATA_FILE_EXTENSION = ".bin";
+constexpr auto NULL_MAP_FILE_EXTENSION = ".null.bin";
+constexpr auto MARKS_FILE_EXTENSION = ".mrk";
+constexpr auto NULL_MARKS_FILE_EXTENSION = ".null.mrk";
+
 struct Stream
 {
-	String path;
-	String name;
-	DataTypePtr type;
-
-	ReadBufferFromFile file_buf;
-	HashingReadBuffer compressed_hashing_buf;
-	CompressedReadBuffer uncompressing_buf;
-	HashingReadBuffer uncompressed_hashing_buf;
-
-	ReadBufferFromFile mrk_file_buf;
-	HashingReadBuffer mrk_hashing_buf;
-
-	Stream(const String & path, const String & name, const DataTypePtr & type) : path(path), name(name), type(type),
-		file_buf(path + name + ".bin"), compressed_hashing_buf(file_buf), uncompressing_buf(compressed_hashing_buf),
-		uncompressed_hashing_buf(uncompressing_buf), mrk_file_buf(path + name + ".mrk"), mrk_hashing_buf(mrk_file_buf)
+public:
+	Stream(const String & path, const String & name, const DataTypePtr & type,
+	       const std::string & extension_, const std::string & mrk_extension_)
+		: path(path), name(name), type(type),
+		extension{extension_}, mrk_extension{mrk_extension_},
+		file_buf(path + name + extension), compressed_hashing_buf(file_buf),
+		uncompressing_buf(compressed_hashing_buf),
+		uncompressed_hashing_buf(uncompressing_buf),
+		mrk_file_buf(path + name + mrk_extension),
+		mrk_hashing_buf(mrk_file_buf)
 	{
 		/// Stream создаётся для типа - внутренностей массива. Случай, когда внутренность массива - массив - не поддерживается.
 		if (typeid_cast<const DataTypeArray *>(type.get()))
@@ -71,7 +73,7 @@ struct Stream
 	size_t read(size_t rows)
 	{
 		ColumnPtr column = type->createColumn();
-		type->deserializeBinary(*column, uncompressed_hashing_buf, rows, 0);
+		type->deserializeBinaryBulk(*column, uncompressed_hashing_buf, rows, 0);
 		return column->size();
 	}
 
@@ -122,7 +124,7 @@ struct Stream
 		if (mrk_mark != data_mark)
 			throw Exception("Incorrect mark: " + data_mark.toString() +
 				(has_alternative_mark ? " or " + alternative_data_mark.toString() : "") + " in data, " +
-				mrk_mark.toString() + " in .mrk file", ErrorCodes::INCORRECT_MARK);
+				mrk_mark.toString() + " in " + mrk_extension + " file", ErrorCodes::INCORRECT_MARK);
 	}
 
 	void assertEnd(MergeTreeData::DataPart::Checksums & checksums)
@@ -132,17 +134,68 @@ struct Stream
 		if (!mrk_hashing_buf.eof())
 			throw Exception("EOF expected in .mrk file", ErrorCodes::CORRUPTED_DATA);
 
-		checksums.files[name + ".bin"] = MergeTreeData::DataPart::Checksums::Checksum(
+		checksums.files[name + extension] = MergeTreeData::DataPart::Checksums::Checksum(
 			compressed_hashing_buf.count(), compressed_hashing_buf.getHash(),
 			uncompressed_hashing_buf.count(), uncompressed_hashing_buf.getHash());
-		checksums.files[name + ".mrk"] = MergeTreeData::DataPart::Checksums::Checksum(
+		checksums.files[name + mrk_extension] = MergeTreeData::DataPart::Checksums::Checksum(
 			mrk_hashing_buf.count(), mrk_hashing_buf.getHash());
 	}
+
+public:
+	String path;
+	String name;
+	DataTypePtr type;
+	std::string extension;
+	std::string mrk_extension;
+
+	ReadBufferFromFile file_buf;
+	HashingReadBuffer compressed_hashing_buf;
+	CompressedReadBuffer uncompressing_buf;
+	HashingReadBuffer uncompressed_hashing_buf;
+
+	ReadBufferFromFile mrk_file_buf;
+	HashingReadBuffer mrk_hashing_buf;
 };
 
+/// Updates the checksum value for the null map information of the
+/// specified column. Returns the number of read rows.
+size_t checkNullMap(const String & path,
+	const String & name,
+	const MergeTreePartChecker::Settings & settings,
+	MergeTreeData::DataPart::Checksums & checksums,
+	std::atomic<bool> * is_cancelled)
+{
+	size_t rows = 0;
 
-/// Возвращает количество строк. Добавляет в checksums чексуммы всех файлов столбца.
-static size_t checkColumn(
+	DataTypePtr type = std::make_shared<DataTypeUInt8>();
+	Stream data_stream(path, escapeForFileName(name), type,
+		NULL_MAP_FILE_EXTENSION, NULL_MARKS_FILE_EXTENSION);
+
+	while (true)
+	{
+		if (is_cancelled && *is_cancelled)
+			return 0;
+
+		if (data_stream.marksEOF())
+			break;
+
+		data_stream.assertMark();
+
+		size_t cur_rows = data_stream.read(settings.index_granularity);
+
+		rows += cur_rows;
+		if (cur_rows < settings.index_granularity)
+			break;
+	}
+
+	data_stream.assertEnd(checksums);
+
+	return rows;
+}
+
+/// Updates the checksum value for the specified column.
+/// Returns the number of read rows.
+size_t checkColumn(
 	const String & path,
 	const String & name,
 	DataTypePtr type,
@@ -157,8 +210,10 @@ static size_t checkColumn(
 		if (auto array = typeid_cast<const DataTypeArray *>(type.get()))
 		{
 			String sizes_name = DataTypeNested::extractNestedTableName(name);
-			Stream sizes_stream(path, escapeForFileName(sizes_name) + ".size0", std::make_shared<DataTypeUInt64>());
-			Stream data_stream(path, escapeForFileName(name), array->getNestedType());
+			Stream sizes_stream(path, escapeForFileName(sizes_name) + ".size0", std::make_shared<DataTypeUInt64>(),
+				DATA_FILE_EXTENSION, MARKS_FILE_EXTENSION);
+			Stream data_stream(path, escapeForFileName(name), array->getNestedType(),
+				DATA_FILE_EXTENSION, MARKS_FILE_EXTENSION);
 
 			ColumnUInt64::Container_t sizes;
 			while (true)
@@ -197,9 +252,9 @@ static size_t checkColumn(
 		}
 		else
 		{
-			Stream data_stream(path, escapeForFileName(name), type);
+			Stream data_stream(path, escapeForFileName(name), type,
+				DATA_FILE_EXTENSION, MARKS_FILE_EXTENSION);
 
-			size_t rows = 0;
 			while (true)
 			{
 				if (is_cancelled && *is_cancelled)
@@ -308,6 +363,19 @@ void MergeTreePartChecker::checkDataPart(
 	size_t rows = UNKNOWN;
 	std::exception_ptr first_exception;
 
+	/// Verify that the number of rows is consistent between all the columns.
+	auto check_row_count = [&rows, &any_column_name](size_t cur_rows, const std::string & col_name)
+	{
+		if (rows == UNKNOWN)
+		{
+			rows = cur_rows;
+			any_column_name = col_name;
+		}
+		else if (rows != cur_rows)
+			throw Exception{"Different number of rows in columns " + any_column_name + " and " + col_name,
+							ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH};
+	};
+
 	for (const NameAndTypePair & column : columns)
 	{
 		if (settings.verbose)
@@ -319,28 +387,39 @@ void MergeTreePartChecker::checkDataPart(
 		bool ok = false;
 		try
 		{
-			if (!settings.require_column_files && !Poco::File(path + escapeForFileName(column.name) + ".bin").exists())
+			if (!settings.require_column_files && !Poco::File(path + escapeForFileName(column.name) + DATA_FILE_EXTENSION).exists())
 			{
 				if (settings.verbose)
 					std::cerr << " no files" << std::endl;
 				continue;
 			}
 
-			size_t cur_rows = checkColumn(path, column.name, column.type, settings, checksums_data, is_cancelled);
+			const DataTypePtr * observed_type;
+
+			/// If the current column is nullable, first we process its null map and the
+			/// corresponding marks.
+			if (column.type->isNullable())
+			{
+				const auto & nullable_type = static_cast<const DataTypeNullable &>(column.type);
+				observed_type = &nullable_type.getNestedType();
+
+				size_t cur_rows = checkNullMap(path, column.name, settings, checksums_data, is_cancelled);
+
+				if (is_cancelled && *is_cancelled)
+					return;
+
+				check_row_count(cur_rows, column.name);
+			}
+			else
+				observed_type = &column.type;
+
+			/// Update the checksum from the data of the column.
+			size_t cur_rows = checkColumn(path, column.name, *observed_type, settings, checksums_data, is_cancelled);
 
 			if (is_cancelled && *is_cancelled)
 				return;
 
-			if (rows == UNKNOWN)
-			{
-				rows = cur_rows;
-				any_column_name = column.name;
-			}
-			else if (rows != cur_rows)
-			{
-				throw Exception("Different number of rows in columns " + any_column_name + " and " + column.name,
-								ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-			}
+			check_row_count(cur_rows, column.name);
 
 			ok = true;
 		}

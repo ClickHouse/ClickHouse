@@ -1,8 +1,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <boost/type_traits.hpp>
-
 #include <common/Common.h>
 
 #include <DB/IO/ReadHelpers.h>
@@ -1065,7 +1063,7 @@ void writeUIntTextTable(T x, DB::WriteBuffer & buf)
 			UInt32 x4;
 		};
 	} data;
-	
+
 	UInt8 len = 4;
 
 	if (x >= 10000000000000000UL)
@@ -1133,9 +1131,14 @@ void writeIntTextTable(T x, DB::WriteBuffer & buf)
 
 UInt64 rdtsc()
 {
+#if __x86_64__
     UInt64 val;
     __asm__ __volatile__("rdtsc" : "=A" (val) : );
     return val;
+#else
+    // TODO: make for arm
+    return 0;
+#endif
 }
 
 
@@ -1145,11 +1148,11 @@ int main(int argc, char ** argv)
 	DB::WriteBufferFromString wb(s);
 	DB::Faster::writeIntText(DB::parse<UInt64>(argv[1]), wb);
 	std::cerr << s << std::endl;*/
-	
+
 	try
 	{
 		using T = UInt8;
-		
+
 		size_t n = atoi(argv[1]);
 		std::vector<T> data(n);
 		std::vector<T> data2(n);

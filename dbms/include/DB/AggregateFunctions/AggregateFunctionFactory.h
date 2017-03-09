@@ -1,20 +1,25 @@
 #pragma once
 
+#include <unordered_map>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
-#include <DB/DataTypes/IDataType.h>
-#include <boost/iterator/transform_iterator.hpp>
+
 
 namespace DB
 {
 
-/** Creates aggregate function by name.
+class IDataType;
+using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypes = std::vector<DataTypePtr>;
+
+
+/** Creates an aggregate function by name.
   */
 class AggregateFunctionFactory final
 {
 	friend class StorageSystemFunctions;
 
 private:
-	/// Not std::function, for lower object size and less indirection.
+	/// No std::function, for smaller object size and less indirection.
 	using Creator = AggregateFunctionPtr(*)(const String & name, const DataTypes & argument_types);
 	using AggregateFunctions = std::unordered_map<String, Creator>;
 
@@ -31,11 +36,14 @@ public:
 		CaseInsensitive
 	};
 
-	/// Register aggregate function with its name.
+	/// Register an aggregate function by its name.
 	void registerFunction(const String & name, Creator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
 	AggregateFunctionFactory(const AggregateFunctionFactory &) = delete;
 	AggregateFunctionFactory & operator=(const AggregateFunctionFactory &) = delete;
+
+private:
+	AggregateFunctionPtr getImpl(const String & name, const DataTypes & argument_types, int recursion_level) const;
 
 private:
 	AggregateFunctions aggregate_functions;

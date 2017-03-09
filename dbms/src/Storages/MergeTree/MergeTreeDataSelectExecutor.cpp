@@ -20,7 +20,9 @@
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergeTreeReadPool.h>
 #include <DB/Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
+#include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTSampleRatio.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
@@ -33,6 +35,7 @@
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeEnum.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
 
@@ -51,6 +54,8 @@ namespace ErrorCodes
 {
 	extern const int INDEX_NOT_USED;
 	extern const int SAMPLING_NOT_SUPPORTED;
+	extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+	extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -193,9 +198,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	SortDescription sort_descr = data.getSortDescription();
 
-	PKCondition key_condition(query, context, available_real_and_virtual_columns, sort_descr);
+	PKCondition key_condition(query, context, available_real_and_virtual_columns, sort_descr,
+		data.getPrimaryExpression()->getSampleBlock());
 	PKCondition date_condition(query, context, available_real_and_virtual_columns,
-		SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
+		SortDescription(1, SortColumnDescription(data.date_column_name, 1)),
+		Block{{DataTypeDate{}.createColumn(), std::make_shared<DataTypeDate>(), data.date_column_name}});
 
 	if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
 	{
@@ -857,7 +864,8 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 }
 
 
-/// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.
+/// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
+/// In other words, it removes subranges from whole range, that defenitely could not contain required keys.
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 	const MergeTreeData::DataPart::Index & index, const PKCondition & key_condition, const Settings & settings) const
 {
@@ -868,7 +876,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 	size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
 	size_t marks_count = index.at(0).get()->size();
 
-	/// Если индекс не используется.
+	/// If index is not used.
 	if (key_condition.alwaysUnknownOrTrue())
 	{
 		res.push_back(MarkRange(0, marks_count));
@@ -882,7 +890,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 			*/
 		std::vector<MarkRange> ranges_stack{ {0, marks_count} };
 
-		/// NOTE Лишнее копирование объектов типа Field для передачи в PKCondition.
+		/// NOTE Creating temporary Field objects to pass to PKCondition.
 		Row index_left(used_key_size);
 		Row index_right(used_key_size);
 
@@ -896,7 +904,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 			{
 				for (size_t i = 0; i < used_key_size; ++i)
 				{
-					index_left[i] = (*index[i].get())[range.begin];
+					index[i]->get(range.begin, index_left[i]);
 				}
 
 				may_be_true = key_condition.mayBeTrueAfter(
@@ -906,8 +914,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 			{
 				for (size_t i = 0; i < used_key_size; ++i)
 				{
-					index_left[i] = (*index[i].get())[range.begin];
-					index_right[i] = (*index[i].get())[range.end];
+					index[i]->get(range.begin, index_left[i]);
+					index[i]->get(range.end, index_right[i]);
 				}
 
 				may_be_true = key_condition.mayBeTrueInRange(

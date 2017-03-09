@@ -2,17 +2,20 @@
 
 #include <mutex>
 #include <thread>
-
 #include <ext/shared_ptr_helper.hpp>
-
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/Interpreters/Context.h>
+#include <Poco/Event.h>
+
+
+namespace Poco { class Logger; }
 
 
 namespace DB
 {
+
+class Context;
 
 
 /** При вставке, буферизует данные в оперативке, пока не превышены некоторые пороги.
@@ -114,7 +117,7 @@ private:
 	const String destination_table;
 	bool no_destination;	/// Если задано - не записывать данные из буфера, а просто опустошать буфер.
 
-	Logger * log;
+	Poco::Logger * log;
 
 	Poco::Event shutdown_event;
 	/// Выполняет сброс данных по таймауту.

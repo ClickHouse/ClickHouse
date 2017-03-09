@@ -40,7 +40,7 @@ void MetricsTransmitter::run()
 			std::chrono::system_clock::now() + std::chrono::minutes(1));
 	};
 
-	ProfileEvents::Count prev_counters[ProfileEvents::end()] {};
+	std::vector<ProfileEvents::Count> prev_counters(ProfileEvents::end());
 
 	std::unique_lock<std::mutex> lock{mutex};
 
@@ -54,7 +54,7 @@ void MetricsTransmitter::run()
 }
 
 
-void MetricsTransmitter::transmit(ProfileEvents::Count * prev_counters)
+void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_counters)
 {
 	auto async_metrics_values = async_metrics.getValues();
 

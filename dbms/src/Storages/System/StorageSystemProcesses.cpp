@@ -4,6 +4,7 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Storages/System/StorageSystemProcesses.h>
+#include <DB/Interpreters/Context.h>
 
 
 namespace DB
@@ -13,16 +14,40 @@ namespace DB
 StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 	: name(name_)
 	, columns{
-		{ "user", 			std::make_shared<DataTypeString>()	},
-		{ "address",		std::make_shared<DataTypeString>()	},
-		{ "port",			std::make_shared<DataTypeUInt16>()	},
-		{ "elapsed", 		std::make_shared<DataTypeFloat64>()	},
-		{ "rows_read", 		std::make_shared<DataTypeUInt64>()	},
-		{ "bytes_read",		std::make_shared<DataTypeUInt64>()	},
-		{ "total_rows_approx", std::make_shared<DataTypeUInt64>() },
-		{ "memory_usage",	std::make_shared<DataTypeUInt64>()	},
-		{ "query", 			std::make_shared<DataTypeString>()	},
-		{ "query_id", 		std::make_shared<DataTypeString>()	}
+		{ "is_initial_query", 	std::make_shared<DataTypeUInt8>() },
+
+		{ "user", 				std::make_shared<DataTypeString>() },
+		{ "query_id", 			std::make_shared<DataTypeString>() },
+		{ "address", 			std::make_shared<DataTypeString>() },
+		{ "port", 				std::make_shared<DataTypeUInt16>() },
+
+		{ "initial_user", 		std::make_shared<DataTypeString>() },
+		{ "initial_query_id", 	std::make_shared<DataTypeString>() },
+		{ "initial_address", 	std::make_shared<DataTypeString>() },
+		{ "initial_port", 		std::make_shared<DataTypeUInt16>() },
+
+		{ "interface",			std::make_shared<DataTypeUInt8>() },
+
+		{ "os_user",				std::make_shared<DataTypeString>() },
+		{ "client_hostname",		std::make_shared<DataTypeString>() },
+		{ "client_name",			std::make_shared<DataTypeString>() },
+		{ "client_version_major",	std::make_shared<DataTypeUInt64>() },
+		{ "client_version_minor",	std::make_shared<DataTypeUInt64>() },
+		{ "client_revision",		std::make_shared<DataTypeUInt64>() },
+
+		{ "http_method",			std::make_shared<DataTypeUInt8>() },
+		{ "http_user_agent",		std::make_shared<DataTypeString>() },
+
+		{ "quota_key",			std::make_shared<DataTypeString>() },
+
+		{ "elapsed", 			std::make_shared<DataTypeFloat64>()	},
+		{ "read_rows",			std::make_shared<DataTypeUInt64>()	},
+		{ "read_bytes",			std::make_shared<DataTypeUInt64>()	},
+		{ "total_rows_approx",	std::make_shared<DataTypeUInt64>()	},
+		{ "written_rows",		std::make_shared<DataTypeUInt64>()	},
+		{ "written_bytes",		std::make_shared<DataTypeUInt64>()	},
+		{ "memory_usage",		std::make_shared<DataTypeInt64>()	},
+		{ "query", 				std::make_shared<DataTypeString>()	}
 	}
 {
 }
@@ -45,45 +70,41 @@ BlockInputStreams StorageSystemProcesses::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	ColumnWithTypeAndName col_user{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "user"};
-	ColumnWithTypeAndName col_address{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "address"};
-	ColumnWithTypeAndName col_port{std::make_shared<ColumnUInt16>(), std::make_shared<DataTypeUInt16>(), "port"};
-	ColumnWithTypeAndName col_elapsed{std::make_shared<ColumnFloat64>(), std::make_shared<DataTypeFloat64>(), "elapsed"};
-	ColumnWithTypeAndName col_rows_read{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "rows_read"};
-	ColumnWithTypeAndName col_bytes_read{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "bytes_read"};
-	ColumnWithTypeAndName col_total_rows_approx{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "total_rows_approx"};
-	ColumnWithTypeAndName col_memory_usage{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "memory_usage"};
-	ColumnWithTypeAndName col_query{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "query"};
-	ColumnWithTypeAndName col_query_id{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "query_id"};
-
 	ProcessList::Info info = context.getProcessList().getInfo();
+
+	Block block = getSampleBlock();
 
 	for (const auto & process : info)
 	{
-		col_user.column->insert(process.user);
-		col_address.column->insert(process.ip_address.toString());
-		col_port.column->insert(static_cast<UInt64>(process.port));
-		col_elapsed.column->insert(process.elapsed_seconds);
-		col_rows_read.column->insert(process.rows);
-		col_bytes_read.column->insert(process.bytes);
-		col_total_rows_approx.column->insert(process.total_rows);
-		col_memory_usage.column->insert(static_cast<UInt64>(process.memory_usage));
-		col_query.column->insert(process.query);
-		col_query_id.column->insert(process.query_id);
+		size_t i = 0;
+		block.getByPosition(i++).column->insert(UInt64(process.client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY));
+		block.getByPosition(i++).column->insert(process.client_info.current_user);
+		block.getByPosition(i++).column->insert(process.client_info.current_query_id);
+		block.getByPosition(i++).column->insert(process.client_info.current_address.host().toString());
+		block.getByPosition(i++).column->insert(UInt64(process.client_info.current_address.port()));
+		block.getByPosition(i++).column->insert(process.client_info.initial_user);
+		block.getByPosition(i++).column->insert(process.client_info.initial_query_id);
+		block.getByPosition(i++).column->insert(process.client_info.initial_address.host().toString());
+		block.getByPosition(i++).column->insert(UInt64(process.client_info.initial_address.port()));
+		block.getByPosition(i++).column->insert(UInt64(process.client_info.interface));
+		block.getByPosition(i++).column->insert(process.client_info.os_user);
+		block.getByPosition(i++).column->insert(process.client_info.client_hostname);
+		block.getByPosition(i++).column->insert(process.client_info.client_name);
+		block.getByPosition(i++).column->insert(process.client_info.client_version_major);
+		block.getByPosition(i++).column->insert(process.client_info.client_version_minor);
+		block.getByPosition(i++).column->insert(UInt64(process.client_info.client_revision));
+		block.getByPosition(i++).column->insert(UInt64(process.client_info.http_method));
+		block.getByPosition(i++).column->insert(process.client_info.http_user_agent);
+		block.getByPosition(i++).column->insert(process.client_info.quota_key);
+		block.getByPosition(i++).column->insert(process.elapsed_seconds);
+		block.getByPosition(i++).column->insert(process.read_rows);
+		block.getByPosition(i++).column->insert(process.read_bytes);
+		block.getByPosition(i++).column->insert(process.total_rows);
+		block.getByPosition(i++).column->insert(process.written_rows);
+		block.getByPosition(i++).column->insert(process.written_bytes);
+		block.getByPosition(i++).column->insert(process.memory_usage);
+		block.getByPosition(i++).column->insert(process.query);
 	}
-
-	Block block{
-		col_user,
-		col_address,
-		col_port,
-		col_elapsed,
-		col_rows_read,
-		col_bytes_read,
-		col_total_rows_approx,
-		col_memory_usage,
-		col_query,
-		col_query_id
-	};
 
 	return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
 }

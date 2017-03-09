@@ -1,15 +1,15 @@
 #pragma once
 #include <common/Common.h>
-#include <boost/function.hpp>
 #include <future>
 #include <memory>
-#include <boost/noncopyable.hpp>
-#include <boost/ptr_container/ptr_vector.hpp>
+#include <vector>
 #include <zookeeper/zookeeper.h>
 #include <Poco/Event.h>
 
+
 namespace zkutil
 {
+
 using ACLPtr = const ACL_vector *;
 using Stat = Stat;
 
@@ -97,7 +97,7 @@ struct Op::Check : public Op
 	}
 
 	std::string describe() override { return "command: check, path: " + path; }
-	
+
 private:
 	std::string path;
 };
@@ -108,7 +108,7 @@ struct OpResult : public zoo_op_result_t
 	/// Поэтому деструктор не нужен
 };
 
-using Ops = boost::ptr_vector<Op>;
+using Ops = std::vector<std::unique_ptr<Op>>;
 using OpResults = std::vector<OpResult>;
 using OpResultsPtr = std::shared_ptr<OpResults>;
 using Strings = std::vector<std::string>;

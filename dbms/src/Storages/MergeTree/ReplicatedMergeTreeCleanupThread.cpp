@@ -70,10 +70,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldParts()
 	size_t count = parts.size();
 
 	if (!count)
-	{
-		LOG_TRACE(log, "No old parts");
 		return;
-	}
 
 	try
 	{
@@ -142,12 +139,12 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 	zkutil::Ops ops;
 	for (size_t i = 0; i < entries.size(); ++i)
 	{
-		ops.push_back(new zkutil::Op::Remove(storage.zookeeper_path + "/log/" + entries[i], -1));
+		ops.emplace_back(std::make_unique<zkutil::Op::Remove>(storage.zookeeper_path + "/log/" + entries[i], -1));
 
 		if (ops.size() > 400 || i + 1 == entries.size())
 		{
 			/// Одновременно с очисткой лога проверим, не добавилась ли реплика с тех пор, как мы получили список реплик.
-			ops.push_back(new zkutil::Op::Check(storage.zookeeper_path + "/replicas", stat.version));
+			ops.emplace_back(std::make_unique<zkutil::Op::Check>(storage.zookeeper_path + "/replicas", stat.version));
 			zookeeper->multi(ops);
 			ops.clear();
 		}
@@ -189,9 +186,9 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 	std::sort(timed_blocks.begin(), timed_blocks.end(), std::greater<std::pair<Int64, String>>());
 	for (size_t i = storage.data.settings.replicated_deduplication_window; i < timed_blocks.size(); ++i)
 	{
-		ops.push_back(new zkutil::Op::Remove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/number", -1));
-		ops.push_back(new zkutil::Op::Remove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/checksum", -1));
-		ops.push_back(new zkutil::Op::Remove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second, -1));
+		ops.emplace_back(std::make_unique<zkutil::Op::Remove>(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/number", -1));
+		ops.emplace_back(std::make_unique<zkutil::Op::Remove>(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/checksum", -1));
+		ops.emplace_back(std::make_unique<zkutil::Op::Remove>(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second, -1));
 
 		if (ops.size() > 400 || i + 1 == timed_blocks.size())
 		{

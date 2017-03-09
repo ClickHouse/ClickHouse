@@ -1,18 +1,12 @@
 #include <common/likely.h>
 #include <common/logger_useful.h>
 #include <DB/Common/Exception.h>
-#include <DB/Common/CurrentMetrics.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/IO/WriteHelpers.h>
 #include <iomanip>
 
 #include <DB/Common/MemoryTracker.h>
 
-
-namespace CurrentMetrics
-{
-	extern const Metric MemoryTracking;
-}
 
 namespace DB
 {
@@ -29,7 +23,7 @@ MemoryTracker::~MemoryTracker()
 		logPeakMemoryUsage();
 
 	if (amount && !next)
-		CurrentMetrics::sub(CurrentMetrics::MemoryTracking, amount);
+		CurrentMetrics::sub(metric, amount);
 }
 
 
@@ -46,7 +40,9 @@ void MemoryTracker::alloc(Int64 size)
 	Int64 will_be = amount += size;
 
 	if (!next)
-		CurrentMetrics::add(CurrentMetrics::MemoryTracking, size);
+		CurrentMetrics::add(metric, size);
+
+	Int64 current_limit = limit.load(std::memory_order_relaxed);
 
 	/// Using non-thread-safe random number generator. Joint distribution in different threads would not be uniform.
 	/// In this case, it doesn't matter.
@@ -60,12 +56,12 @@ void MemoryTracker::alloc(Int64 size)
 			message << " " << description;
 		message << ": fault injected. Would use " << formatReadableSizeWithBinarySuffix(will_be)
 			<< " (attempt to allocate chunk of " << size << " bytes)"
-			<< ", maximum: " << formatReadableSizeWithBinarySuffix(limit);
+			<< ", maximum: " << formatReadableSizeWithBinarySuffix(current_limit);
 
 		throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
 	}
 
-	if (unlikely(limit && will_be > limit))
+	if (unlikely(current_limit && will_be > current_limit))
 	{
 		free(size);
 
@@ -75,7 +71,7 @@ void MemoryTracker::alloc(Int64 size)
 			message << " " << description;
 		message << " exceeded: would use " << formatReadableSizeWithBinarySuffix(will_be)
 			<< " (attempt to allocate chunk of " << size << " bytes)"
-			<< ", maximum: " << formatReadableSizeWithBinarySuffix(limit);
+			<< ", maximum: " << formatReadableSizeWithBinarySuffix(current_limit);
 
 		throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
 	}
@@ -95,18 +91,27 @@ void MemoryTracker::free(Int64 size)
 	if (next)
 		next->free(size);
 	else
-		CurrentMetrics::sub(CurrentMetrics::MemoryTracking, size);
+		CurrentMetrics::sub(metric, size);
 }
 
 
 void MemoryTracker::reset()
 {
 	if (!next)
-		CurrentMetrics::sub(CurrentMetrics::MemoryTracking, amount);
+		CurrentMetrics::sub(metric, amount);
 
-	amount = 0;
-	peak = 0;
-	limit = 0;
+	amount.store(0, std::memory_order_relaxed);
+	peak.store(0, std::memory_order_relaxed);
+	limit.store(0, std::memory_order_relaxed);
+}
+
+
+void MemoryTracker::setOrRaiseLimit(Int64 value)
+{
+	/// This is just atomic set to maximum.
+	Int64 old_value = limit.load(std::memory_order_relaxed);
+	while (old_value < value && !limit.compare_exchange_weak(old_value, value))
+		;
 }
 
 

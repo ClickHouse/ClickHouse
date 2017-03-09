@@ -32,7 +32,7 @@ add_executable (simple_cache simple_cache.cpp)
 target_link_libraries (simple_cache common)
 
 add_executable (compact_array compact_array.cpp)
-target_link_libraries (compact_array dbms libboost_filesystem.a)
+target_link_libraries (compact_array dbms ${Boost_FILESYSTEM_LIBRARY})
 
 add_executable (radix_sort radix_sort.cpp)
 target_link_libraries (radix_sort dbms)

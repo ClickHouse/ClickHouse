@@ -6,11 +6,17 @@
 #include <DB/Core/Types.h>
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Interpreters/Settings.h>
-#include <DB/Storages/IStorage.h>
+#include <DB/Interpreters/ClientInfo.h>
 #include <DB/IO/CompressedStream.h>
 
-#include <Poco/Net/IPAddress.h>
 
+namespace Poco
+{
+	namespace Net
+	{
+		class IPAddress;
+	}
+}
 
 namespace zkutil
 {
@@ -25,7 +31,7 @@ struct ContextShared;
 class QuotaForIntervals;
 class TableFunctionFactory;
 class AggregateFunctionFactory;
-class Dictionaries;
+class EmbeddedDictionaries;
 class ExternalDictionaries;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
@@ -41,9 +47,20 @@ class Macros;
 struct Progress;
 class Clusters;
 class QueryLog;
+class PartLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
+using Tables = std::map<String, StoragePtr>;
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+class IBlockInputStream;
+class IBlockOutputStream;
+using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
+using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
+class Block;
 
 
 /// (имя базы данных, имя таблицы)
@@ -62,43 +79,24 @@ using Dependencies = std::vector<DatabaseAndTableName>;
   */
 class Context
 {
-public:
-	enum class Interface
-	{
-		TCP = 1,
-		HTTP = 2,
-	};
-
-	enum class HTTPMethod
-	{
-		UNKNOWN = 0,
-		GET = 1,
-		POST = 2,
-	};
-
 private:
 	using Shared = std::shared_ptr<ContextShared>;
 	Shared shared;
 
-	String user;						/// Current user
-	Poco::Net::IPAddress ip_address;	/// IP address
-	UInt16 port;						///            and port, from which current query was recieved
-	Interface interface = Interface::TCP;
-	HTTPMethod http_method = HTTPMethod::UNKNOWN;	/// NOTE Возможно, перенести это в отдельный struct ClientInfo.
+	ClientInfo client_info;
 
-	std::shared_ptr<QuotaForIntervals> quota;	/// Текущая квота. По-умолчанию - пустая квота, которая ничего не ограничивает.
-	String current_database;			/// Текущая БД.
-	String current_query_id;			/// Id текущего запроса.
-	Settings settings;					/// Настройки выполнения запроса.
+	std::shared_ptr<QuotaForIntervals> quota;	/// Current quota. By default - empty quota, that have no limits.
+	String current_database;
+	Settings settings;							/// Setting for query execution.
 	using ProgressCallback = std::function<void(const Progress & progress)>;
-	ProgressCallback progress_callback;	/// Колбек для отслеживания прогресса выполнения запроса.
-	ProcessListElement * process_list_elem = nullptr;	/// Для отслеживания общего количества потраченных на запрос ресурсов.
+	ProgressCallback progress_callback;			/// Callback for tracking progress of query execution.
+	ProcessListElement * process_list_elem = nullptr;	/// For tracking total resource usage for query.
 
-	String default_format;	/// Формат, используемый, если сервер сам форматирует данные, и если в запросе не задан FORMAT.
-							/// То есть, используется в HTTP-интерфейсе. Может быть не задан - тогда используется некоторый глобальный формат по-умолчанию.
-	Tables external_tables;				/// Временные таблицы.
-	Context * session_context = nullptr;	/// Контекст сессии или nullptr, если его нет. (Возможно, равен this.)
-	Context * global_context = nullptr;		/// Глобальный контекст или nullptr, если его нет. (Возможно, равен this.)
+	String default_format;	/// Format, used when server formats data by itself and if query does not have FORMAT specification.
+							/// Thus, used in HTTP interface. If not specified - then some globally default format is used.
+	Tables external_tables;					/// Temporary tables.
+	Context * session_context = nullptr;	/// Session context or nullptr. Could be equal to this.
+	Context * global_context = nullptr;		/// Global context or nullptr. Could be equal to this.
 
 	using DatabasePtr = std::shared_ptr<IDatabase>;
 	using Databases = std::map<String, std::shared_ptr<IDatabase>>;
@@ -109,8 +107,10 @@ public:
 
 	String getPath() const;
 	String getTemporaryPath() const;
+	String getFlagsPath() const;
 	void setPath(const String & path);
 	void setTemporaryPath(const String & path);
+	void setFlagsPath(const String & path);
 
 	using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -122,16 +122,11 @@ public:
 
 	ConfigurationPtr getUsersConfig();
 
-	void setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, UInt16 port, const String & quota_key);
-	String getUser() const { return user; }
-	Poco::Net::IPAddress getIPAddress() const { return ip_address; }
-	UInt16 getPort() const { return port; }
+	/// Must be called before getClientInfo.
+	void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
 
-	Interface getInterface() const { return interface; }
-	void setInterface(Interface interface_) { interface = interface_; }
-
-	HTTPMethod getHTTPMethod() const { return http_method; }
-	void setHTTPMethod(HTTPMethod http_method_) { http_method = http_method_; }
+	ClientInfo & getClientInfo() { return client_info; };
+	const ClientInfo & getClientInfo() const { return client_info; };
 
 	void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
 	QuotaForIntervals & getQuota();
@@ -193,9 +188,9 @@ public:
 
 	const TableFunctionFactory & getTableFunctionFactory() const;
 	const AggregateFunctionFactory & getAggregateFunctionFactory() const;
-	const Dictionaries & getDictionaries() const;
+	const EmbeddedDictionaries & getEmbeddedDictionaries() const;
 	const ExternalDictionaries & getExternalDictionaries() const;
-	void tryCreateDictionaries() const;
+	void tryCreateEmbeddedDictionaries() const;
 	void tryCreateExternalDictionaries() const;
 
 	/// Форматы ввода-вывода.
@@ -222,10 +217,13 @@ public:
 	Databases getDatabases();
 
 
-	/// Для методов ниже может быть необходимо захватывать блокировку самостоятельно.
+	/// For methods below you may need to acquire a lock by yourself.
 	std::unique_lock<Poco::Mutex> getLock() const;
 
+	const Context & getSessionContext() const;
 	Context & getSessionContext();
+
+	const Context & getGlobalContext() const;
 	Context & getGlobalContext();
 
 	void setSessionContext(Context & context_)								{ session_context = &context_; }
@@ -285,7 +283,12 @@ public:
 
 	Compiler & getCompiler();
 	QueryLog & getQueryLog();
+	PartLog * getPartLog();
 	const MergeTreeSettings & getMergeTreeSettings();
+
+	/// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
+	void setMaxTableSizeToDrop(size_t max_size);
+	void checkTableCanBeDropped(const String & database, const String & table, size_t table_size);
 
 	/// Позволяет выбрать метод сжатия по условиям, описанным в конфигурационном файле.
 	CompressionMethod chooseCompressionMethod(size_t part_size, double part_size_ratio) const;
@@ -295,6 +298,16 @@ public:
 
 	void shutdown();
 
+	enum class ApplicationType
+	{
+		SERVER,			/// The program is run as clickhouse-server daemon (default behavior)
+		CLIENT,			/// clickhouse-client
+		LOCAL_SERVER	/// clickhouse-local
+	};
+
+	ApplicationType getApplicationType() const;
+	void setApplicationType(ApplicationType type);
+
 private:
 	/** Проверить, имеет ли текущий клиент доступ к заданной базе данных.
 	  * Если доступ запрещён, кинуть исключение.
@@ -302,28 +315,29 @@ private:
 	  */
 	void checkDatabaseAccessRights(const std::string & database_name) const;
 
-	const Dictionaries & getDictionariesImpl(bool throw_on_error) const;
+	const EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 	const ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
 
 	StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 };
 
 
-/** Кладёт элемент в map, в деструкторе - удаляет.
-  * Если элемент уже есть - кидает исключение.
-  */
+/// Puts an element into the map, erases it in the destructor.
+/// If the element already exists in the map, throws an exception containing provided message.
 class DDLGuard
 {
-	/// Имя объекта -> сообщение.
-	using Map = std::unordered_map<String, String>;
+public:
+	/// Element name -> message.
+	/// NOTE: using std::map here (and not std::unordered_map) to avoid iterator invalidation on insertion.
+	using Map = std::map<String, String>;
 
+	DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && lock, const String & elem, const String & message);
+	~DDLGuard();
+
+private:
 	Map & map;
 	Map::iterator it;
 	std::mutex & mutex;
-
-public:
-	DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && lock, const String & elem, const String & message);
-	~DDLGuard();
 };
 
 }

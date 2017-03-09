@@ -296,7 +296,7 @@ namespace ErrorCodes
 	extern const int LIMIT_EXCEEDED = 290;
 	extern const int DATABASE_ACCESS_DENIED = 291;
 	extern const int LEADERSHIP_CHANGED = 292;
-	extern const int MONGODB_INIT_FAILED = 293;
+	extern const int MONGODB_CANNOT_AUTHENTICATE = 293;
 	extern const int INVALID_BLOCK_EXTRA_INFO = 294;
 	extern const int RECEIVED_EMPTY_DATA = 295;
 	extern const int NO_REMOTE_SHARD_FOUND = 296;
@@ -346,10 +346,22 @@ namespace ErrorCodes
 	extern const int NO_ZOOKEEPER_ACCESSOR = 340;
 	extern const int UNFINISHED = 341;
 	extern const int METADATA_MISMATCH = 342;
-	extern const int INVALID_FUNCTION_GENUS = 343;
 	extern const int SUPPORT_IS_DISABLED = 344;
 	extern const int TABLE_DIFFERS_TOO_MUCH = 345;
 	extern const int CANNOT_ICONV = 346;
+	extern const int CANNOT_LOAD_CONFIG = 347;
+	extern const int RESHARDING_NULLABLE_SHARDING_KEY = 348;
+	extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN = 349;
+	extern const int INCOMPATIBLE_SOURCE_TABLES = 350;
+	extern const int AMBIGUOUS_TABLE_NAME = 351;
+	extern const int AMBIGUOUS_COLUMN_NAME = 352;
+	extern const int INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE = 353;
+	extern const int ZLIB_INFLATE_FAILED = 354;
+	extern const int ZLIB_DEFLATE_FAILED = 355;
+	extern const int BAD_LAMBDA = 356;
+	extern const int RESERVED_IDENTIFIER_NAME = 357;
+	extern const int INTO_OUTFILE_NOT_ALLOWED = 358;
+	extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT = 359;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

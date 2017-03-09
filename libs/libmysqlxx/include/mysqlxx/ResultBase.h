@@ -1,7 +1,6 @@
 #pragma once
 
 #include <boost/noncopyable.hpp>
-
 #include <mysqlxx/Types.h>
 
 
@@ -29,10 +28,7 @@ public:
 	MYSQL_RES * getRes()			{ return res; }
 	const Query * getQuery() const	{ return query; }
 
-	virtual ~ResultBase()
-	{
-		mysql_free_result(res);
-	}
+	virtual ~ResultBase();
 
 protected:
 	MYSQL_RES * res;

@@ -140,11 +140,11 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
 	zkutil::Ops ops;
 
 	if (min_unprocessed_insert_time_changed)
-		ops.push_back(new zkutil::Op::SetData(
+		ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
 			replica_path + "/min_unprocessed_insert_time", toString(min_unprocessed_insert_time), -1));
 
 	if (max_processed_insert_time_changed)
-		ops.push_back(new zkutil::Op::SetData(
+		ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
 			replica_path + "/max_processed_insert_time", toString(max_processed_insert_time), -1));
 
 	if (!ops.empty())
@@ -303,7 +303,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 				zkutil::ZooKeeper::ValueAndStat res = future.second.get();
 				copied_entries.emplace_back(LogEntry::parse(res.value, res.stat));
 
-				ops.push_back(new zkutil::Op::Create(
+				ops.emplace_back(std::make_unique<zkutil::Op::Create>(
 					replica_path + "/queue/queue-", res.value, zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
 
 				const auto & entry = *copied_entries.back();
@@ -317,11 +317,11 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 				}
 			}
 
-			ops.push_back(new zkutil::Op::SetData(
+			ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
 				replica_path + "/log_pointer", toString(last_entry_index + 1), -1));
 
 			if (min_unprocessed_insert_time_changed)
-				ops.push_back(new zkutil::Op::SetData(
+				ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
 					replica_path + "/min_unprocessed_insert_time", toString(min_unprocessed_insert_time), -1));
 
 			auto results = zookeeper->multi(ops);
@@ -334,7 +334,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
 				for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
 				{
-					String path_created = dynamic_cast<zkutil::Op::Create &>(ops[i]).getPathCreated();
+					String path_created = dynamic_cast<zkutil::Op::Create &>(*ops[i]).getPathCreated();
 					copied_entries[i]->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 
 					insertUnlocked(copied_entries[i]);
@@ -448,7 +448,11 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
 }
 
 
-bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason, MergeTreeDataMerger & merger)
+bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
+	const LogEntry & entry,
+	String & out_postpone_reason,
+	MergeTreeDataMerger & merger,
+	MergeTreeData & data)
 {
 	/// mutex уже захвачен. Функция вызывается только из selectEntryToProcess.
 
@@ -498,6 +502,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(const LogEntry & entry, Str
 		  * Если каких-то частей не хватает, вместо мерджа будет попытка скачать кусок.
 		  * Такая ситуация возможна, если получение какого-то куска пофейлилось, и его переместили в конец очереди.
 		  */
+		size_t sum_parts_size_in_bytes = 0;
 		for (const auto & name : entry.parts_to_merge)
 		{
 			if (future_parts.count(name))
@@ -508,11 +513,31 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(const LogEntry & entry, Str
 				out_postpone_reason = reason;
 				return false;
 			}
+
+			auto part = data.getPartIfExists(name);
+			if (part)
+				sum_parts_size_in_bytes += part->size_in_bytes;
 		}
 
 		if (merger.isCancelled())
 		{
 			String reason = "Not executing log entry for part " + entry.new_part_name + " because merges are cancelled now.";
+			LOG_DEBUG(log, reason);
+			out_postpone_reason = reason;
+			return false;
+		}
+
+		/** Execute merge only if there are enough free threads in background pool to do merges of that size.
+		  * But if all threads are free (maximal size of merge is allowed) then execute any merge,
+		  *  (because it may be ordered by OPTIMIZE or early with differrent settings).
+		  */
+		size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge();
+		if (max_parts_size_for_merge != data.settings.max_bytes_to_merge_at_max_space_in_pool
+			&& sum_parts_size_in_bytes > max_parts_size_for_merge)
+		{
+			String reason = "Not executing log entry for part " + entry.new_part_name
+				+ " because its size (" + formatReadableSizeWithBinarySuffix(sum_parts_size_in_bytes)
+				+ ") is greater than current maximum (" + formatReadableSizeWithBinarySuffix(max_parts_size_for_merge) + ").";
 			LOG_DEBUG(log, reason);
 			out_postpone_reason = reason;
 			return false;
@@ -546,7 +571,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
 }
 
 
-ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMerger & merger)
+ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMerger & merger, MergeTreeData & data)
 {
 	std::lock_guard<std::mutex> lock(mutex);
 
@@ -557,7 +582,7 @@ ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToP
 		if ((*it)->currently_executing)
 			continue;
 
-		if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger))
+		if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger, data))
 		{
 			entry = *it;
 			queue.splice(queue.end(), queue, it);
@@ -676,33 +701,17 @@ void ReplicatedMergeTreeQueue::getEntries(LogEntriesData & res)
 }
 
 
-void ReplicatedMergeTreeQueue::countMerges(size_t & all_merges, size_t & big_merges, size_t max_big_merges,
-	const std::function<bool(const String &)> & is_part_big)
+size_t ReplicatedMergeTreeQueue::countMerges()
 {
-	all_merges = 0;
-	big_merges = 0;
+	size_t all_merges = 0;
 
 	std::lock_guard<std::mutex> lock(mutex);
 
 	for (const auto & entry : queue)
-	{
 		if (entry->type == LogEntry::MERGE_PARTS)
-		{
 			++all_merges;
 
-			if (big_merges + big_merges < max_big_merges)
-			{
-				for (const String & name : entry->parts_to_merge)
-				{
-					if (is_part_big(name))
-					{
-						++big_merges;
-						break;
-					}
-				}
-			}
-		}
-	}
+	return all_merges;
 }
 
 

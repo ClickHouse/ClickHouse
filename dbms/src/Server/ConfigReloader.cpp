@@ -116,11 +116,16 @@ void ConfigReloader::reloadIfNewer(bool force_main, bool force_users)
 	FilesChangesTracker main_config_files = getFileListFor(main_config_path);
 	if (force_main || main_config_files.isDifferOrNewerThan(last_main_config_files))
 	{
-		last_main_config_files = std::move(main_config_files);
-
 		ConfigurationPtr config = loadConfigFor(main_config_path, force_main);
 		if (config)
 		{
+			/** We should remember last modification time if and only if config was sucessfully loaded
+			  * Otherwise a race condition could occur during config files update:
+			  *  File is contain raw (and non-valid) data, therefore config is not applied.
+			  *  When file has been written (and contain valid data), we don't load new data since modification time remains the same.
+			  */
+			last_main_config_files = std::move(main_config_files);
+
 			try
 			{
 				context->setClustersConfig(config);
@@ -137,11 +142,11 @@ void ConfigReloader::reloadIfNewer(bool force_main, bool force_users)
 	FilesChangesTracker users_config_files = getFileListFor(users_config_path);
 	if (force_users || users_config_files.isDifferOrNewerThan(last_users_config_files))
 	{
-		last_users_config_files = std::move(users_config_files);
-
 		ConfigurationPtr config = loadConfigFor(users_config_path, force_users);
 		if (config)
 		{
+			last_users_config_files = std::move(users_config_files);
+
 			try
 			{
 				context->setUsersConfig(config);

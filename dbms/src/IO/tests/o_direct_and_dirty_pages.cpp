@@ -8,7 +8,6 @@
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
 
-
 int main(int argc, char ** argv)
 {
 	using namespace DB;

@@ -6,6 +6,9 @@
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/DataStreams/IBlockInputStream.h>
 
+
+namespace Poco { class Logger; }
+
 namespace DB
 {
 
@@ -138,31 +141,18 @@ private:
 	void executeMergeSorted();
 	void executePreLimit();
 	void executeUnion();
+	void executeLimitBy();
 	void executeLimit();
 	void executeProjection(ExpressionActionsPtr expression);
 	void executeDistinct(bool before_order, Names columns);
 	void executeSubqueriesInSetsAndJoins(std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 
 	template <typename Transform>
-	void transformStreams(Transform && transform)
-	{
-		for (auto & stream : streams)
-			transform(stream);
+	void transformStreams(Transform && transform);
 
-		if (stream_with_non_joined_data)
-			transform(stream_with_non_joined_data);
-	}
+	bool hasNoData() const;
 
-	bool hasNoData() const
-	{
-		return streams.empty() && !stream_with_non_joined_data;
-	}
-
-	bool hasMoreThanOneStream() const
-	{
-		return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
-	}
-
+	bool hasMoreThanOneStream() const;
 
 	void ignoreWithTotals();
 
@@ -209,12 +199,12 @@ private:
 
 	/// Таблица, откуда читать данные, если не подзапрос.
 	StoragePtr storage;
-	IStorage::TableStructureReadLockPtr table_lock;
+	TableStructureReadLockPtr table_lock;
 
 	/// Выполнить объединение потоков внутри запроса SELECT?
 	bool union_within_single_query = false;
 
-	Logger * log;
+	Poco::Logger * log;
 };
 
 }

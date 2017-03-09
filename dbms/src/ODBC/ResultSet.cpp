@@ -2,6 +2,8 @@
 #include "Statement.h"
 #include "Log.h"
 
+#include <Poco/Types.h>
+
 
 void ResultSet::init(Statement & statement_)
 {
@@ -10,8 +12,8 @@ void ResultSet::init(Statement & statement_)
 	if (in().peek() == EOF)
 		return;
 
-	/// Заголовок: количество столбцов, их имена и типы.
-	uint64_t num_columns = 0;
+	/// Title: number of columns, their names and types.
+	Poco::UInt64 num_columns = 0;
 	readSize(num_columns, in());
 
 	if (!num_columns)
@@ -31,7 +33,7 @@ void ResultSet::init(Statement & statement_)
 
 	readNextBlock();
 
-	/// Отображаемые размеры столбцов, вычисляются по первому блоку.
+	/// The displayed column sizes are calculated from the first block.
 	for (const auto & row : current_block.data)
 		for (size_t i = 0; i < num_columns; ++i)
 			columns_info[i].display_size = std::max(row.data[i].data.size(), columns_info[i].display_size);

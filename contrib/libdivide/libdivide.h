@@ -144,16 +144,34 @@ struct libdivide_s64_t {
     #endif
 #endif
 
+#ifdef __APPLE__
+typedef signed long Int64;
+typedef unsigned long UInt64;
+#endif
 
 LIBDIVIDE_API struct libdivide_s32_t libdivide_s32_gen(int32_t y);
 LIBDIVIDE_API struct libdivide_u32_t libdivide_u32_gen(uint32_t y);
 LIBDIVIDE_API struct libdivide_s64_t libdivide_s64_gen(int64_t y);
 LIBDIVIDE_API struct libdivide_u64_t libdivide_u64_gen(uint64_t y);
+#if defined(__APPLE__) && defined(__cplusplus)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+LIBDIVIDE_API struct libdivide_s64_t libdivide_s64_gen(Int64 y) { return libdivide_s64_gen(int64_t(y)); };
+LIBDIVIDE_API struct libdivide_u64_t libdivide_u64_gen(UInt64 y) { return libdivide_u64_gen(uint64_t(y)); };
+#pragma GCC diagnostic pop
+#endif
 
 LIBDIVIDE_API int32_t  libdivide_s32_do(int32_t numer, const struct libdivide_s32_t *denom);
 LIBDIVIDE_API uint32_t libdivide_u32_do(uint32_t numer, const struct libdivide_u32_t *denom);
 LIBDIVIDE_API int64_t  libdivide_s64_do(int64_t numer, const struct libdivide_s64_t *denom);
 LIBDIVIDE_API uint64_t libdivide_u64_do(uint64_t y, const struct libdivide_u64_t *denom);
+#if defined(__APPLE__) && defined(__cplusplus)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+LIBDIVIDE_API Int64  libdivide_s64_do(Int64 numer, const struct libdivide_s64_t *denom) { return Int64(libdivide_s64_do(int64_t(numer), denom)); };
+LIBDIVIDE_API UInt64 libdivide_u64_do(UInt64 y, const struct libdivide_u64_t *denom) { return UInt64(libdivide_u64_do(uint64_t(y), denom)); };
+#pragma GCC diagnostic pop
+#endif
 
 LIBDIVIDE_API int libdivide_u32_get_algorithm(const struct libdivide_u32_t *denom);
 LIBDIVIDE_API uint32_t libdivide_u32_do_alg0(uint32_t numer, const struct libdivide_u32_t *denom);
@@ -164,6 +182,14 @@ LIBDIVIDE_API int libdivide_u64_get_algorithm(const struct libdivide_u64_t *deno
 LIBDIVIDE_API uint64_t libdivide_u64_do_alg0(uint64_t numer, const struct libdivide_u64_t *denom);
 LIBDIVIDE_API uint64_t libdivide_u64_do_alg1(uint64_t numer, const struct libdivide_u64_t *denom);
 LIBDIVIDE_API uint64_t libdivide_u64_do_alg2(uint64_t numer, const struct libdivide_u64_t *denom);
+#if defined(__APPLE__) && defined(__cplusplus)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+LIBDIVIDE_API UInt64 libdivide_u64_do_alg0(UInt64 numer, const struct libdivide_u64_t *denom) { return UInt64(libdivide_u64_do_alg0(uint64_t(numer), denom)); }
+LIBDIVIDE_API UInt64 libdivide_u64_do_alg1(UInt64 numer, const struct libdivide_u64_t *denom) { return UInt64(libdivide_u64_do_alg1(uint64_t(numer), denom)); }
+LIBDIVIDE_API UInt64 libdivide_u64_do_alg2(UInt64 numer, const struct libdivide_u64_t *denom) { return UInt64(libdivide_u64_do_alg2(uint64_t(numer), denom)); }
+#pragma GCC diagnostic pop
+#endif
 
 LIBDIVIDE_API int libdivide_s32_get_algorithm(const struct libdivide_s32_t *denom);
 LIBDIVIDE_API int32_t libdivide_s32_do_alg0(int32_t numer, const struct libdivide_s32_t *denom);
@@ -178,6 +204,17 @@ LIBDIVIDE_API int64_t libdivide_s64_do_alg1(int64_t numer, const struct libdivid
 LIBDIVIDE_API int64_t libdivide_s64_do_alg2(int64_t numer, const struct libdivide_s64_t *denom);
 LIBDIVIDE_API int64_t libdivide_s64_do_alg3(int64_t numer, const struct libdivide_s64_t *denom);
 LIBDIVIDE_API int64_t libdivide_s64_do_alg4(int64_t numer, const struct libdivide_s64_t *denom);
+#if defined(__APPLE__) && defined(__cplusplus)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+LIBDIVIDE_API Int64 libdivide_s64_do_alg0(Int64 numer, const struct libdivide_s64_t *denom) { return Int64(libdivide_s64_do_alg0(int64_t(numer), denom)); }
+LIBDIVIDE_API Int64 libdivide_s64_do_alg1(Int64 numer, const struct libdivide_s64_t *denom) { return Int64(libdivide_s64_do_alg1(int64_t(numer), denom)); }
+LIBDIVIDE_API Int64 libdivide_s64_do_alg2(Int64 numer, const struct libdivide_s64_t *denom) { return Int64(libdivide_s64_do_alg2(int64_t(numer), denom)); }
+LIBDIVIDE_API Int64 libdivide_s64_do_alg3(Int64 numer, const struct libdivide_s64_t *denom) { return Int64(libdivide_s64_do_alg3(int64_t(numer), denom)); }
+LIBDIVIDE_API Int64 libdivide_s64_do_alg4(Int64 numer, const struct libdivide_s64_t *denom) { return Int64(libdivide_s64_do_alg4(int64_t(numer), denom)); }
+#pragma GCC diagnostic pop
+#endif
+
 
 #if LIBDIVIDE_USE_SSE2
 LIBDIVIDE_API __m128i libdivide_u32_do_vector(__m128i numers, const struct libdivide_u32_t * denom);
@@ -1185,6 +1222,9 @@ namespace libdivide_internal {
     /* Some bogus unswitch functions for unsigned types so the same (presumably templated) code can work for both signed and unsigned. */
     uint32_t crash_u32(uint32_t, const libdivide_u32_t *) { abort(); return *(uint32_t *)NULL; }
     uint64_t crash_u64(uint64_t, const libdivide_u64_t *) { abort(); return *(uint64_t *)NULL; }
+#ifdef __APPLE__
+    UInt64 crash_u64(UInt64, const libdivide_u64_t *) { abort(); return *(UInt64 *)NULL; }
+#endif
 #if LIBDIVIDE_USE_SSE2
     __m128i crash_u32_vector(__m128i, const libdivide_u32_t *) { abort(); return *(__m128i *)NULL; }
     __m128i crash_u64_vector(__m128i, const libdivide_u64_t *) { abort(); return *(__m128i *)NULL; }
@@ -1244,6 +1284,44 @@ namespace libdivide_internal {
         template<int J> struct algo<4, J>  { typedef denom<libdivide_s32_do_alg4, MAYBE_VECTOR(libdivide_s32_do_vector_alg4)>::divider divider; };
 
     };
+
+#ifdef __APPLE__
+    template<> struct divider_mid<Int64> {
+        typedef Int64 IntType;
+        typedef struct libdivide_s64_t DenomType;
+        template<IntType do_func(IntType, const DenomType *), MAYBE_VECTOR_PARAM> struct denom {
+            typedef divider_base<IntType, DenomType, libdivide_s64_gen, libdivide_s64_get_algorithm, do_func, vector_func> divider;
+        };
+
+        template<int ALGO, int J = 0> struct algo { };
+        template<int J> struct algo<-1, J> { typedef denom<libdivide_s64_do, MAYBE_VECTOR(libdivide_s64_do_vector)>::divider divider; };
+        template<int J> struct algo<0, J>  { typedef denom<libdivide_s64_do_alg0, MAYBE_VECTOR(libdivide_s64_do_vector_alg0)>::divider divider; };
+        template<int J> struct algo<1, J>  { typedef denom<libdivide_s64_do_alg1, MAYBE_VECTOR(libdivide_s64_do_vector_alg1)>::divider divider; };
+        template<int J> struct algo<2, J>  { typedef denom<libdivide_s64_do_alg2, MAYBE_VECTOR(libdivide_s64_do_vector_alg2)>::divider divider; };
+        template<int J> struct algo<3, J>  { typedef denom<libdivide_s64_do_alg3, MAYBE_VECTOR(libdivide_s64_do_vector_alg3)>::divider divider; };
+        template<int J> struct algo<4, J>  { typedef denom<libdivide_s64_do_alg4, MAYBE_VECTOR(libdivide_s64_do_vector_alg4)>::divider divider; };
+    };
+
+    template<> struct divider_mid<UInt64> {
+        typedef UInt64 IntType;
+        typedef struct libdivide_u64_t DenomType;
+        template<IntType do_func(IntType, const DenomType *), MAYBE_VECTOR_PARAM> struct denom {
+            typedef divider_base<IntType, DenomType, libdivide_u64_gen, libdivide_u64_get_algorithm, do_func, vector_func> divider;
+        };
+
+        template<int ALGO, int J = 0> struct algo { };
+        template<int J> struct algo<-1, J> { typedef denom<libdivide_u64_do, MAYBE_VECTOR(libdivide_u64_do_vector)>::divider divider; };
+        template<int J> struct algo<0, J>  { typedef denom<libdivide_u64_do_alg0, MAYBE_VECTOR(libdivide_u64_do_vector_alg0)>::divider divider; };
+        template<int J> struct algo<1, J>  { typedef denom<libdivide_u64_do_alg1, MAYBE_VECTOR(libdivide_u64_do_vector_alg1)>::divider divider; };
+        template<int J> struct algo<2, J>  { typedef denom<libdivide_u64_do_alg2, MAYBE_VECTOR(libdivide_u64_do_vector_alg2)>::divider divider; };
+
+        /* Define two more bogus ones so that the same (templated, presumably) code can handle both signed and unsigned */
+        template<int J> struct algo<3, J>  { typedef denom<crash_u64, MAYBE_VECTOR(crash_u64_vector)>::divider divider; };
+        template<int J> struct algo<4, J>  { typedef denom<crash_u64, MAYBE_VECTOR(crash_u64_vector)>::divider divider; };
+
+
+    };
+#endif
 
     template<> struct divider_mid<uint64_t> {
         typedef uint64_t IntType;

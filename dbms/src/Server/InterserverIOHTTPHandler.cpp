@@ -23,7 +23,7 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
 	LOG_TRACE(log, "Request URI: " << request.getURI());
 
-	/// NOTE: Тут можно сделать аутентификацию, если понадобится.
+    /// NOTE: You can do authentication here if you need to.
 
 	String endpoint_name = params.get("endpoint");
 	bool compress = params.get("compress") == "true";
@@ -50,7 +50,7 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
 void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
-	/// Для того, чтобы работал keep-alive.
+    /// In order to work keep-alive.
 	if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
 		response.setChunkedTransferEncoding(true);
 
@@ -62,44 +62,26 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
 	catch (Exception & e)
 	{
 		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-		std::stringstream s;
-		s << "Code: " << e.code()
-			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-		if (!response.sent())
-			response.send() << s.str() << std::endl;
 
-		if (e.code() == ErrorCodes::ABORTED)
-			LOG_INFO(log, s.str());	/// Отдача куска на удалённый сервер была остановлена из-за остановки сервера или удаления таблицы.
+		/// Sending to remote server was cancelled due to server shutdown or drop table.
+		bool is_real_error = e.code() != ErrorCodes::ABORTED;
+
+		std::string message = getCurrentExceptionMessage(is_real_error);
+		if (!response.sent())
+			response.send() << message << std::endl;
+
+		if (is_real_error)
+			LOG_ERROR(log, message);
 		else
-			LOG_ERROR(log, s.str());
-	}
-	catch (Poco::Exception & e)
-	{
-		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-		std::stringstream s;
-		s << "Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-		if (!response.sent())
-			response.send() << s.str() << std::endl;
-		LOG_ERROR(log, s.str());
-	}
-	catch (std::exception & e)
-	{
-		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-		std::stringstream s;
-		s << "Code: " << ErrorCodes::STD_EXCEPTION << ". " << e.what();
-		if (!response.sent())
-			response.send() << s.str() << std::endl;
-		LOG_ERROR(log, s.str());
+			LOG_INFO(log, message);
 	}
 	catch (...)
 	{
 		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-		std::stringstream s;
-		s << "Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ". Unknown exception.";
+		std::string message = getCurrentExceptionMessage(false);
 		if (!response.sent())
-			response.send() << s.str() << std::endl;
-		LOG_ERROR(log, s.str());
+			response.send() << message << std::endl;
+		LOG_ERROR(log, message);
 	}
 }
 

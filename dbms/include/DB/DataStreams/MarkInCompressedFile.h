@@ -4,6 +4,7 @@
 
 #include <DB/Core/Types.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/Common/PODArray.h>
 
 
 namespace DB
@@ -33,6 +34,6 @@ struct MarkInCompressedFile
 	}
 };
 
-using MarksInCompressedFile = std::vector<MarkInCompressedFile>;
+using MarksInCompressedFile = PODArray<MarkInCompressedFile>;
 
 }

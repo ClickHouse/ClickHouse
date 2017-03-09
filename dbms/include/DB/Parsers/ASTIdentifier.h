@@ -1,8 +1,6 @@
 #pragma once
 
-#include <DB/DataTypes/IDataType.h>
 #include <DB/Parsers/ASTWithAlias.h>
-#include <DB/IO/WriteBufferFromOStream.h>
 
 
 namespace DB
@@ -13,7 +11,7 @@ namespace DB
 class ASTIdentifier : public ASTWithAlias
 {
 public:
-	enum Kind
+	enum Kind	/// TODO This is semantic, not syntax. Remove it.
 	{
 		Column,
 		Database,

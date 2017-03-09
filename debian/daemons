@@ -1,5 +1,3 @@
-compressor
+clickhouse-compressor
 clickhouse-client
 clickhouse-server
-clickhouse-benchmark
-config-processor

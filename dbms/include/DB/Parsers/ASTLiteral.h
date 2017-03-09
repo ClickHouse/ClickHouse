@@ -2,7 +2,6 @@
 
 #include <DB/Core/Field.h>
 #include <DB/Core/FieldVisitors.h>
-#include <DB/DataTypes/IDataType.h>
 #include <DB/Parsers/ASTWithAlias.h>
 
 
@@ -22,14 +21,14 @@ public:
 	String getColumnName() const override;
 
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const override { return "Literal_" + apply_visitor(FieldVisitorDump(), value); }
+	String getID() const override { return "Literal_" + applyVisitor(FieldVisitorDump(), value); }
 
 	ASTPtr clone() const override { return std::make_shared<ASTLiteral>(*this); }
 
 protected:
 	void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
 	{
-		settings.ostr << apply_visitor(FieldVisitorToString(), value);
+		settings.ostr << applyVisitor(FieldVisitorToString(), value);
 	}
 };
 

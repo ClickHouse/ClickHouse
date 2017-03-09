@@ -1,13 +1,14 @@
 #pragma once
 
 #include <time.h>
+#include <cstdlib>
+#include <random>
 #include <DB/Common/PoolBase.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/NetException.h>
 #include <DB/Common/Exception.h>
 #include <DB/Common/randomSeed.h>
 #include <DB/Interpreters/Settings.h>
-
 
 namespace DB
 {
@@ -171,16 +172,11 @@ protected:
 	struct PoolWithErrorCount
 	{
 	public:
-		PoolWithErrorCount(const NestedPoolPtr & pool_) : pool(pool_)
-		{
-			srand48_r(randomSeed(), &rand_state);
-		}
+		PoolWithErrorCount(const NestedPoolPtr & pool_) : pool(pool_) {}
 
 		void randomize()
 		{
-			long int rand_res;
-			lrand48_r(&rand_state, &rand_res);
-			state.random = rand_res;
+			state.random = rng();
 		}
 
 	public:
@@ -207,7 +203,7 @@ protected:
 	public:
 		NestedPoolPtr pool;
 		State state;
-		drand48_data rand_state;
+		std::minstd_rand rng = std::minstd_rand(randomSeed());
 	};
 
 	using States = std::vector<typename PoolWithErrorCount::State>;

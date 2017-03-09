@@ -10,6 +10,7 @@ namespace DB
 {
 
 class DatabaseCloud;
+class Context;
 
 
 /** Облачная таблица. Может находиться только в облачной базе данных.

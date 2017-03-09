@@ -13,7 +13,7 @@ struct TypeProcessorImpl
 {
 	static DataTypeTraits::EnrichedDataTypePtr execute()
 	{
-		using EnrichedT1 = std::tuple<TLeft, TRight>;
+		using EnrichedT1 = std::tuple<TLeft, TRight, NumberTraits::HasNoNull>;
 		using EnrichedT2 = typename NumberTraits::EmbedType<TType>::Type;
 		using TCombined = typename NumberTraits::TypeProduct<EnrichedT1, EnrichedT2>::Type;
 

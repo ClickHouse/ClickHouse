@@ -234,17 +234,17 @@ void ComplexKeyHashedDictionary::loadData()
 
 	while (const auto block = stream->read())
 	{
-		const auto rows = block.rowsInFirstColumn();
+		const auto rows = block.rows();
 		element_count += rows;
 
 		const auto key_column_ptrs = ext::map<ConstColumnPlainPtrs>(ext::range(0, keys_size),
 			[&] (const std::size_t attribute_idx) {
-				return block.getByPosition(attribute_idx).column.get();
+				return block.safeGetByPosition(attribute_idx).column.get();
 			});
 
 		const auto attribute_column_ptrs = ext::map<ConstColumnPlainPtrs>(ext::range(0, attributes_size),
 			[&] (const std::size_t attribute_idx) {
-				return block.getByPosition(keys_size + attribute_idx).column.get();
+				return block.safeGetByPosition(keys_size + attribute_idx).column.get();
 			});
 
 		for (const auto row_idx : ext::range(0, rows))

@@ -34,7 +34,7 @@ public:
 			std::make_pair("path", path),
 			std::make_pair("compress", (compress ? "true" : "false"))};
 
-		impl = std::make_unique<ReadBufferFromHTTP>(host, port, params, buffer_size, connection_timeout, send_timeout, receive_timeout);
+		impl = std::make_unique<ReadBufferFromHTTP>(host, port, "", params, "", buffer_size, connection_timeout, send_timeout, receive_timeout);
 	}
 
 	bool nextImpl() override
@@ -57,7 +57,7 @@ public:
 			std::make_pair("action", "list"),
 			std::make_pair("path", path)};
 
-		ReadBufferFromHTTP in(host, port, params, timeout);
+		ReadBufferFromHTTP in(host, port, "", params, "", timeout);
 
 		std::vector<std::string> files;
 		while (!in.eof())

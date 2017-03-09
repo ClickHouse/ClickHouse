@@ -13,30 +13,30 @@
 namespace DB
 {
 
-/** Позволяет выполнить запрос на удалённых репликах одного шарда и получить результат.
+/** This class allowes one to launch queries on remote replicas of one shard and get results
   */
 class RemoteBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	/// Принимает готовое соединение.
+	/// Takes already set connection
 	RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_,
 		ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
 		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
 		const Context & context_ = getDefaultContext());
 
-	/// Принимает готовое соединение. Захватывает владение соединением из пула.
+	/// Takes already set connection. Takes the ownership of a connection from a pool
 	RemoteBlockInputStream(ConnectionPool::Entry & pool_entry_, const String & query_, const Settings * settings_,
 		ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
 		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
 		const Context & context_ = getDefaultContext());
 
-	/// Принимает пул, из которого нужно будет достать одно или несколько соединений.
+	/// Takes a pool and gets one or several connections from it
 	RemoteBlockInputStream(ConnectionPoolPtr & pool_, const String & query_, const Settings * settings_,
 		ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
 		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
 		const Context & context_ = getDefaultContext());
 
-	/// Принимает пулы - один для каждого шарда, из которых нужно будет достать одно или несколько соединений.
+	/// Takes a pool for each shard and gets one or several connections from it
 	RemoteBlockInputStream(ConnectionPoolsPtr & pools_, const String & query_, const Settings * settings_,
 		ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
 		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
@@ -47,14 +47,14 @@ public:
 	/// Specify how we allocate connections on a shard.
 	void setPoolMode(PoolMode pool_mode_);
 
-	/// Кроме блоков, получить информацию о блоках.
+	/// Besides blocks themself, get blocks' extra info
 	void appendExtraInfo();
 
-	/// Отправляет запрос (инициирует вычисления) раньше, чем read.
+	/// Sends query (initiates calculation) before read()
 	void readPrefix() override;
 
-	/** Отменяем умолчальное уведомление о прогрессе,
-	  * так как колбэк прогресса вызывается самостоятельно.
+	/** Prevent default progress notification because progress' callback is
+		called by its own
 	  */
 	void progress(const Progress & value) override {}
 
@@ -75,20 +75,20 @@ public:
 	}
 
 protected:
-	/// Отправить на удаленные серверы все временные таблицы.
+	/// Send all temporary tables to remote servers
 	void sendExternalTables();
 
 	Block readImpl() override;
 
 	void readSuffixImpl() override;
 
-	/// Создать объект для общения с репликами одного шарда, на которых должен выполниться запрос.
+	/// Creates an object to talk to one shard's replicas performing query
 	void createMultiplexedConnections();
 
-	/// Возвращает true, если запрос отправлен.
+	/// Returns true if query was sent
 	bool isQueryPending() const;
 
-	/// Возвращает true, если исключение было выкинуто.
+	/// Returns true if exception was thrown
 	bool hasThrownException() const;
 
 private:
@@ -96,7 +96,7 @@ private:
 
 	void sendQuery();
 
-	/// Отправить запрос на отмену всех соединений к репликам, если такой запрос ещё не был отправлен.
+	/// If wasn't sent yet, send request to cancell all connections to replicas
 	void tryCancel(const char * reason);
 
 	/// ITable::read requires a Context, therefore we should create one if the user can't supply it
@@ -107,14 +107,14 @@ private:
 	}
 
 private:
-	/// Готовое соединение.
+	/// Already set connection
 	ConnectionPool::Entry pool_entry;
 	Connection * connection = nullptr;
 
-	/// Пул соединений одного шарда.
+	/// One shard's connections pool
 	ConnectionPoolPtr pool = nullptr;
 
-	/// Пулы соединений одного или нескольких шардов.
+	/// Connections pools of one or several shards
 	ConnectionPoolsPtr pools;
 
 	std::unique_ptr<MultiplexedConnections> multiplexed_connections;
@@ -122,43 +122,45 @@ private:
 	const String query;
 	bool send_settings;
 	Settings settings;
-	/// Если не nullptr, то используется, чтобы ограничить сетевой трафик.
+	/// If != nullptr, used to limit network trafic
 	ThrottlerPtr throttler;
-	/// Временные таблицы, которые необходимо переслать на удаленные сервера.
+	/// Temporary tables needed to be sent to remote servers
 	Tables external_tables;
 	QueryProcessingStage::Enum stage;
 	Context context;
 
-	/// Потоки для чтения из временных таблиц - для последующей отправки данных на удалённые серверы для GLOBAL-подзапросов.
+	/// Threads for reading from temporary tables and following sending of data
+	/// to remote servers for GLOBAL-subqueries
 	std::vector<ExternalTablesData> external_tables_data;
 	std::mutex external_tables_mutex;
 
-	/// Установили соединения с репликами, но ещё не отправили запрос.
+	/// Connections to replicas are established, but no queries are sent yet
 	std::atomic<bool> established { false };
 
-	/// Отправили запрос (это делается перед получением первого блока).
+	/// Query is sent (used before getting first block)
 	std::atomic<bool> sent_query { false };
 
-	/** Получили все данные от всех реплик, до пакета EndOfStream.
-	  * Если при уничтожении объекта, ещё не все данные считаны,
-	  *  то для того, чтобы не было рассинхронизации, на реплики отправляются просьбы прервать выполнение запроса,
-	  *  и после этого считываются все пакеты до EndOfStream.
+	/** All data from all replicas are received, before EndOfStream packet.
+	  * To prevent desynchronization, if not all data is read before object
+	  * destruction, it's required to send cancel query request to replicas and
+	  * read all packets before EndOfStream
 	  */
 	std::atomic<bool> finished { false };
 
-	/** На каждую реплику была отправлена просьба прервать выполнение запроса, так как данные больше не нужны.
-	  * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT),
-	  *  или если на стороне клиента произошло исключение.
+	/** Cancel query request was sent to all replicas beacuse data is not needed anymore
+	  * This behaviour may occur when:
+	  * - data size is already satisfactory (when using LIMIT, for example)
+	  * - an exception was thrown from client side
 	  */
 	std::atomic<bool> was_cancelled { false };
 
-	/** С одной репилки было получено исключение. В этом случае получать больше пакетов или
-	  * просить прервать запрос на этой реплике не нужно.
+	/** An exception from replica was received. No need in receiving more packets or
+	  * requesting to cancel query execution
 	  */
 	std::atomic<bool> got_exception_from_replica { false };
 
-	/** С одной реплики был получен неизвестный пакет. В этом случае получать больше пакетов или
-	  * просить прервать запрос на этой реплике не нужно.
+	/** Unkown packet was received from replica. No need in receiving more packets or
+	  * requesting to cancel query execution
 	  */
 	std::atomic<bool> got_unknown_packet_from_replica { false };
 

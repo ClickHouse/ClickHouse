@@ -26,7 +26,7 @@ void CollapsingSortedBlockInputStream::reportIncorrectData()
 	{
 		if (i != 0)
 			s << ", ";
-		s << apply_visitor(FieldVisitorToString(), (*current_key.columns[i])[current_key.row_num]);
+		s << applyVisitor(FieldVisitorToString(), (*current_key.columns[i])[current_key.row_num]);
 	}
 
 	s << ").";
@@ -55,6 +55,13 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 				++merged_rows;
 				for (size_t i = 0; i < num_columns; ++i)
 					merged_columns[i]->insertFrom(*last_negative.columns[i], last_negative.row_num);
+
+				if (out_row_sources)
+				{
+					/// true flag value means "skip row"
+					out_row_sources->data()[last_positive_pos].setSkipFlag(false);
+					out_row_sources->data()[last_negative_pos].setSkipFlag(false);
+				}
 			}
 			return;
 		}
@@ -64,6 +71,9 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 			++merged_rows;
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insertFrom(*first_negative.columns[i], first_negative.row_num);
+
+			if (out_row_sources)
+				out_row_sources->data()[first_negative_pos].setSkipFlag(false);
 		}
 
 		if (count_positive >= count_negative)
@@ -71,6 +81,9 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 			++merged_rows;
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insertFrom(*last_positive.columns[i], last_positive.row_num);
+
+			if (out_row_sources)
+				out_row_sources->data()[last_positive_pos].setSkipFlag(false);
 		}
 
 		if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
@@ -123,7 +136,7 @@ void CollapsingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, s
 	size_t merged_rows = 0;
 
 	/// Вынимаем строки в нужном порядке и кладём в merged_block, пока строк не больше max_block_size
-	while (!queue.empty())
+	for (; !queue.empty(); ++current_pos)
 	{
 		TSortCursor current = queue.top();
 
@@ -149,6 +162,10 @@ void CollapsingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, s
 
 		queue.pop();
 
+		/// Initially, skip all rows. On insert, unskip "corner" rows.
+		if (out_row_sources)
+			out_row_sources->emplace_back(current.impl->order, true);
+
 		if (key_differs)
 		{
 			/// Запишем данные для предыдущего первичного ключа.
@@ -166,13 +183,21 @@ void CollapsingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, s
 			last_is_positive = true;
 
 			setRowRef(last_positive, current);
+			last_positive_pos = current_pos;
 		}
 		else if (sign == -1)
 		{
 			if (!count_negative)
+			{
 				setRowRef(first_negative, current);
+				first_negative_pos = current_pos;
+			}
+
 			if (!blocks_written && !merged_rows)
+			{
 				setRowRef(last_negative, current);
+				last_negative_pos = current_pos;
+			}
 
 			++count_negative;
 			last_is_positive = false;

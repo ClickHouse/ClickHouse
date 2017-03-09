@@ -6,6 +6,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
 #include <DB/Core/Types.h>
 #include <common/logger_useful.h>
@@ -32,6 +33,30 @@ public:
 	/// Разбор очереди для проверки осуществляется в фоновом потоке, который нужно сначала запустить.
 	void start();
 	void stop();
+
+	/// Don't create more than one instance of this object simultaneously.
+	struct TemporarilyStop : private boost::noncopyable
+	{
+		ReplicatedMergeTreePartCheckThread * parent;
+
+		TemporarilyStop(ReplicatedMergeTreePartCheckThread * parent) : parent(parent)
+		{
+			parent->stop();
+		}
+
+		TemporarilyStop(TemporarilyStop && old) : parent(old.parent)
+		{
+			old.parent = nullptr;
+		}
+
+		~TemporarilyStop()
+		{
+			if (parent)
+				parent->start();
+		}
+	};
+
+	TemporarilyStop temporarilyStop() { return TemporarilyStop(this); }
 
 	/// Добавить кусок (для которого есть подозрения, что он отсутствует, повреждён или не нужен) в очередь для проверки.
 	/// delay_to_check_seconds - проверять не раньше чем через указанное количество секунд.

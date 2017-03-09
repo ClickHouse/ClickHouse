@@ -2,8 +2,11 @@
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Interpreters/evaluateConstantExpression.h>
 #include <DB/Interpreters/Cluster.h>
+#include <DB/Interpreters/Context.h>
 
 #include <DB/TableFunctions/TableFunctionRemote.h>
 

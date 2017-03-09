@@ -24,9 +24,11 @@
 namespace DB
 {
 
-/// Поток блоков читающих из таблицы и ее имя
+class ClientInfo;
+
+/// The stream of blocks reading from the table and its name
 using ExternalTableData = std::pair<BlockInputStreamPtr, std::string>;
-/// Вектор пар, описывающих таблицы
+/// Vector of pairs describing tables
 using ExternalTablesData = std::vector<ExternalTableData>;
 
 class Connection;
@@ -128,6 +130,8 @@ public:
 
 	void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
 
+	const String & getServerTimezone();
+
 	/// For log and exception messages.
 	const String & getDescription() const;
 	const String & getHost() const;
@@ -135,8 +139,13 @@ public:
 	const String & getDefaultDatabase() const;
 
 	/// If last flag is true, you need to call sendExternalTablesData after.
-	void sendQuery(const String & query, const String & query_id_ = "", UInt64 stage = QueryProcessingStage::Complete,
-		const Settings * settings = nullptr, bool with_pending_data = false);
+	void sendQuery(
+		const String & query,
+		const String & query_id_ = "",
+		UInt64 stage = QueryProcessingStage::Complete,
+		const Settings * settings = nullptr,
+		const ClientInfo * client_info = nullptr,
+		bool with_pending_data = false);
 
 	void sendCancel();
 	/// Send block of data; if name is specified, server will write it to external (temporary) table of that name.
@@ -166,8 +175,8 @@ public:
 	  */
 	void disconnect();
 
-	/** Заполнить информацию, которая необходима при получении блока для некоторых задач
-	  * (пока только для запроса DESCRIBE TABLE с Distributed-таблицами).
+    /** Fill in the information that is needed when getting the block for some tasks
+	  * (so far only for a DESCRIBE TABLE query with Distributed tables).
 	  */
 	void fillBlockExtraInfo(BlockExtraInfo & info) const;
 
@@ -186,7 +195,7 @@ private:
 	  */
 	Poco::Net::SocketAddress resolved_address;
 
-	/// Для сообщений в логе и в эксепшенах.
+    /// For messages in log and in exceptions.
 	String description;
 	void setDescription();
 
@@ -198,6 +207,7 @@ private:
 	UInt64 server_version_major = 0;
 	UInt64 server_version_minor = 0;
 	UInt64 server_revision = 0;
+	String server_timezone;
 
 	Poco::Net::StreamSocket socket;
 	std::shared_ptr<ReadBuffer> in;

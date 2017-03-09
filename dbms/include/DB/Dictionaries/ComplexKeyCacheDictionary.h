@@ -9,13 +9,10 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Core/StringRef.h>
-#include <ext/enumerate.hpp>
 #include <ext/scope_guard.hpp>
 #include <ext/bit_cast.hpp>
-#include <ext/range.hpp>
 #include <ext/map.hpp>
 #include <Poco/RWLock.h>
-#include <cmath>
 #include <atomic>
 #include <chrono>
 #include <vector>
@@ -23,6 +20,23 @@
 #include <tuple>
 #include <random>
 
+namespace ProfileEvents
+{
+	extern const Event DictCacheKeysRequested;
+	extern const Event DictCacheKeysRequestedMiss;
+	extern const Event DictCacheKeysRequestedFound;
+	extern const Event DictCacheKeysExpired;
+	extern const Event DictCacheKeysNotFound;
+	extern const Event DictCacheKeysHit;
+	extern const Event DictCacheRequestTimeNs;
+	extern const Event DictCacheLockWriteNs;
+	extern const Event DictCacheLockReadNs;
+}
+
+namespace CurrentMetrics
+{
+	extern const Metric DictCacheRequests;
+}
 
 namespace DB
 {
@@ -161,8 +175,8 @@ private:
 		using time_point_rep_t = time_point_t::rep;
 		using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
 
-		static constexpr std::uint64_t EXPIRES_AT_MASK = std::numeric_limits<time_point_rep_t>::max();
-		static constexpr std::uint64_t IS_DEFAULT_MASK = ~EXPIRES_AT_MASK;
+		static constexpr UInt64 EXPIRES_AT_MASK = std::numeric_limits<time_point_rep_t>::max();
+		static constexpr UInt64 IS_DEFAULT_MASK = ~EXPIRES_AT_MASK;
 
 		StringRef key;
 		decltype(StringRefHash{}(key)) hash;
@@ -221,7 +235,7 @@ private:
 		const std::vector<std::size_t> & in_requested_rows, PresentKeyHandler && on_cell_updated,
 		AbsentKeyHandler && on_key_not_found) const;
 
-	std::uint64_t getCellIdx(const StringRef key) const;
+	UInt64 getCellIdx(const StringRef key) const;
 
 	void setDefaultAttributeValue(Attribute & attribute, const std::size_t idx) const;
 
@@ -243,6 +257,20 @@ private:
 	static StringRef copyIntoArena(StringRef src, Arena & arena);
 	StringRef copyKey(const StringRef key) const;
 
+	struct FindResult
+	{
+		const size_t cell_idx;
+		const bool valid;
+		const bool outdated;
+	};
+
+	FindResult findCellIdx(const StringRef & key, const CellMetadata::time_point_t now, const size_t hash) const;
+	FindResult findCellIdx(const StringRef & key, const CellMetadata::time_point_t now) const
+	{
+		const auto hash = StringRefHash{}(key);
+		return findCellIdx(key, now, hash);
+	};
+
 	const std::string name;
 	const DictionaryStructure dict_struct;
 	const DictionarySourcePtr source_ptr;
@@ -250,8 +278,17 @@ private:
 	const std::string key_description{dict_struct.getKeyDescription()};
 
 	mutable Poco::RWLock rw_lock;
+
+	/// Actual size will be increased to match power of 2
 	const std::size_t size;
-	const std::uint64_t zero_cell_idx{getCellIdx(StringRef{})};
+
+	/// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
+	const std::size_t size_overlap_mask;
+
+	/// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
+	static constexpr std::size_t max_collision_length = 10;
+
+	const UInt64 zero_cell_idx{getCellIdx(StringRef{})};
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	mutable std::vector<Attribute> attributes;
 	mutable std::vector<CellMetadata> cells{size};

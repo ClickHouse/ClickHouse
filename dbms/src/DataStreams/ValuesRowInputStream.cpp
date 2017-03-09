@@ -3,6 +3,7 @@
 #include <DB/Interpreters/convertFieldToType.h>
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/DataStreams/ValuesRowInputStream.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Core/Block.h>
 
@@ -23,8 +24,8 @@ namespace ErrorCodes
 }
 
 
-ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Context & context_)
-	: istr(istr_), context(context_)
+ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Context & context_, bool interpret_expressions_)
+	: istr(istr_), context(context_), interpret_expressions(interpret_expressions_)
 {
 	/// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
 	skipBOMIfExists(istr);
@@ -55,7 +56,7 @@ bool ValuesRowInputStream::read(Block & block)
 		char * prev_istr_position = istr.position();
 		size_t prev_istr_bytes = istr.count() - istr.offset();
 
-		auto & col = block.unsafeGetByPosition(i);
+		auto & col = block.getByPosition(i);
 
 		bool rollback_on_exception = false;
 		try
@@ -71,6 +72,9 @@ bool ValuesRowInputStream::read(Block & block)
 		}
 		catch (const Exception & e)
 		{
+			if (!interpret_expressions)
+				throw;
+
 			/** Обычный потоковый парсер не смог распарсить значение.
 			  * Попробуем распарсить его SQL-парсером как константное выражение.
 			  * Это исключительный случай.
@@ -79,8 +83,7 @@ bool ValuesRowInputStream::read(Block & block)
 				|| e.code() == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
 				|| e.code() == ErrorCodes::CANNOT_PARSE_DATE
 				|| e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
-				|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
-				|| e.code() == ErrorCodes::CANNOT_PARSE_DATE)
+				|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT)
 			{
 				/// TODO Работоспособность, если выражение не помещается целиком до конца буфера.
 
@@ -91,7 +94,7 @@ bool ValuesRowInputStream::read(Block & block)
 				if (rollback_on_exception)
 					col.column.get()->popBack(1);
 
-				IDataType & type = *block.getByPosition(i).type;
+				IDataType & type = *block.safeGetByPosition(i).type;
 
 				IParser::Pos pos = prev_istr_position;
 
@@ -106,14 +109,36 @@ bool ValuesRowInputStream::read(Block & block)
 
 				istr.position() = const_cast<char *>(max_parsed_pos);
 
-				Field value = convertFieldToType(evaluateConstantExpression(ast, context), type);
+				std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
+				Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
 
-				/// TODO После добавления поддержки NULL, добавить сюда проверку на data type is nullable.
 				if (value.isNull())
-					throw Exception("Expression returns value " + apply_visitor(FieldVisitorToString(), value)
-						+ ", that is out of range of type " + type.getName()
-						+ ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
-						ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE);
+				{
+					/// Check that we are indeed allowed to insert a NULL.
+					bool is_null_allowed = false;
+
+					if (type.isNullable())
+						is_null_allowed = true;
+					else
+					{
+						/// NOTE: For now we support only one level of null values, i.e.
+						/// there are not yet such things as Array(Nullable(Array(Nullable(T))).
+						/// Therefore the code below is valid within the current limitations.
+						const auto array_type = typeid_cast<const DataTypeArray *>(&type);
+						if (array_type != nullptr)
+						{
+							const auto & nested_type = array_type->getMostNestedType();
+							if (nested_type->isNullable())
+								is_null_allowed = true;
+						}
+					}
+
+					if (!is_null_allowed)
+						throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
+							+ ", that is out of range of type " + type.getName()
+							+ ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
+							ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
+				}
 
 				col.column->insert(value);
 

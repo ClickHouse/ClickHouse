@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
 
@@ -23,7 +24,7 @@ public:
 	void write(const Block & block) override;
 
 	void flush() override;
-	String getContentType() const override { return "application/octet-stream"; }
+	std::string getContentType() const override { return "application/octet-stream"; }
 
 private:
 	bool is_first = true;

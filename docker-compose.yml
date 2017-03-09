@@ -1,0 +1,14 @@
+version: "2"
+
+services:
+  builder:
+    image: yandex/clickhouse-builder
+    build: docker/builder
+  client:
+    image: yandex/clickhouse-client
+    build: docker/client
+    network_mode: host
+  server:
+    image: yandex/clickhouse-server
+    build: docker/server
+    network_mode: host

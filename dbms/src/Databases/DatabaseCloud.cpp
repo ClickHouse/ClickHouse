@@ -42,12 +42,12 @@ void DatabaseCloud::createZookeeperNodes()
 	auto acl = zookeeper->getDefaultACL();
 
 	zkutil::Ops ops;
-	ops.push_back(new zkutil::Op::Create(zookeeper_path, "", acl, zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/table_definitions", "", acl, zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/tables", "", acl, zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/local_tables", "", acl, zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/locality_keys", "", acl, zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/nodes", "", acl, zkutil::CreateMode::Persistent));
+	ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path, "", acl, zkutil::CreateMode::Persistent));
+	ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/table_definitions", "", acl, zkutil::CreateMode::Persistent));
+	ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/tables", "", acl, zkutil::CreateMode::Persistent));
+	ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/local_tables", "", acl, zkutil::CreateMode::Persistent));
+	ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/locality_keys", "", acl, zkutil::CreateMode::Persistent));
+	ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/nodes", "", acl, zkutil::CreateMode::Persistent));
 
 	auto code = zookeeper->tryMulti(ops);
 	if (code == ZOK)
@@ -335,8 +335,8 @@ static void modifyTwoTableSets(zkutil::ZooKeeperPtr & zookeeper, const String & 
 
 		zkutil::Ops ops;
 
-		ops.push_back(new zkutil::Op::SetData(path1, new_value1, stat1.version));
-		ops.push_back(new zkutil::Op::SetData(path2, new_value2, stat2.version));
+		ops.emplace_back(std::make_unique<zkutil::Op::SetData>(path1, new_value1, stat1.version));
+		ops.emplace_back(std::make_unique<zkutil::Op::SetData>(path2, new_value2, stat2.version));
 
 		auto code = zookeeper->tryMulti(ops);
 
@@ -592,7 +592,8 @@ Hash DatabaseCloud::getHashForTableDefinition(const String & definition) const
 }
 
 
-void DatabaseCloud::createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine)
+void DatabaseCloud::createTable(
+	const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings)
 {
 	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
@@ -721,7 +722,8 @@ void DatabaseCloud::removeTable(const String & table_name)
 }
 
 
-void DatabaseCloud::renameTable(const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name)
+void DatabaseCloud::renameTable(
+	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings)
 {
 	/// Переименовывать можно только облачные таблицы.
 	/// Перенос между БД не поддерживается.

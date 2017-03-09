@@ -1,6 +1,7 @@
 # emacs files
 *~
 *\#
+.tramp_history
 
 # auto generated files
 *.logrt
@@ -13,6 +14,12 @@ callgrind.out.*
 # ignore kdevelop files
 *.kdev4
 *.kdev_include_paths
+
+# ignore sublime project files
+*.sublime-*
+
+# Qt Creator files
+*.user
 
 # ignore perf output
 */perf.data
@@ -156,19 +163,6 @@ utils/zookeeper-dump-tree/zookeeper-dump-tree
 utils/zookeeper-remove-by-list/zookeeper-remove-by-list
 dbms/src/Storages/tests/remove_symlink_directory
 dbms/tests/queries/1_stateful
-debian/clickhouse-benchmark-metrika-yandex.postinst
-debian/clickhouse-benchmark.docs
-debian/clickhouse-client-metrika-yandex.postinst
-debian/clickhouse-client.docs
-debian/clickhouse-server-base.docs
-debian/clickhouse-server-common.docs
-debian/clickhouse-server-metrika-yandex.postinst
-debian/clickhouse-server-metrika.docs
-debian/clickhouse-server.docs
-debian/compressor-metrika-yandex.postinst
-debian/compressor.docs
-debian/config-processor-metrika-yandex.postinst
-debian/config-processor.docs
 debian/control
 debian/copyright
 debian/tmp/
@@ -217,6 +211,9 @@ nbproject/*
 
 # JetBrains project files
 .idea
+
+# Microsoft Visual Studio Code
+.vscode
 
 config-preprocessed.xml
 

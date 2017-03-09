@@ -2,10 +2,12 @@
 
 #include <DB/Functions/Conditional/CondException.h>
 #include <DB/Functions/Conditional/common.h>
+#include <DB/Functions/Conditional/NullMapBuilder.h>
 #include <DB/Functions/Conditional/CondSource.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Functions/NumberTraits.h>
 
 namespace DB
 {
@@ -254,7 +256,7 @@ public:
 		auto type_name = br.type->getName();
 		if (TypeName<TType>::get() == type_name)
 		{
-			const IColumn * col = block.getByPosition(args[br.index]).column.get();
+			const IColumn * col = block.safeGetByPosition(args[br.index]).column.get();
 			const ColumnArray * col_array = typeid_cast<const ColumnArray *>(col);
 			const ColumnConstArray * col_const_array = typeid_cast<const ColumnConstArray *>(col);
 
@@ -279,6 +281,35 @@ public:
 	}
 };
 
+const Array null_array{Null()};
+
+/// Case for null sources.
+template <typename TResult>
+class ArraySourceCreator<TResult, Null> final
+{
+public:
+	static bool execute(IArraySources<TResult> & sources, const Block & block,
+		const ColumnNumbers & args, const Branch & br)
+	{
+		auto type_name = br.type->getName();
+		if (TypeName<Null>::get() == type_name)
+		{
+			const IColumn * col = block.safeGetByPosition(args[br.index]).column.get();
+			const ColumnNull * null_col = typeid_cast<const ColumnNull *>(col);
+			if (null_col == nullptr)
+				throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+
+			IArraySourcePtr<TResult> source;
+			source = std::make_unique<ConstArraySource<TResult, Null> >(null_array);
+			sources.push_back(std::move(source));
+
+			return true;
+		}
+		else
+			return false;
+	}
+};
+
 }
 
 /// Processing of multiIf in the case of numeric array types.
@@ -286,12 +317,15 @@ template <typename TResult>
 class ArrayEvaluator final
 {
 public:
-	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result)
+	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
 	{
 		const CondSources conds = createConds(block, args);
 		size_t row_count = conds[0].getSize();
 		IArraySources<TResult> sources = createSources(block, args, branches);
 		ArraySink<TResult> sink = createSink(block, sources, result, row_count);
+
+		if (builder)
+			builder.init(args);
 
 		for (size_t cur_row = 0; cur_row < row_count; ++cur_row)
 		{
@@ -303,6 +337,8 @@ public:
 				if (cond.get(cur_row))
 				{
 					sink.store(sources[cur_source]->get());
+					if (builder)
+						builder.update(args[branches[cur_source].index], cur_row);
 					has_triggered_cond = true;
 					break;
 				}
@@ -310,7 +346,11 @@ public:
 			}
 
 			if (!has_triggered_cond)
+			{
 				sink.store(sources.back()->get());
+				if (builder)
+					builder.update(args[branches.back().index], cur_row);
+			}
 
 			for (auto & source : sources)
 				source->next();
@@ -347,7 +387,8 @@ private:
 				|| ArraySourceCreator<TResult, Int32>::execute(sources, block, args, br)
 				|| ArraySourceCreator<TResult, Int64>::execute(sources, block, args, br)
 				|| ArraySourceCreator<TResult, Float32>::execute(sources, block, args, br)
-				|| ArraySourceCreator<TResult, Float64>::execute(sources, block, args, br)))
+				|| ArraySourceCreator<TResult, Float64>::execute(sources, block, args, br)
+				|| ArraySourceCreator<TResult, Null>::execute(sources, block, args, br)))
 				throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 		}
 
@@ -384,7 +425,7 @@ private:
 
 		auto col_res_vec = std::make_shared<ColumnVector<TResult>>();
 		auto col_res_array = std::make_shared<ColumnArray>(col_res_vec);
-		block.getByPosition(result).column = col_res_array;
+		block.safeGetByPosition(result).column = col_res_array;
 
 		return ArraySink<TResult>{col_res_vec->getData(), col_res_array->getOffsets(),
 			data_size, offsets_size};
@@ -396,7 +437,8 @@ template <>
 class ArrayEvaluator<NumberTraits::Error>
 {
 public:
-	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result)
+	/// For the meaning of the builder parameter, see the FunctionMultiIf::perform() declaration.
+	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
 	{
 		throw CondException{CondErrorCodes::ARRAY_EVALUATOR_INVALID_TYPES};
 	}

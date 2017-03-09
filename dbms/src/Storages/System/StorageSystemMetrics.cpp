@@ -54,7 +54,7 @@ BlockInputStreams StorageSystemMetrics::read(
 
 	for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
 	{
-		auto value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
+		Int64 value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
 
 		col_metric.column->insert(String(CurrentMetrics::getDescription(CurrentMetrics::Metric(i))));
 		col_value.column->insert(value);

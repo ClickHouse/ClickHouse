@@ -7,10 +7,13 @@
 	M(SelectQuery) \
 	M(InsertQuery) \
 	M(FileOpen) \
+	M(FileOpenFailed) \
 	M(Seek) \
 	M(ReadBufferFromFileDescriptorRead) \
+	M(ReadBufferFromFileDescriptorReadFailed) \
 	M(ReadBufferFromFileDescriptorReadBytes) \
 	M(WriteBufferFromFileDescriptorWrite) \
+	M(WriteBufferFromFileDescriptorWriteFailed) \
 	M(WriteBufferFromFileDescriptorWriteBytes) \
 	M(ReadBufferAIORead) \
 	M(ReadBufferAIOReadBytes) \
@@ -43,10 +46,11 @@
 	M(ReplicatedPartChecksFailed) \
 	M(ReplicatedDataLoss) \
 	\
+	M(InsertedRows) \
+	M(InsertedBytes) \
 	M(DelayedInserts) \
 	M(RejectedInserts) \
 	M(DelayedInsertsMilliseconds) \
-	M(SynchronousMergeOnInsert) \
 	\
 	M(ZooKeeperInit) \
 	M(ZooKeeperTransactions) \
@@ -84,6 +88,7 @@
 	\
 	M(MergedRows) \
 	M(MergedUncompressedBytes) \
+	M(MergesTimeMilliseconds)\
 	\
 	M(MergeTreeDataWriterRows) \
 	M(MergeTreeDataWriterUncompressedBytes) \
@@ -96,6 +101,26 @@
 	M(LeaderElectionAcquiredLeadership) \
 	\
 	M(RegexpCreated) \
+	M(ContextLock) \
+	\
+	M(StorageBufferFlush) \
+	M(StorageBufferErrorOnFlush) \
+	M(StorageBufferPassedAllMinThresholds) \
+	M(StorageBufferPassedTimeMaxThreshold) \
+	M(StorageBufferPassedRowsMaxThreshold) \
+	M(StorageBufferPassedBytesMaxThreshold) \
+	\
+	M(DictCacheKeysRequested) \
+	M(DictCacheKeysRequestedMiss) \
+	M(DictCacheKeysRequestedFound) \
+	M(DictCacheKeysExpired) \
+	M(DictCacheKeysNotFound) \
+	M(DictCacheKeysHit) \
+	M(DictCacheRequestTimeNs) \
+	M(DictCacheRequests) \
+	M(DictCacheLockWriteNs) \
+	M(DictCacheLockReadNs) \
+
 
 namespace ProfileEvents
 {

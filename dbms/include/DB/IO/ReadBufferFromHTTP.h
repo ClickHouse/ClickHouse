@@ -21,6 +21,8 @@ class ReadBufferFromHTTP : public ReadBuffer
 private:
 	String host;
 	int port;
+	String path;
+	String method;
 
 	Poco::Net::HTTPClientSession session;
 	std::istream * istr;	/// owned by session
@@ -32,7 +34,9 @@ public:
 	ReadBufferFromHTTP(
 		const String & host_,
 		int port_,
+		const String & path_,
 		const Params & params,
+		const String & method_ = "",
 		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
 		const Poco::Timespan & connection_timeout = Poco::Timespan(DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, 0),
 		const Poco::Timespan & send_timeout = Poco::Timespan(DEFAULT_HTTP_READ_BUFFER_TIMEOUT, 0),

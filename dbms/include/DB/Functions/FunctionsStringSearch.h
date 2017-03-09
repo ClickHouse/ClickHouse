@@ -1,10 +1,8 @@
 #pragma once
 
 #include <mutex>
-
 #include <DB/Common/OptimizedRegularExpression.h>
 #include <memory>
-
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
@@ -18,10 +16,14 @@
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <Poco/UTF8String.h>
-
 #include <mutex>
 #include <stack>
 #include <ext/range.hpp>
+#include <common/config_common.h>
+#if USE_RE2_ST
+	#include <re2_st/re2.h>
+#endif
+
 
 
 namespace ProfileEvents
@@ -61,14 +63,14 @@ namespace DB
   */
 
 
-/** Детали реализации функций семейства position в зависимости от ASCII/UTF8 и case sensitiveness.
+/** Implementation details for functions of 'position' family depending on ASCII/UTF8 and case sensitiveness.
   */
 struct PositionCaseSensitiveASCII
 {
-	/// Объект для поиска одной подстроки среди большого количества данных, уложенных подряд. Может слегка сложно инициализироваться.
+	/// For searching single substring inside big-enough contiguous chunk of data. Coluld have slightly expensive initialization.
 	using SearcherInBigHaystack = VolnitskyImpl<true, true>;
 
-	/// Объект для поиска каждый раз разных подстрок, создаваемый на каждую подстроку. Не должен сложно инициализироваться.
+	/// For searching single substring, that is different each time. This object is created for each row of data. It must have cheap initialization.
 	using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
 
 	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
@@ -81,13 +83,14 @@ struct PositionCaseSensitiveASCII
 		return SearcherInSmallHaystack(needle_data, needle_size);
 	}
 
-	/// Посчитать число символов от begin до end.
+	/// Number of code points between 'begin' and 'end' (this has different behaviour for ASCII and UTF-8).
 	static size_t countChars(const char * begin, const char * end)
 	{
 		return end - begin;
 	}
 
-	/// Перевести строку в нижний регистр. Только для регистронезависимого поиска. Можно неэффективно, так как вызывается от одиночной строки.
+	/// Convert string to lowercase. Only for case-insensitive search.
+	/// Implementation is permitted to be inefficient because it is called for single string.
 	static void toLowerIfNeed(std::string & s)
 	{
 	}
@@ -431,7 +434,7 @@ inline bool likePatternIsStrstr(const String & pattern, String & res)
 namespace Regexps
 {
 	using Regexp = OptimizedRegularExpressionImpl<false>;
-	using Pool = ObjectPool<Regexp, String>;
+	using Pool = ObjectPoolMap<Regexp, String>;
 
 	template <bool like>
 	inline Regexp createRegexp(const std::string & pattern, int flags) { return {pattern, flags}; }
@@ -458,10 +461,9 @@ namespace Regexps
 }
 
 
-/** like - использовать выражения LIKE, если true; использовать выражения re2, если false.
-  * Замечание: хотелось бы запускать регексп сразу над всем массивом, аналогично функции position,
-  *  но для этого пришлось бы сделать поддержку символов \0 в движке регулярных выражений,
-  *  и их интерпретацию как начал и концов строк.
+/** 'like' - if true, treat pattern as SQL LIKE; if false - treat pattern as re2 regexp.
+  * NOTE: We want to run regexp search for whole block by one call (as implemented in function 'position')
+  *  but for that, regexp engine must support \0 bytes and their interpretation as string boundaries.
   */
 template <bool like, bool revert = false>
 struct MatchImpl
@@ -616,7 +618,7 @@ struct MatchImpl
 		throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
 	}
 
-	/// Поиск многих подстрок в одной строке.
+	/// Search different needles in single haystack.
 	static void constant_vector(
 		const String & haystack,
 		const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
@@ -671,47 +673,128 @@ struct ExtractImpl
 };
 
 
-/** Заменить все вхождения регекспа needle на строку replacement. needle и replacement - константы.
-  * Replacement может содержать подстановки, например '\2-\3-\1'
+/** Replace all matches of regexp 'needle' to string 'replacement'. 'needle' and 'replacement' are constants.
+  * 'replacement' could contain substitutions, for example: '\2-\3-\1'
   */
-template <bool replaceOne = false>
+template <bool replace_one = false>
 struct ReplaceRegexpImpl
 {
-	/// Последовательность инструкций, описывает как получить конечную строку. Каждый элемент
-	/// либо подстановка, тогда первое число в паре ее id,
-	/// либо строка, которую необходимо вставить, записана второй в паре. (id = -1)
-	using Instructions = std::vector< std::pair<int, std::string> >;
+	/// Sequence of instructions, describing how to get resulting string.
+	/// Each element is either:
+	/// - substitution (in that case first element of pair is their number and second element is empty)
+	/// - string that need to be inserted (in that case, first element of pair is that string and second element is -1)
+	using Instructions = std::vector<std::pair<int, std::string>>;
 
-	static void split(const std::string & s, Instructions & instructions)
+	static const size_t max_captures = 10;
+
+
+	static Instructions createInstructions(const std::string & s, int num_captures)
 	{
-		instructions.clear();
+		Instructions instructions;
+
 		String now = "";
 		for (size_t i = 0; i < s.size(); ++i)
 		{
 			if (s[i] == '\\' && i + 1 < s.size())
 			{
-				if (isdigit(s[i+1])) /// Подстановка
+				if (isdigit(s[i + 1])) /// Substitution
 				{
 					if (!now.empty())
 					{
-						instructions.push_back(std::make_pair(-1, now));
+						instructions.emplace_back(-1, now);
 						now = "";
 					}
-					instructions.push_back(std::make_pair(s[i+1] - '0', ""));
+					instructions.emplace_back(s[i + 1] - '0', String());
 				}
 				else
-					now += s[i+1]; /// Экранирование
+					now += s[i + 1]; /// Escaping
 				++i;
 			}
 			else
-				now += s[i]; /// Обычный символ
+				now += s[i]; /// Plain character
 		}
+
 		if (!now.empty())
 		{
-			instructions.push_back(std::make_pair(-1, now));
+			instructions.emplace_back(-1, now);
 			now = "";
 		}
+
+		for (const auto & it : instructions)
+			if (it.first >= num_captures)
+				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) +
+					", but regexp has only " + toString(num_captures - 1) + " subpatterns",
+					ErrorCodes::BAD_ARGUMENTS);
+
+		return instructions;
 	}
+
+
+	static void processString(
+		const re2_st::StringPiece & input,
+		ColumnString::Chars_t & res_data,
+		ColumnString::Offset_t & res_offset,
+		re2_st::RE2 & searcher, int num_captures,
+		const Instructions & instructions)
+	{
+		re2_st::StringPiece matches[max_captures];
+
+		int start_pos = 0;
+		while (start_pos < input.length())
+		{
+			/// If no more replacements possible for current string
+			bool can_finish_current_string = false;
+
+			if (searcher.Match(input, start_pos, input.length(), re2_st::RE2::Anchor::UNANCHORED, matches, num_captures))
+			{
+				const auto & match = matches[0];
+				size_t bytes_to_copy = (match.data() - input.data()) - start_pos;
+
+				/// Copy prefix before matched regexp without modification
+				res_data.resize(res_data.size() + bytes_to_copy);
+				memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, bytes_to_copy);
+				res_offset += bytes_to_copy;
+				start_pos += bytes_to_copy + match.length();
+
+				/// Do substitution instructions
+				for (const auto & it : instructions)
+				{
+					if (it.first >= 0)
+					{
+						res_data.resize(res_data.size() + matches[it.first].length());
+						memcpy(&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
+						res_offset += matches[it.first].length();
+					}
+					else
+					{
+						res_data.resize(res_data.size() + it.second.size());
+						memcpy(&res_data[res_offset], it.second.data(), it.second.size());
+						res_offset += it.second.size();
+					}
+				}
+
+				if (replace_one || match.length() == 0)		/// Stop after match of zero length, to avoid infinite loop.
+					can_finish_current_string = true;
+			}
+			else
+				can_finish_current_string = true;
+
+			/// If ready, append suffix after match to end of string.
+			if (can_finish_current_string)
+			{
+				res_data.resize(res_data.size() + input.length() - start_pos);
+				memcpySmallAllowReadWriteOverflow15(
+					&res_data[res_offset], input.data() + start_pos, input.length() - start_pos);
+				res_offset += input.length() - start_pos;
+				start_pos = input.length();
+			}
+		}
+
+		res_data.resize(res_data.size() + 1);
+		res_data[res_offset] = 0;
+		++res_offset;
+	}
+
 
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & needle, const std::string & replacement,
@@ -722,79 +805,19 @@ struct ReplaceRegexpImpl
 		size_t size = offsets.size();
 		res_offsets.resize(size);
 
-		RE2 searcher(needle);
-		int capture = std::min(searcher.NumberOfCapturingGroups() + 1, 10);
-		re2::StringPiece matches[10];
+		re2_st::RE2 searcher(needle);
+		int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
 
-		Instructions instructions;
-		split(replacement, instructions);
+		Instructions instructions = createInstructions(replacement, num_captures);
 
-		for (const auto & it : instructions)
-			if (it.first >= capture)
-				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) +
-				", but regexp has only " + toString(capture - 1) + " subpatterns",
-					ErrorCodes::BAD_ARGUMENTS);
-
-		/// Искать вхождение сразу во всех сроках нельзя, будем двигаться вдоль каждой независимо
-		for (size_t id = 0; id < size; ++id)
+		/// Cannot perform search for whole block. Will process each string separately.
+		for (size_t i = 0; i < size; ++i)
 		{
-			int from = id > 0 ? offsets[id - 1] : 0;
-			int start_pos = 0;
-			re2::StringPiece input(reinterpret_cast<const char*>(&data[0] + from), offsets[id] - from - 1);
+			int from = i > 0 ? offsets[i - 1] : 0;
+			re2_st::StringPiece input(reinterpret_cast<const char *>(&data[0] + from), offsets[i] - from - 1);
 
-			while (start_pos < input.length())
-			{
-				/// Правда ли, что с этой строкой больше не надо выполнять преобразования
-				bool can_finish_current_string = false;
-
-				if (searcher.Match(input, start_pos, input.length(), re2::RE2::Anchor::UNANCHORED, matches, capture))
-				{
-					const auto & match = matches[0];
-					size_t char_to_copy = (match.data() - input.data()) - start_pos;
-
-					/// Копируем данные без изменения
-					res_data.resize(res_data.size() + char_to_copy);
-					memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, char_to_copy);
-					res_offset += char_to_copy;
-					start_pos += char_to_copy + match.length();
-
-					/// Выполняем инструкции подстановки
-					for (const auto & it : instructions)
-					{
-						if (it.first >= 0)
-						{
-							res_data.resize(res_data.size() + matches[it.first].length());
-							memcpySmallAllowReadWriteOverflow15(
-								&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
-							res_offset += matches[it.first].length();
-						}
-						else
-						{
-							res_data.resize(res_data.size() + it.second.size());
-							memcpySmallAllowReadWriteOverflow15(
-								&res_data[res_offset], it.second.data(), it.second.size());
-							res_offset += it.second.size();
-						}
-					}
-					if (replaceOne || match.length() == 0)
-						can_finish_current_string = true;
-				} else
-					can_finish_current_string = true;
-
-				/// Если пора, копируем все символы до конца строки
-				if (can_finish_current_string)
-				{
-					res_data.resize(res_data.size() + input.length() - start_pos);
-					memcpySmallAllowReadWriteOverflow15(
-						&res_data[res_offset], input.data() + start_pos, input.length() - start_pos);
-					res_offset += input.length() - start_pos;
-					res_offsets[id] = res_offset;
-					start_pos = input.length();
-				}
-			}
-			res_data.resize(res_data.size() + 1);
-			res_data[res_offset++] = 0;
-			res_offsets[id] = res_offset;
+			processString(input, res_data, res_offset, searcher, num_captures, instructions);
+			res_offsets[i] = res_offset;
 		}
 	}
 
@@ -807,145 +830,39 @@ struct ReplaceRegexpImpl
 		res_data.reserve(data.size());
 		res_offsets.resize(size);
 
-		RE2 searcher(needle);
-		int capture = std::min(searcher.NumberOfCapturingGroups() + 1, 10);
-		re2::StringPiece matches[10];
+		re2_st::RE2 searcher(needle);
+		int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
 
-		Instructions instructions;
-		split(replacement, instructions);
+		Instructions instructions = createInstructions(replacement, num_captures);
 
-		for (const auto & it : instructions)
-			if (it.first >= capture)
-				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) +
-				", but regexp has only " + toString(capture - 1) + " subpatterns",
-					ErrorCodes::BAD_ARGUMENTS);
-
-		/// Искать вхождение сразу во всех сроках нельзя, будем двигаться вдоль каждой независимо.
-		for (size_t id = 0; id < size; ++id)
+		for (size_t i = 0; i < size; ++i)
 		{
-			int from = id * n;
-			int start_pos = 0;
-			re2::StringPiece input(reinterpret_cast<const char*>(&data[0] + from), (id + 1) * n - from);
+			int from = i * n;
+			re2_st::StringPiece input(reinterpret_cast<const char*>(&data[0] + from), n);
 
-			while (start_pos < input.length())
-			{
-				/// Правда ли, что с этой строкой больше не надо выполнять преобразования.
-				bool can_finish_current_string = false;
-
-				if (searcher.Match(input, start_pos, input.length(), re2::RE2::Anchor::UNANCHORED, matches, capture))
-				{
-					const auto & match = matches[0];
-					size_t char_to_copy = (match.data() - input.data()) - start_pos;
-
-					/// Копируем данные без изменения
-					res_data.resize(res_data.size() + char_to_copy);
-					memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, char_to_copy);
-					res_offset += char_to_copy;
-					start_pos += char_to_copy + match.length();
-
-					/// Выполняем инструкции подстановки
-					for (const auto & it : instructions)
-					{
-						if (it.first >= 0)
-						{
-							res_data.resize(res_data.size() + matches[it.first].length());
-							memcpySmallAllowReadWriteOverflow15(
-								&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
-							res_offset += matches[it.first].length();
-						}
-						else
-						{
-							res_data.resize(res_data.size() + it.second.size());
-							memcpySmallAllowReadWriteOverflow15(
-								&res_data[res_offset], it.second.data(), it.second.size());
-							res_offset += it.second.size();
-						}
-					}
-					if (replaceOne || match.length() == 0)
-						can_finish_current_string = true;
-				} else
-					can_finish_current_string = true;
-
-				/// Если пора, копируем все символы до конца строки
-				if (can_finish_current_string)
-				{
-					res_data.resize(res_data.size() + input.length() - start_pos);
-					memcpySmallAllowReadWriteOverflow15(
-						&res_data[res_offset], input.data() + start_pos, input.length() - start_pos);
-					res_offset += input.length() - start_pos;
-					res_offsets[id] = res_offset;
-					start_pos = input.length();
-				}
-			}
-			res_data.resize(res_data.size() + 1);
-			res_data[res_offset++] = 0;
-			res_offsets[id] = res_offset;
-
+			processString(input, res_data, res_offset, searcher, num_captures, instructions);
+			res_offsets[i] = res_offset;
 		}
 	}
 
-	static void constant(const std::string & data, const std::string & needle, const std::string & replacement,
+	static void constant(const std::string & data,
+		const std::string & needle, const std::string & replacement,
 		std::string & res_data)
 	{
-		RE2 searcher(needle);
-		int capture = std::min(searcher.NumberOfCapturingGroups() + 1, 10);
-		re2::StringPiece matches[10];
+		ColumnString src;
+		ColumnString dst;
+		src.insert(data);
 
-		Instructions instructions;
-		split(replacement, instructions);
+		vector(src.getChars(), src.getOffsets(), needle, replacement, dst.getChars(), dst.getOffsets());
 
-		for (const auto & it : instructions)
-			if (it.first >= capture)
-				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) +
-				", but regexp has only " + toString(capture - 1) + " subpatterns",
-					ErrorCodes::BAD_ARGUMENTS);
-
-		int start_pos = 0;
-		re2::StringPiece input(data);
-		res_data = "";
-
-		while (start_pos < input.length())
-		{
-			/// Правда ли, что с этой строкой больше не надо выполнять преобразования.
-			bool can_finish_current_string = false;
-
-			if (searcher.Match(input, start_pos, input.length(), re2::RE2::Anchor::UNANCHORED, matches, capture))
-			{
-				const auto & match = matches[0];
-				size_t char_to_copy = (match.data() - input.data()) - start_pos;
-
-				/// Копируем данные без изменения
-				res_data += data.substr(start_pos, char_to_copy);
-				start_pos += char_to_copy + match.length();
-
-				/// Выполняем инструкции подстановки
-				for (const auto & it : instructions)
-				{
-					if (it.first >= 0)
-						res_data += matches[it.first].ToString();
-					else
-						res_data += it.second;
-				}
-
-				if (replaceOne || match.length() == 0)
-					can_finish_current_string = true;
-			} else
-				can_finish_current_string = true;
-
-			/// Если пора, копируем все символы до конца строки
-			if (can_finish_current_string)
-			{
-				res_data += data.substr(start_pos);
-				start_pos = input.length();
-			}
-		}
+		res_data = dst[0].safeGet<String>();
 	}
 };
 
 
-/** Заменить все вхождения подстроки needle на строку replacement. needle и replacement - константы.
+/** Replace one or all occurencies of substring 'needle' to 'replacement'. 'needle' and 'replacement' are constants.
   */
-template <bool replaceOne = false>
+template <bool replace_one = false>
 struct ReplaceStringImpl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
@@ -997,7 +914,7 @@ struct ReplaceStringImpl
 				memcpy(&res_data[res_offset], replacement.data(), replacement.size());
 				res_offset += replacement.size();
 				pos = match + needle.size();
-				if (replaceOne)
+				if (replace_one)
 					can_finish_current_string = true;
 			}
 			else
@@ -1048,7 +965,7 @@ struct ReplaceStringImpl
 			/// Определим, к какому индексу оно относится.
 			while (i < size && begin + n * (i + 1) <= match)
 			{
-				res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos);
+				res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos) + 1;
 				++i;
 			}
 			res_offset += (match - pos);
@@ -1061,13 +978,13 @@ struct ReplaceStringImpl
 			bool can_finish_current_string = false;
 
 			/// Проверяем, что вхождение не переходит через границы строк.
-			if (match + needle.size() < begin + n * (i + 1))
+			if (match + needle.size() - 1 < begin + n * (i + 1))
 			{
 				res_data.resize(res_data.size() + replacement.size());
 				memcpy(&res_data[res_offset], replacement.data(), replacement.size());
 				res_offset += replacement.size();
 				pos = match + needle.size();
-				if (replaceOne)
+				if (replace_one)
 					can_finish_current_string = true;
 			}
 			else
@@ -1085,6 +1002,10 @@ struct ReplaceStringImpl
 				pos = begin + n * (i + 1);
 			}
 		}
+
+		if (i < size) {
+			res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos) + 1;
+		}
 	}
 
 	static void constant(const std::string & data, const std::string & needle, const std::string & replacement,
@@ -1095,7 +1016,7 @@ struct ReplaceStringImpl
 		for (size_t i = 0; i < data.size(); ++i)
 		{
 			bool match = true;
-			if (i + needle.size() > data.size() || (replaceOne && replace_cnt > 0))
+			if (i + needle.size() > data.size() || (replace_one && replace_cnt > 0))
 				match = false;
 			for (size_t j = 0; match && j < needle.size(); ++j)
 				if (data[i + j] != needle[j])
@@ -1125,14 +1046,11 @@ public:
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 3)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 3.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+	size_t getNumberOfArguments() const override { return 3; }
 
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1149,17 +1067,17 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnPtr column_src = block.getByPosition(arguments[0]).column;
-		const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
-		const ColumnPtr column_replacement = block.getByPosition(arguments[2]).column;
+		const ColumnPtr column_src = block.safeGetByPosition(arguments[0]).column;
+		const ColumnPtr column_needle = block.safeGetByPosition(arguments[1]).column;
+		const ColumnPtr column_replacement = block.safeGetByPosition(arguments[2]).column;
 
 		if (!column_needle->isConst() || !column_replacement->isConst())
 			throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
 
-		const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
-		const IColumn * c2 = block.getByPosition(arguments[2]).column.get();
+		const IColumn * c1 = block.safeGetByPosition(arguments[1]).column.get();
+		const IColumn * c2 = block.safeGetByPosition(arguments[2]).column.get();
 		const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
 		const ColumnConstString * c2_const = typeid_cast<const ColumnConstString *>(c2);
 		String needle = c1_const->getData();
@@ -1171,7 +1089,7 @@ public:
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_src))
 		{
 			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 			Impl::vector(col->getChars(), col->getOffsets(),
 				needle, replacement,
 				col_res->getChars(), col_res->getOffsets());
@@ -1179,7 +1097,7 @@ public:
 		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_src))
 		{
 			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 			Impl::vector_fixed(col->getChars(), col->getN(),
 				needle, replacement,
 				col_res->getChars(), col_res->getOffsets());
@@ -1189,10 +1107,10 @@ public:
 			String res;
 			Impl::constant(col->getData(), needle, replacement, res);
 			auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 		}
 		else
-		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+		   throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 				+ " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -1212,14 +1130,11 @@ public:
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+	size_t getNumberOfArguments() const override { return 2; }
 
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1232,12 +1147,12 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		using ResultType = typename Impl::ResultType;
 
-		const ColumnPtr & column_haystack = block.getByPosition(arguments[0]).column;
-		const ColumnPtr & column_needle = block.getByPosition(arguments[1]).column;
+		const ColumnPtr & column_haystack = block.safeGetByPosition(arguments[0]).column;
+		const ColumnPtr & column_needle = block.safeGetByPosition(arguments[1]).column;
 
 		const ColumnConstString * col_haystack_const = typeid_cast<const ColumnConstString *>(&*column_haystack);
 		const ColumnConstString * col_needle_const = typeid_cast<const ColumnConstString *>(&*column_needle);
@@ -1246,12 +1161,12 @@ public:
 		{
 			ResultType res{};
 			Impl::constant_constant(col_haystack_const->getData(), col_needle_const->getData(), res);
-			block.getByPosition(result).column = std::make_shared<ColumnConst<ResultType>>(col_haystack_const->size(), res);
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ResultType>>(col_haystack_const->size(), res);
 			return;
 		}
 
 		auto col_res = std::make_shared<ColumnVector<ResultType>>();
-		block.getByPosition(result).column = col_res;
+		block.safeGetByPosition(result).column = col_res;
 
 		typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
 		vec_res.resize(column_haystack->size());
@@ -1276,8 +1191,8 @@ public:
 				vec_res);
 		else
 			throw Exception("Illegal columns "
-				+ block.getByPosition(arguments[0]).column->getName()
-				+ " and " + block.getByPosition(arguments[1]).column->getName()
+				+ block.safeGetByPosition(arguments[0]).column->getName()
+				+ " and " + block.safeGetByPosition(arguments[1]).column->getName()
 				+ " of arguments of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
@@ -1297,14 +1212,11 @@ public:
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		if (arguments.size() != 2)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-			+ toString(arguments.size()) + ", should be 2.",
-							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+	size_t getNumberOfArguments() const override { return 2; }
 
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1317,10 +1229,10 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnPtr column = block.getByPosition(arguments[0]).column;
-		const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
+		const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
+		const ColumnPtr column_needle = block.safeGetByPosition(arguments[1]).column;
 
 		const ColumnConstString * col_needle = typeid_cast<const ColumnConstString *>(&*column_needle);
 		if (!col_needle)
@@ -1329,7 +1241,7 @@ public:
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 		{
 			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-			block.getByPosition(result).column = col_res;
+			block.safeGetByPosition(result).column = col_res;
 
 			ColumnString::Chars_t & vec_res = col_res->getChars();
 			ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
@@ -1351,10 +1263,10 @@ public:
 			if (!res_offsets.empty())
 				res.assign(&res_vdata[0], &res_vdata[res_vdata.size() - 1]);
 
-			block.getByPosition(result).column = std::make_shared<ColumnConstString>(col->size(), res);
+			block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col->size(), res);
 		}
 		else
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
 			+ " of argument of function " + getName(),
 							ErrorCodes::ILLEGAL_COLUMN);
 	}

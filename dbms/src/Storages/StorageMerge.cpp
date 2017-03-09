@@ -1,5 +1,7 @@
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
+#include <DB/DataStreams/LazyBlockInputStream.h>
+#include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
@@ -17,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int ILLEGAL_PREWHERE;
+	extern const int INCOMPATIBLE_SOURCE_TABLES;
 }
 
 
@@ -107,36 +110,31 @@ BlockInputStreams StorageMerge::read(
 		else
 			virt_column_names.push_back(it);
 
-	StorageVector selected_tables;
-
-	/// Среди всех стадий, до которых обрабатывается запрос в таблицах-источниках, выберем минимальную.
-	processed_stage = QueryProcessingStage::Complete;
-	QueryProcessingStage::Enum tmp_processed_stage = QueryProcessingStage::Complete;
+	std::experimental::optional<QueryProcessingStage::Enum> processed_stage_in_source_tables;
 
 	/** Сначала составим список выбранных таблиц, чтобы узнать его размер.
 	  * Это нужно, чтобы правильно передать в каждую таблицу рекомендацию по количеству потоков.
 	  */
-	getSelectedTables(selected_tables);
+	StorageListWithLocks selected_tables = getSelectedTables();
 
 	/// Если в запросе используется PREWHERE, надо убедиться, что все таблицы это поддерживают.
 	if (typeid_cast<const ASTSelectQuery &>(*query).prewhere_expression)
-		for (const auto & table : selected_tables)
-			if (!table->supportsPrewhere())
-				throw Exception("Storage " + table->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
-
-	TableLocks table_locks;
-
-	/// Нельзя, чтобы эти таблицы кто-нибудь удалил, пока мы их читаем.
-	for (auto & table : selected_tables)
-		table_locks.push_back(table->lockStructure(false));
+		for (const auto & elem : selected_tables)
+			if (!elem.first->supportsPrewhere())
+				throw Exception("Storage " + elem.first->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
 
 	Block virtual_columns_block = getBlockWithVirtualColumns(selected_tables);
 
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
 	if (!virt_column_names.empty())
+	{
 		VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
 
-	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
+		auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
+
+		/// Remove unused tables from the list
+		selected_tables.remove_if([&] (const auto & elem) { return values.find(elem.first->getTableName()) == values.end(); });
+	}
 
 	/** На всякий случай отключаем оптимизацию "перенос в PREWHERE",
 	  * так как нет уверенности, что она работает, когда одна из таблиц MergeTree, а другая - нет.
@@ -144,13 +142,12 @@ BlockInputStreams StorageMerge::read(
 	Settings modified_settings = settings;
 	modified_settings.optimize_move_to_prewhere = false;
 
-	for (size_t i = 0, size = selected_tables.size(); i < size; ++i)
+	size_t tables_count = selected_tables.size();
+	size_t curr_table_number = 0;
+	for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it, ++curr_table_number)
 	{
-		StoragePtr table = selected_tables[i];
-		auto & table_lock = table_locks[i];
-
-		if (values.find(table->getTableName()) == values.end())
-			continue;
+		StoragePtr table = it->first;
+		auto & table_lock = it->second;
 
 		/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.
 		if (real_column_names.size() == 0)
@@ -160,14 +157,51 @@ BlockInputStreams StorageMerge::read(
 		ASTPtr modified_query_ast = query->clone();
 		VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_table", table->getTableName());
 
-		BlockInputStreams source_streams = table->read(
-			real_column_names,
-			modified_query_ast,
-			context,
-			modified_settings,
-			tmp_processed_stage,
-			max_block_size,
-			size > threads ? 1 : (threads / size));
+		BlockInputStreams source_streams;
+
+		if (curr_table_number < threads)
+		{
+			QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
+			source_streams = table->read(
+				real_column_names,
+				modified_query_ast,
+				context,
+				modified_settings,
+				processed_stage_in_source_table,
+				max_block_size,
+				tables_count >= threads ? 1 : (threads / tables_count));
+
+			if (!processed_stage_in_source_tables)
+				processed_stage_in_source_tables.emplace(processed_stage_in_source_table);
+			else if (processed_stage_in_source_table != processed_stage_in_source_tables.value())
+				throw Exception("Source tables for Merge table are processing data up to different stages",
+					ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
+		}
+		else
+		{
+			/// If many streams, initialize it lazily, to avoid long delay before start of query processing.
+			source_streams.emplace_back(std::make_shared<LazyBlockInputStream>([=]
+			{
+				QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
+				BlockInputStreams streams = table->read(
+					real_column_names,
+					modified_query_ast,
+					context,
+					modified_settings,
+					processed_stage_in_source_table,
+					max_block_size,
+					1);
+
+				if (!processed_stage_in_source_tables)
+					throw Exception("Logical error: unknown processed stage in source tables",
+						ErrorCodes::LOGICAL_ERROR);
+				else if (processed_stage_in_source_table != processed_stage_in_source_tables.value())
+					throw Exception("Source tables for Merge table are processing data up to different stages",
+						ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
+
+				return streams.empty() ? std::make_shared<NullBlockInputStream>() : streams.front();
+			}));
+		}
 
 		for (auto & stream : source_streams)
 			stream->addTableLock(table_lock);
@@ -183,29 +217,30 @@ BlockInputStreams StorageMerge::read(
 		}
 
 		res.insert(res.end(), source_streams.begin(), source_streams.end());
-
-		if (tmp_processed_stage < processed_stage)
-			processed_stage = tmp_processed_stage;
 	}
+
+	if (processed_stage_in_source_tables)
+		processed_stage = processed_stage_in_source_tables.value();
 
 	return narrowBlockInputStreams(res, threads);
 }
 
 /// Построить блок состоящий только из возможных значений виртуальных столбцов
-Block StorageMerge::getBlockWithVirtualColumns(const std::vector<StoragePtr> & selected_tables) const
+Block StorageMerge::getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const
 {
 	Block res;
 	ColumnWithTypeAndName _table(std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "_table");
 
-	for (StorageVector::const_iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
-		_table.column->insert((*it)->getTableName());
+	for (const auto & elem : selected_tables)
+		_table.column->insert(elem.first->getTableName());
 
 	res.insert(_table);
 	return res;
 }
 
-void StorageMerge::getSelectedTables(StorageVector & selected_tables) const
+StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
 {
+	StorageListWithLocks selected_tables;
 	auto database = context.getDatabase(source_database);
 	auto iterator = database->getIterator();
 
@@ -215,11 +250,13 @@ void StorageMerge::getSelectedTables(StorageVector & selected_tables) const
 		{
 			auto & table = iterator->table();
 			if (table.get() != this)
-				selected_tables.emplace_back(table);
+				selected_tables.emplace_back(table, table->lockStructure(false));
 		}
 
 		iterator->next();
 	}
+
+	return selected_tables;
 }
 
 

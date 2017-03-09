@@ -58,14 +58,6 @@ sudo ln -s /usr/local/bin/g++ /usr/local/bin/c++
 # /usr/local/bin/ should be in $PATH
 ```
 
-Note that these ways of installation differs.
-When installing from PPA, by default, "old C++ ABI" is used,
- and when installing from sources, "new C++ ABI" is used.
-When using different C++ ABI, you need to recompile all C++ libraries,
- otherwise libraries will not link.
-ClickHouse works with both old and new C++ ABI,
- but production releases is built with old C++ ABI.
-
 ## Use GCC 6 for builds
 
 ```
@@ -76,64 +68,21 @@ export CXX=g++-6
 ## Install required libraries from packages
 
 ```
-sudo apt-get install libicu-dev libglib2.0-dev libreadline-dev libmysqlclient-dev libssl-dev unixodbc-dev
-```
-
-## Install recent version of boost
-
-Version 1.57 or newer will be Ok.
-
-There are several ways to do it.
-
-### 1. Install from sources.
-
-```
-wget http://downloads.sourceforge.net/project/boost/boost/1.60.0/boost_1_60_0.tar.bz2
-tar xf boost_1_60_0.tar.bz2
-cd boost_1_60_0
-./bootstrap.sh
-./b2 --toolset=gcc-6 -j $THREADS
-sudo ./b2 install --toolset=gcc-6 -j $THREADS
-cd ..
-```
-
-### 2. Install from package.
-
-On Ubuntu 15.10 or newer.
-```
-sudo apt-get install libboost-dev libboost-thread-dev libboost-program-options-dev libboost-system-dev libboost-regex-dev libboost-filesystem-dev
-```
-
-## Install mongoclient (optional)
-
-This library is needed only for 'external dictionaries' with MongoDB source.
-This is rarely used but enabled by default.
-
-If you don't need it, you could set variable and skip installation step:
-```
-export DISABLE_MONGODB=1
-```
-
-Otherwise:
-```
-sudo apt-get install scons
-git clone -b legacy https://github.com/mongodb/mongo-cxx-driver.git
-cd mongo-cxx-driver
-sudo scons --c++11 --release --cc=$CC --cxx=$CXX --ssl=0 --disable-warnings-as-errors -j $THREADS --prefix=/usr/local install
-cd ..
+sudo apt-get install libicu-dev libreadline-dev libmysqlclient-dev libssl-dev unixodbc-dev
 ```
 
 # Checkout ClickHouse sources
 
+To get latest stable version:
 ```
-git clone git@github.com:yandex/ClickHouse.git
-# or: git clone https://github.com/yandex/ClickHouse.git
+git clone -b stable git@github.com:yandex/ClickHouse.git
+# or: git clone -b stable https://github.com/yandex/ClickHouse.git
 
 cd ClickHouse
 ```
 
-Note that master branch is not stable.
-For stable version, switch to some release branch.
+For development, switch to the `master` branch.
+For latest release candidate, switch to the `testing` branch.
 
 # Build ClickHouse
 
@@ -147,7 +96,7 @@ sudo apt-get install devscripts dupload fakeroot debhelper
 
 ### Install recent version of clang.
 
-Clang is embedded into ClickHouse package and used at runtime. Minimal version is 3.8.0. It is optional.
+Clang is embedded into ClickHouse package and used at runtime. Minimum version is 3.8.0. It is optional.
 
 There are two variants:
 #### 1. Build clang from sources.
@@ -210,3 +159,8 @@ cmake ..
 make -j $THREADS
 cd ..
 ```
+To create an executable, run
+```
+make clickhouse
+```
+This will create the dbms/src/Server/clickhouse executable, which can be used with --client or --server.

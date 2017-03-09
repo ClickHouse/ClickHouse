@@ -15,6 +15,29 @@ namespace ErrorCodes
 	extern const int CANNOT_UNBLOCK_SIGNAL;
 }
 
+#ifdef __APPLE__
+// We only need to support timeout = {0, 0} at this moment
+static int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct timespec *timeout) {
+	sigset_t pending;
+	int signo;
+	sigpending(&pending);
+
+	for (signo = 1; signo < NSIG; signo++) {
+		if (sigismember(set, signo) && sigismember(&pending, signo)) {
+			sigwait(set, &signo);
+			if (info) {
+				memset(info, 0, sizeof *info);
+				info->si_signo = signo;
+			}
+			return signo;
+		}
+	}
+	errno = EAGAIN;
+
+	return -1;
+}
+#endif
+
 
 /** Пока существует объект этого класса - блокирует сигнал INT, при этом позволяет узнать, не пришёл ли он.
   * Это нужно, чтобы можно было прервать выполнение запроса с помощью Ctrl+C.

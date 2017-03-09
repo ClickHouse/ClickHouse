@@ -15,11 +15,7 @@
 
 
 #include "Poco/Checksum.h"
-#if defined(POCO_UNBUNDLED)
 #include <zlib.h>
-#else
-#include "Poco/zlib.h"
-#endif
 
 
 namespace Poco {

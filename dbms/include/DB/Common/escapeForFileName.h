@@ -1,68 +1,16 @@
 #pragma once
 
 #include <string>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/Common/StringUtils.h>
 
 
 namespace DB
 {
 
-inline std::string escapeForFileName(const std::string & s)
-{
-	std::string res;
-	const char * pos = s.data();
-	const char * end = pos + s.size();
+/** Convert a string, so result could be used as a file name.
+  * In fact it percent-encode all non-word characters, as in URL.
+  */
 
-	static const char * hex = "0123456789ABCDEF";
-
-	while (pos != end)
-	{
-		char c = *pos;
-
-		if (isWordCharASCII(c))
-			res += c;
-		else
-		{
-			res += '%';
-			res += hex[c / 16];
-			res += hex[c % 16];
-		}
-
-		++pos;
-	}
-
-	return res;
-}
-
-
-inline std::string unescapeForFileName(const std::string & s)
-{
-	std::string res;
-	const char * pos = s.data();
-	const char * end = pos + s.size();
-
-	while (pos != end)
-	{
-		if (*pos != '%')
-			res += *pos;
-		else
-		{
-			/// пропустим '%'
-			if (++pos == end) break;
-
-			char val = unhex(*pos) * 16;
-
-			if (++pos == end) break;
-
-			val += unhex(*pos);
-
-			res += val;
-		}
-
-		++pos;
-	}
-	return res;
-}
+std::string escapeForFileName(const std::string & s);
+std::string unescapeForFileName(const std::string & s);
 
 }

@@ -20,6 +20,8 @@
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ASTWeightedZooKeeperPath.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/queryToString.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
@@ -32,7 +34,10 @@
 
 #include <DB/Core/Field.h>
 
+#include <Poco/DirectoryIterator.h>
+
 #include <memory>
+
 
 namespace DB
 {
@@ -416,7 +421,7 @@ bool StorageDistributed::hasColumn(const String & column_name) const
 
 void StorageDistributed::createDirectoryMonitor(const std::string & name)
 {
-	directory_monitors.emplace(name, std::make_unique<DirectoryMonitor>(*this, name));
+	directory_monitors.emplace(name, std::make_unique<StorageDistributedDirectoryMonitor>(*this, name));
 }
 
 void StorageDistributed::createDirectoryMonitors()

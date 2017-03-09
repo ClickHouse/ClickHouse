@@ -1,18 +1,18 @@
 #include <iomanip>
 
-#include <Poco/InflatingStream.h>
-
 #include <Poco/Net/HTTPBasicCredentials.h>
 
-#include <DB/Common/Stopwatch.h>
+#include <DB/Common/ExternalTable.h>
 #include <DB/Common/StringUtils.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>
+#include <DB/IO/ZlibInflatingReadBuffer.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/ConcatReadBuffer.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/WriteBufferFromHTTPServerResponse.h>
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
@@ -20,11 +20,7 @@
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/Quota.h>
 
-#include <DB/Common/ExternalTable.h>
-
 #include "HTTPHandler.h"
-
-
 
 namespace DB
 {
@@ -33,8 +29,91 @@ namespace ErrorCodes
 {
 	extern const int READONLY;
 	extern const int UNKNOWN_COMPRESSION_METHOD;
+
+	extern const int CANNOT_PARSE_TEXT;
+	extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+	extern const int CANNOT_PARSE_QUOTED_STRING;
+	extern const int CANNOT_PARSE_DATE;
+	extern const int CANNOT_PARSE_DATETIME;
+	extern const int CANNOT_PARSE_NUMBER;
+
+	extern const int UNKNOWN_ELEMENT_IN_AST;
+	extern const int UNKNOWN_TYPE_OF_AST_NODE;
+	extern const int TOO_DEEP_AST;
+	extern const int TOO_BIG_AST;
+	extern const int UNEXPECTED_AST_STRUCTURE;
+
+	extern const int UNKNOWN_TABLE;
+	extern const int UNKNOWN_FUNCTION;
+	extern const int UNKNOWN_IDENTIFIER;
+	extern const int UNKNOWN_TYPE;
+	extern const int UNKNOWN_STORAGE;
+	extern const int UNKNOWN_DATABASE;
+	extern const int UNKNOWN_SETTING;
+	extern const int UNKNOWN_DIRECTION_OF_SORTING;
+	extern const int UNKNOWN_AGGREGATE_FUNCTION;
+	extern const int UNKNOWN_FORMAT;
+	extern const int UNKNOWN_DATABASE_ENGINE;
+	extern const int UNKNOWN_TYPE_OF_QUERY;
+
+	extern const int QUERY_IS_TOO_LARGE;
+
+	extern const int NOT_IMPLEMENTED;
+	extern const int SOCKET_TIMEOUT;
+
+	extern const int UNKNOWN_USER;
+	extern const int WRONG_PASSWORD;
+	extern const int REQUIRED_PASSWORD;
 }
 
+static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int exception_code)
+{
+	using namespace Poco::Net;
+
+	if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
+		return HTTPResponse::HTTP_UNAUTHORIZED;
+	else if (exception_code == ErrorCodes::CANNOT_PARSE_TEXT ||
+			 exception_code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE ||
+			 exception_code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING ||
+			 exception_code == ErrorCodes::CANNOT_PARSE_DATE ||
+			 exception_code == ErrorCodes::CANNOT_PARSE_DATETIME ||
+			 exception_code == ErrorCodes::CANNOT_PARSE_NUMBER)
+		return HTTPResponse::HTTP_BAD_REQUEST;
+	else if (exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
+			 exception_code == ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE ||
+			 exception_code == ErrorCodes::TOO_DEEP_AST ||
+			 exception_code == ErrorCodes::TOO_BIG_AST ||
+			 exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE)
+		return HTTPResponse::HTTP_BAD_REQUEST;
+	else if (exception_code == ErrorCodes::UNKNOWN_TABLE ||
+			 exception_code == ErrorCodes::UNKNOWN_FUNCTION ||
+			 exception_code == ErrorCodes::UNKNOWN_IDENTIFIER ||
+			 exception_code == ErrorCodes::UNKNOWN_TYPE ||
+			 exception_code == ErrorCodes::UNKNOWN_STORAGE ||
+			 exception_code == ErrorCodes::UNKNOWN_DATABASE ||
+			 exception_code == ErrorCodes::UNKNOWN_SETTING ||
+			 exception_code == ErrorCodes::UNKNOWN_DIRECTION_OF_SORTING ||
+			 exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION ||
+			 exception_code == ErrorCodes::UNKNOWN_FORMAT ||
+			 exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE)
+		return HTTPResponse::HTTP_NOT_FOUND;
+	else if (exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
+		return HTTPResponse::HTTP_NOT_FOUND;
+	else if (exception_code == ErrorCodes::QUERY_IS_TOO_LARGE)
+		return HTTPResponse::HTTP_REQUESTENTITYTOOLARGE;
+	else if (exception_code == ErrorCodes::NOT_IMPLEMENTED)
+		return HTTPResponse::HTTP_NOT_IMPLEMENTED;
+	else if (exception_code == ErrorCodes::SOCKET_TIMEOUT)
+		return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
+
+	return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
+}
+
+HTTPHandler::HTTPHandler(Server & server_)
+	: server(server_)
+	, log(&Logger::get("HTTPHandler"))
+{
+}
 
 void HTTPHandler::processQuery(
 	Poco::Net::HTTPServerRequest & request,
@@ -46,53 +125,49 @@ void HTTPHandler::processQuery(
 
 	std::istream & istr = request.stream();
 
-	BlockInputStreamPtr query_plan;
-
-	/** Часть запроса может быть передана в параметре query, а часть - POST-ом
-	  *  (точнее - в теле запроса, а метод не обязательно должен быть POST).
-	  * В таком случае, считается, что запрос - параметр query, затем перевод строки, а затем - данные POST-а.
-	  */
+	/// Part of the query can be passed in the 'query' parameter and the rest in the request body
+	/// (http method need not necessarily be POST). In this case the entire query consists of the
+	/// contents of the 'query' parameter, a line break and the request body.
 	std::string query_param = params.get("query", "");
 	if (!query_param.empty())
 		query_param += '\n';
 
-	/** Клиент может указать поддерживаемый метод сжатия (gzip или deflate) в HTTP-заголовке.
-	  */
+
+	/// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
 	String http_response_compression_methods = request.get("Accept-Encoding", "");
 	bool client_supports_http_compression = false;
-	Poco::DeflatingStreamBuf::StreamType http_response_compression_method {};
+	ZlibCompressionMethod http_response_compression_method {};
 
 	if (!http_response_compression_methods.empty())
 	{
-		/// Мы поддерживаем gzip или deflate. Если клиент поддерживает оба, то предпочитается gzip.
-		/// NOTE Парсинг списка методов слегка некорректный.
-
+		/// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
+		/// NOTE parsing of the list of methods is slightly incorrect.
 		if (std::string::npos != http_response_compression_methods.find("gzip"))
 		{
 			client_supports_http_compression = true;
-			http_response_compression_method = Poco::DeflatingStreamBuf::STREAM_GZIP;
+			http_response_compression_method = ZlibCompressionMethod::Gzip;
 		}
 		else if (std::string::npos != http_response_compression_methods.find("deflate"))
 		{
 			client_supports_http_compression = true;
-			http_response_compression_method = Poco::DeflatingStreamBuf::STREAM_ZLIB;
+			http_response_compression_method = ZlibCompressionMethod::Zlib;
 		}
 	}
 
 	used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
 		response, client_supports_http_compression, http_response_compression_method);
 
-	/** Клиент может указать compress в query string.
-	  * В этом случае, результат сжимается несовместимым алгоритмом для внутреннего использования и этот факт не отражается в HTTP заголовках.
-	  */
+	/// Client can pass a 'compress' flag in the query string. In this case the query result is
+	/// compressed using internal algorithm. This is not reflected in HTTP headers.
 	if (parse<bool>(params.get("compress", "0")))
 		used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
 	else
 		used_output.out_maybe_compressed = used_output.out;
 
-	/// Имя пользователя и пароль могут быть заданы как в параметрах URL, так и с помощью HTTP Basic authentification (и то, и другое не секъюрно).
-	std::string user = params.get("user", "default");
-	std::string password = params.get("password", "");
+	/// User name and password can be passed using query parameters or using HTTP Basic auth (both methods are insecure).
+	/// The user and password can be passed by headers (similar to X-Auth-*), which is used by load balancers to pass authentication information
+	std::string user = request.get("X-ClickHouse-User", params.get("user", "default"));
+	std::string password = request.get("X-ClickHouse-Key", params.get("password", ""));
 
 	if (request.hasCredentials())
 	{
@@ -102,54 +177,45 @@ void HTTPHandler::processQuery(
 		password = credentials.getPassword();
 	}
 
-	std::string quota_key = params.get("quota_key", "");
+	std::string quota_key = request.get("X-ClickHouse-Quota", params.get("quota_key", ""));
 	std::string query_id = params.get("query_id", "");
 
 	Context context = *server.global_context;
 	context.setGlobalContext(*server.global_context);
 
-	context.setUser(user, password, request.clientAddress().host(), request.clientAddress().port(), quota_key);
+	context.setUser(user, password, request.clientAddress(), quota_key);
 	context.setCurrentQueryId(query_id);
 
 	std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query_param);
 
-	/// Данные POST-а могут быть сжаты алгоритмом, указанным в Content-Encoding заголовке.
-	String http_request_compression_method_str = request.get("Content-Encoding", "");
-	bool http_request_decompress = false;
-	Poco::InflatingStreamBuf::StreamType http_request_compression_method {};
+	std::unique_ptr<ReadBuffer> in_post_raw = std::make_unique<ReadBufferFromIStream>(istr);
 
+	/// Request body can be compressed using algorithm specified in the Content-Encoding header.
+	std::unique_ptr<ReadBuffer> in_post;
+	String http_request_compression_method_str = request.get("Content-Encoding", "");
 	if (!http_request_compression_method_str.empty())
 	{
+		ZlibCompressionMethod method;
 		if (http_request_compression_method_str == "gzip")
 		{
-			http_request_decompress = true;
-			http_request_compression_method = Poco::InflatingStreamBuf::STREAM_GZIP;
+			method = ZlibCompressionMethod::Gzip;
 		}
 		else if (http_request_compression_method_str == "deflate")
 		{
-			http_request_decompress = true;
-			http_request_compression_method = Poco::InflatingStreamBuf::STREAM_ZLIB;
+			method = ZlibCompressionMethod::Zlib;
 		}
 		else
 			throw Exception("Unknown Content-Encoding of HTTP request: " + http_request_compression_method_str,
 				ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-	}
-
-	std::experimental::optional<Poco::InflatingInputStream> decompressing_stream;
-	std::unique_ptr<ReadBuffer> in_post;
-
-	if (http_request_decompress)
-	{
-		decompressing_stream.emplace(istr, http_request_compression_method);
-		in_post = std::make_unique<ReadBufferFromIStream>(decompressing_stream.value());
+		in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, method);
 	}
 	else
-		in_post = std::make_unique<ReadBufferFromIStream>(istr);
+		in_post = std::move(in_post_raw);
 
-	/// Также данные могут быть сжаты несовместимым алгоритмом для внутреннего использования - это определяется параметром query_string.
+	/// The data can also be compressed using incompatible internal algorithm. This is indicated by
+	/// 'decompress' query parameter.
 	std::unique_ptr<ReadBuffer> in_post_maybe_compressed;
 	bool in_post_compressed = false;
-
 	if (parse<bool>(params.get("decompress", "0")))
 	{
 		in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post);
@@ -160,7 +226,7 @@ void HTTPHandler::processQuery(
 
 	std::unique_ptr<ReadBuffer> in;
 
-	/// Поддержка "внешних данных для обработки запроса".
+	/// Support for "external data for query processing".
 	if (startsWith(request.getContentType().data(), "multipart/form-data"))
 	{
 		in = std::move(in_param);
@@ -168,7 +234,8 @@ void HTTPHandler::processQuery(
 
 		params.load(request, istr, handler);
 
-		/// Удаляем уже нененужные параметры из хранилища, чтобы впоследствии не перепутать их с наcтройками контекста и параметрами запроса.
+		/// Erase unneeded parameters to avoid confusing them later with context settings or query
+		/// parameters.
 		for (const auto & it : handler.names)
 		{
 			params.erase(it + "_format");
@@ -179,21 +246,20 @@ void HTTPHandler::processQuery(
 	else
 		in = std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
-	/** Настройки могут быть переопределены в запросе.
-	  * Некоторые параметры (database, default_format, и все что использовались выше),
-	  *  не относятся к обычным настройкам (Settings).
-	  *
-	  * Среди настроек есть также readonly.
-	  * readonly = 0 - можно выполнять любые запросы и изменять любые настройки
-	  * readonly = 1 - можно выполнять только запросы на чтение, нельзя изменять настройки
-	  * readonly = 2 - можно выполнять только запросы на чтение, можно изменять настройки кроме настройки readonly
-	  *
-	  * Заметим, что в запросе, если до этого readonly было равно 0,
-	  *  пользователь может изменить любые настройки и одновременно выставить readonly в другое значение.
-	  */
+	/// Settings can be overridden in the query.
+	/// Some parameters (database, default_format, everything used in the code above) do not
+	/// belong to the Settings class.
+
+	/// 'readonly' setting values mean:
+	/// readonly = 0 - any query is allowed, client can change any setting.
+	/// readonly = 1 - only readonly queries are allowed, client can't change settings.
+	/// readonly = 2 - only readonly queries are allowed, client can change any setting except 'readonly'.
+
+	/// In theory if initially readonly = 0, the client can change any setting and then set readonly
+	/// to some other value.
 	auto & limits = context.getSettingsRef().limits;
 
-	/// Если метод GET, то это эквивалентно настройке readonly, выставленной в ненулевое значение.
+	/// Only readonly queries are allowed for HTTP GET requests.
 	if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
 	{
 		if (limits.readonly == 0)
@@ -224,7 +290,7 @@ void HTTPHandler::processQuery(
 		}
 		else
 		{
-			/// Все остальные параметры запроса рассматриваются, как настройки.
+			/// All other query parameters are treated as settings.
 
 			if (readonly_before_query == 1)
 				throw Exception("Cannot override setting (" + it->first + ") in readonly mode", ErrorCodes::READONLY);
@@ -236,46 +302,63 @@ void HTTPHandler::processQuery(
 		}
 	}
 
-	/// Сжатие ответа (Content-Encoding) включается только если клиент сказал, что он это понимает (Accept-Encoding)
-	/// и выставлена настройка, разрешающая сжатие.
-	used_output.out->setCompression(client_supports_http_compression && context.getSettingsRef().enable_http_compression);
-	if (client_supports_http_compression)
-		used_output.out->setCompressionLevel(context.getSettingsRef().http_zlib_compression_level);
+	const Settings & settings = context.getSettingsRef();
 
-	/// Возможно, что выставлена настройка - не проверять чексуммы при разжатии данных от клиента, сжатых родным форматом.
-	if (in_post_compressed && context.getSettingsRef().http_native_compression_disable_checksumming_on_decompress)
+	/// HTTP response compression is turned on only if the client signalled that they support it
+	/// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
+	used_output.out->setCompression(client_supports_http_compression && settings.enable_http_compression);
+	if (client_supports_http_compression)
+		used_output.out->setCompressionLevel(settings.http_zlib_compression_level);
+
+	used_output.out->setSendProgressInterval(settings.http_headers_progress_interval_ms);
+
+	/// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
+	/// checksums of client data compressed with internal algorithm are not checked.
+	if (in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
 		static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
-	/// Добавить CORS header выставлена настройка, и если клиент передал заголовок Origin
-	used_output.out->addHeaderCORS( context.getSettingsRef().add_http_cors_header && !request.get("Origin", "").empty() );
+	/// Add CORS header if 'add_http_cors_header' setting is turned on and the client passed
+	/// Origin header.
+	used_output.out->addHeaderCORS(settings.add_http_cors_header && !request.get("Origin", "").empty());
 
-	context.setInterface(Context::Interface::HTTP);
+	ClientInfo & client_info = context.getClientInfo();
+	client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+	client_info.interface = ClientInfo::Interface::HTTP;
 
-	Context::HTTPMethod http_method = Context::HTTPMethod::UNKNOWN;
+	/// Query sent through HTTP interface is initial.
+	client_info.initial_user = client_info.current_user;
+	client_info.initial_query_id = client_info.current_query_id;
+	client_info.initial_address = client_info.current_address;
+
+	ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
 	if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
-		http_method = Context::HTTPMethod::GET;
+		http_method = ClientInfo::HTTPMethod::GET;
 	else if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_POST)
-		http_method = Context::HTTPMethod::POST;
+		http_method = ClientInfo::HTTPMethod::POST;
 
-	context.setHTTPMethod(http_method);
+	client_info.http_method = http_method;
+	client_info.http_user_agent = request.get("User-Agent", "");
 
-	executeQuery(*in, *used_output.out_maybe_compressed, context, query_plan,
+	/// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
+	if (settings.send_progress_in_http_headers)
+		context.setProgressCallback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
+
+	executeQuery(*in, *used_output.out_maybe_compressed, /* allow_into_outfile = */ false, context,
 		[&response] (const String & content_type) { response.setContentType(content_type); });
 
-	/// Если не было эксепшена и данные ещё не отправлены - отправляются HTTP заголовки с кодом 200.
+	/// Send HTTP headers with code 200 if no exception happened and the data is still not sent to
+	/// the client.
 	used_output.out->finalize();
 }
 
-
-void HTTPHandler::trySendExceptionToClient(const std::string & s,
+void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_code,
 	Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
 	Output & used_output)
 {
 	try
 	{
-		/** Если POST и Keep-Alive, прочитаем тело до конца.
-		  * Иначе вместо следующего запроса, будет прочитан кусок этого тела.
-		  */
+		/// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
+		/// to avoid reading part of the current request body in the next request.
 		if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
 			&& response.getKeepAlive()
 			&& !request.stream().eof())
@@ -283,19 +366,29 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s,
 			request.stream().ignore(std::numeric_limits<std::streamsize>::max());
 		}
 
-		response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+		bool auth_fail = exception_code == ErrorCodes::UNKNOWN_USER ||
+						 exception_code == ErrorCodes::WRONG_PASSWORD ||
+						 exception_code == ErrorCodes::REQUIRED_PASSWORD;
+
+		if (auth_fail)
+		{
+			response.requireAuthentication("ClickHouse server HTTP API");
+		}
+		else
+		{
+			response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
+		}
 
 		if (!response.sent() && !used_output.out_maybe_compressed)
 		{
-			/// Ещё ничего не отправляли, и даже не знаем, нужно ли сжимать ответ.
+			/// If nothing was sent yet and we don't even know if we must compress the response.
 			response.send() << s << std::endl;
 		}
 		else if (used_output.out_maybe_compressed)
 		{
-			/** Отправим в использованный (возможно сжатый) поток сообщение об ошибке.
-			  * Сообщение об ошибке может идти невпопад - после каких-то данных.
-			  * Также стоит иметь ввиду, что мы могли уже отправить код 200.
-			  */
+			/// Send the error message into already used (and possibly compressed) stream.
+			/// Note that the error message will possibly be sent after some data.
+			/// Also HTTP code 200 could have already been sent.
 
 			/** If buffer has data, and that data wasn't sent yet, then no need to send that data */
 			if (used_output.out->count() - used_output.out->offset() == 0)
@@ -343,6 +436,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 		tryLogCurrentException(log);
 
 		std::string exception_message = getCurrentExceptionMessage(with_stacktrace);
+		int exception_code = getCurrentExceptionCode();
 
 		/** If exception is received from remote server, then stack trace is embedded in message.
 		  * If exception is thrown on local server, then stack trace is in separate field.
@@ -352,7 +446,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 		if (std::string::npos != embedded_stack_trace_pos && !with_stacktrace)
 			exception_message.resize(embedded_stack_trace_pos);
 
-		trySendExceptionToClient(exception_message, request, response, used_output);
+		trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
 	}
 }
 

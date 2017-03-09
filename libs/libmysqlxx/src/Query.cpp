@@ -1,3 +1,4 @@
+#include <mysql/mysql.h>
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Query.h>
 
@@ -8,8 +9,8 @@ namespace mysqlxx
 Query::Query(Connection * conn_, const std::string & query_string) : std::ostream(0), conn(conn_)
 {
 	/// Важно в случае, если Query используется не из того же потока, что Connection.
-	my_thread_init();
-	
+	mysql_thread_init();
+
 	init(&query_buf);
 
 	if (!query_string.empty())
@@ -24,8 +25,8 @@ Query::Query(Connection * conn_, const std::string & query_string) : std::ostrea
 Query::Query(const Query & other) : std::ostream(0), conn(other.conn)
 {
 	/// Важно в случае, если Query используется не из того же потока, что Connection.
-	my_thread_init();
-	
+	mysql_thread_init();
+
 	init(&query_buf);
 	imbue(std::locale::classic());
 
@@ -39,13 +40,13 @@ Query & Query::operator= (const Query & other)
 	seekp(0);
 	clear();
 	*this << other.str();
-	
+
 	return *this;
 }
 
 Query::~Query()
 {
-	my_thread_end();
+	mysql_thread_end();
 }
 
 void Query::reset()

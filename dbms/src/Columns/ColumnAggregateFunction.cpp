@@ -1,6 +1,6 @@
 #include <DB/AggregateFunctions/AggregateFunctionState.h>
 #include <DB/Columns/ColumnAggregateFunction.h>
-
+#include <DB/Common/SipHash.h>
 
 namespace DB
 {
@@ -57,5 +57,125 @@ ColumnPtr ColumnAggregateFunction::convertToValues() const
 
 	return res;
 }
+
+
+void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start, size_t length)
+{
+	const ColumnAggregateFunction & from_concrete = static_cast<const ColumnAggregateFunction &>(from);
+
+	if (start + length > from_concrete.getData().size())
+		throw Exception("Parameters start = "
+			+ toString(start) + ", length = "
+			+ toString(length) + " are out of bound in ColumnAggregateFunction::insertRangeFrom method"
+			" (data.size() = " + toString(from_concrete.getData().size()) + ").",
+			ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
+	if (!empty() && src.get() != &from_concrete)
+	{
+		/// Must create new states of aggregate function and take ownership of it,
+		///  because ownership of states of aggregate function cannot be shared for individual rows,
+		///  (only as a whole).
+
+		size_t end = start + length;
+		for (size_t i = start; i < end; ++i)
+			insertFrom(from, i);
+	}
+	else
+	{
+		/// Keep shared ownership of aggregation states.
+		src = from_concrete.shared_from_this();
+
+		auto & data = getData();
+		size_t old_size = data.size();
+		data.resize(old_size + length);
+		memcpy(&data[old_size], &from_concrete.getData()[start], length * sizeof(data[0]));
+	}
+}
+
+
+ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_size_hint) const
+{
+	size_t size = getData().size();
+	if (size != filter.size())
+		throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+	std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
+
+	if (size == 0)
+		return res;
+
+	auto & res_data = res->getData();
+
+	if (result_size_hint)
+		res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
+
+	for (size_t i = 0; i < size; ++i)
+		if (filter[i])
+			res_data.push_back(getData()[i]);
+
+	/// Для экономии оперативки в случае слишком сильной фильтрации.
+	if (res_data.size() * 2 < res_data.capacity())
+		res_data = Container_t(res_data.cbegin(), res_data.cend());
+
+	return res;
+}
+
+
+ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
+{
+	size_t size = getData().size();
+
+	if (limit == 0)
+		limit = size;
+	else
+		limit = std::min(size, limit);
+
+	if (perm.size() < limit)
+		throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+	std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
+
+	res->getData().resize(limit);
+	for (size_t i = 0; i < limit; ++i)
+		res->getData()[i] = getData()[perm[i]];
+
+	return res;
+}
+
+/// Is required to support operations with Set
+void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) const
+{
+	String buf;
+	{
+		WriteBufferFromString wbuf(buf);
+		func->serialize(getData()[n], wbuf);
+	}
+	hash.update(buf.c_str(), buf.size());
+}
+
+/// NOTE: Highly overestimates size of a column if it was produced in AggregatingBlockInputStream (it contains size of other columns)
+size_t ColumnAggregateFunction::byteSize() const
+{
+	size_t res = getData().size() * sizeof(getData()[0]);
+
+	for (const auto & arena : arenas)
+		res += arena.get()->size();
+
+	return res;
+}
+
+
+/// Like byteSize(), highly overestimates size
+size_t ColumnAggregateFunction::allocatedSize() const
+{
+	size_t res = getData().allocated_size() * sizeof(getData()[0]);
+
+	for (const auto & arena : arenas)
+		res += arena.get()->size();
+
+	return res;
+}
+
+
 
 }

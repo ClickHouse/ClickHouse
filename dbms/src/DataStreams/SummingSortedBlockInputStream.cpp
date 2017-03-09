@@ -2,7 +2,8 @@
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Common/StringUtils.h>
-#include <boost/range/iterator_range_core.hpp>
+#include <DB/Core/FieldVisitors.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -78,7 +79,7 @@ Block SummingSortedBlockInputStream::readImpl()
 		  */
 		for (size_t i = 0; i < num_columns; ++i)
 		{
-			ColumnWithTypeAndName & column = merged_block.getByPosition(i);
+			ColumnWithTypeAndName & column = merged_block.safeGetByPosition(i);
 
 			/// Discover nested Maps and find columns for summation
 			if (typeid_cast<const DataTypeArray *>(column.type.get()))
@@ -93,8 +94,11 @@ Block SummingSortedBlockInputStream::readImpl()
 			else
 			{
 				/// Оставляем только числовые типы. При чём, даты и даты-со-временем здесь такими не считаются.
-				if (!column.type->isNumeric() || column.type->getName() == "Date" ||
-												 column.type->getName() == "DateTime")
+				if (!column.type->isNumeric() ||
+					column.type->getName() == "Date" ||
+					column.type->getName() == "DateTime" ||
+					column.type->getName() == "Nullable(Date)" ||
+					column.type->getName() == "Nullable(DateTime)")
 					continue;
 
 				/// Входят ли в PK?
@@ -120,7 +124,7 @@ Block SummingSortedBlockInputStream::readImpl()
 			/// no elements of map could be in primary key
 			auto column_num_it = map.second.begin();
 			for (; column_num_it != map.second.end(); ++column_num_it)
-				if (isInPrimaryKey(description, merged_block.getByPosition(*column_num_it).name, *column_num_it))
+				if (isInPrimaryKey(description, merged_block.safeGetByPosition(*column_num_it).name, *column_num_it))
 					break;
 			if (column_num_it != map.second.end())
 				continue;
@@ -131,7 +135,7 @@ Block SummingSortedBlockInputStream::readImpl()
 			column_num_it = map.second.begin();
 			for (; column_num_it != map.second.end(); ++column_num_it)
 			{
-				const ColumnWithTypeAndName & key_col = merged_block.getByPosition(*column_num_it);
+				const ColumnWithTypeAndName & key_col = merged_block.safeGetByPosition(*column_num_it);
 				const String & name = key_col.name;
 				const IDataType & nested_type = *static_cast<const DataTypeArray *>(key_col.type.get())->getNestedType();
 
@@ -313,7 +317,7 @@ bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & 
 		bool has_non_zero = false;
 		size_t size = dst.size();
 		for (size_t i = 0; i < size; ++i)
-			if (apply_visitor(FieldVisitorSum(src[i]), dst[i]))
+			if (applyVisitor(FieldVisitorSum(src[i]), dst[i]))
 				has_non_zero = true;
 		return has_non_zero;
 	};
@@ -370,7 +374,7 @@ bool SummingSortedBlockInputStream::addRow(Row & row, TSortCursor & cursor)
 	for (size_t i = 0, size = column_numbers_to_sum.size(); i < size; ++i)
 	{
 		size_t j = column_numbers_to_sum[i];
-		if (apply_visitor(FieldVisitorSum((*cursor->all_columns[j])[cursor->pos]), row[j]))
+		if (applyVisitor(FieldVisitorSum((*cursor->all_columns[j])[cursor->pos]), row[j]))
 			res = true;
 	}
 

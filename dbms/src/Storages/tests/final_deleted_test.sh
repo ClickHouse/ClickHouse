@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 echo "DROP DATABASE IF EXISTS final_deleted_test" | clickhouse-client || exit 1
 echo "CREATE DATABASE final_deleted_test" | clickhouse-client || exit 2

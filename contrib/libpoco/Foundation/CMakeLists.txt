@@ -44,10 +44,6 @@ if (POCO_UNBUNDLED)
         src/pcre_ucd.c
         src/pcre_tables.c
     )
-
-    find_package(ZLIB REQUIRED)
-    set(SYSLIBS ${SYSLIBS} ${ZLIB_LIBRARIES})
-    include_directories(${ZLIB_INCLUDE_DIRS})
 else()
     # pcre
     POCO_SOURCES( SRCS pcre
@@ -73,26 +69,10 @@ else()
         src/pcre_valid_utf8.c
         src/pcre_xclass.c
     )
-
-    # zlib
-    POCO_HEADERS( SRCS zlib
-        include/Poco/zconf.h
-        include/Poco/zlib.h
-        )
-
-    POCO_SOURCES( SRCS zlib
-        src/adler32.c
-        src/compress.c
-        src/crc32.c
-        src/deflate.c
-        src/infback.c
-        src/inffast.c
-        src/inflate.c
-        src/inftrees.c
-        src/trees.c
-        src/zutil.c
-    )
 endif (POCO_UNBUNDLED)
+
+# Use zlib found by clickhouse.
+set(SYSLIBS ${SYSLIBS} ${ZLIB_LIBRARIES})
 
 if(WIN32)
     set(SYSLIBS ${SYSLIBS} iphlpapi)
@@ -104,6 +84,8 @@ endif (${CMAKE_CXX_COMPILER_ID} MATCHES "SunPro")
 # TODO: Why is this here?
 add_definitions( -DPCRE_STATIC)
 
+include_directories (BEFORE include)
+
 add_library( "${LIBNAME}" ${LIB_MODE} ${SRCS})
 set_target_properties( "${LIBNAME}"
     PROPERTIES
@@ -114,7 +96,7 @@ set_target_properties( "${LIBNAME}"
 
 target_link_libraries( "${LIBNAME}" ${SYSLIBS})
 
-if (ENABLE_TESTS)
+if (POCO_ENABLE_TESTS)
     add_subdirectory( samples )
     add_subdirectory( testsuite )
 endif ()

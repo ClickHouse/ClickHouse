@@ -6,7 +6,6 @@
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
-
 namespace DB
 {
 
@@ -69,7 +68,7 @@ Block IProfilingBlockInputStream::read()
 		cancel();
 	}
 
-	progress(Progress(res.rowsInFirstColumn(), res.bytes()));
+	progress(Progress(res.rows(), res.bytes()));
 
 	return res;
 }
@@ -106,9 +105,9 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 			Field min_value;
 			Field max_value;
 
-			block.getByPosition(i).column->getExtremes(min_value, max_value);
+			block.safeGetByPosition(i).column->getExtremes(min_value, max_value);
 
-			ColumnPtr & column = extremes.getByPosition(i).column;
+			ColumnPtr & column = extremes.safeGetByPosition(i).column;
 
 			if (auto converted = column->convertToFullColumnIfConst())
 				column = converted;
@@ -121,7 +120,7 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 	{
 		for (size_t i = 0; i < columns; ++i)
 		{
-			ColumnPtr & column = extremes.getByPosition(i).column;
+			ColumnPtr & column = extremes.safeGetByPosition(i).column;
 
 			Field min_value = (*column)[0];
 			Field max_value = (*column)[1];
@@ -129,7 +128,7 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 			Field cur_min_value;
 			Field cur_max_value;
 
-			block.getByPosition(i).column->getExtremes(cur_min_value, cur_max_value);
+			block.safeGetByPosition(i).column->getExtremes(cur_min_value, cur_max_value);
 
 			if (cur_min_value < min_value)
 				min_value = cur_min_value;
@@ -146,35 +145,37 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 
 bool IProfilingBlockInputStream::checkLimits()
 {
-	/// Проверка ограничений.
-	if (limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
+	if (limits.mode == LIMITS_CURRENT)
 	{
-		if (limits.read_overflow_mode == OverflowMode::THROW)
-			throw Exception(std::string("Limit for ")
-				+ (limits.mode == LIMITS_CURRENT ? "result rows" : "rows to read")
-				+ " exceeded: read " + toString(info.rows)
-				+ " rows, maximum: " + toString(limits.max_rows_to_read),
-				ErrorCodes::TOO_MUCH_ROWS);
+		/// Check current stream limitations (i.e. max_result_{rows,bytes})
 
-		if (limits.read_overflow_mode == OverflowMode::BREAK)
-			return false;
+		if (limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
+		{
+			if (limits.read_overflow_mode == OverflowMode::THROW)
+				throw Exception(std::string("Limit for result rows ")
+					+ " exceeded: read " + toString(info.rows)
+					+ " rows, maximum: " + toString(limits.max_rows_to_read),
+					ErrorCodes::TOO_MUCH_ROWS);
 
-		throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-	}
+			if (limits.read_overflow_mode == OverflowMode::BREAK)
+				return false;
 
-	if (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read)
-	{
-		if (limits.read_overflow_mode == OverflowMode::THROW)
-			throw Exception(std::string("Limit for ")
-				+ (limits.mode == LIMITS_CURRENT ? "result bytes (uncompressed)" : "(uncompressed) bytes to read")
-				+ " exceeded: read " + toString(info.bytes)
-				+ " bytes, maximum: " + toString(limits.max_bytes_to_read),
-				ErrorCodes::TOO_MUCH_BYTES);
+			throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+		}
 
-		if (limits.read_overflow_mode == OverflowMode::BREAK)
-			return false;
+		if (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read)
+		{
+			if (limits.read_overflow_mode == OverflowMode::THROW)
+				throw Exception(std::string("Limit for result bytes (uncompressed)")
+					+ " exceeded: read " + toString(info.bytes)
+					+ " bytes, maximum: " + toString(limits.max_bytes_to_read),
+					ErrorCodes::TOO_MUCH_BYTES);
 
-		throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+			if (limits.read_overflow_mode == OverflowMode::BREAK)
+				return false;
+
+			throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+		}
 	}
 
 	if (limits.max_execution_time != 0
@@ -208,7 +209,7 @@ void IProfilingBlockInputStream::checkQuota(Block & block)
 			time_t current_time = time(0);
 			double total_elapsed = info.total_stopwatch.elapsedSeconds();
 
-			quota->checkAndAddResultRowsBytes(current_time, block.rowsInFirstColumn(), block.bytes());
+			quota->checkAndAddResultRowsBytes(current_time, block.rows(), block.bytes());
 			quota->checkAndAddExecutionTime(current_time, Poco::Timespan((total_elapsed - prev_elapsed) * 1000000.0));
 
 			prev_elapsed = total_elapsed;
@@ -228,15 +229,15 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 
 	if (process_list_elem)
 	{
-		if (!process_list_elem->update(value))
+		if (!process_list_elem->updateProgressIn(value))
 			cancel();
 
 		/// Общее количество данных, обработанных или предполагаемых к обработке во всех листовых источниках, возможно, на удалённых серверах.
 
-		size_t rows_processed = process_list_elem->progress.rows;
-		size_t bytes_processed = process_list_elem->progress.bytes;
+		size_t rows_processed = process_list_elem->progress_in.rows;
+		size_t bytes_processed = process_list_elem->progress_in.bytes;
 
-		size_t total_rows_estimate = std::max(rows_processed, process_list_elem->progress.total_rows.load(std::memory_order_relaxed));
+		size_t total_rows_estimate = std::max(rows_processed, process_list_elem->progress_in.total_rows.load(std::memory_order_relaxed));
 
 		/** Проверяем ограничения на объём данных для чтения, скорость выполнения запроса, квоту на объём данных для чтения.
 			* NOTE: Может быть, имеет смысл сделать, чтобы они проверялись прямо в ProcessList?
@@ -270,7 +271,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 				throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
 		}
 
-		size_t total_rows = process_list_elem->progress.total_rows;
+		size_t total_rows = process_list_elem->progress_in.total_rows;
 
 		if (limits.min_execution_speed || (total_rows && limits.timeout_before_checking_execution_speed != 0))
 		{
@@ -283,7 +284,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 						+ " rows/sec., minimum: " + toString(limits.min_execution_speed),
 						ErrorCodes::TOO_SLOW);
 
-				size_t total_rows = process_list_elem->progress.total_rows;
+				size_t total_rows = process_list_elem->progress_in.total_rows;
 
 				/// Если предсказанное время выполнения больше, чем max_execution_time.
 				if (limits.max_execution_time != 0 && total_rows)

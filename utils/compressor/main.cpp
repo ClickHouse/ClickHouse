@@ -10,24 +10,31 @@
 #include <DB/IO/copyData.h>
 
 
+namespace DB
+{
+	namespace ErrorCodes
+	{
+		extern const int TOO_LARGE_SIZE_COMPRESSED;
+	}
+}
+
+
 /// Выводит размеры разжатых и сжатых блоков для сжатого файла.
 void stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 {
 	while (!in.eof())
 	{
-		char header[COMPRESSED_BLOCK_HEADER_SIZE];
-
 		in.ignore(16);	/// checksum
+
+		char header[COMPRESSED_BLOCK_HEADER_SIZE];
 		in.readStrict(header, COMPRESSED_BLOCK_HEADER_SIZE);
 
-		size_t size_compressed = 0;
-		memcpy(&size_compressed, &header[1], 4);	/// little endian
+		UInt32 size_compressed = unalignedLoad<UInt32>(&header[1]);
 
 		if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
 			throw DB::Exception("Too large size_compressed. Most likely corrupted data.", DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
-		size_t size_decompressed = 0;
-		memcpy(&size_compressed, &header[5], 4);	/// little endian
+		UInt32 size_decompressed = unalignedLoad<UInt32>(&header[5]);
 
 		DB::writeText(size_decompressed, out);
 		DB::writeChar('\t', out);
@@ -44,7 +51,7 @@ int main(int argc, char ** argv)
 	boost::program_options::options_description desc("Allowed options");
 	desc.add_options()
 		("help,h", "produce help message")
-		("d,decompress", "decompress")
+		("decompress,d", "decompress")
 		("block-size,b", boost::program_options::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
 		("hc", "use LZ4HC instead of LZ4")
 	#ifdef USE_QUICKLZ
@@ -66,7 +73,7 @@ int main(int argc, char ** argv)
 
 	try
 	{
-		bool decompress = options.count("d");
+		bool decompress = options.count("decompress");
 
 	#ifdef USE_QUICKLZ
 		bool use_qlz = options.count("qlz");

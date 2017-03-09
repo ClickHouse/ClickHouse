@@ -1,5 +1,6 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnNullable.h>
 
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
@@ -96,7 +97,7 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 }
 
 
-void DataTypeArray::serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeArray::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
 	const ColumnArray & column_array = typeid_cast<const ColumnArray &>(column);
 	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -120,11 +121,11 @@ void DataTypeArray::serializeBinary(const IColumn & column, WriteBuffer & ostr, 
 		: 0;
 
 	if (limit == 0 || nested_limit)
-		nested->serializeBinary(column_array.getData(), ostr, nested_offset, nested_limit);
+		nested->serializeBinaryBulk(column_array.getData(), ostr, nested_offset, nested_limit);
 }
 
 
-void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeArray::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
 	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -135,7 +136,7 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr, size_
 	if (last_offset < nested_column.size())
 		throw Exception("Nested column longer than last offset", ErrorCodes::LOGICAL_ERROR);
 	size_t nested_limit = last_offset - nested_column.size();
-	nested->deserializeBinary(nested_column, istr, nested_limit, 0);
+	nested->deserializeBinaryBulk(nested_column, istr, nested_limit, 0);
 
 	if (column_array.getData().size() != last_offset)
 		throw Exception("Cannot read all array values", ErrorCodes::CANNOT_READ_ALL_DATA);
@@ -188,7 +189,8 @@ void DataTypeArray::deserializeOffsets(IColumn & column, ReadBuffer & istr, size
 }
 
 
-void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+template <typename Writer>
+static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && write_nested)
 {
 	const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
 	const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -203,7 +205,7 @@ void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteB
 	{
 		if (i != offset)
 			writeChar(',', ostr);
-		nested->serializeTextQuoted(nested_column, i, ostr);
+		write_nested(nested_column, i);
 	}
 	writeChar(']', ostr);
 }
@@ -258,9 +260,23 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
 }
 
 
+void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+	serializeTextImpl(column, row_num, ostr,
+					[&](const IColumn & nested_column, size_t i)
+					{
+						nested->serializeTextQuoted(nested_column, i, ostr);
+					});
+}
+
+
 void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr) const
 {
-	deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeTextQuoted(nested_column, istr); });
+	deserializeTextImpl(column, istr,
+					[&](IColumn & nested_column)
+					{
+						nested->deserializeTextQuoted(nested_column, istr);
+					});
 }
 
 
@@ -359,7 +375,16 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 
 ColumnPtr DataTypeArray::createColumn() const
 {
-	return std::make_shared<ColumnArray>(nested->createColumn());
+	if (nested->isNull())
+	{
+		ColumnPtr col = std::make_shared<ColumnUInt8>();
+		ColumnPtr null_map = std::make_shared<ColumnUInt8>();
+		ColumnPtr nullable_col = std::make_shared<ColumnNullable>(col, null_map);
+
+		return std::make_shared<ColumnArray>(nullable_col);
+	}
+	else
+		return std::make_shared<ColumnArray>(nested->createColumn());
 }
 
 
@@ -367,6 +392,27 @@ ColumnPtr DataTypeArray::createConstColumn(size_t size, const Field & field) con
 {
 	/// Последним аргументом нельзя отдать this.
 	return std::make_shared<ColumnConstArray>(size, get<const Array &>(field), std::make_shared<DataTypeArray>(nested));
+}
+
+
+const DataTypePtr & DataTypeArray::getMostNestedType() const
+{
+	const DataTypeArray * array = this;
+	const IDataType * array_nested_type = array->getNestedType().get();
+
+	while (true)
+	{
+		const DataTypeArray * type = typeid_cast<const DataTypeArray *>(array_nested_type);
+		if (type == nullptr)
+				break;
+		else
+		{
+			array = type;
+			array_nested_type = array->getNestedType().get();
+		}
+	}
+
+	return array->getNestedType();
 }
 
 }

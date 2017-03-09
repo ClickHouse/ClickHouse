@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -26,7 +27,7 @@ public:
 
 private:
 	void run();
-	void transmit(ProfileEvents::Count * prev_counters);
+	void transmit(std::vector<ProfileEvents::Count> & prev_counters);
 
 	const AsynchronousMetrics & async_metrics;
 

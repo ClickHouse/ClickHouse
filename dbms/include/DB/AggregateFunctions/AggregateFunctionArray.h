@@ -10,9 +10,9 @@ namespace DB
 {
 
 
-/** Не агрегатная функция, а адаптер агрегатных функций,
-  *  который любую агрегатную функцию agg(x) делает агрегатной функцией вида aggArray(x).
-  * Адаптированная агрегатная функция вычисляет вложенную агрегатную функцию для каждого элемента массива.
+/** Not an aggregate function, but an adapter of aggregate functions,
+  *  which any aggregate function `agg(x)` makes an aggregate function of the form `aggArray(x)`.
+  * The adapted aggregate function calculates nested aggregate function for each element of the array.
   */
 class AggregateFunctionArray final : public IAggregateFunction
 {
@@ -83,7 +83,7 @@ public:
 		return nested_func->alignOfData();
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
 	{
 		const IColumn * nested[num_agruments];
 
@@ -97,7 +97,7 @@ public:
 		size_t end = offsets[row_num];
 
 		for (size_t i = begin; i < end; ++i)
-			nested_func->add(place, nested, i, nullptr);
+			nested_func->add(place, nested, i, arena);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -118,6 +118,11 @@ public:
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		nested_func->insertResultInto(place, to);
+	}
+
+	bool allocatesMemoryInArena() const override
+	{
+		return nested_func->allocatesMemoryInArena();
 	}
 
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
