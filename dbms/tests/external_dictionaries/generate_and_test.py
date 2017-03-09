@@ -668,7 +668,7 @@ if __name__ == '__main__':
     parser.add_argument('--http_port', default = 58000, help = 'http server port')
     parser.add_argument('--http_host', default = 'localhost', help = 'http server host')
     parser.add_argument('--http_path', default = '/generated/', help = 'http server path')
-    parser.add_argument('--use_https', default = False, help = 'Use https dictionaries')
+    parser.add_argument('--use_https', default = True, help = 'Use https dictionaries')
     parser.add_argument('--https_port', default = 58443, help = 'https server port')
     parser.add_argument('--https_host', default = 'localhost', help = 'https server host')
     parser.add_argument('--https_path', default = '/generated/', help = 'https server path')
