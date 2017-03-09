@@ -8,18 +8,18 @@ namespace DB
 {
 
 
-/// Возможные значения параметров шаблонов см. в AggregateFunctionsMinMaxAny.h
+/// For possible values for template parameters, see AggregateFunctionsMinMaxAny.h
 template <typename ResultData, typename ValueData>
 struct AggregateFunctionsArgMinMaxData
 {
 	using ResultData_t = ResultData;
 	using ValueData_t = ValueData;
 
-	ResultData result;	// аргумент, при котором достигается минимальное/максимальное значение value.
-	ValueData value;	// значение, для которого считается минимум/максимум.
+	ResultData result;  // the argument at which the minimum/maximum value is reached.
+	ValueData value;    // value for which the minimum/maximum is calculated.
 };
 
-/// Возвращает первое попавшееся значение arg для минимального/максимального value. Пример: argMax(arg, value).
+/// Returns the first arg value found for the minimum/maximum value. Example: argMax(arg, value).
 template <typename Data>
 class AggregateFunctionsArgMinMax final : public IBinaryAggregateFunction<Data, AggregateFunctionsArgMinMax<Data>>
 {

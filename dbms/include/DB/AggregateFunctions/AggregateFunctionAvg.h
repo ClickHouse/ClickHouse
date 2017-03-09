@@ -22,7 +22,7 @@ struct AggregateFunctionAvgData
 };
 
 
-/// Считает арифметическое среднее значение чисел.
+/// Calculates arithmetic mean of numbers.
 template <typename T>
 class AggregateFunctionAvg final : public IUnaryAggregateFunction<AggregateFunctionAvgData<typename NearestFieldType<T>::Type>, AggregateFunctionAvg<T> >
 {

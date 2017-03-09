@@ -16,8 +16,8 @@ public:
 	String default_specifier;
 	ASTPtr default_expression;
 
-    ASTColumnDeclaration() = default;
-    ASTColumnDeclaration(const StringRange range) : IAST{range} {}
+	ASTColumnDeclaration() = default;
+	ASTColumnDeclaration(const StringRange range) : IAST{range} {}
 
 	String getID() const override { return "ColumnDeclaration_" + name; }
 

@@ -8,7 +8,7 @@ namespace DB
 
 class Context;
 
-/// Отвечает "Ok.\n", если все реплики на этом сервере не слишком сильно отстают. Иначе выводит информацию об отставании.
+/// Replies "Ok.\n" if all replicas on this server don't lag too much. Otherwise output lag information.
 class ReplicasStatusHandler : public Poco::Net::HTTPRequestHandler
 {
 private:

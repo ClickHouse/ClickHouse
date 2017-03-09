@@ -6,6 +6,7 @@
 #include <DB/Columns/ColumnsNumber.h>
 
 #include <DB/Interpreters/sortBlock.h>
+#include <DB/Interpreters/Context.h>
 
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 
@@ -40,7 +41,7 @@ using BlocksWithDateIntervals = std::list<BlockWithDateInterval>;
 class MergeTreeDataWriter
 {
 public:
-	MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Logger::get(data.getLogName() + " (Writer)")) {}
+	MergeTreeDataWriter(MergeTreeData & data_, Context & context_) : data(data_), context(context_), log(&Logger::get(data.getLogName() + " (Writer)")) {}
 
 	/** Split the block to blocks, each of them must be written as separate part.
 	  *  (split rows by months)
@@ -56,6 +57,7 @@ public:
 
 private:
 	MergeTreeData & data;
+	Context & context;
 
 	Logger * log;
 };

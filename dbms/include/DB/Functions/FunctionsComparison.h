@@ -776,7 +776,6 @@ private:
 
 
 public:
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -853,7 +852,6 @@ public:
 		return std::make_shared<DataTypeUInt8>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const auto & col_with_type_and_name_left = block.safeGetByPosition(arguments[0]);

@@ -138,7 +138,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
 				ErrorCodes::LOGICAL_ERROR};
 
 		// Used for https queries
-		std::call_once(client_ssl_init_once, clientSSLInit);
+		std::call_once(ssl_init_once, SSLInit);
 
 		return std::make_unique<HTTPDictionarySource>(dict_struct, config, config_prefix + ".http", sample_block, context);
 	}

@@ -35,7 +35,7 @@ protected:
 public:
 	HexWriteBuffer(WriteBuffer & out_) : WriteBuffer(buf, sizeof(buf)), out(out_) {}
 
-    ~HexWriteBuffer() override
+	~HexWriteBuffer() override
 	{
 		try
 		{

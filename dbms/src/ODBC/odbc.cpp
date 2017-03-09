@@ -21,11 +21,11 @@
 #include "utils.h"
 
 
-/** Функции из ODBC интерфейса не могут напрямую вызывать другие функции.
-  * Потому что будет вызвана не функция из этой библиотеки, а обёртка из driver manager-а,
-  *  которая может неправильно работать, будучи вызванной изнутри другой функции.
-  * Неправильно - потому что driver manager оборачивает все handle в свои другие,
-  *  которые имеют уже другие адреса.
+/** Functions from the ODBC interface can not directly call other functions.
+  * Because not a function from this library will be called, but a wrapper from the driver manager,
+  * which can work incorrectly, being called from within another function.
+  * Wrong - because driver manager wraps all handle in its own,
+  * which already have other addresses.
   */
 
 extern "C"
@@ -495,7 +495,7 @@ SQLDisconnect(HDBC connection_handle)
 
 RETCODE
 impl_SQLGetDiagRec(SQLSMALLINT handle_type, SQLHANDLE handle,
-    SQLSMALLINT record_number,
+	SQLSMALLINT record_number,
 	SQLCHAR * out_sqlstate,
 	SQLINTEGER * out_native_error_code,
 	SQLCHAR * out_mesage, SQLSMALLINT out_message_max_size, SQLSMALLINT * out_message_size)
@@ -532,7 +532,7 @@ impl_SQLGetDiagRec(SQLSMALLINT handle_type, SQLHANDLE handle,
 	if (diagnostic_record->native_error_code == 0)
 		return SQL_NO_DATA;
 
-	/// Пятибуквенный SQLSTATE и завершающий ноль.
+	/// The five-letter SQLSTATE and the trailing zero.
 	if (out_sqlstate)
 		strncpy(reinterpret_cast<char *>(out_sqlstate), diagnostic_record->sql_state.data(), 6);
 
@@ -545,7 +545,7 @@ impl_SQLGetDiagRec(SQLSMALLINT handle_type, SQLHANDLE handle,
 
 RETCODE SQL_API
 SQLGetDiagRec(SQLSMALLINT handle_type, SQLHANDLE handle,
-    SQLSMALLINT record_number,
+	SQLSMALLINT record_number,
 	SQLCHAR * out_sqlstate,
 	SQLINTEGER * out_native_error_code,
 	SQLCHAR * out_mesage, SQLSMALLINT out_message_max_size, SQLSMALLINT * out_message_size)
@@ -556,7 +556,7 @@ SQLGetDiagRec(SQLSMALLINT handle_type, SQLHANDLE handle,
 
 RETCODE SQL_API
 SQLGetDiagField(SQLSMALLINT handle_type, SQLHANDLE handle,
-    SQLSMALLINT record_number,
+	SQLSMALLINT record_number,
 	SQLSMALLINT field_id,
 	SQLPOINTER out_mesage, SQLSMALLINT out_message_max_size, SQLSMALLINT * out_message_size)
 {
@@ -798,7 +798,7 @@ SQLBrowseConnect(HDBC connection_handle,
 }
 
 
-/// Не реализовано.
+/// Not implemented.
 
 
 RETCODE SQL_API
@@ -832,7 +832,7 @@ SQLGetCursorName(HSTMT StatementHandle,
 
 
 /*
-/// Эта функция может быть реализована в driver manager-е.
+/// This function can be implemented in the driver manager.
 RETCODE SQL_API
 SQLGetFunctions(HDBC ConnectionHandle,
 				SQLUSMALLINT FunctionId, SQLUSMALLINT *Supported)
@@ -1059,8 +1059,8 @@ SQLBindParameter(HSTMT hstmt,
 /*
 RETCODE SQL_API
 SQLBulkOperations(
-     SQLHSTMT       StatementHandle,
-     SQLUSMALLINT   Operation)
+	 SQLHSTMT       StatementHandle,
+	 SQLUSMALLINT   Operation)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;
@@ -1069,8 +1069,8 @@ SQLBulkOperations(
 
 RETCODE SQL_API
 SQLCancelHandle(
-      SQLSMALLINT  HandleType,
-      SQLHANDLE    Handle)
+	  SQLSMALLINT  HandleType,
+	  SQLHANDLE    Handle)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;
@@ -1079,9 +1079,9 @@ SQLCancelHandle(
 
 RETCODE SQL_API
 SQLCompleteAsync(
-      SQLSMALLINT HandleType,
-      SQLHANDLE   Handle,
-      RETCODE *   AsyncRetCodePtr)
+	  SQLSMALLINT HandleType,
+	  SQLHANDLE   Handle,
+	  RETCODE *   AsyncRetCodePtr)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;
@@ -1090,8 +1090,8 @@ SQLCompleteAsync(
 
 RETCODE SQL_API
 SQLCopyDesc(
-     SQLHDESC     SourceDescHandle,
-     SQLHDESC     TargetDescHandle)
+	 SQLHDESC     SourceDescHandle,
+	 SQLHDESC     TargetDescHandle)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;
@@ -1100,9 +1100,9 @@ SQLCopyDesc(
 
 RETCODE SQL_API
 SQLEndTran(
-     SQLSMALLINT   HandleType,
-     SQLHANDLE     Handle,
-     SQLSMALLINT   CompletionType)
+	 SQLSMALLINT   HandleType,
+	 SQLHANDLE     Handle,
+	 SQLSMALLINT   CompletionType)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;
@@ -1111,8 +1111,8 @@ SQLEndTran(
 
 RETCODE SQL_API
 SQLError(SQLHENV hDrvEnv, SQLHDBC hDrvDbc, SQLHSTMT hDrvStmt,
-    SQLCHAR *szSqlState, SQLINTEGER *pfNativeError, SQLCHAR *szErrorMsg,
-    SQLSMALLINT nErrorMsgMax, SQLSMALLINT *pcbErrorMsg)
+	SQLCHAR *szSqlState, SQLINTEGER *pfNativeError, SQLCHAR *szErrorMsg,
+	SQLSMALLINT nErrorMsgMax, SQLSMALLINT *pcbErrorMsg)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;
@@ -1121,8 +1121,8 @@ SQLError(SQLHENV hDrvEnv, SQLHDBC hDrvDbc, SQLHSTMT hDrvStmt,
 
 RETCODE SQL_API
 SQLGetDescField(SQLHDESC DescriptorHandle, SQLSMALLINT RecordNumber,
-    SQLSMALLINT FieldIdentifier, SQLPOINTER Value, SQLINTEGER BufferLength,
-    SQLINTEGER *StringLength)
+	SQLSMALLINT FieldIdentifier, SQLPOINTER Value, SQLINTEGER BufferLength,
+	SQLINTEGER *StringLength)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;
@@ -1131,9 +1131,9 @@ SQLGetDescField(SQLHDESC DescriptorHandle, SQLSMALLINT RecordNumber,
 
 RETCODE SQL_API
 SQLGetDescRec(SQLHDESC DescriptorHandle, SQLSMALLINT RecordNumber,
-    SQLCHAR *Name, SQLSMALLINT BufferLength, SQLSMALLINT *StringLength,
-    SQLSMALLINT *Type, SQLSMALLINT *SubType, SQLLEN *Length,
-    SQLSMALLINT *Precision, SQLSMALLINT *Scale, SQLSMALLINT *Nullable)
+	SQLCHAR *Name, SQLSMALLINT BufferLength, SQLSMALLINT *StringLength,
+	SQLSMALLINT *Type, SQLSMALLINT *SubType, SQLLEN *Length,
+	SQLSMALLINT *Precision, SQLSMALLINT *Scale, SQLSMALLINT *Nullable)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;
@@ -1150,7 +1150,7 @@ SQLParamOptions(SQLHSTMT hDrvStmt, SQLULEN nRow, SQLULEN *pnRow)
 
 RETCODE SQL_API
 SQLSetDescField(SQLHDESC DescriptorHandle, SQLSMALLINT RecordNumber,
-    SQLSMALLINT FieldIdentifier, SQLPOINTER Value, SQLINTEGER BufferLength)
+	SQLSMALLINT FieldIdentifier, SQLPOINTER Value, SQLINTEGER BufferLength)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;
@@ -1159,9 +1159,9 @@ SQLSetDescField(SQLHDESC DescriptorHandle, SQLSMALLINT RecordNumber,
 
 RETCODE SQL_API
 SQLSetDescRec(SQLHDESC hDescriptorHandle, SQLSMALLINT nRecordNumber,
-    SQLSMALLINT nType, SQLSMALLINT nSubType, SQLLEN nLength,
-    SQLSMALLINT nPrecision, SQLSMALLINT nScale, SQLPOINTER pData,
-    SQLLEN *pnStringLength, SQLLEN *pnIndicator)
+	SQLSMALLINT nType, SQLSMALLINT nSubType, SQLLEN nLength,
+	SQLSMALLINT nPrecision, SQLSMALLINT nScale, SQLPOINTER pData,
+	SQLLEN *pnStringLength, SQLLEN *pnIndicator)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;
@@ -1171,7 +1171,7 @@ SQLSetDescRec(SQLHDESC hDescriptorHandle, SQLSMALLINT nRecordNumber,
 RETCODE SQL_API
 SQLSetScrollOptions(
 	SQLHSTMT hDrvStmt, SQLUSMALLINT fConcurrency, SQLLEN crowKeyset,
-    SQLUSMALLINT crowRowset)
+	SQLUSMALLINT crowRowset)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;

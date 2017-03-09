@@ -87,9 +87,9 @@ public:
 	Impl impls[NUM_BUCKETS];
 
 
-    TwoLevelHashTable() {}
+	TwoLevelHashTable() {}
 
-    /// Скопировать данные из другой (обычной) хэш-таблицы. У неё должна быть такая же хэш-функция.
+	/// Скопировать данные из другой (обычной) хэш-таблицы. У неё должна быть такая же хэш-функция.
 	template <typename Source>
 	TwoLevelHashTable(const Source & src)
 	{

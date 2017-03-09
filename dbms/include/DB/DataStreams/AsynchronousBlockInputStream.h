@@ -78,7 +78,7 @@ public:
 	}
 
 
-    ~AsynchronousBlockInputStream() override
+	~AsynchronousBlockInputStream() override
 	{
 		if (started)
 			pool.wait();

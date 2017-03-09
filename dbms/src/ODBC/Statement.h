@@ -11,7 +11,7 @@
 #include "ResultSet.h"
 
 
-/// Информация, куда и как складывать значения при чтении.
+/// Information where and how to add values when reading.
 struct Binding
 {
 	SQLSMALLINT target_type;
@@ -43,7 +43,7 @@ public:
 		request.setKeepAlive(true);
 		request.setChunkedTransferEncoding(true);
 		request.setCredentials("Basic", user_password_base64.str());
-		request.setURI("/?database=" + connection.database + "&default_format=ODBCDriver");	/// TODO Возможность передать настройки. TODO эскейпинг
+		request.setURI("/?database=" + connection.database + "&default_format=ODBCDriver");	/// TODO Ability to transfer settings. TODO escaping
 
 //		if (in && in->peek() != EOF)
 			connection.session.reset();

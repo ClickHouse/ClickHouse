@@ -135,7 +135,10 @@ private:
 
 	ClusterPtr getCluster() const;
 
-private:
+	/// Get monotonically increasing string to name files with data to be written to remote servers.
+	String getMonotonicFileName();
+
+
 	String name;
 	NamesAndTypesListPtr columns;
 	String remote_database;

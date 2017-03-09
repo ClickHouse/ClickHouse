@@ -152,7 +152,7 @@ public:
 		return res.str();
 	}
 
-    ~GraphiteRollupSortedBlockInputStream()
+	~GraphiteRollupSortedBlockInputStream()
 	{
 		if (current_pattern)
 			current_pattern->function->destroy(place_for_aggregate_state.data());

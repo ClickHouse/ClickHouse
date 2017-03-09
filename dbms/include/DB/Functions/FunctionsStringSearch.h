@@ -1040,7 +1040,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringReplace>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -1048,7 +1047,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 3; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
@@ -1066,7 +1064,6 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column_src = block.safeGetByPosition(arguments[0]).column;
@@ -1124,7 +1121,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionsStringSearch>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -1132,7 +1128,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 2; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
@@ -1146,7 +1141,6 @@ public:
 		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ResultType>::Type>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		using ResultType = typename Impl::ResultType;
@@ -1206,7 +1200,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionsStringSearchToString>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -1214,7 +1207,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 2; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
@@ -1228,7 +1220,6 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;

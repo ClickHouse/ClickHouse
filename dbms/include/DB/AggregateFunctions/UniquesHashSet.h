@@ -14,54 +14,53 @@
 #include <DB/Common/HashTable/Hash.h>
 
 
-/** Приближённый рассчёт чего-угодно, как правило, построен по следующей схеме:
-  * - для рассчёта значения X используется некоторая структура данных;
-  * - в структуру данных добавляются не все значения, а только избранные (согласно некоторому критерию избранности);
-  * - после обработки всех элементов, структура данных находится в некотором состоянии S;
-  * - в качестве приближённого значения X возвращается значание, посчитанное по принципу максимального правдоподобия:
-  *   при каком реальном значении X, вероятность нахождения структуры данных в полученном состоянии S максимальна.
-  */
+/** Approximate calculation of anything, as a rule, is constructed according to the following scheme:
+  * - some data structure is used to calculate the value of X;
+  * - Not all values are added to the data structure, but only selected ones (according to some selectivity criteria);
+  * - after processing all elements, the data structure is in some state S;
+  * - as an approximate value of X, the value calculated according to the maximum likelihood principle is returned:
+  *   at what real value X, the probability of finding the data structure in the obtained state S is maximal.
+  */
 
-/** В частности, то, что описано ниже, можно найти по названию BJKST algorithm.
-  */
+/** In particular, what is described below can be found by the name of the BJKST algorithm.
+  */
 
-/** Очень простое хэш-множество для приближённого подсчёта количества уникальных значений.
-  * Работает так:
-  * - вставлять можно UInt64;
-  * - перед вставкой, сначала вычисляется хэш-функция UInt64 -> UInt32;
-  * - исходное значение не сохраняется (теряется);
-  * - далее все операции производятся с этими хэшами;
-  * - хэш таблица построена по схеме:
-  * -  open addressing (один буфер, позиция в буфере вычисляется взятием остатка от деления на его размер);
-  * -  linear probing (если в ячейке уже есть значение, то берётся ячейка, следующая за ней и т. д.);
-  * -  отсутствующее значение кодируется нулём; чтобы запомнить наличие в множестве нуля, используется отдельная переменная типа bool;
-  * -  рост буфера в 2 раза при заполнении более чем на 50%;
-  * - если в множестве больше UNIQUES_HASH_MAX_SIZE элементов, то из множества удаляются все элементы,
-  *   не делящиеся на 2, и затем все элементы, которые не делятся на 2, не вставляются в множество;
-  * - если ситуация повторяется, то берутся только элементы делящиеся на 4 и т. п.
-  * - метод size() возвращает приблизительное количество элементов, которые были вставлены в множество;
-  * - есть методы для быстрого чтения и записи в бинарный и текстовый вид.
-  */
+/** Very simple hash-set for approximate number of unique values.
+  * Works like this:
+  * - you can insert UInt64;
+  * - before insertion, first the hash function UInt64 -> UInt32 is calculated;
+  * - the original value is not saved (lost);
+  * - further all operations are made with these hashes;
+  * - hash table is constructed according to the scheme:
+  * -  open addressing (one buffer, position in buffer is calculated by taking remainder of division by its size);
+  * -  linear probing (if the cell already has a value, then the cell following it is taken, etc.);
+  * -  the missing value is zero-encoded; to remember presence of zero in set, separate variable of type bool is used;
+  * -  buffer growth by 2 times when filling more than 50%;
+  * - if the set has more UNIQUES_HASH_MAX_SIZE elements, then all the elements are removed from the set,
+  *   not divisible by 2, and then all elements that do not divide by 2 are not inserted into the set;
+  * - if the situation repeats, then only elements dividing by 4, etc., are taken.
+  * - the size() method returns an approximate number of elements that have been inserted into the set;
+  * - there are methods for quick reading and writing in binary and text form.
+  */
 
-
-/// Максимальная степень размера буфера перед тем, как значения будут выкидываться
+/// The maximum degree of buffer size before the values are discarded
 #define UNIQUES_HASH_MAX_SIZE_DEGREE 			17
 
-/// Максимальное количество элементов перед тем, как значения будут выкидываться
+/// The maximum number of elements before the values are discarded
 #define UNIQUES_HASH_MAX_SIZE 					(1 << (UNIQUES_HASH_MAX_SIZE_DEGREE - 1))
 
-/** Количество младших бит, использующихся для прореживания. Оставшиеся старшие биты используются для определения позиции в хэш-таблице.
-  * (старшие биты берутся потому что младшие будут постоянными после выкидывания части значений)
-  */
+/** The number of least significant bits used for thinning. The remaining high-order bits are used to determine the position in the hash table.
+  * (high-order bits are taken because the younger bits will be constant after dropping some of the values)
+  */
 #define UNIQUES_HASH_BITS_FOR_SKIP 			(32 - UNIQUES_HASH_MAX_SIZE_DEGREE)
 
-/// Начальная степень размера буфера
+/// Initial buffer size degree
 #define UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE 	4
 
 
-/** Эта хэш-функция не самая оптимальная, но состояния UniquesHashSet, посчитанные с ней,
-  *  хранятся много где на дисках (в Метраже), поэтому она продолжает использоваться.
-  */
+/** This hash function is not the most optimal, but UniquesHashSet states counted with it,
+  * stored in many places on disks (in the Meter), so it continues to be used.
+  */
 struct UniquesHashSetDefaultHash
 {
 	size_t operator() (UInt64 x) const
@@ -79,15 +78,15 @@ private:
 	using HashValue_t = UInt32;
 	using Allocator = HashTableAllocatorWithStackMemory<(1 << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>;
 
-	UInt32 m_size;			/// Количество элементов
-	UInt8 size_degree;		/// Размер таблицы в виде степени двух
-	UInt8 skip_degree;		/// Пропускать элементы не делящиеся на 2 ^ skip_degree
-	bool has_zero;			/// Хэш-таблица содержит элемент со значением хэш-функции = 0.
+	UInt32 m_size;			/// Number of elements
+	UInt8 size_degree;		/// The size of the table as a power of 2
+	UInt8 skip_degree;      /// Skip elements not divisible by 2 ^ skip_degree
+	bool has_zero;          /// The hash table contains an element with a hash value of 0.
 
 	HashValue_t * buf;
 
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-	/// Для профилирования.
+	/// For profiling.
 	mutable size_t collisions;
 #endif
 
@@ -111,7 +110,7 @@ private:
 	inline size_t mask() const							{ return buf_size() - 1; }
 	inline size_t place(HashValue_t x) const 			{ return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
 
-	/// Значение делится на 2 ^ skip_degree
+	/// The value is divided by 2 ^ skip_degree
 	inline bool good(HashValue_t hash) const
 	{
 		return hash == ((hash >> skip_degree) << skip_degree);
@@ -122,7 +121,7 @@ private:
 		return Hash()(key);
 	}
 
-	/// Удалить все значения, хэши которых не делятся на 2 ^ skip_degree
+	/// Delete all values whose hashes do not divide by 2 ^ skip_degree
 	void rehash()
 	{
 		for (size_t i = 0; i < buf_size(); ++i)
@@ -134,9 +133,9 @@ private:
 			}
 		}
 
-		/** После удаления элементов, возможно, освободилось место для элементов,
-		  * которые были помещены дальше, чем нужно, из-за коллизии.
-		  * Надо переместить их.
+		/** After removing the elements, there may have been room for items,
+		  * which were placed further than necessary, due to a collision.
+		  * You need to move them.
 		  */
 		for (size_t i = 0; i < buf_size(); ++i)
 		{
@@ -149,7 +148,7 @@ private:
 		}
 	}
 
-	/// Увеличить размер буфера в 2 раза или до new_size_degree, если указана ненулевая.
+	/// Increase the size of the buffer 2 times or up to new_size_degree, if it is non-zero.
 	void resize(size_t new_size_degree = 0)
 	{
 		size_t old_size = buf_size();
@@ -157,21 +156,21 @@ private:
 		if (!new_size_degree)
 			new_size_degree = size_degree + 1;
 
-		/// Расширим пространство.
+		/// Expand the space.
 		buf = reinterpret_cast<HashValue_t *>(Allocator::realloc(buf, old_size * sizeof(buf[0]), (1 << new_size_degree) * sizeof(buf[0])));
 		size_degree = new_size_degree;
 
-		/** Теперь некоторые элементы может потребоваться переместить на новое место.
-		  * Элемент может остаться на месте, или переместиться в новое место "справа",
-		  *  или переместиться левее по цепочке разрешения коллизий, из-за того, что элементы левее него были перемещены в новое место "справа".
-		  * Также имеется особый случай:
-		  *    если элемент должен был быть в конце старого буфера,                    [        x]
-		  *    но находится в начале из-за цепочки разрешения коллизий,                [o       x]
-		  *    то после ресайза, он сначала снова окажется не на своём месте,          [        xo        ]
-		  *    и для того, чтобы перенести его куда надо,
-		  *    надо будет после переноса всех элементов из старой половинки            [         o   x    ]
-		  *    обработать ещё хвостик из цепочки разрешения коллизий сразу после неё   [        o    x    ]
-		  * Именно для этого написано || buf[i] ниже.
+		/** Now some items may need to be moved to a new location.
+		  * The element can stay in place, or move to a new location "on the right",
+		  * or move to the left of the collision resolution chain, because the elements to the left of it have been moved to the new "right" location.
+		  * There is also a special case
+		  *    if the element was to be at the end of the old buffer,                        [        x]
+		  *    but is at the beginning because of the collision resolution chain,            [o       x]
+		  *    then after resizing, it will first be out of place again,                     [        xo        ]
+		  *    and in order to transfer it to where you need it,
+		  *    will have to be after transferring all elements from the old half             [         o   x    ]
+		  *    process another tail from the collision resolution chain immediately after it [        o    x    ]
+		  * This is why || buf[i] below.
 		  */
 		for (size_t i = 0; i < old_size || buf[i]; ++i)
 		{
@@ -181,7 +180,7 @@ private:
 
 			size_t place_value = place(x);
 
-			/// Элемент на своём месте.
+			/// The element is in its place.
 			if (place_value == i)
 				continue;
 
@@ -195,7 +194,7 @@ private:
 #endif
 			}
 
-			/// Элемент остался на своём месте.
+			/// The element remained in its place.
 			if (buf[place_value] == x)
 				continue;
 
@@ -204,7 +203,7 @@ private:
 		}
 	}
 
-	/// Вставить значение.
+	/// Insert a value.
 	void insertImpl(HashValue_t x)
 	{
 		if (x == 0)
@@ -232,8 +231,8 @@ private:
 		++m_size;
 	}
 
-	/** Вставить в новый буфер значение, которое было в старом буфере.
-	  * Используется при увеличении размера буфера, а также при чтении из файла.
+	/** Insert a value into the new buffer that was in the old buffer.
+	  * Used when increasing the size of the buffer, as well as when reading from a file.
 	  */
 	void reinsertImpl(HashValue_t x)
 	{
@@ -251,8 +250,8 @@ private:
 		buf[place_value] = x;
 	}
 
-	/** Если хэш-таблица достаточно заполнена, то сделать resize.
-	  * Если элементов слишком много - то выкидывать половину, пока их не станет достаточно мало.
+	/** If the hash table is full enough, then do resize.
+	  * If there are too many items, then throw half the pieces until they are small enough.
 	  */
 	void shrinkIfNeed()
 	{
@@ -330,16 +329,16 @@ public:
 
 		size_t res = m_size * (1 << skip_degree);
 
-		/** Псевдослучайный остаток - для того, чтобы не было видно,
-		  * что количество делится на степень двух.
+		/** Pseudo-random remainder - in order to be not visible,
+		  * that the number is divided by the power of two.
 		  */
 		res += (intHashCRC32(m_size) & ((1 << skip_degree) - 1));
 
-		/** Коррекция систематической погрешности из-за коллизий при хэшировании в UInt32.
-		  * Формула fixed_res(res)
-		  * - при каком количестве разных элементов fixed_res,
-		  *   при их случайном разбрасывании по 2^32 корзинам,
-		  *   получается в среднем res заполненных корзин.
+		/** Correction of a systematic error due to collisions during hashing in UInt32.
+		  * `fixed_res(res)` formula
+		  * - with how many different elements of fixed_res,
+		  *   when randomly scattered across 2^32 baskets,
+		  *   filled baskets with average of res is obtained.
 		  */
 		size_t p32 = 1ULL << 32;
 		size_t fixed_res = round(p32 * (log(p32) - log(p32 - res)));

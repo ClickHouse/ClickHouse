@@ -43,16 +43,16 @@ struct QueryState
 	/// Streams of blocks, that are processing the query.
 	BlockIO io;
 
-	/// Отменен ли запрос
+	/// Is request cancelled
 	bool is_cancelled = false;
-	/// Пустой или нет
+	/// empty or not
 	bool is_empty = true;
-	/// Данные были отправлены.
+	/// Data was sent.
 	bool sent_all_data = false;
-	/// Запрос требует приёма данных от клиента (INSERT, но не INSERT SELECT).
+	/// Request requires data from the client (INSERT, but not INSERT SELECT).
 	bool need_receive_data_for_insert = false;
 
-	/// Для вывода прогресса - разница после предыдущей отправки прогресса.
+	/// To output progress, the difference after the previous sending of progress.
 	Progress progress;
 
 
@@ -92,17 +92,17 @@ private:
 	Context connection_context;
 	Context query_context;
 
-	/// Потоки для чтения/записи из/в сокет соединения с клиентом.
+	/// Streams for reading/writing from/to client connection socket.
 	std::shared_ptr<ReadBuffer> in;
 	std::shared_ptr<WriteBuffer> out;
 
-	/// Время после последней проверки остановки запроса и отправки прогресса.
+	/// Time after the last check to stop the request and send the progress.
 	Stopwatch after_check_cancelled;
 	Stopwatch after_send_progress;
 
 	String default_database;
 
-	/// На данный момент, поддерживается одновременное выполнение только одного запроса в соединении.
+	/// At the moment, only one ongoing query in the connection is supported at a time.
 	QueryState state;
 
 	CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
@@ -116,14 +116,14 @@ private:
 	bool receiveData();
 	void readData(const Settings & global_settings);
 
-	/// Обработать запрос INSERT
+	/// Process INSERT query
 	void processInsertQuery(const Settings & global_settings);
 
-	/// Обработать запрос, который не требует приёма блоков данных от клиента
+	/// Process a request that does not require the receiving of data blocks from the client
 	void processOrdinaryQuery();
 
 	void sendHello();
-	void sendData(Block & block);	/// Записать в сеть блок.
+	void sendData(Block & block);	/// Write a block to the network.
 	void sendException(const Exception & e);
 	void sendProgress();
 	void sendEndOfStream();
@@ -131,13 +131,13 @@ private:
 	void sendTotals();
 	void sendExtremes();
 
-	/// Создаёт state.block_in/block_out для чтения/записи блоков, в зависимости от того, включено ли сжатие.
+	/// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
 	void initBlockInput();
 	void initBlockOutput();
 
 	bool isQueryCancelled();
 
-	/// Эта функция вызывается из разных потоков.
+	/// This function is called from different threads.
 	void updateProgress(const Progress & value);
 };
 

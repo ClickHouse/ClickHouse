@@ -10,39 +10,36 @@ namespace DB
 {
 
 
-/** Для получения данных сразу из нескольких реплик (соединений) из одного или нексольких шардов
-  * в рамках одного потока. В качестве вырожденного случая, может также работать с одним соединением.
-  * Предполагается, что все функции кроме sendCancel всегда выполняются в одном потоке.
+/** To retrieve data directly from multiple replicas (connections) from one or several shards
+  * within a single thread. As a degenerate case, it can also work with one connection.
+  * It is assumed that all functions except sendCancel are always executed in one thread.
   *
-  * Интерфейс почти совпадает с Connection.
+  * The interface is almost the same as Connection.
   */
 class MultiplexedConnections final : private boost::noncopyable
 {
 public:
-	/// Принимает готовое соединение.
+	/// Accepts ready connection.
 	MultiplexedConnections(Connection * connection_, const Settings * settings_, ThrottlerPtr throttler_);
 
-	/** Принимает пул, из которого нужно будет достать одно или несколько соединений.
-	  * Если флаг append_extra_info установлен, к каждому полученному блоку прилагается
-	  * дополнительная информация.
-	  * Если флаг get_all_replicas установлен, достаются все соединения.
+	/** Accepts a pool from which it will be necessary to get one or more connections.
+	  * If the append_extra_info flag is set, additional information appended to each received block.
+	  * If the get_all_replicas flag is set, all connections are selected.
 	  */
 	MultiplexedConnections(IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_,
 		bool append_extra_info = false, PoolMode pool_mode_ = PoolMode::GET_MANY);
 
-	/** Принимает пулы, один для каждого шарда, из которих нужно будет достать одно или несколько
-	  * соединений.
-	  * Если флаг append_extra_info установлен, к каждому полученному блоку прилагается
-	  * дополнительная информация.
-	  * Если флаг do_broadcast установлен, достаются все соединения.
+	/** Accepts pools, one for each shard, from which one will need to get one or more connections.
+	  * If the append_extra_info flag is set, additional information appended to each received block.
+	  * If the do_broadcast flag is set, all connections are received.
 	  */
 	MultiplexedConnections(ConnectionPools & pools_, const Settings * settings_, ThrottlerPtr throttler_,
 		bool append_extra_info = false, PoolMode pool_mode_ = PoolMode::GET_MANY);
 
-	/// Отправить на реплики всё содержимое внешних таблиц.
+	/// Send all content of external tables to replicas.
 	void sendExternalTablesData(std::vector<ExternalTablesData> & data);
 
-	/// Отправить запрос на реплики.
+	/// Send request to replicas.
 	void sendQuery(
 		const String & query,
 		const String & query_id = "",
@@ -50,87 +47,86 @@ public:
 		const ClientInfo * client_info = nullptr,
 		bool with_pending_data = false);
 
-	/// Получить пакет от какой-нибудь реплики.
+	/// Get package from any replica.
 	Connection::Packet receivePacket();
 
-	/// Получить информацию про последний полученный пакет.
+	/// Get information about the last received package.
 	BlockExtraInfo getBlockExtraInfo() const;
 
-	/// Разорвать все действующие соединения.
+	/// Break all active connections.
 	void disconnect();
 
-	/// Отправить на реплики просьбу отменить выполнение запроса
+	/// Send a request to the replica to cancel the request
 	void sendCancel();
 
-	/** На каждой реплике читать и пропускать все пакеты до EndOfStream или Exception.
-	  * Возвращает EndOfStream, если не было получено никакого исключения. В противном
-	  * случае возвращает последний полученный пакет типа Exception.
+	/** On each replica, read and skip all packets to EndOfStream or Exception.
+	  * Returns EndOfStream if no exception has been received. Otherwise
+	  * returns the last received packet of type Exception.
 	  */
 	Connection::Packet drain();
 
-	/// Получить адреса реплик в виде строки.
+	/// Get the replica addresses as a string.
 	std::string dumpAddresses() const;
 
-	/// Возвращает количесто реплик.
-	/// Без блокировки, потому что sendCancel() не меняет это количество.
+	/// Returns the number of replicas.
+	/// Without locking, because sendCancel() does not change this number.
 	size_t size() const { return replica_map.size(); }
 
-	/// Проверить, есть ли действительные реплики.
-	/// Без блокировки, потому что sendCancel() не меняет состояние реплик.
+	/// Check if there are any valid replicas.
+	/// Without locking, because sendCancel() does not change the state of the replicas.
 	bool hasActiveConnections() const { return active_connection_total_count > 0; }
 
 private:
-	/// Соединения 1-го шарда, затем соединения 2-го шарда, и т.д.
+	/// Connections of the 1st shard, then the connections of the 2nd shard, etc.
 	using Connections = std::vector<Connection *>;
 
-	/// Состояние соединений одного шарда.
+	/// The state of the connections of one shard.
 	struct ShardState
 	{
-		/// Количество выделенных соединений, т.е. реплик, для этого шарда.
+		/// The number of connections allocated, i.e. replicas for this shard.
 		size_t allocated_connection_count;
-		/// Текущее количество действительных соединений к репликам этого шарда.
+		/// The current number of valid connections to the replicas of this shard.
 		size_t active_connection_count;
 	};
 
-	/// Описание одной реплики.
+	/// Description of a single replica.
 	struct ReplicaState
 	{
-		/// Индекс соединения.
 		size_t connection_index;
-		/// Владелец этой реплики.
+		/// The owner of this replica.
 		ShardState * shard_state;
 	};
 
-	/// Реплики хэшированные по id сокета.
+	/// Replicas hashed by id of the socket.
 	using ReplicaMap = std::unordered_map<int, ReplicaState>;
 
-	/// Состояние каждого шарда.
+	/// The state of each shard.
 	using ShardStates = std::vector<ShardState>;
 
 private:
 	void initFromShard(IConnectionPool * pool);
 
-	/// Зарегистрировать шарды.
+	/// Register shards.
 	void registerShards();
 
-	/// Зарегистрировать реплики одного шарда.
+	/// Register replicas of one shard.
 	void registerReplicas(size_t index_begin, size_t index_end, ShardState & shard_state);
 
-	/// Внутренняя версия функции receivePacket без блокировки.
+	/// Interval version of `receivePacket` function without blocking.
 	Connection::Packet receivePacketUnlocked();
 
-	/// Внутренняя версия функции dumpAddresses без блокировки.
+	/// Interval version of `dumpAddresses` function without blocking.
 	std::string dumpAddressesUnlocked() const;
 
-	/// Получить реплику, на которой можно прочитать данные.
+	/// Get a replica where you can read the data.
 	ReplicaMap::iterator getReplicaForReading();
 
-	/** Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
-	  * Возвращает одну такую реплику, если она найдётся.
+	/** Check if there are any data that can be read on any of the replicas.
+	  * Returns one such replica if it exists.
 	  */
 	ReplicaMap::iterator waitForReadEvent();
 
-	/// Пометить реплику как недействительную.
+	/// Mark the replica as invalid.
 	void invalidateReplica(ReplicaMap::iterator it);
 
 private:
@@ -140,29 +136,29 @@ private:
 	ReplicaMap replica_map;
 	ShardStates shard_states;
 
-	/// Если не nullptr, то используется, чтобы ограничить сетевой трафик.
+	/// If not nullptr, then it is used to restrict network traffic.
 	ThrottlerPtr throttler;
 
 	std::vector<ConnectionPool::Entry> pool_entries;
 
-	/// Соединение, c которого был получен последний блок.
+	/// Connection that received last block.
 	Connection * current_connection;
-	/// Информация про последний полученный блок, если поддерживается.
+	/// Information about the last received block, if supported.
 	std::unique_ptr<BlockExtraInfo> block_extra_info;
 
-	/// Текущее количество действительных соединений к репликам.
+	/// The current number of valid connections to replicas.
 	size_t active_connection_total_count = 0;
-	/// Запрос выполняется параллельно на нескольких репликах.
+	/// The query is run in parallel on multiple replicas.
 	bool supports_parallel_execution;
-	/// Отправили запрос
+	/// Send the request
 	bool sent_query = false;
-	/// Отменили запрос
+	/// Cancel request
 	bool cancelled = false;
 
 	PoolMode pool_mode = PoolMode::GET_MANY;
 
-	/// Мьютекс для того, чтобы функция sendCancel могла выполняться безопасно
-	/// в отдельном потоке.
+	/// A mutex for the sendCancel function to execute safely
+	/// in separate thread.
 	mutable std::mutex cancel_mutex;
 };
 
