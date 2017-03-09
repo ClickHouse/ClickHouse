@@ -106,4 +106,18 @@ public:
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
+/// If value is not Nullable or NULL, wraps it to Nullable.
+class FunctionToNullable : public IFunction
+{
+public:
+	static constexpr auto name = "toNullable";
+	static FunctionPtr create(const Context & context);
+
+	std::string getName() const override;
+	size_t getNumberOfArguments() const override { return 1; }
+	bool hasSpecialSupportForNulls() const override;
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+};
+
 }
