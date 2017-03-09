@@ -1,15 +1,14 @@
 ﻿#pragma once
 
-#include <DB/Functions/IFunction.h>
-#include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/DataTypes/DataTypeString.h>
 #include <DB/Functions/FunctionsArithmetic.h>
+#include <DB/Functions/IFunction.h>
 
 
 namespace DB
 {
-
 /** Функции поиска и замены в строках:
   *
   * position(haystack, needle)	- обычный поиск подстроки в строке, возвращает позицию (в байтах) найденной подстроки, начиная с 1, или 0, если подстрока не найдена.
@@ -43,24 +42,30 @@ class FunctionsStringSearch : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionsStringSearch>(); }
+	static FunctionPtr create(const Context & context)
+	{
+		return std::make_shared<FunctionsStringSearch>();
+	}
 
 	String getName() const override
 	{
 		return name;
 	}
 
-	size_t getNumberOfArguments() const override { return 2; }
+	size_t getNumberOfArguments() const override
+	{
+		return 2;
+	}
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
-			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception(
+				"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		if (!typeid_cast<const DataTypeString *>(&*arguments[1]))
-			throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception(
+				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ResultType>::Type>();
 	}
@@ -93,25 +98,20 @@ public:
 		const ColumnString * col_needle_vector = typeid_cast<const ColumnString *>(&*column_needle);
 
 		if (col_haystack_vector && col_needle_vector)
-			Impl::vector_vector(
-				col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
-				col_needle_vector->getChars(), col_needle_vector->getOffsets(),
+			Impl::vector_vector(col_haystack_vector->getChars(),
+				col_haystack_vector->getOffsets(),
+				col_needle_vector->getChars(),
+				col_needle_vector->getOffsets(),
 				vec_res);
 		else if (col_haystack_vector && col_needle_const)
-			Impl::vector_constant(
-				col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
-				col_needle_const->getData(),
-				vec_res);
+			Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), col_needle_const->getData(), vec_res);
 		else if (col_haystack_const && col_needle_vector)
-			Impl::constant_vector(
-				col_haystack_const->getData(),
-				col_needle_vector->getChars(), col_needle_vector->getOffsets(),
-				vec_res);
+			Impl::constant_vector(col_haystack_const->getData(), col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
 		else
-			throw Exception("Illegal columns "
-				+ block.safeGetByPosition(arguments[0]).column->getName()
-				+ " and " + block.safeGetByPosition(arguments[1]).column->getName()
-				+ " of arguments of function " + getName(),
+			throw Exception("Illegal columns " + block.safeGetByPosition(arguments[0]).column->getName() + " and "
+					+ block.safeGetByPosition(arguments[1]).column->getName()
+					+ " of arguments of function "
+					+ getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -122,24 +122,30 @@ class FunctionsStringSearchToString : public IFunction
 {
 public:
 	static constexpr auto name = Name::name;
-	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionsStringSearchToString>(); }
+	static FunctionPtr create(const Context & context)
+	{
+		return std::make_shared<FunctionsStringSearchToString>();
+	}
 
 	String getName() const override
 	{
 		return name;
 	}
 
-	size_t getNumberOfArguments() const override { return 2; }
+	size_t getNumberOfArguments() const override
+	{
+		return 2;
+	}
 
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
-			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception(
+				"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		if (!typeid_cast<const DataTypeString *>(&*arguments[1]))
-			throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
-			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception(
+				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		return std::make_shared<DataTypeString>();
 	}
@@ -165,8 +171,7 @@ public:
 		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
 		{
 			const std::string & data = col->getData();
-			ColumnString::Chars_t vdata(
-				reinterpret_cast<const ColumnString::Chars_t::value_type *>(data.c_str()),
+			ColumnString::Chars_t vdata(reinterpret_cast<const ColumnString::Chars_t::value_type *>(data.c_str()),
 				reinterpret_cast<const ColumnString::Chars_t::value_type *>(data.c_str() + data.size() + 1));
 			ColumnString::Offsets_t offsets(1, vdata.size());
 			ColumnString::Chars_t res_vdata;
@@ -181,11 +186,9 @@ public:
 			block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col->size(), res);
 		}
 		else
-			throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
-			+ " of argument of function " + getName(),
-							ErrorCodes::ILLEGAL_COLUMN);
+			throw Exception(
+				"Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
-
-
 }
