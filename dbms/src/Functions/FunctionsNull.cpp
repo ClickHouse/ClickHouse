@@ -210,13 +210,27 @@ DataTypePtr FunctionIfNull::getReturnTypeImpl(const DataTypes & arguments) const
 	if (arguments[0]->isNull())
 		return arguments[1];
 
+	if (!arguments[0]->isNullable())
+		return arguments[0];
+
 	return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), getNestedDataType(arguments[0]), arguments[1]});
 }
 
 void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
+	/// Always null.
 	if (block.getByPosition(arguments[0]).column->isNull())
+	{
 		block.getByPosition(result).column = block.getByPosition(arguments[1]).column;
+		return;
+	}
+
+	/// Could not contain nulls, so nullIf makes no sense.
+	if (!block.getByPosition(arguments[0]).column->isNullable())
+	{
+		block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
+		return;
+	}
 
 	/// ifNull(col1, col2) == if(isNotNull(col1), assumeNotNull(col1), col2)
 
