@@ -140,6 +140,30 @@ struct NumComparisonImpl
 };
 
 
+inline int memcmp16(const void * a, const void * b)
+{
+	/// Assuming little endian.
+
+	UInt64 a_hi = __builtin_bswap64(unalignedLoad<UInt64>(a));
+	UInt64 b_hi = __builtin_bswap64(unalignedLoad<UInt64>(b));
+
+	if (a_hi < b_hi)
+		return -1;
+	if (a_hi > b_hi)
+		return 1;
+
+	UInt64 a_lo = __builtin_bswap64(unalignedLoad<UInt64>(reinterpret_cast<const char *>(a) + 8));
+	UInt64 b_lo = __builtin_bswap64(unalignedLoad<UInt64>(reinterpret_cast<const char *>(b) + 8));
+
+	if (a_lo < b_lo)
+		return -1;
+	if (a_lo > b_lo)
+		return 1;
+
+	return 0;
+}
+
+
 template <typename Op>
 struct StringComparisonImpl
 {
@@ -216,7 +240,6 @@ struct StringComparisonImpl
 		StringComparisonImpl<typename Op::SymmetricOp>::string_vector_fixed_string_vector(b_data, b_offsets, a_data, a_n, c);
 	}
 
-#if 0
 	static void NO_INLINE fixed_string_vector_fixed_string_vector_16(
 		const ColumnString::Chars_t & a_data,
 		const ColumnString::Chars_t & b_data,
@@ -225,10 +248,7 @@ struct StringComparisonImpl
 		size_t size = a_data.size();
 
 		for (size_t i = 0, j = 0; i < size; i += 16, ++j)
-		{
-			int res = memcmp(&a_data[i], &b_data[i], 16);
-			c[j] = Op::apply(res, 0);
-		}
+			c[j] = Op::apply(memcmp16(&a_data[i], &b_data[i]), 0);
 	}
 
 	static void NO_INLINE fixed_string_vector_constant_16(
@@ -239,12 +259,8 @@ struct StringComparisonImpl
 		size_t size = a_data.size();
 
 		for (size_t i = 0, j = 0; i < size; i += 16, ++j)
-		{
-			int res = memcmp(&a_data[i], b.data(), 16);
-			c[j] = Op::apply(res, 0);
-		}
+			c[j] = Op::apply(memcmp16(&a_data[i], b.data()), 0);
 	}
-#endif
 
 	static void NO_INLINE fixed_string_vector_fixed_string_vector(
 		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
@@ -254,13 +270,11 @@ struct StringComparisonImpl
 		/** Specialization if both sizes are 16.
 		  * To more efficient comparison of IPv6 addresses stored in FixedString(16).
 		  */
-#if 0
 		if (a_n == 16 && b_n == 16)
 		{
 			fixed_string_vector_fixed_string_vector_16(a_data, b_data, c);
 		}
 		else
-#endif
 		{
 			/// Generic implementation, less efficient.
 			size_t size = a_data.size();
@@ -279,13 +293,11 @@ struct StringComparisonImpl
 		PaddedPODArray<UInt8> & c)
 	{
 		ColumnString::Offset_t b_n = b.size();
-#if 0
 		if (a_n == 16 && b_n == 16)
 		{
 			fixed_string_vector_constant_16(a_data, b, c);
 		}
 		else
-#endif
 		{
 			size_t size = a_data.size();
 			const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
