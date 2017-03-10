@@ -561,6 +561,11 @@ LIMIT 20
 
 <p><a href="https://clickhouse.yandex/reference_en.html#Distributed">Distributed-table</a> is actually a kind of "view" to local tables of ClickHouse cluster. SELECT query from a distributed table will be executed using resources of all cluster's shards. You may specify configs for multiple clusters and create multiple Distributed-tables providing views to different clusters.</p>
 
+
+<p>Enable network access to clickhouse:
+<pre>&lt;listen_host&gt;::&lt;/listen_host&gt;</pre>
+</p>
+
 <div class="spoiler"><a class="spoiler_title">Config for cluster of three shards. Each shard stores data on a single replica</a>
 <div class="spoiler_body">
 <pre>
