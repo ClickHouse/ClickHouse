@@ -5,13 +5,11 @@
 
 namespace DB
 {
-
 class ColumnConstAggregateFunction : public IColumnConst
 {
 public:
-
 	ColumnConstAggregateFunction(size_t size, const Field & value_, const DataTypePtr & data_type_)
-	: data_type(data_type_), value(value_), s(size)
+		: data_type(data_type_), value(value_), s(size)
 	{
 	}
 
@@ -173,7 +171,6 @@ public:
 	}
 
 private:
-
 	DataTypePtr data_type;
 	Field value;
 	size_t s;
@@ -189,6 +186,4 @@ private:
 		return rhs_const && value == rhs_const->value && data_type->equals(*rhs_const->data_type);
 	}
 };
-
-
 }
