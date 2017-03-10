@@ -24,6 +24,7 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNullable.h>
+#include <DB/Columns/ColumnTuple.h>
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Functions/IFunction.h>
