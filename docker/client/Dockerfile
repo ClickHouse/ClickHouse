@@ -1,9 +1,9 @@
-FROM ubuntu:14.04
+FROM ubuntu:16.04
 
 RUN apt-get update && \
     apt-get install -y apt-transport-https && \
     mkdir -p /etc/apt/sources.list.d && \
-    echo "deb https://repo.yandex.ru/clickhouse/trusty/ dists/stable/main/binary-amd64/" | \
+    echo "deb https://repo.yandex.ru/clickhouse/xenial/ dists/stable/main/binary-amd64/" | \
          tee /etc/apt/sources.list.d/clickhouse.list && \
     apt-get update && \
     apt-get install --allow-unauthenticated -y clickhouse-client && \
