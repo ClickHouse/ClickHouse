@@ -149,5 +149,10 @@ bool StorageMaterializedView::optimize(const String & partition, bool final, con
 	return getInnerTable()->optimize(partition, final, settings);
 }
 
+StoragePtr StorageMaterializedView::getInnerTable() const
+{
+	return context.getTable(database_name, getInnerTableName());
+}
+
 
 }
