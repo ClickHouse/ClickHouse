@@ -12,7 +12,6 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Common/Volnitsky.h>
 #include <DB/Functions/IFunction.h>
-#include <DB/Functions/FunctionsStringSearch.h>
 #include <DB/IO/ReadBufferFromMemory.h>
 
 /** Функции для извлечения параметров визитов.
@@ -414,21 +413,5 @@ struct ExtractParamToStringImpl
 };
 
 
-struct NameVisitParamHas			{ static constexpr auto name = "visitParamHas"; };
-struct NameVisitParamExtractUInt	{ static constexpr auto name = "visitParamExtractUInt"; };
-struct NameVisitParamExtractInt		{ static constexpr auto name = "visitParamExtractInt"; };
-struct NameVisitParamExtractFloat	{ static constexpr auto name = "visitParamExtractFloat"; };
-struct NameVisitParamExtractBool	{ static constexpr auto name = "visitParamExtractBool"; };
-struct NameVisitParamExtractRaw		{ static constexpr auto name = "visitParamExtractRaw"; };
-struct NameVisitParamExtractString	{ static constexpr auto name = "visitParamExtractString"; };
-
-
-using FunctionVisitParamHas = FunctionsStringSearch<ExtractParamImpl<HasParam>, NameVisitParamHas>;
-using FunctionVisitParamExtractUInt = FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<UInt64> >, NameVisitParamExtractUInt>;
-using FunctionVisitParamExtractInt = FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<Int64> >, NameVisitParamExtractInt>;
-using FunctionVisitParamExtractFloat = FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<Float64> >, NameVisitParamExtractFloat>;
-using FunctionVisitParamExtractBool = FunctionsStringSearch<ExtractParamImpl<ExtractBool>, NameVisitParamExtractBool>;
-using FunctionVisitParamExtractRaw = FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractRaw>, NameVisitParamExtractRaw>;
-using FunctionVisitParamExtractString = FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractString>, NameVisitParamExtractString>;
 
 }

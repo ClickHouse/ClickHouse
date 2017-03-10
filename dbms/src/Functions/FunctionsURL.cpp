@@ -1,6 +1,7 @@
 #include <DB/Common/hex.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsURL.h>
+#include <DB/Functions/FunctionsStringSearch.h>
 #include <common/find_first_symbols.h>
 
 namespace DB
@@ -124,6 +125,55 @@ void DecodeURLComponentImpl::vector_fixed(const ColumnString::Chars_t & data, si
 {
 	throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
 }
+
+struct NameProtocol 					{ static constexpr auto name = "protocol"; };
+struct NameDomain 						{ static constexpr auto name = "domain"; };
+struct NameDomainWithoutWWW 			{ static constexpr auto name = "domainWithoutWWW"; };
+struct NameFirstSignificantSubdomain	{ static constexpr auto name = "firstSignificantSubdomain"; };
+struct NameTopLevelDomain 				{ static constexpr auto name = "topLevelDomain"; };
+struct NamePath 						{ static constexpr auto name = "path"; };
+struct NamePathFull						{ static constexpr auto name = "pathFull"; };
+struct NameQueryString					{ static constexpr auto name = "queryString"; };
+struct NameFragment 					{ static constexpr auto name = "fragment"; };
+struct NameQueryStringAndFragment		{ static constexpr auto name = "queryStringAndFragment"; };
+struct NameDecodeURLComponent           { static constexpr auto name = "decodeURLComponent"; };
+
+struct NameCutToFirstSignificantSubdomain { static constexpr auto name = "cutToFirstSignificantSubdomain"; };
+
+struct NameCutWWW 						{ static constexpr auto name = "cutWWW"; };
+struct NameCutQueryString				{ static constexpr auto name = "cutQueryString"; };
+struct NameCutFragment 					{ static constexpr auto name = "cutFragment"; };
+struct NameCutQueryStringAndFragment 	{ static constexpr auto name = "cutQueryStringAndFragment"; };
+
+struct NameExtractURLParameter			{ static constexpr auto name = "extractURLParameter"; };
+struct NameCutURLParameter 				{ static constexpr auto name = "cutURLParameter"; };
+
+using FunctionProtocol = FunctionStringToString<ExtractSubstringImpl<ExtractProtocol>, 				NameProtocol>	 	;
+using FunctionDomain = FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false> >, 		NameDomain>	 		;
+using FunctionDomainWithoutWWW = FunctionStringToString<ExtractSubstringImpl<ExtractDomain<true>  >, 		NameDomainWithoutWWW>;
+using FunctionFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<ExtractFirstSignificantSubdomain>, NameFirstSignificantSubdomain>;
+using FunctionTopLevelDomain = FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain>, 		NameTopLevelDomain>	;
+using FunctionPath = FunctionStringToString<ExtractSubstringImpl<ExtractPath>, 					NamePath>			;
+using FunctionPathFull = FunctionStringToString<ExtractSubstringImpl<ExtractPathFull>,				NamePathFull>		;
+using FunctionQueryString = FunctionStringToString<ExtractSubstringImpl<ExtractQueryString<true> >, 	NameQueryString>	;
+using FunctionFragment = FunctionStringToString<ExtractSubstringImpl<ExtractFragment<true> >, 		NameFragment>		;
+using FunctionQueryStringAndFragment = FunctionStringToString<ExtractSubstringImpl<ExtractQueryStringAndFragment<true> >, NameQueryStringAndFragment>;
+using FunctionDecodeURLComponent = FunctionStringToString<DecodeURLComponentImpl, NameDecodeURLComponent>;
+
+using FunctionCutToFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdomain>, NameCutToFirstSignificantSubdomain>;
+
+using FunctionCutWWW = FunctionStringToString<CutSubstringImpl<ExtractWWW>, 						NameCutWWW>			;
+using FunctionCutQueryString = FunctionStringToString<CutSubstringImpl<ExtractQueryString<false> >, 		NameCutQueryString>	;
+using FunctionCutFragment = FunctionStringToString<CutSubstringImpl<ExtractFragment<false> >, 			NameCutFragment>	;
+using FunctionCutQueryStringAndFragment = FunctionStringToString<CutSubstringImpl<ExtractQueryStringAndFragment<false> >, NameCutQueryStringAndFragment>;
+
+using FunctionExtractURLParameter = FunctionsStringSearchToString<ExtractURLParameterImpl, NameExtractURLParameter>;
+using FunctionCutURLParameter = FunctionsStringSearchToString<CutURLParameterImpl, NameCutURLParameter>;
+using FunctionExtractURLParameters = FunctionTokens<ExtractURLParametersImpl>;
+using FunctionExtractURLParameters = FunctionTokens<ExtractURLParametersImpl>;
+using FunctionURLHierarchy = FunctionTokens<URLHierarchyImpl>;
+using FunctionURLPathHierarchy = FunctionTokens<URLPathHierarchyImpl>;
+using FunctionExtractURLParameterNames = FunctionTokens<ExtractURLParameterNamesImpl>;
 
 
 void registerFunctionsURL(FunctionFactory & factory)
