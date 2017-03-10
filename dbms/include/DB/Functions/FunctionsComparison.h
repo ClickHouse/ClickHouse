@@ -44,18 +44,54 @@ namespace DB
   * TODO Массивы.
   */
 
-template <typename A, typename B> struct EqualsOp 			{ static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); } };
-template <typename A, typename B> struct NotEqualsOp 		{ static UInt8 apply(A a, B b) { return accurate::notEqualsOp(a, b); } };
-template <typename A, typename B> struct LessOp 			{ static UInt8 apply(A a, B b) { return accurate::lessOp(a, b); } };
-template <typename A, typename B> struct GreaterOp 			{ static UInt8 apply(A a, B b) { return accurate::greaterOp(a, b); } };
-template <typename A, typename B> struct LessOrEqualsOp 	{ static UInt8 apply(A a, B b) { return accurate::lessOrEqualsOp(a, b); } };
-template <typename A, typename B> struct GreaterOrEqualsOp 	{ static UInt8 apply(A a, B b) { return accurate::greaterOrEqualsOp(a, b); } };
+template <typename A, typename B> struct EqualsOp
+{
+	/// An operation that gives the same result, if arguments are passed in reverse order.
+	using SymmetricOp = EqualsOp<B, A>;
+
+	static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); }
+};
+
+template <typename A, typename B> struct NotEqualsOp
+{
+	using SymmetricOp = NotEqualsOp<B, A>;
+	static UInt8 apply(A a, B b) { return accurate::notEqualsOp(a, b); }
+};
+
+template <typename A, typename B> struct GreaterOp;
+
+template <typename A, typename B> struct LessOp
+{
+	using SymmetricOp = GreaterOp<B, A>;
+	static UInt8 apply(A a, B b) { return accurate::lessOp(a, b); }
+};
+
+template <typename A, typename B> struct GreaterOp
+{
+	using SymmetricOp = LessOp<B, A>;
+	static UInt8 apply(A a, B b) { return accurate::greaterOp(a, b); }
+};
+
+template <typename A, typename B> struct GreaterOrEqualsOp;
+
+template <typename A, typename B> struct LessOrEqualsOp
+{
+	using SymmetricOp = GreaterOrEqualsOp<B, A>;
+	static UInt8 apply(A a, B b) { return accurate::lessOrEqualsOp(a, b); }
+};
+
+template <typename A, typename B> struct GreaterOrEqualsOp
+{
+	using SymmetricOp = LessOrEqualsOp<B, A>;
+	static UInt8 apply(A a, B b) { return accurate::greaterOrEqualsOp(a, b); }
+};
 
 
 template<typename A, typename B, typename Op>
 struct NumComparisonImpl
 {
-	static void vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<UInt8> & c)
+	/// If you don't specify NO_INLINE, the compiler will inline this function, but we don't need this as this function contains tight loop inside.
+	static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<UInt8> & c)
 	{
 		/** GCC 4.8.2 векторизует цикл только если его записать в такой форме.
 		  * В данном случае, если сделать цикл по индексу массива (код будет выглядеть проще),
@@ -77,7 +113,7 @@ struct NumComparisonImpl
 		}
 	}
 
-	static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<UInt8> & c)
+	static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a.size();
 		const A * a_pos = &a[0];
@@ -94,17 +130,7 @@ struct NumComparisonImpl
 
 	static void constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<UInt8> & c)
 	{
-		size_t size = b.size();
-		const B * b_pos = &b[0];
-		UInt8 * c_pos = &c[0];
-		const B * b_end = b_pos + size;
-
-		while (b_pos < b_end)
-		{
-			*c_pos = Op::apply(a, *b_pos);
-			++b_pos;
-			++c_pos;
-		}
+		NumComparisonImpl<B, A, typename Op::SymmetricOp>::vector_constant(b, a, c);
 	}
 
 	static void constant_constant(A a, B b, UInt8 & c)
@@ -117,7 +143,7 @@ struct NumComparisonImpl
 template <typename Op>
 struct StringComparisonImpl
 {
-	static void string_vector_string_vector(
+	static void NO_INLINE string_vector_string_vector(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
 		PaddedPODArray<UInt8> & c)
@@ -138,7 +164,7 @@ struct StringComparisonImpl
 		}
 	}
 
-	static void string_vector_fixed_string_vector(
+	static void NO_INLINE string_vector_fixed_string_vector(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
 		PaddedPODArray<UInt8> & c)
@@ -160,7 +186,7 @@ struct StringComparisonImpl
 		}
 	}
 
-	static void string_vector_constant(
+	static void NO_INLINE string_vector_constant(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const std::string & b,
 		PaddedPODArray<UInt8> & c)
@@ -187,48 +213,87 @@ struct StringComparisonImpl
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
 		PaddedPODArray<UInt8> & c)
 	{
-		size_t size = b_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], &b_data[0], std::min(b_offsets[0] - 1, a_n));
-				c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_n + 1, b_offsets[0]));
-			}
-			else
-			{
-				int res = memcmp(&a_data[i * a_n], &b_data[b_offsets[i - 1]],
-					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
-				c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_n + 1, b_offsets[i] - b_offsets[i - 1]));
-			}
-		}
+		StringComparisonImpl<typename Op::SymmetricOp>::string_vector_fixed_string_vector(b_data, b_offsets, a_data, a_n, c);
 	}
 
-	static void fixed_string_vector_fixed_string_vector(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
+#if 0
+	static void NO_INLINE fixed_string_vector_fixed_string_vector_16(
+		const ColumnString::Chars_t & a_data,
+		const ColumnString::Chars_t & b_data,
 		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a_data.size();
-		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+
+		for (size_t i = 0, j = 0; i < size; i += 16, ++j)
 		{
-			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
-			c[j] = Op::apply(res, 0) || (res == 0 && Op::apply(a_n, b_n));
+			int res = memcmp(&a_data[i], &b_data[i], 16);
+			c[j] = Op::apply(res, 0);
 		}
 	}
 
-	static void fixed_string_vector_constant(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
+	static void NO_INLINE fixed_string_vector_constant_16(
+		const ColumnString::Chars_t & a_data,
 		const std::string & b,
 		PaddedPODArray<UInt8> & c)
 	{
 		size_t size = a_data.size();
-		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		ColumnString::Offset_t b_n = b.size();
-		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+
+		for (size_t i = 0, j = 0; i < size; i += 16, ++j)
 		{
-			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
-			c[j] = Op::apply(res, 0) || (res == 0 && Op::apply(a_n, b_n));
+			int res = memcmp(&a_data[i], b.data(), 16);
+			c[j] = Op::apply(res, 0);
+		}
+	}
+#endif
+
+	static void NO_INLINE fixed_string_vector_fixed_string_vector(
+		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
+		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
+		PaddedPODArray<UInt8> & c)
+	{
+		/** Specialization if both sizes are 16.
+		  * To more efficient comparison of IPv6 addresses stored in FixedString(16).
+		  */
+#if 0
+		if (a_n == 16 && b_n == 16)
+		{
+			fixed_string_vector_fixed_string_vector_16(a_data, b_data, c);
+		}
+		else
+#endif
+		{
+			/// Generic implementation, less efficient.
+			size_t size = a_data.size();
+
+			for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+			{
+				int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
+				c[j] = Op::apply(res, 0) || (res == 0 && Op::apply(a_n, b_n));
+			}
+		}
+	}
+
+	static void NO_INLINE fixed_string_vector_constant(
+		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
+		const std::string & b,
+		PaddedPODArray<UInt8> & c)
+	{
+		ColumnString::Offset_t b_n = b.size();
+#if 0
+		if (a_n == 16 && b_n == 16)
+		{
+			fixed_string_vector_constant_16(a_data, b, c);
+		}
+		else
+#endif
+		{
+			size_t size = a_data.size();
+			const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
+			for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+			{
+				int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
+				c[j] = Op::apply(res, 0) || (res == 0 && Op::apply(a_n, b_n));
+			}
 		}
 	}
 
@@ -237,21 +302,7 @@ struct StringComparisonImpl
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
 		PaddedPODArray<UInt8> & c)
 	{
-		size_t size = b_offsets.size();
-		ColumnString::Offset_t a_n = a.size();
-		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				c[i] = Op::apply(memcmp(a_data, &b_data[0], std::min(b_offsets[0], a_n + 1)), 0);
-			}
-			else
-			{
-				c[i] = Op::apply(memcmp(a_data, &b_data[b_offsets[i - 1]],
-					std::min(b_offsets[i] - b_offsets[i - 1], a_n + 1)), 0);
-			}
-		}
+		StringComparisonImpl<typename Op::SymmetricOp>::string_vector_constant(b_data, b_offsets, a, c);
 	}
 
 	static void constant_fixed_string_vector(
@@ -259,14 +310,7 @@ struct StringComparisonImpl
 		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
 		PaddedPODArray<UInt8> & c)
 	{
-		size_t size = b_data.size();
-		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		ColumnString::Offset_t a_n = a.size();
-		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
-		{
-			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
-			c[j] = Op::apply(res, 0) || (res == 0 && Op::apply(b_n, a_n));
-		}
+		StringComparisonImpl<typename Op::SymmetricOp>::fixed_string_vector_constant(b_data, b_n, a, c);
 	}
 
 	static void constant_constant(
@@ -279,11 +323,11 @@ struct StringComparisonImpl
 };
 
 
-/// Сравнения на равенство/неравенство реализованы несколько более эффективно.
+/// Comparisons for equality/inequality are implemented slightly more efficient.
 template <bool positive>
 struct StringEqualsImpl
 {
-	static void string_vector_string_vector(
+	static void NO_INLINE string_vector_string_vector(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
 		PaddedPODArray<UInt8> & c)
@@ -296,7 +340,7 @@ struct StringEqualsImpl
 					&& !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]], a_offsets[i] - a_offsets[i - 1] - 1)));
 	}
 
-	static void string_vector_fixed_string_vector(
+	static void NO_INLINE string_vector_fixed_string_vector(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
 		PaddedPODArray<UInt8> & c)
@@ -309,7 +353,7 @@ struct StringEqualsImpl
 					&& !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_n * i], b_n)));
 	}
 
-	static void string_vector_constant(
+	static void NO_INLINE string_vector_constant(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const std::string & b,
 		PaddedPODArray<UInt8> & c)
@@ -324,26 +368,96 @@ struct StringEqualsImpl
 					&& !memcmp(&a_data[a_offsets[i - 1]], b_data, b_n)));
 	}
 
-	static void fixed_string_vector_fixed_string_vector(
+#if 0
+	static void NO_INLINE fixed_string_vector_fixed_string_vector_16(
+		const ColumnString::Chars_t & a_data,
+		const ColumnString::Chars_t & b_data,
+		PaddedPODArray<UInt8> & c)
+	{
+		size_t size = c.size();
+
+		const __m128i * a_pos = reinterpret_cast<const __m128i *>(a_data.data());
+		const __m128i * b_pos = reinterpret_cast<const __m128i *>(b_data.data());
+		UInt8 * c_pos = c.data();
+		UInt8 * c_end = c_pos + size;
+
+		while (c_pos < c_end)
+		{
+			*c_pos = positive == (0xFFFF == _mm_movemask_epi8(_mm_cmpeq_epi8(
+				_mm_loadu_si128(a_pos),
+				_mm_loadu_si128(b_pos))));
+
+			++a_pos;
+			++b_pos;
+			++c_pos;
+		}
+	}
+
+	static void NO_INLINE fixed_string_vector_constant_16(
+		const ColumnString::Chars_t & a_data,
+		const std::string & b,
+		PaddedPODArray<UInt8> & c)
+	{
+		size_t size = c.size();
+
+		const __m128i * a_pos = reinterpret_cast<const __m128i *>(a_data.data());
+		const __m128i b_value = _mm_loadu_si128(reinterpret_cast<const __m128i *>(b.data()));
+		UInt8 * c_pos = c.data();
+		UInt8 * c_end = c_pos + size;
+
+		while (c_pos < c_end)
+		{
+			*c_pos = positive == (0xFFFF == _mm_movemask_epi8(_mm_cmpeq_epi8(
+				_mm_loadu_si128(a_pos),
+				b_value)));
+
+			++a_pos;
+			++c_pos;
+		}
+	}
+#endif
+
+	static void NO_INLINE fixed_string_vector_fixed_string_vector(
 		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
 		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
 		PaddedPODArray<UInt8> & c)
 	{
-		size_t size = a_data.size();
-		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-			c[j] = positive == (a_n == b_n && !memcmp(&a_data[i], &b_data[i], a_n));
+		/** Specialization if both sizes are 16.
+		  * To more efficient comparison of IPv6 addresses stored in FixedString(16).
+		  */
+#if 0
+		if (a_n == 16 && b_n == 16)
+		{
+			fixed_string_vector_fixed_string_vector_16(a_data, b_data, c);
+		}
+		else
+#endif
+		{
+			size_t size = a_data.size();
+			for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+				c[j] = positive == (a_n == b_n && !memcmp(&a_data[i], &b_data[i], a_n));
+		}
 	}
 
-	static void fixed_string_vector_constant(
+	static void NO_INLINE fixed_string_vector_constant(
 		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
 		const std::string & b,
 		PaddedPODArray<UInt8> & c)
 	{
-		size_t size = a_data.size();
-		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		ColumnString::Offset_t b_n = b.size();
-		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-			c[j] = positive == (a_n == b_n && !memcmp(&a_data[i], b_data, a_n));
+#if 0
+		if (a_n == 16 && b_n == 16)
+		{
+			fixed_string_vector_constant_16(a_data, b, c);
+		}
+		else
+#endif
+		{
+			size_t size = a_data.size();
+			const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
+			for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+				c[j] = positive == (a_n == b_n && !memcmp(&a_data[i], b_data, a_n));
+		}
 	}
 
 	static void constant_constant(
