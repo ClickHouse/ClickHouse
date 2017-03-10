@@ -14,12 +14,7 @@ public:
 	Block read() override { return Block(); }
 	String getName() const override { return "Null"; }
 
-	String getID() const override
-	{
-		std::stringstream res;
-		res << this;
-		return res.str();
-	}
+	String getID() const override;
 };
 
 }
