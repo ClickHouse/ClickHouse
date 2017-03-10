@@ -2,6 +2,10 @@
 
 #include <DB/Common/typeid_cast.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ExpressionElementParsers.h>
+#include <DB/Parsers/CommonParsers.h>
+#include <DB/Parsers/ASTUseQuery.h>
+
 
 namespace DB
 {
