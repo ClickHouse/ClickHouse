@@ -7,6 +7,7 @@
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnConst.h>
 #include <DB/Common/memcpySmall.h>
 #include <DB/Functions/NumberTraits.h>
 
