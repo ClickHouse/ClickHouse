@@ -9,6 +9,7 @@
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/Regexps.h>
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
