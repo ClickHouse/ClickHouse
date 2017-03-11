@@ -8,6 +8,8 @@
 #include <DB/Common/HashTable/HashSet.h>
 #include <DB/Common/UInt128.h>
 
+#include <ext/bit_cast.hpp>
+
 
 namespace DB
 {
@@ -46,7 +48,7 @@ struct SetMethodOneNumber
 			size_t i,						/// Из какой строки блока достать ключ.
 			const Sizes & key_sizes) const	/// Если ключи фиксированной длины - их длины. Не используется в методах по ключам переменной длины.
 		{
-			return unionCastToUInt64(vec[i]);
+			return ext::bit_cast<UInt64>(vec[i]);
 		}
 	};
 

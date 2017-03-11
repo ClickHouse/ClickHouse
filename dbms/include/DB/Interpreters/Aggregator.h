@@ -4,6 +4,8 @@
 #include <memory>
 #include <functional>
 
+#include <ext/bit_cast.hpp>
+
 #include <Poco/TemporaryFile.h>
 
 #include <common/logger_useful.h>
@@ -127,7 +129,7 @@ struct AggregationMethodOneNumber
 			StringRefs & keys,			/// Сюда могут быть записаны ссылки на данные ключей в столбцах. Они могут быть использованы в дальнейшем.
 			Arena & pool) const
 		{
-			return unionCastToUInt64(vec[i]);
+			return ext::bit_cast<UInt64>(vec[i]);
 		}
 	};
 
