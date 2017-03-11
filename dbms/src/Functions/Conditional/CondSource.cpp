@@ -4,6 +4,8 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnNullable.h>
+#include <DB/IO/WriteHelpers.h>
+
 
 namespace DB
 {
