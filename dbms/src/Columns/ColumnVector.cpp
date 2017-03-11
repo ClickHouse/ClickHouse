@@ -25,37 +25,6 @@ namespace ErrorCodes
 }
 
 
-/** To implement `get64` function.
-  */
-template <typename T>
-inline UInt64 unionCastToUInt64(T x) { return x; }
-
-template <> inline UInt64 unionCastToUInt64(Float64 x)
-{
-	union
-	{
-		Float64 src;
-		UInt64 res;
-	};
-
-	src = x;
-	return res;
-}
-
-template <> inline UInt64 unionCastToUInt64(Float32 x)
-{
-	union
-	{
-		Float32 src;
-		UInt64 res;
-	};
-
-	res = 0;
-	src = x;
-	return res;
-}
-
-
 /// To be sure, that this function is zero-cost for non-floating point types.
 template <typename T>
 inline bool isNaN(T x)
