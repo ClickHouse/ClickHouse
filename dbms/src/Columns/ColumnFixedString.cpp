@@ -211,18 +211,12 @@ ColumnPtr ColumnFixedString::replicate(const Offsets_t & offsets) const
 		return res;
 
 	Chars_t & res_chars = res->chars;
-	res_chars.reserve(n * offsets.back());
+	res_chars.resize(n * offsets.back());
 
-	Offset_t prev_offset = 0;
+	Offset_t curr_offset = 0;
 	for (size_t i = 0; i < col_size; ++i)
-	{
-		size_t size_to_replicate = offsets[i] - prev_offset;
-		prev_offset = offsets[i];
-
-		for (size_t j = 0; j < size_to_replicate; ++j)
-			for (size_t k = 0; k < n; ++k)
-				res_chars.push_back(chars[i * n + k]);
-	}
+		for (size_t next_offset = offsets[i]; curr_offset < next_offset; ++curr_offset)
+			memcpySmallAllowReadWriteOverflow15(&res->chars[curr_offset * n], &chars[i * n], n);
 
 	return res;
 }
