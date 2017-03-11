@@ -46,6 +46,7 @@ namespace ErrorCodes
 	extern const int CANNOT_PARSE_DATE;
 	extern const int CANNOT_PARSE_DATETIME;
 	extern const int CANNOT_PARSE_TEXT;
+	extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
