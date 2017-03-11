@@ -4,11 +4,14 @@
 #include <DB/Common/Exception.h>
 #include <DB/Common/Arena.h>
 #include <DB/Common/SipHash.h>
+#include <DB/Common/NaNUtils.h>
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/Columns/ColumnVector.h>
+
+#include <ext/bit_cast.hpp>
 
 #if __SSE2__
 	#include <emmintrin.h>
@@ -22,27 +25,6 @@ namespace ErrorCodes
 {
 	extern const int PARAMETER_OUT_OF_BOUND;
 	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-}
-
-
-/// To be sure, that this function is zero-cost for non-floating point types.
-template <typename T>
-inline bool isNaN(T x)
-{
-	return std::is_floating_point<T>::value ? std::isnan(x) : false;
-}
-
-
-template <typename T>
-typename std::enable_if<std::is_floating_point<T>::value, T>::type NaNOrZero()
-{
-	return std::numeric_limits<T>::quiet_NaN();
-}
-
-template <typename T>
-typename std::enable_if<!std::is_floating_point<T>::value, T>::type NaNOrZero()
-{
-	return 0;
 }
 
 
@@ -139,7 +121,7 @@ ColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 template <typename T>
 UInt64 ColumnVector<T>::get64(size_t n) const
 {
-	return unionCastToUInt64(data[n]);
+	return ext::bit_cast<UInt64>(data[n]);
 }
 
 template <typename T>

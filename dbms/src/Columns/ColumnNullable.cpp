@@ -1,4 +1,6 @@
 #include <DB/Common/Arena.h>
+#include <DB/Common/SipHash.h>
+#include <DB/Common/NaNUtils.h>
 #include <DB/Columns/ColumnNullable.h>
 
 
