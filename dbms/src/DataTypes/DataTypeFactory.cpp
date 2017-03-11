@@ -21,6 +21,7 @@
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTEnumElement.h>
 #include <DB/Parsers/ParserEnumElement.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/DataTypes/DataTypeEnum.h>

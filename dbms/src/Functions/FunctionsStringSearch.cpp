@@ -1,4 +1,4 @@
-﻿#include <DB/Functions/FunctionsStringSearch.h>
+#include <DB/Functions/FunctionsStringSearch.h>
 
 #include <memory>
 #include <mutex>
@@ -12,9 +12,10 @@
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/Regexps.h>
 #if USE_RE2_ST
-#include <re2_st/re2.h>
+	#include <re2_st/re2.h>
+#else
+	#define re2_st re2
 #endif
-
 
 namespace DB
 {

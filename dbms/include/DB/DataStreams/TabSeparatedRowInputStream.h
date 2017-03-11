@@ -45,16 +45,7 @@ private:
 	char * pos_of_current_row = nullptr;
 	char * pos_of_prev_row = nullptr;
 
-	void updateDiagnosticInfo()
-	{
-		++row_num;
-
-		bytes_read_at_start_of_buffer_on_prev_row = bytes_read_at_start_of_buffer_on_current_row;
-		bytes_read_at_start_of_buffer_on_current_row = istr.count() - istr.offset();
-
-		pos_of_prev_row = pos_of_current_row;
-		pos_of_current_row = istr.position();
-	}
+	void updateDiagnosticInfo();
 
 	bool parseRowAndPrintDiagnosticInfo(Block & block,
 		WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name);

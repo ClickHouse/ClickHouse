@@ -2,6 +2,8 @@
 #include <DB/Common/OptimizedRegularExpression.h>
 #include <DB/Functions/ObjectPool.h>
 #include <DB/Functions/likePatternToRegexp.h>
+#include <DB/Common/ProfileEvents.h>
+
 
 namespace ProfileEvents
 {
