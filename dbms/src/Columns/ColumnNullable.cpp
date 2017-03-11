@@ -1,14 +1,15 @@
+#include <DB/Common/Arena.h>
 #include <DB/Columns/ColumnNullable.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-
-extern const int LOGICAL_ERROR;
-
+	extern const int LOGICAL_ERROR;
 }
+
 
 ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
 	: nested_column{nested_column_}, null_map{null_map_}

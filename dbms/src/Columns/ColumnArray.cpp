@@ -19,6 +19,8 @@ namespace ErrorCodes
 	extern const int ILLEGAL_COLUMN;
 	extern const int NOT_IMPLEMENTED;
 	extern const int BAD_ARGUMENTS;
+	extern const int PARAMETER_OUT_OF_BOUND;
+	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 
