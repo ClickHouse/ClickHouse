@@ -172,16 +172,6 @@ public:
 		res = typename NearestFieldType<T>::Type(data[n]);
 	}
 
-	const T & getElement(size_t n) const
-	{
-		return data[n];
-	}
-
-	T & getElement(size_t n)
-	{
-		return data[n];
-	}
-
 	UInt64 get64(size_t n) const override;
 
 	void insert(const Field & x) override
@@ -214,6 +204,16 @@ public:
 	const Container_t & getData() const
 	{
 		return data;
+	}
+
+	const T & getElement(size_t n) const
+	{
+		return data[n];
+	}
+
+	T & getElement(size_t n)
+	{
+		return data[n];
 	}
 
 protected:
