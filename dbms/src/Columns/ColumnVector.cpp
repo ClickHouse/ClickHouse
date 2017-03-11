@@ -161,7 +161,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 #if __SSE2__
 	/** A slightly more optimized version.
 		* Based on the assumption that often pieces of consecutive values
-		*  completely pass or do not pass the filter completely.
+		*  completely pass or do not pass the filter.
 		* Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
 		*/
 
