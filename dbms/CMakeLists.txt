@@ -13,8 +13,6 @@ if (NOT NO_WERROR)
 	set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
 
-include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
-
 find_package (Threads)
 
 add_subdirectory (src)
@@ -148,7 +146,6 @@ target_link_libraries(dbms
 	${Poco_MongoDB_LIBRARY}
 	${Poco_Foundation_LIBRARY}
 	${Poco_NetSSL_LIBRARY}
-	${ICONV_LIBRARY}
 	${PLATFORM_LIBS}
 	${CMAKE_DL_LIBS}
 	${LTDL_LIB}
