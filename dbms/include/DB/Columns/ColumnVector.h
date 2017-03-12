@@ -36,15 +36,31 @@ struct FloatCompareHelper
 {
 	static bool less(T a, T b, int nan_direction_hint)
 	{
-		if (unlikely(std::isnan(b)))
-			return (nan_direction_hint > 0) ^ std::isnan(a);
+		bool isnan_a = std::isnan(a);
+		bool isnan_b = std::isnan(b);
+
+		if (isnan_a && isnan_b)
+			return false;
+		if (isnan_a)
+			return nan_direction_hint < 0;
+		if (isnan_b)
+			return nan_direction_hint > 0;
+
 		return a < b;
 	}
 
 	static bool greater(T a, T b, int nan_direction_hint)
 	{
-		if (unlikely(std::isnan(b)))
-			return (nan_direction_hint < 0) ^ std::isnan(a);
+		bool isnan_a = std::isnan(a);
+		bool isnan_b = std::isnan(b);
+
+		if (isnan_a && isnan_b)
+			return false;
+		if (isnan_a)
+			return nan_direction_hint > 0;
+		if (isnan_b)
+			return nan_direction_hint < 0;
+
 		return a > b;
 	}
 

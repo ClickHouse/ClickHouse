@@ -67,7 +67,7 @@ struct SortCursorImpl
 
 			sort_columns.push_back(block.safeGetByPosition(column_number).column.get());
 
-			need_collation[j] = desc[j].collator != nullptr && sort_columns.back()->getName() == "ColumnString";
+			need_collation[j] = desc[j].collator != nullptr && sort_columns.back()->getName() == "ColumnString";	/// TODO Nullable(String)
 			has_collation |= need_collation[j];
 		}
 
