@@ -3,6 +3,9 @@
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/Core/Block.h>
+#include <DB/Core/NamesAndTypes.h>
+
 
 using namespace DB;
 
