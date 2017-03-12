@@ -5,6 +5,7 @@
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsArray.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 #if __SSE2__
