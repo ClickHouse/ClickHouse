@@ -21,6 +21,11 @@ ColumnTuple::ColumnTuple(Block data_) : data(data_)
 		columns[i] = data.getByPosition(i).column;
 }
 
+ColumnPtr ColumnTuple::cloneEmpty() const
+{
+	return std::make_shared<ColumnTuple>(data.cloneEmpty());
+}
+
 Field ColumnTuple::operator[](size_t n) const
 {
 	return Tuple{ext::map<TupleBackend>(columns, [n] (const auto & column) { return (*column)[n]; })};
