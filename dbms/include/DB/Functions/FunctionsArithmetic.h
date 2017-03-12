@@ -941,6 +941,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 	}
 };
 
+}
 
 /// Оптимизации для целочисленного деления на константу.
 
@@ -950,6 +951,8 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 
 #include <libdivide.h>
 
+namespace DB
+{
 
 template <typename A, typename B>
 struct DivideIntegralByConstantImpl

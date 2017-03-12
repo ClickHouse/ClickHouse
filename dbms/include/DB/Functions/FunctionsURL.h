@@ -12,6 +12,7 @@
 #include <common/apple_memrchr.h>
 #endif
 
+
 namespace DB
 {
 
