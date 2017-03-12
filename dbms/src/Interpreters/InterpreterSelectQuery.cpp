@@ -1041,7 +1041,7 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
 		if (order_by_elem.collation)
 			collator = std::make_shared<Collator>(typeid_cast<const ASTLiteral &>(*order_by_elem.collation).value.get<String>());
 
-		order_descr.emplace_back(name, order_by_elem.direction, collator);
+		order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
 	}
 
 	return order_descr;

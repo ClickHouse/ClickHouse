@@ -109,7 +109,7 @@ struct ColumnFixedString::less
 	}
 };
 
-void ColumnFixedString::getPermutation(bool reverse, size_t limit, Permutation & res) const
+void ColumnFixedString::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
 	size_t s = size();
 	res.resize(s);

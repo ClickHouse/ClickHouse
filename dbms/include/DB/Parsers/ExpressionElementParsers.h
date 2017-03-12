@@ -226,8 +226,9 @@ using ParserWithOptionalAlias = ParserWithOptionalAliasImpl<ParserAlias>;
 using ParserCastExpressionWithOptionalAlias = ParserWithOptionalAliasImpl<ParserCastExpressionAlias>;
 
 
-/** Элемент выражения ORDER BY - то же самое, что и элемент выражения, но после него ещё может быть указано ASC[ENDING] | DESC[ENDING]
- * 	и, возможно, COLLATE 'locale'.
+/** Element of ORDER BY expression - same as expression element, but in addition, ASC[ENDING] | DESC[ENDING] could be specified
+  *  and optionally, NULLS LAST|FIRST
+  *  and optionally, COLLATE 'locale'.
   */
 class ParserOrderByElement : public IParserBase
 {

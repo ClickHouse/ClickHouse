@@ -192,12 +192,12 @@ public:
 	  * Returns negative number, 0, or positive number (*this)[n] is less, equal, greater than rhs[m] respectively.
 	  * Is used in sortings.
 	  *
-	  * If one of element's value is NaN, then:
-	  * - if nan_direction_hint == -1, NaN is considered as least number;
-	  * - if nan_direction_hint ==  1, NaN is considered as greatest number.
-	  * In fact, if nan_direction_hint == -1 is used by descending sorting, NaNs will be at the end.
+	  * If one of element's value is NaN or NULLs, then:
+	  * - if nan_direction_hint == -1, NaN and NULLs are considered as least than everything other;
+	  * - if nan_direction_hint ==  1, NaN and NULLs are considered as greatest than everything other.
+	  * For example, if nan_direction_hint == -1 is used by descending sorting, NaNs will be at the end.
 	  *
-	  * nan_direction_hint is ignored for non floating point values.
+	  * For non Nullable and non floating point types, nan_direction_hint is ignored.
 	  */
 	virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 
@@ -205,9 +205,9 @@ public:
 	  *  i.e. perm[i]-th element of source column should be i-th element of sorted column.
 	  * reverse - reverse ordering (acsending).
 	  * limit - if isn't 0, then only first limit elements of the result column could be sorted.
-	  * Regardless of the ordering, NaNs should be at the end.
+	  * nan_direction_hint - see above.
 	  */
-	virtual void getPermutation(bool reverse, size_t limit, Permutation & res) const = 0;
+	virtual void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const = 0;
 
 	/** Copies each element according offsets parameter.
 	  * (i-th element should be copied offsets[i] - offsets[i - 1] times.)

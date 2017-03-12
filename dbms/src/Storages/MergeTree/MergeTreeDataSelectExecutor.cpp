@@ -201,7 +201,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	PKCondition key_condition(query, context, available_real_and_virtual_columns, sort_descr,
 		data.getPrimaryExpression()->getSampleBlock());
 	PKCondition date_condition(query, context, available_real_and_virtual_columns,
-		SortDescription(1, SortColumnDescription(data.date_column_name, 1)),
+		SortDescription(1, SortColumnDescription(data.date_column_name, 1, 1)),
 		Block{{DataTypeDate{}.createColumn(), std::make_shared<DataTypeDate>(), data.date_column_name}});
 
 	if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())

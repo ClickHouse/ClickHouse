@@ -69,7 +69,7 @@ try
 	inputs.push_back(std::make_shared<OneBlockInputStream>(block2));
 
 	SortDescription descr;
-	SortColumnDescription col_descr("CounterID", 1);
+	SortColumnDescription col_descr("CounterID", 1, 1);
 	descr.push_back(col_descr);
 
 	//CollapsingSortedBlockInputStream collapsed(inputs, descr, "Sign", 1048576);

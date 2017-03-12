@@ -1,6 +1,7 @@
 #include <DB/Functions/FunctionsMiscellaneous.h>
 
 #include <cmath>
+#include <ext/range.hpp>
 #include <Poco/Net/DNS.h>
 #include <common/ClickHouseRevision.h>
 #include <DB/Columns/ColumnSet.h>
