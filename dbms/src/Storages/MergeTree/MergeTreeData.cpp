@@ -155,7 +155,7 @@ void MergeTreeData::initPrimaryKey()
 	for (const ASTPtr & ast : primary_expr_ast->children)
 	{
 		String name = ast->getColumnName();
-		sort_descr.emplace_back(name, 1);
+		sort_descr.emplace_back(name, 1, 1);
 	}
 
 	primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(false);

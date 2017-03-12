@@ -208,7 +208,7 @@ void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_directi
 	/// Cannot pass limit because of unknown amount of NULLs.
 	nested_column->getPermutation(reverse, 0, null_direction_hint, res);
 
-	if (null_direction_hint > 0 != reverse)
+	if ((null_direction_hint > 0) != reverse)
 	{
 		/// Shift all NULL values to the end.
 
