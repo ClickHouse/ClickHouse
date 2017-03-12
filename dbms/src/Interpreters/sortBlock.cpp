@@ -1,5 +1,7 @@
 #include <DB/Interpreters/sortBlock.h>
 
+#include <DB/Columns/ColumnString.h>
+
 
 namespace DB
 {

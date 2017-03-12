@@ -1,5 +1,3 @@
-#pragma once
-
 #include <DB/Columns/ColumnTuple.h>
 #include <ext/map.hpp>
 #include <ext/range.hpp>
