@@ -243,7 +243,7 @@ int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_dir
 {
 	const ColumnArray & rhs = static_cast<const ColumnArray &>(rhs_);
 
-	/// Не оптимально
+	/// Suboptimal
 	size_t lhs_size = sizeAt(n);
 	size_t rhs_size = rhs.sizeAt(m);
 	size_t min_size = std::min(lhs_size, rhs_size);
