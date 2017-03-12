@@ -5,7 +5,7 @@
 #include <DB/Dictionaries/OwningBlockInputStream.h>
 
 #include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 
 #include <common/logger_useful.h>
 

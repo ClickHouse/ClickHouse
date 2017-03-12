@@ -4,7 +4,7 @@
 #include <DB/IO/ReadHelpers.h>
 
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 
 #include <DB/Columns/ColumnArray.h>
@@ -48,7 +48,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return std::make_shared<DataTypeArray>(std::make_shared<typename DataTypeFromFieldType<T>::Type>());
+		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
 	}
 
 	void setArgument(const DataTypePtr & argument)

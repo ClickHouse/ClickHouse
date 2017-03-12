@@ -1,4 +1,4 @@
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Common/Stopwatch.h>
 #include <iomanip>

@@ -6,7 +6,7 @@
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Interpreters/Context.h>
 

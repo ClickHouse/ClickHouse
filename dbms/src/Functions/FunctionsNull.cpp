@@ -3,7 +3,7 @@
 #include <DB/Functions/FunctionsComparison.h>
 #include <DB/Functions/FunctionsConditional.h>
 #include <DB/Functions/FunctionFactory.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 #include <DB/DataTypes/DataTypeNull.h>
 #include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Columns/ColumnConst.h>

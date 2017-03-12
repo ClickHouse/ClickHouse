@@ -1,6 +1,6 @@
 #include <DB/Storages/AlterCommands.h>
 #include <DB/Storages/IStorage.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>

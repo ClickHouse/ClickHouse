@@ -7,12 +7,13 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 
 namespace DB

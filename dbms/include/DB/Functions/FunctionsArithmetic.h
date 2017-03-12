@@ -1,8 +1,10 @@
 #pragma once
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/Columns/ColumnVector.h>
+#include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/AccurateComparison.h>
@@ -387,6 +389,12 @@ template <typename T> using Else = T;
 /// Used to indicate undefined operation
 struct InvalidType;
 
+template <typename T>
+struct DataTypeFromFieldType
+{
+	using Type = DataTypeNumber<T>;
+};
+
 template <>
 struct DataTypeFromFieldType<NumberTraits::Error>
 {
@@ -766,8 +774,7 @@ private:
 	{
 		if (typeid_cast<const T0 *>(&*arguments[0]))
 		{
-			result = std::make_shared<typename DataTypeFromFieldType<
-				typename Op<typename T0::FieldType>::ResultType>::Type>();
+			result = std::make_shared<DataTypeNumber<typename Op<typename T0::FieldType>::ResultType>>();
 			return true;
 		}
 		return false;

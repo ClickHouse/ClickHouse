@@ -14,9 +14,11 @@
 #include <DB/Parsers/ASTOrderByElement.h>
 
 #include <DB/DataTypes/DataTypeSet.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/DataTypes/DataTypeExpression.h>
 #include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnExpression.h>

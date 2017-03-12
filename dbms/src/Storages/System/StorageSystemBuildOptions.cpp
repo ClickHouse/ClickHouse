@@ -1,6 +1,6 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Storages/System/StorageSystemBuildOptions.h>

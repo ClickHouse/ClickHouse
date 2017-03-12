@@ -1,6 +1,8 @@
 #pragma once
 
 #include <DB/Functions/FunctionsArithmetic.h>
+#include <DB/IO/WriteHelpers.h>
+
 #include <cmath>
 #include <type_traits>
 #include <array>

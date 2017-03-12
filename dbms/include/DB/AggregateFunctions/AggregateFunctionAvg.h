@@ -3,7 +3,8 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 

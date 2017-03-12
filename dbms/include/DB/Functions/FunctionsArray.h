@@ -3,7 +3,7 @@
 #include <DB/Core/FieldVisitors.h>
 
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -1027,7 +1027,7 @@ public:
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
 
-		return std::make_shared<typename DataTypeFromFieldType<typename IndexConv::ResultType>::Type>();
+		return std::make_shared<DataTypeNumber<typename IndexConv::ResultType>>();
 	}
 
 	/// Perform function on the given block.

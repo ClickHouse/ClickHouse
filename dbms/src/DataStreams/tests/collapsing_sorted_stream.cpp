@@ -12,7 +12,7 @@
 #include <DB/DataStreams/copyData.h>
 #include <DB/Interpreters/Context.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 
 
 int main(int argc, char ** argv)

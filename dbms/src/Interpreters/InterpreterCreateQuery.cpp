@@ -32,7 +32,7 @@
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 

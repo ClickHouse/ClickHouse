@@ -1,6 +1,6 @@
 #include <DB/Storages/VirtualColumnFactory.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 
 
 namespace DB

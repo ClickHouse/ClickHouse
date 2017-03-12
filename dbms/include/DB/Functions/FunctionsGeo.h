@@ -1,6 +1,8 @@
 #pragma once
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
 #include <ext/range.hpp>
 #include <math.h>

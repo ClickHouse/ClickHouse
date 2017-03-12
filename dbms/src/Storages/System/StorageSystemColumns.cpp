@@ -2,9 +2,10 @@
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Parsers/queryToString.h>

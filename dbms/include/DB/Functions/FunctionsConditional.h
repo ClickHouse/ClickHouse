@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
@@ -940,7 +940,7 @@ private:
 		}
 		else
 		{
-			if (!typeid_cast<const typename DataTypeFromFieldType<T1>::Type *>(
+			if (!typeid_cast<const DataTypeNumber<T1> *>(
 				typeid_cast<const DataTypeArray &>(*col_right_const_array->getDataType()).getNestedType().get()))
 				return false;
 
@@ -987,7 +987,7 @@ private:
 		}
 		else
 		{
-			if (!typeid_cast<const typename DataTypeFromFieldType<T1>::Type *>(
+			if (!typeid_cast<const DataTypeNumber<T1> *>(
 				typeid_cast<const DataTypeArray &>(*col_right_const_array->getDataType()).getNestedType().get()))
 				return false;
 
@@ -1082,7 +1082,7 @@ private:
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
 		else if (col_const_arr_left
-			&& typeid_cast<const typename DataTypeFromFieldType<T0>::Type *>(
+			&& typeid_cast<const DataTypeNumber<T0> *>(
 				typeid_cast<const DataTypeArray &>(*col_const_arr_left->getDataType()).getNestedType().get()))
 		{
 			if (	executeConstRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_const_arr_left)
