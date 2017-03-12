@@ -78,7 +78,7 @@ public:
 		return 0;
 	}
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const override;
+	void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
 	ColumnPtr replicate(const Offsets_t & offsets) const override;
 

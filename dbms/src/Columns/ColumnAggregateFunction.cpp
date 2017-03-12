@@ -315,7 +315,7 @@ Columns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const
 
 	return columns;
 }
-void ColumnAggregateFunction::getPermutation(bool reverse, size_t limit, IColumn::Permutation & res) const
+void ColumnAggregateFunction::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
 	size_t s = getData().size();
 	res.resize(s);

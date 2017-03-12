@@ -1,5 +1,7 @@
 #include <DB/Interpreters/sortBlock.h>
 
+#include <DB/Columns/ColumnString.h>
+
 
 namespace DB
 {
@@ -36,7 +38,7 @@ static inline bool needCollation(const IColumn * column, const SortColumnDescrip
 	if (!description.collator)
 		return false;
 
-	if (column->getName() != "ColumnString")
+	if (!typeid_cast<const ColumnString *>(column))	/// TODO Nullable(String)
 		throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
 
 	return true;
@@ -53,7 +55,7 @@ struct PartialSortingLess
 	{
 		for (ColumnsWithSortDescriptions::const_iterator it = columns.begin(); it != columns.end(); ++it)
 		{
-			int res = it->second.direction * it->first->compareAt(a, b, *it->first, it->second.direction);
+			int res = it->second.direction * it->first->compareAt(a, b, *it->first, it->second.nulls_direction);
 			if (res < 0)
 				return true;
 			else if (res > 0)
@@ -80,7 +82,7 @@ struct PartialSortingLessWithCollation
 				res = column_string.compareAtWithCollation(a, b, *it->first, *it->second.collator);
 			}
 			else
-				res = it->first->compareAt(a, b, *it->first, it->second.direction);
+				res = it->first->compareAt(a, b, *it->first, it->second.nulls_direction);
 
 			res *= it->second.direction;
 			if (res < 0)
@@ -114,7 +116,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 			column_string.getPermutationWithCollation(*description[0].collator, reverse, limit, perm);
 		}
 		else
-			column->getPermutation(reverse, limit, perm);
+			column->getPermutation(reverse, limit, description[0].nulls_direction, perm);
 
 		size_t columns = block.columns();
 		for (size_t i = 0; i < columns; ++i)

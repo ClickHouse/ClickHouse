@@ -105,7 +105,7 @@ public:
 		return memcmp(&chars[p1 * n], &rhs.chars[p2 * n], n);
 	}
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const override;
+	void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 

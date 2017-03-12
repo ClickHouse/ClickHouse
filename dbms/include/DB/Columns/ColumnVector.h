@@ -16,8 +16,8 @@ namespace DB
 template <typename T>
 struct CompareHelper
 {
-	static bool less(T a, T b) { return a < b; }
-	static bool greater(T a, T b) { return a > b; }
+	static bool less(T a, T b, int nan_direction_hint) { return a < b; }
+	static bool greater(T a, T b, int nan_direction_hint) { return a > b; }
 
 	/** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
 	  * If one of the values is NaN, then
@@ -34,17 +34,33 @@ struct CompareHelper
 template <typename T>
 struct FloatCompareHelper
 {
-	static bool less(T a, T b)
+	static bool less(T a, T b, int nan_direction_hint)
 	{
-		if (unlikely(std::isnan(b)))
-			return !std::isnan(a);
+		bool isnan_a = std::isnan(a);
+		bool isnan_b = std::isnan(b);
+
+		if (isnan_a && isnan_b)
+			return false;
+		if (isnan_a)
+			return nan_direction_hint < 0;
+		if (isnan_b)
+			return nan_direction_hint > 0;
+
 		return a < b;
 	}
 
-	static bool greater(T a, T b)
+	static bool greater(T a, T b, int nan_direction_hint)
 	{
-		if (unlikely(std::isnan(b)))
-			return !std::isnan(a);
+		bool isnan_a = std::isnan(a);
+		bool isnan_b = std::isnan(b);
+
+		if (isnan_a && isnan_b)
+			return false;
+		if (isnan_a)
+			return nan_direction_hint > 0;
+		if (isnan_b)
+			return nan_direction_hint < 0;
+
 		return a > b;
 	}
 
@@ -182,7 +198,7 @@ public:
 		return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
 	}
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const override;
+	void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
 	void reserve(size_t n) override
 	{

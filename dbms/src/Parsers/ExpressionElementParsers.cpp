@@ -830,6 +830,9 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 	ParserString descending("DESCENDING", true, true);
 	ParserString asc("ASC", true, true);
 	ParserString desc("DESC", true, true);
+	ParserString nulls("NULLS", true, true);
+	ParserString first("FIRST", true, true);
+	ParserString last("LAST", true, true);
 	ParserString collate("COLLATE", true, true);
 	ParserStringLiteral collate_locale_parser;
 
@@ -847,6 +850,25 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 
 	ws.ignore(pos, end);
 
+	int nulls_direction = direction;
+	bool nulls_direction_was_explicitly_specified = false;
+
+	if (nulls.ignore(pos, end))
+	{
+		nulls_direction_was_explicitly_specified = true;
+
+		ws.ignore(pos, end);
+
+		if (first.ignore(pos, end))
+			nulls_direction = -direction;
+		else if (last.ignore(pos, end))
+			;
+		else
+			return false;
+
+		ws.ignore(pos, end);
+	}
+
 	ASTPtr locale_node;
 	if (collate.ignore(pos, end))
 	{
@@ -856,7 +878,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 			return false;
 	}
 
-	node = std::make_shared<ASTOrderByElement>(StringRange(begin, pos), direction, locale_node);
+	node = std::make_shared<ASTOrderByElement>(StringRange(begin, pos), direction, nulls_direction, nulls_direction_was_explicitly_specified, locale_node);
 	node->children.push_back(expr_elem);
 	if (locale_node)
 		node->children.push_back(locale_node);

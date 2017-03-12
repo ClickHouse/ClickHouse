@@ -265,15 +265,17 @@ namespace
 	struct less
 	{
 		const ColumnArray & parent;
+		int nan_direction_hint;
 
-		less(const ColumnArray & parent_) : parent(parent_) {}
+		less(const ColumnArray & parent_, int nan_direction_hint_)
+			: parent(parent_), nan_direction_hint(nan_direction_hint_) {}
 
 		bool operator()(size_t lhs, size_t rhs) const
 		{
 			if (positive)
-				return parent.compareAt(lhs, rhs, parent, 1) < 0;
+				return parent.compareAt(lhs, rhs, parent, nan_direction_hint) < 0;
 			else
-				return parent.compareAt(lhs, rhs, parent, -1) > 0;
+				return parent.compareAt(lhs, rhs, parent, nan_direction_hint) > 0;
 		}
 	};
 }
@@ -553,7 +555,7 @@ ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
 }
 
 
-void ColumnArray::getPermutation(bool reverse, size_t limit, Permutation & res) const
+void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
 	size_t s = size();
 	if (limit >= s)
@@ -566,16 +568,16 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, Permutation & res) 
 	if (limit)
 	{
 		if (reverse)
-			std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
+			std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this, nan_direction_hint));
 		else
-			std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
+			std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this, nan_direction_hint));
 	}
 	else
 	{
 		if (reverse)
-			std::sort(res.begin(), res.end(), less<false>(*this));
+			std::sort(res.begin(), res.end(), less<false>(*this, nan_direction_hint));
 		else
-			std::sort(res.begin(), res.end(), less<true>(*this));
+			std::sort(res.begin(), res.end(), less<true>(*this, nan_direction_hint));
 	}
 }
 

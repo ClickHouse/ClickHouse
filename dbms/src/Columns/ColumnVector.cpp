@@ -53,20 +53,22 @@ template <typename T>
 struct ColumnVector<T>::less
 {
 	const Self & parent;
-	less(const Self & parent_) : parent(parent_) {}
-	bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::less(parent.data[lhs], parent.data[rhs]); }
+	int nan_direction_hint;
+	less(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
+	bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::less(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
 template <typename T>
 struct ColumnVector<T>::greater
 {
 	const Self & parent;
-	greater(const Self & parent_) : parent(parent_) {}
-	bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs]); }
+	int nan_direction_hint;
+	greater(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
+	bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
 template <typename T>
-void ColumnVector<T>::getPermutation(bool reverse, size_t limit, Permutation & res) const
+void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
 	size_t s = data.size();
 	res.resize(s);
@@ -79,16 +81,16 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, Permutation & r
 	if (limit)
 	{
 		if (reverse)
-			std::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this));
+			std::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
 		else
-			std::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this));
+			std::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
 	}
 	else
 	{
 		if (reverse)
-			std::sort(res.begin(), res.end(), greater(*this));
+			std::sort(res.begin(), res.end(), greater(*this, nan_direction_hint));
 		else
-			std::sort(res.begin(), res.end(), less(*this));
+			std::sort(res.begin(), res.end(), less(*this, nan_direction_hint));
 	}
 }
 

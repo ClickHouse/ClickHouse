@@ -136,10 +136,10 @@ try
 	}
 
 	SortDescription sort_columns;
-	sort_columns.push_back(SortColumnDescription(1, -1));
-	sort_columns.push_back(SortColumnDescription(2, 1));
-	sort_columns.push_back(SortColumnDescription(0, 1));
-	sort_columns.push_back(SortColumnDescription(3, 1));
+	sort_columns.push_back(SortColumnDescription(1, -1, -1));
+	sort_columns.push_back(SortColumnDescription(2, 1, 1));
+	sort_columns.push_back(SortColumnDescription(0, 1, 1));
+	sort_columns.push_back(SortColumnDescription(3, 1, 1));
 
 	QueryProcessingStage::Enum stage;
 
