@@ -22,7 +22,7 @@ alter table test.merge_distributed drop column dummy;
 describe table test.merge_distributed;
 show create table test.merge_distributed;
 
---error: должен упасть, так как не существует столбца dummy1 
+--error: should fall, because there is no `dummy1` column
 alter table test.merge_distributed add column dummy1 String after CounterID;
 select CounterID, dummy1 from test.merge_distributed where dummy1 <> '' limit 10;
 

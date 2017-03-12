@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # coding=UTF-8
 
-# Выводит список активных кусков - кусков, не покрытых никаким другим куском.
+# Displays a list of active parts - parts that are not overlapped by any other part.
 # Usage: `ls /var/lib/clickhouse/data/merge/visits | active_parts.py`
 
 import sys
@@ -31,7 +31,7 @@ for m, ps in sorted(parts.items()):
 			pass
 		elif x1 > y2: # 1 is to the right of 2
 			if x1 != y2 + 1 and y2 != -1:
-				print # чтобы на глаз было видно пропущенные номера
+				print # to see the missing numbers
 			(x2, y2, l2, s2) = (x1, y1, l1, s1)
 			print s1
 		else:

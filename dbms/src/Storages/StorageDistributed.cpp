@@ -54,7 +54,7 @@ namespace ErrorCodes
 namespace
 {
 	/// select query has database and table names as AST pointers
-	/// Создает копию запроса, меняет имена базы данных и таблицы.
+    /// Creates a copy of query, changes database and table names.
 	inline ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 	{
 		auto modified_query_ast = query->clone();
@@ -63,7 +63,7 @@ namespace
 	}
 
 	/// insert query has database and table names as bare strings
-	/// Создает копию запроса, меняет имена базы данных и таблицы.
+    /// Creates a copy of query, changes the database and table names.
 	inline ASTPtr rewriteInsertQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 	{
 		auto modified_query_ast = query->clone();
@@ -190,12 +190,12 @@ BlockInputStreams StorageDistributed::read(
 	if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
 		external_tables = context.getExternalTables();
 
-	/// Отключаем мультиплексирование шардов, если есть ORDER BY без GROUP BY.
+    /// Disable multiplexing of shards if there is an ORDER BY without GROUP BY.
 	//const ASTSelectQuery & ast = *(static_cast<const ASTSelectQuery *>(modified_query_ast.get()));
 
-	/** Функциональность shard_multiplexing не доделана - выключаем её.
-	  * (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
-	  * Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
+    /** The functionality of shard_multiplexing is not completed - turn it off.
+      * (Because connecting to different shards within a single thread is not done in parallel.)
+      * For more information, see https: //███████████.yandex-team.ru/METR-18300
 	  */
 	//bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
 	bool enable_shard_multiplexing = false;
@@ -288,7 +288,7 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 
 	try
 	{
-		/// Создать запрос ALTER TABLE ... RESHARD [COPY] PARTITION ... COORDINATE WITH ...
+        /// Create query ALTER TABLE ... RESHARD [COPY] PARTITION ... COORDINATE WITH ...
 
 		ASTPtr alter_query_ptr = std::make_shared<ASTAlterQuery>();
 		auto & alter_query = static_cast<ASTAlterQuery &>(*alter_query_ptr);
@@ -322,9 +322,9 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 
 		resharding_worker.registerQuery(coordinator_id, queryToString(alter_query_ptr));
 
-		/** Функциональность shard_multiplexing не доделана - выключаем её.
-		* (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
-		* Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
+		/** The functionality of shard_multiplexing is not completed - turn it off.
+		* (Because connecting to different shards within a single thread is not done in parallel.)
+		* For more information, see https: //███████████.yandex-team.ru/METR-18300
 		*/
 		bool enable_shard_multiplexing = false;
 
@@ -392,7 +392,7 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 
 BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)
 {
-	/// Создать запрос DESCRIBE TABLE.
+    /// Create DESCRIBE TABLE query.
 	auto cluster = getCluster();
 
 	ASTPtr describe_query_ptr = std::make_shared<ASTDescribeQuery>();
@@ -401,9 +401,9 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 	describe_query.database = remote_database;
 	describe_query.table = remote_table;
 
-	/** Функциональность shard_multiplexing не доделана - выключаем её.
-	  * (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
-	  * Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
+    /** The functionality of shard_multiplexing is not completed - turn it off.
+      * (Because connecting connections to different shards within a single thread is not done in parallel.)
+      * For more information, see https: //███████████.yandex-team.ru/METR-18300
 	  */
 	bool enable_shard_multiplexing = false;
 

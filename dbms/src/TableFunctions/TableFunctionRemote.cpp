@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-/// Декартово произведение двух множеств строк, результат записываем на место первого аргумента
+/// The Cartesian product of two sets of rows, the result is written in place of the first argument
 static void append(std::vector<String> & to, const std::vector<String> & what, size_t max_addresses)
 {
 	if (what.empty())
@@ -45,7 +45,7 @@ static void append(std::vector<String> & to, const std::vector<String> & what, s
 }
 
 
-/// Парсим число из подстроки
+/// Parse number from substring
 static bool parseNumber(const String & description, size_t l, size_t r, size_t & res)
 {
 	res = 0;
@@ -61,24 +61,25 @@ static bool parseNumber(const String & description, size_t l, size_t r, size_t &
 }
 
 
-/* Парсит строку, генерирующую шарды и реплики. Разделитель - один из двух символов | или ,
-	* в зависимости от того генерируются шарды или реплики.
-	* Например:
-	* host1,host2,... - порождает множество шардов из host1, host2, ...
-	* host1|host2|... - порождает множество реплик из host1, host2, ...
-	* abc{8..10}def - порождает множество шардов abc8def, abc9def, abc10def.
-	* abc{08..10}def - порождает множество шардов abc08def, abc09def, abc10def.
-	* abc{x,yy,z}def - порождает множество шардов abcxdef, abcyydef, abczdef.
-	* abc{x|yy|z}def - порождает множество реплик abcxdef, abcyydef, abczdef.
-	* abc{1..9}de{f,g,h} - прямое произведение, 27 шардов.
-	* abc{1..9}de{0|1} - прямое произведение, 9 шардов, в каждом 2 реплики.
-	*/
+
+/* Parse a string that generates shards and replicas. Separator - one of two characters | or ,
+ *  depending on whether shards or replicas are generated.
+ * For example:
+ * host1,host2,...      - generates set of shards from host1, host2, ...
+ * host1|host2|...      - generates set of replicas from host1, host2, ...
+ * abc{8..10}def        - generates set of shards abc8def, abc9def, abc10def.
+ * abc{08..10}def       - generates set of shards abc08def, abc09def, abc10def.
+ * abc{x,yy,z}def       - generates set of shards abcxdef, abcyydef, abczdef.
+ * abc{x|yy|z} def      - generates set of replicas abcxdef, abcyydef, abczdef.
+ * abc{1..9}de{f,g,h}   - is a direct product, 27 shards.
+ * abc{1..9}de{0|1}     - is a direct product, 9 shards, in each 2 replicas.
+ */
 static std::vector<String> parseDescription(const String & description, size_t l, size_t r, char separator, size_t max_addresses)
 {
 	std::vector<String> res;
 	std::vector<String> cur;
 
-	/// Пустая подстрока, означает множество из пустой строки
+	/// An empty substring means a set of an empty string
 	if (l >= r)
 	{
 		res.push_back("");
@@ -87,16 +88,16 @@ static std::vector<String> parseDescription(const String & description, size_t l
 
 	for (size_t i = l; i < r; ++i)
 	{
-		/// Либо числовой интервал (8..10) либо аналогичное выражение в скобках
+		/// Either the numeric interval (8..10) or equivalent expression in brackets
 		if (description[i] == '{')
 		{
 			int cnt = 1;
-			int last_dot = -1; /// Самая правая пара точек, запоминаем индекс правой из двух
+			int last_dot = -1; /// The rightmost pair of points, remember the index of the right of the two
 			size_t m;
 			std::vector<String> buffer;
 			bool have_splitter = false;
 
-			/// Ищем соответствующую нашей закрывающую скобку
+			/// Look for the corresponding closing bracket
 			for (m = i + 1; m < r; ++m)
 			{
 				if (description[m] == '{') ++cnt;
@@ -108,7 +109,7 @@ static std::vector<String> parseDescription(const String & description, size_t l
 			if (cnt != 0)
 				throw Exception("Storage Distributed, incorrect brace sequence in first argument",
 								ErrorCodes::BAD_ARGUMENTS);
-			/// Наличие точки означает, что числовой интервал
+			/// The presence of a dot - numeric interval
 			if (last_dot != -1)
 			{
 				size_t left, right;
@@ -132,7 +133,7 @@ static std::vector<String> parseDescription(const String & description, size_t l
 						ErrorCodes::BAD_ARGUMENTS);
 				bool add_leading_zeroes = false;
 				size_t len = last_dot - 1 - (i + 1);
-				/// Если у левой и правой границы поровну цифр, значит необходимо дополнять лидирующими нулями.
+ 				/// If the left and right borders have equal numbers, then you must add leading zeros.
 				if (last_dot - 1 - (i + 1) == m - (last_dot + 1))
 					add_leading_zeroes = true;
 				for (size_t id = left; id <= right; ++id)
@@ -145,23 +146,23 @@ static std::vector<String> parseDescription(const String & description, size_t l
 					}
 					buffer.push_back(cur);
 				}
-			} else if (have_splitter) /// Если внутри есть текущий разделитель, то сгенерировать множество получаемых строк
+			} else if (have_splitter) /// If there is a current delimiter inside, then generate a set of resulting rows
 				buffer = parseDescription(description, i + 1, m, separator, max_addresses);
-			else 					/// Иначе просто скопировать, порождение произойдет при вызове с правильным разделителем
+			else 					/// Otherwise just copy, spawn will occur when you call with the correct delimiter
 				buffer.push_back(description.substr(i, m - i + 1));
-			/// К текущему множеству строк добавить все возможные полученные продолжения
+			/// Add all possible received extensions to the current set of lines
 			append(cur, buffer, max_addresses);
 			i = m;
 		}
 		else if (description[i] == separator)
 		{
-			/// Если разделитель, то добавляем в ответ найденные строки
+			/// If the delimiter, then add found rows
 			res.insert(res.end(), cur.begin(), cur.end());
 			cur.clear();
 		}
 		else
 		{
-			/// Иначе просто дописываем символ к текущим строкам
+			/// Otherwise, simply append the character to current lines
 			std::vector<String> buffer;
 			buffer.push_back(description.substr(i, 1));
 			append(cur, buffer, max_addresses);
@@ -220,7 +221,7 @@ StoragePtr TableFunctionRemote::execute(ASTPtr ast_function, Context & context) 
 	size_t dot = remote_database.find('.');
 	if (dot != String::npos)
 	{
-		/// NOTE Плохо - не поддерживаются идентификаторы в обратных кавычках.
+		/// NOTE Bad - do not support identifiers in backquotes.
 		remote_table = remote_database.substr(dot + 1);
 		remote_database = remote_database.substr(0, dot);
 	}
@@ -251,8 +252,8 @@ StoragePtr TableFunctionRemote::execute(ASTPtr ast_function, Context & context) 
 	if (arg_num < args.size())
 		throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-	/// В InterpreterSelectQuery будет создан ExpressionAnalzyer, который при обработке запроса наткнется на эти Identifier.
-	/// Нам необходимо их пометить как имя базы данных или таблицы, поскольку по умолчанию стоит значение column.
+	/// ExpressionAnalyzer will be created in InterpreterSelectQuery that will meet these `Identifier` when processing the request.
+	/// We need to mark them as the name of the database or table, because the default value is column.
 	for (auto & arg : args)
 		if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(arg.get()))
 			id->kind = ASTIdentifier::Table;

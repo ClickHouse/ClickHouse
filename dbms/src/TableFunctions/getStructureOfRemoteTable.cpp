@@ -23,12 +23,12 @@ NamesAndTypesList getStructureOfRemoteTable(
 	const std::string & table,
 	const Context & context)
 {
-	/// Запрос на описание таблицы
+	/// Request for a table description
 	String query = "DESC TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
 	Settings settings = context.getSettings();
 	NamesAndTypesList res;
 
-	/// Отправляем на первый попавшийся удалённый шард.
+	/// Send to the first random remote shard.
 	const auto & shard_info = cluster.getAnyShardInfo();
 
 	if (shard_info.isLocal())

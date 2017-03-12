@@ -93,7 +93,7 @@ static bool extractPathImpl(const IAST & elem, String & res)
 }
 
 
-/** Вынимает из запроса условие вида path = 'path', из конъюнкций в секции WHERE.
+/** Retrieve from the query a condition of the form `path = 'path'`, from conjunctions in the WHERE clause.
   */
 static String extractPath(const ASTPtr & query)
 {
@@ -139,7 +139,7 @@ BlockInputStreams StorageSystemZooKeeper::read(
 
 	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
-	/// Во всех случаях кроме корня, path не должен заканчиваться на слеш.
+    /// In all cases except the root, path must not end with a slash.
 	String path_corrected = path;
 	if (path_corrected != "/" && path_corrected.back() == '/')
 		path_corrected.resize(path_corrected.size() - 1);
@@ -159,7 +159,7 @@ BlockInputStreams StorageSystemZooKeeper::read(
 	{
 		auto res = futures[i].get();
 		if (!res.exists)
-			continue;	/// Ноду успели удалить.
+            continue;   /// Node was deleted meanwhile.
 
 		const zkutil::Stat & stat = res.stat;
 
@@ -176,7 +176,7 @@ BlockInputStreams StorageSystemZooKeeper::read(
 		col_dataLength.column->insert(Int64(stat.dataLength));
 		col_numChildren.column->insert(Int64(stat.numChildren));
 		col_pzxid.column->insert(Int64(stat.pzxid));
-		col_path.column->insert(path);			/// Здесь именно оригинальный path. Чтобы при обработке запроса, условие в WHERE срабатывало.
+        col_path.column->insert(path);          /// This is the original path. In order to process the request, condition in WHERE should be triggered.
 	}
 
 	Block block{
