@@ -3,7 +3,7 @@
 #include <mutex>
 
 #include <DB/Core/FieldVisitors.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnString.h>

@@ -8,7 +8,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDateTime.h>

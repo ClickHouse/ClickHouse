@@ -8,7 +8,7 @@
 
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/MongoDBBlockInputStream.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>

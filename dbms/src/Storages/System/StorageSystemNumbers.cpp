@@ -1,6 +1,6 @@
 #include <DB/Common/Exception.h>
 #include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Storages/System/StorageSystemNumbers.h>
 

@@ -10,7 +10,7 @@
 #include <DB/IO/Operators.h>
 #include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/DataTypes/DataTypeFactory.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDate.h>

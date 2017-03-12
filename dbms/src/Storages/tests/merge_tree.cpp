@@ -4,7 +4,7 @@
 
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>

@@ -3,7 +3,7 @@
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeArray.h>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>

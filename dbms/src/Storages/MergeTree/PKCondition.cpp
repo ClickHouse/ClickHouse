@@ -1,6 +1,6 @@
 #include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/Storages/MergeTree/BoolMask.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/DataTypes/DataTypeEnum.h>

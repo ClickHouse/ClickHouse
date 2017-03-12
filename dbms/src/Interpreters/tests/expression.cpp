@@ -6,7 +6,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnsNumber.h>
 
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>

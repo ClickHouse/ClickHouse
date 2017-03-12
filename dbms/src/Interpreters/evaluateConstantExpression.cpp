@@ -4,7 +4,7 @@
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>

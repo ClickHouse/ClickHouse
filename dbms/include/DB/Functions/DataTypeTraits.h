@@ -2,7 +2,7 @@
 
 #include <DB/Functions/NumberTraits.h>
 #include <DB/DataTypes/EnrichedDataTypePtr.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/DataTypes/DataTypeNull.h>
 

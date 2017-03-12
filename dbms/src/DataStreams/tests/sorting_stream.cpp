@@ -5,7 +5,7 @@
 
 #include <DB/Storages/StorageLog.h>
 
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
@@ -17,7 +17,7 @@
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/parseQuery.h>

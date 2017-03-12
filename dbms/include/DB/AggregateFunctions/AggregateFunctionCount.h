@@ -3,7 +3,7 @@
 #include <DB/IO/VarInt.h>
 
 #include <array>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/AggregateFunctions/INullaryAggregateFunction.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>

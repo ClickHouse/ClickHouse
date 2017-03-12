@@ -11,7 +11,7 @@
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 
 #include <DB/Columns/ColumnString.h>

@@ -14,7 +14,7 @@
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
 #include <DB/AggregateFunctions/QuantilesCommon.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 
 

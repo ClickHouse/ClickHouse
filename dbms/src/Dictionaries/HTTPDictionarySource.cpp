@@ -7,7 +7,7 @@
 #include <DB/IO/ReadWriteBufferFromHTTP.h>
 
 #include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 
 #include <DB/Dictionaries/ExecutableDictionarySource.h> // idsToBuffer, columnsToBuffer

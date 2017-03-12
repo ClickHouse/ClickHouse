@@ -10,7 +10,7 @@
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergeTreeDataPart.h>
 

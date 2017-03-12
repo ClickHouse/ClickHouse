@@ -5,7 +5,7 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 #include <Poco/Util/Application.h>
 

@@ -3,7 +3,7 @@
 
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/IFunction.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataStreams/PrettyBlockOutputStream.h>
 #include <DB/Columns/ColumnConst.h>

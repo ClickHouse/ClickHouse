@@ -14,7 +14,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>

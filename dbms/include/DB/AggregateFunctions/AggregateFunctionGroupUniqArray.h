@@ -4,7 +4,7 @@
 #include <DB/IO/ReadHelpers.h>
 
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 
 #include <DB/Columns/ColumnArray.h>

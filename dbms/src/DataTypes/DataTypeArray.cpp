@@ -6,7 +6,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadBufferFromString.h>
 
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 
 

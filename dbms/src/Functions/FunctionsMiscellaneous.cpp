@@ -12,7 +12,7 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeTuple.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Set.h>

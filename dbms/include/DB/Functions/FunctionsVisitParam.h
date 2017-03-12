@@ -2,7 +2,7 @@
 
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeArray.h>

@@ -2,7 +2,7 @@
 
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeExpression.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnArray.h>

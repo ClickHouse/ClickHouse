@@ -3,7 +3,7 @@
 
 #include <DB/Common/Stopwatch.h>
 
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/Columns/ColumnsNumber.h>
 
 #include <DB/Functions/FunctionsArithmetic.h>

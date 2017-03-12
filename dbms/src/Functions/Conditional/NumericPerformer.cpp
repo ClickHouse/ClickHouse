@@ -6,7 +6,7 @@
 #include <DB/Functions/Conditional/ArrayEvaluator.h>
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/DataTypeTraits.h>
-#include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnConst.h>
