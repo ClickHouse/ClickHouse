@@ -3,6 +3,8 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeString.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/AccurateComparison.h>
@@ -559,6 +561,35 @@ private:
 		}
 		return false;
 	}
+
+	/// We implement some bitwise operations also on FixedStrings of same widths.
+
+	static constexpr bool is_applicable_for_fixed_strings
+		 = std::is_same<Op<UInt8, UInt8>, BitAndImpl<UInt8, UInt8>>::value
+		|| std::is_same<Op<UInt8, UInt8>, BitOrImpl<UInt8, UInt8>>::value
+		|| std::is_same<Op<UInt8, UInt8>, BitXorImpl<UInt8, UInt8>>::value;
+
+/*	bool checkTypeFixedString(const DataTypes & arguments, DataTypePtr & type_res) const
+	{
+		if (!is_applicable_for_fixed_strings)
+			return false;
+
+		const DataTypeFixedString * type_a = typeid_cast<const DataTypeFixedString *>(arguments[0].get());
+		const DataTypeFixedString * type_b = typeid_cast<const DataTypeFixedString *>(arguments[1].get());
+
+		/// Constant strings are also fine.
+		const DataTypeString * type_a_string = typeid_cast<const DataTypeString *>(arguments[0].get());
+		const DataTypeString * type_b_string = typeid_cast<const DataTypeString *>(arguments[1].get());
+
+		if ((!type_a && !type_a_string) || (!type_b && !type_b_string))
+			return false;
+
+		if (type_a && type_b && type_a->getN() != type_b->getN())
+			throw Exception("If you pass FixedString as an argument to function " + getName() + ", both arguments must be FixedStrings of same size",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		type_res = std::make_shared
+	}*/
 
 	/// Overload for date operations
 	template <typename LeftDataType, typename RightDataType, typename ColumnType>
