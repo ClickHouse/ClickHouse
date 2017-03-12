@@ -31,7 +31,7 @@ static void readTextUnsafeIfIntegral(typename std::enable_if<std::is_integral<T>
 template <typename T>
 static void readTextUnsafeIfIntegral(typename std::enable_if<!std::is_integral<T>::value, T>::type & x, ReadBuffer & istr)
 {
-	readIntText(x, istr);
+	readText(x, istr);
 }
 
 template <typename T>
