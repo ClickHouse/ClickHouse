@@ -21,6 +21,7 @@
 #include <DB/Common/Stopwatch.h>
 
 #include <DB/Common/Exception.h>
+#include <DB/Common/ShellCommand.h>
 #include <DB/Core/Types.h>
 #include <DB/Core/QueryProcessingStage.h>
 
@@ -132,6 +133,7 @@ private:
 
 	/// Console output.
 	WriteBufferFromFileDescriptor std_out {STDOUT_FILENO};
+	std::unique_ptr<ShellCommand> pager_cmd;
 	/// The user can specify to redirect query output to a file.
 	std::experimental::optional<WriteBufferFromFile> out_file_buf;
 	BlockOutputStreamPtr block_out_stream;
@@ -821,6 +823,11 @@ private:
 	void resetOutput()
 	{
 		block_out_stream = nullptr;
+		if (pager_cmd) {
+			pager_cmd->in.close();
+			pager_cmd->wait();
+		}
+		pager_cmd = nullptr;
 		if (out_file_buf)
 		{
 			out_file_buf->next();
@@ -937,7 +944,18 @@ private:
 	{
 		if (!block_out_stream)
 		{
-			WriteBuffer * out_buf = &std_out;
+			WriteBuffer * out_buf = nullptr;
+	                String pager = config().getString("pager", "");
+			if (!pager.empty())
+			{
+				pager_cmd = ShellCommand::execute(pager, true);
+				out_buf = &pager_cmd->in;
+			}
+			else
+			{
+				out_buf = &std_out;
+			}
+
 			String current_format = format;
 
 			/// The query can specify output format or output file.
@@ -1227,6 +1245,7 @@ public:
 			("password", 		boost::program_options::value<std::string>(),	"password")
 			("query,q", 		boost::program_options::value<std::string>(), 	"query")
 			("database,d", 		boost::program_options::value<std::string>(), 	"database")
+			("pager",		boost::program_options::value<std::string>(),	"pager")
 			("multiline,m",														"multiline")
 			("multiquery,n",													"multiquery")
 			("format,f",        boost::program_options::value<std::string>(), 	"default output format")
@@ -1317,6 +1336,8 @@ public:
 			config().setString("query", options["query"].as<std::string>());
 		if (options.count("database"))
 			config().setString("database", options["database"].as<std::string>());
+		if (options.count("pager"))
+			config().setString("pager", options["pager"].as<std::string>());
 
 		if (options.count("port") && !options["port"].defaulted())
 			config().setInt("port", options["port"].as<int>());
