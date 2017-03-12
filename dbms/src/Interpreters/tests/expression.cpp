@@ -4,6 +4,7 @@
 #include <DB/IO/WriteBufferFromOStream.h>
 
 #include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 #include <DB/DataTypes/DataTypeNumber.h>
 #include <DB/DataTypes/DataTypeString.h>

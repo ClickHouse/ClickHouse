@@ -1,6 +1,8 @@
 #include <DB/DataTypes/DataTypeNumber.h>
+#include <DB/Columns/ColumnVector.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Common/Stopwatch.h>
+#include <DB/IO/WriteHelpers.h>
 #include <iomanip>
 
 
