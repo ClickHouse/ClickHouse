@@ -9,7 +9,7 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 
 #include <DB/DataStreams/NativeBlockInputStream.h>

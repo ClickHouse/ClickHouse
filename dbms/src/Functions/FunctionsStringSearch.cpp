@@ -11,14 +11,18 @@
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/Regexps.h>
+#include <DB/IO/WriteHelpers.h>
+
 #if USE_RE2_ST
 	#include <re2_st/re2.h>
 #else
 	#define re2_st re2
 #endif
 
+
 namespace DB
 {
+
 /** Implementation details for functions of 'position' family depending on ASCII/UTF8 and case sensitiveness.
   */
 struct PositionCaseSensitiveASCII

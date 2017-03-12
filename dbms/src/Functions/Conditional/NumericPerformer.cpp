@@ -6,7 +6,7 @@
 #include <DB/Functions/Conditional/ArrayEvaluator.h>
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/DataTypeTraits.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnConst.h>
@@ -89,7 +89,7 @@ protected:
 
 						const IDataType * nested_type = arr->getNestedType().get();
 
-						using ElementType = typename DataTypeFromFieldType<TType>::Type;
+						using ElementType = DataTypeNumber<TType>;
 
 						if (typeid_cast<const ElementType *>(nested_type) == nullptr)
 							return false;

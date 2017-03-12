@@ -21,9 +21,9 @@ class IDataTypeEnum : public IDataType
 public:
 
 	virtual Field castToName(const Field & value_or_name) const = 0;
-
 	virtual Field castToValue(const Field & value_or_name) const = 0;
 };
+
 
 template <typename Type>
 class DataTypeEnum final : public IDataTypeEnum

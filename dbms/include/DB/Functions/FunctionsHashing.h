@@ -9,13 +9,14 @@
 #include <Poco/ByteOrder.h>
 
 #include <DB/Common/SipHash.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnFixedString.h>
@@ -333,7 +334,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ReturnType>::Type>();
+		return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
 	}
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override

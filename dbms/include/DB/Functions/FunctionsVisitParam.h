@@ -2,7 +2,7 @@
 
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeArray.h>
@@ -13,6 +13,8 @@
 #include <DB/Common/Volnitsky.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/IO/ReadBufferFromMemory.h>
+#include <DB/IO/ReadHelpers.h>
+
 
 /** Функции для извлечения параметров визитов.
  *  Реализованы через шаблоны из FunctionsStringSearch.h.

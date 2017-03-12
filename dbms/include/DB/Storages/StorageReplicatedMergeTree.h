@@ -20,7 +20,7 @@
 #include <DB/Storages/MergeTree/ShardedPartitionUploader.h>
 #include <DB/Storages/MergeTree/RemoteQueryExecutor.h>
 #include <DB/Storages/MergeTree/RemotePartChecker.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/LeaderElection.h>
 

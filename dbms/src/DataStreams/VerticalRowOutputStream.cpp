@@ -2,7 +2,7 @@
 #include <DB/Functions/IFunction.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/DataStreams/VerticalRowOutputStream.h>
 

@@ -2,7 +2,7 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataStreams/OneBlockInputStream.h>

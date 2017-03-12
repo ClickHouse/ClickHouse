@@ -10,7 +10,7 @@
 #include <DB/IO/Operators.h>
 #include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/DataTypes/DataTypeFactory.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDate.h>
@@ -185,7 +185,7 @@ struct FormatImpl<DataTypeEnum<FieldType>>
 
 /// DataTypeEnum<T> to DataType<T> free conversion
 template <typename FieldType, typename Name>
-struct ConvertImpl<DataTypeEnum<FieldType>, typename DataTypeFromFieldType<FieldType>::Type, Name>
+struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name>
 {
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
@@ -992,7 +992,7 @@ private:
 	template <typename T>
 	bool getSizeTyped(const ColumnWithTypeAndName & column, size_t & out_size)
 	{
-		if (!typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(column.type.get()))
+		if (!typeid_cast<const DataTypeNumber<T> *>(column.type.get()))
 			return false;
 		const ColumnConst<T> * column_const = typeid_cast<const ColumnConst<T> *>(column.column.get());
 		if (!column_const)
@@ -1052,7 +1052,7 @@ struct ToIntMonotonicity
 			return { true };
 
 		/// If type is same, too. (Enum has separate case, because it is different data type)
-		if (typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(&type) ||
+		if (typeid_cast<const DataTypeNumber<T> *>(&type) ||
 			typeid_cast<const DataTypeEnum<T> *>(&type))
 			return { true };
 
@@ -1174,7 +1174,7 @@ template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTim
 template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
 template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
 template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
-	: FunctionTo<typename DataTypeFromFieldType<FieldType>::Type>
+	: FunctionTo<DataTypeNumber<FieldType>>
 {
 };
 

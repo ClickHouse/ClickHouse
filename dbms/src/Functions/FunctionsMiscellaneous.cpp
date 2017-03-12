@@ -1,4 +1,4 @@
-﻿#include <DB/Functions/FunctionsMiscellaneous.h>
+#include <DB/Functions/FunctionsMiscellaneous.h>
 
 #include <cmath>
 #include <Poco/Net/DNS.h>
@@ -12,7 +12,7 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeTuple.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/Set.h>
@@ -1550,7 +1550,7 @@ public:
 	{
 		DataTypePtr res;
 		dispatchForSourceType(*arguments[0], [&](auto field_type_tag) {
-			res = std::make_shared<typename DataTypeFromFieldType<DstFieldType<decltype(field_type_tag)>>::Type>();
+			res = std::make_shared<DataTypeNumber<DstFieldType<decltype(field_type_tag)>>>();
 		});
 
 		return res;

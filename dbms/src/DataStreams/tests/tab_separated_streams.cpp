@@ -5,7 +5,7 @@
 
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromFile.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>

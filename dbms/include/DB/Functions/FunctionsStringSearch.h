@@ -67,7 +67,7 @@ public:
 			throw Exception(
 				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ResultType>::Type>();
+		return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
 	}
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override

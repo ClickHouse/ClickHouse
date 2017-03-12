@@ -3,7 +3,7 @@
 
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 #include <DB/DataStreams/verbosePrintString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 
 namespace DB

@@ -2,7 +2,7 @@
 #include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/parseQuery.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 using namespace DB;
 

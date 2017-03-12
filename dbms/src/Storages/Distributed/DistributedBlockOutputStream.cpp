@@ -12,7 +12,7 @@
 #include <DB/Interpreters/createBlockSelector.h>
 
 #include <DB/Common/Increment.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <memory>
 #include <common/ClickHouseRevision.h>
 

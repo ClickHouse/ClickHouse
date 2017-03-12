@@ -2,8 +2,8 @@
 
 #include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
