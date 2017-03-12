@@ -16,7 +16,7 @@ void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState 
 	{
 		settings.ostr << (settings.hilite ? hilite_keyword : "")
 			<< " NULLS "
-			<< (nulls_direction == direction ? " LAST" : " FIRST")
+			<< (nulls_direction == direction ? "LAST" : "FIRST")
 			<< (settings.hilite ? hilite_none : "");
 	}
 
