@@ -599,7 +599,10 @@ inline typename std::enable_if<std::is_floating_point<T>::value, void>::type
 writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
 inline void writeText(const String & x,		WriteBuffer & buf) { writeEscapedString(x, buf); }
-inline void writeText(const bool & x, 		WriteBuffer & buf) { writeBoolText(x, buf); }
+
+/// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
+template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }
+
 /// в отличие от метода для std::string
 /// здесь предполагается, что x null-terminated строка.
 inline void writeText(const char * x, 		WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
