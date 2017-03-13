@@ -207,6 +207,9 @@ static void appendBlock(const Block & from, Block & to)
 		/// Rollback changes.
 		try
 		{
+			/// Avoid "memory limit exceeded" exceptions during rollback.
+			TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
+
 			for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
 			{
 				ColumnPtr & col_to = to.safeGetByPosition(column_no).column;
