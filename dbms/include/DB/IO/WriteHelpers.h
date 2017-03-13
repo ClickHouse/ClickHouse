@@ -610,7 +610,7 @@ inline void writeText(const LocalDateTime & x,	WriteBuffer & buf) { writeDateTim
 
 /// Строки, даты, даты-с-временем - в одинарных кавычках с C-style эскейпингом. Числа - без.
 template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value, void>::type
+inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x,	WriteBuffer & buf) { writeQuotedString(x, buf); }
@@ -632,7 +632,7 @@ inline void writeQuoted(const LocalDateTime & x,	WriteBuffer & buf)
 
 /// Строки, даты, даты-с-временем - в двойных кавычках с C-style эскейпингом. Числа - без.
 template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value, void>::type
+inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x,		WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
@@ -654,7 +654,7 @@ inline void writeDoubleQuoted(const LocalDateTime & x,	WriteBuffer & buf)
 
 /// Строки - в двойных кавычках и с CSV-эскейпингом; даты, даты-с-временем - в двойных кавычках. Числа - без.
 template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value, void>::type
+inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeCSV(const String & x,		WriteBuffer & buf) { writeCSVString<>(x, buf); }
