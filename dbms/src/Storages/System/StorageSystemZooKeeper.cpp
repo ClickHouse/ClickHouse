@@ -140,7 +140,7 @@ BlockInputStreams StorageSystemZooKeeper::read(
 
 	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
-    /// In all cases except the root, path must not end with a slash.
+	/// In all cases except the root, path must not end with a slash.
 	String path_corrected = path;
 	if (path_corrected != "/" && path_corrected.back() == '/')
 		path_corrected.resize(path_corrected.size() - 1);
@@ -160,7 +160,7 @@ BlockInputStreams StorageSystemZooKeeper::read(
 	{
 		auto res = futures[i].get();
 		if (!res.exists)
-            continue;   /// Node was deleted meanwhile.
+			continue;   /// Node was deleted meanwhile.
 
 		const zkutil::Stat & stat = res.stat;
 
@@ -177,7 +177,7 @@ BlockInputStreams StorageSystemZooKeeper::read(
 		col_dataLength.column->insert(Int64(stat.dataLength));
 		col_numChildren.column->insert(Int64(stat.numChildren));
 		col_pzxid.column->insert(Int64(stat.pzxid));
-        col_path.column->insert(path);          /// This is the original path. In order to process the request, condition in WHERE should be triggered.
+		col_path.column->insert(path);          /// This is the original path. In order to process the request, condition in WHERE should be triggered.
 	}
 
 	Block block{

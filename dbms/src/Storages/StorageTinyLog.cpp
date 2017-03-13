@@ -166,9 +166,9 @@ Block TinyLogBlockInputStream::readImpl()
 
 	if (finished || (!streams.empty() && streams.begin()->second->compressed.eof()))
 	{
-        /** Close the files (before destroying the object).
-          * When many sources are created, but simultaneously reading only a few of them,
-          * buffers don't waste memory.
+		/** Close the files (before destroying the object).
+		  * When many sources are created, but simultaneously reading only a few of them,
+		  * buffers don't waste memory.
 		  */
 		finished = true;
 		streams.clear();
@@ -192,7 +192,7 @@ Block TinyLogBlockInputStream::readImpl()
 		}
 	}
 
-    /// Pointers to offset columns, mutual for columns from nested data structures
+	/// Pointers to offset columns, mutual for columns from nested data structures
 	using OffsetColumns = std::map<std::string, ColumnPtr>;
 	OffsetColumns offset_columns;
 
@@ -221,7 +221,7 @@ Block TinyLogBlockInputStream::readImpl()
 			is_nullable = false;
 		}
 
-        /// For nested structures, remember pointers to columns with offsets
+		/// For nested structures, remember pointers to columns with offsets
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type))
 		{
 			String nested_name = DataTypeNested::extractNestedTableName(column.name);
@@ -229,7 +229,7 @@ Block TinyLogBlockInputStream::readImpl()
 			if (offset_columns.count(nested_name) == 0)
 				offset_columns[nested_name] = std::make_shared<ColumnArray::ColumnOffsets_t>();
 			else
-                read_offsets = false; /// on previous iterations, the offsets were already calculated by `readData`
+				read_offsets = false; /// on previous iterations, the offsets were already calculated by `readData`
 
 			column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
 			if (is_nullable)
@@ -277,7 +277,7 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-        /// For arrays separate threads are used for sizes.
+		/// For arrays separate threads are used for sizes.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
 			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), max_read_buffer_size)));
@@ -310,7 +310,7 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-        /// For arrays you first need to deserialize dimensions, and then the values.
+		/// For arrays you first need to deserialize dimensions, and then the values.
 		if (read_offsets)
 		{
 			type_arr->deserializeOffsets(
@@ -330,7 +330,7 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 		}
 	}
 	else
-        type.deserializeBinaryBulk(column, streams[name]->compressed, limit, 0);    /// TODO Use avg_value_size_hint.
+		type.deserializeBinaryBulk(column, streams[name]->compressed, limit, 0);    /// TODO Use avg_value_size_hint.
 }
 
 
@@ -350,7 +350,7 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-        /// For arrays separate threads are used for sizes.
+		/// For arrays separate threads are used for sizes.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
 			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size)));
@@ -404,7 +404,7 @@ void TinyLogBlockOutputStream::writeSuffix()
 		return;
 	done = true;
 
-    /// Finish write.
+	/// Finish write.
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		it->second->finalize();
 
@@ -422,7 +422,7 @@ void TinyLogBlockOutputStream::write(const Block & block)
 {
 	storage.check(block, true);
 
-    /// The set of written offset columns so that you do not write mutual columns for nested structures multiple times
+	/// The set of written offset columns so that you do not write mutual columns for nested structures multiple times
 	OffsetColumns offset_columns;
 
 	for (size_t i = 0; i < block.columns(); ++i)
@@ -454,7 +454,7 @@ StorageTinyLog::StorageTinyLog(
 	String full_path = path + escapeForFileName(name) + '/';
 	if (!attach)
 	{
-        /// create files if they do not exist
+		/// create files if they do not exist
 		if (0 != mkdir(full_path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
 			throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
 	}
@@ -529,7 +529,7 @@ void StorageTinyLog::addFile(const String & column_name, const IDataType & type,
 
 void StorageTinyLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
-    /// Rename directory with data.
+	/// Rename directory with data.
 	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
 
 	path = new_path_to_db;

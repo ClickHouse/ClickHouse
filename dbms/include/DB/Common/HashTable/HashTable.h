@@ -865,12 +865,12 @@ public:
 
 	size_t size() const
 	{
-	    return m_size;
+		return m_size;
 	}
 
 	bool empty() const
 	{
-	    return 0 == m_size;
+		return 0 == m_size;
 	}
 
 	void clear()

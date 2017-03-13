@@ -37,8 +37,8 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(const String & path_,	/// p
 {
 	try
 	{
-        /** @note you could simply swap `reverse` in if and else branches of MergeTreeDataSelectExecutor,
-          * and remove this reverse. */
+		/** @note you could simply swap `reverse` in if and else branches of MergeTreeDataSelectExecutor,
+		  * and remove this reverse. */
 		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
 		/// inject columns required for defaults evaluation
@@ -60,7 +60,7 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(const String & path_,	/// p
 
 			const NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
 			/// If the expression in PREWHERE is not a column of the table, you do not need to output a column with it
-            ///  (from storage expect to receive only the columns of the table).
+			///  (from storage expect to receive only the columns of the table).
 			remove_prewhere_column = !pre_name_set.count(prewhere_column);
 
 			Names post_column_names;
@@ -76,8 +76,8 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(const String & path_,	/// p
 
 		if (check_columns)
 		{
-            /// Under owned_data_part->columns_lock we check that all requested columns are of the same type as in the table.
-            /// This may be not true in case of ALTER MODIFY.
+			/// Under owned_data_part->columns_lock we check that all requested columns are of the same type as in the table.
+			/// This may be not true in case of ALTER MODIFY.
 			if (!pre_column_names.empty())
 				storage.check(owned_data_part->columns, pre_column_names);
 			if (!column_names.empty())
@@ -92,7 +92,7 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(const String & path_,	/// p
 			columns = owned_data_part->columns.addTypes(column_names);
 		}
 
-        /// Let's estimate total number of rows for progress bar.
+		/// Let's estimate total number of rows for progress bar.
 		size_t total_rows = 0;
 		for (const auto & range : all_mark_ranges)
 			total_rows += range.end - range.begin;
@@ -110,7 +110,7 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(const String & path_,	/// p
 	}
 	catch (const Exception & e)
 	{
-        /// Suspicion of the broken part. A part is added to the queue for verification.
+		/// Suspicion of the broken part. A part is added to the queue for verification.
 		if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
 			storage.reportBrokenPart(owned_data_part->name);
 		throw;
@@ -228,7 +228,7 @@ Block MergeTreeBlockInputStream::readImpl()
 	{
 		do
 		{
-            /// Let's read the full block of columns needed to calculate the expression in PREWHERE.
+			/// Let's read the full block of columns needed to calculate the expression in PREWHERE.
 			size_t space_left = std::max(1LU, block_size / storage.index_granularity);
 			MarkRanges ranges_to_read;
 			while (!remaining_mark_ranges.empty() && space_left && !isCancelled())
@@ -245,14 +245,14 @@ Block MergeTreeBlockInputStream::readImpl()
 					remaining_mark_ranges.pop_back();
 			}
 
-            /// In the case of isCancelled.
+			/// In the case of isCancelled.
 			if (!res)
 				return res;
 
 			progressImpl(Progress(res.rows(), res.bytes()));
 			pre_reader->fillMissingColumns(res, ordered_names, should_reorder);
 
-            /// Compute the expression in PREWHERE.
+			/// Compute the expression in PREWHERE.
 			prewhere_actions->execute(res);
 
 			ColumnPtr column = res.getByName(prewhere_column).column;
@@ -270,8 +270,8 @@ Block MergeTreeBlockInputStream::readImpl()
 			else
 				observed_column = column;
 
-            /** If the filter is a constant (for example, it says PREWHERE 1),
-                *  then either return an empty block, or return the block unchanged.
+			/** If the filter is a constant (for example, it says PREWHERE 1),
+				*  then either return an empty block, or return the block unchanged.
 				*/
 			if (const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(observed_column.get()))
 			{
@@ -296,7 +296,7 @@ Block MergeTreeBlockInputStream::readImpl()
 				const IColumn::Filter & pre_filter = column_vec->getData();
 				IColumn::Filter post_filter(pre_filter.size());
 
-                /// Let's read the rest of the columns in the required segments and compose our own filter for them.
+				/// Let's read the rest of the columns in the required segments and compose our own filter for them.
 				size_t pre_filter_pos = 0;
 				size_t post_filter_pos = 0;
 				for (size_t i = 0; i < ranges_to_read.size(); ++i)
@@ -343,8 +343,8 @@ Block MergeTreeBlockInputStream::readImpl()
 
 				post_filter.resize(post_filter_pos);
 
-                /// Filter the columns related to PREWHERE using pre_filter,
-                ///  other columns - using post_filter.
+				/// Filter the columns related to PREWHERE using pre_filter,
+				///  other columns - using post_filter.
 				size_t rows = 0;
 				for (size_t i = 0; i < res.columns(); ++i)
 				{
@@ -355,7 +355,7 @@ Block MergeTreeBlockInputStream::readImpl()
 					rows = column.column->size();
 				}
 
-                /// Replace column with condition value from PREWHERE to constant.
+				/// Replace column with condition value from PREWHERE to constant.
 				if (!remove_prewhere_column)
 					res.getByName(prewhere_column).column = std::make_shared<ColumnConstUInt8>(rows, 1);
 			}
@@ -383,7 +383,7 @@ Block MergeTreeBlockInputStream::readImpl()
 				remaining_mark_ranges.pop_back();
 		}
 
-        /// In the case of isCancelled.
+		/// In the case of isCancelled.
 		if (!res)
 			return res;
 
@@ -394,9 +394,9 @@ Block MergeTreeBlockInputStream::readImpl()
 	if (remaining_mark_ranges.empty())
 	{
 		/** Close the files (before destroying the object).
-          * When many sources are created, but simultaneously reading only a few of them,
-          * buffers don't waste memory.
-          */
+		  * When many sources are created, but simultaneously reading only a few of them,
+		  * buffers don't waste memory.
+		  */
 		reader.reset();
 		pre_reader.reset();
 		part_columns_lock.reset();

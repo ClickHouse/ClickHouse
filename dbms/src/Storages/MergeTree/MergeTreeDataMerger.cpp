@@ -527,8 +527,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
 	ColumnSizeEstimator column_sizes(merged_column_to_size, merging_column_names, gathering_column_names);
 
-    /** Read from all parts, merge and write into a new one.
-      * In passing, we calculate expression for sorting.
+	/** Read from all parts, merge and write into a new one.
+	  * In passing, we calculate expression for sorting.
 	  */
 	BlockInputStreams src_streams;
 	UInt64 watch_prev_elapsed = 0;
@@ -551,9 +551,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 			src_streams.emplace_back(std::move(input));
 	}
 
-    /// The order of the threads is important: when the key is matched, the elements go in the order of the source stream number.
-    /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
-    ///  that is (approximately) increasing insertion time.
+	/// The order of the threads is important: when the key is matched, the elements go in the order of the source stream number.
+	/// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
+	///  that is (approximately) increasing insertion time.
 	std::unique_ptr<IProfilingBlockInputStream> merged_stream;
 
 	switch (data.merging_params.mode)
@@ -721,7 +721,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 		new_data_part->checksums = to.writeSuffixAndGetChecksums(all_columns, &checksums_gathered_columns);
 	new_data_part->index.swap(to.getIndex());
 
-    /// For convenience, even CollapsingSortedBlockInputStream can not return zero rows.
+	/// For convenience, even CollapsingSortedBlockInputStream can not return zero rows.
 	if (0 == to.marksCount())
 		throw Exception("Empty part after merge", ErrorCodes::LOGICAL_ERROR);
 
@@ -777,27 +777,27 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::renameMergedTemporaryPart(
 	const String & merged_name,
 	MergeTreeData::Transaction * out_transaction)
 {
-    /// Rename new part, add to the set and remove original parts.
+	/// Rename new part, add to the set and remove original parts.
 	auto replaced_parts = data.renameTempPartAndReplace(new_data_part, nullptr, out_transaction);
 
 	if (new_data_part->name != merged_name)
 		throw Exception("Unexpected part name: " + new_data_part->name + " instead of " + merged_name, ErrorCodes::LOGICAL_ERROR);
 
-    /// Let's check that all original parts have been deleted and only them.
+	/// Let's check that all original parts have been deleted and only them.
 	if (replaced_parts.size() != parts.size())
 	{
 		/** This is normal, although this happens rarely.
 		 *
-         * The situation - was replaced 0 parts instead of N can be, for example, in the following case
-         * - we had A part, but there was no B and C parts;
-         * - A, B -> AB was in the queue, but it has not been done, because there is no B part;
-         * - AB, C -> ABC was in the queue, but it has not been done, because there are no AB and C parts;
-         * - we have completed the task of downloading a B part;
-         * - we started to make A, B -> AB merge, since all parts appeared;
-         * - we decided to download ABC part from another replica, since it was impossible to make merge AB, C -> ABC;
-         * - ABC part appeared. When it was added, old A, B, C parts were deleted;
-         * - AB merge finished. AB part was added. But this is an obsolete part. The log will contain the message `Obsolete part added`,
-         *   then we get here.
+		 * The situation - was replaced 0 parts instead of N can be, for example, in the following case
+		 * - we had A part, but there was no B and C parts;
+		 * - A, B -> AB was in the queue, but it has not been done, because there is no B part;
+		 * - AB, C -> ABC was in the queue, but it has not been done, because there are no AB and C parts;
+		 * - we have completed the task of downloading a B part;
+		 * - we started to make A, B -> AB merge, since all parts appeared;
+		 * - we decided to download ABC part from another replica, since it was impossible to make merge AB, C -> ABC;
+		 * - ABC part appeared. When it was added, old A, B, C parts were deleted;
+		 * - AB merge finished. AB part was added. But this is an obsolete part. The log will contain the message `Obsolete part added`,
+		 *   then we get here.
 		 *
 		 * When M > N parts could be replaced?
 		 * - new block was added in ReplicatedMergeTreeBlockOutputStream;
@@ -832,7 +832,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 {
 	size_t aio_threshold = data.context.getSettings().min_bytes_to_use_direct_io;
 
-    /// Assemble all parts of the partition.
+	/// Assemble all parts of the partition.
 	DayNum_t month = MergeTreeData::getMonthFromName(job.partition);
 	MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(month);
 
@@ -847,7 +847,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 	LOG_DEBUG(log, "Resharding " << parts.size() << " parts from " << parts.front()->name
 		<< " to " << parts.back()->name << " which span the partition " << job.partition);
 
-    /// Merge all parts of the partition.
+	/// Merge all parts of the partition.
 
 	for (const MergeTreeData::DataPartPtr & part : parts)
 	{
@@ -899,12 +899,12 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 		sum_rows_approx += parts[i]->size * data.index_granularity;
 	}
 
-    /// Sharding of merged blocks.
+	/// Sharding of merged blocks.
 
-    /// For blocks numbering.
+	/// For blocks numbering.
 	SimpleIncrement increment(job.block_number);
 
-    /// Create a new part for each shard.
+	/// Create a new part for each shard.
 	MergeTreeData::PerShardDataParts per_shard_data_parts;
 
 	per_shard_data_parts.reserve(job.paths.size());
@@ -924,7 +924,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 		per_shard_data_parts.emplace(shard_no, data_part);
 	}
 
-    /// A very rough estimate for the compressed data size of each sharded partition.
+	/// A very rough estimate for the compressed data size of each sharded partition.
 	/// Actually it all depends on the properties of the expression for sharding.
 	UInt64 per_shard_size_bytes_compressed = merge_entry->total_size_bytes_compressed / static_cast<double>(job.paths.size());
 
@@ -935,7 +935,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 	using MergedBlockOutputStreamPtr = std::unique_ptr<MergedBlockOutputStream>;
 	using PerShardOutput = std::unordered_map<size_t, MergedBlockOutputStreamPtr>;
 
-    /// Create a stream for each shard that writes the corresponding sharded blocks.
+	/// Create a stream for each shard that writes the corresponding sharded blocks.
 	PerShardOutput per_shard_output;
 
 	per_shard_output.reserve(job.paths.size());
@@ -950,9 +950,9 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 		per_shard_output.emplace(shard_no, std::move(output_stream));
 	}
 
-    /// The order of the threads is important: when the key is matched, the elements go in the order of the source stream number.
-    /// In the merged part, rows with the same key must be in ascending order of the original part identifier,
-    ///  that is (approximately) increasing insertion time.
+	/// The order of the threads is important: when the key is matched, the elements go in the order of the source stream number.
+	/// In the merged part, rows with the same key must be in ascending order of the original part identifier,
+	///  that is (approximately) increasing insertion time.
 	std::unique_ptr<IProfilingBlockInputStream> merged_stream;
 
 	switch (data.merging_params.mode)
@@ -1041,7 +1041,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
 	merged_stream->readSuffix();
 
-    /// Complete initialization of new partitions parts.
+	/// Complete initialization of new partitions parts.
 	for (size_t shard_no = 0; shard_no < job.paths.size(); ++shard_no)
 	{
 		abortReshardPartitionIfRequested();
@@ -1049,7 +1049,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 		MergedBlockOutputStreamPtr & output_stream = per_shard_output.at(shard_no);
 		if (0 == output_stream->marksCount())
 		{
-            /// There was no data in this shard. Ignore.
+			/// There was no data in this shard. Ignore.
 			LOG_WARNING(log, "No data in partition for shard " + job.paths[shard_no].first);
 			per_shard_data_parts.erase(shard_no);
 			continue;
@@ -1067,7 +1067,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 		data_part->shard_no = shard_no;
 	}
 
-    /// Turn parts of new partitions into permanent parts.
+	/// Turn parts of new partitions into permanent parts.
 	for (auto & entry : per_shard_data_parts)
 	{
 		size_t shard_no = entry.first;

@@ -35,10 +35,10 @@ void ActiveDataPartSet::addImpl(const String & name)
 	part.name = name;
 	parsePartName(name, part);
 
-    /// Parts contained in `part` are located inside `data_parts` in sequence, overlapping with place where the part itself would be inserted.
+	/// Parts contained in `part` are located inside `data_parts` in sequence, overlapping with place where the part itself would be inserted.
 	Parts::iterator it = parts.lower_bound(part);
 
-    /// Let's go left.
+	/// Let's go left.
 	while (it != parts.begin())
 	{
 		--it;
@@ -50,7 +50,7 @@ void ActiveDataPartSet::addImpl(const String & name)
 		parts.erase(it++);
 	}
 
-    /// Let's go to the right.
+	/// Let's go to the right.
 	while (it != parts.end() && part.contains(*it))
 	{
 		parts.erase(it++);
@@ -72,7 +72,7 @@ String ActiveDataPartSet::getContainingPartImpl(const String & part_name) const
 	Part part;
 	parsePartName(part_name, part);
 
-    /// A part can only be covered/overlapped by the previous or next one in `parts`.
+	/// A part can only be covered/overlapped by the previous or next one in `parts`.
 	Parts::iterator it = parts.lower_bound(part);
 
 	if (it != parts.end())
@@ -118,7 +118,7 @@ String ActiveDataPartSet::getPartName(DayNum_t left_date, DayNum_t right_date, I
 {
 	const auto & date_lut = DateLUT::instance();
 
-    /// Directory name for the part has form: `YYYYMMDD_YYYYMMDD_N_N_L`.
+	/// Directory name for the part has form: `YYYYMMDD_YYYYMMDD_N_N_L`.
 	String res;
 	{
 		unsigned left_date_id = date_lut.toNumYYYYMMDD(left_date);

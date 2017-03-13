@@ -48,7 +48,7 @@ SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(StorageSetOrJoinBase & ta
 
 void SetOrJoinBlockOutputStream::write(const Block & block)
 {
-    /// Sort columns in the block. This is necessary, since Set and Join count on the same column order in different blocks.
+	/// Sort columns in the block. This is necessary, since Set and Join count on the same column order in different blocks.
 	Block sorted_block = block.sortColumns();
 
 	table.insertBlock(sorted_block);
@@ -126,7 +126,7 @@ void StorageSetOrJoinBase::restore()
 			&& endsWith(name, file_suffix)
 			&& dir_it->getSize() > 0)
 		{
-            /// Calculate the maximum number of available files with a backup to add the following files with large numbers.
+			/// Calculate the maximum number of available files with a backup to add the following files with large numbers.
 			UInt64 file_num = parse<UInt64>(name.substr(0, name.size() - file_suffix_size));
 			if (file_num > increment)
 				increment = file_num;
@@ -148,7 +148,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 		insertBlock(block);
 	backup_stream.readSuffix();
 
-    /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
+	/// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
 	LOG_INFO(&Logger::get("StorageSetOrJoinBase"), std::fixed << std::setprecision(2)
 		<< "Loaded from backup file " << file_path << ". "
 		<< backup_stream.getProfileInfo().rows << " rows, "
@@ -159,7 +159,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 
 void StorageSetOrJoinBase::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
-    /// Rename directory with data.
+	/// Rename directory with data.
 	String new_path = new_path_to_db + escapeForFileName(new_table_name);
 	Poco::File(path).renameTo(new_path);
 

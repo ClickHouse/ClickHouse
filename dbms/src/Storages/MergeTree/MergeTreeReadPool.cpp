@@ -367,8 +367,8 @@ NameSet MergeTreeReadPool::injectRequiredColumns(const MergeTreeData::DataPartPt
 		}
 	}
 
-    /** Add a column of the minimum size.
-        * Used in case when no column is needed or files are missing, but at least you need to know number of rows.
+	/** Add a column of the minimum size.
+		* Used in case when no column is needed or files are missing, but at least you need to know number of rows.
 		* Adds to the columns.
 		*/
 	if (all_column_files_missing)

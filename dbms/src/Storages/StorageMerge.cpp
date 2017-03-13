@@ -112,12 +112,12 @@ BlockInputStreams StorageMerge::read(
 
 	std::experimental::optional<QueryProcessingStage::Enum> processed_stage_in_source_tables;
 
-    /** First we make list of selected tables to find out its size.
-      * This is necessary to correctly pass the recommended number of threads to each table.
+	/** First we make list of selected tables to find out its size.
+	  * This is necessary to correctly pass the recommended number of threads to each table.
 	  */
 	StorageListWithLocks selected_tables = getSelectedTables();
 
-    /// If PREWHERE is used in query, you need to make sure that all tables support this.
+	/// If PREWHERE is used in query, you need to make sure that all tables support this.
 	if (typeid_cast<const ASTSelectQuery &>(*query).prewhere_expression)
 		for (const auto & elem : selected_tables)
 			if (!elem.first->supportsPrewhere())
@@ -136,8 +136,8 @@ BlockInputStreams StorageMerge::read(
 		selected_tables.remove_if([&] (const auto & elem) { return values.find(elem.first->getTableName()) == values.end(); });
 	}
 
-    /** Just in case, turn off optimization "transfer to PREWHERE",
-      * since there is no certainty that it works when one of table is MergeTree and other is not.
+	/** Just in case, turn off optimization "transfer to PREWHERE",
+	  * since there is no certainty that it works when one of table is MergeTree and other is not.
 	  */
 	Settings modified_settings = settings;
 	modified_settings.optimize_move_to_prewhere = false;
@@ -149,11 +149,11 @@ BlockInputStreams StorageMerge::read(
 		StoragePtr table = it->first;
 		auto & table_lock = it->second;
 
-        /// If there are only virtual columns in query, you must request at least one other column.
+		/// If there are only virtual columns in query, you must request at least one other column.
 		if (real_column_names.size() == 0)
 			real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumnsList()));
 
-        /// Substitute virtual column for its value
+		/// Substitute virtual column for its value
 		ASTPtr modified_query_ast = query->clone();
 		VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_table", table->getTableName());
 

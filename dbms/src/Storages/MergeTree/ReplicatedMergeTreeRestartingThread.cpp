@@ -49,19 +49,19 @@ void ReplicatedMergeTreeRestartingThread::run()
 {
 	constexpr auto retry_period_ms = 10 * 1000;
 
-    /// The frequency of checking expiration of session in ZK.
+	/// The frequency of checking expiration of session in ZK.
 	Int64 check_period_ms = storage.data.settings.zookeeper_session_expiration_check_period * 1000;
 
-    /// Periodicity of checking lag of replica.
+	/// Periodicity of checking lag of replica.
 	if (check_period_ms > static_cast<Int64>(storage.data.settings.check_delay_period) * 1000)
 		check_period_ms = storage.data.settings.check_delay_period * 1000;
 
 	setThreadName("ReplMTRestart");
 
-    bool first_time = true;                 /// Activate replica for the first time.
+	bool first_time = true;                 /// Activate replica for the first time.
 	time_t prev_time_of_check_delay = 0;
 
-    /// Starts the replica when the server starts/creates a table. Restart the replica when session expires with ZK.
+	/// Starts the replica when the server starts/creates a table. Restart the replica when session expires with ZK.
 	while (!need_stop)
 	{
 		try
@@ -90,7 +90,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 					}
 					catch (const zkutil::KeeperException & e)
 					{
-                        /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
+						/// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
 						tryLogCurrentException(__PRETTY_FUNCTION__);
 
 						wakeup_event.tryWait(retry_period_ms);
@@ -115,7 +115,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 			time_t current_time = time(0);
 			if (current_time >= prev_time_of_check_delay + static_cast<time_t>(storage.data.settings.check_delay_period))
 			{
-                /// Find out lag of replicas.
+				/// Find out lag of replicas.
 				time_t absolute_delay = 0;
 				time_t relative_delay = 0;
 
@@ -126,7 +126,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 
 				prev_time_of_check_delay = current_time;
 
-                /// We give up leadership if the relative gap is greater than threshold.
+				/// We give up leadership if the relative gap is greater than threshold.
 				if (storage.is_leader_node
 					&& relative_delay > static_cast<time_t>(storage.data.settings.min_relative_delay_to_yield_leadership))
 				{
@@ -201,8 +201,8 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
 		storage.leader_election = std::make_shared<zkutil::LeaderElection>(
 			storage.zookeeper_path + "/leader_election",
-            *storage.current_zookeeper,     /// current_zookeeper lives for the lifetime of leader_election,
-                                            ///  since before changing `current_zookeeper`, `leader_election` object is destroyed in `partialShutdown` method.
+			*storage.current_zookeeper,     /// current_zookeeper lives for the lifetime of leader_election,
+											///  since before changing `current_zookeeper`, `leader_election` object is destroyed in `partialShutdown` method.
 			[this] { storage.becomeLeader(); CurrentMetrics::add(CurrentMetrics::LeaderReplica); },
 			storage.replica_name);
 
@@ -312,8 +312,8 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 
 	String is_active_path = storage.replica_path + "/is_active";
 
-    /** If the node is marked as active, but the mark is made in the same instance, delete it.
-      * This is possible only when session in ZooKeeper expires.
+	/** If the node is marked as active, but the mark is made in the same instance, delete it.
+	  * This is possible only when session in ZooKeeper expires.
 	  */
 	String data;
 	Stat stat;
@@ -331,7 +331,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 			throw zkutil::KeeperException(code, is_active_path);
 	}
 
-    /// Simultaneously declare that this replica is active, and update the host.
+	/// Simultaneously declare that this replica is active, and update the host.
 	zkutil::Ops ops;
 	ops.emplace_back(std::make_unique<zkutil::Op::Create>(is_active_path,
 		active_node_identifier, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
@@ -350,8 +350,8 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 		throw;
 	}
 
-    /// `current_zookeeper` lives for the lifetime of `replica_is_active_node`,
-    ///  since before changing `current_zookeeper`, `replica_is_active_node` object is destroyed in `partialShutdown` method.
+	/// `current_zookeeper` lives for the lifetime of `replica_is_active_node`,
+	///  since before changing `current_zookeeper`, `replica_is_active_node` object is destroyed in `partialShutdown` method.
 	storage.replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *storage.current_zookeeper);
 }
 

@@ -48,9 +48,9 @@ void AlterCommand::apply(
 
 			if (!after_column.empty())
 			{
-                /// We are trying to find first column from end with name `column_name` or with a name beginning with `column_name` and ".".
-                /// For example "fruits.bananas"
-                /// names are considered the same if they completely match or `name_without_dot` matches the part of the name to the point
+				/// We are trying to find first column from end with name `column_name` or with a name beginning with `column_name` and ".".
+				/// For example "fruits.bananas"
+				/// names are considered the same if they completely match or `name_without_dot` matches the part of the name to the point
 				const auto reverse_insert_it = std::find_if(columns.rbegin(), columns.rend(),
 					std::bind(namesEqual, std::cref(after_column), std::placeholders::_1));
 

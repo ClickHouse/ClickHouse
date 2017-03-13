@@ -23,7 +23,7 @@ TableFunctionPtr TableFunctionFactory::get(
 	const Context & context) const
 {
 	if (context.getSettings().limits.readonly == 1)		/** For example, for readonly = 2 - allowed. */
-    	throw Exception("Table functions are forbidden in readonly mode", ErrorCodes::READONLY);
+		throw Exception("Table functions are forbidden in readonly mode", ErrorCodes::READONLY);
 
 		 if (name == "merge")		return std::make_shared<TableFunctionMerge>();
 	else if (name == "remote")		return std::make_shared<TableFunctionRemote>();

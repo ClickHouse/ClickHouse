@@ -19,7 +19,7 @@ namespace DB
 StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string & name_)
 	: name(name_)
 	, columns{
-        /// Table properties.
+		/// Table properties.
 		{ "database", 				std::make_shared<DataTypeString>()	},
 		{ "table", 					std::make_shared<DataTypeString>()	},
 		{ "replica_name",			std::make_shared<DataTypeString>()	},
@@ -35,7 +35,7 @@ StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string &
 		{ "is_detach",				std::make_shared<DataTypeUInt8>()	},
 		{ "is_attach_unreplicated",	std::make_shared<DataTypeUInt8>()	},
 		{ "attach_source_part_name",std::make_shared<DataTypeString>()	},
-        /// Processing status of item.
+		/// Processing status of item.
 		{ "is_currently_executing",	std::make_shared<DataTypeUInt8>()	},
 		{ "num_tries",				std::make_shared<DataTypeUInt32>()	},
 		{ "last_exception",			std::make_shared<DataTypeString>()	},
@@ -83,7 +83,7 @@ BlockInputStreams StorageSystemReplicationQueue::read(
 		}
 	}
 
-    /// Determine what tables are needed by the conditions in the query.
+	/// Determine what tables are needed by the conditions in the query.
 	{
 		Block filtered_block { col_database_to_filter, col_table_to_filter };
 

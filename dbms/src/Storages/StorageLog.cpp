@@ -100,9 +100,9 @@ private:
 	Names column_names;
 	DataTypes column_types;
 	StorageLog & storage;
-    size_t mark_number;     /// from what mark to read data
+	size_t mark_number;     /// from what mark to read data
 	size_t null_mark_number;
-    size_t rows_limit;      /// The maximum number of rows that can be read
+	size_t rows_limit;      /// The maximum number of rows that can be read
 	size_t rows_read = 0;
 	size_t max_read_buffer_size;
 
@@ -174,7 +174,7 @@ private:
 		WriteBufferFromFile plain;
 		CompressedWriteBuffer compressed;
 
-        size_t plain_offset;    /// How many bytes were in the file at the time the LogBlockOutputStream was created.
+		size_t plain_offset;    /// How many bytes were in the file at the time the LogBlockOutputStream was created.
 
 		void finalize()
 		{
@@ -190,7 +190,7 @@ private:
 
 	using OffsetColumns = std::set<std::string>;
 
-    WriteBufferFromFile marks_stream; /// Declared below `lock` to make the file open when rwlock is captured.
+	WriteBufferFromFile marks_stream; /// Declared below `lock` to make the file open when rwlock is captured.
 	std::unique_ptr<WriteBufferFromFile> null_marks_stream;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
@@ -226,10 +226,10 @@ Block LogBlockInputStream::readImpl()
 		}
 	}
 
-    /// How many rows to read for the next block.
+	/// How many rows to read for the next block.
 	size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
 
-    /// Pointers to offset columns, mutual for columns from nested data structures
+	/// Pointers to offset columns, mutual for columns from nested data structures
 	using OffsetColumns = std::map<std::string, ColumnPtr>;
 	OffsetColumns offset_columns;
 
@@ -258,7 +258,7 @@ Block LogBlockInputStream::readImpl()
 			is_nullable = false;
 		}
 
-        /// For nested structures, remember pointers to columns with offsets
+		/// For nested structures, remember pointers to columns with offsets
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type))
 		{
 			String name = DataTypeNested::extractNestedTableName(column.name);
@@ -266,7 +266,7 @@ Block LogBlockInputStream::readImpl()
 			if (offset_columns.count(name) == 0)
 				offset_columns[name] = std::make_shared<ColumnArray::ColumnOffsets_t>();
 			else
-                read_offsets = false; /// on previous iterations the offsets were already read by `readData`
+				read_offsets = false; /// on previous iterations the offsets were already read by `readData`
 
 			column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
 			if (is_nullable)
@@ -294,11 +294,11 @@ Block LogBlockInputStream::readImpl()
 
 	if (!res || rows_read == rows_limit)
 	{
-        /** Close the files (before destroying the object).
-          * When many sources are created, but simultaneously reading only a few of them,
-          * buffers don't waste memory.
-          */
-        streams.clear();
+		/** Close the files (before destroying the object).
+		  * When many sources are created, but simultaneously reading only a few of them,
+		  * buffers don't waste memory.
+		  */
+		streams.clear();
 	}
 
 	return res;
@@ -327,7 +327,7 @@ void LogBlockInputStream::addStream(const String & name, const IDataType & type,
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-        /// For arrays, separate threads are used for sizes.
+		/// For arrays, separate threads are used for sizes.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
 			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
@@ -368,7 +368,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-        /// For arrays, you first need to deserialize the dimensions, and then the values.
+		/// For arrays, you first need to deserialize the dimensions, and then the values.
 		if (read_offsets)
 		{
 			type_arr->deserializeOffsets(
@@ -394,7 +394,7 @@ void LogBlockOutputStream::write(const Block & block)
 {
 	storage.check(block, true);
 
-    /// The set of written offset columns so that you do not write mutual columns for nested structures multiple times
+	/// The set of written offset columns so that you do not write mutual columns for nested structures multiple times
 	OffsetColumns offset_columns;
 
 	MarksForColumns marks;
@@ -422,7 +422,7 @@ void LogBlockOutputStream::writeSuffix()
 		return;
 	done = true;
 
-    /// Finish write.
+	/// Finish write.
 	marks_stream.next();
 	if (null_marks_stream)
 		null_marks_stream->next();
@@ -458,7 +458,7 @@ void LogBlockOutputStream::addStream(const String & name, const IDataType & type
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-        /// For arrays separate threads are used for sizes.
+		/// For arrays separate threads are used for sizes.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
 			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
@@ -500,7 +500,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-        /// For arrays, you first need to serialize the dimensions, and then the values.
+		/// For arrays, you first need to serialize the dimensions, and then the values.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
 		if (offset_columns.count(size_name) == 0)
@@ -577,7 +577,7 @@ StorageLog::StorageLog(
 	if (columns->empty())
 		throw Exception("Empty list of columns passed to StorageLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-     /// create files if they do not exist
+	 /// create files if they do not exist
 	Poco::File(path + escapeForFileName(name) + '/').createDirectories();
 
 	for (const auto & column : getColumnsList())
@@ -750,7 +750,7 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_databa
 {
 	Poco::ScopedWriteRWLock lock(rwlock);
 
-    /// Rename directory with data.
+	/// Rename directory with data.
 	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
 
 	path = new_path_to_db;
@@ -783,8 +783,8 @@ const Marks & StorageLog::getMarksWithRealRowCount() const
 	const IDataType & column_type = *init_column_type();
 	String filename;
 
-    /** We take marks from first column.
-      * If this is an array, then we take the marks corresponding to the sizes, and not to the internals of the arrays.
+	/** We take marks from first column.
+	  * If this is an array, then we take the marks corresponding to the sizes, and not to the internals of the arrays.
 	  */
 
 	if (typeid_cast<const DataTypeArray *>(&column_type))

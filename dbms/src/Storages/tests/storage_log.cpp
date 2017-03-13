@@ -18,7 +18,7 @@ try
 
 	const size_t rows = 10000000;
 
-    /// create table with a pair of columns
+	/// create table with a pair of columns
 
 	NamesAndTypesListPtr names_and_types = std::make_shared<NamesAndTypesList>();
 	names_and_types->push_back(NameAndTypePair("a", std::make_shared<DataTypeUInt64>()));
@@ -26,7 +26,7 @@ try
 
 	StoragePtr table = StorageLog::create("./", "test", names_and_types);
 
-    /// write into it
+	/// write into it
 	{
 		Block block;
 
@@ -58,7 +58,7 @@ try
 		out->write(block);
 	}
 
-    /// read from it
+	/// read from it
 	{
 		Names column_names;
 		column_names.push_back("a");

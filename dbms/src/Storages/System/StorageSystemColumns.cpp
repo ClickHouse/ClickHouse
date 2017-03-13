@@ -55,13 +55,13 @@ BlockInputStreams StorageSystemColumns::read(
 	{
 		Databases databases = context.getDatabases();
 
-        /// Add `database` column.
+		/// Add `database` column.
 		ColumnPtr database_column = std::make_shared<ColumnString>();
 		for (const auto & database : databases)
 			database_column->insert(database.first);
 		block.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
 
-        /// Filter block with `database` column.
+		/// Filter block with `database` column.
 		VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 
 		if (!block.rows())
@@ -70,7 +70,7 @@ BlockInputStreams StorageSystemColumns::read(
 		database_column = block.getByName("database").column;
 		size_t rows = database_column->size();
 
-        /// Add `table` column.
+		/// Add `table` column.
 		ColumnPtr table_column = std::make_shared<ColumnString>();
 		IColumn::Offsets_t offsets(rows);
 		for (size_t i = 0; i < rows; ++i)
@@ -99,7 +99,7 @@ BlockInputStreams StorageSystemColumns::read(
 		block.insert(ColumnWithTypeAndName(table_column, std::make_shared<DataTypeString>(), "table"));
 	}
 
-    /// Filter block with `database` and `table` columns.
+	/// Filter block with `database` and `table` columns.
 	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 
 	if (!block.rows())
@@ -108,7 +108,7 @@ BlockInputStreams StorageSystemColumns::read(
 	ColumnPtr filtered_database_column = block.getByName("database").column;
 	ColumnPtr filtered_table_column = block.getByName("table").column;
 
-    /// We compose the result.
+	/// We compose the result.
 	ColumnPtr database_column = std::make_shared<ColumnString>();
 	ColumnPtr table_column = std::make_shared<ColumnString>();
 	ColumnPtr name_column = std::make_shared<ColumnString>();

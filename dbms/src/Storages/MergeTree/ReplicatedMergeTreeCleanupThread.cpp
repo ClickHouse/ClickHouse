@@ -111,7 +111,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
 	int children_count = stat.numChildren;
 
-    /// We will wait for 1.1 times more records to accumulate than necessary.
+	/// We will wait for 1.1 times more records to accumulate than necessary.
 	if (static_cast<double>(children_count) < storage.data.settings.replicated_logs_to_keep * 1.1)
 		return;
 
@@ -128,7 +128,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 	Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/log");
 	std::sort(entries.begin(), entries.end());
 
-    /// We will not touch the last `replicated_logs_to_keep` records.
+	/// We will not touch the last `replicated_logs_to_keep` records.
 	entries.erase(entries.end() - std::min(entries.size(), storage.data.settings.replicated_logs_to_keep), entries.end());
 	/// We will not touch records that are no less than `min_pointer`.
 	entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + padIndex(min_pointer)), entries.end());
@@ -143,7 +143,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
 		if (ops.size() > 400 || i + 1 == entries.size())
 		{
-            /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
+			/// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
 			ops.emplace_back(std::make_unique<zkutil::Op::Check>(storage.zookeeper_path + "/replicas", stat.version));
 			zookeeper->multi(ops);
 			ops.clear();

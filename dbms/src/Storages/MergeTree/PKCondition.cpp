@@ -74,8 +74,8 @@ static String extractFixedPrefixFromLikePattern(const String & like_pattern)
   */
 static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix)
 {
-    /** Increment the last byte of the prefix by one. But if it is 255, then remove it and increase the previous one.
-      * Example (for convenience, suppose that the maximum value of byte is `z`)
+	/** Increment the last byte of the prefix by one. But if it is 255, then remove it and increase the previous one.
+	  * Example (for convenience, suppose that the maximum value of byte is `z`)
 	  * abcx -> abcy
 	  * abcz -> abd
 	  * zzz -> empty string
@@ -229,8 +229,8 @@ PKCondition::PKCondition(ASTPtr & query, const Context & context, const NamesAnd
 			pk_columns[name] = i;
 	}
 
-    /** Evaluation of expressions that depend only on constants.
-      * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
+	/** Evaluation of expressions that depend only on constants.
+	  * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
 	  */
 	Block block_with_constants = getBlockWithConstants(query, context, all_columns);
 
@@ -310,8 +310,8 @@ void PKCondition::traverseAST(ASTPtr & node, const Context & context, Block & bl
 			{
 				traverseAST(args[i], context, block_with_constants);
 
-                /** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
-                  * - in this case `n - 1` elements are added (where `n` is the number of arguments).
+				/** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
+				  * - in this case `n - 1` elements are added (where `n` is the number of arguments).
 				  */
 				if (i != 0 || element.function == RPNElement::FUNCTION_NOT)
 					rpn.push_back(element);
@@ -365,8 +365,8 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 	DataTypePtr & out_primary_key_column_type,
 	std::vector<const ASTFunction *> & out_functions_chain)
 {
-    /** By itself, the primary key column can be a functional expression. for example, `intHash32(UserID)`.
-      * Therefore, use the full name of the expression for search.
+	/** By itself, the primary key column can be a functional expression. for example, `intHash32(UserID)`.
+	  * Therefore, use the full name of the expression for search.
 	  */
 	String name = node->getColumnName();
 
@@ -419,9 +419,9 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 
 bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
 {
-    /** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of primary key,
-      *  or itself, wrapped in a chain of possibly-monotone functions,
-      *  or constant expression - number.
+	/** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of primary key,
+	  *  or itself, wrapped in a chain of possibly-monotone functions,
+	  *  or constant expression - number.
 	  */
 	Field const_value;
 	DataTypePtr const_type;
@@ -495,7 +495,7 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 			|| const_value.getType() == Field::Types::Int64
 			|| const_value.getType() == Field::Types::Float64)
 		{
-            /// Zero in all types is represented in memory the same way as in UInt64.
+			/// Zero in all types is represented in memory the same way as in UInt64.
 			out.function = const_value.get<UInt64>()
 				? RPNElement::ALWAYS_TRUE
 				: RPNElement::ALWAYS_FALSE;
@@ -509,9 +509,9 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 
 bool PKCondition::operatorFromAST(const ASTFunction * func, RPNElement & out)
 {
-    /// Functions AND, OR, NOT.
-    /** Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
-      * (or, the same thing - calling the function `and` from one argument).
+	/// Functions AND, OR, NOT.
+	/** Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
+	  * (or, the same thing - calling the function `and` from one argument).
 	  */
 	const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
@@ -625,7 +625,7 @@ static bool forAnyParallelogram(
 		{
 			if (key_left[prefix_size] == key_right[prefix_size])
 			{
-                /// Point ranges.
+				/// Point ranges.
 				parallelogram[prefix_size] = Range(key_left[prefix_size]);
 				++prefix_size;
 			}
@@ -741,7 +741,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
 		{
 			const Range * key_range = &key_ranges[element.key_column];
 
-            /// The case when the column is wrapped in a chain of possibly monotone functions.
+			/// The case when the column is wrapped in a chain of possibly monotone functions.
 			Range key_range_transformed;
 			bool evaluation_is_not_possible = false;
 			if (!element.monotonic_functions_chain.empty())
@@ -750,7 +750,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
 				DataTypePtr current_type = data_types[element.key_column];
 				for (auto & func : element.monotonic_functions_chain)
 				{
-                    /// We check the monotonicity of each function on a specific range.
+					/// We check the monotonicity of each function on a specific range.
 					IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
 						*current_type.get(), key_range_transformed.left, key_range_transformed.right);
 
@@ -766,7 +766,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
 						break;
 					}
 
-                    /// Compute the function.
+					/// Compute the function.
 					DataTypePtr new_type;
 					if (!key_range_transformed.left.isNull())
 						applyFunction(func, current_type, key_range_transformed.left, new_type, key_range_transformed.left);

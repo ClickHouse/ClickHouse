@@ -78,7 +78,7 @@ void IMergedBlockOutputStream::addStream(
 	{
 		if (!skip_offsets)
 		{
-            /// For arrays, separate threads are used for sizes.
+			/// For arrays, separate threads are used for sizes.
 			String size_name = DataTypeNested::extractNestedTableName(name)
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 			String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
@@ -156,14 +156,14 @@ void IMergedBlockOutputStream::writeDataImpl(
 		{
 			size_t limit = 0;
 
-            /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
+			/// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
 			if (prev_mark == 0 && index_offset != 0)
 				limit = index_offset;
 			else
 			{
 				limit = storage.index_granularity;
 
-                /// There could already be enough data to compress into the new block.
+				/// There could already be enough data to compress into the new block.
 				if (stream.compressed.offset() >= min_compress_block_size)
 					stream.compressed.next();
 
@@ -173,7 +173,7 @@ void IMergedBlockOutputStream::writeDataImpl(
 
 			DataTypeUInt8{}.serializeBinaryBulk(nullable_col.getNullMapConcreteColumn(), stream.compressed, 0, 0);
 
-            /// This way that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
+			/// This way that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
 			stream.compressed.nextIfAtEnd();
 
 			prev_mark += limit;
@@ -184,7 +184,7 @@ void IMergedBlockOutputStream::writeDataImpl(
 	}
 	else if (!write_array_data && ((type_arr = typeid_cast<const DataTypeArray *>(&type)) != nullptr))
 	{
-        /// For arrays, you first need to serialize dimensions, and then values.
+		/// For arrays, you first need to serialize dimensions, and then values.
 		String size_name = DataTypeNested::extractNestedTableName(name)
 			+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
@@ -199,7 +199,7 @@ void IMergedBlockOutputStream::writeDataImpl(
 			{
 				size_t limit = 0;
 
-                /// If there is `index_offset`, the first mark goes not immediately, but after this number of rows.
+				/// If there is `index_offset`, the first mark goes not immediately, but after this number of rows.
 				if (prev_mark == 0 && index_offset != 0)
 					limit = index_offset;
 				else
@@ -216,7 +216,7 @@ void IMergedBlockOutputStream::writeDataImpl(
 
 				type_arr->serializeOffsets(column, stream.compressed, prev_mark, limit);
 
-                /// This way that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
+				/// This way that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
 				stream.compressed.nextIfAtEnd();
 
 				prev_mark += limit;
@@ -239,14 +239,14 @@ void IMergedBlockOutputStream::writeDataImpl(
 		{
 			size_t limit = 0;
 
-            /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
+			/// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
 			if (prev_mark == 0 && index_offset != 0)
 				limit = index_offset;
 			else
 			{
 				limit = storage.index_granularity;
 
-                /// There could already be enough data to compress into the new block.
+				/// There could already be enough data to compress into the new block.
 				if (stream.compressed.offset() >= min_compress_block_size)
 					stream.compressed.next();
 
@@ -256,7 +256,7 @@ void IMergedBlockOutputStream::writeDataImpl(
 
 			type.serializeBinaryBulk(column, stream.compressed, prev_mark, limit);
 
-            /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
+			/// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
 			stream.compressed.nextIfAtEnd();
 
 			prev_mark += limit;
@@ -371,7 +371,7 @@ void MergedBlockOutputStream::write(const Block & block)
 }
 
 /** If the data is not sorted, but we pre-calculated the permutation, after which they will be sorted.
-    * This method is used to save RAM, since you do not need to keep two blocks at once - the source and the sorted.
+	* This method is used to save RAM, since you do not need to keep two blocks at once - the source and the sorted.
 	*/
 void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation)
 {
@@ -387,7 +387,7 @@ MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChe
 	const NamesAndTypesList & total_column_list,
 	MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
-    /// Finish write and get checksums.
+	/// Finish write and get checksums.
 	MergeTreeData::DataPart::Checksums checksums;
 
 	if (additional_column_checksums)
@@ -411,20 +411,20 @@ MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChe
 
 	if (marks_count == 0)
 	{
-        /// A part is empty - all records are deleted.
+		/// A part is empty - all records are deleted.
 		Poco::File(part_path).remove(true);
 		checksums.files.clear();
 		return checksums;
 	}
 
 	{
-        /// Write a file with a description of columns.
+		/// Write a file with a description of columns.
 		WriteBufferFromFile out(part_path + "columns.txt", 4096);
 		total_column_list.writeText(out);
 	}
 
 	{
-        /// Write file with checksums.
+		/// Write file with checksums.
 		WriteBufferFromFile out(part_path + "checksums.txt", 4096);
 		checksums.write(out);
 	}
@@ -465,12 +465,12 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 	block.checkNumberOfRows();
 	size_t rows = block.rows();
 
-    /// The set of written offset columns so that you do not write mutual to nested structures columns several times
+	/// The set of written offset columns so that you do not write mutual to nested structures columns several times
 	OffsetColumns offset_columns;
 
 	auto sort_description = storage.getSortDescription();
 
-    /// Here we will add the columns related to the Primary Key, then write the index.
+	/// Here we will add the columns related to the Primary Key, then write the index.
 	std::vector<ColumnWithTypeAndName> primary_columns(sort_description.size());
 	std::map<String, size_t> primary_columns_name_to_position;
 
@@ -489,7 +489,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 			? block.getByName(descr.column_name)
 			: block.safeGetByPosition(descr.column_number);
 
-        /// Reorder primary key columns in advance and add them to `primary_columns`.
+		/// Reorder primary key columns in advance and add them to `primary_columns`.
 		if (permutation)
 			primary_columns[i].column = primary_columns[i].column->permute(*permutation, 0);
 	}
@@ -501,7 +501,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 			index_columns[i] = primary_columns[i].column.get()->cloneEmpty();
 	}
 
-    /// Now write the data.
+	/// Now write the data.
 	for (const auto & it : columns_list)
 	{
 		const ColumnWithTypeAndName & column = block.getByName(it.name);
@@ -515,7 +515,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 			}
 			else
 			{
-                /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
+				/// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
 				ColumnPtr permutted_column = column.column->permute(*permutation, 0);
 				writeData(column.name, *column.type, *permutted_column, offset_columns, 0, false);
 			}
@@ -535,7 +535,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 		  */
 		TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
 
-        /// Write index. The index contains Primary Key value for each `index_granularity` row.
+		/// Write index. The index contains Primary Key value for each `index_granularity` row.
 		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
 		{
 			if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)

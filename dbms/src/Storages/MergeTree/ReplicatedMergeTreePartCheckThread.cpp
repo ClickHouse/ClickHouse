@@ -66,7 +66,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 	auto zookeeper = storage.getZooKeeper();
 	String part_path = storage.replica_path + "/parts/" + part_name;
 
-    /// If the part is in ZooKeeper, remove it from there and add the task to download it to the queue.
+	/// If the part is in ZooKeeper, remove it from there and add the task to download it to the queue.
 	if (zookeeper->exists(part_path))
 	{
 		LOG_WARNING(log, "Part " << part_name << " exists in ZooKeeper but not locally. "
@@ -77,18 +77,18 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 		return;
 	}
 
-    /// If the part is not in ZooKeeper, we'll check if it's at least somewhere.
+	/// If the part is not in ZooKeeper, we'll check if it's at least somewhere.
 	ActiveDataPartSet::Part part_info;
 	ActiveDataPartSet::parsePartName(part_name, part_info);
 
-    /** The logic is this:
-        * - if some live or inactive replica has such a part, or a part covering it
-        *   - it is Ok, nothing is needed, it is then downloaded when processing the queue, when the replica comes to life;
-        *   - or, if the replica never comes to life, then the administrator will delete or create a new replica with the same address and see everything from the beginning;
-        * - if no one has such part or a part covering it, then
-        *   - if someone has all the constituent parts, then we will do nothing - it simply means that other replicas have not yet completed merge
-        *   - if no one has all the constituent parts, then agree the part forever lost,
-        *     and remove the entry from the replication queue.
+	/** The logic is this:
+		* - if some live or inactive replica has such a part, or a part covering it
+		*   - it is Ok, nothing is needed, it is then downloaded when processing the queue, when the replica comes to life;
+		*   - or, if the replica never comes to life, then the administrator will delete or create a new replica with the same address and see everything from the beginning;
+		* - if no one has such part or a part covering it, then
+		*   - if someone has all the constituent parts, then we will do nothing - it simply means that other replicas have not yet completed merge
+		*   - if no one has all the constituent parts, then agree the part forever lost,
+		*     and remove the entry from the replication queue.
 		*/
 
 	LOG_WARNING(log, "Checking if anyone has part covering " << part_name << ".");
@@ -126,7 +126,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 
 	if (found)
 	{
-        /// On some live or dead replica there is a necessary part or part covering it.
+		/// On some live or dead replica there is a necessary part or part covering it.
 		return;
 	}
 
@@ -136,12 +136,12 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 
 	if (num_found_blocks == part_length_in_blocks)
 	{
-        /// On a set of live or dead lines, there are all parts from which you can compound the desired part. We will do nothing.
+		/// On a set of live or dead lines, there are all parts from which you can compound the desired part. We will do nothing.
 		LOG_WARNING(log, "Found all blocks for missing part " << part_name << ". Will wait for them to be merged.");
 		return;
 	}
 
-    /// No one has such a part.
+	/// No one has such a part.
 	LOG_ERROR(log, "No replica has part covering " << part_name);
 
 	if (num_found_blocks != 0)
@@ -150,32 +150,32 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 
 	ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
-    /// Is it in the replication queue? If there is - delete, because the task can not be processed.
+	/// Is it in the replication queue? If there is - delete, because the task can not be processed.
 	if (!storage.queue.remove(zookeeper, part_name))
 	{
-        /// The part was not in our queue. Why did it happen?
+		/// The part was not in our queue. Why did it happen?
 		LOG_ERROR(log, "Missing part " << part_name << " is not in our queue.");
 		return;
 	}
 
-    /** This situation is possible if on all the replicas where the part was, it deteriorated.
-        * For example, a replica that has just written it has power turned off and the data has not been written from cache to disk.
+	/** This situation is possible if on all the replicas where the part was, it deteriorated.
+		* For example, a replica that has just written it has power turned off and the data has not been written from cache to disk.
 		*/
 	LOG_ERROR(log, "Part " << part_name << " is lost forever.");
 	ProfileEvents::increment(ProfileEvents::ReplicatedDataLoss);
 
-    /** You need to add the missing part to `block_numbers` so that it does not interfere with merges.
-      * But we can't just add it to `block_numbers` - if so,
-      *  ZooKeeper for some reason will skip one number for autoincrement,
-      *  and there will still be a hole in the block numbers.
-      * Especially because of this, you have to separately have `nonincrement_block_numbers`.
+	/** You need to add the missing part to `block_numbers` so that it does not interfere with merges.
+	  * But we can't just add it to `block_numbers` - if so,
+	  *  ZooKeeper for some reason will skip one number for autoincrement,
+	  *  and there will still be a hole in the block numbers.
+	  * Especially because of this, you have to separately have `nonincrement_block_numbers`.
 	  *
-      * By the way, if we die here, the mergers will not be made through these missing parts.
-      *
-      * And, we will not add if:
-      * - would need to create too many (more than 1000) nodes;
-      * - the part is the first in partition or was ATTACHed.
-      * NOTE It is possible to also add a condition if the entry in the queue is very old.
+	  * By the way, if we die here, the mergers will not be made through these missing parts.
+	  *
+	  * And, we will not add if:
+	  * - would need to create too many (more than 1000) nodes;
+	  * - the part is the first in partition or was ATTACHed.
+	  * NOTE It is possible to also add a condition if the entry in the queue is very old.
 	  */
 
 	if (part_length_in_blocks > 1000)
@@ -208,18 +208,18 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 
 	auto part = storage.data.getActiveContainingPart(part_name);
 
-    /// We do not have this or a covering part.
+	/// We do not have this or a covering part.
 	if (!part)
 	{
 		searchForMissingPart(part_name);
 	}
-    /// We have this part, and it's active. We will check whether we need this part and whether it has the right data.
+	/// We have this part, and it's active. We will check whether we need this part and whether it has the right data.
 	else if (part->name == part_name)
 	{
 		auto zookeeper = storage.getZooKeeper();
 		auto table_lock = storage.lockStructure(false);
 
-        /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
+		/// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
 		if (zookeeper->exists(storage.replica_path + "/parts/" + part_name))
 		{
 			LOG_WARNING(log, "Checking data of part " << part_name << ".");
@@ -260,15 +260,15 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 
 				storage.removePartAndEnqueueFetch(part_name);
 
-                /// Delete part locally.
+				/// Delete part locally.
 				storage.data.renameAndDetachPart(part, "broken_");
 			}
 		}
 		else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(0))
 		{
-            /// If the part is not in ZooKeeper, delete it locally.
-            /// Probably, someone just wrote down the part, and has not yet added to ZK.
-            /// Therefore, delete only if the part is old (not very reliable).
+			/// If the part is not in ZooKeeper, delete it locally.
+			/// Probably, someone just wrote down the part, and has not yet added to ZK.
+			/// Therefore, delete only if the part is old (not very reliable).
 			ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
 			LOG_ERROR(log, "Unexpected part " << part_name << " in filesystem. Removing.");
@@ -276,10 +276,10 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 		}
 		else
 		{
-            /// TODO You need to make sure that the part is still checked after a while.
-            /// Otherwise, it's possible that the part was not added to ZK,
-            ///  but remained in the file system and in a number of active parts.
-            /// And then for a long time (before restarting), the data on the replicas will be different.
+			/// TODO You need to make sure that the part is still checked after a while.
+			/// Otherwise, it's possible that the part was not added to ZK,
+			///  but remained in the file system and in a number of active parts.
+			/// And then for a long time (before restarting), the data on the replicas will be different.
 
 			LOG_TRACE(log, "Young part " << part_name
 				<< " with age " << (time(0) - part->modification_time)
@@ -288,8 +288,8 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 	}
 	else
 	{
-        /// If we have a covering part, ignore all the problems with this part.
-        /// In the worst case, errors will still appear `old_parts_lifetime` seconds in error log until the part is removed as the old one.
+		/// If we have a covering part, ignore all the problems with this part.
+		/// In the worst case, errors will still appear `old_parts_lifetime` seconds in error log until the part is removed as the old one.
 		LOG_WARNING(log, "We have part " << part->name << " covering part " << part_name);
 	}
 }
@@ -305,7 +305,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 		{
 			time_t current_time = time(0);
 
-            /// Take part from the queue for verification.
+			/// Take part from the queue for verification.
 			PartsToCheckQueue::iterator selected = parts_queue.end();	/// end from std::list is not get invalidated
 			time_t min_check_time = std::numeric_limits<time_t>::max();
 
@@ -338,8 +338,8 @@ void ReplicatedMergeTreePartCheckThread::run()
 
 			if (selected == parts_queue.end())
 			{
-                /// Poco::Event is triggered immediately if `signal` was before the `wait` call.
-                /// We can wait a little more than we need due to the use of the old `current_time`.
+				/// Poco::Event is triggered immediately if `signal` was before the `wait` call.
+				/// We can wait a little more than we need due to the use of the old `current_time`.
 
 				if (min_check_time != std::numeric_limits<time_t>::max() && min_check_time > current_time)
 					wakeup_event.tryWait(1000 * (min_check_time - current_time));
@@ -354,7 +354,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 			if (need_stop)
 				break;
 
-            /// Remove the part from check queue.
+			/// Remove the part from check queue.
 			{
 				std::lock_guard<std::mutex> lock(mutex);
 

@@ -70,7 +70,7 @@ BlockInputStreams StorageSystemReplicas::read(
 			if (typeid_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
 				replicated_tables[db.first][iterator->name()] = iterator->table();
 
-    /// Do you need columns that require a walkthrough in ZooKeeper to compute.
+	/// Do you need columns that require a walkthrough in ZooKeeper to compute.
 	bool with_zk_fields = false;
 	for (const auto & name : column_names)
 	{

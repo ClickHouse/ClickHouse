@@ -372,7 +372,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const IAST * ptr) const
 			|| global_not_in_function_name == function_ptr->name)
 			return true;
 
-        /// indexHint is a special function that it does not make sense to transfer to PREWHERE
+		/// indexHint is a special function that it does not make sense to transfer to PREWHERE
 		if ("indexHint" == function_ptr->name)
 			return true;
 	}

@@ -601,7 +601,7 @@ public:
 
 		if (const auto col_in = typeid_cast<const ColumnString *>(column.get()))
 		{
-		    const auto col_res = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
+			const auto col_res = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
 			block.safeGetByPosition(result).column = col_res;
 
 			auto & vec_res = col_res->getChars();

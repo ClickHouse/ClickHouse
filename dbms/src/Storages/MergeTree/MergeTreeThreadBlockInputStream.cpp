@@ -75,9 +75,9 @@ bool MergeTreeThreadBlockInputStream::getNewTask()
 	if (!task)
 	{
 		/** Close the files (before destroying the object).
-          * When many sources are created, but simultaneously reading only a few of them,
-          * buffers don't waste memory.
-          */
+		  * When many sources are created, but simultaneously reading only a few of them,
+		  * buffers don't waste memory.
+		  */
 		reader = {};
 		pre_reader = {};
 		return false;
@@ -85,7 +85,7 @@ bool MergeTreeThreadBlockInputStream::getNewTask()
 
 	const auto path = storage.getFullPath() + task->data_part->name + '/';
 
-    /// Allows pool to reduce number of threads in case of too slow reads.
+	/// Allows pool to reduce number of threads in case of too slow reads.
 	auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info) { pool->profileFeedback(info); };
 
 	if (!reader)
@@ -132,7 +132,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 	{
 		do
 		{
-            /// Let's read the full block of columns needed to calculate the expression in PREWHERE.
+			/// Let's read the full block of columns needed to calculate the expression in PREWHERE.
 			size_t space_left = std::max(1LU, block_size_marks);
 			MarkRanges ranges_to_read;
 
@@ -150,7 +150,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 					task->mark_ranges.pop_back();
 			}
 
-            /// In case of isCancelled.
+			/// In case of isCancelled.
 			if (!res)
 				return res;
 
@@ -175,8 +175,8 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 			else
 				observed_column = column;
 
-            /** If the filter is a constant (for example, it says PREWHERE 1),
-                * then either return an empty block, or return the block unchanged.
+			/** If the filter is a constant (for example, it says PREWHERE 1),
+				* then either return an empty block, or return the block unchanged.
 				*/
 			if (const auto column_const = typeid_cast<const ColumnConstUInt8 *>(observed_column.get()))
 			{
@@ -198,7 +198,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 				const auto & pre_filter = column_vec->getData();
 				IColumn::Filter post_filter(pre_filter.size());
 
-                /// Let's read the rest of the columns in the required segments and compose our own filter for them.
+				/// Let's read the rest of the columns in the required segments and compose our own filter for them.
 				size_t pre_filter_pos = 0;
 				size_t post_filter_pos = 0;
 
@@ -248,8 +248,8 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 
 				post_filter.resize(post_filter_pos);
 
-                /// Filter the columns related to PREWHERE using pre_filter,
-                ///  other columns - using post_filter.
+				/// Filter the columns related to PREWHERE using pre_filter,
+				///  other columns - using post_filter.
 				size_t rows = 0;
 				for (const auto i : ext::range(0, res.columns()))
 				{
@@ -261,7 +261,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 					rows = col.column->size();
 				}
 
-                /// Replace column with condition value from PREWHERE to a constant.
+				/// Replace column with condition value from PREWHERE to a constant.
 				if (!task->remove_prewhere_column)
 					res.getByName(prewhere_column).column = std::make_shared<ColumnConstUInt8>(rows, 1);
 			}
@@ -293,7 +293,7 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
 				task->mark_ranges.pop_back();
 		}
 
-        /// In the case of isCancelled.
+		/// In the case of isCancelled.
 		if (!res)
 			return res;
 

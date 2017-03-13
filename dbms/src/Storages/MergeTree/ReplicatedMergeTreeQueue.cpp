@@ -136,7 +136,7 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
 {
 	/// Here there can be a race condition (with different remove at the same time).
 	/// Consider it unimportant (for a short time, ZK will have a slightly different time value).
-    /// We also read values ​​of `min_unprocessed_insert_time`, `max_processed_insert_time` without synchronization.
+	/// We also read values ​​of `min_unprocessed_insert_time`, `max_processed_insert_time` without synchronization.
 	zkutil::Ops ops;
 
 	if (min_unprocessed_insert_time_changed)
@@ -176,7 +176,7 @@ void ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPt
 		/// Remove the job from the queue in the RAM.
 		/// You can not just refer to a pre-saved iterator, because someone else might be able to delete the task.
 		/// Why do we view the queue from the end?
-        ///  - because the task for execution first is moved to the end of the queue, so that in case of failure it remains at the end.
+		///  - because the task for execution first is moved to the end of the queue, so that in case of failure it remains at the end.
 		for (Queue::iterator it = queue.end(); it != queue.begin();)
 		{
 			--it;
@@ -239,7 +239,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
 	if (index_str.empty())
 	{
-        /// If we do not already have a pointer to the log, put a pointer to the first entry in it.
+		/// If we do not already have a pointer to the log, put a pointer to the first entry in it.
 		index = log_entries.empty() ? 0 : parse<UInt64>(std::min_element(log_entries.begin(), log_entries.end())->substr(strlen("log-")));
 
 		zookeeper->set(replica_path + "/log_pointer", toString(index));
@@ -262,9 +262,9 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 		std::sort(log_entries.begin(), log_entries.end());
 
 		/// ZK contains a limit on the number or total size of operations in a multi-request.
-        /// If the limit is exceeded, the connection is simply closed.
-        /// The constant is selected with a margin. The default limit in ZK is 1 MB of data in total.
-        /// The average size of the node value in this case is less than 10 kilobytes.
+		/// If the limit is exceeded, the connection is simply closed.
+		/// The constant is selected with a margin. The default limit in ZK is 1 MB of data in total.
+		/// The average size of the node value in this case is less than 10 kilobytes.
 		static constexpr auto MAX_MULTI_OPS = 100;
 
 		for (size_t i = 0, size = log_entries.size(); i < size; i += MAX_MULTI_OPS)
@@ -326,7 +326,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
 			auto results = zookeeper->multi(ops);
 
-            /// Now we have successfully updated the queue in ZooKeeper. Update it in RAM.
+			/// Now we have successfully updated the queue in ZooKeeper. Update it in RAM.
 
 			try
 			{
@@ -344,8 +344,8 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 			}
 			catch (...)
 			{
-                /// If it fails, the data in RAM is incorrect. In order to avoid possible further corruption of data in ZK, we will kill ourselves.
-                /// This is possible only if there is an unknown logical error.
+				/// If it fails, the data in RAM is incorrect. In order to avoid possible further corruption of data in ZK, we will kill ourselves.
+				/// This is possible only if there is an unknown logical error.
 				std::terminate();
 			}
 
@@ -368,7 +368,7 @@ ReplicatedMergeTreeQueue::StringSet ReplicatedMergeTreeQueue::moveSiblingPartsFo
 {
 	std::lock_guard<std::mutex> lock(mutex);
 
-    /// Let's find the action to merge this part with others. Let's remember others.
+	/// Let's find the action to merge this part with others. Let's remember others.
 	StringSet parts_for_merge;
 	Queue::iterator merge_entry;
 	for (Queue::iterator it = queue.begin(); it != queue.end(); ++it)
@@ -387,7 +387,7 @@ ReplicatedMergeTreeQueue::StringSet ReplicatedMergeTreeQueue::moveSiblingPartsFo
 
 	if (!parts_for_merge.empty())
 	{
-        /// Move to the end of queue actions that are receiving `parts_for_merge`.
+		/// Move to the end of queue actions that are receiving `parts_for_merge`.
 		for (Queue::iterator it = queue.begin(); it != queue.end();)
 		{
 			auto it0 = it;
@@ -415,7 +415,7 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
 	bool min_unprocessed_insert_time_changed = false;
 	bool max_processed_insert_time_changed = false;
 
-    /// Remove operations with parts, contained in the range to be deleted, from the queue.
+	/// Remove operations with parts, contained in the range to be deleted, from the queue.
 	std::unique_lock<std::mutex> lock(mutex);
 	for (Queue::iterator it = queue.begin(); it != queue.end();)
 	{
@@ -442,7 +442,7 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
 	LOG_DEBUG(log, "Removed " << removed_entries << " entries from queue. "
 		"Waiting for " << to_wait.size() << " entries that are currently executing.");
 
-    /// Let's wait for the operations with the parts contained in the range to be deleted.
+	/// Let's wait for the operations with the parts contained in the range to be deleted.
 	for (LogEntryPtr & entry : to_wait)
 		entry->execution_complete.wait(lock, [&entry] { return !entry->currently_executing; });
 }
@@ -454,11 +454,11 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 	MergeTreeDataMerger & merger,
 	MergeTreeData & data)
 {
-    /// mutex has already been captured. The function is called only from `selectEntryToProcess`.
+	/// mutex has already been captured. The function is called only from `selectEntryToProcess`.
 
 	if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
 	{
-        /// Let's check if the same part is now being created by another action.
+		/// Let's check if the same part is now being created by another action.
 		if (future_parts.count(entry.new_part_name))
 		{
 			String reason = "Not executing log entry for part " + entry.new_part_name
@@ -467,19 +467,19 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 			out_postpone_reason = reason;
 			return false;
 
-            /** When the corresponding action is completed, then `shouldExecuteLogEntry` next time, will succeed,
-              *  and queue element will be processed. Immediately in the `executeLogEntry` function it will be found that we already have a part,
-              ,
-              *  and queue element will be immediately treated as processed.
+			/** When the corresponding action is completed, then `shouldExecuteLogEntry` next time, will succeed,
+			  *  and queue element will be processed. Immediately in the `executeLogEntry` function it will be found that we already have a part,
+			  ,
+			  *  and queue element will be immediately treated as processed.
 			  */
 		}
 
-        /// A more complex check is whether another part is currently created by other action that will cover this part.
+		/// A more complex check is whether another part is currently created by other action that will cover this part.
 		/// NOTE The above is redundant, but left for a more convenient message in the log.
 		ActiveDataPartSet::Part result_part;
 		ActiveDataPartSet::parsePartName(entry.new_part_name, result_part);
 
-        /// It can slow down when the size of `future_parts` is large. But it can not be large, since `BackgroundProcessingPool` is limited.
+		/// It can slow down when the size of `future_parts` is large. But it can not be large, since `BackgroundProcessingPool` is limited.
 		for (const auto & future_part_name : future_parts)
 		{
 			ActiveDataPartSet::Part future_part;
@@ -498,10 +498,10 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
 	if (entry.type == LogEntry::MERGE_PARTS)
 	{
-        /** If any of the required parts are now transferred or in merge process, wait for the end of this operation.
-          * Otherwise, even if all the necessary parts for the merge are not present, you should try to make a merge.
-          * If any parts are missing, instead of merge, there will be an attempt to download a part.
-          * Such a situation is possible if the receive of a part has failed, and it was moved to the end of the queue.
+		/** If any of the required parts are now transferred or in merge process, wait for the end of this operation.
+		  * Otherwise, even if all the necessary parts for the merge are not present, you should try to make a merge.
+		  * If any parts are missing, instead of merge, there will be an attempt to download a part.
+		  * Such a situation is possible if the receive of a part has failed, and it was moved to the end of the queue.
 		  */
 		size_t sum_parts_size_in_bytes = 0;
 		for (const auto & name : entry.parts_to_merge)

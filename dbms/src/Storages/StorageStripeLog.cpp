@@ -109,8 +109,8 @@ private:
 	IndexForNativeFormat::Blocks::const_iterator index_end;
 
 	/** optional - to create objects only on first reading
-      *  and delete objects (release buffers) after the source is exhausted
-      * - to save RAM when using a large number of sources.
+	  *  and delete objects (release buffers) after the source is exhausted
+	  * - to save RAM when using a large number of sources.
 	  */
 	bool started = false;
 	std::experimental::optional<CompressedReadBufferFromFile> data_in;
@@ -200,7 +200,7 @@ StorageStripeLog::StorageStripeLog(
 	String full_path = path + escapeForFileName(name) + '/';
 	if (!attach)
 	{
-        /// create files if they do not exist
+		/// create files if they do not exist
 		if (0 != mkdir(full_path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
 			throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
 	}
@@ -228,7 +228,7 @@ void StorageStripeLog::rename(const String & new_path_to_db, const String & new_
 {
 	Poco::ScopedWriteRWLock lock(rwlock);
 
-    /// Rename directory with data.
+	/// Rename directory with data.
 	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
 
 	path = new_path_to_db;
@@ -276,7 +276,7 @@ BlockInputStreams StorageStripeLog::read(
 		res.emplace_back(std::make_shared<StripeLogBlockInputStream>(column_names_set, *this, settings.max_read_buffer_size, index, begin, end));
 	}
 
-    /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
+	/// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
 
 	return res;
 }

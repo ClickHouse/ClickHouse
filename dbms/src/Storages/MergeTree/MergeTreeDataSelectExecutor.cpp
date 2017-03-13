@@ -84,7 +84,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 {
 	size_t full_marks_count = 0;
 
-    /// We will find out how many rows we would have read without sampling.
+	/// We will find out how many rows we would have read without sampling.
 	LOG_DEBUG(log, "Preliminary index scan with condition: " << key_condition.toString());
 
 	for (size_t i = 0; i < parts.size(); ++i)
@@ -92,9 +92,9 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 		const MergeTreeData::DataPartPtr & part = parts[i];
 		MarkRanges ranges = markRangesFromPKRange(part->index, key_condition, settings);
 
-        /** In order to get a lower bound on the number of rows that match the condition on PK,
-          *  consider only guaranteed full marks.
-          * That is, do not take into account the first and last marks, which may be incomplete.
+		/** In order to get a lower bound on the number of rows that match the condition on PK,
+		  *  consider only guaranteed full marks.
+		  * That is, do not take into account the first and last marks, which may be incomplete.
 		  */
 		for (size_t j = 0; j < ranges.size(); ++j)
 			if (ranges[j].end - ranges[j].begin > 2)
@@ -144,8 +144,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	MergeTreeData::DataPartsVector parts = data.getDataPartsVector();
 
-    /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
-    /// The virtual column `_sample_factor - 1 / <used sampling factor>` can be requested in the query.
+	/// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
+	/// The virtual column `_sample_factor - 1 / <used sampling factor>` can be requested in the query.
 	Names virt_column_names;
 	Names real_column_names;
 
@@ -182,11 +182,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	for (const auto & name : virt_column_names)
 		available_real_and_virtual_columns.emplace_back(data.getColumn(name));
 
-    /// If there are only virtual columns in the query, you must request at least one non-virtual one.
+	/// If there are only virtual columns in the query, you must request at least one non-virtual one.
 	if (real_column_names.empty())
 		real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
 
-    /// If `_part` virtual column is requested, we try to use it as an index.
+	/// If `_part` virtual column is requested, we try to use it as an index.
 	Block virtual_columns_block = getBlockWithPartColumn(parts);
 	if (part_column_queried)
 		VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
@@ -219,8 +219,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		throw Exception("Index by date (" + data.date_column_name + ") is not used and setting 'force_index_by_date' is set.",
 			ErrorCodes::INDEX_NOT_USED);
 
-    /// Select the parts in which there can be data that satisfy `date_condition` and that match the condition on `_part`,
-    ///  as well as `max_block_number_to_read`.
+	/// Select the parts in which there can be data that satisfy `date_condition` and that match the condition on `_part`,
+	///  as well as `max_block_number_to_read`.
 	{
 		const DataTypes data_types_date { std::make_shared<DataTypeDate>() };
 
@@ -276,7 +276,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		if (relative_sample_offset < 0)
 			throw Exception("Negative sample offset", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        /// Convert absolute value of the sampling (in form `SAMPLE 1000000` - how many rows to read) into the relative `SAMPLE 0.1` (how much data to read).
+		/// Convert absolute value of the sampling (in form `SAMPLE 1000000` - how many rows to read) into the relative `SAMPLE 0.1` (how much data to read).
 		size_t approx_total_rows = 0;
 		if (relative_sample_size > 1 || relative_sample_offset > 1)
 			approx_total_rows = getApproximateTotalRowsToRead(parts, key_condition, settings);
@@ -287,7 +287,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			LOG_DEBUG(log, "Selected relative sample size: " << relative_sample_size);
 		}
 
-        /// SAMPLE 1 is the same as the absence of SAMPLE.
+		/// SAMPLE 1 is the same as the absence of SAMPLE.
 		if (relative_sample_size == 1)
 			relative_sample_size = 0;
 
@@ -303,39 +303,39 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	/** Which range of sampling key values ​​do I need to read?
 	  * First, in the whole range ("universe") we select the interval
-      *  of relative `relative_sample_size` size, offset from the beginning by `relative_sample_offset`.
+	  *  of relative `relative_sample_size` size, offset from the beginning by `relative_sample_offset`.
 	  *
-      * Example: SAMPLE 0.4 OFFSET 0.3
+	  * Example: SAMPLE 0.4 OFFSET 0.3
 	  *
 	  * [------********------]
 	  *        ^ - offset
 	  *        <------> - size
 	  *
-      * If the interval passes through the end of the universe, then cut its right side.
+	  * If the interval passes through the end of the universe, then cut its right side.
 	  *
-      * Example: SAMPLE 0.4 OFFSET 0.8
+	  * Example: SAMPLE 0.4 OFFSET 0.8
 	  *
 	  * [----------------****]
 	  *                  ^ - offset
 	  *                  <------> - size
 	  *
-      * Next, if the `parallel_replicas_count`, `parallel_replica_offset` settings are set,
+	  * Next, if the `parallel_replicas_count`, `parallel_replica_offset` settings are set,
 	  *  then it is necessary to break the received interval into pieces of the number `parallel_replicas_count`,
-      *  and select a piece with the number `parallel_replica_offset` (from zero).
+	  *  and select a piece with the number `parallel_replica_offset` (from zero).
 	  *
-      * Example: SAMPLE 0.4 OFFSET 0.3, parallel_replicas_count = 2, parallel_replica_offset = 1
+	  * Example: SAMPLE 0.4 OFFSET 0.3, parallel_replicas_count = 2, parallel_replica_offset = 1
 	  *
 	  * [----------****------]
 	  *        ^ - offset
 	  *        <------> - size
-      *        <--><--> - pieces for different `parallel_replica_offset`, select the second one.
+	  *        <--><--> - pieces for different `parallel_replica_offset`, select the second one.
 	  *
-      * It is very important that the intervals for different `parallel_replica_offset` cover the entire range without gaps and overlaps.
-      * It is also important that the entire universe can be covered using SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 and similar decimals.
+	  * It is very important that the intervals for different `parallel_replica_offset` cover the entire range without gaps and overlaps.
+	  * It is also important that the entire universe can be covered using SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 and similar decimals.
 	  */
 
 	bool use_sampling = relative_sample_size > 0 || settings.parallel_replicas_count > 1;
-    bool no_data = false;   /// There is nothing left after sampling.
+	bool no_data = false;   /// There is nothing left after sampling.
 
 	if (use_sampling)
 	{
@@ -372,7 +372,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		if (relative_sample_offset >= 1)
 			no_data = true;
 
-        /// Calculate the half-interval of `[lower, upper)` column values.
+		/// Calculate the half-interval of `[lower, upper)` column values.
 		bool has_lower_limit = false;
 		bool has_upper_limit = false;
 
@@ -406,7 +406,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		}
 		else
 		{
-            /// Let's add the conditions to cut off something else when the index is scanned again and when the request is processed.
+			/// Let's add the conditions to cut off something else when the index is scanned again and when the request is processed.
 
 			std::shared_ptr<ASTFunction> lower_function;
 			std::shared_ptr<ASTFunction> upper_function;
@@ -459,7 +459,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 			filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, available_real_columns).getActions(false);
 
-            /// Add columns needed for `sampling_expression`.
+			/// Add columns needed for `sampling_expression`.
 			std::vector<String> add_columns = filter_expression->getRequiredColumns();
 			column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 			std::sort(column_names_to_read.begin(), column_names_to_read.end());
@@ -486,9 +486,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		prewhere_column = select.prewhere_expression->getColumnName();
 		SubqueriesForSets prewhere_subqueries = analyzer.getSubqueriesForSets();
 
-        /** Compute the subqueries right now.
+		/** Compute the subqueries right now.
 		  * NOTE Disadvantage - these calculations do not fit into the query execution pipeline.
-          * They are done before the execution of the pipeline; they can not be interrupted; during the computation, packets of progress are not sent.
+		  * They are done before the execution of the pipeline; they can not be interrupted; during the computation, packets of progress are not sent.
 		  */
 		if (!prewhere_subqueries.empty())
 			CreatingSetsBlockInputStream(std::make_shared<NullBlockInputStream>(), prewhere_subqueries, settings.limits).read();
@@ -496,7 +496,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	RangesInDataParts parts_with_ranges;
 
-    /// Let's find what range to read from each part.
+	/// Let's find what range to read from each part.
 	size_t sum_marks = 0;
 	size_t sum_ranges = 0;
 	for (auto & part : parts)
@@ -532,7 +532,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	if (select.final())
 	{
-        /// Add columns needed to calculate primary key and the sign.
+		/// Add columns needed to calculate primary key and the sign.
 		std::vector<String> add_columns = data.getPrimaryExpression()->getRequiredColumns();
 		column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 
@@ -574,7 +574,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		for (auto & stream : res)
 			stream = std::make_shared<FilterBlockInputStream>(stream, filter_expression, filter_function->getColumnName());
 
-    /// By the way, if a distributed query or query to a Merge table is made, then the `_sample_factor` column can have different values.
+	/// By the way, if a distributed query or query to a Merge table is made, then the `_sample_factor` column can have different values.
 	if (sample_factor_column_queried)
 		for (auto & stream : res)
 			stream = std::make_shared<AddingConstColumnBlockInputStream<Float64>>(
@@ -600,12 +600,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 	const std::size_t max_marks_to_use_cache =
 		(settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
 
-    /// Count marks for each part.
+	/// Count marks for each part.
 	std::vector<size_t> sum_marks_in_parts(parts.size());
 	size_t sum_marks = 0;
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
-        /// Let the segments be listed from right to left so that the leftmost segment can be dropped using `pop_back()`.
+		/// Let the segments be listed from right to left so that the leftmost segment can be dropped using `pop_back()`.
 		std::reverse(parts[i].ranges.begin(), parts[i].ranges.end());
 
 		for (const auto & range : parts[i].ranges)
@@ -629,7 +629,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 			threads, sum_marks, min_marks_for_concurrent_read, parts, data, prewhere_actions, prewhere_column, true,
 			column_names, MergeTreeReadPool::BackoffSettings(settings));
 
-        /// Let's estimate total number of rows for progress bar.
+		/// Let's estimate total number of rows for progress bar.
 		const std::size_t total_rows = data.index_granularity * sum_marks;
 		LOG_TRACE(log, "Reading approx. " << total_rows << " rows");
 
@@ -655,25 +655,25 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 		{
 			size_t need_marks = min_marks_per_thread;
 
-            /// Loop parts.
+			/// Loop parts.
 			while (need_marks > 0 && !parts.empty())
 			{
 				RangesInDataPart & part = parts.back();
 				size_t & marks_in_part = sum_marks_in_parts.back();
 
-                /// We will not take too few rows from a part.
+				/// We will not take too few rows from a part.
 				if (marks_in_part >= min_marks_for_concurrent_read &&
 					need_marks < min_marks_for_concurrent_read)
 					need_marks = min_marks_for_concurrent_read;
 
-                /// Do not leave too few rows in the part.
+				/// Do not leave too few rows in the part.
 				if (marks_in_part > need_marks &&
 					marks_in_part - need_marks < min_marks_for_concurrent_read)
 					need_marks = marks_in_part;
 
 				MarkRanges ranges_to_get_from_part;
 
-                /// We take the whole part if it is small enough.
+				/// We take the whole part if it is small enough.
 				if (marks_in_part <= need_marks)
 				{
 					/// Restore the order of segments.
@@ -687,7 +687,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 				}
 				else
 				{
-                    /// Cycle through segments of a part.
+					/// Cycle through segments of a part.
 					while (need_marks > 0)
 					{
 						if (part.ranges.empty())
@@ -758,7 +758,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 
 	BlockInputStreams to_merge;
 
-    /// NOTE `merge_tree_uniform_read_distribution` is not used for FINAL
+	/// NOTE `merge_tree_uniform_read_distribution` is not used for FINAL
 
 	for (size_t part_index = 0; part_index < parts.size(); ++part_index)
 	{
@@ -884,9 +884,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 	else
 	{
 		/** There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
-		    * At each step, take the left segment and check if it fits.
-            * If fits, split it into smaller ones and put them on the stack. If not, discard it.
-            * If the segment is already of one mark length, add it to response and discard it.
+			* At each step, take the left segment and check if it fits.
+			* If fits, split it into smaller ones and put them on the stack. If not, discard it.
+			* If the segment is already of one mark length, add it to response and discard it.
 			*/
 		std::vector<MarkRange> ranges_stack{ {0, marks_count} };
 
@@ -927,7 +927,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
 			if (range.end == range.begin + 1)
 			{
-                /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
+				/// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
 				if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
 					res.push_back(range);
 				else
@@ -935,7 +935,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 			}
 			else
 			{
-                /// Break the segment and put the result on the stack from right to left.
+				/// Break the segment and put the result on the stack from right to left.
 				size_t step = (range.end - range.begin - 1) / settings.merge_tree_coarse_index_granularity + 1;
 				size_t end;
 
