@@ -136,7 +136,7 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
 {
 	/// Here there can be a race condition (with different remove at the same time).
 	/// Consider it unimportant (for a short time, ZK will have a slightly different time value).
-	/// We also read values ​​of `min_unprocessed_insert_time`, `max_processed_insert_time` without synchronization.
+	/// We also read values of `min_unprocessed_insert_time`, `max_processed_insert_time` without synchronization.
 	zkutil::Ops ops;
 
 	if (min_unprocessed_insert_time_changed)

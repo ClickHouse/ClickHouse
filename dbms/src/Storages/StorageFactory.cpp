@@ -550,7 +550,7 @@ StoragePtr StorageFactory::get(
 		  *     (the query with `SAMPLE x` will select rows that have a lower value in this column than `x * UINT32_MAX`);
 		  *  - an expression for sorting (either a scalar expression or a tuple from several);
 		  *  - index_granularity;
-		  *  - (for Collapsing) the name of Int8 column that contains `sign` type with the change of "visit" (taking values ​​1 and -1).
+		  *  - (for Collapsing) the name of Int8 column that contains `sign` type with the change of "visit" (taking values 1 and -1).
 		  * For example: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
 		  *  - (for Summing, optional) a tuple of columns to be summed. If not specified, all numeric columns that are not included in the primary key are used.
 		  *  - (for Replacing, optional) the column name of one of the UInt types, which stands for "version"

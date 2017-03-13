@@ -225,7 +225,7 @@ BlockInputStreams StorageMerge::read(
 	return narrowBlockInputStreams(res, threads);
 }
 
-/// Construct a block consisting only of possible values ​​of virtual columns
+/// Construct a block consisting only of possible values of virtual columns
 Block StorageMerge::getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const
 {
 	Block res;

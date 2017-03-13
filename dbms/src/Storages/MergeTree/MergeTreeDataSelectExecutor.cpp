@@ -65,7 +65,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 }
 
 
-/// Construct a block consisting only of possible values ​​of virtual columns
+/// Construct a block consisting only of possible values of virtual columns
 static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts)
 {
 	Block res;
@@ -301,7 +301,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		}
 	}
 
-	/** Which range of sampling key values ​​do I need to read?
+	/** Which range of sampling key values do I need to read?
 	  * First, in the whole range ("universe") we select the interval
 	  *  of relative `relative_sample_size` size, offset from the beginning by `relative_sample_offset`.
 	  *

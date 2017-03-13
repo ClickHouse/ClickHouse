@@ -415,7 +415,7 @@ void MergeTreeDataPart::renameAddPrefix(bool to_detached, const String & prefix)
 	if (to_detached)
 	{
 		/** If you need to unhook a part, and directory into which we want to rename it already exists,
-			*  we will rename to the directory with the name to which the suffix is ​​added in the form of "_tryN".
+			*  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".
 			* This is done only in the case of `to_detached`, because it is assumed that in this case the exact name does not matter.
 			* No more than 10 attempts are made so that there are not too many junk directories left.
 			*/
