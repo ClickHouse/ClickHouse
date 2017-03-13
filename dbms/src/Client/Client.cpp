@@ -823,7 +823,8 @@ private:
 	void resetOutput()
 	{
 		block_out_stream = nullptr;
-		if (pager_cmd) {
+		if (pager_cmd)
+		{
 			pager_cmd->in.close();
 			pager_cmd->wait();
 		}
@@ -945,7 +946,7 @@ private:
 		if (!block_out_stream)
 		{
 			WriteBuffer * out_buf = nullptr;
-	                String pager = config().getString("pager", "");
+			String pager = config().getString("pager", "");
 			if (!pager.empty())
 			{
 				pager_cmd = ShellCommand::execute(pager, true);
