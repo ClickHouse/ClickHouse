@@ -48,9 +48,9 @@ void AlterCommand::apply(
 
 			if (!after_column.empty())
 			{
-				/// Пытаемся найти первую с конца колонку с именем column_name или с именем, начинающимся с column_name и ".".
-				/// Например "fruits.bananas"
-				/// одинаковыми считаются имена, если они совпадают целиком или name_without_dot совпадает с частью имени до точки
+                /// We are trying to find first column from end with name `column_name` or with a name beginning with `column_name` and ".".
+                /// For example "fruits.bananas"
+                /// names are considered the same if they completely match or `name_without_dot` matches the part of the name to the point
 				const auto reverse_insert_it = std::find_if(columns.rbegin(), columns.rend(),
 					std::bind(namesEqual, std::cref(after_column), std::placeholders::_1));
 
@@ -59,7 +59,7 @@ void AlterCommand::apply(
 									DB::ErrorCodes::ILLEGAL_COLUMN);
 				else
 				{
-					/// base возвращает итератор, уже смещенный на один элемент вправо
+					/// base returns an iterator that is already offset by one element to the right
 					insert_it = reverse_insert_it.base();
 				}
 			}
@@ -79,7 +79,7 @@ void AlterCommand::apply(
 		if (default_expression)
 			column_defaults.emplace(column_name, ColumnDefault{default_type, default_expression});
 
-		/// Медленно, так как каждый раз копируется список
+		/// Slowly, because each time a list is copied
 		columns = *DataTypeNested::expandNestedColumns(columns);
 	}
 	else if (type == DROP_COLUMN)
@@ -163,8 +163,8 @@ void AlterCommand::apply(
 	}
 	else if (type == MODIFY_PRIMARY_KEY)
 	{
-		/// Это никак не относится к изменению списка столбцов.
-		/// TODO Проверять, что все столбцы существуют, что добавляются только столбцы с константными default-ами.
+		/// This does not apply to changing the list of columns.
+		/// TODO Check that all columns exist, that only columns with constant defaults are added.
 	}
 	else
 		throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);

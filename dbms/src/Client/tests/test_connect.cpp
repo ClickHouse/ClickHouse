@@ -8,11 +8,10 @@
 #include <DB/IO/ReadHelpers.h>
 
 
-/** В цикле соединяется с сервером и сразу же разрывает соединение.
-  * С помощью опции SO_LINGER добиваемся, что соединение разрывается путём отправки пакета RST (не FIN).
-  * Такое поведение вызывает баг в реализации TCPServer в библиотеке Poco.
-  */
-
+/** In a loop it connects to the server and immediately breaks the connection.
+  * Using the SO_LINGER option, we ensure that the connection is terminated by sending a RST packet (not FIN).
+  * This behavior causes a bug in the TCPServer implementation in the Poco library.
+  */
 int main(int argc, char ** argv)
 try
 {

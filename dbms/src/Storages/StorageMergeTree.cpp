@@ -39,7 +39,7 @@ StorageMergeTree::StorageMergeTree(
 	Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_,
-	const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
+    const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
 	size_t index_granularity_,
 	const MergeTreeData::MergingParams & merging_params_,
 	bool has_force_restore_data_flag,
@@ -159,7 +159,7 @@ void StorageMergeTree::alter(
 	const String & table_name,
 	const Context & context)
 {
-	/// NOTE: Здесь так же как в ReplicatedMergeTree можно сделать ALTER, не блокирующий запись данных надолго.
+    /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
 	auto merge_blocker = merger.cancel();
 
 	auto table_soft_lock = lockDataForAlter();
@@ -213,8 +213,8 @@ void StorageMergeTree::alter(
 			tuple->arguments = new_primary_key_ast;
 			tuple->children.push_back(tuple->arguments);
 
-			/// Первичный ключ находится на втором месте в описании движка таблицы и может быть представлен в виде кортежа.
-			/// TODO: Не всегда на втором месте. Если есть ключ сэмплирования, то на третьем. Исправить.
+            /// Primary key is in the second place in table engine description and can be represented as a tuple.
+            /// TODO: Not always in second place. If there is a sampling key, then the third one. Fix it.
 			typeid_cast<ASTExpressionList &>(*typeid_cast<ASTFunction &>(*engine_ast).arguments).children.at(1) = tuple;
 		};
 
@@ -301,7 +301,7 @@ bool StorageMergeTree::merge(
 
 	size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
-	/// Нужно вызывать деструктор под незалоченным currently_merging_mutex.
+    /// You must call destructor under unlocked `currently_merging_mutex`.
 	std::experimental::optional<CurrentlyMergingPartsTagger> merging_tagger;
 	String merged_name;
 
@@ -395,10 +395,10 @@ void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool
 	if (unreplicated)
 		throw Exception("UNREPLICATED option for DROP has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);
 
-	/// Просит завершить мерджи и не позволяет им начаться.
-	/// Это защищает от "оживания" данных за удалённую партицию после завершения мерджа.
+    /// Asks to complete merges and does not allow them to start.
+    /// This protects against "revival" of data for a removed partition after completion of merge.
 	auto merge_blocker = merger.cancel();
-	/// Дожидается завершения мерджей и не даёт начаться новым.
+    /// Waits for completion of merge and does not start new ones.
 	auto lock = lockForAlter();
 
 	DayNum_t month = MergeTreeData::getMonthDayNum(partition);
@@ -438,7 +438,7 @@ void StorageMergeTree::attachPartition(ASTPtr query, const Field & field, bool u
 
 	String source_dir = "detached/";
 
-	/// Составим список кусков, которые нужно добавить.
+    /// Let's make a list of parts to add.
 	Strings parts;
 	if (part)
 	{
@@ -475,14 +475,14 @@ void StorageMergeTree::attachPartition(ASTPtr query, const Field & field, bool u
 		LOG_INFO(log, "Finished attaching part");
 	}
 
-	/// На месте удаленных кусков могут появиться новые, с другими данными.
+    /// New parts with other data may appear in place of deleted pieces.
 	context.resetCaches();
 }
 
 
 void StorageMergeTree::freezePartition(const Field & partition, const String & with_name, const Settings & settings)
 {
-	/// Префикс может быть произвольным. Не обязательно месяц - можно указать лишь год.
+    /// The prefix can be arbitrary. Not necessarily a month - you can specify only a year.
 	data.freezePartition(partition.getType() == Field::Types::UInt64
 		? toString(partition.get<UInt64>())
 		: partition.safeGet<String>(), with_name);
