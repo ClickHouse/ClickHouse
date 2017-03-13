@@ -39,6 +39,158 @@ namespace ErrorCodes
 	extern const int UNKNOWN_EXCEPTION;
 }
 
+bool isNumber(const std::string & str) {
+    if (str.empty()) { return false; }
+
+    size_t dotsCounter = 0;
+
+    if (str[0] == '.' || str[str.size() - 1] == '.') {
+        return false;
+    }
+
+    for (char chr : str) {
+        if (chr == '.') {
+            if (dotsCounter)
+                return false;
+            else
+                ++dotsCounter;
+            continue;
+        }
+
+        if (chr < '0' || chr > '9') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+class JSONString {
+ private:
+    std::map<std::string, std::string> content;
+    std::string current_key;
+    size_t _padding = 1;
+ public:
+    JSONString() {};
+    JSONString(size_t padding): _padding(padding) {};
+
+    JSONString & operator[](const std::string & key)
+    {
+        current_key = key;
+        return *this;
+    }
+
+    template <typename T>
+	typename std::enable_if<std::is_arithmetic<T>::value, JSONString & >::type
+	operator[](const T key)
+    {
+        current_key = std::to_string(key);
+        return *this;
+    }
+
+    void set(std::string value)
+    {
+        if (current_key.empty()) {
+            throw "cannot use set without key";
+        }
+
+        if (value.empty()) {
+            value = "null";
+        }
+
+        bool reserved = (value[0] == '[' || value[0] == '{' || value == "null");
+
+        if (!reserved && !isNumber(value)) {
+            value = '\"' + value + '\"';
+        }
+
+        content[current_key] = value;
+        current_key = "";
+    }
+
+	void set(const JSONString & innerJSON)
+    {
+    	set(innerJSON.constructOutput());
+    }
+
+	void set(const std::vector<JSONString> & runInfos)
+    {
+        if (current_key.empty()) {
+            throw "cannot use set without key";
+        }
+
+        content[current_key] = "[\n";
+
+        for (size_t i = 0; i < runInfos.size(); ++i) {
+        	for (size_t i = 0; i < _padding + 1; ++i) {
+        		content[current_key] += "\t";
+        	}
+        	content[current_key] += runInfos[i].constructOutput(_padding + 2);
+
+        	if (i != runInfos.size() - 1) {
+        		content[current_key] += ',';
+        	}
+
+        	content[current_key] += "\n";
+        }
+
+        for (size_t i = 0; i < _padding; ++i) {
+        	content[current_key] += "\t";
+        }
+        content[current_key] += ']';
+        current_key = "";
+    }
+
+    template <typename T>
+    typename std::enable_if<std::is_arithmetic<T>::value, void>::type set(T value)
+    {
+        set(std::to_string(value));
+    }
+    std::string constructOutput() const
+    {
+    	return constructOutput(_padding);
+    }
+
+    std::string constructOutput(size_t padding) const
+    {
+        std::string output = "{";
+
+        bool first = true;
+
+        for (auto it = content.begin(); it != content.end(); ++it) {
+            if (! first) {
+                output += ',';
+            } else {
+                first = false;
+            }
+
+            output += "\n";
+            for (size_t i = 0; i < padding; ++i) {
+	            output += "\t";
+            }
+
+            std::string key   = '\"' + it->first + '\"';
+            std::string value = it->second;
+
+            output += key + ": " + value;
+        }
+
+        output += "\n";
+        for (size_t i = 0; i < padding - 1; ++i) {
+            output += "\t";
+        }
+        output += "}";
+        return output;
+    }
+};
+
+std::ostream & operator<<(std::ostream & stream, const JSONString & jsonObj)
+{
+    stream << jsonObj.constructOutput();
+
+    return stream;
+}
+
 struct CriterionWithPriority {
 	std::string priority  = "";
 	size_t      value     = 0;
@@ -107,6 +259,20 @@ public:
 		}
 	}
 
+	void reset()
+	{
+		timeout_ms.fulfilled                        = false;
+		rows_read.fulfilled                         = false;
+		bytes_read_uncompressed.fulfilled           = false;
+		iterations.fulfilled                        = false;
+		min_time_not_changing_for_ms.fulfilled      = false;
+		max_speed_not_changing_for_ms.fulfilled     = false;
+		average_speed_not_changing_for_ms.fulfilled = false;
+
+		fulfilled_criterions_min = 0;
+		fulfilled_criterions_max = 0;
+	}
+
 	struct CriterionWithPriority timeout_ms;
 	struct CriterionWithPriority rows_read;
 	struct CriterionWithPriority bytes_read_uncompressed;
@@ -129,8 +295,10 @@ struct Stats
 	Stopwatch watch;
 	Stopwatch watch_per_query;
 	Stopwatch min_time_watch;
-	Stopwatch max_speed_watch;
-	Stopwatch average_speed_watch;
+	Stopwatch max_rows_speed_watch;
+	Stopwatch max_bytes_speed_watch;
+	Stopwatch avg_rows_speed_watch;
+	Stopwatch avg_bytes_speed_watch;
 	size_t queries;
 	size_t rows_read;
 	size_t bytes_read;
@@ -141,11 +309,68 @@ struct Stats
 	/// min_time in ms
 	UInt64 min_time   = std::numeric_limits<UInt64>::max();
 	double total_time = 0;
-	double max_speed  = 0;
-	double average_speed_value = 0;
-	double average_speed_first = 0;
-	double average_speed_precision = 0.001;
-	size_t number_of_speed_info_batches = 0;
+
+	double max_rows_speed  = 0;
+	double max_bytes_speed  = 0;
+
+	double avg_rows_speed_value = 0;
+	double avg_rows_speed_first = 0;
+	double avg_rows_speed_precision = 0.001;
+
+	double avg_bytes_speed_value = 0;
+	double avg_bytes_speed_first = 0;
+	double avg_bytes_speed_precision = 0.001;
+
+	size_t number_of_rows_speed_info_batches  = 0;
+	size_t number_of_bytes_speed_info_batches = 0;
+
+	std::string getStatisticByName(const std::string & statisticName) {
+	    if (statisticName == "min_time") {
+	    	return std::to_string(min_time) + "ms";
+	    }
+	    if (statisticName == "quantiles") {
+	    	std::string result = "\n";
+
+	    	for (double percent = 10; percent <= 90; percent += 10) {
+	    		result += "\t" + std::to_string((percent / 100));
+	    		result += ": " + std::to_string(sampler.quantileInterpolated(percent / 100.0));
+	    		result += "\n";
+	    	}
+			result += "\t0.95: "   + std::to_string(sampler.quantileInterpolated(95 / 100.0))   + "\n";
+			result += "\t0.99: "   + std::to_string(sampler.quantileInterpolated(99 / 100.0))   + "\n";
+			result += "\t0.999: "  + std::to_string(sampler.quantileInterpolated(99.9 / 100.))  + "\n";
+			result += "\t0.9999: " + std::to_string(sampler.quantileInterpolated(99.99 / 100.));
+
+			return result;
+	    }
+	    if (statisticName == "total_time") {
+	    	return std::to_string(total_time) + "s";
+	    }
+	    if (statisticName == "queries_per_second") {
+	    	return std::to_string(queries / total_time);
+	    }
+	    if (statisticName == "rows_per_second") {
+	    	return std::to_string(rows_read / total_time);
+	    }
+	    if (statisticName == "bytes_per_second") {
+	    	return std::to_string(bytes_read / total_time);
+	    }
+
+	    if (statisticName == "max_rows_per_second") {
+	    	return std::to_string(max_rows_speed);
+	    }
+	    if (statisticName == "max_bytes_per_second") {
+	    	return std::to_string(max_bytes_speed);
+	    }
+	    if (statisticName == "avg_rows_per_second") {
+	    	return std::to_string(avg_rows_speed_value);
+	    }
+	    if (statisticName == "avg_bytes_per_second") {
+	    	return std::to_string(avg_bytes_speed_value);
+	    }
+
+	    return "";
+	}
 
 	void update_min_time(const UInt64 min_time_candidate)
 	{
@@ -155,23 +380,26 @@ struct Stats
 		}
 	}
 
-	void update_average_speed(const double new_speed_info)
+	void update_average_speed(const double new_speed_info, Stopwatch & avg_speed_watch,
+							  size_t & number_of_info_batches, double precision,
+							  double & avg_speed_first, double & avg_speed_value)
 	{
-		average_speed_value = ((average_speed_value * number_of_speed_info_batches)
-							   + new_speed_info);
-		average_speed_value /= (++number_of_speed_info_batches);
+		avg_speed_value = ((avg_speed_value * number_of_info_batches)
+						   + new_speed_info);
+		avg_speed_value /= (++number_of_info_batches);
 
-		if (average_speed_first == 0) {
-			average_speed_first = average_speed_value;
+		if (avg_speed_first == 0) {
+			avg_speed_first = avg_speed_value;
 		}
 
-		if (abs(average_speed_value - average_speed_first) >= average_speed_precision) {
-			average_speed_first = average_speed_value;
-			average_speed_watch.restart();
+		if (abs(avg_speed_value - avg_speed_first) >= precision) {
+			avg_speed_first = avg_speed_value;
+			avg_speed_watch.restart();
 		}
 	}
 
-	void update_max_speed(const size_t max_speed_candidate)
+	void update_max_speed(const size_t max_speed_candidate, Stopwatch & max_speed_watch,
+						  double & max_speed)
 	{
 		if (max_speed_candidate > max_speed) {
 			max_speed = max_speed_candidate;
@@ -184,9 +412,19 @@ struct Stats
 		rows_read  += rows_read_inc;
 		bytes_read += bytes_read_inc;
 
-		double new_speed = rows_read_inc / watch_per_query.elapsedSeconds();
-		update_max_speed(new_speed);
-		update_average_speed(new_speed);
+		double new_rows_speed  = rows_read_inc  / watch_per_query.elapsedSeconds();
+		double new_bytes_speed = bytes_read_inc / watch_per_query.elapsedSeconds();
+
+		/// Update rows speed
+		update_max_speed(new_rows_speed, max_rows_speed_watch, max_rows_speed);
+		update_average_speed(new_rows_speed, avg_rows_speed_watch,
+							 number_of_rows_speed_info_batches, avg_rows_speed_precision,
+							 avg_rows_speed_first, avg_rows_speed_value);
+		/// Update bytes speed
+		update_max_speed(new_bytes_speed, max_bytes_speed_watch, max_bytes_speed);
+		update_average_speed(new_bytes_speed, avg_bytes_speed_watch,
+							 number_of_bytes_speed_info_batches, avg_bytes_speed_precision,
+							 avg_bytes_speed_first, avg_bytes_speed_value);
 	}
 
 	void updateQueryInfo()
@@ -206,8 +444,10 @@ struct Stats
 		watch.restart();
 		watch_per_query.restart();
 		min_time_watch.restart();
-		max_speed_watch.restart();
-		average_speed_watch.restart();
+		max_rows_speed_watch.restart();
+		max_bytes_speed_watch.restart();
+		avg_rows_speed_watch.restart();
+		avg_bytes_speed_watch.restart();
 
 		sampler.clear();
 
@@ -217,11 +457,16 @@ struct Stats
 
 		min_time   = std::numeric_limits<UInt64>::max();
 		total_time = 0;
-		max_speed  = 0;
-		average_speed_value = 0;
-		average_speed_first = 0;
-		average_speed_precision = 0.001;
-		number_of_speed_info_batches = 0;
+		max_rows_speed  = 0;
+		max_bytes_speed = 0;
+		avg_rows_speed_value  = 0;
+		avg_bytes_speed_value = 0;
+		avg_rows_speed_first  = 0;
+		avg_bytes_speed_first = 0;
+		avg_rows_speed_precision  = 0.001;
+		avg_bytes_speed_precision = 0.001;
+		number_of_rows_speed_info_batches  = 0;
+		number_of_bytes_speed_info_batches = 0;
 	}
 };
 
@@ -252,7 +497,8 @@ public:
 			throw Poco::Exception("No tests were specified", 1);
 		}
 
-		// std::cerr << std::fixed << std::setprecision(3);
+		std::cerr << std::fixed << std::setprecision(3);
+		std::cout << std::fixed << std::setprecision(3);
 		readTestsConfiguration(input_files);
 	}
 
@@ -266,6 +512,8 @@ private:
 
 	using Queue = ConcurrentBoundedQueue<Query>;
 	Queue queue;
+
+	using Keys = std::vector<std::string>;
 
 	ConnectionPool connections;
 	ThreadPool     pool;
@@ -282,7 +530,11 @@ private:
 	using Config            = Poco::AutoPtr<XMLConfiguration>;
 	using Paths             = std::vector<std::string>;
 	using StringToVector    = std::map< std::string, std::vector<std::string> >;
+	StringToVector substitutions;
 	std::vector<Config> testsConfigurations;
+
+	using StringKeyValue = std::map<std::string, std::string>;
+	std::vector<StringKeyValue> substitutionsMaps;
 
 	struct StopCriterions stopCriterions;
 
@@ -297,9 +549,9 @@ private:
 	enum ExecutionType { loop, once };
 	ExecutionType execType;
 
-	Stats info_total;
+	size_t timesToRun = 1;
+	std::vector<Stats> statistics;
 	std::mutex mutex;
-
 
 	void readTestsConfiguration(const Paths & input_files)
 	{
@@ -327,8 +579,6 @@ private:
 		std::cout << "Running: " << testName << "\n";
 
 		/// Preprocess configuration file
-		using Keys = std::vector<std::string>;
-
 		if (testConfig->has("settings")) {
 			Keys configSettings;
 			testConfig->keys("settings", configSettings);
@@ -353,8 +603,13 @@ private:
 			}
 
 			if (std::find(configSettings.begin(), configSettings.end(),
-						  "average_speed_precision") != configSettings.end()) {
-				info_total.average_speed_precision = testConfig->getDouble("settings.average_speed_precision");
+						  "average_rows_speed_precision") != configSettings.end()) {
+				statistics.back().avg_rows_speed_precision = testConfig->getDouble("settings.average_rows_speed_precision");
+			}
+
+			if (std::find(configSettings.begin(), configSettings.end(),
+						  "average_bytes_speed_precision") != configSettings.end()) {
+				statistics.back().avg_bytes_speed_precision = testConfig->getDouble("settings.average_bytes_speed_precision");
 			}
 		}
 
@@ -376,8 +631,6 @@ private:
 			/// Make "subconfig" of inner xml block
 			AbstractConfig substitutionsView(testConfig
 											 ->createView("substitutions"));
-
-			StringToVector substitutions;
 			constructSubstitutions(substitutionsView, substitutions);
 
 			queries = formatQueries(query, substitutions);
@@ -411,19 +664,66 @@ private:
 			throw Poco::Exception("No termination conditions were found", 1);
 		}
 
-		if (execType == loop) {
-			runLoopQuery(queries[0]);
-		} else {
-			runQueries(queries);
+		if (testConfig->has("timesToRun")) {
+			timesToRun = testConfig->getUInt("timesToRun");
 		}
 
-		info_total.setTotalTime();
-		constructTotalInfo();
+		for (size_t numberOfLaunch = 0; numberOfLaunch < timesToRun; ++numberOfLaunch) {
+			stopCriterions.reset();
+			statistics.emplace_back();
+
+			if (execType == loop) {
+				runLoopQuery(queries[0]);
+			} else {
+				runQueries(queries);
+			}
+
+			statistics.back().setTotalTime();
+		}
+
+		AbstractConfig metricsView(testConfig->createView("metric"));
+
+		Keys metrics;
+		metricsView->keys(metrics);
+		if (metrics.size() > 1) {
+			throw Poco::Exception("More than 1 main metric is not allowed");
+		}
+
+		if (metrics.size() == 1) {
+			checkMetricInput(metrics[0]);
+			minOutput(metrics[0]);
+		} else {
+			constructTotalInfo();
+		}
+	}
+
+	void checkMetricInput(const std::string & main_metric) const {
+	    std::vector<std::string> loopMetrics = {
+	    	"min_time", "quantiles", "total_time", "queries_per_second",
+	    	"rows_per_second", "bytes_per_second"
+	    };
+
+	    std::vector<std::string> infiniteMetrics = {
+	    	"max_rows_per_second", "max_bytes_per_second", "avg_rows_per_second",
+	    	"avg_bytes_per_second"
+	    };
+
+	    if (execType == loop) {
+	    	if (std::find(infiniteMetrics.begin(), infiniteMetrics.end(), main_metric) != infiniteMetrics.end()) {
+	    		throw Poco::Exception("Wrong type of main metric for loop "
+						    		  "execution type");
+	    	}
+	    } else {
+	    	if (std::find(loopMetrics.begin(), loopMetrics.end(), main_metric) != loopMetrics.end()) {
+	    		throw Poco::Exception("Wrong type of main metric for "
+	    							  "inifinite execution type");
+	    	}
+	    }
 	}
 
 	void runLoopQuery(const Query & query)
 	{
-		info_total.clear();
+		statistics.back().clear();
 
 		size_t max_iterations = stopCriterions.iterations.value;
 		size_t i = -1;
@@ -469,7 +769,7 @@ private:
 
 	void runQueries(const Queries & queries)
 	{
-		info_total.clear();
+		statistics.back().clear();
 
 		for (size_t i = 0; i < concurrency; ++i) {
 			pool.schedule(std::bind(
@@ -509,7 +809,7 @@ private:
 	void execute(ConnectionPool::Entry & connection, const Query & query)
 	{
 		InterruptListener thread_interrupt_listener;
-		info_total.watch_per_query.restart();
+		statistics.back().watch_per_query.restart();
 
 		RemoteBlockInputStream * stream = new RemoteBlockInputStream(
 			connection, query, &settings, nullptr, Tables()/*, query_processing_stage*/
@@ -541,13 +841,13 @@ private:
 		streams.erase(streams.begin() + stream_index);
 		delete stream;
 
-		info_total.updateQueryInfo();
+		statistics.back().updateQueryInfo();
 
 		// const BlockStreamProfileInfo & info = stream->getProfileInfo();
 		// double seconds = watch.elapsedSeconds();
 		// std::lock_guard<std::mutex> lock(mutex);
 		// info_per_interval.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
-		// info_total.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
+		// statistics.back().add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
 	}
 
 	void checkFulfilledCriterionsAndUpdate(const Progress & progress,
@@ -556,21 +856,21 @@ private:
 	{
 		std::lock_guard<std::mutex> lock(mutex);
 
-		info_total.add(progress.rows, progress.bytes);
+		statistics.back().add(progress.rows, progress.bytes);
 
 		size_t max_rows_to_read = stopCriterions.rows_read.value;
-		if (max_rows_to_read && info_total.rows_read >= max_rows_to_read) {
+		if (max_rows_to_read && statistics.back().rows_read >= max_rows_to_read) {
 			incFulfilledCriterions(rows_read);
 		}
 
 		size_t max_bytes_to_read = stopCriterions.bytes_read_uncompressed.value;
-		if (max_bytes_to_read && info_total.bytes_read >= max_bytes_to_read) {
+		if (max_bytes_to_read && statistics.back().bytes_read >= max_bytes_to_read) {
 			incFulfilledCriterions(bytes_read_uncompressed);
 		}
 
 		if (UInt64 max_timeout_ms = stopCriterions.timeout_ms.value) {
 			/// cast nanoseconds to ms
-			if ((info_total.watch.elapsed() / (1000 * 1000)) > max_timeout_ms) {
+			if ((statistics.back().watch.elapsed() / (1000 * 1000)) > max_timeout_ms) {
 				incFulfilledCriterions(timeout_ms);
 			}
 		}
@@ -578,7 +878,7 @@ private:
 		size_t min_time_not_changing_for_ms = stopCriterions
 												.min_time_not_changing_for_ms.value;
 		if (min_time_not_changing_for_ms) {
-			size_t min_time_did_not_change_for = info_total
+			size_t min_time_did_not_change_for = statistics.back()
 													.min_time_watch
 													.elapsed() / (1000 * 1000);
 
@@ -591,8 +891,8 @@ private:
 												.max_speed_not_changing_for_ms
 												.value;
 		if (max_speed_not_changing_for_ms) {
-			UInt64 speed_not_changing_time = info_total
-												.max_speed_watch
+			UInt64 speed_not_changing_time = statistics.back()
+												.max_rows_speed_watch
 												.elapsed() / (1000 * 1000);
 			if (speed_not_changing_time >= max_speed_not_changing_for_ms) {
 				incFulfilledCriterions(max_speed_not_changing_for_ms);
@@ -603,8 +903,8 @@ private:
 													.average_speed_not_changing_for_ms
 													.value;
 		if (average_speed_not_changing_for_ms) {
-			UInt64 speed_not_changing_time = info_total
-												.average_speed_watch
+			UInt64 speed_not_changing_time = statistics.back()
+												.avg_rows_speed_watch
 												.elapsed() / (1000 * 1000);
 			if (speed_not_changing_time >= average_speed_not_changing_for_ms) {
 				incFulfilledCriterions(average_speed_not_changing_for_ms);
@@ -644,7 +944,6 @@ private:
 	void constructSubstitutions(AbstractConfig & substitutionsView,
 						        StringToVector & substitutions)
 	{
-		using Keys = std::vector<std::string>;
 		Keys xml_substitutions;
 		substitutionsView->keys(xml_substitutions);
 
@@ -671,7 +970,7 @@ private:
 	}
 
 	std::vector<std::string> formatQueries(const std::string & query,
-					   					   StringToVector substitutions) const
+					   					   StringToVector substitutions)
 	{
 		std::vector<std::string> queries;
 
@@ -679,8 +978,10 @@ private:
 		StringToVector::iterator substitutions_last  = substitutions.end();
 		--substitutions_last;
 
+		std::map<std::string, std::string> substitutionsMap;
+
 		runThroughAllOptionsAndPush(
-			substitutions_first, substitutions_last, query, queries
+			substitutions_first, substitutions_last, query, queries, substitutionsMap
 		);
 
 		return queries;
@@ -692,15 +993,17 @@ private:
 		StringToVector::iterator substitutions_left,
 		StringToVector::iterator substitutions_right,
 		const std::string & template_query,
-		std::vector<std::string> & queries
-	) const
+		std::vector<std::string> & queries,
+		const StringKeyValue & templateSubstitutionsMap = StringKeyValue()
+	)
 	{
 		std::string name = substitutions_left->first;
 		std::vector<std::string> values = substitutions_left->second;
 
-		for (auto value = values.begin(); value != values.end(); ++value) {
+		for (const std::string & value : values) {
 			/// Copy query string for each unique permutation
 			Query query = template_query;
+			StringKeyValue substitutionsMap = templateSubstitutionsMap;
 			size_t substrPos  = 0;
 
 			while (substrPos != std::string::npos) {
@@ -709,20 +1012,23 @@ private:
 				if (substrPos != std::string::npos) {
 					query.replace(
 						substrPos, 1 + name.length() + 1,
-						*value
+						value
 					);
 				}
 			}
 
+			substitutionsMap[name] = value;
+
 			/// If we've reached the end of substitution chain
 			if (substitutions_left == substitutions_right) {
 				queries.push_back(query);
+				substitutionsMaps.push_back(substitutionsMap);
 			} else {
 				StringToVector::iterator next_it = substitutions_left;
 				++next_it;
 
 				runThroughAllOptionsAndPush(
-					next_it, substitutions_right, query, queries
+					next_it, substitutions_right, query, queries, substitutionsMap
 				);
 			}
 		}
@@ -731,36 +1037,88 @@ private:
 public:
 	void constructTotalInfo()
 	{
-		std::string hostname = "null";
+		JSONString jsonOutput;
+		std::string hostname = "";
 
 		char hostname_buffer[256];
 		if (gethostname(hostname_buffer, 256) == 0) {
 			hostname = std::string(hostname_buffer);
 		}
 
-		std::cout << "total info: " << std::endl;
-		std::cout << "hostname: " << hostname << std::endl;
-		std::cout << "Number of CPUs: " << sysconf(_SC_NPROCESSORS_ONLN) << std::endl;
-		std::cout << "test_name: "  << testName << std::endl;
-        std::cout << "??main_metric: total_time??" << std::endl;
-        std::cout << "parameters: {some substitutions here...}" << std::endl;
+		jsonOutput["hostname"].set(hostname);
+		jsonOutput["Number of CPUs: "].set(sysconf(_SC_NPROCESSORS_ONLN));
+		jsonOutput["test_name"].set(testName);
 
-        if (execType == loop) {
-	    	std::cout << "min_time: " << info_total.min_time / 1000
-	    			  << "." << info_total.min_time % 1000 << "s" << std::endl;
+		if (substitutions.size()) {
+			JSONString jsonParameters;
 
-	    	// TODO: <quantile>90</quantile>
+			for (auto it = substitutions.begin(); it != substitutions.end(); ++it) {
+				std::string parameter = it->first;
+				std::vector<std::string> values = it->second;
 
-		    std::cout << "total_time: " << info_total.total_time << "s" << std::endl;
-		    std::cout << "queries_per_second: " << double(info_total.queries)    / info_total.total_time << std::endl;
-		    std::cout << "rows_per_second: "    << double(info_total.rows_read)  / info_total.total_time << std::endl;
-		    std::cout << "bytes_per_second: "   << double(info_total.bytes_read) / info_total.total_time << std::endl;
-        } else {
-		    std::cout << " max_rows_per_second: "  << info_total.max_speed << std::endl;
-		    // std::cout << " max_bytes_per_second: " <<  << std::endl;
-		    std::cout << " avg_rows_per_second: "  << info_total.average_speed_value << std::endl;
-		    // std::cout << " avg_bytes_per_second: " <<  << std::endl;
-        }
+				std::string arrayString = "[";
+				for (size_t i = 0; i != values.size(); ++i) {
+					arrayString += '\"' + values[i] + '\"';
+					if (i != values.size() - 1) {
+						arrayString += ", ";
+					}
+				}
+				arrayString += ']';
+
+				jsonParameters[parameter].set(arrayString);
+			}
+
+			jsonOutput["parameters"].set(jsonParameters);
+		}
+
+		std::vector<JSONString> runInfos(timesToRun);
+		for (size_t numberOfLaunch = 0; numberOfLaunch < timesToRun; ++numberOfLaunch) {
+			JSONString runJSON;
+
+	        if (execType == loop) {
+		    	runJSON["min_time"].set(std::to_string(statistics[numberOfLaunch].min_time / 1000)
+		    			  				   + "." + std::to_string(statistics[numberOfLaunch].min_time % 1000) + "s");
+
+	    		JSONString quantiles(4); /// here, 4 is the size of \t padding
+		    	for (double percent = 10; percent <= 90; percent += 10) {
+		    		quantiles[percent / 100].set(statistics[numberOfLaunch].sampler.quantileInterpolated(percent / 100.0));
+		    	}
+				quantiles[0.95].set(statistics[numberOfLaunch].sampler.quantileInterpolated(95 / 100.0));
+				quantiles[0.99].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99 / 100.0));
+				quantiles[0.999].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99.9 / 100.0));
+				quantiles[0.9999].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99.99 / 100.0));
+
+				runJSON["quantiles"].set(quantiles);
+
+			    runJSON["total_time"].set(std::to_string(statistics[numberOfLaunch].total_time) + "s");
+			    runJSON["queries_per_second"].set(double(statistics[numberOfLaunch].queries)  / statistics[numberOfLaunch].total_time);
+			    runJSON["rows_per_second"].set(double(statistics[numberOfLaunch].rows_read)   / statistics[numberOfLaunch].total_time);
+			    runJSON["bytes_per_second"].set(double(statistics[numberOfLaunch].bytes_read) / statistics[numberOfLaunch].total_time);
+	        } else {
+			    runJSON["max_rows_per_second"].set(statistics[numberOfLaunch].max_rows_speed);
+			    runJSON["max_bytes_per_second"].set(statistics[numberOfLaunch].max_bytes_speed);
+			    runJSON["avg_rows_per_second"].set(statistics[numberOfLaunch].avg_rows_speed_value);
+			    runJSON["avg_bytes_per_second"].set(statistics[numberOfLaunch].avg_bytes_speed_value);
+	        }
+
+	        runInfos[numberOfLaunch] = runJSON;
+		}
+
+		jsonOutput["runs"].set(runInfos);
+
+		std::cout << jsonOutput << std::endl;
+	}
+
+	void minOutput(const std::string & main_metric)
+	{
+		// TODO: remove
+		std::cout << "test" << std::endl;
+
+		for (size_t numberOfLaunch = 0; numberOfLaunch < timesToRun; ++numberOfLaunch) {
+			std::cout << "run " << numberOfLaunch + 1 << ": ";
+			std::cout << main_metric << " = " << statistics[numberOfLaunch].getStatisticByName(main_metric);
+			std::cout << std::endl;
+		}
 	}
 };
 
