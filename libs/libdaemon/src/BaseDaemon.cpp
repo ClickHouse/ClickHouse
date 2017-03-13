@@ -428,7 +428,7 @@ static void terminate_handler()
 	char buf[buf_size];
 	DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
 
-	DB::writeBinary(SignalListener::StdTerminate, out);
+	DB::writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
 	DB::writeBinary(Poco::ThreadNumber::get(), out);
 	DB::writeBinary(log_message, out);
 	out.next();
