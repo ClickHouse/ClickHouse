@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <iostream>
+#include <type_traits>
 
 #include <mysqlxx/Types.h>
 #include <mysqlxx/Row.h>
@@ -44,16 +45,11 @@ struct EscapeManipResult
 	std::ostream & operator<< (char value) 					{ return ostr << static_cast<int>(value); }
 	std::ostream & operator<< (unsigned char value) 		{ return ostr << static_cast<int>(value); }
 	std::ostream & operator<< (signed char value)			{ return ostr << static_cast<int>(value); }
-	std::ostream & operator<< (short value)					{ return ostr << value; }
-	std::ostream & operator<< (unsigned short value)		{ return ostr << value; }
-	std::ostream & operator<< (int value)					{ return ostr << value; }
-	std::ostream & operator<< (unsigned int value)			{ return ostr << value; }
-	std::ostream & operator<< (long value)					{ return ostr << value; }
-	std::ostream & operator<< (unsigned long value)			{ return ostr << value; }
-	std::ostream & operator<< (float value)					{ return ostr << value; }
-	std::ostream & operator<< (double value)				{ return ostr << value; }
-	std::ostream & operator<< (long long value)				{ return ostr << value; }
-	std::ostream & operator<< (unsigned long long value)	{ return ostr << value; }
+
+	template <typename T>
+	typename std::enable_if<std::is_arithmetic<T>::value, std::ostream &>::type
+	operator<< (T value) { return ostr << value; }
+
 	std::ostream & operator<< (LocalDate value)				{ return ostr << value; }
 	std::ostream & operator<< (LocalDateTime value)			{ return ostr << value; }
 
@@ -171,16 +167,11 @@ public:
 	std::ostream & operator<< (char value) 					{ return ostr << static_cast<int>(value); }
 	std::ostream & operator<< (unsigned char value) 		{ return ostr << static_cast<int>(value); }
 	std::ostream & operator<< (signed char value)			{ return ostr << static_cast<int>(value); }
-	std::ostream & operator<< (short value)					{ return ostr << value; }
-	std::ostream & operator<< (unsigned short value)		{ return ostr << value; }
-	std::ostream & operator<< (int value)					{ return ostr << value; }
-	std::ostream & operator<< (unsigned int value)			{ return ostr << value; }
-	std::ostream & operator<< (long value)					{ return ostr << value; }
-	std::ostream & operator<< (unsigned long value)			{ return ostr << value; }
-	std::ostream & operator<< (float value)					{ return ostr << value; }
-	std::ostream & operator<< (double value)				{ return ostr << value; }
-	std::ostream & operator<< (long long value)				{ return ostr << value; }
-	std::ostream & operator<< (unsigned long long value)	{ return ostr << value; }
+
+	template <typename T>
+	typename std::enable_if<std::is_arithmetic<T>::value, std::ostream &>::type
+	operator<< (T value) { return ostr << value; }
+
 	std::ostream & operator<< (LocalDate value)				{ return ostr << '\'' << value << '\''; }
 	std::ostream & operator<< (LocalDateTime value)			{ return ostr << '\'' << value << '\''; }
 
@@ -329,16 +320,10 @@ struct UnEscapeManipResult
 	std::istream & operator>> (char 				& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
 	std::istream & operator>> (unsigned char 		& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
 	std::istream & operator>> (signed char 			& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
-	std::istream & operator>> (short 				& value) { return istr >> value; }
-	std::istream & operator>> (unsigned short 		& value) { return istr >> value; }
-	std::istream & operator>> (int 					& value) { return istr >> value; }
-	std::istream & operator>> (unsigned int 		& value) { return istr >> value; }
-	std::istream & operator>> (long 				& value) { return istr >> value; }
-	std::istream & operator>> (unsigned long 		& value) { return istr >> value; }
-	std::istream & operator>> (float 				& value) { return istr >> value; }
-	std::istream & operator>> (double 				& value) { return istr >> value; }
-	std::istream & operator>> (long long 			& value) { return istr >> value; }
-	std::istream & operator>> (unsigned long long 	& value) { return istr >> value; }
+
+	template <typename T>
+	typename std::enable_if<std::is_arithmetic<T>::value, std::istream &>::type
+	operator>> (T & value) { return istr >> value; }
 
 	std::istream & operator>> (std::string & value)
 	{
@@ -435,16 +420,10 @@ public:
 	std::istream & operator>> (char 				& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
 	std::istream & operator>> (unsigned char 		& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
 	std::istream & operator>> (signed char 			& value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
-	std::istream & operator>> (short 				& value) { return istr >> value; }
-	std::istream & operator>> (unsigned short 		& value) { return istr >> value; }
-	std::istream & operator>> (int 					& value) { return istr >> value; }
-	std::istream & operator>> (unsigned int 		& value) { return istr >> value; }
-	std::istream & operator>> (long 				& value) { return istr >> value; }
-	std::istream & operator>> (unsigned long 		& value) { return istr >> value; }
-	std::istream & operator>> (float 				& value) { return istr >> value; }
-	std::istream & operator>> (double 				& value) { return istr >> value; }
-	std::istream & operator>> (long long 			& value) { return istr >> value; }
-	std::istream & operator>> (unsigned long long 	& value) { return istr >> value; }
+
+	template <typename T>
+	typename std::enable_if<std::is_arithmetic<T>::value, std::istream &>::type
+	operator>> (T & value) { return istr >> value; }
 
 	std::istream & operator>> (std::string & value)
 	{
