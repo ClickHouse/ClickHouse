@@ -77,7 +77,7 @@ namespace DB
 {
 
 
-std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[])
+std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only)
 {
 	/** Тут написано, что при обычном вызове vfork, есть шанс deadlock-а в многопоточных программах,
 	  *  из-за резолвинга символов в shared-библиотеке:
@@ -109,11 +109,14 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
 		if (STDIN_FILENO != dup2(pipe_stdin.read_fd, STDIN_FILENO))
 			_exit(int(ReturnCodes::CANNOT_DUP_STDIN));
 
-		if (STDOUT_FILENO != dup2(pipe_stdout.write_fd, STDOUT_FILENO))
-			_exit(int(ReturnCodes::CANNOT_DUP_STDOUT));
+		if (!pipe_stdin_only)
+		{
+			if (STDOUT_FILENO != dup2(pipe_stdout.write_fd, STDOUT_FILENO))
+				_exit(int(ReturnCodes::CANNOT_DUP_STDOUT));
 
-		if (STDERR_FILENO != dup2(pipe_stderr.write_fd, STDERR_FILENO))
-			_exit(int(ReturnCodes::CANNOT_DUP_STDERR));
+			if (STDERR_FILENO != dup2(pipe_stderr.write_fd, STDERR_FILENO))
+				_exit(int(ReturnCodes::CANNOT_DUP_STDERR));
+		}
 
 		execv(filename, argv);
 		/// Если процесс запущен, то execv не возвращает сюда.
@@ -132,7 +135,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
 }
 
 
-std::unique_ptr<ShellCommand> ShellCommand::execute(const std::string & command)
+std::unique_ptr<ShellCommand> ShellCommand::execute(const std::string & command, bool pipe_stdin_only)
 {
 	/// Аргументы в неконстантных кусках памяти (как требуется для execv).
 	/// Причём, их копирование должно быть совершено раньше вызова vfork, чтобы после vfork делать минимум вещей.
@@ -142,7 +145,7 @@ std::unique_ptr<ShellCommand> ShellCommand::execute(const std::string & command)
 
 	char * const argv[] = { argv0.data(), argv1.data(), argv2.data(), nullptr };
 
-	return executeImpl("/bin/sh", argv);
+	return executeImpl("/bin/sh", argv, pipe_stdin_only);
 }
 
 
@@ -167,7 +170,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const std::string & pa
 
 	argv[arguments.size() + 1] = nullptr;
 
-	return executeImpl(path.data(), argv.data());
+	return executeImpl(path.data(), argv.data(), false);
 }
 
 
