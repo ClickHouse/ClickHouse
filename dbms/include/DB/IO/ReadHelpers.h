@@ -240,7 +240,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 			case '+':
 				break;
 			case '-':
-			    if (std::is_signed<T>::value)
+				if (std::is_signed<T>::value)
 					negative = true;
 				else
 					return ReturnType(false);

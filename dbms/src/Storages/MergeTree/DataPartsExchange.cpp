@@ -69,9 +69,9 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
 		CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
-		/// Список файлов возьмем из списка контрольных сумм.
+		/// We'll take a list of files from the list of checksums.
 		MergeTreeData::DataPart::Checksums checksums = part->checksums;
-		/// Добавим файлы, которых нет в списке контрольных сумм.
+		/// Add files that are not in the checksum list.
 		checksums.files["checksums.txt"];
 		checksums.files["columns.txt"];
 
@@ -218,8 +218,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
 
 		if (is_cancelled)
 		{
-			/// NOTE Флаг is_cancelled также имеет смысл проверять при каждом чтении по сети, осуществляя poll с не очень большим таймаутом.
-			/// А сейчас мы проверяем его только между прочитанными кусками (в функции copyData).
+			/// NOTE The is_cancelled flag also makes sense to check every time you read over the network, performing a poll with a not very large timeout.
+			/// And now we check it only between read chunks (in the `copyData` function).
 			part_file.remove(true);
 			throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
 		}

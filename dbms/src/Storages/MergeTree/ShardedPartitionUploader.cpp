@@ -162,9 +162,9 @@ bool Client::send(const std::string & part_name, size_t shard_no,
 
 	CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
-	/// Список файлов возьмем из списка контрольных сумм.
+	/// We take a list of files from list of checksums.
 	MergeTreeData::DataPart::Checksums checksums = part->checksums;
-	/// Добавим файлы, которых нет в списке контрольных сумм.
+	/// Add files that are not in checksum list.
 	checksums.files["checksums.txt"];
 	checksums.files["columns.txt"];
 

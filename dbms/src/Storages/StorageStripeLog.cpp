@@ -88,7 +88,7 @@ protected:
 		{
 			res = block_in->read();
 
-			/// Освобождаем память раньше уничтожения объекта.
+			/// Freeing memory before destroying the object.
 			if (!res)
 			{
 				block_in = std::experimental::nullopt;
@@ -108,9 +108,9 @@ private:
 	IndexForNativeFormat::Blocks::const_iterator index_begin;
 	IndexForNativeFormat::Blocks::const_iterator index_end;
 
-	/** optional - чтобы создавать объекты только при первом чтении
-	 *  и удалять объекты (освобождать буферы) после исчерпания источника
-	  * - для экономии оперативки при использовании большого количества источников.
+	/** optional - to create objects only on first reading
+	  *  and delete objects (release buffers) after the source is exhausted
+	  * - to save RAM when using a large number of sources.
 	  */
 	bool started = false;
 	std::experimental::optional<CompressedReadBufferFromFile> data_in;
@@ -200,7 +200,7 @@ StorageStripeLog::StorageStripeLog(
 	String full_path = path + escapeForFileName(name) + '/';
 	if (!attach)
 	{
-		/// создаём файлы, если их нет
+		/// create files if they do not exist
 		if (0 != mkdir(full_path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
 			throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
 	}
@@ -228,7 +228,7 @@ void StorageStripeLog::rename(const String & new_path_to_db, const String & new_
 {
 	Poco::ScopedWriteRWLock lock(rwlock);
 
-	/// Переименовываем директорию с данными.
+	/// Rename directory with data.
 	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
 
 	path = new_path_to_db;
@@ -276,7 +276,7 @@ BlockInputStreams StorageStripeLog::read(
 		res.emplace_back(std::make_shared<StripeLogBlockInputStream>(column_names_set, *this, settings.max_read_buffer_size, index, begin, end));
 	}
 
-	/// Непосредственно во время чтения не держим read lock, потому что мы читаем диапазоны данных, которые не меняются.
+	/// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
 
 	return res;
 }

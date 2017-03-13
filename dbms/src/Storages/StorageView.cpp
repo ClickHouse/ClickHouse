@@ -47,7 +47,7 @@ StorageView::StorageView(
 	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_);
 	ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*create.select);
 
-	/// Если во внутреннем запросе не указана база данных, получить ее из контекста и записать в запрос.
+	/// If the internal query does not specify a database, retrieve it from the context and write it to the query.
 	select.setDatabaseIfNeeded(database_name);
 
 	inner_query = select;
@@ -106,7 +106,7 @@ BlockInputStreams StorageView::read(
 /*	ASTSelectQuery & inner_select = static_cast<ASTSelectQuery &>(*inner_query_clone);
 	const ASTSelectQuery & outer_select = typeid_cast<const ASTSelectQuery &>(*query);
 
-	/// Пробрасываем внутрь SAMPLE и FINAL, если они есть во внешнем запросе и их нет во внутреннем. TODO
+	/// We pass through SAMPLE and FINAL if they exist in an external query and they are not in the internal query. TODO
 
 	if (outer_select.sample_size && !inner_select.sample_size)
 	{

@@ -122,7 +122,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
 	in >> "\n";
 
-	/// Необязательное поле.
+	/// Optional field.
 	if (!in.eof())
 		in >> "quorum: " >> quorum >> "\n";
 }

@@ -233,7 +233,7 @@ void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums
 /// Control sum computed from the set of control sums of .bin files.
 void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
 {
-	/// Пользуемся тем, что итерирование в детерминированном (лексикографическом) порядке.
+	/// We use fact that iteration is in deterministic (lexicographical) order.
 	for (const auto & it : files)
 	{
 		const String & name = it.first;
@@ -414,10 +414,10 @@ void MergeTreeDataPart::renameAddPrefix(bool to_detached, const String & prefix)
 
 	if (to_detached)
 	{
-		/** Если нужно отцепить кусок, и директория, в которую мы хотим его переименовать, уже существует,
-			*  то будем переименовывать в директорию с именем, в которое добавлен суффикс в виде "_tryN".
-			* Это делается только в случае to_detached, потому что считается, что в этом случае, точное имя не имеет значения.
-			* Больше 10 попыток не делается, чтобы не оставалось слишком много мусорных директорий.
+		/** If you need to unhook a part, and directory into which we want to rename it already exists,
+			*  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".
+			* This is done only in the case of `to_detached`, because it is assumed that in this case the exact name does not matter.
+			* No more than 10 attempts are made so that there are not too many junk directories left.
 			*/
 		while (try_no < 10 && Poco::File(storage.full_path + dst_name()).exists())
 		{
@@ -432,7 +432,7 @@ void MergeTreeDataPart::renameAddPrefix(bool to_detached, const String & prefix)
 
 void MergeTreeDataPart::loadIndex()
 {
-	/// Размер - в количестве засечек.
+	/// Size - in number of marks.
 	if (!size)
 	{
 		if (columns.empty())
@@ -507,7 +507,7 @@ void MergeTreeDataPart::loadColumns(bool require)
 		if (require)
 			throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-		/// Если нет файла со списком столбцов, запишем его.
+		/// If there is no file with a list of columns, write it down.
 		for (const NameAndTypePair & column : *storage.columns)
 		{
 			if (Poco::File(storage.full_path + name + "/" + escapeForFileName(column.name) + ".bin").exists())
@@ -556,14 +556,14 @@ void MergeTreeDataPart::checkNotBroken(bool require_part_metadata)
 	{
 		if (!storage.sort_descr.empty())
 		{
-			/// Проверяем, что первичный ключ непуст.
+			/// Check that the primary key is not empty.
 			Poco::File index_file(path + "/primary.idx");
 
 			if (!index_file.exists() || index_file.getSize() == 0)
 				throw Exception("Part " + path + " is broken: primary key is empty.", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
 		}
 
-		/// Проверяем, что все засечки непусты и имеют одинаковый размер.
+		/// Check that all marks are nonempty and have the same size.
 
 		auto check_marks = [](const std::string & path, const NamesAndTypesList & columns, const std::string & extension)
 		{
@@ -572,7 +572,7 @@ void MergeTreeDataPart::checkNotBroken(bool require_part_metadata)
 			{
 				Poco::File marks_file(path + "/" + escapeForFileName(it.name) + extension);
 
-				/// При добавлении нового столбца в таблицу файлы .mrk не создаются. Не будем ничего удалять.
+				/// When you add a new column to the table, the .mrk files are not created. We will not delete anything.
 				if (!marks_file.exists())
 					continue;
 

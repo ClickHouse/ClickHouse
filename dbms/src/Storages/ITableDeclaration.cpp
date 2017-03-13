@@ -79,12 +79,12 @@ bool ITableDeclaration::hasMaterializedColumn(const String & column_name) const
 
 bool ITableDeclaration::hasColumn(const String & column_name) const
 {
-	return hasRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
+	return hasRealColumn(column_name); /// By default, we assume that there are no virtual columns in the storage.
 }
 
 NameAndTypePair ITableDeclaration::getColumn(const String & column_name) const
 {
-	return getRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
+	return getRealColumn(column_name); /// By default, we assume that there are no virtual columns in the storage.
 }
 
 

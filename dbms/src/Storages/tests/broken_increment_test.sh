@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# См. таску METR-9006
-# Удалим increment.txt из StorageMergeTree таблицы и попробуем сделать INSERT в нее. Перезапустим сервер и попробуем сделать INSERT снова.
+# See METR-9006
+# Remove increment.txt from StorageMergeTree table and try to make INSERT into it. Restart the server and try to make INSERT again.
 
 echo 'Droping database'
 echo 'DROP DATABASE IF EXISTS increment' | clickhouse-client || exit 1

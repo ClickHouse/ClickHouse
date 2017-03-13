@@ -320,7 +320,7 @@ public:
 
 	bool empty() const
 	{
-	    for (size_t i = 0; i < NUM_BUCKETS; ++i)
+		for (size_t i = 0; i < NUM_BUCKETS; ++i)
 			if (!impls[i].empty())
 				return false;
 

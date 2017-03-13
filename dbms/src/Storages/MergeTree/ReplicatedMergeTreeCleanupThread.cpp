@@ -111,7 +111,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
 	int children_count = stat.numChildren;
 
-	/// Будем ждать, пока накопятся в 1.1 раза больше записей, чем нужно.
+	/// We will wait for 1.1 times more records to accumulate than necessary.
 	if (static_cast<double>(children_count) < storage.data.settings.replicated_logs_to_keep * 1.1)
 		return;
 
@@ -128,9 +128,9 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 	Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/log");
 	std::sort(entries.begin(), entries.end());
 
-	/// Не будем трогать последние replicated_logs_to_keep записей.
+	/// We will not touch the last `replicated_logs_to_keep` records.
 	entries.erase(entries.end() - std::min(entries.size(), storage.data.settings.replicated_logs_to_keep), entries.end());
-	/// Не будем трогать записи, не меньшие min_pointer.
+	/// We will not touch records that are no less than `min_pointer`.
 	entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + padIndex(min_pointer)), entries.end());
 
 	if (entries.empty())
@@ -143,7 +143,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
 		if (ops.size() > 400 || i + 1 == entries.size())
 		{
-			/// Одновременно с очисткой лога проверим, не добавилась ли реплика с тех пор, как мы получили список реплик.
+			/// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
 			ops.emplace_back(std::make_unique<zkutil::Op::Check>(storage.zookeeper_path + "/replicas", stat.version));
 			zookeeper->multi(ops);
 			ops.clear();
@@ -164,7 +164,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 
 	int children_count = stat.numChildren;
 
-	/// Чтобы делать "асимптотически" меньше запросов exists, будем ждать, пока накопятся в 1.1 раза больше блоков, чем нужно.
+	/// To make "asymptotically" fewer `exists` requests, we will wait for 1.1 times more blocks to accumulate than necessary.
 	if (static_cast<double>(children_count) < storage.data.settings.replicated_deduplication_window * 1.1)
 		return;
 
