@@ -1,42 +1,25 @@
 #include "LocalServer.h"
+
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Util/OptionCallback.h>
 #include <Poco/String.h>
-
 #include <DB/Databases/DatabaseOrdinary.h>
-
-#include <DB/Storages/System/StorageSystemNumbers.h>
-#include <DB/Storages/System/StorageSystemTables.h>
-#include <DB/Storages/System/StorageSystemDatabases.h>
-#include <DB/Storages/System/StorageSystemProcesses.h>
-#include <DB/Storages/System/StorageSystemEvents.h>
-#include <DB/Storages/System/StorageSystemOne.h>
-#include <DB/Storages/System/StorageSystemSettings.h>
-#include <DB/Storages/System/StorageSystemDictionaries.h>
-#include <DB/Storages/System/StorageSystemColumns.h>
-#include <DB/Storages/System/StorageSystemFunctions.h>
-#include <DB/Storages/System/StorageSystemBuildOptions.h>
-
+#include <DB/Storages/System/attach_system_tables.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/loadMetadata.h>
-
 #include <DB/Common/Exception.h>
 #include <DB/Common/Macros.h>
 #include <DB/Common/ConfigProcessor.h>
 #include <DB/Common/escapeForFileName.h>
-
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
-
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/IAST.h>
-
 #include <common/ErrorHandlers.h>
 #include <common/ApplicationServerExt.h>
-
 #include "StatusFile.h"
 
 
@@ -394,16 +377,7 @@ void LocalServer::attachSystemTables()
 		context->addDatabase("system", system_database);
 	}
 
-	system_database->attachTable("one", 	StorageSystemOne::create("one"));
-	system_database->attachTable("numbers", StorageSystemNumbers::create("numbers"));
-	system_database->attachTable("numbers_mt", StorageSystemNumbers::create("numbers_mt", true));
-	system_database->attachTable("databases", 	StorageSystemDatabases::create("databases"));
-	system_database->attachTable("tables", 		StorageSystemTables::create("tables"));
-	system_database->attachTable("columns",   	StorageSystemColumns::create("columns"));
-	system_database->attachTable("functions", 	StorageSystemFunctions::create("functions"));
-	system_database->attachTable("events", 		StorageSystemEvents::create("events"));
-	system_database->attachTable("settings", 	StorageSystemSettings::create("settings"));
-	system_database->attachTable("build_options", 	StorageSystemBuildOptions::create("build_options"));
+	attach_system_tables_local(system_database);
 }
 
 
