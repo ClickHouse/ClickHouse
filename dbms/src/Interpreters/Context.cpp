@@ -174,6 +174,7 @@ struct ContextShared
 		shutdown_called = true;
 
 		query_log.reset();
+		part_log.reset();
 
 		/** В этот момент, некоторые таблицы могут иметь потоки, которые блокируют наш mutex.
 		  * Чтобы корректно их завершить, скопируем текущий список таблиц,
