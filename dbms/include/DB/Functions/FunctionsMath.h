@@ -1,16 +1,16 @@
 #pragma once
 
 #include <common/exp10.h>
-
 #include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/Common/config.h>
 
-/** Более эффективные реализации математических функций возможны при подключении отдельной библиотеки.
-  * Отключено по-умолчанию из соображения совместимости лицензий.
+/** More effective implementations of mathematical functions are possible when connecting a separate library
+  * Disabled due licence compatibility limitations
+  * To enable: rebuild with -DUSE_VECTORIZED_MATH_FUNCTIONS=1
   */
-#define USE_VECTORIZED_FUNCTIONS 0
 
 
 namespace DB
@@ -166,7 +166,7 @@ struct UnaryFunctionPlain
 	}
 };
 
-#if USE_VECTORIZED_FUNCTIONS
+#if USE_VECTORIZED_MATH_FUNCTIONS
 
 template <typename Name, Vec2d(&Function)(const Vec2d &)>
 struct UnaryFunctionVectorized
@@ -436,7 +436,7 @@ struct BinaryFunctionPlain
 	}
 };
 
-#if USE_VECTORIZED_FUNCTIONS
+#if USE_VECTORIZED_MATH_FUNCTIONS
 
 template <typename Name, Vec2d(&Function)(const Vec2d &, const Vec2d &)>
 struct BinaryFunctionVectorized
@@ -502,7 +502,7 @@ using FunctionLog10 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Log10Name
 using FunctionSqrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<SqrtName, sqrt>>;
 
 using FunctionCbrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<CbrtName,
-#if USE_VECTORIZED_FUNCTIONS
+#if USE_VECTORIZED_MATH_FUNCTIONS
 	Power_rational<1, 3>::pow
 #else
 	cbrt
