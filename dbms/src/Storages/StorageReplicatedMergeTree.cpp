@@ -2059,6 +2059,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 		part_log->add(elem);
 	}
+	part_log.reset();
 
 	if (!to_detached)
 	{
