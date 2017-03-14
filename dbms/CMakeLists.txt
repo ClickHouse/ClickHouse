@@ -1,4 +1,4 @@
-option (USE_VECTORIZED_MATH_FUNCTIONS "Faster math functions" OFF)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/find_vectorclass.cmake)
 
 set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/include/DB/Common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/DB/Common/config.h)

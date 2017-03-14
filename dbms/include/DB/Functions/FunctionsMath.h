@@ -9,8 +9,24 @@
 
 /** More effective implementations of mathematical functions are possible when connecting a separate library
   * Disabled due licence compatibility limitations
-  * To enable: rebuild with -DUSE_VECTORIZED_MATH_FUNCTIONS=1
+  * To enable: download http://www.agner.org/optimize/vectorclass.zip and unpack to contrib/vectorclass
+  *  Then rebuild with -DENABLE_VECTORCLASS=1
   */
+
+#if USE_VECTORCLASS
+       #if __clang__
+               #pragma clang diagnostic push
+               #pragma clang diagnostic ignored "-Wshift-negative-value"
+       #endif
+
+       #include <vectorf128.h>
+       #include <vectormath_exp.h>
+       #include <vectormath_trig.h>
+
+       #if __clang__
+               #pragma clang diagnostic pop
+       #endif
+#endif
 
 
 namespace DB
@@ -166,7 +182,7 @@ struct UnaryFunctionPlain
 	}
 };
 
-#if USE_VECTORIZED_MATH_FUNCTIONS
+#if USE_VECTORCLASS
 
 template <typename Name, Vec2d(&Function)(const Vec2d &)>
 struct UnaryFunctionVectorized
@@ -436,7 +452,7 @@ struct BinaryFunctionPlain
 	}
 };
 
-#if USE_VECTORIZED_MATH_FUNCTIONS
+#if USE_VECTORCLASS
 
 template <typename Name, Vec2d(&Function)(const Vec2d &, const Vec2d &)>
 struct BinaryFunctionVectorized
@@ -502,7 +518,7 @@ using FunctionLog10 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Log10Name
 using FunctionSqrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<SqrtName, sqrt>>;
 
 using FunctionCbrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<CbrtName,
-#if USE_VECTORIZED_MATH_FUNCTIONS
+#if USE_VECTORCLASS
 	Power_rational<1, 3>::pow
 #else
 	cbrt
