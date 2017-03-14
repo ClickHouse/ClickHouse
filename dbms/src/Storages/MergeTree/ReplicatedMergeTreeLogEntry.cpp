@@ -47,7 +47,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 			break;
 
 		default:
-			throw Exception("Unknown log entry type: " + DB::toString(type), ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
 	}
 
 	out << '\n';

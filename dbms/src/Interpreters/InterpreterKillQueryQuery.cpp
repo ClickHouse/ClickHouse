@@ -10,6 +10,7 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <thread>
 #include <iostream>
+#include <cstddef>
 
 
 namespace DB
@@ -120,7 +121,7 @@ public:
 
 	String getID() const override
 	{
-		return "SynchronousQueryKiller_" + toString(this);
+		return "SynchronousQueryKiller_" + toString(intptr_t(this));
 	}
 
 	Block readImpl() override

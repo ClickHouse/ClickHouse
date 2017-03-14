@@ -48,7 +48,7 @@ ProcessList::EntryPtr ProcessList::insert(
 					&& user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user)
 					throw Exception("Too much simultaneous queries for user " + client_info.current_user
 						+ ". Current: " + toString(user_process_list->second.queries.size())
-						+ ", maximum: " + toString(settings.max_concurrent_queries_for_user),
+						+ ", maximum: " + settings.max_concurrent_queries_for_user.toString(),
 						ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
 				if (!client_info.current_query_id.empty())

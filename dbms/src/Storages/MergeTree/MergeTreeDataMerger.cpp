@@ -594,7 +594,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 			break;
 
 		default:
-			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(data.merging_params.mode), ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(data.merging_params.mode), ErrorCodes::LOGICAL_ERROR);
 	}
 
 	String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
@@ -993,7 +993,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 			break;
 
 		default:
-			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(data.merging_params.mode), ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(data.merging_params.mode), ErrorCodes::LOGICAL_ERROR);
 	}
 
 	merged_stream->readPrefix();

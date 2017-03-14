@@ -264,7 +264,7 @@ String MergeTreeData::MergingParams::getModeName() const
 		case Graphite: 		return "Graphite";
 
 		default:
-			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(mode), ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(mode), ErrorCodes::LOGICAL_ERROR);
 	}
 }
 
