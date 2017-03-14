@@ -122,7 +122,7 @@ struct ContextShared
 	Macros macros;											/// Substitutions extracted from config.
 	std::unique_ptr<Compiler> compiler;						/// Used for dynamic compilation of queries' parts if it necessary.
 	std::unique_ptr<QueryLog> query_log;					/// Used to log queries.
-	std::shared_prt<PartLog> part_log;						/// Used to log operations with parts
+	std::shared_ptr<PartLog> part_log;						/// Used to log operations with parts
 	/// Правила для выбора метода сжатия в зависимости от размера куска.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
 	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Settings of MergeTree* engines.
