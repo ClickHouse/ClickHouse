@@ -2,16 +2,16 @@
 
 #include <memory>
 #include <mutex>
-#include <re2/re2.h>
-#include <re2/stringpiece.h>
 #include <Poco/UTF8String.h>
-#include <common/config_common.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Common/Volnitsky.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/Regexps.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/Common/config.h>
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
 
 #if USE_RE2_ST
 	#include <re2_st/re2.h>

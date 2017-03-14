@@ -4,7 +4,7 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Storages/System/StorageSystemBuildOptions.h>
-#include <common/config_build.h>
+#include <DB/Common/config_build.h>
 
 namespace DB
 {
