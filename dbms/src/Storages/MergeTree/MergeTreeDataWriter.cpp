@@ -165,7 +165,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->size_in_bytes);
 
-	PartLog * part_log = context.getPartLog();
+	std::shared_ptr<PartLog> part_log = context.getPartLog();
 	if (part_log)
 	{
 		elem.event_type = PartLogElement::NEW_PART;

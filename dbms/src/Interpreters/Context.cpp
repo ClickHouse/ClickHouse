@@ -122,7 +122,7 @@ struct ContextShared
 	Macros macros;											/// Substitutions extracted from config.
 	std::unique_ptr<Compiler> compiler;						/// Used for dynamic compilation of queries' parts if it necessary.
 	std::unique_ptr<QueryLog> query_log;					/// Used to log queries.
-	std::unique_ptr<PartLog> part_log;						/// Used to log operations with parts
+	std::shared_ptr<PartLog> part_log;						/// Used to log operations with parts
 	/// Правила для выбора метода сжатия в зависимости от размера куска.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
 	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Settings of MergeTree* engines.
@@ -1064,7 +1064,7 @@ QueryLog & Context::getQueryLog()
 }
 
 
-PartLog * Context::getPartLog()
+std::shared_ptr<PartLog> Context::getPartLog()
 {
 	auto lock = getLock();
 
@@ -1088,7 +1088,7 @@ PartLog * Context::getPartLog()
 			*global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
 	}
 
-	return shared->part_log.get();
+	return shared->part_log;
 }
 
 
