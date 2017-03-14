@@ -1,4 +1,4 @@
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 
 #include <DB/DataStreams/BlocksListBlockInputStream.h>
 #include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>

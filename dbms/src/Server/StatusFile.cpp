@@ -7,7 +7,7 @@
 
 #include <Poco/File.h>
 #include <common/logger_useful.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 #include <common/LocalDateTime.h>
 
 #include <DB/IO/ReadBufferFromFile.h>

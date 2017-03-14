@@ -25,7 +25,6 @@ add_library (common
 	src/DateLUT.cpp
 	src/DateLUTImpl.cpp
 	src/exp10.cpp
-	src/ClickHouseRevision.cpp
 	src/JSON.cpp
 
 	include/common/ApplicationServerExt.h
@@ -39,7 +38,6 @@ add_library (common
 	include/common/likely.h
 	include/common/logger_useful.h
 	include/common/MultiVersion.h
-	include/common/ClickHouseRevision.h
 	include/common/singleton.h
 	include/common/strong_typedef.h
 	include/common/JSON.h

@@ -1,5 +1,5 @@
 #include <Poco/DirectoryIterator.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 #include <ext/unlock_guard.hpp>
 
 #include <DB/Common/SipHash.h>
