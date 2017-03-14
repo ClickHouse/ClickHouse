@@ -9,7 +9,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/Interpreters/PartLog.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 #include <Poco/Net/IPAddress.h>
 #include <array>
 

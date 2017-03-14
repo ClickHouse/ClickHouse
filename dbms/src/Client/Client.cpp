@@ -11,7 +11,7 @@
 #include <boost/program_options.hpp>
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 #include <DB/Common/Stopwatch.h>
 #include <DB/Common/Exception.h>
 #include <DB/Common/ShellCommand.h>
