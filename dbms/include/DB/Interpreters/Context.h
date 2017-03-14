@@ -283,7 +283,7 @@ public:
 
 	Compiler & getCompiler();
 	QueryLog & getQueryLog();
-	PartLog * getPartLog();
+	std::shared_ptr<PartLog> getPartLog();
 	const MergeTreeSettings & getMergeTreeSettings();
 
 	/// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
