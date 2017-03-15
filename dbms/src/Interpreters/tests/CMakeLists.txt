@@ -8,7 +8,7 @@ add_executable (create_query create_query.cpp)
 target_link_libraries (create_query dbms)
 
 add_executable (select_query select_query.cpp)
-target_link_libraries (select_query dbms)
+target_link_libraries (select_query dbms storages_system)
 
 add_executable (aggregate aggregate.cpp)
 target_link_libraries (aggregate dbms)
