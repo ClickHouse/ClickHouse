@@ -1,4 +1,5 @@
 #include <DB/IO/CachedCompressedReadBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
@@ -6,7 +7,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int ARGUMENT_OUT_OF_BOUND;
+	extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
 
@@ -93,7 +94,9 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
 		nextImpl();
 
 		if (offset_in_decompressed_block > working_buffer.size())
-			throw Exception("Seek position is beyond the decompressed block", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+			throw Exception("Seek position is beyond the decompressed block"
+				" (pos: " + toString(offset_in_decompressed_block) + ", block size: " + toString(working_buffer.size()) + ")",
+				ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
 		pos = working_buffer.begin() + offset_in_decompressed_block;
 		bytes -= offset();
