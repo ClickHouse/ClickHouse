@@ -1,14 +1,15 @@
 #include "MetricsTransmitter.h"
 
+#include <Poco/Util/Application.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <daemon/BaseDaemon.h>
-#include <DB/Common/setThreadName.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <DB/Common/setThreadName.h>
 #include <DB/Interpreters/AsynchronousMetrics.h>
 
 
 namespace DB
 {
-
 MetricsTransmitter::~MetricsTransmitter()
 {
 	try
@@ -33,12 +34,18 @@ void MetricsTransmitter::run()
 {
 	setThreadName("MetricsTransmit");
 
-	/// Next minute at 00 seconds. To avoid time drift and transmit values exactly each minute.
-	const auto get_next_minute = []
-	{
-		return std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
-			std::chrono::system_clock::now() + std::chrono::minutes(1));
+	const auto get_next_time = [](size_t seconds) {
+		/// Next minute at 00 seconds. To avoid time drift and transmit values exactly each minute.
+		if (seconds == 60)
+			return std::chrono::time_point_cast<std::chrono::seconds, std::chrono::system_clock>(
+				std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
+					std::chrono::system_clock::now() + std::chrono::minutes(1)));
+		return std::chrono::time_point_cast<std::chrono::seconds, std::chrono::system_clock>(
+			std::chrono::system_clock::now() + std::chrono::seconds(seconds));
 	};
+
+	Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
+	auto interval = config.getInt(config_name + ".interval", 60);
 
 	std::vector<ProfileEvents::Count> prev_counters(ProfileEvents::end());
 
@@ -46,7 +53,7 @@ void MetricsTransmitter::run()
 
 	while (true)
 	{
-		if (cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
+		if (cond.wait_until(lock, get_next_time(interval), [this] { return quit; }))
 			break;
 
 		transmit(prev_counters);
@@ -67,7 +74,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
 		const auto counter_increment = counter - prev_counters[i];
 		prev_counters[i] = counter;
 
-		std::string key {ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
+		std::string key{ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
 		key_vals.emplace_back(profile_events_path_prefix + key, counter_increment);
 	}
 
@@ -75,7 +82,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
 	{
 		const auto value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
 
-		std::string key {CurrentMetrics::getDescription(static_cast<CurrentMetrics::Metric>(i))};
+		std::string key{CurrentMetrics::getDescription(static_cast<CurrentMetrics::Metric>(i))};
 		key_vals.emplace_back(current_metrics_path_prefix + key, value);
 	}
 
@@ -84,7 +91,6 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
 		key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second);
 	}
 
-	BaseDaemon::instance().writeToGraphite(key_vals);
+	BaseDaemon::instance().writeToGraphite(key_vals, config_name);
 }
-
 }

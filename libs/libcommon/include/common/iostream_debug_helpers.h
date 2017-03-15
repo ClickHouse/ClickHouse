@@ -85,5 +85,20 @@ std::ostream & operator<<(std::ostream & stream, const std::pair<K, V> & what)
 	return stream;
 }
 
+#include <chrono>
+template <class Rep, class Period>
+std::ostream & operator<<(std::ostream & stream, const std::chrono::duration<Rep, Period> & what)
+{
+	stream << "chrono::duration{" << what.count() << "}";
+	return stream;
+}
+
+template <class Clock, class Duration>
+std::ostream & operator<<(std::ostream & stream, const std::chrono::time_point<Clock, Duration> & what)
+{
+	stream << "chrono::time_point{" << what.time_since_epoch() << "}";
+	return stream;
+}
+
 
 // TODO: add more types

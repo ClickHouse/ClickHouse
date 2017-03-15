@@ -11,6 +11,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
+#include <DB/Common/config_keys_multi.h>
 #include <ext/scope_guard.hpp>
 #include <zkutil/ZooKeeper.h>
 #include <DB/Common/Macros.h>
@@ -31,6 +32,7 @@
 #include "ReplicasStatusHandler.h"
 #include "StatusFile.h"
 #include "TCPHandler.h"
+
 
 namespace DB
 {
@@ -397,12 +399,8 @@ int Server::main(const std::vector<std::string> & args)
 		std::vector<std::unique_ptr<Poco::Net::TCPServer>> servers;
 
 		std::vector<std::string> listen_hosts;
-		Poco::Util::AbstractConfiguration::Keys config_keys;
-		config().keys("", config_keys);
-		for (const auto & key : config_keys)
+		for (const auto & key : DB::config_keys_multi(config(), "", "listen_host"))
 		{
-			if (!startsWith(key.data(), "listen_host"))
-				continue;
 			listen_hosts.emplace_back(config().getString(key));
 		}
 
@@ -558,8 +556,12 @@ int Server::main(const std::vector<std::string> & args)
 
 		attach_system_tables_async(system_database, async_metrics);
 
-		const auto metrics_transmitter
-			= config().getBool("use_graphite", true) ? std::make_unique<MetricsTransmitter>(async_metrics) : nullptr;
+		std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
+		for (const auto & graphite_key : DB::config_keys_multi(config(), "", "graphite"))
+		{
+			metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(async_metrics, graphite_key));
+		}
+
 
 		waitForTerminationRequest();
 	}

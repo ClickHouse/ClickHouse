@@ -138,15 +138,14 @@
 	<builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 
 
-	<!-- Sending data to Graphite for monitoring. -->
-	<use_graphite>false</use_graphite>
-
-	<!-- Uncomment if use_graphite.
+	<!-- Sending data to Graphite for monitoring. Several sections can be defined. -->
+	<!--
 	<graphite>
 		<host>localhost</host>
 		<port>42000</port>
 		<root_path>one_min</root_path>
 		<timeout>0.1</timeout>
+		<interval>60</interval>
 	</graphite>
 	-->
 

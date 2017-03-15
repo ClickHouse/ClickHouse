@@ -3,6 +3,7 @@
 #include <vector>
 #include <thread>
 #include <mutex>
+#include <string>
 #include <condition_variable>
 
 #include <DB/Common/ProfileEvents.h>
@@ -22,14 +23,15 @@ class AsynchronousMetrics;
 class MetricsTransmitter
 {
 public:
-	MetricsTransmitter(const AsynchronousMetrics & async_metrics_) : async_metrics(async_metrics_) {}
+	MetricsTransmitter(const AsynchronousMetrics & async_metrics,  const std::string & config_name) : async_metrics{async_metrics}, config_name{config_name} {}
 	~MetricsTransmitter();
 
 private:
 	void run();
-	void transmit(std::vector<ProfileEvents::Count> & prev_counters);
+	void transmit(std::vector< ProfileEvents::Count >& prev_counters);
 
 	const AsynchronousMetrics & async_metrics;
+	const std::string & config_name;
 
 	bool quit = false;
 	std::mutex mutex;
