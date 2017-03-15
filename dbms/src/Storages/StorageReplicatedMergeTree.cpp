@@ -1155,8 +1155,33 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 			MergeTreeData::Transaction transaction;
 			size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
 
+			/// Logging
+			PartLogElement elem;
+			Stopwatch stopwatch;
+			elem.event_time = time(0);
+
+			elem.merged_from.reserve(parts.size());
+			for (const auto & part : parts)
+				elem.merged_from.push_back(part->name);
+
 			auto part = merger.mergePartsToTemporaryPart(
 				parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get());
+
+			std::shared_ptr<PartLog> part_log = context.getPartLog();
+			if (part_log)
+			{
+				elem.event_type = PartLogElement::MERGE_PARTS;
+				elem.size_in_bytes = part->size_in_bytes;
+
+				elem.database_name = part->storage.getDatabaseName();
+				elem.table_name = part->storage.getTableName();
+				elem.part_name = part->name;
+
+				elem.duration_ms = stopwatch.elapsed() / 1000000;
+
+				part_log->add(elem);
+			}
+			part_log.reset();
 
 			zkutil::Ops ops;
 
@@ -2331,10 +2356,34 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
 		{
 			MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, merged_name, parts);
 
+			/// Logging
+			PartLogElement elem;
+			Stopwatch stopwatch;
+			elem.event_time = time(0);
+
+			elem.merged_from.reserve(parts.size());
+			for (const auto & part : parts)
+				elem.merged_from.push_back(part->name);
+
 			auto new_part = unreplicated_merger->mergePartsToTemporaryPart(
 				parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io, time(0));
 
 			unreplicated_merger->renameMergedTemporaryPart(parts, new_part, merged_name, nullptr);
+
+			std::shared_ptr<PartLog> part_log = context.getPartLog();
+			if (part_log)
+			{
+				elem.event_type = PartLogElement::MERGE_PARTS;
+				elem.size_in_bytes = new_part->size_in_bytes;
+
+				elem.database_name = new_part->storage.getDatabaseName();
+				elem.table_name = new_part->storage.getTableName();
+				elem.part_name = new_part->name;
+
+				elem.duration_ms = stopwatch.elapsed() / 1000000;
+
+				part_log->add(elem);
+			}
 			return true;
 		}
 	}
