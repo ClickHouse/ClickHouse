@@ -1,3 +1,20 @@
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/find_vectorclass.cmake)
+
+set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/include/DB/Common/config_version.h)
+set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/DB/Common/config.h)
+set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_build.cpp)
+
+include (cmake/version.cmake)
+message (STATUS "Will build ${VERSION_FULL}")
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/DB/Common/config.h.in ${CONFIG_COMMON})
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/DB/Common/config_version.h.in ${CONFIG_VERSION})
+
+get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
+get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_build.cpp.in ${CONFIG_BUILD})
+
+
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
@@ -51,6 +68,9 @@ add_headers_and_sources(dbms Core)
 add_headers_and_sources(dbms Client)
 add_headers_only(dbms Server)
 
+list (APPEND dbms_sources ${CONFIG_BUILD})
+list (APPEND dbms_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
+
 list(REMOVE_ITEM dbms_sources
 	src/Client/Client.cpp
 	src/Client/Benchmark.cpp
@@ -68,7 +88,7 @@ if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
 		src/IO/WriteBufferAIO.cpp)
 endif()
 
-include (${CMAKE_SOURCE_DIR}/libs/libcommon/cmake/version.cmake)
+#include (${CMAKE_SOURCE_DIR}/libs/libcommon/cmake/version.cmake)
 
 if (USE_STATIC_LIBRARIES)
 	add_library(dbms ${dbms_headers} ${dbms_sources})

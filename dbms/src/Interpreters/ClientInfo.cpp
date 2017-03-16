@@ -7,7 +7,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Core/Defines.h>
 #include <DB/Common/getFQDNOrHostName.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 
 
 namespace DB

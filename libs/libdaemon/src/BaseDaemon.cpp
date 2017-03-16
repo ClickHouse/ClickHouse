@@ -49,7 +49,7 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Common/config_keys_multi.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 #include <daemon/OwnPatternFormatter.h>
 
 using Poco::Logger;

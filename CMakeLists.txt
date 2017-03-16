@@ -172,8 +172,6 @@ include (cmake/find_readline_edit.cmake)
 include (cmake/find_zookeeper.cmake)
 include (cmake/find_double-conversion.cmake)
 include (cmake/find_re2.cmake)
-include (cmake/find_gperftools.cmake)
-include (cmake/find_jemalloc.cmake)
 
 set (FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")
 set (FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")

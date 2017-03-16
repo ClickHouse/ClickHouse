@@ -3,7 +3,7 @@
 #include <cmath>
 #include <ext/range.hpp>
 #include <Poco/Net/DNS.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Common/UnicodeBar.h>
 #include <DB/Core/FieldVisitors.h>

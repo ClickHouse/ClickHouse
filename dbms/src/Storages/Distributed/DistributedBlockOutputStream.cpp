@@ -14,7 +14,7 @@
 #include <DB/Common/Increment.h>
 #include <DB/DataTypes/DataTypesNumber.h>
 #include <memory>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 
 #include <iostream>
 

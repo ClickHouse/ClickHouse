@@ -20,7 +20,7 @@
 #include <DB/Storages/StorageLog.h>
 
 #include <DB/Interpreters/Context.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 
 
 int main(int argc, char ** argv)

@@ -19,7 +19,7 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 
 #include <DB/Interpreters/Aggregator.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 #include <DB/Interpreters/config_compile.h>
 
 

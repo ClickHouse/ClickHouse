@@ -26,7 +26,6 @@
 
 #include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/StorageLog.h>
-#include <DB/Storages/System/StorageSystemNumbers.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>

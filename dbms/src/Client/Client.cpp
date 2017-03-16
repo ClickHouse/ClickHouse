@@ -2,29 +2,21 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
-
 #include <iostream>
 #include <fstream>
 #include <iomanip>
 #include <experimental/optional>
-
 #include <unordered_set>
 #include <algorithm>
-
 #include <boost/program_options.hpp>
-
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
-
-#include <common/ClickHouseRevision.h>
-
+#include <DB/Common/ClickHouseRevision.h>
 #include <DB/Common/Stopwatch.h>
-
 #include <DB/Common/Exception.h>
 #include <DB/Common/ShellCommand.h>
 #include <DB/Core/Types.h>
 #include <DB/Core/QueryProcessingStage.h>
-
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFile.h>
@@ -32,10 +24,8 @@
 #include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
-
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
-
 #include <DB/Parsers/ParserQuery.h>
 #include <DB/Parsers/ASTSetQuery.h>
 #include <DB/Parsers/ASTUseQuery.h>
@@ -46,21 +36,14 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/parseQuery.h>
-
 #include <DB/Interpreters/Context.h>
-
 #include <DB/Client/Connection.h>
-
 #include "InterruptListener.h"
-
 #include <DB/Common/ExternalTable.h>
 #include <DB/Common/UnicodeBar.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/Columns/ColumnString.h>
-
 #include <DB/Common/NetException.h>
-
-#include <common/config_common.h>
 #include <common/readline_use.h>
 
 
