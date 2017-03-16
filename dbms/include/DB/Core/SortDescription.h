@@ -3,6 +3,7 @@
 #include <vector>
 #include <memory>
 #include <cstddef>
+#include <string>
 
 
 class Collator;
