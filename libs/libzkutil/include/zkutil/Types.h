@@ -126,6 +126,9 @@ using EventPtr = std::shared_ptr<Poco::Event>;
 class ZooKeeper;
 
 /// Callback to call when the watch fires.
+/// Because callbacks are called in the single "completion" thread internal to libzookeeper,
+/// they must execute as quickly as possible (preferably just set some notification).
+/// Parameters:
 /// zookeeper - zookeeper session to which the fired watch belongs
 /// type - event type, one of the *_EVENT constants from zookeeper.h
 /// state - session connection state, one of the *_STATE constants from zookeeper.h

@@ -31,28 +31,36 @@ class ConfigProcessor
 public:
 	using Substitutions = std::vector<std::pair<std::string, std::string> >;
 
-	/// log_to_console нужно использовать, если система логгирования еще не инициализирована.
+	/// Set log_to_console to true if the logging subsystem is not initialized yet.
 	ConfigProcessor(bool throw_on_bad_incl = false, bool log_to_console = false, const Substitutions & substitutions = Substitutions());
 
 	~ConfigProcessor();
 
-	/** Выполняет подстановки в конфиге и возвращает XML-документ.
-	  *
-	  * Пусть в качестве path передана "/path/file.xml"
-	  * 1) Объединяем xml-дерево из /path/file.xml со всеми деревьями из файлов /path/{conf,file}.d/ *.{conf,xml}
-	  *     Если у элемента есть атрибут replace, заменяем на него подходящий элемент.
-	  *     Если у элемента есть атрибут remove, удаляем подходящий элемент.
-	  *     Иначе объединяем детей рекурсивно.
-	  * 2) Берем из конфига путь к файлу, из которого будем делать подстановки: <include_from>/path2/metrika.xml</include_from>.
-	  *     Если путь не указан, используем /etc/metrika.xml
-	  * 3) Заменяем элементы вида "<foo incl="bar"/>" на "<foo>содержимое элемента yandex.bar из metrika.xml</foo>"
-	  * 4) Заменяет "<layer/>" на "<layer>номер слоя из имени хоста</layer>"
-	  */
+	/// Perform config includes and substitutions and return the resulting XML-document.
+	///
+	/// Suppose path is "/path/file.xml"
+	/// 1) Merge XML trees of /path/file.xml with XML trees of all files from /path/{conf,file}.d/*.{conf,xml}
+	///    * If an element has a "replace" attribute, replace the matching element with it.
+	///    * If an element has a "remove" attribute, remove the matching element.
+	///    * Else, recursively merge child elements.
+	/// 2) Determine the includes file from the config: <include_from>/path2/metrika.xml</include_from>
+	///    If this path is not configured, use /etc/metrika.xml
+	/// 3) Replace elements matching the "<foo incl="bar"/>" pattern with
+	///    "<foo>contents of the yandex/bar element in metrika.xml</foo>"
+	/// 4) If zk_node_cache is non-NULL, replace elements matching the "<foo from_zk="/bar">" pattern with
+	///    "<foo>contents of the /bar ZooKeeper node</foo>".
+	///    If has_zk_includes is non-NULL and there are such elements, set has_zk_includes to true.
+	/// 5) (Yandex.Metrika-specific) Substitute "<layer/>" with "<layer>layer number from the hostname</layer>".
 	XMLDocumentPtr processConfig(
 			const std::string & path,
 			bool * has_zk_includes = nullptr,
 			zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr);
 
+
+	/// loadConfig* functions apply processConfig and create Poco::Util::XMLConfiguration.
+	/// The resulting XML document is saved into a file with the name
+	/// resulting from adding "-preprocessed" suffix to the path file name.
+	/// E.g., config.xml -> config-preprocessed.xml
 
 	struct LoadedConfig
 	{
@@ -62,16 +70,13 @@ public:
 		bool preprocessed_written;
 	};
 
-	/** Делает processConfig и создает из результата Poco::Util::XMLConfiguration.
-	  * Еще сохраняет результат в файл по пути, полученному из path приписыванием строки "-preprocessed" к имени файла.
-	  */
-
-	/// If allow_zk_includes is true, expects that the configuration xml can contain from_zk nodes.
-	/// If the xml contains them, set has_zk_includes to true and don't write config-preprocessed.xml,
+	/// If allow_zk_includes is true, expect that the configuration XML can contain from_zk nodes.
+	/// If it is the case, set has_zk_includes to true and don't write config-preprocessed.xml,
 	/// expecting that config would be reloaded with zookeeper later.
-
 	LoadedConfig loadConfig(const std::string & path, bool allow_zk_includes = false);
 
+	/// If fallback_to_preprocessed is true, then if KeeperException is thrown during config
+	/// processing, load the configuration from the preprocessed file.
 	LoadedConfig loadConfigWithZooKeeperIncludes(
 			const std::string & path,
 			zkutil::ZooKeeperNodeCache & zk_node_cache,
