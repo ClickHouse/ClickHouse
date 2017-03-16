@@ -1,6 +1,6 @@
 function get_revision {
 	BASEDIR=$(dirname "${BASH_SOURCE[0]}")
-	grep "set(VERSION_REVISION" ${BASEDIR}/libs/libcommon/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\))$/\1/'
+	grep "set(VERSION_REVISION" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\))$/\1/'
 }
 
 function add_daemon_impl {
@@ -101,14 +101,21 @@ function gen_revision_author {
 		git_log_grep=`git log --oneline --max-count=1 | grep "$auto_message"`
 		if [ "$git_log_grep" == "" ]; then
 			git_describe=`git describe`
-			sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g" libs/libcommon/cmake/version.cmake
-			sed -i -- "s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" libs/libcommon/cmake/version.cmake
-			git commit -m "$auto_message [$REVISION]" libs/libcommon/cmake/version.cmake
+			sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g" dbms/cmake/version.cmake
+			sed -i -- "s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
+			git commit -m "$auto_message [$REVISION]" dbms/cmake/version.cmake
 			# git push
 		fi
 
 	fi
 
+	AUTHOR=$(git config --get user.name)
+	export REVISION
+	export AUTHOR
+}
+
+function get_revision_author {
+	REVISION=$(get_revision)
 	AUTHOR=$(git config --get user.name)
 	export REVISION
 	export AUTHOR
