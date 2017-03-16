@@ -56,9 +56,6 @@ add_library (common
 	${CONFIG_COMMON}
 )
 
-include (cmake/find_gperftools.cmake)
-include (cmake/find_jemalloc.cmake)
-
 # When testing for memory leaks, dont link tcmalloc or jemalloc.
 
 if (USE_JEMALLOC)
