@@ -31,7 +31,7 @@ MetricsTransmitter::~MetricsTransmitter()
 
 void MetricsTransmitter::run()
 {
-	Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
+	auto & config = Poco::Util::Application::instance().config();
 	auto interval = config.getInt(config_name + ".interval", 60);
 
 	setThreadName(("MetricsTransmit " + std::to_string(interval) + "s").c_str());
@@ -62,34 +62,46 @@ void MetricsTransmitter::run()
 
 void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_counters)
 {
+	auto & config = Poco::Util::Application::instance().config();
 	auto async_metrics_values = async_metrics.getValues();
 
 	GraphiteWriter::KeyValueVector<ssize_t> key_vals{};
 	key_vals.reserve(ProfileEvents::end() + CurrentMetrics::end() + async_metrics_values.size());
 
-	for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
-	{
-		const auto counter = ProfileEvents::counters[i].load(std::memory_order_relaxed);
-		const auto counter_increment = counter - prev_counters[i];
-		prev_counters[i] = counter;
 
-		std::string key{ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
-		key_vals.emplace_back(profile_events_path_prefix + key, counter_increment);
+	if (config.getBool(config_name + ".events", true))
+	{
+		for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+		{
+			const auto counter = ProfileEvents::counters[i].load(std::memory_order_relaxed);
+			const auto counter_increment = counter - prev_counters[i];
+			prev_counters[i] = counter;
+
+			std::string key{ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
+			key_vals.emplace_back(profile_events_path_prefix + key, counter_increment);
+		}
 	}
 
-	for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
+	if (config.getBool(config_name + ".metrics", true))
 	{
-		const auto value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
+		for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
+		{
+			const auto value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
 
-		std::string key{CurrentMetrics::getDescription(static_cast<CurrentMetrics::Metric>(i))};
-		key_vals.emplace_back(current_metrics_path_prefix + key, value);
+			std::string key{CurrentMetrics::getDescription(static_cast<CurrentMetrics::Metric>(i))};
+			key_vals.emplace_back(current_metrics_path_prefix + key, value);
+		}
 	}
 
-	for (const auto & name_value : async_metrics_values)
+	if (config.getBool(config_name + ".asynchronous_metrics", true))
 	{
-		key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second);
+		for (const auto & name_value : async_metrics_values)
+		{
+			key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second);
+		}
 	}
 
-	BaseDaemon::instance().writeToGraphite(key_vals, config_name);
+	if (key_vals.size())
+		BaseDaemon::instance().writeToGraphite(key_vals, config_name);
 }
 }
