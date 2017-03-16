@@ -24,6 +24,10 @@ ColumnGathererStream::ColumnGathererStream(const BlockInputStreams & source_stre
 
 	children.assign(source_streams.begin(), source_streams.end());
 
+	/// Trivial case
+	if (children.size() == 1)
+		return;
+
 	sources.reserve(children.size());
 	for (size_t i = 0; i < children.size(); i++)
 	{
@@ -150,6 +154,9 @@ void ColumnGathererStream::fetchNewBlock(Source & source, size_t source_num)
 
 void ColumnGathererStream::readSuffixImpl()
 {
+	if (children.size() == 1)
+		return;
+
 	const BlockStreamProfileInfo & profile_info = getProfileInfo();
 	double seconds = profile_info.total_stopwatch.elapsedSeconds();
 	LOG_DEBUG(log, std::fixed << std::setprecision(2)
