@@ -71,8 +71,6 @@ if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
 		src/IO/WriteBufferAIO.cpp)
 endif()
 
-include (${ClickHouse_SOURCE_DIR}/libs/libcommon/cmake/version.cmake)
-
 if (USE_STATIC_LIBRARIES)
 	add_library(dbms ${dbms_headers} ${dbms_sources})
 else ()
