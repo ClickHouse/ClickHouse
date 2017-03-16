@@ -48,7 +48,8 @@ fi
 
 if [[ $TEST != 'yes' ]]
 then
-	gen_revision_author
+	# now done in external release scripts via --version
+	#gen_revision_author
 else
 	REVISION=99999
 fi
