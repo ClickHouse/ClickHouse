@@ -7,7 +7,6 @@
 #include <DB/Common/setThreadName.h>
 #include <DB/Interpreters/AsynchronousMetrics.h>
 
-
 namespace DB
 {
 MetricsTransmitter::~MetricsTransmitter()
@@ -32,20 +31,20 @@ MetricsTransmitter::~MetricsTransmitter()
 
 void MetricsTransmitter::run()
 {
-	setThreadName("MetricsTransmit");
+	Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
+	auto interval = config.getInt(config_name + ".interval", 60);
+
+	setThreadName(("MetricsTransmit " + std::to_string(interval) + "s").c_str());
 
 	const auto get_next_time = [](size_t seconds) {
 		/// Next minute at 00 seconds. To avoid time drift and transmit values exactly each minute.
-		if (seconds == 60)
+		if (!(seconds % 60))
 			return std::chrono::time_point_cast<std::chrono::seconds, std::chrono::system_clock>(
 				std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
-					std::chrono::system_clock::now() + std::chrono::minutes(1)));
+					std::chrono::system_clock::now() + std::chrono::minutes(seconds / 60)));
 		return std::chrono::time_point_cast<std::chrono::seconds, std::chrono::system_clock>(
 			std::chrono::system_clock::now() + std::chrono::seconds(seconds));
 	};
-
-	Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
-	auto interval = config.getInt(config_name + ".interval", 60);
 
 	std::vector<ProfileEvents::Count> prev_counters(ProfileEvents::end());
 

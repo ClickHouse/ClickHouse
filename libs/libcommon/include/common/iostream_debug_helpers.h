@@ -85,11 +85,20 @@ std::ostream & operator<<(std::ostream & stream, const std::pair<K, V> & what)
 	return stream;
 }
 
+#include <ratio>
+
+template < std::intmax_t Num,  std::intmax_t Denom>
+std::ostream & operator<<(std::ostream & stream, const std::ratio<Num, Denom> & what)
+{
+	stream << "ratio<Num=" << Num << ", Denom=" << Denom << ">";
+	return stream;
+}
+
 #include <chrono>
 template <class Rep, class Period>
 std::ostream & operator<<(std::ostream & stream, const std::chrono::duration<Rep, Period> & what)
 {
-	stream << "chrono::duration{" << what.count() << "}";
+  stream << "chrono::duration<Rep="<<Rep()<<", Period="<<Period()<<">{" << what.count() << "}";
 	return stream;
 }
 

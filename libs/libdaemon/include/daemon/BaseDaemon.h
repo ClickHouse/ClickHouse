@@ -112,20 +112,25 @@ public:
 	template <class T>
 	void writeToGraphite(const std::string & key, const T & value, const std::string & config_name = "graphite", time_t timestamp = 0, const std::string & custom_root_path = "")
 	{
-		//for(auto & graphite_writer : graphite_writers)
-	  		if (graphite_writers.count(config_name))
-		  graphite_writers[config_name]->write(key, value, timestamp, custom_root_path);
+		auto writer = getGraphiteWriter(config_name);
+		if (writer)
+			writer->write(key, value, timestamp, custom_root_path);
 	}
 
 	template <class T>
 	void writeToGraphite(const GraphiteWriter::KeyValueVector<T> & key_vals, const std::string & config_name = "graphite", time_t timestamp = 0, const std::string & custom_root_path = "")
 	{
-		//for(auto & graphite_writer : graphite_writers)
-		if (graphite_writers.count(config_name))
-		  graphite_writers[config_name]->write(key_vals, timestamp, custom_root_path);
+		auto writer = getGraphiteWriter(config_name);
+		if (writer)
+			writer->write(key_vals, timestamp, custom_root_path);
 	}
 
-	//GraphiteWriter * getGraphiteWriter() { return graphite_writer.get(); }
+	GraphiteWriter * getGraphiteWriter(const std::string & config_name = "graphite")
+	{
+		if (graphite_writers.count(config_name))
+			return graphite_writers[config_name].get();
+		return nullptr;
+	}
 
 	std::experimental::optional<size_t> getLayer() const
 	{
