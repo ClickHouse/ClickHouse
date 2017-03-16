@@ -12,7 +12,7 @@ std::vector<std::string> config_keys_multi(Poco::Util::AbstractConfiguration & c
 	config.keys(root, config_keys);
 	for (const auto & key : config_keys)
 	{
-		if (!startsWith(key.data(), name) || !(key == name || endsWith(key.data(), "]")))
+		if (key != name && !(startsWith(key.data(), name + "[") && endsWith(key.data(), "]")))
 			continue;
 		values.emplace_back(key);
 	}
