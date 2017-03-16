@@ -1,6 +1,6 @@
 
-## [1.1.54182](https://github.com/yandex/Clickhouse/tree/v1.1.54182-testing) (2017-03-14)
-[Full Changelog](https://github.com/yandex/Clickhouse/compare/v1.1.54181-stable...v1.1.54182-testing)
+## [1.1.54186](https://github.com/yandex/Clickhouse/tree/v1.1.54186-testing) (2017-03-16)
+[Full Changelog](https://github.com/yandex/Clickhouse/compare/v1.1.54181-stable...v1.1.54186-testing)
 
 - Config: Allow define several graphite blocks, graphite.interval=60 option added. use_graphite option deleted.
 
