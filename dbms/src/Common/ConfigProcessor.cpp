@@ -20,7 +20,7 @@ static bool endsWith(const std::string & s, const std::string & suffix)
 	return s.size() >= suffix.size() && s.substr(s.size() - suffix.size()) == suffix;
 }
 
-/// Извлекает из строки первое попавшееся число, состоящее из хотя бы двух цифр.
+/// Extracts from a string the first encountered number consisting of at least two digits.
 static std::string numberFromHost(const std::string & s)
 {
 	for (size_t i = 0; i < s.size(); ++i)
@@ -66,13 +66,14 @@ ConfigProcessor::~ConfigProcessor()
 }
 
 
-/// Вектор из имени элемента и отсортированного списка имен и значений атрибутов (кроме атрибутов replace и remove).
-/// Взаимно однозначно задает имя элемента и список его атрибутов. Нужен, чтобы сравнивать элементы.
+/// Vector containing the name of the element and a sorted list of attribute names and values
+/// (except "remove" and "replace" attributes).
+/// Serves as a unique identifier of the element contents for comparison.
 using ElementIdentifier = std::vector<std::string>;
 
 using NamedNodeMapPtr = Poco::AutoPtr<Poco::XML::NamedNodeMap>;
-/// NOTE Можно избавиться от использования Node.childNodes() и итерации по полученному списку, потому что
-///  доступ к i-му элементу этого списка работает за O(i).
+/// NOTE getting rid of iterating over the result of Node.childNodes() call is a good idea
+/// because accessing the i-th element of this list takes O(i) time.
 using NodeListPtr = Poco::AutoPtr<Poco::XML::NodeList>;
 
 static ElementIdentifier getElementIdentifier(Node * element)
@@ -107,7 +108,8 @@ static Node * getRootNode(Document * document)
 	for (size_t i = 0; i < children->length(); ++i)
 	{
 		Node * child = children->item(i);
-		/// Кроме корневого элемента на верхнем уровне могут быть комментарии. Пропустим их.
+		/// Besides the root element there can be comment nodes on the top level.
+		/// Skip them.
 		if (child->nodeType() == Node::ELEMENT_NODE)
 			return child;
 	}
@@ -135,7 +137,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
 	for (Node * node = config_root->firstChild(); node;)
 	{
 		Node * next_node = node->nextSibling();
-		/// Уберем исходный текст из объединяемой части.
+		/// Remove text from the original config node.
 		if (node->nodeType() == Node::TEXT_NODE && !allWhitespace(node->getNodeValue()))
 		{
 			config_root->removeChild(node);
@@ -241,7 +243,8 @@ void ConfigProcessor::doIncludesRecursive(
 	if (node->nodeType() != Node::ELEMENT_NODE)
 		return;
 
-	/// Будем заменять <layer> на число из имени хоста, только если во входном файле есть тег <layer>, и он пустой, и у него нет атрибутов
+	/// Substitute <layer> for the number extracted from the hostname only if there is an
+	/// empty <layer> tag without attributes in the original file.
 	if ( node->nodeName() == "layer" &&
 		!node->hasAttributes() &&
 		!node->hasChildNodes() &&
@@ -259,7 +262,7 @@ void ConfigProcessor::doIncludesRecursive(
 	if (incl_attribute && from_zk_attribute)
 		throw Poco::Exception("both incl and from_zk attributes set for element <" + node->nodeName() + ">");
 
-	/// Заменять имеющееся значение, а не добавлять к нему.
+	/// Replace the original contents, not add to it.
 	bool replace = attributes->getNamedItem("replace");
 
 	auto process_include = [&](const Node * include_attr, const std::function<Node * (const std::string &)> & get_node, const char * error_msg)
