@@ -575,7 +575,8 @@ $ curl &#39;http://localhost:8123/&#39;
 Ok.
 </pre>
 
-Send the request as a URL &#39;query&#39; parameter, or as a POST. Or send the beginning of the request in the &#39;query&#39; parameter, and the rest in the POST (we&#39;ll explain later why this is necessary).
+Send the request as a URL &#39;query&#39; parameter, or as a POST. Or send the beginning of the request in the &#39;query&#39; parameter, and the rest in the POST (we&#39;ll explain later why this is necessary). URL length is limited by 16KB, this limit should be taken into account when sending long queries in the &#39;query&#39; parameter.
+
 If successful, you receive the 200 response code and the result in the response body.
 If an error occurs, you receive the 500 response code and an error description text in the response body.
 
