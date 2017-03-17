@@ -123,4 +123,13 @@ namespace CreateMode
 
 using EventPtr = std::shared_ptr<Poco::Event>;
 
+class ZooKeeper;
+
+/// Callback to call when the watch fires.
+/// zookeeper - zookeeper session to which the fired watch belongs
+/// type - event type, one of the *_EVENT constants from zookeeper.h
+/// state - session connection state, one of the *_STATE constants from zookeeper.h
+/// path - znode path to which the change happened. if event == ZOO_SESSION_EVENT it is either NULL or empty string.
+using WatchCallback = std::function<void(ZooKeeper & zookeeper, int type, int state, const char * path)>;
+
 }

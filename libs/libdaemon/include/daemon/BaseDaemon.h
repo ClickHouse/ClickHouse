@@ -6,6 +6,9 @@
 #include <iostream>
 #include <memory>
 #include <functional>
+#include <experimental/optional>
+#include <mutex>
+#include <condition_variable>
 
 #include <Poco/Process.h>
 #include <Poco/ThreadPool.h>
@@ -23,9 +26,7 @@
 
 #include <daemon/GraphiteWriter.h>
 
-#include <experimental/optional>
-#include <zkutil/ZooKeeperHolder.h>
-
+#include <DB/Common/ConfigProcessor.h>
 
 namespace Poco { class TaskManager; }
 
@@ -207,6 +208,9 @@ protected:
 	std::condition_variable signal_event;
 	std::atomic_size_t terminate_signals_counter{0};
 	std::atomic_size_t sigint_signals_counter{0};
+
+	std::string config_path;
+	ConfigProcessor::LoadedConfig loaded_config;
 };
 
 

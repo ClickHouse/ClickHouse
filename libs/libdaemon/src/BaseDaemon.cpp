@@ -480,8 +480,9 @@ void BaseDaemon::reloadConfiguration()
 	  * При этом, параметры логгирования, заданные в командной строке, не игнорируются.
 	  */
 	std::string log_command_line_option = config().getString("logger.log", "");
-	ConfigurationPtr processed_config = ConfigProcessor(false, true).loadConfig(config().getString("config-file", "config.xml"));
-	config().add(processed_config.duplicate(), PRIO_DEFAULT, false);
+	config_path = config().getString("config-file", "config.xml");
+	loaded_config = ConfigProcessor(false, true).loadConfig(config_path, /* allow_zk_includes = */ true);
+	config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
 	log_to_console = !config().getBool("application.runAsDaemon", false) && log_command_line_option.empty();
 }
 
