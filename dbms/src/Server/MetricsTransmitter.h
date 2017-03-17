@@ -31,7 +31,7 @@ private:
 	void transmit(std::vector< ProfileEvents::Count >& prev_counters);
 
 	const AsynchronousMetrics & async_metrics;
-	const std::string & config_name;
+	const std::string config_name;
 
 	bool quit = false;
 	std::mutex mutex;
