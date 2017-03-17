@@ -209,6 +209,23 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->setGlobalContext(*global_context);
 	global_context->setApplicationType(Context::ApplicationType::SERVER);
 
+	bool has_zookeeper = false;
+	if (config().has("zookeeper"))
+	{
+		global_context->setZooKeeper(std::make_shared<zkutil::ZooKeeper>(config(), "zookeeper"));
+		has_zookeeper = true;
+	}
+
+	zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
+	if (loaded_config.has_zk_includes)
+	{
+		auto old_configuration = loaded_config.configuration;
+		loaded_config = ConfigProcessor().loadConfigWithZooKeeperIncludes(
+				config_path, main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
+		config().removeConfiguration(old_configuration.get());
+		config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+	}
+
 	std::string path = getCanonicalPath(config().getString("path"));
 	std::string default_database = config().getString("default_database", "default");
 
@@ -278,13 +295,6 @@ int Server::main(const std::vector<std::string> & args)
 	Poco::File(path + "flags/").createDirectories();
 	global_context->setFlagsPath(path + "flags/");
 
-	bool has_zookeeper = false;
-	if (config().has("zookeeper"))
-	{
-		global_context->setZooKeeper(std::make_shared<zkutil::ZooKeeper>(config(), "zookeeper"));
-		has_zookeeper = true;
-	}
-
 	if (config().has("interserver_http_port"))
 	{
 		String this_host = config().getString("interserver_http_host", "");
@@ -309,11 +319,29 @@ int Server::main(const std::vector<std::string> & args)
 	if (config().has("macros"))
 		global_context->setMacros(Macros(config(), "macros"));
 
-	/// Initialize automatic config updater
-	std::string main_config_path = config().getString("config-file", "config.xml");
-	std::string users_config_path = config().getString("users_config", main_config_path);
+	/// Initialize main config reloader.
 	std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
-	auto config_reloader = std::make_unique<ConfigReloader>(main_config_path, users_config_path, include_from_path, global_context.get());
+	auto main_config_reloader = std::make_unique<ConfigReloader>(
+			config_path, include_from_path,
+			std::move(main_config_zk_node_cache),
+			[&](ConfigurationPtr config) { global_context->setClustersConfig(config); },
+			/* already_loaded = */ true);
+
+	/// Initialize users config reloader.
+	std::string users_config_path = config().getString("users_config", config_path);
+	/// If path to users' config isn't absolute, try guess its root (current) dir.
+	/// At first, try to find it in dir of main config, after will use current dir.
+	if (users_config_path.empty() || users_config_path[0] != '/')
+	{
+		std::string config_dir = Poco::Path(config_path).parent().toString();
+		if (Poco::File(config_dir + users_config_path).exists())
+			users_config_path = config_dir + users_config_path;
+	}
+	auto users_config_reloader = std::make_unique<ConfigReloader>(
+			users_config_path, include_from_path,
+			zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
+			[&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
+			/* already_loaded = */ false);
 
 	/// Limit on total number of coucurrently executed queries.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -535,7 +563,8 @@ int Server::main(const std::vector<std::string> & args)
 
 			LOG_DEBUG(log, "Closed all connections.");
 
-			config_reloader.reset();
+			main_config_reloader.reset();
+			users_config_reloader.reset();
 		});
 
 		/// try to load dictionaries immediately, throw on error and die

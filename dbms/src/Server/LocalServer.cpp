@@ -243,7 +243,9 @@ try
 	/// Load config files if exists
 	if (config().has("config-file") || Poco::File("config.xml").exists())
 	{
-		ConfigurationPtr processed_config = ConfigProcessor(false, true).loadConfig(config().getString("config-file", "config.xml"));
+		ConfigurationPtr processed_config = ConfigProcessor(false, true)
+			.loadConfig(config().getString("config-file", "config.xml"))
+			.configuration;
 		config().add(processed_config.duplicate(), PRIO_DEFAULT, false);
 	}
 
@@ -438,7 +440,7 @@ void LocalServer::setupUsers()
 	if (config().has("users_config") || config().has("config-file") || Poco::File("config.xml").exists())
 	{
 		auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-		users_config = ConfigProcessor().loadConfig(users_config_path);
+		users_config = ConfigProcessor().loadConfig(users_config_path).configuration;
 	}
 	else
 	{

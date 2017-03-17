@@ -3,6 +3,7 @@
 #include <daemon/BaseDaemon.h>
 #include <DB/Common/setThreadName.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <DB/Common/Exception.h>
 #include <DB/Interpreters/AsynchronousMetrics.h>
 
 
