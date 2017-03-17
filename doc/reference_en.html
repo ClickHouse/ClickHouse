@@ -7134,12 +7134,13 @@ If &#39;remove&#39; is specified, it deletes the element.
 
 The config can also define &quot;substitutions&quot;. If an element has the &#39;incl&#39; attribute, the corresponding substitution from the file will be used as the value. By default, the path to the file with substitutions is &#39;/etc/metrika.xml&#39;. This can be changed in the config in the &#39;include_from&#39; element. The substitution values are specified in  &#39;/yandex/<i>substitution_name</i>&#39; elements of this file.
 
-The &#39;config.xml&#39; file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the &#39;users_config&#39; element. By default, it is &#39;users.xml&#39;. If &#39;users_config&#39; is omitted, the user settings, profiles, and quotas are specified directly in &#39;config.xml&#39;. The server tracks changes to &#39;users_config&#39; and reloads it in runtime. That is, you can add or change users and their settings without relaunching the server.
+You can also perform substitutions from ZooKeeper nodes. To do that add the <span class="inline-example">from_zk="/path/to/node"</span> attribute to a config element. Element contents will be substituted with the contents of the <span class="inline-example">/path/to/node</span> ZooKeeper node. The ZooKeeper node can contain a whole XML subtree, and it will be inserted as a child of the substituted node.
 
-For &#39;users.config&#39;, overrides and substitutions may also exist in files from the &#39;<i>users_config</i>.d&#39; directory (for example, &#39;users.d&#39;). Note that the server tracks updates only directly in the &#39;users.xml&#39; file, so all the possible overrides are not updated in runtime.
+The &#39;config.xml&#39; file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the &#39;users_config&#39; element. By default, it is &#39;users.xml&#39;. If &#39;users_config&#39; is omitted, the user settings, profiles, and quotas are specified directly in &#39;config.xml&#39;. For &#39;users_config&#39;, overrides and substitutions may also exist in files from the &#39;<i>users_config</i>.d&#39; directory (for example, &#39;users.d&#39;).
 
-For each config file, the server also generates <i>file</i>-preprocessed.xml files on launch. These files contain all the completed substitutions and overrides, and they are intended for informational use. The server itself does not use these files, and you do not need to edit them.
+For each config file, the server also generates <i>file</i>-preprocessed.xml files on launch. These files contain all the completed substitutions and overrides, and they are intended for informational use. If ZooKeeper substitutions were used in a config file and the ZooKeeper is unavailable during server startup, the configuration is loaded from the respective preprocessed file.
 
+The server tracks changes to config files and files and ZooKeeper nodes that were used for substitutions and overrides and reloads users and clusters configurations in runtime. That is, you can add or change users, clusters and their settings without relaunching the server.
 
 </div>
 <div class="island">
