@@ -31,7 +31,7 @@ const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
 const UInt32 MEDIUM_SESSION_TIMEOUT = 120000;
 const UInt32 BIG_SESSION_TIMEOUT = 600000;
 
-struct WatchWithEvent;
+struct WatchContext;
 
 
 /** Сессия в ZooKeeper. Интерфейс существенно отличается от обычного API ZooKeeper.
@@ -151,14 +151,17 @@ public:
 	  */
 	int32_t tryRemoveEphemeralNodeWithRetries(const std::string & path, int32_t version = -1, size_t * attempt = nullptr);
 
-	bool exists(const std::string & path, Stat * stat = nullptr, EventPtr watch = nullptr);
+	bool exists(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
+	bool existsWatch(const std::string & path, Stat * stat, const WatchCallback & watch_callback);
 
-	std::string get(const std::string & path, Stat * stat = nullptr, EventPtr watch = nullptr);
+	std::string get(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
 
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Такой ноды нет. В таком случае возвращает false.
 	  */
-	bool tryGet(const std::string & path, std::string & res, Stat * stat = nullptr, EventPtr watch = nullptr, int * code = nullptr);
+	bool tryGet(const std::string & path, std::string & res, Stat * stat = nullptr, const EventPtr & watch = nullptr, int * code = nullptr);
+
+	bool tryGetWatch(const std::string & path, std::string & res, Stat * stat, const WatchCallback & watch_callback, int * code = nullptr);
 
 	void set(const std::string & path, const std::string & data,
 			int32_t version = -1, Stat * stat = nullptr);
@@ -175,14 +178,14 @@ public:
 
 	Strings getChildren(const std::string & path,
 						Stat * stat = nullptr,
-						EventPtr watch = nullptr);
+						const EventPtr & watch = nullptr);
 
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Такой ноды нет.
 	  */
 	int32_t tryGetChildren(const std::string & path, Strings & res,
 						Stat * stat = nullptr,
-						EventPtr watch = nullptr);
+						const EventPtr & watch = nullptr);
 
 	/** Транзакционно выполняет несколько операций. При любой ошибке бросает исключение.
 	  */
@@ -331,15 +334,17 @@ public:
 	zhandle_t * getHandle() { return impl; }
 
 private:
-	friend struct WatchWithEvent;
+	friend struct WatchContext;
 	friend class EphemeralNodeHolder;
 
 	void init(const std::string & hosts, int32_t session_timeout_ms);
 	void removeChildrenRecursive(const std::string & path);
 	void tryRemoveChildrenRecursive(const std::string & path);
-	void * watchForEvent(EventPtr event);
-	watcher_fn callbackForEvent(EventPtr event);
-	static void processEvent(zhandle_t * zh, int type, int state, const char * path, void * watcherCtx);
+
+	static WatchCallback callbackForEvent(const EventPtr & event);
+	WatchContext * createContext(WatchCallback && callback);
+	static void destroyContext(WatchContext * context);
+	static void processCallback(zhandle_t * zh, int type, int state, const char * path, void * watcher_ctx);
 
 	template <class T>
 	int32_t retry(T && operation, size_t * attempt = nullptr)
@@ -367,14 +372,11 @@ private:
 	/// методы не бросают исключений, а возвращают коды ошибок
 	int32_t createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
 	int32_t removeImpl(const std::string & path, int32_t version = -1);
-	int32_t getImpl(const std::string & path, std::string & res, Stat * stat = nullptr, EventPtr watch = nullptr);
-	int32_t setImpl(const std::string & path, const std::string & data,
-							int32_t version = -1, Stat * stat = nullptr);
-	int32_t getChildrenImpl(const std::string & path, Strings & res,
-						Stat * stat = nullptr,
-						EventPtr watch = nullptr);
+	int32_t getImpl(const std::string & path, std::string & res, Stat * stat, WatchCallback watch_callback);
+	int32_t setImpl(const std::string & path, const std::string & data, int32_t version = -1, Stat * stat = nullptr);
+	int32_t getChildrenImpl(const std::string & path, Strings & res, Stat * stat, WatchCallback watch_callback);
 	int32_t multiImpl(const Ops & ops, OpResultsPtr * out_results = nullptr);
-	int32_t existsImpl(const std::string & path, Stat * stat_, EventPtr watch = nullptr);
+	int32_t existsImpl(const std::string & path, Stat * stat_, WatchCallback watch_callback);
 
 	std::string hosts;
 	int32_t session_timeout_ms;
@@ -383,7 +385,7 @@ private:
 	ACLPtr default_acl;
 	zhandle_t * impl;
 
-	std::unordered_set<WatchWithEvent *> watch_store;
+	std::unordered_set<WatchContext *> watch_context_store;
 
 	/// Количество попыток повторить операцию чтения при OperationTimeout, ConnectionLoss
 	static constexpr size_t retry_num = 3;

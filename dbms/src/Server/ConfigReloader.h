@@ -1,6 +1,8 @@
 #pragma once
 
 #include <DB/Common/ConfigProcessor.h>
+#include <zkutil/Common.h>
+#include <zkutil/ZooKeeperNodeCache.h>
 
 #include <time.h>
 #include <string>
@@ -19,89 +21,57 @@ class Context;
 
 /** Every two seconds checks configuration files for update.
   * If configuration is changed, then config will be reloaded by ConfigProcessor
-  *  and the reloaded config will be applied via setUsersConfig() and setClusters() methods of Context.
-  * So, ConfigReloader actually reloads only <users> and <remote_servers> "tags".
-  * Also, it doesn't take into account changes of --config-file, <users_config> and <include_from> parameters.
+  *  and the reloaded config will be applied via Updater functor.
+  * It doesn't take into account changes of --config-file, <users_config> and <include_from> parameters.
   */
 class ConfigReloader
 {
 public:
-	/** main_config_path is usually /path/to/.../clickhouse-server/config.xml (i.e. --config-file value)
-	  * users_config_path is usually /path/to/.../clickhouse-server/users.xml (i.e. value of <users_config> tag)
-	  * include_from_path is usually /path/to/.../etc/metrika.xml (i.e. value of <include_from> tag)
+	using Updater = std::function<void(ConfigurationPtr)>;
+
+	/** include_from_path is usually /etc/metrika.xml (i.e. value of <include_from> tag)
 	  */
-	ConfigReloader(const std::string & main_config_path_, const std::string & users_config_path_, const std::string & include_from_path_, Context * context_);
+	ConfigReloader(
+			const std::string & path,
+			const std::string & include_from_path,
+			zkutil::ZooKeeperNodeCache && zk_node_cache,
+			Updater && updater,
+			bool already_loaded);
 
 	~ConfigReloader();
 
 private:
+	void run();
 
-	struct FileWithTimestamp
-	{
-		std::string path;
-		time_t modification_time;
+	void reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed);
 
-		FileWithTimestamp(const std::string & path_, time_t modification_time_)
-			: path(path_), modification_time(modification_time_) {}
-
-		bool operator < (const FileWithTimestamp & rhs) const
-		{
-			return path < rhs.path;
-		}
-
-		static bool isTheSame(const FileWithTimestamp & lhs, const FileWithTimestamp & rhs)
-		{
-			return (lhs.modification_time == rhs.modification_time) && (lhs.path == rhs.path);
-		}
-	};
+	struct FileWithTimestamp;
 
 	struct FilesChangesTracker
 	{
 		std::set<FileWithTimestamp> files;
 
-		void addIfExists(const std::string & path)
-		{
-			if (!path.empty() && Poco::File(path).exists())
-			{
-				files.emplace(path, Poco::File(path).getLastModified().epochTime());
-			}
-		}
-
-		bool isDifferOrNewerThan(const FilesChangesTracker & rhs)
-		{
-			return (files.size() != rhs.files.size()) ||
-					!std::equal(files.begin(), files.end(), rhs.files.begin(), FileWithTimestamp::isTheSame);
-		}
+		void addIfExists(const std::string & path);
+		bool isDifferOrNewerThan(const FilesChangesTracker & rhs);
 	};
 
-private:
-
-	/// Make sense to separate this function on two threads
-	void reloadIfNewer(bool force_main, bool force_users);
-	void run();
-
-	FilesChangesTracker getFileListFor(const std::string & root_config_path);
-	ConfigurationPtr loadConfigFor(const std::string & root_config_path, bool throw_error);
+	FilesChangesTracker getNewFileList() const;
 
 private:
 
 	static constexpr auto reload_interval = std::chrono::seconds(2);
 
-	std::string main_config_path;
-	std::string users_config_path;
-	std::string include_from_path;
-
-	Context * context;
-
-	FilesChangesTracker last_main_config_files;
-	FilesChangesTracker last_users_config_files;
-
-	bool quit {false};
-	std::mutex mutex;
-	std::condition_variable cond;
-	std::thread thread;
-
 	Poco::Logger * log = &Logger::get("ConfigReloader");
+
+	std::string path;
+	std::string include_from_path;
+	FilesChangesTracker files;
+	zkutil::ZooKeeperNodeCache zk_node_cache;
+
+	Updater updater;
+
+	std::atomic<bool> quit{false};
+	std::thread thread;
 };
 
 }

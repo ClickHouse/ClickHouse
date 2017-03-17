@@ -24,7 +24,7 @@ int main(int argc, char ** argv)
 		}
 
 		ConfigProcessor processor(false, true);
-		auto config = processor.loadConfig(argv[1]);
+		auto config = processor.loadConfig(argv[1]).configuration;
 		zkutil::ZooKeeper zk(*config, "zookeeper");
 		zkutil::EventPtr watch = std::make_shared<Poco::Event>();
 

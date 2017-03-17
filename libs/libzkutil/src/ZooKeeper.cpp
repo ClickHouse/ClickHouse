@@ -43,42 +43,30 @@ void check(int32_t code, const std::string path = "")
 	}
 }
 
-struct WatchWithEvent
+struct WatchContext
 {
-	/// существует все время существования WatchWithEvent
+	/// существует все время существования WatchContext
 	ZooKeeper & zk;
-	EventPtr event;
+	WatchCallback callback;
 	CurrentMetrics::Increment metric_increment{CurrentMetrics::ZooKeeperWatch};
 
-	WatchWithEvent(ZooKeeper & zk_, EventPtr event_) : zk(zk_), event(event_) {}
+	WatchContext(ZooKeeper & zk_, WatchCallback callback_) : zk(zk_), callback(std::move(callback_)) {}
 
-	void process(zhandle_t * zh, int32_t event_type, int32_t state, const char * path)
+	void process(int32_t event_type, int32_t state, const char * path)
 	{
-		if (event)
-		{
-			event->set();
-			event = nullptr;
-		}
+		if (callback)
+			callback(zk, event_type, state, path);
 	}
 };
 
-void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * path, void * watcherCtx)
+void ZooKeeper::processCallback(zhandle_t * zh, int type, int state, const char * path, void * watcher_ctx)
 {
-	if (watcherCtx)
-	{
-		WatchWithEvent * watch = static_cast<WatchWithEvent *>(watcherCtx);
-		watch->process(zh, type, state, path);
+	WatchContext * context = static_cast<WatchContext *>(watcher_ctx);
+	context->process(type, state, path);
 
-		/// Гарантируется, что не-ZOO_SESSION_EVENT событие придет ровно один раз (https://issues.apache.org/jira/browse/ZOOKEEPER-890).
-		if (type != ZOO_SESSION_EVENT)
-		{
-			{
-				std::lock_guard<std::mutex> lock(watch->zk.mutex);
-				watch->zk.watch_store.erase(watch);
-			}
-			delete watch;
-		}
-	}
+	/// Гарантируется, что не-ZOO_SESSION_EVENT событие придет ровно один раз (https://issues.apache.org/jira/browse/ZOOKEEPER-890).
+	if (type != ZOO_SESSION_EVENT)
+		destroyContext(context);
 }
 
 void ZooKeeper::init(const std::string & hosts_, int32_t session_timeout_ms_)
@@ -147,40 +135,62 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 	init(args.hosts, args.session_timeout_ms);
 }
 
-void * ZooKeeper::watchForEvent(EventPtr event)
+WatchCallback ZooKeeper::callbackForEvent(const EventPtr & event)
 {
+	WatchCallback callback;
 	if (event)
 	{
-		WatchWithEvent * res = new WatchWithEvent(*this, event);
+		callback = [e=event](ZooKeeper &, int, int, const char *) mutable
+		{
+			if (e)
+			{
+				e->set();
+				e.reset(); /// The event is set only once, even if the callback can fire multiple times due to session events.
+			}
+		};
+	}
+	return callback;
+}
+
+WatchContext * ZooKeeper::createContext(WatchCallback && callback)
+{
+	if (callback)
+	{
+		WatchContext * res = new WatchContext(*this, std::move(callback));
 		{
 			std::lock_guard<std::mutex> lock(mutex);
-			watch_store.insert(res);
-			if (watch_store.size() % 10000 == 0)
+			watch_context_store.insert(res);
+			if (watch_context_store.size() % 10000 == 0)
 			{
-				LOG_ERROR(log, "There are " << watch_store.size() << " active watches. There must be a leak somewhere.");
+				LOG_ERROR(log, "There are " << watch_context_store.size() << " active watches. There must be a leak somewhere.");
 			}
 		}
 		return res;
 	}
 	else
-	{
 		return nullptr;
-	}
 }
 
-watcher_fn ZooKeeper::callbackForEvent(EventPtr event)
+void ZooKeeper::destroyContext(WatchContext * context)
 {
-	return event ? processEvent : nullptr;
+	if (context)
+	{
+		std::lock_guard<std::mutex> lock(context->zk.mutex);
+		context->zk.watch_context_store.erase(context);
+	}
+	delete context;
 }
 
 int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
 					Stat * stat_,
-					EventPtr watch)
+					WatchCallback watch_callback)
 {
 	String_vector strings;
 	int code;
 	Stat stat;
-	code = zoo_wget_children2(impl, path.c_str(), callbackForEvent(watch), watchForEvent(watch), &strings, &stat);
+	watcher_fn watcher = watch_callback ? processCallback : nullptr;
+	WatchContext * context = createContext(std::move(watch_callback));
+	code = zoo_wget_children2(impl, path.c_str(), watcher, context, &strings, &stat);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperGetChildren);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
@@ -193,11 +203,16 @@ int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
 			res[i] = std::string(strings.data[i]);
 		deallocate_String_vector(&strings);
 	}
+	else
+	{
+		/// The call was unsuccessful, so the watch was not set. Destroy the context.
+		destroyContext(context);
+	}
 
 	return code;
 }
 Strings ZooKeeper::getChildren(
-	const std::string & path, Stat * stat, EventPtr watch)
+	const std::string & path, Stat * stat, const EventPtr & watch)
 {
 	Strings res;
 	check(tryGetChildren(path, res, stat, watch), path);
@@ -205,9 +220,9 @@ Strings ZooKeeper::getChildren(
 }
 
 int32_t ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
-								Stat * stat_, EventPtr watch)
+								Stat * stat_, const EventPtr & watch)
 {
-	int32_t code = retry(std::bind(&ZooKeeper::getChildrenImpl, this, std::ref(path), std::ref(res), stat_, watch));
+	int32_t code = retry(std::bind(&ZooKeeper::getChildrenImpl, this, std::ref(path), std::ref(res), stat_, callbackForEvent(watch)));
 
 	if (!(	code == ZOK ||
 			code == ZNONODE))
@@ -356,11 +371,13 @@ int32_t ZooKeeper::tryRemoveEphemeralNodeWithRetries(const std::string & path, i
 	}
 }
 
-int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, EventPtr watch)
+int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, WatchCallback watch_callback)
 {
 	int32_t code;
 	Stat stat;
-	code = zoo_wexists(impl, path.c_str(), callbackForEvent(watch), watchForEvent(watch), &stat);
+	watcher_fn watcher = watch_callback ? processCallback : nullptr;
+	WatchContext * context = createContext(std::move(watch_callback));
+	code = zoo_wexists(impl, path.c_str(), watcher, context, &stat);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
@@ -369,13 +386,18 @@ int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, EventPtr w
 		if (stat_)
 			*stat_ = stat;
 	}
+	if (code != ZOK && code != ZNONODE)
+	{
+		/// The call was unsuccessful, so the watch was not set. Destroy the context.
+		destroyContext(context);
+	}
 
 	return code;
 }
 
-bool ZooKeeper::exists(const std::string & path, Stat * stat_, EventPtr watch)
+bool ZooKeeper::exists(const std::string & path, Stat * stat_, const EventPtr & watch)
 {
-	int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, watch));
+	int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, callbackForEvent(watch)));
 
 	if (!(	code == ZOK ||
 			code == ZNONODE))
@@ -385,13 +407,28 @@ bool ZooKeeper::exists(const std::string & path, Stat * stat_, EventPtr watch)
 	return true;
 }
 
-int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * stat_, EventPtr watch)
+bool ZooKeeper::existsWatch(const std::string & path, Stat * stat_, const WatchCallback & watch_callback)
+{
+	int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, watch_callback));
+
+	if (!(	code == ZOK ||
+			code == ZNONODE))
+		throw KeeperException(code, path);
+	if (code == ZNONODE)
+		return false;
+	return true;
+}
+
+int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * stat_, WatchCallback watch_callback)
 {
 	char buffer[MAX_NODE_SIZE];
 	int buffer_len = MAX_NODE_SIZE;
 	int32_t code;
 	Stat stat;
-	code = zoo_wget(impl, path.c_str(), callbackForEvent(watch), watchForEvent(watch), buffer, &buffer_len, &stat);
+	watcher_fn watcher = watch_callback ? processCallback : nullptr;
+	WatchContext * context = createContext(std::move(watch_callback));
+
+	code = zoo_wget(impl, path.c_str(), watcher, context, buffer, &buffer_len, &stat);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
@@ -405,10 +442,15 @@ int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * s
 		else
 			res.assign(buffer, buffer_len);
 	}
+	else
+	{
+		/// The call was unsuccessful, so the watch was not set. Destroy the context.
+		destroyContext(context);
+	}
 	return code;
 }
 
-std::string ZooKeeper::get(const std::string & path, Stat * stat, EventPtr watch)
+std::string ZooKeeper::get(const std::string & path, Stat * stat, const EventPtr & watch)
 {
 	int code;
 	std::string res;
@@ -418,9 +460,23 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, EventPtr watch
 		throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
 }
 
-bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_, EventPtr watch, int * return_code)
+bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_, const EventPtr & watch, int * return_code)
 {
-	int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, watch));
+	int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, callbackForEvent(watch)));
+
+	if (!(code == ZOK ||
+			code == ZNONODE))
+		throw KeeperException(code, path);
+
+	if (return_code)
+		*return_code = code;
+
+	return code == ZOK;
+}
+
+bool ZooKeeper::tryGetWatch(const std::string & path, std::string & res, Stat * stat_, const WatchCallback & watch_callback, int * return_code)
+{
+	int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, watch_callback));
 
 	if (!(code == ZOK ||
 			code == ZNONODE))
@@ -626,11 +682,11 @@ ZooKeeper::~ZooKeeper()
 		LOG_ERROR(&Logger::get("~ZooKeeper"), "Failed to close ZooKeeper session: " << zerror(code));
 	}
 
-	LOG_INFO(&Logger::get("~ZooKeeper"), "Removing " << watch_store.size() << " watches");
+	LOG_INFO(&Logger::get("~ZooKeeper"), "Removing " << watch_context_store.size() << " watches");
 
-	/// удаляем WatchWithEvent которые уже никогда не будут обработаны
-	for (WatchWithEvent * watch : watch_store)
-		delete watch;
+	/// удаляем WatchContext которые уже никогда не будут обработаны
+	for (WatchContext * context : watch_context_store)
+		delete context;
 
 	LOG_INFO(&Logger::get("~ZooKeeper"), "Removed watches");
 }
