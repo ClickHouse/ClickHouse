@@ -20,7 +20,7 @@ else ()
 		"${ClickHouse_SOURCE_DIR}/contrib/libpoco/MongoDB/include/"
 	)
 
-	if (USE_STATIC_LIBRARIES)
+	if (USE_STATIC_LIBRARIES AND USE_INTERNAL_ZLIB_LIBRARY)
 		set (Poco_INCLUDE_DIRS ${Poco_INCLUDE_DIRS} "${ClickHouse_SOURCE_DIR}/contrib/libzlib-ng/" "${ClickHouse_BINARY_DIR}/contrib/libzlib-ng/")
 	endif ()
 
