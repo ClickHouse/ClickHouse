@@ -6649,9 +6649,9 @@ The dictionary config file has the following format:
 &lt;/dictionaries>
 %%
 
-The dictionary identifier (key attribute) must be a number that fits into UInt64. Compound and string keys are not supported. However, if your dictionary has a complex key, you can hash it and use the hash as the key. You can use View for this purpose (in both ClickHouse and MySQL).
+The dictionary identifier (key attribute) should be a number that fits into UInt64. Also, you can use arbitrary tuples as keys (see section "Dictionaries with complex keys"). Note: you can use complex keys consisting of just one element. This allows using e.g. Strings as dictionary keys.
 
-There are three ways to store dictionaries in memory.
+There are six ways to store dictionaries in memory.
 
 1. %%flat%% - As flat arrays.
 This is the most effective method. It works if all keys are smaller than 500,000.  If a larger key is discovered when creating the dictionary, an exception is thrown and the dictionary is not created. The dictionary is loaded to RAM in its entirety. The dictionary uses the amount of memory proportional to maximum key value. With the limit of 500,000, memory consumption is not likely to be high. All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
@@ -6661,6 +6661,14 @@ This method is slightly less effective than the first one. The dictionary is als
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
 3. %%cache%% - This is the least effective method. It is appropriate if the dictionary doesn&#39;t fit in RAM. It is a cache of a fixed number of cells, where frequently-used data can be located. MySQL, ClickHouse, executable, http sources are supported, but file sources are not supported. When searching a dictionary, the cache is searched first. For each data block, all keys not found in the cache (or expired keys) are collected in a package, which is sent to the source with the query %%SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)%%. The received data is then written to the cache.
+
+4. %%range_hashed%%
+
+5. %%complex_key_hashed%% - The same as %%hashed%%, but for complex keys.
+
+6. %%complex_key_cache%% - The same as %%cache%%, but for complex keys.
+
+===Notes===
 
 We recommend using the flat method when possible, or hashed. The speed of the dictionaries is impeccable with this type of memory storage.
 
@@ -6685,6 +6693,29 @@ To use external dictionaries, see the section &quot;Functions for working with e
 
 Note that you can convert values for a small dictionary by specifying all the contents of the dictionary directly in a SELECT query (see the section &quot;transform function&quot;). This functionality is not related to external dictionaries.
 
+===Dictionaries with complex keys===
+
+You can use tuples consisting of fields of arbitrary types as keys. Configure your dictionary with %%complex_key_hashed%% or %%complex_key_cache%% layout in this case.
+
+Key structure is configured not in the %%&lt;id>%% element but in the %%&lt;key>%% element. Fields of the key tuple are configured analogously to dictionary attributes. Example:
+
+%%
+&lt;structure>
+    &lt;key>
+        &lt;attribute>
+            &lt;name>field1&lt;/name>
+            &lt;type>String&lt;/type>
+        &lt;/attribute>
+        &lt;attribute>
+            &lt;name>field2&lt;/name>
+            &lt;type>UInt32&lt;/type>
+        &lt;/attribute>
+        ...
+    &lt;/key>
+    ...
+%%
+
+When using such dictionary, use a Tuple of field values as a key in dictGet* functions. Example: %%dictGetString('dict_name', 'attr_name', tuple('field1_value', 123))%%.
 
 </div>
 <div class="island">
