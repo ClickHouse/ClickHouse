@@ -47,6 +47,7 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 		{ "written_rows",		std::make_shared<DataTypeUInt64>()	},
 		{ "written_bytes",		std::make_shared<DataTypeUInt64>()	},
 		{ "memory_usage",		std::make_shared<DataTypeInt64>()	},
+		{ "initial_thread",		std::make_shared<DataTypeInt64>()	},
 		{ "query", 				std::make_shared<DataTypeString>()	}
 	}
 {
@@ -103,6 +104,7 @@ BlockInputStreams StorageSystemProcesses::read(
 		block.getByPosition(i++).column->insert(process.written_rows);
 		block.getByPosition(i++).column->insert(process.written_bytes);
 		block.getByPosition(i++).column->insert(process.memory_usage);
+		block.getByPosition(i++).column->insert(process.initial_thread);
 		block.getByPosition(i++).column->insert(process.query);
 	}
 
