@@ -161,6 +161,7 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 include (cmake/find_openssl.cmake)
 include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
+# zlib before poco
 include (cmake/find_zlib.cmake)
 include (cmake/find_zstd.cmake)
 include (cmake/find_poco.cmake)
