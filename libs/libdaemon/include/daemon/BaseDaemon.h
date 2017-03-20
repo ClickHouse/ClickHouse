@@ -2,14 +2,13 @@
 
 #include <sys/types.h>
 #include <unistd.h>
-
 #include <iostream>
 #include <memory>
 #include <functional>
 #include <experimental/optional>
 #include <mutex>
 #include <condition_variable>
-
+#include <atomic>
 #include <Poco/Process.h>
 #include <Poco/ThreadPool.h>
 #include <Poco/TaskNotification.h>
@@ -20,12 +19,9 @@
 #include <Poco/FileChannel.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/Version.h>
-
 #include <common/Common.h>
 #include <common/logger_useful.h>
-
 #include <daemon/GraphiteWriter.h>
-
 #include <DB/Common/ConfigProcessor.h>
 
 namespace Poco { class TaskManager; }
