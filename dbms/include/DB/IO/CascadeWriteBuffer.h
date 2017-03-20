@@ -11,7 +11,19 @@ namespace ErrorCodes
 	extern const int CURRENT_WRITE_BUFFER_IS_EXHAUSTED;
 }
 
-
+/* The buffer is similar to ConcatReadBuffer, but writes data
+ *
+ * It has WriteBuffers sequence [prepared_sources, lazy_sources]
+ * (lazy_sources contains not pointers themself, but their delayed constructors)
+ *
+ * Firtly, CascadeWriteBuffer redirects data to first buffer of the sequence
+ * If current WriteBuffer cannot recieve data anymore, it throws special exception CURRENT_WRITE_BUFFER_IS_EXHAUSTED in nextImpl() body,
+ *  CascadeWriteBuffer prepare next buffer and continuously redirects data to it.
+ * If there are no buffers anymore CascadeWriteBuffer throws an exception.
+ *
+ * NOTE: If you use one of underlying WriteBuffers buffers outside, you need sync its position() with CascadeWriteBuffer's position().
+ * The sync is performed into nextImpl(), getResultBuffers() and destructor.
+ */
 class CascadeWriteBuffer : public WriteBuffer
 {
 public:

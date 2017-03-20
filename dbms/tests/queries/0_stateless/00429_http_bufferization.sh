@@ -1,12 +1,11 @@
 #!/bin/bash
 set -e
 
-max_block_size=10
+max_block_size=100
 URL='http://localhost:8123/'
 
 function query {
 	echo "SELECT toUInt8(intHash64(number)) FROM system.numbers LIMIT $1 FORMAT RowBinary"
-	#echo "SELECT toUInt8(number) FROM system.numbers LIMIT $1 FORMAT RowBinary"
 }
 
 function ch_url() {
@@ -23,47 +22,49 @@ function check_only_exception() {
 	#(echo "$res")
 	#(echo "$res" | wc -l)
 	#(echo "$res" | grep -c "^$exception_pattern")
-	[[ `echo "$res" | wc -l` -eq 1 ]] && echo OK || echo FAIL
-	[[ $(echo "$res" | grep -c "^$exception_pattern") -eq 1 ]] && echo OK || echo FAIL
+	[[ `echo "$res" | wc -l` -eq 1 ]] || echo FAIL
+	[[ $(echo "$res" | grep -c "^$exception_pattern") -eq 1 ]] || echo FAIL
 }
 
 function check_last_line_exception() {
 	local res=`ch_url "$1" "$2"`
-	echo "$res" > res
+	#echo "$res" > res
 	#echo "$res" | wc -c
 	#echo "$res" | tail -n -2
-	[[ $(echo "$res" | tail -n -1 | grep -c "$exception_pattern") -eq 1 ]] && echo OK || echo FAIL
-	[[ $(echo "$res" | head -n -1 | grep -c "$exception_pattern") -eq 0 ]] && echo OK || echo FAIL
+	[[ $(echo "$res" | tail -n -1 | grep -c "$exception_pattern") -eq 1 ]] || echo FAIL
+	[[ $(echo "$res" | head -n -1 | grep -c "$exception_pattern") -eq 0 ]] || echo FAIL
 }
 
 function check_exception_handling() {
-check_only_exception "max_result_bytes=1000" 						1001
-check_only_exception "max_result_bytes=1000&wait_end_of_query=1"	1001
-echo
-check_only_exception "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=0" 1048577
-check_only_exception "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=1" 1048577
-echo
-check_only_exception "max_result_bytes=1500000&buffer_size=2500000&wait_end_of_query=0" 1500001
-check_only_exception "max_result_bytes=1500000&buffer_size=1500000&wait_end_of_query=1" 1500001
-echo
-check_only_exception 		"max_result_bytes=4000000&buffer_size=2000000&wait_end_of_query=1" 5000000
-check_only_exception 		"max_result_bytes=4000000&wait_end_of_query=1" 5000000
-check_last_line_exception 	"max_result_bytes=4000000&buffer_size=2000000&wait_end_of_query=0" 5000000
+	check_only_exception "max_result_bytes=1000" 						1001
+	check_only_exception "max_result_bytes=1000&wait_end_of_query=1"	1001
+
+	check_only_exception "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=0" 1048577
+	check_only_exception "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=1" 1048577
+
+	check_only_exception "max_result_bytes=1500000&buffer_size=2500000&wait_end_of_query=0" 1500001
+	check_only_exception "max_result_bytes=1500000&buffer_size=1500000&wait_end_of_query=1" 1500001
+
+	check_only_exception 		"max_result_bytes=4000000&buffer_size=2000000&wait_end_of_query=1" 5000000
+	check_only_exception 		"max_result_bytes=4000000&wait_end_of_query=1" 5000000
+	check_last_line_exception 	"max_result_bytes=4000000&buffer_size=2000000&wait_end_of_query=0" 5000000
 }
 
-#check_exception_handling
+check_exception_handling
 
 
+# Tune setting to speed up combinatorial test
 max_block_size=500000
 corner_sizes="1048576 `seq 500000 1000000 3500000`"
+
+
 # Check HTTP results with clickhouse-client in normal case
 
 function cmp_cli_and_http() {
 	clickhouse-client -q "`query $1`" > res1
 	ch_url "buffer_size=$2&wait_end_of_query=0" "$1" > res2
 	ch_url "buffer_size=$2&wait_end_of_query=1" "$1" > res3
-	cmp res1 res2
-	cmp res1 res3
+	cmp res1 res2 && cmp res1 res3 || echo FAIL
 	rm -rf res1 res2 res3
 }
 
@@ -78,7 +79,9 @@ function check_cli_and_http() {
 
 check_cli_and_http
 
-# Check HTTP internal compression in normal case (clickhouse-compressor required)
+
+# Check HTTP internal compression in normal case
+# Skip if clickhouse-compressor not installed
 
 function cmp_http_compression() {
 	clickhouse-client -q "`query $1`" > res0
@@ -101,4 +104,7 @@ function check_http_compression() {
 }
 
 has_compressor=$(command -v clickhouse-compressor &>/dev/null && echo 1)
-[[ has_compressor ]] && check_http_compression || true
+
+if [[ $has_compressor -eq 1 ]]; then
+	check_http_compression
+fi

@@ -149,7 +149,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 	}
 
 	ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
-	copyData(concat_read_buffer, *used_output.out);
+	copyData(concat_read_buffer, *used_output.out_maybe_compressed);
 }
 
 
@@ -446,7 +446,7 @@ void HTTPHandler::processQuery(
 
 	if (used_output.hasDelayed())
 	{
-		/// TODO: set Content-Length if possible (?)
+		/// TODO: set Content-Length if possible
 		pushDelayedResults(used_output);
 	}
 
@@ -490,6 +490,10 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 		}
 		else if (used_output.out_maybe_compressed)
 		{
+			/// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
+			if (used_output.hasDelayed())
+				used_output.out_maybe_delayed_and_compressed.reset();
+
 			/// Send the error message into already used (and possibly compressed) stream.
 			/// Note that the error message will possibly be sent after some data.
 			/// Also HTTP code 200 could have already been sent.
@@ -505,7 +509,9 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 
 			writeString(s, *used_output.out_maybe_compressed);
 			writeChar('\n', *used_output.out_maybe_compressed);
+
 			used_output.out_maybe_compressed->next();
+			used_output.out->next();
 			used_output.out->finalize();
 		}
 	}
