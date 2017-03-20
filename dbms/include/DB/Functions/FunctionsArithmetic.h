@@ -20,9 +20,10 @@ namespace ErrorCodes
 }
 
 
-/** Арифметические функции: +, -, *, /, %,
-  * intDiv (целочисленное деление), унарный минус.
-  * Битовые функции: |, &, ^, ~.
+/** Arithmetic operations: +, -, *, /, %,
+  * intDiv (integer division), unary minus.
+  * Bitwise operations: |, &, ^, ~.
+  * Etc.
   */
 
 template<typename A, typename B, typename Op, typename ResultType_ = typename Op::ResultType>
@@ -269,6 +270,32 @@ struct BitShiftRightImpl
 	{
 		return static_cast<Result>(a)
 			>> static_cast<Result>(b);
+	}
+};
+
+template<typename A, typename B>
+struct BitRotateLeftImpl
+{
+	using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
+
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
+	{
+		return (static_cast<Result>(a) << static_cast<Result>(b))
+			| (static_cast<Result>(a) >> ((sizeof(Result) * 8) - static_cast<Result>(b)));
+	}
+};
+
+template<typename A, typename B>
+struct BitRotateRightImpl
+{
+	using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
+
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
+	{
+		return (static_cast<Result>(a) >> static_cast<Result>(b))
+			| (static_cast<Result>(a) << ((sizeof(Result) * 8) - static_cast<Result>(b)));
 	}
 };
 
@@ -885,6 +912,8 @@ struct NameBitXor			{ static constexpr auto name = "bitXor"; };
 struct NameBitNot			{ static constexpr auto name = "bitNot"; };
 struct NameBitShiftLeft		{ static constexpr auto name = "bitShiftLeft"; };
 struct NameBitShiftRight	{ static constexpr auto name = "bitShiftRight"; };
+struct NameBitRotateLeft	{ static constexpr auto name = "bitRotateLeft"; };
+struct NameBitRotateRight	{ static constexpr auto name = "bitRotateRight"; };
 struct NameLeast			{ static constexpr auto name = "least"; };
 struct NameGreatest			{ static constexpr auto name = "greatest"; };
 
@@ -903,6 +932,8 @@ using FunctionBitXor = FunctionBinaryArithmetic<BitXorImpl, NameBitXor>;
 using FunctionBitNot = FunctionUnaryArithmetic<BitNotImpl, NameBitNot, true>;
 using FunctionBitShiftLeft = FunctionBinaryArithmetic<BitShiftLeftImpl,	NameBitShiftLeft>;
 using FunctionBitShiftRight = FunctionBinaryArithmetic<BitShiftRightImpl, NameBitShiftRight>;
+using FunctionBitRotateLeft = FunctionBinaryArithmetic<BitRotateLeftImpl,	NameBitRotateLeft>;
+using FunctionBitRotateRight = FunctionBinaryArithmetic<BitRotateRightImpl, NameBitRotateRight>;
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 
