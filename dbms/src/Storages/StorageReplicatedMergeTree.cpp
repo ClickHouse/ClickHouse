@@ -1760,10 +1760,13 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				MergeTreeData::DataPartsVector parts;
 				String merged_name;
 
-				if (merger.selectPartsToMerge(
-					parts, merged_name, false,
-					merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued),
-					can_merge)
+				size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued);
+
+				if (max_parts_size_for_merge > 0
+					&& merger.selectPartsToMerge(
+						parts, merged_name, false,
+						max_parts_size_for_merge,
+						can_merge)
 					&& createLogEntryToMergeParts(parts, merged_name))
 				{
 					success = true;
