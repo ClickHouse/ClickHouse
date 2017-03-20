@@ -103,7 +103,7 @@ function check_http_compression() {
 	done
 }
 
-has_compressor=$(command -v clickhouse-compressor &>/dev/null && echo 1)
+has_compressor=$(command -v clickhouse-compressor &>/dev/null && echo 1 || echo 0)
 
 if [[ $has_compressor -eq 1 ]]; then
 	check_http_compression
