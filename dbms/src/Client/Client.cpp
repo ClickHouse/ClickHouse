@@ -1072,6 +1072,7 @@ private:
 		/// To avoid flicker, display it only if .5 seconds have passed since query execution start
 		/// and the query less than halfway done.
 		ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_size.ws_col) - written_progress_chars - strlen(" 99%");
+		size_t total_rows_corrected = std::max(progress.rows, progress.total_rows);
 
 		if (show_progress_bar
 			|| (width_of_progress_bar > 0
@@ -1080,16 +1081,13 @@ private:
 				&& progress.rows * 2 < progress.total_rows))
 		{
 			show_progress_bar = true;
-
-			size_t total_rows_corrected = std::max(progress.rows, progress.total_rows);
-
 			std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.rows, 0, total_rows_corrected, width_of_progress_bar));
 			std::cerr << "\033[0;32m" << bar << "\033[0m";
 			if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
 				std::cerr << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
-			std::cerr << ' ' << (99 * progress.rows / total_rows_corrected) << '%';	/// Underestimate percentage a bit to avoid displaying 100%.
 		}
 
+		std::cerr << ' ' << (99 * progress.rows / total_rows_corrected) << '%';	/// Underestimate percentage a bit to avoid displaying 100%.
 		std::cerr << ENABLE_LINE_WRAPPING;
 		++increment;
 	}
