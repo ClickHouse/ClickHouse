@@ -2,6 +2,7 @@
 
 #include <boost/program_options.hpp>
 
+#include <DB/Common/Exception.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/CompressedWriteBuffer.h>
@@ -116,14 +117,10 @@ int main(int argc, char ** argv)
 			DB::copyData(rb, to);
 		}
 	}
-	catch (const DB::Exception & e)
+	catch (...)
 	{
-		std::cerr << e.what() << ", " << e.message() << std::endl
-			<< std::endl
-			<< "Stack trace:" << std::endl
-			<< e.getStackTrace().toString()
-			<< std::endl;
-		throw;
+		std::cerr << DB::getCurrentExceptionMessage(true);
+		return DB::getCurrentExceptionCode();
 	}
 
     return 0;

@@ -61,6 +61,8 @@ void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
 
 	curr_buffer = nullptr;
 	curr_buffer_num = num_sources = 0;
+	prepared_sources.clear();
+	lazy_sources.clear();
 }
 
 
