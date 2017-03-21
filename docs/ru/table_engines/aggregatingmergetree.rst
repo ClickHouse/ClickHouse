@@ -48,6 +48,7 @@ AggregatingMergeTree
 Создаём материализованное представление типа AggregatingMergeTree, следящее за таблицей test.visits:
 
 .. code-block:: sql
+
   CREATE MATERIALIZED VIEW test.basic
   ENGINE = AggregatingMergeTree(StartDate, (CounterID, StartDate), 8192)
   AS SELECT
