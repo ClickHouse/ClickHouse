@@ -22,6 +22,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
+#include <memory>
 #include <Poco/Observer.h>
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
@@ -788,7 +789,7 @@ void BaseDaemon::initialize(Application& self)
 
 	for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
 	{
-		graphite_writers.emplace(std::make_pair(key, new GraphiteWriter(key)));
+		graphite_writers.emplace(key, std::make_unique<GraphiteWriter>(key));
 	}
 }
 
