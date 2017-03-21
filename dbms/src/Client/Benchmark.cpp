@@ -371,11 +371,11 @@ private:
 
 		double seconds = info.watch.elapsedSeconds();
 		print_key_value("QPS", info.queries / seconds);
-		print_key_value("RPS", info.queries / seconds);
-		print_key_value("MiBPS", info.queries / seconds);
-		print_key_value("RPS_result", info.queries / seconds);
-		print_key_value("MiBPS_result", info.queries / seconds);
-		print_key_value("num_queries", info.queries / seconds, false);
+		print_key_value("RPS", info.read_rows / seconds);
+		print_key_value("MiBPS", info.read_bytes / seconds);
+		print_key_value("RPS_result", info.result_rows / seconds);
+		print_key_value("MiBPS_result", info.result_bytes / seconds);
+		print_key_value("num_queries", info.queries.load(), false);
 
 		json_out << "},\n";
 
