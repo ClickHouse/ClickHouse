@@ -13,42 +13,31 @@
 namespace DB
 {
 
-namespace ErrorCodes { extern const int FILE_DOESNT_EXIST; }
-
-
 constexpr decltype(ConfigReloader::reload_interval) ConfigReloader::reload_interval;
 
-
-ConfigReloader::ConfigReloader(const std::string & main_config_path_, const std::string & users_config_path_,
-							   const std::string & include_from_path_, Context * context_)
-	: main_config_path(main_config_path_), users_config_path(users_config_path_),
-	include_from_path(include_from_path_), context(context_)
+ConfigReloader::ConfigReloader(
+		const std::string & path_,
+		const std::string & include_from_path_,
+		zkutil::ZooKeeperNodeCache && zk_node_cache_,
+		Updater && updater_,
+		bool already_loaded)
+	: path(path_), include_from_path(include_from_path_)
+	, zk_node_cache(std::move(zk_node_cache_))
+	, updater(std::move(updater_))
 {
-	/// If path to users' config isn't absolute, try guess its root (current) dir.
-	/// At first, try to find it in dir of main config, after will use current dir.
-	if (users_config_path.empty() || users_config_path[0] != '/')
-	{
-		std::string config_dir = Poco::Path(main_config_path).parent().toString();
-		if (Poco::File(config_dir + users_config_path).exists())
-			users_config_path = config_dir + users_config_path;
-	}
-
-	/// Setup users on server init
-	reloadIfNewer(false, true);
+	if (!already_loaded)
+		reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true);
 
 	thread = std::thread(&ConfigReloader::run, this);
 }
+
 
 ConfigReloader::~ConfigReloader()
 {
 	try
 	{
-		{
-			std::lock_guard<std::mutex> lock{mutex};
-			quit = true;
-		}
-
-		cond.notify_one();
+		quit = true;
+		zk_node_cache.getChangedEvent().set();
 		thread.join();
 	}
 	catch (...)
@@ -62,104 +51,106 @@ void ConfigReloader::run()
 {
 	setThreadName("ConfigReloader");
 
-	std::unique_lock<std::mutex> lock{mutex};
-
 	while (true)
 	{
-		if (cond.wait_for(lock, reload_interval, [this] { return quit; }))
-			break;
+		bool zk_changed = zk_node_cache.getChangedEvent().tryWait(std::chrono::milliseconds(reload_interval).count());
+		if (quit)
+			return;
 
-		reloadIfNewer(false, false);
+		reloadIfNewer(zk_changed, /* throw_on_error = */ false, /* fallback_to_preprocessed = */ false);
 	}
 }
 
+void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed)
+{
+	FilesChangesTracker new_files = getNewFileList();
+	if (force || new_files.isDifferOrNewerThan(files))
+	{
+		ConfigProcessor::LoadedConfig loaded_config;
+		try
+		{
+			LOG_DEBUG(log, "Loading config `" << path << "'");
 
-ConfigReloader::FilesChangesTracker ConfigReloader::getFileListFor(const std::string & root_config_path)
+			loaded_config = ConfigProcessor().loadConfig(path, /* allow_zk_includes = */ true);
+			if (loaded_config.has_zk_includes)
+				loaded_config = ConfigProcessor().loadConfigWithZooKeeperIncludes(
+						path, zk_node_cache, fallback_to_preprocessed);
+		}
+		catch (...)
+		{
+			if (throw_on_error)
+				throw;
+
+			tryLogCurrentException(log, "Error loading config from `" + path + "'");
+			return;
+		}
+
+		/** We should remember last modification time if and only if config was sucessfully loaded
+		 * Otherwise a race condition could occur during config files update:
+		 *  File is contain raw (and non-valid) data, therefore config is not applied.
+		 *  When file has been written (and contain valid data), we don't load new data since modification time remains the same.
+		 */
+		if (!loaded_config.loaded_from_preprocessed)
+			files = std::move(new_files);
+
+		try
+		{
+			updater(loaded_config.configuration);
+		}
+		catch (...)
+		{
+			if (throw_on_error)
+				throw;
+			tryLogCurrentException(log, "Error updating configuration from `" + path + "' config.");
+		}
+	}
+}
+
+struct ConfigReloader::FileWithTimestamp
+{
+	std::string path;
+	time_t modification_time;
+
+	FileWithTimestamp(const std::string & path_, time_t modification_time_)
+		: path(path_), modification_time(modification_time_) {}
+
+	bool operator < (const FileWithTimestamp & rhs) const
+	{
+		return path < rhs.path;
+	}
+
+	static bool isTheSame(const FileWithTimestamp & lhs, const FileWithTimestamp & rhs)
+	{
+		return (lhs.modification_time == rhs.modification_time) && (lhs.path == rhs.path);
+	}
+};
+
+
+void ConfigReloader::FilesChangesTracker::addIfExists(const std::string & path)
+{
+	if (!path.empty() && Poco::File(path).exists())
+	{
+		files.emplace(path, Poco::File(path).getLastModified().epochTime());
+	}
+}
+
+bool ConfigReloader::FilesChangesTracker::isDifferOrNewerThan(const FilesChangesTracker & rhs)
+{
+	return (files.size() != rhs.files.size()) ||
+		!std::equal(files.begin(), files.end(), rhs.files.begin(), FileWithTimestamp::isTheSame);
+}
+
+ConfigReloader::FilesChangesTracker ConfigReloader::getNewFileList() const
 {
 	FilesChangesTracker file_list;
 
-	file_list.addIfExists(root_config_path);
+	file_list.addIfExists(path);
 	file_list.addIfExists(include_from_path);
 
-	for (const auto & path : ConfigProcessor::getConfigMergeFiles(root_config_path))
-		file_list.addIfExists(path);
+	for (const auto & merge_path : ConfigProcessor::getConfigMergeFiles(path))
+		file_list.addIfExists(merge_path);
 
- 	return file_list;
+	return file_list;
 }
-
-
-ConfigurationPtr ConfigReloader::loadConfigFor(const std::string & root_config_path, bool throw_on_error)
-{
-	ConfigurationPtr config;
-
-	LOG_DEBUG(log, "Loading config '" << root_config_path << "'");
-
-	try
-	{
-		config = ConfigProcessor().loadConfig(root_config_path);
-	}
-	catch (...)
-	{
-		if (throw_on_error)
-			throw;
-
-		tryLogCurrentException(log, "Error loading config from '" + root_config_path + "' ");
-		return nullptr;
-	}
-
-	return config;
-}
-
-
-void ConfigReloader::reloadIfNewer(bool force_main, bool force_users)
-{
-	FilesChangesTracker main_config_files = getFileListFor(main_config_path);
-	if (force_main || main_config_files.isDifferOrNewerThan(last_main_config_files))
-	{
-		ConfigurationPtr config = loadConfigFor(main_config_path, force_main);
-		if (config)
-		{
-			/** We should remember last modification time if and only if config was sucessfully loaded
-			  * Otherwise a race condition could occur during config files update:
-			  *  File is contain raw (and non-valid) data, therefore config is not applied.
-			  *  When file has been written (and contain valid data), we don't load new data since modification time remains the same.
-			  */
-			last_main_config_files = std::move(main_config_files);
-
-			try
-			{
-				context->setClustersConfig(config);
-			}
-			catch (...)
-			{
-				if (force_main)
-					throw;
-				tryLogCurrentException(log, "Error updating remote_servers config from '" + main_config_path + "' ");
-			}
-		}
-	}
-
-	FilesChangesTracker users_config_files = getFileListFor(users_config_path);
-	if (force_users || users_config_files.isDifferOrNewerThan(last_users_config_files))
-	{
-		ConfigurationPtr config = loadConfigFor(users_config_path, force_users);
-		if (config)
-		{
-			last_users_config_files = std::move(users_config_files);
-
-			try
-			{
-				context->setUsersConfig(config);
-			}
-			catch (...)
-			{
-				if (force_users)
-					throw;
-				tryLogCurrentException(log, "Error updating users config from '" + users_config_path + "' ");
-			}
-		}
-	}
-}
-
 
 }

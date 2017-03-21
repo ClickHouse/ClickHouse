@@ -319,7 +319,9 @@ bool StorageMergeTree::merge(
 
 		if (partition.empty())
 		{
-			selected = merger.selectPartsToMerge(parts, merged_name, aggressive, merger.getMaxPartsSizeForMerge(), can_merge);
+			size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge();
+			if (max_parts_size_for_merge > 0)
+				selected = merger.selectPartsToMerge(parts, merged_name, aggressive, max_parts_size_for_merge, can_merge);
 		}
 		else
 		{

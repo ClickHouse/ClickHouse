@@ -105,6 +105,9 @@ function gen_revision_author {
 			sed -i -- "s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
 			git commit -m "$auto_message [$REVISION]" dbms/cmake/version.cmake
 			# git push
+		else
+			REVISION=$(get_revision)
+			echo reusing old version $REVISION
 		fi
 
 	fi

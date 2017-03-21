@@ -51,4 +51,4 @@ target_link_libraries (in_join_subqueries_preprocessor dbms)
 add_check(in_join_subqueries_preprocessor)
 
 add_executable (users users.cpp)
-target_link_libraries (users dbms ${Boost_FILESYSTEM_LIBRARY})
+target_link_libraries (users dbms ${Boost_FILESYSTEM_LIBRARY} zkutil dbms)

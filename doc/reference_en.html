@@ -575,7 +575,8 @@ $ curl &#39;http://localhost:8123/&#39;
 Ok.
 </pre>
 
-Send the request as a URL &#39;query&#39; parameter, or as a POST. Or send the beginning of the request in the &#39;query&#39; parameter, and the rest in the POST (we&#39;ll explain later why this is necessary).
+Send the request as a URL &#39;query&#39; parameter, or as a POST. Or send the beginning of the request in the &#39;query&#39; parameter, and the rest in the POST (we&#39;ll explain later why this is necessary). URL length is limited by 16KB, this limit should be taken into account when sending long queries in the &#39;query&#39; parameter.
+
 If successful, you receive the 200 response code and the result in the response body.
 If an error occurs, you receive the 500 response code and an error description text in the response body.
 
@@ -2291,6 +2292,19 @@ You can put an asterisk in any part of a query instead of an expression. When th
 - In subqueries (since columns that aren&#39;t needed for the external query are excluded from subqueries).
 In all other cases, we don&#39;t recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages.
 
+===KILL QUERY===
+%%KILL QUERY WHERE &lt;where expression to SELECT FROM system.processes query&gt; [SYNC|ASYNC|TEST] [FORMAT format]%%
+Tries to finish currently executing queries.
+Queries to be finished are selected from %%system.processes%% table according to expression after WHERE term.
+
+Examples:
+%%KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'%%
+Finishes all queries with specified %%query_id%%.
+
+%%KILL QUERY WHERE user='username' SYNC%%
+Synchronously finishes all queries of user %%username%%.
+
+Readonly users can kill only own queries.
 
 </div>
 <div class="island">
@@ -2451,15 +2465,15 @@ Reading is automatically parallelized. During a read, the table indexes on remot
 The Distributed engine accepts parameters: the cluster name in the server&#39;s config file, the name of a remote database, the name of a remote table, and (optionally) a sharding key.
 Example:
 
-%%Distributed(calcs, default, hits[, sharding_key])%%
+%%Distributed(logs, default, hits[, sharding_key])%%
 
-- Data will be read from all servers in the &#39;calcs&#39; cluster, from the &#39;default.hits&#39; table located on every server in the cluster.
+- Data will be read from all servers in the &#39;logs&#39; cluster, from the &#39;default.hits&#39; table located on every server in the cluster.
 Data is not only read, but is partially processed on the remote servers (to the extent that this is possible).
 For example, for a query with GROUP BY, data will be aggregated on remote servers, and the intermediate states of aggregate functions will be sent to the requestor server. Then data will be further aggregated.
 
 Instead of the database name, you can use a constant expression that returns a string. For example, %%currentDatabase()%%.
 
-calcs - The cluster name in the server&#39;s config file.
+logs - The cluster name in the server&#39;s config file.
 
 Clusters are set like this:
 
@@ -6648,9 +6662,9 @@ The dictionary config file has the following format:
 &lt;/dictionaries>
 %%
 
-The dictionary identifier (key attribute) must be a number that fits into UInt64. Compound and string keys are not supported. However, if your dictionary has a complex key, you can hash it and use the hash as the key. You can use View for this purpose (in both ClickHouse and MySQL).
+The dictionary identifier (key attribute) should be a number that fits into UInt64. Also, you can use arbitrary tuples as keys (see section "Dictionaries with complex keys"). Note: you can use complex keys consisting of just one element. This allows using e.g. Strings as dictionary keys.
 
-There are three ways to store dictionaries in memory.
+There are six ways to store dictionaries in memory.
 
 1. %%flat%% - As flat arrays.
 This is the most effective method. It works if all keys are smaller than 500,000.  If a larger key is discovered when creating the dictionary, an exception is thrown and the dictionary is not created. The dictionary is loaded to RAM in its entirety. The dictionary uses the amount of memory proportional to maximum key value. With the limit of 500,000, memory consumption is not likely to be high. All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
@@ -6660,6 +6674,14 @@ This method is slightly less effective than the first one. The dictionary is als
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
 3. %%cache%% - This is the least effective method. It is appropriate if the dictionary doesn&#39;t fit in RAM. It is a cache of a fixed number of cells, where frequently-used data can be located. MySQL, ClickHouse, executable, http sources are supported, but file sources are not supported. When searching a dictionary, the cache is searched first. For each data block, all keys not found in the cache (or expired keys) are collected in a package, which is sent to the source with the query %%SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)%%. The received data is then written to the cache.
+
+4. %%range_hashed%%
+
+5. %%complex_key_hashed%% - The same as %%hashed%%, but for complex keys.
+
+6. %%complex_key_cache%% - The same as %%cache%%, but for complex keys.
+
+===Notes===
 
 We recommend using the flat method when possible, or hashed. The speed of the dictionaries is impeccable with this type of memory storage.
 
@@ -6684,6 +6706,29 @@ To use external dictionaries, see the section &quot;Functions for working with e
 
 Note that you can convert values for a small dictionary by specifying all the contents of the dictionary directly in a SELECT query (see the section &quot;transform function&quot;). This functionality is not related to external dictionaries.
 
+===Dictionaries with complex keys===
+
+You can use tuples consisting of fields of arbitrary types as keys. Configure your dictionary with %%complex_key_hashed%% or %%complex_key_cache%% layout in this case.
+
+Key structure is configured not in the %%&lt;id>%% element but in the %%&lt;key>%% element. Fields of the key tuple are configured analogously to dictionary attributes. Example:
+
+%%
+&lt;structure>
+    &lt;key>
+        &lt;attribute>
+            &lt;name>field1&lt;/name>
+            &lt;type>String&lt;/type>
+        &lt;/attribute>
+        &lt;attribute>
+            &lt;name>field2&lt;/name>
+            &lt;type>UInt32&lt;/type>
+        &lt;/attribute>
+        ...
+    &lt;/key>
+    ...
+%%
+
+When using such dictionary, use a Tuple of field values as a key in dictGet* functions. Example: %%dictGetString('dict_name', 'attr_name', tuple('field1_value', 123))%%.
 
 </div>
 <div class="island">
@@ -7134,12 +7179,13 @@ If &#39;remove&#39; is specified, it deletes the element.
 
 The config can also define &quot;substitutions&quot;. If an element has the &#39;incl&#39; attribute, the corresponding substitution from the file will be used as the value. By default, the path to the file with substitutions is &#39;/etc/metrika.xml&#39;. This can be changed in the config in the &#39;include_from&#39; element. The substitution values are specified in  &#39;/yandex/<i>substitution_name</i>&#39; elements of this file.
 
-The &#39;config.xml&#39; file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the &#39;users_config&#39; element. By default, it is &#39;users.xml&#39;. If &#39;users_config&#39; is omitted, the user settings, profiles, and quotas are specified directly in &#39;config.xml&#39;. The server tracks changes to &#39;users_config&#39; and reloads it in runtime. That is, you can add or change users and their settings without relaunching the server.
+You can also perform substitutions from ZooKeeper nodes. To do that add the <span class="inline-example">from_zk="/path/to/node"</span> attribute to a config element. Element contents will be substituted with the contents of the <span class="inline-example">/path/to/node</span> ZooKeeper node. The ZooKeeper node can contain a whole XML subtree, and it will be inserted as a child of the substituted node.
 
-For &#39;users.config&#39;, overrides and substitutions may also exist in files from the &#39;<i>users_config</i>.d&#39; directory (for example, &#39;users.d&#39;). Note that the server tracks updates only directly in the &#39;users.xml&#39; file, so all the possible overrides are not updated in runtime.
+The &#39;config.xml&#39; file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the &#39;users_config&#39; element. By default, it is &#39;users.xml&#39;. If &#39;users_config&#39; is omitted, the user settings, profiles, and quotas are specified directly in &#39;config.xml&#39;. For &#39;users_config&#39;, overrides and substitutions may also exist in files from the &#39;<i>users_config</i>.d&#39; directory (for example, &#39;users.d&#39;).
 
-For each config file, the server also generates <i>file</i>-preprocessed.xml files on launch. These files contain all the completed substitutions and overrides, and they are intended for informational use. The server itself does not use these files, and you do not need to edit them.
+For each config file, the server also generates <i>file</i>-preprocessed.xml files on launch. These files contain all the completed substitutions and overrides, and they are intended for informational use. If ZooKeeper substitutions were used in a config file and the ZooKeeper is unavailable during server startup, the configuration is loaded from the respective preprocessed file.
 
+The server tracks changes to config files and files and ZooKeeper nodes that were used for substitutions and overrides and reloads users and clusters configurations in runtime. That is, you can add or change users, clusters and their settings without relaunching the server.
 
 </div>
 <div class="island">
