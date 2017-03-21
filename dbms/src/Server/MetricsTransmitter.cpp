@@ -35,7 +35,8 @@ void MetricsTransmitter::run()
 	auto & config = Poco::Util::Application::instance().config();
 	auto interval = config.getInt(config_name + ".interval", 60);
 
-	setThreadName(("MetricsTransmit " + std::to_string(interval) + "s").c_str());
+	const std::string thread_name = "MericsTrns " + std::to_string(interval) + "s";
+	setThreadName(thread_name.c_str());
 
 	const auto get_next_time = [](size_t seconds) {
 		/// Next minute at 00 seconds. To avoid time drift and transmit values exactly each minute.

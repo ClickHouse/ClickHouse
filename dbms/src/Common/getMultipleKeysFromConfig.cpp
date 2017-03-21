@@ -1,11 +1,11 @@
-#include <DB/Common/config_keys_multi.h>
+#include <DB/Common/getMultipleKeysFromConfig.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <DB/Common/StringUtils.h>
 
 namespace DB
 {
-std::vector<std::string> config_keys_multi(Poco::Util::AbstractConfiguration & config, const std::string & root, const std::string & name)
+std::vector<std::string> getMultipleKeysFromConfig(Poco::Util::AbstractConfiguration & config, const std::string & root, const std::string & name)
 {
 	std::vector<std::string> values;
 	Poco::Util::AbstractConfiguration::Keys config_keys;

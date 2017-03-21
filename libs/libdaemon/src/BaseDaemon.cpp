@@ -48,7 +48,7 @@
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
-#include <DB/Common/config_keys_multi.h>
+#include <DB/Common/getMultipleKeysFromConfig.h>
 #include <DB/Common/ClickHouseRevision.h>
 #include <daemon/OwnPatternFormatter.h>
 
@@ -786,7 +786,7 @@ void BaseDaemon::initialize(Application& self)
 	signal_listener.reset(new SignalListener(*this));
 	signal_listener_thread.start(*signal_listener);
 
-	for (const auto & key : DB::config_keys_multi(config(), "", "graphite"))
+	for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
 	{
 		graphite_writers.emplace(std::make_pair(key, new GraphiteWriter(key)));
 	}

@@ -11,7 +11,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
-#include <DB/Common/config_keys_multi.h>
+#include <DB/Common/getMultipleKeysFromConfig.h>
 #include <ext/scope_guard.hpp>
 #include <zkutil/ZooKeeper.h>
 #include <DB/Common/Macros.h>
@@ -427,7 +427,7 @@ int Server::main(const std::vector<std::string> & args)
 		std::vector<std::unique_ptr<Poco::Net::TCPServer>> servers;
 
 		std::vector<std::string> listen_hosts;
-		for (const auto & key : DB::config_keys_multi(config(), "", "listen_host"))
+		for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "listen_host"))
 		{
 			listen_hosts.emplace_back(config().getString(key));
 		}
@@ -586,7 +586,7 @@ int Server::main(const std::vector<std::string> & args)
 		attach_system_tables_async(system_database, async_metrics);
 
 		std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
-		for (const auto & graphite_key : DB::config_keys_multi(config(), "", "graphite"))
+		for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
 		{
 			metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(async_metrics, graphite_key));
 		}
