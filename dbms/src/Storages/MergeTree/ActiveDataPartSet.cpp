@@ -35,7 +35,7 @@ void ActiveDataPartSet::addImpl(const String & name)
 	part.name = name;
 	parsePartName(name, part);
 
-	/// Parts contained in `part` are located inside `data_parts` in sequence, overlapping with place where the part itself would be inserted.
+	/// Parts contained in `part` are located contiguously inside `data_parts`, overlapping with the place where the part itself would be inserted.
 	Parts::iterator it = parts.lower_bound(part);
 
 	/// Let's go left.

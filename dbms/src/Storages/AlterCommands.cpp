@@ -79,7 +79,7 @@ void AlterCommand::apply(
 		if (default_expression)
 			column_defaults.emplace(column_name, ColumnDefault{default_type, default_expression});
 
-		/// Slowly, because each time a list is copied
+		/// Slow, because each time a list is copied
 		columns = *DataTypeNested::expandNestedColumns(columns);
 	}
 	else if (type == DROP_COLUMN)
@@ -163,7 +163,7 @@ void AlterCommand::apply(
 	}
 	else if (type == MODIFY_PRIMARY_KEY)
 	{
-		/// This does not apply to changing the list of columns.
+		/// This have no relation to changing the list of columns.
 		/// TODO Check that all columns exist, that only columns with constant defaults are added.
 	}
 	else
