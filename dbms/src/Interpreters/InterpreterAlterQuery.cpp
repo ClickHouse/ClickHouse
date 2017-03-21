@@ -127,6 +127,9 @@ void InterpreterAlterQuery::parseAlter(
 			command.type = AlterCommand::DROP_COLUMN;
 			command.column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
 
+			if (params.partition)
+				command.partition_name = get<String>(typeid_cast<const ASTLiteral &>(*(params.partition)).value);
+
 			out_alter_commands.emplace_back(std::move(command));
 		}
 		else if (params.type == ASTAlterQuery::MODIFY_COLUMN)
