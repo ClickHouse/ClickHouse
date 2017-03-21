@@ -13,9 +13,11 @@
 #include <common/ErrorHandlers.h>
 #include <ext/scope_guard.hpp>
 #include <zkutil/ZooKeeper.h>
+#include <zkutil/ZooKeeperNodeCache.h>
 #include <DB/Common/Macros.h>
 #include <DB/Common/StringUtils.h>
 #include <DB/Common/getFQDNOrHostName.h>
+#include <DB/Common/getMultipleKeysFromConfig.h>
 #include <DB/Databases/DatabaseOrdinary.h>
 #include <DB/IO/HTTPCommon.h>
 #include <DB/Interpreters/AsynchronousMetrics.h>
@@ -23,7 +25,7 @@
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Storages/System/attach_system_tables.h>
+#include <DB/Storages/System/attachSystemTables.h>
 #include "ConfigReloader.h"
 #include "HTTPHandler.h"
 #include "InterserverIOHTTPHandler.h"
@@ -31,6 +33,7 @@
 #include "ReplicasStatusHandler.h"
 #include "StatusFile.h"
 #include "TCPHandler.h"
+
 
 namespace DB
 {
@@ -221,7 +224,7 @@ int Server::main(const std::vector<std::string> & args)
 	{
 		auto old_configuration = loaded_config.configuration;
 		loaded_config = ConfigProcessor().loadConfigWithZooKeeperIncludes(
-				config_path, main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
+			config_path, main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
 		config().removeConfiguration(old_configuration.get());
 		config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
 	}
@@ -321,11 +324,11 @@ int Server::main(const std::vector<std::string> & args)
 
 	/// Initialize main config reloader.
 	std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
-	auto main_config_reloader = std::make_unique<ConfigReloader>(
-			config_path, include_from_path,
-			std::move(main_config_zk_node_cache),
-			[&](ConfigurationPtr config) { global_context->setClustersConfig(config); },
-			/* already_loaded = */ true);
+	auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
+		include_from_path,
+		std::move(main_config_zk_node_cache),
+		[&](ConfigurationPtr config) { global_context->setClustersConfig(config); },
+		/* already_loaded = */ true);
 
 	/// Initialize users config reloader.
 	std::string users_config_path = config().getString("users_config", config_path);
@@ -337,11 +340,11 @@ int Server::main(const std::vector<std::string> & args)
 		if (Poco::File(config_dir + users_config_path).exists())
 			users_config_path = config_dir + users_config_path;
 	}
-	auto users_config_reloader = std::make_unique<ConfigReloader>(
-			users_config_path, include_from_path,
-			zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
-			[&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
-			/* already_loaded = */ false);
+	auto users_config_reloader = std::make_unique<ConfigReloader>(users_config_path,
+		include_from_path,
+		zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
+		[&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
+		/* already_loaded = */ false);
 
 	/// Limit on total number of coucurrently executed queries.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -385,7 +388,7 @@ int Server::main(const std::vector<std::string> & args)
 
 	DatabasePtr system_database = global_context->getDatabase("system");
 
-	attach_system_tables_server(system_database, global_context.get(), has_zookeeper);
+	attachSystemTablesServer(system_database, global_context.get(), has_zookeeper);
 
 	bool has_resharding_worker = false;
 	if (has_zookeeper && config().has("resharding"))
@@ -425,12 +428,8 @@ int Server::main(const std::vector<std::string> & args)
 		std::vector<std::unique_ptr<Poco::Net::TCPServer>> servers;
 
 		std::vector<std::string> listen_hosts;
-		Poco::Util::AbstractConfiguration::Keys config_keys;
-		config().keys("", config_keys);
-		for (const auto & key : config_keys)
+		for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "listen_host"))
 		{
-			if (!startsWith(key.data(), "listen_host"))
-				continue;
 			listen_hosts.emplace_back(config().getString(key));
 		}
 
@@ -585,10 +584,14 @@ int Server::main(const std::vector<std::string> & args)
 		/// This object will periodically calculate some metrics.
 		AsynchronousMetrics async_metrics(*global_context);
 
-		attach_system_tables_async(system_database, async_metrics);
+		attachSystemTablesAsync(system_database, async_metrics);
 
-		const auto metrics_transmitter
-			= config().getBool("use_graphite", true) ? std::make_unique<MetricsTransmitter>(async_metrics) : nullptr;
+		std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
+		for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
+		{
+			metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(async_metrics, graphite_key));
+		}
+
 
 		waitForTerminationRequest();
 	}

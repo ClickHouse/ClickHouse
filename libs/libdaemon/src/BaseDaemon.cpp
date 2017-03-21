@@ -7,7 +7,6 @@
 #include <sys/fcntl.h>
 #include <sys/time.h>
 #include <errno.h>
-
 #include <string.h>
 #include <signal.h>
 #include <cxxabi.h>
@@ -17,16 +16,13 @@
 #define _XOPEN_SOURCE
 #endif
 #include <ucontext.h>
-
 #include <typeinfo>
-
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
-
 #include <sys/time.h>
 #include <sys/resource.h>
-
 #include <iostream>
+#include <memory>
 #include <Poco/Observer.h>
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
@@ -48,13 +44,12 @@
 #include <Poco/NumberFormatter.h>
 #include <Poco/Condition.h>
 #include <Poco/SyslogChannel.h>
-
 #include <DB/Common/Exception.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
-
+#include <DB/Common/getMultipleKeysFromConfig.h>
 #include <DB/Common/ClickHouseRevision.h>
 #include <daemon/OwnPatternFormatter.h>
 
@@ -792,7 +787,10 @@ void BaseDaemon::initialize(Application& self)
 	signal_listener.reset(new SignalListener(*this));
 	signal_listener_thread.start(*signal_listener);
 
-	graphite_writer.reset(new GraphiteWriter("graphite"));
+	for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
+	{
+		graphite_writers.emplace(key, std::make_unique<GraphiteWriter>(key));
+	}
 }
 
 void BaseDaemon::logRevision() const

@@ -5,7 +5,7 @@
 #include <Poco/Util/OptionCallback.h>
 #include <Poco/String.h>
 #include <DB/Databases/DatabaseOrdinary.h>
-#include <DB/Storages/System/attach_system_tables.h>
+#include <DB/Storages/System/attachSystemTables.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/executeQuery.h>
@@ -379,7 +379,7 @@ void LocalServer::attachSystemTables()
 		context->addDatabase("system", system_database);
 	}
 
-	attach_system_tables_local(system_database);
+	attachSystemTablesLocal(system_database);
 }
 
 

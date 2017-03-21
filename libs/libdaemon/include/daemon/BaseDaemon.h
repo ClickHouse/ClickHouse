@@ -107,18 +107,27 @@ public:
 	/// root_path по умолчанию one_min
 	/// key - лучше группировать по смыслу. Например "meminfo.cached" или "meminfo.free", "meminfo.total"
 	template <class T>
-	void writeToGraphite(const std::string & key, const T & value, time_t timestamp = 0, const std::string & custom_root_path = "")
+	void writeToGraphite(const std::string & key, const T & value, const std::string & config_name = "graphite", time_t timestamp = 0, const std::string & custom_root_path = "")
 	{
-		graphite_writer->write(key, value, timestamp, custom_root_path);
+		auto writer = getGraphiteWriter(config_name);
+		if (writer)
+			writer->write(key, value, timestamp, custom_root_path);
 	}
 
 	template <class T>
-	void writeToGraphite(const GraphiteWriter::KeyValueVector<T> & key_vals, time_t timestamp = 0, const std::string & custom_root_path = "")
+	void writeToGraphite(const GraphiteWriter::KeyValueVector<T> & key_vals, const std::string & config_name = "graphite", time_t timestamp = 0, const std::string & custom_root_path = "")
 	{
-		graphite_writer->write(key_vals, timestamp, custom_root_path);
+		auto writer = getGraphiteWriter(config_name);
+		if (writer)
+			writer->write(key_vals, timestamp, custom_root_path);
 	}
 
-	GraphiteWriter * getGraphiteWriter() { return graphite_writer.get(); }
+	GraphiteWriter * getGraphiteWriter(const std::string & config_name = "graphite")
+	{
+		if (graphite_writers.count(config_name))
+			return graphite_writers[config_name].get();
+		return nullptr;
+	}
 
 	std::experimental::optional<size_t> getLayer() const
 	{
@@ -196,7 +205,7 @@ protected:
 	Poco::AutoPtr<Poco::FileChannel> error_log_file;
 	Poco::AutoPtr<Poco::SyslogChannel> syslog_channel;
 
-	std::unique_ptr<GraphiteWriter> graphite_writer;
+	std::map<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
 
 	std::experimental::optional<size_t> layer;
 
