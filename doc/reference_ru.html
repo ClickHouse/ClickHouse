@@ -2328,10 +2328,17 @@ ORDER BY EventDate ASC
 
 
 ===KILL QUERY===
-%%KILL QUERY WHERE expression_for_system.processes [SYNC|ASYNC|TEST] [FORMAT format]%%
-
+%%KILL QUERY WHERE &lt;where expression to SELECT FROM system.processes query&gt; [SYNC|ASYNC|TEST] [FORMAT format]%%
 Пытается завершить исполняющиеся в данный момент запросы.
-Запросы для завершения выбираются из таблицы system.processes для которых выражение expression_for_system.processes истинно.
+Запросы для завершения выбираются из таблицы %%system.processes%% для которых выражение после WHERE истинно.
+
+Примеры:
+%%KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'%%
+Завершает все запросы с указанным %%query_id%%.
+
+%%KILL QUERY WHERE user='username' SYNC%%
+Синхронно завершает все запросы пользователя %%username%%.
+
 Readonly-пользователи могут совершать только свои запросы.
 По-умолчанию используется асинхронный вариант запроса (ASYNC), который завершается не ожидая завершения запросов.
 Синхронный вариант (SYNC) ожидает завершения всех запросов и построчно выводит информацию о процессах по ходу их завершения.
