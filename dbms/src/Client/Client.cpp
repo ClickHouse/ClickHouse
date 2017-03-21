@@ -1086,8 +1086,8 @@ private:
 			if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
 				std::cerr << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
 		}
-
-		std::cerr << ' ' << (99 * progress.rows / total_rows_corrected) << '%';	/// Underestimate percentage a bit to avoid displaying 100%.
+		if (progress.total_rows != 0 && progress.rows * 2 < progress.total_rows && elapsed_ns > 500000000)
+			std::cerr << ' ' << (99 * progress.rows / total_rows_corrected) << '%';	/// Underestimate percentage a bit to avoid displaying 100%.
 		std::cerr << ENABLE_LINE_WRAPPING;
 		++increment;
 	}
