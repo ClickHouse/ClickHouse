@@ -2292,6 +2292,19 @@ You can put an asterisk in any part of a query instead of an expression. When th
 - In subqueries (since columns that aren&#39;t needed for the external query are excluded from subqueries).
 In all other cases, we don&#39;t recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages.
 
+===KILL QUERY===
+%%KILL QUERY WHERE &lt;where expression to SELECT FROM system.processes query&gt; [SYNC|ASYNC|TEST] [FORMAT format]%%
+Tries to finish currently executing queries.
+Queries to be finished are selected from %%system.processes%% table according to expression after WHERE term.
+
+Examples:
+%%KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'%%
+Finishes all queries with specified %%query_id%%.
+
+%%KILL QUERY WHERE user='username' SYNC%%
+Synchronously finishes all queries of user %%username%%.
+
+Readonly users can kill only own queries.
 
 </div>
 <div class="island">
