@@ -4,8 +4,8 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <daemon/BaseDaemon.h>
 #include <DB/Common/CurrentMetrics.h>
-#include <DB/Common/setThreadName.h>
 #include <DB/Common/Exception.h>
+#include <DB/Common/setThreadName.h>
 #include <DB/Interpreters/AsynchronousMetrics.h>
 
 namespace DB
@@ -39,13 +39,12 @@ void MetricsTransmitter::run()
 	setThreadName(thread_name.c_str());
 
 	const auto get_next_time = [](size_t seconds) {
-		/// Next minute at 00 seconds. To avoid time drift and transmit values exactly each minute.
-		if (!(seconds % 60))
-			return std::chrono::time_point_cast<std::chrono::seconds, std::chrono::system_clock>(
-				std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
-					std::chrono::system_clock::now() + std::chrono::minutes(seconds / 60)));
-		return std::chrono::time_point_cast<std::chrono::seconds, std::chrono::system_clock>(
-			std::chrono::system_clock::now() + std::chrono::seconds(seconds));
+		/// To avoid time drift and transmit values exactly each interval:
+		///  next time aligned to system seconds
+		/// (60s -> every minute at 00 seconds, 5s -> every minute:[00, 05, 15 ... 55]s, 3600 -> every hour:00:00
+		return std::chrono::system_clock::time_point(
+			(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()) / seconds) * seconds
+			+ std::chrono::seconds(seconds));
 	};
 
 	std::vector<ProfileEvents::Count> prev_counters(ProfileEvents::end());

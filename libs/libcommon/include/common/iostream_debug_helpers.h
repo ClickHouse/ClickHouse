@@ -95,15 +95,15 @@ std::ostream & operator<<(std::ostream & stream, const std::ratio<Num, Denom> & 
 }
 
 #include <chrono>
-template <class Rep, class Period>
-std::ostream & operator<<(std::ostream & stream, const std::chrono::duration<Rep, Period> & what)
+template <class clock, class duration>
+std::ostream & operator<<(std::ostream & stream, const std::chrono::duration<clock, duration> & what)
 {
-  stream << "chrono::duration<Rep="<<Rep()<<", Period="<<Period()<<">{" << what.count() << "}";
+  stream << "chrono::duration<clock="<<clock()<<", duration="<<duration()<<">{" << what.count() << "}";
 	return stream;
 }
 
-template <class Clock, class Duration>
-std::ostream & operator<<(std::ostream & stream, const std::chrono::time_point<Clock, Duration> & what)
+template <class clock, class duration>
+std::ostream & operator<<(std::ostream & stream, const std::chrono::time_point<clock, duration> & what)
 {
 	stream << "chrono::time_point{" << what.time_since_epoch() << "}";
 	return stream;

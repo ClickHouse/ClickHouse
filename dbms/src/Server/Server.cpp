@@ -11,13 +11,13 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
-#include <DB/Common/getMultipleKeysFromConfig.h>
 #include <ext/scope_guard.hpp>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/ZooKeeperNodeCache.h>
 #include <DB/Common/Macros.h>
 #include <DB/Common/StringUtils.h>
 #include <DB/Common/getFQDNOrHostName.h>
+#include <DB/Common/getMultipleKeysFromConfig.h>
 #include <DB/Databases/DatabaseOrdinary.h>
 #include <DB/IO/HTTPCommon.h>
 #include <DB/Interpreters/AsynchronousMetrics.h>
@@ -26,13 +26,13 @@
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/System/attachSystemTables.h>
+#include "ConfigReloader.h"
 #include "HTTPHandler.h"
 #include "InterserverIOHTTPHandler.h"
 #include "MetricsTransmitter.h"
 #include "ReplicasStatusHandler.h"
 #include "StatusFile.h"
 #include "TCPHandler.h"
-#include "ConfigReloader.h"
 
 
 namespace DB
@@ -224,7 +224,7 @@ int Server::main(const std::vector<std::string> & args)
 	{
 		auto old_configuration = loaded_config.configuration;
 		loaded_config = ConfigProcessor().loadConfigWithZooKeeperIncludes(
-				config_path, main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
+			config_path, main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
 		config().removeConfiguration(old_configuration.get());
 		config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
 	}
@@ -324,11 +324,11 @@ int Server::main(const std::vector<std::string> & args)
 
 	/// Initialize main config reloader.
 	std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
-	auto main_config_reloader = std::make_unique<ConfigReloader>(
-			config_path, include_from_path,
-			std::move(main_config_zk_node_cache),
-			[&](ConfigurationPtr config) { global_context->setClustersConfig(config); },
-			/* already_loaded = */ true);
+	auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
+		include_from_path,
+		std::move(main_config_zk_node_cache),
+		[&](ConfigurationPtr config) { global_context->setClustersConfig(config); },
+		/* already_loaded = */ true);
 
 	/// Initialize users config reloader.
 	std::string users_config_path = config().getString("users_config", config_path);
@@ -340,11 +340,11 @@ int Server::main(const std::vector<std::string> & args)
 		if (Poco::File(config_dir + users_config_path).exists())
 			users_config_path = config_dir + users_config_path;
 	}
-	auto users_config_reloader = std::make_unique<ConfigReloader>(
-			users_config_path, include_from_path,
-			zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
-			[&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
-			/* already_loaded = */ false);
+	auto users_config_reloader = std::make_unique<ConfigReloader>(users_config_path,
+		include_from_path,
+		zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
+		[&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
+		/* already_loaded = */ false);
 
 	/// Limit on total number of coucurrently executed queries.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
