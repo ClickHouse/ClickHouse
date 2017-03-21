@@ -1,4 +1,4 @@
-#include <DB/Storages/System/attach_system_tables.h>
+#include <DB/Storages/System/attachSystemTables.h>
 
 #include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <DB/Storages/System/StorageSystemBuildOptions.h>
@@ -23,7 +23,7 @@
 
 namespace DB
 {
-void attach_system_tables_local(DatabasePtr system_database)
+void attachSystemTablesLocal(DatabasePtr system_database)
 {
 	system_database->attachTable("one", StorageSystemOne::create("one"));
 	system_database->attachTable("numbers", StorageSystemNumbers::create("numbers"));
@@ -37,9 +37,9 @@ void attach_system_tables_local(DatabasePtr system_database)
 	system_database->attachTable("build_options", StorageSystemBuildOptions::create("build_options"));
 }
 
-void attach_system_tables_server(DatabasePtr system_database, Context * global_context, bool has_zookeeper)
+void attachSystemTablesServer(DatabasePtr system_database, Context * global_context, bool has_zookeeper)
 {
-	attach_system_tables_local(system_database);
+	attachSystemTablesLocal(system_database);
 	system_database->attachTable("parts", StorageSystemParts::create("parts"));
 	system_database->attachTable("processes", StorageSystemProcesses::create("processes"));
 	system_database->attachTable("metrics", StorageSystemMetrics::create("metrics"));
@@ -54,7 +54,7 @@ void attach_system_tables_server(DatabasePtr system_database, Context * global_c
 		system_database->attachTable("zookeeper", StorageSystemZooKeeper::create("zookeeper"));
 }
 
-void attach_system_tables_async(DatabasePtr system_database, AsynchronousMetrics & async_metrics)
+void attachSystemTablesAsync(DatabasePtr system_database, AsynchronousMetrics & async_metrics)
 {
 	system_database->attachTable("asynchronous_metrics", StorageSystemAsynchronousMetrics::create("asynchronous_metrics", async_metrics));
 }

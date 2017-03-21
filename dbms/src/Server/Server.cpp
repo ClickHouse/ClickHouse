@@ -14,6 +14,7 @@
 #include <DB/Common/getMultipleKeysFromConfig.h>
 #include <ext/scope_guard.hpp>
 #include <zkutil/ZooKeeper.h>
+#include <zkutil/ZooKeeperNodeCache.h>
 #include <DB/Common/Macros.h>
 #include <DB/Common/StringUtils.h>
 #include <DB/Common/getFQDNOrHostName.h>
@@ -24,14 +25,14 @@
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Storages/System/attach_system_tables.h>
-#include "ConfigReloader.h"
+#include <DB/Storages/System/attachSystemTables.h>
 #include "HTTPHandler.h"
 #include "InterserverIOHTTPHandler.h"
 #include "MetricsTransmitter.h"
 #include "ReplicasStatusHandler.h"
 #include "StatusFile.h"
 #include "TCPHandler.h"
+#include "ConfigReloader.h"
 
 
 namespace DB
@@ -387,7 +388,7 @@ int Server::main(const std::vector<std::string> & args)
 
 	DatabasePtr system_database = global_context->getDatabase("system");
 
-	attach_system_tables_server(system_database, global_context.get(), has_zookeeper);
+	attachSystemTablesServer(system_database, global_context.get(), has_zookeeper);
 
 	bool has_resharding_worker = false;
 	if (has_zookeeper && config().has("resharding"))
@@ -583,7 +584,7 @@ int Server::main(const std::vector<std::string> & args)
 		/// This object will periodically calculate some metrics.
 		AsynchronousMetrics async_metrics(*global_context);
 
-		attach_system_tables_async(system_database, async_metrics);
+		attachSystemTablesAsync(system_database, async_metrics);
 
 		std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
 		for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
