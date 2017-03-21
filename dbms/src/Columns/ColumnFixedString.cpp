@@ -185,6 +185,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 		if (0 == mask)
 		{
 			/// Nothing is inserted.
+			data_pos += chars_per_simd_elements;
 		}
 		else if (0xFFFF == mask)
 		{
