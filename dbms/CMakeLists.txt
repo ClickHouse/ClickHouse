@@ -33,7 +33,6 @@ endif ()
 find_package (Threads)
 
 add_subdirectory (src)
-add_subdirectory (tests)
 
 add_library(string_utils
 	include/DB/Common/StringUtils.h
@@ -174,3 +173,11 @@ target_link_libraries(dbms
 target_include_directories (dbms
 	INTERFACE include
 )
+
+if (ENABLE_TESTS)
+	# attach all dbms gtest sources
+	grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
+	add_executable(unit_tests_dbms ${dbms_gtest_sources})
+	target_link_libraries(unit_tests_dbms gtest_main dbms)
+	add_check(unit_tests_dbms)
+endif()
