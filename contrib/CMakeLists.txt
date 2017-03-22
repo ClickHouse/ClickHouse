@@ -45,10 +45,3 @@ endif ()
 if (NOT AARCH64)
 	add_subdirectory (libcpuid)
 endif ()
-
-if (ENABLE_TESTS)
-	add_subdirectory (googletest)
-	# avoid problems with <regexp.h>
-	target_compile_definitions (gtest INTERFACE -DGTEST_HAS_POSIX_RE=0)
-	target_include_directories (gtest INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/googletest/include)
-endif()
