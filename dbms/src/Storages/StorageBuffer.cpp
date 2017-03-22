@@ -283,24 +283,34 @@ public:
 
 		/// We loop through the buffers, trying to lock mutex. No more than one lap.
 		auto shard_num = start_shard_num;
-		size_t try_no = 0;
-		for (; try_no != storage.num_shards; ++try_no)
+
+		StorageBuffer::Buffer * least_busy_buffer = nullptr;
+		std::unique_lock<std::mutex> least_busy_lock;
+		size_t least_busy_shard_rows = 0;
+
+		for (size_t try_no = 0; try_no < storage.num_shards; ++try_no)
 		{
 			std::unique_lock<std::mutex> lock(storage.buffers[shard_num].mutex, std::try_to_lock_t());
+
 			if (lock.owns_lock())
 			{
-				insertIntoBuffer(block, storage.buffers[shard_num], std::move(lock));
-				break;
+				size_t num_rows = storage.buffers[shard_num].data.rows();
+				if (!least_busy_buffer || num_rows < least_busy_shard_rows)
+				{
+					least_busy_buffer = &storage.buffers[shard_num];
+					least_busy_lock = std::move(lock);
+					least_busy_shard_rows = num_rows;
+				}
 			}
 
-			++shard_num;
-			if (shard_num == storage.num_shards)
-				shard_num = 0;
+			shard_num = (shard_num + 1) % storage.num_shards;
 		}
 
 		/// If you still can not lock anything at once, then we'll wait on mutex.
-		if (try_no == storage.num_shards)
+		if (!least_busy_buffer)
 			insertIntoBuffer(block, storage.buffers[start_shard_num], std::unique_lock<std::mutex>(storage.buffers[start_shard_num].mutex));
+		else
+			insertIntoBuffer(block, *least_busy_buffer, std::move(least_busy_lock));
 	}
 private:
 	StorageBuffer & storage;
