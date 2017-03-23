@@ -139,11 +139,11 @@ install: build
 	ln -s clickhouse-server.docs debian/clickhouse-server-metrika.docs
 
 	mkdir -p debian/tmp/etc/security/limits.d
-	cp tools/etc/security/limits.d/clickhouse.conf debian/tmp/etc/security/limits.d
+	cp debian/clickhouse-server.limits debian/tmp/etc/security/limits.d/clickhouse.conf
 	mkdir -p debian/tmp/etc/init.d
-	cp tools/etc/init.d/clickhouse-server debian/tmp/etc/init.d
+	cp debian/clickhouse-server.init debian/tmp/etc/init.d/clickhouse-server
 	mkdir -p debian/tmp/etc/cron.d
-	cp tools/etc/cron.d/clickhouse-server debian/tmp/etc/cron.d
+	cp debian/clickhouse-server.cron.d debian/tmp/etc/cron.d/clickhouse-server
 
 # Build architecture-independent files here.
 binary-indep: build install
