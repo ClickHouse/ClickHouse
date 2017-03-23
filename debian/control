@@ -16,7 +16,7 @@ Description: clickhouse-compressor
 Package: clickhouse-client
 Section: libdevel
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base(=1.1.54196)
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
 Description: clickhouse-client
  ClickHouse client and additional tools such as clickhouse-local and clickhouse-benchmark.
 
@@ -31,13 +31,13 @@ Description: clickhouse-server-base
 Package: clickhouse-server-metrika
 Section: libdevel
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base(=1.1.54196)
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
 Description: clickhouse-server-metrika
  Configuration files specific for Metrika project for clickhouse-server-base package
 
 Package: clickhouse-server-common
 Section: libdevel
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base(=1.1.54196)
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
 Description: clickhouse-server-common
  Common configuration files for clickhouse-server-base package
