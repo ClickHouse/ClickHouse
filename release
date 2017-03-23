@@ -56,7 +56,7 @@ fi
 
 echo -e "\nCurrent revision is $REVISION"
 
-make_control "$CONTROL" "$DAEMONS"
+#make_control "$CONTROL" "$DAEMONS"
 
 gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG" "$DAEMONS"
 
