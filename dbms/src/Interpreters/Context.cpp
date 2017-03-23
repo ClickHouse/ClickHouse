@@ -348,7 +348,11 @@ void Context::setUser(const String & name, const String & password, const Poco::
 	auto lock = getLock();
 
 	const User & user_props = shared->users.get(name, password, address.host());
-	setSetting("profile", user_props.profile);
+
+	/// Firstly set default settings from default profile
+	if (user_props.profile != "default")
+		settings.setProfile("default", *shared->users_config);
+	settings.setProfile(user_props.profile, *shared->users_config);
 	setQuota(user_props.quota, quota_key, name, address.host());
 
 	client_info.current_user = name;
