@@ -73,8 +73,9 @@ BlockIO InterpreterAlterQuery::execute()
 					command.coordinator, context.getSettingsRef());
 				break;
 
-			default:
-				throw Exception("Bad PartitionCommand::Type: " + toString<int>(command.type), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+			case PartitionCommand::DROP_COLUMN:
+				table->dropColumnFromPartition(query_ptr, command.partition, command.column_name);
+				break;
 		}
 	}
 
@@ -123,14 +124,21 @@ void InterpreterAlterQuery::parseAlter(
 		}
 		else if (params.type == ASTAlterQuery::DROP_COLUMN)
 		{
-			AlterCommand command;
-			command.type = AlterCommand::DROP_COLUMN;
-			command.column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
-
 			if (params.partition)
-				command.partition_name = get<String>(typeid_cast<const ASTLiteral &>(*(params.partition)).value);
+			{
+				const Field & partition = typeid_cast<const ASTLiteral &>(*(params.partition)).value;
+				const Field & column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
 
-			out_alter_commands.emplace_back(std::move(command));
+				out_partition_commands.emplace_back(PartitionCommand::dropColumnFromPartition(partition, column_name));
+			}
+			else
+			{
+				AlterCommand command;
+				command.type = AlterCommand::DROP_COLUMN;
+				command.column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
+
+				out_alter_commands.emplace_back(std::move(command));
+			}
 		}
 		else if (params.type == ASTAlterQuery::MODIFY_COLUMN)
 		{
