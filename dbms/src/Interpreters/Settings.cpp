@@ -82,12 +82,12 @@ void Settings::setProfile(const String & profile_name, Poco::Util::AbstractConfi
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys(elem, config_keys);
 
-	for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
+	for (const std::string & key : config_keys)
 	{
-		if (*it == "profile")	/// Наследование одного профиля от другого.
-			setProfile(config.getString(elem + "." + *it), config);
+		if (key == "profile")	/// Наследование одного профиля от другого.
+			setProfile(config.getString(elem + "." + key), config);
 		else
-			set(*it, config.getString(elem + "." + *it));
+			set(key, config.getString(elem + "." + key));
 	}
 }
 

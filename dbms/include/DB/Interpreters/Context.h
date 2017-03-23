@@ -308,6 +308,10 @@ public:
 	ApplicationType getApplicationType() const;
 	void setApplicationType(ApplicationType type);
 
+	/// Set once
+	String getDefaultProfileName() const;
+	void setDefaultProfileName(const String & name);
+
 private:
 	/** Проверить, имеет ли текущий клиент доступ к заданной базе данных.
 	  * Если доступ запрещён, кинуть исключение.
