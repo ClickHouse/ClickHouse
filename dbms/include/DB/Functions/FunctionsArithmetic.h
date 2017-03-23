@@ -1,8 +1,10 @@
 #pragma once
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/Columns/ColumnVector.h>
+#include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/AccurateComparison.h>
@@ -18,9 +20,10 @@ namespace ErrorCodes
 }
 
 
-/** Арифметические функции: +, -, *, /, %,
-  * intDiv (целочисленное деление), унарный минус.
-  * Битовые функции: |, &, ^, ~.
+/** Arithmetic operations: +, -, *, /, %,
+  * intDiv (integer division), unary minus.
+  * Bitwise operations: |, &, ^, ~.
+  * Etc.
   */
 
 template<typename A, typename B, typename Op, typename ResultType_ = typename Op::ResultType>
@@ -270,6 +273,32 @@ struct BitShiftRightImpl
 	}
 };
 
+template<typename A, typename B>
+struct BitRotateLeftImpl
+{
+	using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
+
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
+	{
+		return (static_cast<Result>(a) << static_cast<Result>(b))
+			| (static_cast<Result>(a) >> ((sizeof(Result) * 8) - static_cast<Result>(b)));
+	}
+};
+
+template<typename A, typename B>
+struct BitRotateRightImpl
+{
+	using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
+
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
+	{
+		return (static_cast<Result>(a) >> static_cast<Result>(b))
+			| (static_cast<Result>(a) << ((sizeof(Result) * 8) - static_cast<Result>(b)));
+	}
+};
+
 
 template<typename A, typename B>
 struct LeastBaseImpl
@@ -386,6 +415,12 @@ template <typename T> using Else = T;
 
 /// Used to indicate undefined operation
 struct InvalidType;
+
+template <typename T>
+struct DataTypeFromFieldType
+{
+	using Type = DataTypeNumber<T>;
+};
 
 template <>
 struct DataTypeFromFieldType<NumberTraits::Error>
@@ -766,8 +801,7 @@ private:
 	{
 		if (typeid_cast<const T0 *>(&*arguments[0]))
 		{
-			result = std::make_shared<typename DataTypeFromFieldType<
-				typename Op<typename T0::FieldType>::ResultType>::Type>();
+			result = std::make_shared<DataTypeNumber<typename Op<typename T0::FieldType>::ResultType>>();
 			return true;
 		}
 		return false;
@@ -878,6 +912,8 @@ struct NameBitXor			{ static constexpr auto name = "bitXor"; };
 struct NameBitNot			{ static constexpr auto name = "bitNot"; };
 struct NameBitShiftLeft		{ static constexpr auto name = "bitShiftLeft"; };
 struct NameBitShiftRight	{ static constexpr auto name = "bitShiftRight"; };
+struct NameBitRotateLeft	{ static constexpr auto name = "bitRotateLeft"; };
+struct NameBitRotateRight	{ static constexpr auto name = "bitRotateRight"; };
 struct NameLeast			{ static constexpr auto name = "least"; };
 struct NameGreatest			{ static constexpr auto name = "greatest"; };
 
@@ -896,6 +932,8 @@ using FunctionBitXor = FunctionBinaryArithmetic<BitXorImpl, NameBitXor>;
 using FunctionBitNot = FunctionUnaryArithmetic<BitNotImpl, NameBitNot, true>;
 using FunctionBitShiftLeft = FunctionBinaryArithmetic<BitShiftLeftImpl,	NameBitShiftLeft>;
 using FunctionBitShiftRight = FunctionBinaryArithmetic<BitShiftRightImpl, NameBitShiftRight>;
+using FunctionBitRotateLeft = FunctionBinaryArithmetic<BitRotateLeftImpl,	NameBitRotateLeft>;
+using FunctionBitRotateRight = FunctionBinaryArithmetic<BitRotateRightImpl, NameBitRotateRight>;
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 
@@ -934,6 +972,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 	}
 };
 
+}
 
 /// Оптимизации для целочисленного деления на константу.
 
@@ -943,6 +982,8 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 
 #include <libdivide.h>
 
+namespace DB
+{
 
 template <typename A, typename B>
 struct DivideIntegralByConstantImpl

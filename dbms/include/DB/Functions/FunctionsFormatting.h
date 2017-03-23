@@ -1,9 +1,12 @@
 #include <DB/Functions/IFunction.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnVector.h>
+#include <DB/Columns/ColumnConst.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/IO/WriteBufferFromVector.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/WriteHelpers.h>
 #include <DB/Common/formatReadable.h>
 
 

@@ -1,3 +1,20 @@
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/find_vectorclass.cmake)
+
+set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/include/DB/Common/config_version.h)
+set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/DB/Common/config.h)
+set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_build.cpp)
+
+include (cmake/version.cmake)
+message (STATUS "Will build ${VERSION_FULL}")
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/DB/Common/config.h.in ${CONFIG_COMMON})
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/DB/Common/config_version.h.in ${CONFIG_VERSION})
+
+get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
+get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_build.cpp.in ${CONFIG_BUILD})
+
+
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
@@ -12,8 +29,6 @@ if (NOT NO_WERROR)
 	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
 	set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
-
-include (${ClickHouse_SOURCE_DIR}/cmake/find_iconv.cmake)
 
 find_package (Threads)
 
@@ -49,10 +64,12 @@ add_headers_and_sources(dbms Columns)
 add_headers_and_sources(dbms Storages)
 add_headers_and_sources(dbms Storages/Distributed)
 add_headers_and_sources(dbms Storages/MergeTree)
-add_headers_and_sources(dbms Storages/System)
 add_headers_and_sources(dbms Core)
 add_headers_and_sources(dbms Client)
 add_headers_only(dbms Server)
+
+list (APPEND dbms_sources ${CONFIG_BUILD})
+list (APPEND dbms_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
 list(REMOVE_ITEM dbms_sources
 	src/Client/Client.cpp
@@ -70,8 +87,6 @@ if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
 		src/IO/ReadBufferAIO.cpp
 		src/IO/WriteBufferAIO.cpp)
 endif()
-
-include (${CMAKE_SOURCE_DIR}/libs/libcommon/cmake/version.cmake)
 
 if (USE_STATIC_LIBRARIES)
 	add_library(dbms ${dbms_headers} ${dbms_sources})
@@ -148,7 +163,7 @@ target_link_libraries(dbms
 	${Poco_MongoDB_LIBRARY}
 	${Poco_Foundation_LIBRARY}
 	${Poco_NetSSL_LIBRARY}
-	${ICONV_LIBRARY}
+	${ICU_LIBS}
 	${PLATFORM_LIBS}
 	${CMAKE_DL_LIBS}
 	${LTDL_LIB}

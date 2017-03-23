@@ -4,7 +4,7 @@
 
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
@@ -24,7 +24,7 @@ try
 
 	Context context;
 
-	/// создаём таблицу с парой столбцов
+	/// create a table with a pair of columns
 
 	NamesAndTypesListPtr names_and_types = std::make_shared<NamesAndTypesList>();
 	names_and_types->push_back(NameAndTypePair("d", std::make_shared<DataTypeDate>()));
@@ -49,7 +49,7 @@ try
 		context, primary_expr, "d",
 		nullptr, 101, params, false, {});
 
-	/// пишем в неё
+	/// write into it
 	{
 		Block block;
 
@@ -79,7 +79,7 @@ try
 		out->write(block);
 	}
 
-	/// читаем из неё
+	/// read from it
 	{
 		Names column_names;
 		column_names.push_back("d");

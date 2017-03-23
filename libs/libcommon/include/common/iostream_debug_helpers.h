@@ -85,5 +85,29 @@ std::ostream & operator<<(std::ostream & stream, const std::pair<K, V> & what)
 	return stream;
 }
 
+#include <ratio>
+
+template <std::intmax_t Num, std::intmax_t Denom>
+std::ostream & operator<<(std::ostream & stream, const std::ratio<Num, Denom> & what)
+{
+	stream << "ratio<Num=" << Num << ", Denom=" << Denom << ">";
+	return stream;
+}
+
+#include <chrono>
+template <class clock, class duration>
+std::ostream & operator<<(std::ostream & stream, const std::chrono::duration<clock, duration> & what)
+{
+	stream << "chrono::duration<clock=" << clock() << ", duration=" << duration() << ">{" << what.count() << "}";
+	return stream;
+}
+
+template <class clock, class duration>
+std::ostream & operator<<(std::ostream & stream, const std::chrono::time_point<clock, duration> & what)
+{
+	stream << "chrono::time_point{" << what.time_since_epoch() << "}";
+	return stream;
+}
+
 
 // TODO: add more types

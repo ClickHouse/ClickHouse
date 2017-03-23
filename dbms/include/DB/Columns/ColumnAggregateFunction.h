@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <DB/Common/Arena.h>
 
@@ -16,11 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-	extern const int PARAMETER_OUT_OF_BOUND;
-	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-}
 
 
 /** State column of aggregate functions.
@@ -83,12 +78,7 @@ public:
 	{
 	}
 
-	~ColumnAggregateFunction()
-	{
-		if (!func->hasTrivialDestructor() && !src)
-			for (auto val : data)
-				func->destroy(val);
-	}
+	~ColumnAggregateFunction();
 
 	void set(const AggregateFunctionPtr & func_)
 	{
@@ -99,10 +89,7 @@ public:
 	AggregateFunctionPtr getAggregateFunction() const { return func; }
 
 	/// Take shared ownership of Arena, that holds memory for states of aggregate functions.
-	void addArena(ArenaPtr arena_)
-	{
-		arenas.push_back(arena_);
-	}
+	void addArena(ArenaPtr arena_);
 
 	/** Transform column with states of aggregate functions to column with final result values.
 	  */
@@ -117,104 +104,34 @@ public:
 		return getData().size();
 	}
 
-	ColumnPtr cloneEmpty() const override
-	{
-		return std::make_shared<ColumnAggregateFunction>(func, Arenas(1, std::make_shared<Arena>()));
-	};
+	ColumnPtr cloneEmpty() const override;;
 
-	Field operator[](size_t n) const override
-	{
-		Field field = String();
-		{
-			WriteBufferFromString buffer(field.get<String &>());
-			func->serialize(getData()[n], buffer);
-		}
-		return field;
-	}
+	Field operator[](size_t n) const override;
 
-	void get(size_t n, Field & res) const override
-	{
-		res = String();
-		{
-			WriteBufferFromString buffer(res.get<String &>());
-			func->serialize(getData()[n], buffer);
-		}
-	}
+	void get(size_t n, Field & res) const override;
 
-	StringRef getDataAt(size_t n) const override
-	{
-		return StringRef(reinterpret_cast<const char *>(&getData()[n]), sizeof(getData()[n]));
-	}
+	StringRef getDataAt(size_t n) const override;
 
-	void insertData(const char * pos, size_t length) override
-	{
-		getData().push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
-	}
+	void insertData(const char * pos, size_t length) override;
 
-	void insertFrom(const IColumn & src, size_t n) override
-	{
-		/// Must create new state of aggregate function and take ownership of it,
-		///  because ownership of states of aggregate function cannot be shared for individual rows,
-		///  (only as a whole, see comment above).
-		insertDefault();
-		insertMergeFrom(src, n);
-	}
+	void insertFrom(const IColumn & src, size_t n) override;
 
-	void insertFrom(ConstAggregateDataPtr place)
-	{
-		insertDefault();
-		insertMergeFrom(place);
-	}
+	void insertFrom(ConstAggregateDataPtr place);
 
 	/// Merge state at last row with specified state in another column.
-	void insertMergeFrom(ConstAggregateDataPtr place)
-	{
-		func->merge(getData().back(), place, &createOrGetArena());
-	}
+	void insertMergeFrom(ConstAggregateDataPtr place);
 
-	void insertMergeFrom(const IColumn & src, size_t n)
-	{
-		insertMergeFrom(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
-	}
+	void insertMergeFrom(const IColumn & src, size_t n);
 
-	Arena & createOrGetArena()
-	{
-		if (unlikely(arenas.empty()))
-			arenas.emplace_back(std::make_shared<Arena>());
-		return *arenas.back().get();
-	}
+	Arena & createOrGetArena();
 
-	void insert(const Field & x) override
-	{
-		IAggregateFunction * function = func.get();
+	void insert(const Field & x) override;
 
-		Arena & arena = createOrGetArena();
+	void insertDefault() override;
 
-		getData().push_back(arena.alloc(function->sizeOfData()));
-		function->create(getData().back());
-		ReadBufferFromString read_buffer(x.get<const String &>());
-		function->deserialize(getData().back(), read_buffer, &arena);
-	}
+	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
-	void insertDefault() override
-	{
-		IAggregateFunction * function = func.get();
-
-		Arena & arena = createOrGetArena();
-
-		getData().push_back(arena.alloc(function->sizeOfData()));
-		function->create(getData().back());
-	}
-
-	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
-	{
-		throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
-
-	const char * deserializeAndInsertFromArena(const char * pos) override
-	{
-		throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
+	const char * deserializeAndInsertFromArena(const char * pos) override;
 
 	void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -224,62 +141,22 @@ public:
 
 	void insertRangeFrom(const IColumn & from, size_t start, size_t length) override;
 
-	void popBack(size_t n) override
-	{
-		size_t size = data.size();
-		size_t new_size = size - n;
-
-		if (!src)
-			for (size_t i = new_size; i < size; ++i)
-				func->destroy(data[i]);
-
-		data.resize_assume_reserved(new_size);
-	}
+	void popBack(size_t n) override;
 
 	ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
 
 	ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
-	ColumnPtr replicate(const Offsets_t & offsets) const override
-	{
-		throw Exception("Method replicate is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
-	}
+	ColumnPtr replicate(const Offsets_t & offsets) const override;
 
-	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
-	{
-		/// Columns with scattered values will point to this column as the owner of values.
-		Columns columns(num_columns);
-		for (auto & column : columns)
-			column = std::make_shared<ColumnAggregateFunction>(*this);
-
-		size_t num_rows = size();
-
-		{
-			size_t reserve_size = num_rows / num_columns * 1.1;	/// 1.1 is just a guess. Better to use n-sigma rule.
-
-			if (reserve_size > 1)
-				for (auto & column : columns)
-					column->reserve(reserve_size);
-		}
-
-		for (size_t i = 0; i < num_rows; ++i)
-			static_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
-
-		return columns;
-	}
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 	{
 		return 0;
 	}
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
-	{
-		size_t s = getData().size();
-		res.resize(s);
-		for (size_t i = 0; i < s; ++i)
-			res[i] = i;
-	}
+	void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
 	/** More efficient manipulation methods */
 	Container_t & getData()
@@ -292,10 +169,7 @@ public:
 		return data;
 	}
 
-	void getExtremes(Field & min, Field & max) const override
-	{
-		throw Exception("Method getExtremes is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
-	}
+	void getExtremes(Field & min, Field & max) const override;
 };
 
 

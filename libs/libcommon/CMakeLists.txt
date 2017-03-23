@@ -1,7 +1,3 @@
-set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_version.h)
-set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
-set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/src/config_build.cpp)
-
 include_directories (include)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcctz/include)
 
@@ -15,16 +11,8 @@ if (APPLE)
 	endif ()
 endif ()
 
-include (cmake/version.cmake)
-message (STATUS "Will build ${VERSION_FULL}")
+set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${CONFIG_COMMON})
-configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_version.h.in ${CONFIG_VERSION})
-
-get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
-get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
-
-string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
-configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/config_build.cpp.in ${CONFIG_BUILD})
 
 if (APPLE)
 	add_library (apple_rt
@@ -37,7 +25,6 @@ add_library (common
 	src/DateLUT.cpp
 	src/DateLUTImpl.cpp
 	src/exp10.cpp
-	src/ClickHouseRevision.cpp
 	src/JSON.cpp
 
 	include/common/ApplicationServerExt.h
@@ -51,11 +38,9 @@ add_library (common
 	include/common/likely.h
 	include/common/logger_useful.h
 	include/common/MultiVersion.h
-	include/common/ClickHouseRevision.h
 	include/common/singleton.h
 	include/common/strong_typedef.h
 	include/common/JSON.h
-	include/common/config_build.h
 
 	include/ext/bit_cast.hpp
 	include/ext/collection_cast.hpp
@@ -68,9 +53,7 @@ add_library (common
 	include/ext/size.hpp
 	include/ext/unlock_guard.hpp
 
-	${CONFIG_VERSION}
 	${CONFIG_COMMON}
-	${CONFIG_BUILD}
 )
 
 # When testing for memory leaks, dont link tcmalloc or jemalloc.
@@ -96,9 +79,10 @@ target_link_libraries (
 	common
 	pocoext
 	cctz
+	${Boost_SYSTEM_LIBRARY}
+	${Boost_FILESYSTEM_LIBRARY}
 	${MALLOC_LIBRARIES}
 	${CMAKE_THREAD_LIBS_INIT}
-	${ICU_LIBS}
 	${RT_LIBRARIES})
 
 if (ENABLE_TESTS)

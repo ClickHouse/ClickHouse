@@ -1,6 +1,6 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Storages/System/StorageSystemReplicas.h>
@@ -63,14 +63,14 @@ BlockInputStreams StorageSystemReplicas::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	/// Собираем набор реплицируемых таблиц.
+	/// We collect a set of replicated tables.
 	std::map<String, std::map<String, StoragePtr>> replicated_tables;
 	for (const auto & db : context.getDatabases())
 		for (auto iterator = db.second->getIterator(); iterator->isValid(); iterator->next())
 			if (typeid_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
 				replicated_tables[db.first][iterator->name()] = iterator->table();
 
-	/// Нужны ли столбцы, требующие для вычисления хождение в ZooKeeper.
+	/// Do you need columns that require a walkthrough in ZooKeeper to compute.
 	bool with_zk_fields = false;
 	for (const auto & name : column_names)
 	{
@@ -98,7 +98,7 @@ BlockInputStreams StorageSystemReplicas::read(
 		}
 	}
 
-	/// Определяем, какие нужны таблицы, по условиям в запросе.
+	/// Determine what tables are needed by the conditions in the query.
 	{
 		Block filtered_block { col_database, col_table, col_engine };
 

@@ -6,10 +6,11 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <thread>
 #include <iostream>
+#include <cstddef>
 
 
 namespace DB
@@ -120,7 +121,7 @@ public:
 
 	String getID() const override
 	{
-		return "SynchronousQueryKiller_" + toString(this);
+		return "SynchronousQueryKiller_" + toString(intptr_t(this));
 	}
 
 	Block readImpl() override

@@ -1,24 +1,20 @@
+﻿#include <DB/Functions/FunctionsArray.h>
+
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-
 #include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsArray.h>
 #include <DB/Functions/FunctionsConversion.h>
 #include <DB/Functions/Conditional/getArrayType.h>
 #include <DB/Functions/Conditional/CondException.h>
-
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Common/HashTable/ClearableHashMap.h>
-
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTLiteral.h>
-
 #include <DB/Interpreters/AggregationCommon.h>
-
 #include <DB/Columns/ColumnTuple.h>
-
+#include <DB/Columns/ColumnAggregateFunction.h>
 #include <tuple>
 #include <array>
 

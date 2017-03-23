@@ -73,7 +73,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 	original_max_threads = settings.max_threads;
 
 	if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
-		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
+		throw Exception("Too deep subqueries. Maximum: " + settings.limits.max_subquery_depth.toString(),
 			ErrorCodes::TOO_DEEP_SUBQUERIES);
 
 	if (is_first_select_inside_union_all)
@@ -787,7 +787,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 	if (settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
 		throw Exception("Limit for number of columns to read exceeded. "
 			"Requested: " + toString(required_columns.size())
-			+ ", maximum: " + toString(settings.limits.max_columns_to_read),
+			+ ", maximum: " + settings.limits.max_columns_to_read.toString(),
 			ErrorCodes::TOO_MUCH_COLUMNS);
 
 	size_t limit_length = 0;
@@ -1041,7 +1041,7 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
 		if (order_by_elem.collation)
 			collator = std::make_shared<Collator>(typeid_cast<const ASTLiteral &>(*order_by_elem.collation).value.get<String>());
 
-		order_descr.emplace_back(name, order_by_elem.direction, collator);
+		order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
 	}
 
 	return order_descr;

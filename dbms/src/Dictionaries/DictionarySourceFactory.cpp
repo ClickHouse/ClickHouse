@@ -9,9 +9,10 @@
 #include <DB/Dictionaries/HTTPDictionarySource.h>
 #include <DB/Dictionaries/MongoDBDictionarySource.h>
 #include <DB/Dictionaries/ODBCDictionarySource.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/Core/FieldVisitors.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/IO/HTTPCommon.h>
 #include <memory>
 #include <mutex>

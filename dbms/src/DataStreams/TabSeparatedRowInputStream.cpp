@@ -3,7 +3,7 @@
 
 #include <DB/DataStreams/TabSeparatedRowInputStream.h>
 #include <DB/DataStreams/verbosePrintString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 
 namespace DB
@@ -306,5 +306,15 @@ void TabSeparatedRowInputStream::syncAfterError()
 {
 	skipToUnescapedNextLineOrEOF(istr);
 }
+void TabSeparatedRowInputStream::updateDiagnosticInfo()
+	{
+		++row_num;
+
+		bytes_read_at_start_of_buffer_on_prev_row = bytes_read_at_start_of_buffer_on_current_row;
+		bytes_read_at_start_of_buffer_on_current_row = istr.count() - istr.offset();
+
+		pos_of_prev_row = pos_of_current_row;
+		pos_of_current_row = istr.position();
+	}
 
 }

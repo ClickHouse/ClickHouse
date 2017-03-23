@@ -112,12 +112,12 @@ BlockInputStreams StorageMerge::read(
 
 	std::experimental::optional<QueryProcessingStage::Enum> processed_stage_in_source_tables;
 
-	/** Сначала составим список выбранных таблиц, чтобы узнать его размер.
-	  * Это нужно, чтобы правильно передать в каждую таблицу рекомендацию по количеству потоков.
+	/** First we make list of selected tables to find out its size.
+	  * This is necessary to correctly pass the recommended number of threads to each table.
 	  */
 	StorageListWithLocks selected_tables = getSelectedTables();
 
-	/// Если в запросе используется PREWHERE, надо убедиться, что все таблицы это поддерживают.
+	/// If PREWHERE is used in query, you need to make sure that all tables support this.
 	if (typeid_cast<const ASTSelectQuery &>(*query).prewhere_expression)
 		for (const auto & elem : selected_tables)
 			if (!elem.first->supportsPrewhere())
@@ -125,7 +125,7 @@ BlockInputStreams StorageMerge::read(
 
 	Block virtual_columns_block = getBlockWithVirtualColumns(selected_tables);
 
-	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
+	/// If at least one virtual column is requested, try indexing
 	if (!virt_column_names.empty())
 	{
 		VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
@@ -136,8 +136,8 @@ BlockInputStreams StorageMerge::read(
 		selected_tables.remove_if([&] (const auto & elem) { return values.find(elem.first->getTableName()) == values.end(); });
 	}
 
-	/** На всякий случай отключаем оптимизацию "перенос в PREWHERE",
-	  * так как нет уверенности, что она работает, когда одна из таблиц MergeTree, а другая - нет.
+	/** Just in case, turn off optimization "transfer to PREWHERE",
+	  * since there is no certainty that it works when one of table is MergeTree and other is not.
 	  */
 	Settings modified_settings = settings;
 	modified_settings.optimize_move_to_prewhere = false;
@@ -149,11 +149,11 @@ BlockInputStreams StorageMerge::read(
 		StoragePtr table = it->first;
 		auto & table_lock = it->second;
 
-		/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.
+		/// If there are only virtual columns in query, you must request at least one other column.
 		if (real_column_names.size() == 0)
 			real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumnsList()));
 
-		/// Подменяем виртуальный столбец на его значение
+		/// Substitute virtual column for its value
 		ASTPtr modified_query_ast = query->clone();
 		VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_table", table->getTableName());
 
@@ -225,7 +225,7 @@ BlockInputStreams StorageMerge::read(
 	return narrowBlockInputStreams(res, threads);
 }
 
-/// Построить блок состоящий только из возможных значений виртуальных столбцов
+/// Construct a block consisting only of possible values of virtual columns
 Block StorageMerge::getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const
 {
 	Block res;

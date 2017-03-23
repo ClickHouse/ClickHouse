@@ -26,13 +26,12 @@
 
 #include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/StorageLog.h>
-#include <DB/Storages/System/StorageSystemNumbers.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 

@@ -3,11 +3,14 @@
 #include <cerrno>
 #include <cstring>
 #include <iostream>
+#include <functional>
 
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>
 #include <Poco/Util/XMLConfiguration.h>
+
+#include <zkutil/ZooKeeperNodeCache.h>
 
 using namespace Poco::XML;
 
@@ -17,7 +20,7 @@ static bool endsWith(const std::string & s, const std::string & suffix)
 	return s.size() >= suffix.size() && s.substr(s.size() - suffix.size()) == suffix;
 }
 
-/// Извлекает из строки первое попавшееся число, состоящее из хотя бы двух цифр.
+/// Extracts from a string the first encountered number consisting of at least two digits.
 static std::string numberFromHost(const std::string & s)
 {
 	for (size_t i = 0; i < s.size(); ++i)
@@ -37,7 +40,13 @@ static std::string numberFromHost(const std::string & s)
 }
 
 ConfigProcessor::ConfigProcessor(bool throw_on_bad_incl_, bool log_to_console, const Substitutions & substitutions_)
-	: throw_on_bad_incl(throw_on_bad_incl_), substitutions(substitutions_)
+	: throw_on_bad_incl(throw_on_bad_incl_)
+	, substitutions(substitutions_)
+	/// We need larger name pool to allow to support vast amount of users in users.xml files for ClickHouse.
+	/// Size is prime because Poco::XML::NamePool uses bad (inefficient, low quality)
+	///  hash function internally, and its size was prime by default.
+	, name_pool(new Poco::XML::NamePool(65521))
+	, dom_parser(name_pool)
 {
 	if (log_to_console && Logger::has("ConfigProcessor") == nullptr)
 	{
@@ -50,13 +59,21 @@ ConfigProcessor::ConfigProcessor(bool throw_on_bad_incl_, bool log_to_console, c
 	}
 }
 
-/// Вектор из имени элемента и отсортированного списка имен и значений атрибутов (кроме атрибутов replace и remove).
-/// Взаимно однозначно задает имя элемента и список его атрибутов. Нужен, чтобы сравнивать элементы.
+ConfigProcessor::~ConfigProcessor()
+{
+	if (channel_ptr) /// This means we have created a new console logger in the constructor.
+		Logger::destroy("ConfigProcessor");
+}
+
+
+/// Vector containing the name of the element and a sorted list of attribute names and values
+/// (except "remove" and "replace" attributes).
+/// Serves as a unique identifier of the element contents for comparison.
 using ElementIdentifier = std::vector<std::string>;
 
 using NamedNodeMapPtr = Poco::AutoPtr<Poco::XML::NamedNodeMap>;
-/// NOTE Можно избавиться от использования Node.childNodes() и итерации по полученному списку, потому что
-///  доступ к i-му элементу этого списка работает за O(i).
+/// NOTE getting rid of iterating over the result of Node.childNodes() call is a good idea
+/// because accessing the i-th element of this list takes O(i) time.
 using NodeListPtr = Poco::AutoPtr<Poco::XML::NodeList>;
 
 static ElementIdentifier getElementIdentifier(Node * element)
@@ -67,7 +84,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
 	{
 		Node * node = attrs->item(i);
 		std::string name = node->nodeName();
-		if (name == "replace" || name == "remove" || name == "incl")
+		if (name == "replace" || name == "remove" || name == "incl" || name == "from_zk")
 			continue;
 		std::string value = node->nodeValue();
 		attrs_kv.push_back(std::make_pair(name, value));
@@ -91,7 +108,8 @@ static Node * getRootNode(Document * document)
 	for (size_t i = 0; i < children->length(); ++i)
 	{
 		Node * child = children->item(i);
-		/// Кроме корневого элемента на верхнем уровне могут быть комментарии. Пропустим их.
+		/// Besides the root element there can be comment nodes on the top level.
+		/// Skip them.
 		if (child->nodeType() == Node::ELEMENT_NODE)
 			return child;
 	}
@@ -104,7 +122,14 @@ static bool allWhitespace(const std::string & s)
 	return s.find_first_not_of(" \t\n\r") == std::string::npos;
 }
 
-void ConfigProcessor::mergeRecursive(DocumentPtr config, Node * config_root, Node * with_root)
+static std::string preprocessedConfigPath(const std::string & path)
+{
+	Poco::Path preprocessed_path(path);
+	preprocessed_path.setBaseName(preprocessed_path.getBaseName() + "-preprocessed");
+	return preprocessed_path.toString();
+}
+
+void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, Node * with_root)
 {
 	NodeListPtr with_nodes = with_root->childNodes();
 	using ElementsByIdentifier = std::multimap<ElementIdentifier, Node *>;
@@ -112,7 +137,7 @@ void ConfigProcessor::mergeRecursive(DocumentPtr config, Node * config_root, Nod
 	for (Node * node = config_root->firstChild(); node;)
 	{
 		Node * next_node = node->nextSibling();
-		/// Уберем исходный текст из объединяемой части.
+		/// Remove text from the original config node.
 		if (node->nodeType() == Node::TEXT_NODE && !allWhitespace(node->getNodeValue()))
 		{
 			config_root->removeChild(node);
@@ -137,7 +162,7 @@ void ConfigProcessor::mergeRecursive(DocumentPtr config, Node * config_root, Nod
 			bool replace = with_element->hasAttribute("replace");
 
 			if (remove && replace)
-				throw Poco::Exception("remove and replace attributes on the same element");
+				throw Poco::Exception("both remove and replace attributes set for element <" + with_node->nodeName() + ">");
 
 			ElementsByIdentifier::iterator it = config_element_by_id.find(getElementIdentifier(with_node));
 
@@ -171,7 +196,7 @@ void ConfigProcessor::mergeRecursive(DocumentPtr config, Node * config_root, Nod
 	}
 }
 
-void ConfigProcessor::merge(DocumentPtr config, DocumentPtr with)
+void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
 {
 	mergeRecursive(config, getRootNode(&*config), getRootNode(&*with));
 }
@@ -189,7 +214,12 @@ std::string ConfigProcessor::layerFromHost()
 	return layer;
 }
 
-void ConfigProcessor::doIncludesRecursive(DocumentPtr config, DocumentPtr include_from, Node * node)
+void ConfigProcessor::doIncludesRecursive(
+		XMLDocumentPtr config,
+		XMLDocumentPtr include_from,
+		Node * node,
+		zkutil::ZooKeeperNodeCache * zk_node_cache,
+		std::unordered_set<std::string> & contributing_zk_paths)
 {
 	if (node->nodeType() == Node::TEXT_NODE)
 	{
@@ -213,7 +243,8 @@ void ConfigProcessor::doIncludesRecursive(DocumentPtr config, DocumentPtr includ
 	if (node->nodeType() != Node::ELEMENT_NODE)
 		return;
 
-	/// Будем заменять <layer> на число из имени хоста, только если во входном файле есть тег <layer>, и он пустой, и у него нет атрибутов
+	/// Substitute <layer> for the number extracted from the hostname only if there is an
+	/// empty <layer> tag without attributes in the original file.
 	if ( node->nodeName() == "layer" &&
 		!node->hasAttributes() &&
 		!node->hasChildNodes() &&
@@ -226,60 +257,91 @@ void ConfigProcessor::doIncludesRecursive(DocumentPtr config, DocumentPtr includ
 
 	NamedNodeMapPtr attributes = node->attributes();
 	Node * incl_attribute = attributes->getNamedItem("incl");
+	Node * from_zk_attribute = attributes->getNamedItem("from_zk");
 
-	/// Заменять имеющееся значение, а не добавлять к нему.
+	if (incl_attribute && from_zk_attribute)
+		throw Poco::Exception("both incl and from_zk attributes set for element <" + node->nodeName() + ">");
+
+	/// Replace the original contents, not add to it.
 	bool replace = attributes->getNamedItem("replace");
 
-	if (incl_attribute)
+	auto process_include = [&](const Node * include_attr, const std::function<Node * (const std::string &)> & get_node, const char * error_msg)
 	{
-		std::string name = incl_attribute->getNodeValue();
-		Node * included_node = include_from ? include_from->getNodeByPath("yandex/" + name) : nullptr;
-		if (!included_node)
+		std::string name = include_attr->getNodeValue();
+		Node * node_to_include = get_node(name);
+		if (!node_to_include)
 		{
 			if (attributes->getNamedItem("optional"))
 				node->parentNode()->removeChild(node);
 			else if (throw_on_bad_incl)
-				throw Poco::Exception("Include not found: " + name);
+				throw Poco::Exception(error_msg + name);
 			else
-				LOG_WARNING(log, "Include not found: " << name);
+				LOG_WARNING(log, error_msg << name);
 		}
 		else
 		{
+			Element * element = dynamic_cast<Element *>(node);
+
+			element->removeAttribute("incl");
+			element->removeAttribute("from_zk");
+
 			if (replace)
+			{
 				while (Node * child = node->firstChild())
 					node->removeChild(child);
 
-			NodeListPtr children = included_node->childNodes();
+				element->removeAttribute("replace");
+			}
+
+			NodeListPtr children = node_to_include->childNodes();
 			for (size_t i = 0; i < children->length(); ++i)
 			{
 				NodePtr new_node = config->importNode(children->item(i), true);
 				node->appendChild(new_node);
 			}
 
-			Element * element = dynamic_cast<Element *>(node);
-			element->removeAttribute("incl");
-
-			if (replace)
-				element->removeAttribute("replace");
-
-			NamedNodeMapPtr from_attrs = included_node->attributes();
+			NamedNodeMapPtr from_attrs = node_to_include->attributes();
 			for (size_t i = 0; i < from_attrs->length(); ++i)
 			{
 				element->setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
 			}
+		}
+	};
+
+	auto get_incl_node = [&](const std::string & name)
+	{
+		return include_from ? include_from->getNodeByPath("yandex/" + name) : nullptr;
+	};
+	if (incl_attribute)
+		process_include(incl_attribute, get_incl_node, "Include not found: ");
+
+	if (from_zk_attribute)
+	{
+		contributing_zk_paths.insert(from_zk_attribute->getNodeValue());
+
+		if (zk_node_cache)
+		{
+			XMLDocumentPtr zk_document;
+			auto get_zk_node = [&](const std::string & name) -> Node *
+			{
+				std::experimental::optional<std::string> contents = zk_node_cache->get(name);
+				if (!contents)
+					return nullptr;
+
+				/// Enclose contents into a fake <from_zk> tag to allow pure text substitutions.
+				zk_document = dom_parser.parseString("<from_zk>" + contents.value() + "</from_zk>");
+				return getRootNode(zk_document.get());
+			};
+
+			process_include(from_zk_attribute, get_zk_node, "Could not get ZooKeeper node: ");
 		}
 	}
 
 	NodeListPtr children = node->childNodes();
 	for (size_t i = 0; i < children->length(); ++i)
 	{
-		doIncludesRecursive(config, include_from, children->item(i));
+		doIncludesRecursive(config, include_from, children->item(i), zk_node_cache, contributing_zk_paths);
 	}
-}
-
-void ConfigProcessor::doIncludes(DocumentPtr config, DocumentPtr include_from)
-{
-	doIncludesRecursive(config, include_from, getRootNode(&*config));
 }
 
 ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & config_path)
@@ -314,15 +376,12 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 	return res;
 }
 
-XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
+XMLDocumentPtr ConfigProcessor::processConfig(
+		const std::string & path_str,
+		bool * has_zk_includes,
+		zkutil::ZooKeeperNodeCache * zk_node_cache)
 {
-	/// We need larger name pool to allow to support vast amount of users in users.xml files for ClickHouse.
-	/// Size is prime because Poco::XML::NamePool uses bad (inefficient, low quality)
-	///  hash function internally, and its size was prime by default.
-	Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool(65521));
-	Poco::XML::DOMParser dom_parser(name_pool);
-
-	DocumentPtr config = dom_parser.parse(path_str);
+	XMLDocumentPtr config = dom_parser.parse(path_str);
 
 	std::vector<std::string> contributing_files;
 	contributing_files.push_back(path_str);
@@ -331,7 +390,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
 	{
 		try
 		{
-			DocumentPtr with = dom_parser.parse(merge_file);
+			XMLDocumentPtr with = dom_parser.parse(merge_file);
 			merge(config, with);
 			contributing_files.push_back(merge_file);
 		}
@@ -341,10 +400,11 @@ XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
 		}
 	}
 
+	std::unordered_set<std::string> contributing_zk_paths;
 	try
 	{
 		Node * node = config->getNodeByPath("yandex/include_from");
-		DocumentPtr include_from;
+		XMLDocumentPtr include_from;
 		std::string include_from_path;
 		if (node)
 		{
@@ -362,12 +422,15 @@ XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
 			include_from = dom_parser.parse(include_from_path);
 		}
 
-		doIncludes(config, include_from);
+		doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, contributing_zk_paths);
 	}
 	catch (Poco::Exception & e)
 	{
-		throw Poco::Exception("Failed to preprocess config: " + e.displayText());
+		throw Poco::Exception("Failed to preprocess config `" + path_str + "': " + e.displayText(), e);
 	}
+
+	if (has_zk_includes)
+		*has_zk_includes = !contributing_zk_paths.empty();
 
 	std::stringstream comment;
 	comment <<     " This file was generated automatically.\n";
@@ -377,7 +440,14 @@ XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
 	{
 		comment << "\n       " << path;
 	}
-	comment<<"      ";
+	if (zk_node_cache && !contributing_zk_paths.empty())
+	{
+		comment << "\n     ZooKeeper nodes used to generate this file:";
+		for (const std::string & path : contributing_zk_paths)
+			comment << "\n       " << path;
+	}
+
+	comment << "      ";
 	NodePtr new_node = config->createTextNode("\n\n");
 	config->insertBefore(new_node, config->firstChild());
 	new_node = config->createComment(comment.str());
@@ -386,20 +456,74 @@ XMLDocumentPtr ConfigProcessor::processConfig(const std::string & path_str)
 	return config;
 }
 
-ConfigurationPtr ConfigProcessor::loadConfig(const std::string & path)
+ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(const std::string & path, bool allow_zk_includes)
 {
-	DocumentPtr res = processConfig(path);
+	bool has_zk_includes;
+	XMLDocumentPtr config_xml = processConfig(path, &has_zk_includes);
 
-	Poco::Path preprocessed_path(path);
-	preprocessed_path.setBaseName(preprocessed_path.getBaseName() + "-preprocessed");
+	if (has_zk_includes && !allow_zk_includes)
+		throw Poco::Exception("Error while loading config `" + path + "': from_zk includes are not allowed!");
+
+	bool preprocessed_written = false;
+	if (!has_zk_includes)
+	{
+		savePreprocessedConfig(config_xml, preprocessedConfigPath(path));
+		preprocessed_written = true;
+	}
+
+	ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
+
+	return LoadedConfig{configuration, has_zk_includes, /* loaded_from_preprocessed = */ false, preprocessed_written};
+}
+
+ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
+		const std::string & path,
+		zkutil::ZooKeeperNodeCache & zk_node_cache,
+		bool fallback_to_preprocessed)
+{
+	std::string preprocessed_path = preprocessedConfigPath(path);
+
+	XMLDocumentPtr config_xml;
+	bool has_zk_includes;
+	bool processed_successfully = false;
 	try
 	{
-		DOMWriter().writeNode(preprocessed_path.toString(), res);
+		config_xml = processConfig(path, &has_zk_includes, &zk_node_cache);
+		processed_successfully = true;
+	}
+	catch (const Poco::Exception & ex)
+	{
+		if (!fallback_to_preprocessed)
+			throw;
+
+		const auto * zk_exception = dynamic_cast<const zkutil::KeeperException *>(ex.nested());
+		if (!zk_exception)
+			throw;
+
+		LOG_WARNING(
+				log,
+				"Error while processing from_zk config includes: " + zk_exception->message() +
+				". Config will be loaded from preprocessed file: " + preprocessed_path);
+
+		config_xml = dom_parser.parse(preprocessed_path);
+	}
+
+	if (processed_successfully)
+		savePreprocessedConfig(config_xml, preprocessed_path);
+
+	ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
+
+	return LoadedConfig{configuration, has_zk_includes, !processed_successfully, processed_successfully};
+}
+
+void ConfigProcessor::savePreprocessedConfig(const XMLDocumentPtr & config, const std::string & preprocessed_path)
+{
+	try
+	{
+		DOMWriter().writeNode(preprocessed_path, config);
 	}
 	catch (Poco::Exception & e)
 	{
-		LOG_WARNING(log, "Couldn't save preprocessed config to " << preprocessed_path.toString() << ": " << e.displayText());
+		LOG_WARNING(log, "Couldn't save preprocessed config to " << preprocessed_path << ": " << e.displayText());
 	}
-
-	return new Poco::Util::XMLConfiguration(res);
 }

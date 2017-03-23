@@ -10,10 +10,11 @@
 #include <DB/Common/RadixSort.h>
 #include <DB/Common/PODArray.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
 #include <DB/AggregateFunctions/QuantilesCommon.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 
 

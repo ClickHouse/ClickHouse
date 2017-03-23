@@ -61,7 +61,7 @@ StoragePtr TableFunctionShardByHash::execute(ASTPtr ast_function, Context & cont
 	remote_database = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 	remote_table = static_cast<const ASTLiteral &>(*args[3]).value.safeGet<String>();
 
-	/// Аналогично другим TableFunctions.
+	/// Similar to other TableFunctions.
 	for (auto & arg : args)
 		if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(arg.get()))
 			id->kind = ASTIdentifier::Table;

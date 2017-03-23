@@ -921,9 +921,9 @@ void ReshardingWorker::publishShardedPartitions()
 	using TaskInfoList = std::vector<TaskInfo>;
 	TaskInfoList task_info_list;
 
-	/// Копировать новые партиции на реплики соответствующих шардов.
+	/// Copy new partitions to the replicas of corresponding shards.
 
-	/// Количество участвующих локальных реплик. Должно быть <= 1.
+	/// Number of participating local replicas. It should be <= 1.
 	size_t local_count = 0;
 
 	for (const auto & entry : storage.data.per_shard_data_parts)
@@ -1036,7 +1036,7 @@ void ReshardingWorker::publishShardedPartitions()
 
 	if (local_count == 1)
 	{
-		/// На локальной реплике просто перемещаем шардированную паритцию в папку detached/.
+		/// On the local replica, simply move the sharded partition to the `detached/` folder.
 		const TaskInfo & entry = task_info_list[0];
 		const auto & part = entry.part;
 		size_t shard_no = entry.shard_no;

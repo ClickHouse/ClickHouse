@@ -131,7 +131,7 @@ void NullableAdapterBlockInputStream::buildActions(
 		else
 		{
 			throw Exception{String("Types must be the same for columns at same position. ")
-			    + "Column " + in_elem.name + " has type " + in_elem.type->getName()
+				+ "Column " + in_elem.name + " has type " + in_elem.type->getName()
 				+ ", but column " + out_elem.name + " has type " + out_elem.type->getName(),
 				ErrorCodes::TYPE_MISMATCH};
 		}

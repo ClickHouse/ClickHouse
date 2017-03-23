@@ -7,13 +7,13 @@
 #include <vector>
 #include <algorithm>
 
-/** Проверяем гипотезу, что пропуск ненужных кусков seek-ом вперед никогда не ухудшает общую скорость чтения.
-  * Перед измерениями желательно выбросить дисковый кэш: `echo 3 > /proc/sys/vm/drop_caches`.
+/** We test the hypothesis that skipping unnecessary parts of seek-forward never degrades overall read speed.
+  * Before the measurements, it is desirable to discard disk cache: `echo 3 > /proc/sys/vm/drop_caches`.
   *
-  * Результат: да, даже частые относительно короткие seek вперед ничего не ухудшают на всех опробованных параметрах:
-  * - 1MiB данных, 16 0 0 16 vs 16 16 32 16
-  * - 1GiB данных, 1048576 0 0 vs 1048576 512 1024 vs 1048576 1048576 1048576
-  * - 1GiB данных, 1024 0 0 vs 1024 512 1024
+  * Result: yes, even frequent relatively short seek forward does not worsen anything on all tested parameters
+  * - 1MiB of data, 16 0 0 16 vs 16 16 32 16
+  * - 1GiB of data, 1048576 0 0 vs 1048576 512 1024 vs 1048576 1048576 1048576
+  * - 1GiB of data, 1024 0 0 vs 1024 512 1024
   */
 
 int main(int argc, const char ** argv)

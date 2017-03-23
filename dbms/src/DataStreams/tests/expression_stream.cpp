@@ -11,7 +11,7 @@
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/parseQuery.h>

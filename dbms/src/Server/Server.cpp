@@ -13,9 +13,11 @@
 #include <common/ErrorHandlers.h>
 #include <ext/scope_guard.hpp>
 #include <zkutil/ZooKeeper.h>
+#include <zkutil/ZooKeeperNodeCache.h>
 #include <DB/Common/Macros.h>
 #include <DB/Common/StringUtils.h>
 #include <DB/Common/getFQDNOrHostName.h>
+#include <DB/Common/getMultipleKeysFromConfig.h>
 #include <DB/Databases/DatabaseOrdinary.h>
 #include <DB/IO/HTTPCommon.h>
 #include <DB/Interpreters/AsynchronousMetrics.h>
@@ -23,26 +25,7 @@
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/MergeTree/ReshardingWorker.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
-#include <DB/Storages/System/StorageSystemBuildOptions.h>
-#include <DB/Storages/System/StorageSystemClusters.h>
-#include <DB/Storages/System/StorageSystemColumns.h>
-#include <DB/Storages/System/StorageSystemDatabases.h>
-#include <DB/Storages/System/StorageSystemDictionaries.h>
-#include <DB/Storages/System/StorageSystemEvents.h>
-#include <DB/Storages/System/StorageSystemFunctions.h>
-#include <DB/Storages/System/StorageSystemGraphite.h>
-#include <DB/Storages/System/StorageSystemMerges.h>
-#include <DB/Storages/System/StorageSystemMetrics.h>
-#include <DB/Storages/System/StorageSystemNumbers.h>
-#include <DB/Storages/System/StorageSystemOne.h>
-#include <DB/Storages/System/StorageSystemParts.h>
-#include <DB/Storages/System/StorageSystemProcesses.h>
-#include <DB/Storages/System/StorageSystemReplicas.h>
-#include <DB/Storages/System/StorageSystemReplicationQueue.h>
-#include <DB/Storages/System/StorageSystemSettings.h>
-#include <DB/Storages/System/StorageSystemTables.h>
-#include <DB/Storages/System/StorageSystemZooKeeper.h>
+#include <DB/Storages/System/attachSystemTables.h>
 #include "ConfigReloader.h"
 #include "HTTPHandler.h"
 #include "InterserverIOHTTPHandler.h"
@@ -50,6 +33,7 @@
 #include "ReplicasStatusHandler.h"
 #include "StatusFile.h"
 #include "TCPHandler.h"
+
 
 namespace DB
 {
@@ -228,6 +212,23 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->setGlobalContext(*global_context);
 	global_context->setApplicationType(Context::ApplicationType::SERVER);
 
+	bool has_zookeeper = false;
+	if (config().has("zookeeper"))
+	{
+		global_context->setZooKeeper(std::make_shared<zkutil::ZooKeeper>(config(), "zookeeper"));
+		has_zookeeper = true;
+	}
+
+	zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
+	if (loaded_config.has_zk_includes)
+	{
+		auto old_configuration = loaded_config.configuration;
+		loaded_config = ConfigProcessor().loadConfigWithZooKeeperIncludes(
+			config_path, main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
+		config().removeConfiguration(old_configuration.get());
+		config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+	}
+
 	std::string path = getCanonicalPath(config().getString("path"));
 	std::string default_database = config().getString("default_database", "default");
 
@@ -270,7 +271,7 @@ int Server::main(const std::vector<std::string> & args)
 	/// Initialize DateLUT early, to not interfere with running time of first query.
 	LOG_DEBUG(log, "Initializing DateLUT.");
 	DateLUT::instance();
-	LOG_TRACE(log, "Initialized DateLUT.");
+	LOG_TRACE(log, "Initialized DateLUT with time zone `" << DateLUT::instance().getTimeZone() << "'.");
 
 	/// Directory with temporary data for processing of hard queries.
 	{
@@ -297,13 +298,6 @@ int Server::main(const std::vector<std::string> & args)
 	Poco::File(path + "flags/").createDirectories();
 	global_context->setFlagsPath(path + "flags/");
 
-	bool has_zookeeper = false;
-	if (config().has("zookeeper"))
-	{
-		global_context->setZooKeeper(std::make_shared<zkutil::ZooKeeper>(config(), "zookeeper"));
-		has_zookeeper = true;
-	}
-
 	if (config().has("interserver_http_port"))
 	{
 		String this_host = config().getString("interserver_http_host", "");
@@ -328,11 +322,29 @@ int Server::main(const std::vector<std::string> & args)
 	if (config().has("macros"))
 		global_context->setMacros(Macros(config(), "macros"));
 
-	/// Initialize automatic config updater
-	std::string main_config_path = config().getString("config-file", "config.xml");
-	std::string users_config_path = config().getString("users_config", main_config_path);
+	/// Initialize main config reloader.
 	std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
-	auto config_reloader = std::make_unique<ConfigReloader>(main_config_path, users_config_path, include_from_path, global_context.get());
+	auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
+		include_from_path,
+		std::move(main_config_zk_node_cache),
+		[&](ConfigurationPtr config) { global_context->setClustersConfig(config); },
+		/* already_loaded = */ true);
+
+	/// Initialize users config reloader.
+	std::string users_config_path = config().getString("users_config", config_path);
+	/// If path to users' config isn't absolute, try guess its root (current) dir.
+	/// At first, try to find it in dir of main config, after will use current dir.
+	if (users_config_path.empty() || users_config_path[0] != '/')
+	{
+		std::string config_dir = Poco::Path(config_path).parent().toString();
+		if (Poco::File(config_dir + users_config_path).exists())
+			users_config_path = config_dir + users_config_path;
+	}
+	auto users_config_reloader = std::make_unique<ConfigReloader>(users_config_path,
+		include_from_path,
+		zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
+		[&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
+		/* already_loaded = */ false);
 
 	/// Limit on total number of coucurrently executed queries.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -353,7 +365,9 @@ int Server::main(const std::vector<std::string> & args)
 
 	/// Load global settings from default profile.
 	Settings & settings = global_context->getSettingsRef();
-	global_context->setSetting("profile", config().getString("default_profile", "default"));
+	String default_profile_name = config().getString("default_profile", "default");
+	global_context->setDefaultProfileName(default_profile_name);
+	global_context->setSetting("profile", default_profile_name);
 
 	LOG_INFO(log, "Loading metadata.");
 	loadMetadata(*global_context);
@@ -376,28 +390,7 @@ int Server::main(const std::vector<std::string> & args)
 
 	DatabasePtr system_database = global_context->getDatabase("system");
 
-	system_database->attachTable("one", StorageSystemOne::create("one"));
-	system_database->attachTable("numbers", StorageSystemNumbers::create("numbers"));
-	system_database->attachTable("numbers_mt", StorageSystemNumbers::create("numbers_mt", true));
-	system_database->attachTable("tables", StorageSystemTables::create("tables"));
-	system_database->attachTable("parts", StorageSystemParts::create("parts"));
-	system_database->attachTable("databases", StorageSystemDatabases::create("databases"));
-	system_database->attachTable("processes", StorageSystemProcesses::create("processes"));
-	system_database->attachTable("settings", StorageSystemSettings::create("settings"));
-	system_database->attachTable("events", StorageSystemEvents::create("events"));
-	system_database->attachTable("metrics", StorageSystemMetrics::create("metrics"));
-	system_database->attachTable("merges", StorageSystemMerges::create("merges"));
-	system_database->attachTable("replicas", StorageSystemReplicas::create("replicas"));
-	system_database->attachTable("replication_queue", StorageSystemReplicationQueue::create("replication_queue"));
-	system_database->attachTable("dictionaries", StorageSystemDictionaries::create("dictionaries"));
-	system_database->attachTable("columns", StorageSystemColumns::create("columns"));
-	system_database->attachTable("functions", StorageSystemFunctions::create("functions"));
-	system_database->attachTable("clusters", StorageSystemClusters::create("clusters", *global_context));
-	system_database->attachTable("build_options", StorageSystemBuildOptions::create("build_options"));
-	system_database->attachTable("graphite_retentions", StorageSystemGraphite::create("graphite_retentions"));
-
-	if (has_zookeeper)
-		system_database->attachTable("zookeeper", StorageSystemZooKeeper::create("zookeeper"));
+	attachSystemTablesServer(system_database, global_context.get(), has_zookeeper);
 
 	bool has_resharding_worker = false;
 	if (has_zookeeper && config().has("resharding"))
@@ -437,12 +430,8 @@ int Server::main(const std::vector<std::string> & args)
 		std::vector<std::unique_ptr<Poco::Net::TCPServer>> servers;
 
 		std::vector<std::string> listen_hosts;
-		Poco::Util::AbstractConfiguration::Keys config_keys;
-		config().keys("", config_keys);
-		for (const auto & key : config_keys)
+		for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "listen_host"))
 		{
-			if (!startsWith(key.data(), "listen_host"))
-				continue;
 			listen_hosts.emplace_back(config().getString(key));
 		}
 
@@ -575,7 +564,8 @@ int Server::main(const std::vector<std::string> & args)
 
 			LOG_DEBUG(log, "Closed all connections.");
 
-			config_reloader.reset();
+			main_config_reloader.reset();
+			users_config_reloader.reset();
 		});
 
 		/// try to load dictionaries immediately, throw on error and die
@@ -596,11 +586,14 @@ int Server::main(const std::vector<std::string> & args)
 		/// This object will periodically calculate some metrics.
 		AsynchronousMetrics async_metrics(*global_context);
 
-		system_database->attachTable(
-			"asynchronous_metrics", StorageSystemAsynchronousMetrics::create("asynchronous_metrics", async_metrics));
+		attachSystemTablesAsync(system_database, async_metrics);
 
-		const auto metrics_transmitter
-			= config().getBool("use_graphite", true) ? std::make_unique<MetricsTransmitter>(async_metrics) : nullptr;
+		std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
+		for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
+		{
+			metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(async_metrics, graphite_key));
+		}
+
 
 		waitForTerminationRequest();
 	}

@@ -1,12 +1,15 @@
 #pragma once
 
 #include <DB/IO/ReadBufferFromString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnArray.h>
@@ -598,7 +601,7 @@ public:
 
 		if (const auto col_in = typeid_cast<const ColumnString *>(column.get()))
 		{
-		    const auto col_res = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
+			const auto col_res = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
 			block.safeGetByPosition(result).column = col_res;
 
 			auto & vec_res = col_res->getChars();
@@ -1680,7 +1683,7 @@ public:
 			}
 
 			out_column = std::make_shared<ColumnConstArray>(
-				col_from->size(), res, std::make_shared<DataTypeArray>(std::make_shared<typename DataTypeFromFieldType<T>::Type>()));
+				col_from->size(), res, std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>()));
 
 			return true;
 		}

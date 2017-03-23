@@ -271,7 +271,7 @@ main()
 
 status()
 {
-	if [ $(running_processes) -eq 1 ]; then
+	if is_running; then
 		echo "$PROGRAM service is running"
 	else
 		if is_cron_disabled; then

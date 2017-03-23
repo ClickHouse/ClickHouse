@@ -2,9 +2,10 @@
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Parsers/queryToString.h>
@@ -54,13 +55,13 @@ BlockInputStreams StorageSystemColumns::read(
 	{
 		Databases databases = context.getDatabases();
 
-		/// Добавляем столбец database.
+		/// Add `database` column.
 		ColumnPtr database_column = std::make_shared<ColumnString>();
 		for (const auto & database : databases)
 			database_column->insert(database.first);
 		block.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
 
-		/// Отфильтруем блок со столбцом database.
+		/// Filter block with `database` column.
 		VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 
 		if (!block.rows())
@@ -69,7 +70,7 @@ BlockInputStreams StorageSystemColumns::read(
 		database_column = block.getByName("database").column;
 		size_t rows = database_column->size();
 
-		/// Добавляем столбец table.
+		/// Add `table` column.
 		ColumnPtr table_column = std::make_shared<ColumnString>();
 		IColumn::Offsets_t offsets(rows);
 		for (size_t i = 0; i < rows; ++i)
@@ -98,7 +99,7 @@ BlockInputStreams StorageSystemColumns::read(
 		block.insert(ColumnWithTypeAndName(table_column, std::make_shared<DataTypeString>(), "table"));
 	}
 
-	/// Отфильтруем блок со столбцами database и table.
+	/// Filter block with `database` and `table` columns.
 	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 
 	if (!block.rows())
@@ -107,7 +108,7 @@ BlockInputStreams StorageSystemColumns::read(
 	ColumnPtr filtered_database_column = block.getByName("database").column;
 	ColumnPtr filtered_table_column = block.getByName("table").column;
 
-	/// Составляем результат.
+	/// We compose the result.
 	ColumnPtr database_column = std::make_shared<ColumnString>();
 	ColumnPtr table_column = std::make_shared<ColumnString>();
 	ColumnPtr name_column = std::make_shared<ColumnString>();

@@ -50,20 +50,20 @@ StorageMaterializedView::StorageMaterializedView(
 
 	auto inner_table_name = getInnerTableName();
 
-	/// Если запрос ATTACH, то к этому моменту внутренняя таблица уже должна быть подключена.
+	/// If there is an ATTACH request, then the internal table must already be connected.
 	if (!attach_)
 	{
-		/// Составим запрос для создания внутреннего хранилища.
+		/// We will create a query to create an internal repository.
 		auto manual_create_query = std::make_shared<ASTCreateQuery>();
 		manual_create_query->database = database_name;
 		manual_create_query->table = inner_table_name;
 		manual_create_query->columns = create.columns;
 		manual_create_query->children.push_back(manual_create_query->columns);
 
-		/// Если не указан в запросе тип хранилища попробовать извлечь его из запроса Select.
+		/// If you do not specify a storage type in the query, try retrieving it from SELECT query.
 		if (!create.inner_storage)
 		{
-			/// TODO так же попытаться извлечь params для создания хранилища
+			/// TODO also try to extract `params` to create a repository
 			auto func = std::make_shared<ASTFunction>();
 			func->name = context.getTable(select_database_name, select_table_name)->getName();
 			manual_create_query->storage = func;
@@ -134,7 +134,7 @@ void StorageMaterializedView::drop()
 
 	if (context.tryGetTable(database_name, inner_table_name))
 	{
-		/// Состваляем и выполняем запрос drop для внутреннего хранилища.
+		/// We create and execute `drop` query for internal repository.
 		auto drop_query = std::make_shared<ASTDropQuery>();
 		drop_query->database = database_name;
 		drop_query->table = inner_table_name;
@@ -147,6 +147,11 @@ void StorageMaterializedView::drop()
 bool StorageMaterializedView::optimize(const String & partition, bool final, const Settings & settings)
 {
 	return getInnerTable()->optimize(partition, final, settings);
+}
+
+StoragePtr StorageMaterializedView::getInnerTable() const
+{
+	return context.getTable(database_name, getInnerTableName());
 }
 
 

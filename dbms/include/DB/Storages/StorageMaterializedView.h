@@ -26,7 +26,7 @@ public:
 
 	std::string getName() const override { return "MaterializedView"; }
 	std::string getInnerTableName() const { return  ".inner." + table_name; }
-	StoragePtr getInnerTable() const { return context.getTable(database_name, getInnerTableName()); }
+	StoragePtr getInnerTable() const;
 
 	NameAndTypePair getColumn(const String & column_name) const override;
 	bool hasColumn(const String & column_name) const override;

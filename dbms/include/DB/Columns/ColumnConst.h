@@ -200,7 +200,7 @@ public:
 				: 1);
 	}
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
+	void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override
 	{
 		res.resize(s);
 		for (size_t i = 0; i < s; ++i)

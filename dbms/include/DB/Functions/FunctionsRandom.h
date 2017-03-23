@@ -1,7 +1,10 @@
 #pragma once
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/Columns/ColumnVector.h>
+#include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/IO/WriteHelpers.h>
 #include <DB/Common/HashTable/Hash.h>
 #include <DB/Common/randomSeed.h>
 
@@ -168,7 +171,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0 or 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ReturnType>::Type>();
+		return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
 	}
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -214,7 +217,7 @@ public:
 				+ toString(arguments.size()) + ", should be 0 or 1.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ReturnType>::Type>();
+		return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
 	}
 
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override

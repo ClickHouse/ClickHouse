@@ -106,9 +106,10 @@ struct ContextShared
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
 	FormatFactory format_factory;							/// Форматы.
-	mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;	/// Словари Метрики. Инициализируются лениво.
+	mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;	/// Metrica's dictionaeis. Have lazy initialization.
 	mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
-	Users users;											/// Известные пользователи.
+	String default_profile_name;							/// Default profile name used for default values.
+	Users users;											/// Known users.
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
 	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
 	mutable MarkCachePtr mark_cache;						/// Кэш засечек в сжатых файлах.
@@ -122,7 +123,7 @@ struct ContextShared
 	Macros macros;											/// Substitutions extracted from config.
 	std::unique_ptr<Compiler> compiler;						/// Used for dynamic compilation of queries' parts if it necessary.
 	std::unique_ptr<QueryLog> query_log;					/// Used to log queries.
-	std::unique_ptr<PartLog> part_log;						/// Used to log operations with parts
+	std::shared_ptr<PartLog> part_log;						/// Used to log operations with parts
 	/// Правила для выбора метода сжатия в зависимости от размера куска.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
 	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Settings of MergeTree* engines.
@@ -348,7 +349,12 @@ void Context::setUser(const String & name, const String & password, const Poco::
 	auto lock = getLock();
 
 	const User & user_props = shared->users.get(name, password, address.host());
-	setSetting("profile", user_props.profile);
+
+	/// Firstly set default settings from default profile
+	auto default_profile_name = getDefaultProfileName();
+	if (user_props.profile != default_profile_name)
+		settings.setProfile(default_profile_name, *shared->users_config);
+	settings.setProfile(user_props.profile, *shared->users_config);
 	setQuota(user_props.quota, quota_key, name, address.host());
 
 	client_info.current_user = name;
@@ -1064,7 +1070,7 @@ QueryLog & Context::getQueryLog()
 }
 
 
-PartLog * Context::getPartLog()
+std::shared_ptr<PartLog> Context::getPartLog()
 {
 	auto lock = getLock();
 
@@ -1088,7 +1094,7 @@ PartLog * Context::getPartLog()
 			*global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
 	}
 
-	return shared->part_log.get();
+	return shared->part_log;
 }
 
 
@@ -1208,6 +1214,17 @@ void Context::setApplicationType(ApplicationType type)
 {
 	/// Lock isn't required, you should set it at start
 	shared->application_type = type;
+}
+
+
+String Context::getDefaultProfileName() const
+{
+	return shared->default_profile_name;
+}
+
+void Context::setDefaultProfileName(const String & name)
+{
+	shared->default_profile_name = name;
 }
 
 

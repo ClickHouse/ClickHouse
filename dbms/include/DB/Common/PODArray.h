@@ -216,7 +216,7 @@ public:
 		if (n > old_size)
 		{
 			reserve(n);
-			memset(c_end, 0, n - old_size);
+			memset(c_end, 0, byte_size(n - old_size));
 		}
 		c_end = c_start + byte_size(n);
 	}

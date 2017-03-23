@@ -155,7 +155,7 @@ void MergeTreeData::initPrimaryKey()
 	for (const ASTPtr & ast : primary_expr_ast->children)
 	{
 		String name = ast->getColumnName();
-		sort_descr.emplace_back(name, 1);
+		sort_descr.emplace_back(name, 1, 1);
 	}
 
 	primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(false);
@@ -264,7 +264,7 @@ String MergeTreeData::MergingParams::getModeName() const
 		case Graphite: 		return "Graphite";
 
 		default:
-			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(mode), ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(mode), ErrorCodes::LOGICAL_ERROR);
 	}
 }
 

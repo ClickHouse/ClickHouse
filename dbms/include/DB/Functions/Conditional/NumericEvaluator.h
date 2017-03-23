@@ -5,9 +5,11 @@
 #include <DB/Functions/Conditional/NullMapBuilder.h>
 #include <DB/Functions/Conditional/CondSource.h>
 #include <DB/Functions/NumberTraits.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/IO/WriteHelpers.h>
+
 
 namespace DB
 {

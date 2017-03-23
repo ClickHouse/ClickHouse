@@ -5,8 +5,11 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/Functions/IFunction.h>
-#include <DB/Functions/FunctionsStringSearch.h>
+#include <DB/Functions/Regexps.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB

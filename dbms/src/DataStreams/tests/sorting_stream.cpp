@@ -5,7 +5,7 @@
 
 #include <DB/Storages/StorageLog.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
@@ -17,7 +17,7 @@
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/parseQuery.h>
@@ -136,10 +136,10 @@ try
 	}
 
 	SortDescription sort_columns;
-	sort_columns.push_back(SortColumnDescription(1, -1));
-	sort_columns.push_back(SortColumnDescription(2, 1));
-	sort_columns.push_back(SortColumnDescription(0, 1));
-	sort_columns.push_back(SortColumnDescription(3, 1));
+	sort_columns.push_back(SortColumnDescription(1, -1, -1));
+	sort_columns.push_back(SortColumnDescription(2, 1, 1));
+	sort_columns.push_back(SortColumnDescription(0, 1, 1));
+	sort_columns.push_back(SortColumnDescription(3, 1, 1));
 
 	QueryProcessingStage::Enum stage;
 

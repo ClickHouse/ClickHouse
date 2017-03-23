@@ -7,7 +7,7 @@
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/Operators.h>
 

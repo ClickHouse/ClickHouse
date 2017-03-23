@@ -47,7 +47,7 @@ struct ReplicatedMergeTreeLogEntryData
 			case ReplicatedMergeTreeLogEntryData::DROP_RANGE: 	return "DROP_RANGE";
 			case ReplicatedMergeTreeLogEntryData::ATTACH_PART: 	return "ATTACH_PART";
 			default:
-				throw Exception("Unknown log entry type: " + DB::toString(type), ErrorCodes::LOGICAL_ERROR);
+				throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
 		}
 	}
 

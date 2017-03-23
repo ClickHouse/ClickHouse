@@ -1,6 +1,8 @@
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Common/Stopwatch.h>
+#include <DB/IO/WriteHelpers.h>
 #include <iomanip>
 
 

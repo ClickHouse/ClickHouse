@@ -3,7 +3,7 @@
 
 #include <DB/DataStreams/verbosePrintString.h>
 #include <DB/DataStreams/CSVRowInputStream.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 
 namespace DB
@@ -330,6 +330,17 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
 void CSVRowInputStream::syncAfterError()
 {
 	skipToNextLineOrEOF(istr);
+}
+
+void CSVRowInputStream::updateDiagnosticInfo()
+{
+	++row_num;
+
+	bytes_read_at_start_of_buffer_on_prev_row = bytes_read_at_start_of_buffer_on_current_row;
+	bytes_read_at_start_of_buffer_on_current_row = istr.count() - istr.offset();
+
+	pos_of_prev_row = pos_of_current_row;
+	pos_of_current_row = istr.position();
 }
 
 }

@@ -2,7 +2,10 @@
 #include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/parseQuery.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/Core/Block.h>
+#include <DB/Core/NamesAndTypes.h>
+
 
 using namespace DB;
 
@@ -30,7 +33,7 @@ int main(int argc, const char ** argv)
 	NamesAndTypesList columns{{"key", std::make_shared<DataTypeUInt64>()}};
 	Block sample_block{{DataTypeUInt64{}.createColumn(), std::make_shared<DataTypeUInt64>(), "key"}};
 	SortDescription sort_descr;
-	sort_descr.push_back(SortColumnDescription("key", 1));
+	sort_descr.push_back(SortColumnDescription("key", 1, 1));
 
 	cond = std::make_unique<PKCondition>(ast, context, columns, sort_descr, sample_block);
 	std::cout << "condition: " << cond->toString() << std::endl;

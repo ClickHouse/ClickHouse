@@ -15,6 +15,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TOO_LARGE_STRING_SIZE;
+	extern const int LOGICAL_ERROR;
+	extern const int NOT_IMPLEMENTED;
+}
+
+
 template <>
 ColumnPtr ColumnConst<Null>::convertToFullColumn() const
 {

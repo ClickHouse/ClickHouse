@@ -240,7 +240,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 			case '+':
 				break;
 			case '-':
-			    if (std::is_signed<T>::value)
+				if (std::is_signed<T>::value)
 					negative = true;
 				else
 					return ReturnType(false);
@@ -648,73 +648,38 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 
 
 /// Generic methods to read value in native binary format.
-inline void readBinary(UInt8 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(UInt16 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(UInt32 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(UInt64 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
-#ifdef __APPLE__
-/**
- * On Linux x86_64 'int64_t' maps to "long", but on Apple x86_64 it maps to 'long long'
- * But on both platforms Int64 maps to 'long'. This is two different types
- * with the same size==8, so we need extra functions here
- */
-inline void readBinary(uint64_t & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(int64_t & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
-#endif
-inline void readBinary(Int8 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Int16 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Int32 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Int64 & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Float32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Float64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(String & x, 	ReadBuffer & buf) { readStringBinary(x, buf); }
-inline void readBinary(bool & x, 	ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(uint128 & x,	ReadBuffer & buf) { readPODBinary(x, buf); }
+template <typename T>
+inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
-inline void readBinary(VisitID_t & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(String & x, 	ReadBuffer & buf) { readStringBinary(x, buf); }
+inline void readBinary(uint128 & x,	ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(LocalDate & x, 	ReadBuffer & buf) 	{ readPODBinary(x, buf); }
 inline void readBinary(LocalDateTime & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 
 /// Generic methods to read value in text tab-separated format.
-inline void readText(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readText(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readText(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readText(UInt64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-#ifdef __APPLE__
-inline void readText(uint64_t & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readText(int64_t & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-#endif
-inline void readText(Int8 & x, 		ReadBuffer & buf) { readIntText(x, buf); }
-inline void readText(Int16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readText(Int32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readText(Int64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readText(Float32 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
-inline void readText(Float64 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
-inline void readText(String & x, 	ReadBuffer & buf) { readEscapedString(x, buf); }
-inline void readText(bool & x, 		ReadBuffer & buf) { readBoolText(x, buf); }
+template <typename T>
+inline typename std::enable_if<std::is_integral<T>::value, void>::type
+readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
-inline void readText(VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
+template <typename T>
+inline typename std::enable_if<std::is_floating_point<T>::value, void>::type
+readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
+
+inline void readText(bool & x, 		ReadBuffer & buf) { readBoolText(x, buf); }
+inline void readText(String & x, 	ReadBuffer & buf) { readEscapedString(x, buf); }
 inline void readText(LocalDate & x, 	ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 
 
 /// Generic methods to read value in text format,
 ///  possibly in single quotes (only for data types that use quotes in VALUES format of INSERT statement in SQL).
-inline void readQuoted(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readQuoted(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readQuoted(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readQuoted(UInt64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readQuoted(Int8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readQuoted(Int16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readQuoted(Int32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readQuoted(Int64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readQuoted(Float32 & x, ReadBuffer & buf) { readFloatText(x, buf); }
-inline void readQuoted(Float64 & x, ReadBuffer & buf) { readFloatText(x, buf); }
-inline void readQuoted(String & x, 	ReadBuffer & buf) { readQuotedString(x, buf); }
-inline void readQuoted(bool & x, 	ReadBuffer & buf) { readBoolText(x, buf); }
+template <typename T>
+inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
-inline void readQuoted(VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
+inline void readQuoted(String & x, 	ReadBuffer & buf) { readQuotedString(x, buf); }
 
 inline void readQuoted(LocalDate & x, ReadBuffer & buf)
 {
@@ -732,20 +697,11 @@ inline void readQuoted(LocalDateTime & x, ReadBuffer & buf)
 
 
 /// Same as above, but in double quotes.
-inline void readDoubleQuoted(UInt8 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readDoubleQuoted(UInt16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readDoubleQuoted(UInt32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readDoubleQuoted(UInt64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readDoubleQuoted(Int8 & x, 		ReadBuffer & buf) { readIntText(x, buf); }
-inline void readDoubleQuoted(Int16 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readDoubleQuoted(Int32 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readDoubleQuoted(Int64 & x, 	ReadBuffer & buf) { readIntText(x, buf); }
-inline void readDoubleQuoted(Float32 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
-inline void readDoubleQuoted(Float64 & x, 	ReadBuffer & buf) { readFloatText(x, buf); }
-inline void readDoubleQuoted(String & x, 	ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
-inline void readDoubleQuoted(bool & x, 		ReadBuffer & buf) { readBoolText(x, buf); }
+template <typename T>
+inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
-inline void readDoubleQuoted(VisitID_t & x, ReadBuffer & buf) { readIntText(x, buf); }
+inline void readDoubleQuoted(String & x, 	ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
 
 inline void readDoubleQuoted(LocalDate & x, ReadBuffer & buf)
 {
@@ -780,19 +736,11 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
 		assertChar(maybe_quote, buf);
 }
 
-inline void readCSV(UInt8 & x, 		ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(UInt16 & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(UInt32 & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(UInt64 & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(Int8 & x, 		ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(Int16 & x, 		ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(Int32 & x, 		ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(Int64 & x, 		ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(Float32 & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(Float64 & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
+template <typename T>
+inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+
 inline void readCSV(String & x, ReadBuffer & buf, const char delimiter = ',') { readCSVString(x, buf, delimiter); }
-inline void readCSV(bool & x, 		ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(VisitID_t & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDate & x, 	ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 

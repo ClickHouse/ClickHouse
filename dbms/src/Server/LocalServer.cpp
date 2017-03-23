@@ -1,42 +1,25 @@
 #include "LocalServer.h"
+
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Util/OptionCallback.h>
 #include <Poco/String.h>
-
 #include <DB/Databases/DatabaseOrdinary.h>
-
-#include <DB/Storages/System/StorageSystemNumbers.h>
-#include <DB/Storages/System/StorageSystemTables.h>
-#include <DB/Storages/System/StorageSystemDatabases.h>
-#include <DB/Storages/System/StorageSystemProcesses.h>
-#include <DB/Storages/System/StorageSystemEvents.h>
-#include <DB/Storages/System/StorageSystemOne.h>
-#include <DB/Storages/System/StorageSystemSettings.h>
-#include <DB/Storages/System/StorageSystemDictionaries.h>
-#include <DB/Storages/System/StorageSystemColumns.h>
-#include <DB/Storages/System/StorageSystemFunctions.h>
-#include <DB/Storages/System/StorageSystemBuildOptions.h>
-
+#include <DB/Storages/System/attachSystemTables.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/loadMetadata.h>
-
 #include <DB/Common/Exception.h>
 #include <DB/Common/Macros.h>
 #include <DB/Common/ConfigProcessor.h>
 #include <DB/Common/escapeForFileName.h>
-
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
-
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/IAST.h>
-
 #include <common/ErrorHandlers.h>
 #include <common/ApplicationServerExt.h>
-
 #include "StatusFile.h"
 
 
@@ -103,7 +86,7 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 		Poco::Util::Option("input-format", "if", "Input format of intial table data")
 			.required(false)
 			.repeatable(false)
-			.argument("[TabSeparated]")
+			.argument("[TSV]")
 			.binding("table-data-format"));
 
 	/// List of queries to execute
@@ -119,7 +102,7 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 		Poco::Util::Option("output-format", "of", "Default output format")
 			.required(false)
 			.repeatable(false)
-			.argument("[TabSeparated]", true)
+			.argument("[TSV]", true)
 			.binding("output-format"));
 
 	/// Alias for previous one, required for clickhouse-client compability
@@ -127,7 +110,7 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 		Poco::Util::Option("format", "", "Default ouput format")
 			.required(false)
 			.repeatable(false)
-			.argument("[TabSeparated]", true)
+			.argument("[TSV]", true)
 			.binding("format"));
 
 	_options.addOption(
@@ -176,7 +159,7 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 
 void LocalServer::applyOptions()
 {
-	context->setDefaultFormat(config().getString("output-format", config().getString("format", "TabSeparated")));
+	context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
 
 	/// settings and limits could be specified in config file, but passed settings has higher priority
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
@@ -204,7 +187,7 @@ void LocalServer::displayHelp()
 		"After you can execute your SQL queries in the usual manner.\n"
 		"There are two ways to define initial table keeping your data:\n"
 		"either just in first query like this:\n"
-		"	CREATE TABLE <table> (<structure>) ENGINE = File(<format>, <file>);\n"
+		"	CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);\n"
 		"either through corresponding command line parameters."
 	);
 	helpFormatter.setWidth(132); /// 80 is ugly due to wide settings params
@@ -260,7 +243,9 @@ try
 	/// Load config files if exists
 	if (config().has("config-file") || Poco::File("config.xml").exists())
 	{
-		ConfigurationPtr processed_config = ConfigProcessor(false, true).loadConfig(config().getString("config-file", "config.xml"));
+		ConfigurationPtr processed_config = ConfigProcessor(false, true)
+			.loadConfig(config().getString("config-file", "config.xml"))
+			.configuration;
 		config().add(processed_config.duplicate(), PRIO_DEFAULT, false);
 	}
 
@@ -303,7 +288,9 @@ try
 		context->setMarkCache(mark_cache_size);
 
 	/// Load global settings from default profile.
-	context->setSetting("profile", config().getString("default_profile", "default"));
+	String default_profile_name = config().getString("default_profile", "default");
+	context->setDefaultProfileName(default_profile_name);
+	context->setSetting("profile", default_profile_name);
 
 	/** Init dummy default DB
 	  * NOTE: We force using isolated default database to avoid conflicts with default database from server enviroment
@@ -368,7 +355,7 @@ std::string LocalServer::getInitialCreateTableQuery()
 
 	auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
 	auto table_structure = config().getString("table-structure");
-	auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TabSeparated"));
+	auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TSV"));
 	String table_file;
 	if (!config().has("table-file") || config().getString("table-file") == "-") /// Use Unix tools stdin naming convention
 		table_file = "stdin";
@@ -394,16 +381,7 @@ void LocalServer::attachSystemTables()
 		context->addDatabase("system", system_database);
 	}
 
-	system_database->attachTable("one", 	StorageSystemOne::create("one"));
-	system_database->attachTable("numbers", StorageSystemNumbers::create("numbers"));
-	system_database->attachTable("numbers_mt", StorageSystemNumbers::create("numbers_mt", true));
-	system_database->attachTable("databases", 	StorageSystemDatabases::create("databases"));
-	system_database->attachTable("tables", 		StorageSystemTables::create("tables"));
-	system_database->attachTable("columns",   	StorageSystemColumns::create("columns"));
-	system_database->attachTable("functions", 	StorageSystemFunctions::create("functions"));
-	system_database->attachTable("events", 		StorageSystemEvents::create("events"));
-	system_database->attachTable("settings", 	StorageSystemSettings::create("settings"));
-	system_database->attachTable("build_options", 	StorageSystemBuildOptions::create("build_options"));
+	attachSystemTablesLocal(system_database);
 }
 
 
@@ -464,7 +442,7 @@ void LocalServer::setupUsers()
 	if (config().has("users_config") || config().has("config-file") || Poco::File("config.xml").exists())
 	{
 		auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-		users_config = ConfigProcessor().loadConfig(users_config_path);
+		users_config = ConfigProcessor().loadConfig(users_config_path).configuration;
 	}
 	else
 	{

@@ -2,13 +2,16 @@
 
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Parsers/CommonParsers.h>
 #include <ext/range.hpp>
 #include <boost/range/iterator_range_core.hpp>
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Common/PODArray.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
 #include <bitset>
 #include <stack>
 
