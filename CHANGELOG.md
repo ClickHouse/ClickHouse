@@ -3,6 +3,7 @@
 [Full Changelog](https://github.com/yandex/Clickhouse/compare/v1.1.54188-stable...v1.1.54189-testing)
 
 - Config: Allow define several graphite blocks, graphite.interval=60 option added. use_graphite option deleted.
+- Configuration elements can now be loaded from ZooKeeper (see [documentation](https://clickhouse.yandex/reference_en.html#Configuration%20files))
 
 
 ## [1.1.54181](https://github.com/yandex/Clickhouse/tree/v1.1.54181-testing) (2017-03-10)
