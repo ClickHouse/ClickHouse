@@ -79,9 +79,10 @@ target_link_libraries (
 	common
 	pocoext
 	cctz
+	${Boost_SYSTEM_LIBRARY}
+	${Boost_FILESYSTEM_LIBRARY}
 	${MALLOC_LIBRARIES}
 	${CMAKE_THREAD_LIBS_INIT}
-	${ICU_LIBS}
 	${RT_LIBRARIES})
 
 if (ENABLE_TESTS)
