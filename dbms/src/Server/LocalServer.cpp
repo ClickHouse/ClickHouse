@@ -86,7 +86,7 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 		Poco::Util::Option("input-format", "if", "Input format of intial table data")
 			.required(false)
 			.repeatable(false)
-			.argument("[TabSeparated]")
+			.argument("[TSV]")
 			.binding("table-data-format"));
 
 	/// List of queries to execute
@@ -102,7 +102,7 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 		Poco::Util::Option("output-format", "of", "Default output format")
 			.required(false)
 			.repeatable(false)
-			.argument("[TabSeparated]", true)
+			.argument("[TSV]", true)
 			.binding("output-format"));
 
 	/// Alias for previous one, required for clickhouse-client compability
@@ -110,7 +110,7 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 		Poco::Util::Option("format", "", "Default ouput format")
 			.required(false)
 			.repeatable(false)
-			.argument("[TabSeparated]", true)
+			.argument("[TSV]", true)
 			.binding("format"));
 
 	_options.addOption(
@@ -159,7 +159,7 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 
 void LocalServer::applyOptions()
 {
-	context->setDefaultFormat(config().getString("output-format", config().getString("format", "TabSeparated")));
+	context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
 
 	/// settings and limits could be specified in config file, but passed settings has higher priority
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
@@ -187,7 +187,7 @@ void LocalServer::displayHelp()
 		"After you can execute your SQL queries in the usual manner.\n"
 		"There are two ways to define initial table keeping your data:\n"
 		"either just in first query like this:\n"
-		"	CREATE TABLE <table> (<structure>) ENGINE = File(<format>, <file>);\n"
+		"	CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);\n"
 		"either through corresponding command line parameters."
 	);
 	helpFormatter.setWidth(132); /// 80 is ugly due to wide settings params
@@ -288,7 +288,9 @@ try
 		context->setMarkCache(mark_cache_size);
 
 	/// Load global settings from default profile.
-	context->setSetting("profile", config().getString("default_profile", "default"));
+	String default_profile_name = config().getString("default_profile", "default");
+	context->setDefaultProfileName(default_profile_name);
+	context->setSetting("profile", default_profile_name);
 
 	/** Init dummy default DB
 	  * NOTE: We force using isolated default database to avoid conflicts with default database from server enviroment
@@ -353,7 +355,7 @@ std::string LocalServer::getInitialCreateTableQuery()
 
 	auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
 	auto table_structure = config().getString("table-structure");
-	auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TabSeparated"));
+	auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TSV"));
 	String table_file;
 	if (!config().has("table-file") || config().getString("table-file") == "-") /// Use Unix tools stdin naming convention
 		table_file = "stdin";

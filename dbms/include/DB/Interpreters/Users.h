@@ -364,8 +364,8 @@ public:
 		Poco::Util::AbstractConfiguration::Keys config_keys;
 		config.keys("users", config_keys);
 
-		for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
-			cont[*it] = User(*it, "users." + *it, config);
+		for (const std::string & key : config_keys)
+			cont[key] = User(key, "users." + key, config);
 	}
 
 	const User & get(const String & name, const String & password, const Poco::Net::IPAddress & address) const

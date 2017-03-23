@@ -365,7 +365,9 @@ int Server::main(const std::vector<std::string> & args)
 
 	/// Load global settings from default profile.
 	Settings & settings = global_context->getSettingsRef();
-	global_context->setSetting("profile", config().getString("default_profile", "default"));
+	String default_profile_name = config().getString("default_profile", "default");
+	global_context->setDefaultProfileName(default_profile_name);
+	global_context->setSetting("profile", default_profile_name);
 
 	LOG_INFO(log, "Loading metadata.");
 	loadMetadata(*global_context);

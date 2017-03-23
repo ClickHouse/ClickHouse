@@ -106,9 +106,10 @@ struct ContextShared
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
 	FormatFactory format_factory;							/// Форматы.
-	mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;	/// Словари Метрики. Инициализируются лениво.
+	mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;	/// Metrica's dictionaeis. Have lazy initialization.
 	mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
-	Users users;											/// Известные пользователи.
+	String default_profile_name;							/// Default profile name used for default values.
+	Users users;											/// Known users.
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
 	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
 	mutable MarkCachePtr mark_cache;						/// Кэш засечек в сжатых файлах.
@@ -348,7 +349,12 @@ void Context::setUser(const String & name, const String & password, const Poco::
 	auto lock = getLock();
 
 	const User & user_props = shared->users.get(name, password, address.host());
-	setSetting("profile", user_props.profile);
+
+	/// Firstly set default settings from default profile
+	auto default_profile_name = getDefaultProfileName();
+	if (user_props.profile != default_profile_name)
+		settings.setProfile(default_profile_name, *shared->users_config);
+	settings.setProfile(user_props.profile, *shared->users_config);
 	setQuota(user_props.quota, quota_key, name, address.host());
 
 	client_info.current_user = name;
@@ -1208,6 +1214,17 @@ void Context::setApplicationType(ApplicationType type)
 {
 	/// Lock isn't required, you should set it at start
 	shared->application_type = type;
+}
+
+
+String Context::getDefaultProfileName() const
+{
+	return shared->default_profile_name;
+}
+
+void Context::setDefaultProfileName(const String & name)
+{
+	shared->default_profile_name = name;
 }
 
 
