@@ -69,7 +69,7 @@ function gen_revision_author {
 		# Создадим номер ревизии и попытаемся залить на сервер.
 		succeeded=0
 		attempts=0
-		max_attempts=5
+		max_attempts=10
 		while [ $succeeded -eq 0 ] && [ $attempts -le $max_attempts ]
 		do
 			REVISION=$(($REVISION + 1))
