@@ -95,19 +95,6 @@ wait_for_done()
 	done
 }
 
-
- running_processes()
- {
-     pidfiles=$(find_pid_files)
-     running=0
-     for pidfile in $pidfiles; do
-         if is_running $pidfile; then
-             running=$(($running + 1))
-         fi
-     done
-     echo $running
- }
-
 initdb()
 {
 	if ! getent group ${CLICKHOUSE_USER} >/dev/null; then
