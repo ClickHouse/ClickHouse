@@ -141,8 +141,8 @@ if (ENABLE_TESTS)
 endif (ENABLE_TESTS)
 
 # Installation prefix
+set (CMAKE_INSTALL_PREFIX /usr)
 if (NOT CMAKE_SYSTEM MATCHES "FreeBSD")
-	set (CMAKE_INSTALL_PREFIX /usr)
 	set (CLICKHOUSE_ETC_DIR /etc)
 else ()
 	set (CLICKHOUSE_ETC_DIR ${CMAKE_INSTALL_PREFIX}/etc)

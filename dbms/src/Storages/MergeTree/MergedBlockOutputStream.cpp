@@ -171,7 +171,7 @@ void IMergedBlockOutputStream::writeDataImpl(
 				writeIntBinary(stream.compressed.offset(), stream.marks);
 			}
 
-			DataTypeUInt8{}.serializeBinaryBulk(nullable_col.getNullMapConcreteColumn(), stream.compressed, 0, 0);
+			DataTypeUInt8{}.serializeBinaryBulk(nullable_col.getNullMapConcreteColumn(), stream.compressed, prev_mark, limit);
 
 			/// This way that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
 			stream.compressed.nextIfAtEnd();
