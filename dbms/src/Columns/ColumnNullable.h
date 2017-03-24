@@ -27,6 +27,7 @@ public:
     bool isNumericNotNullable() const override { return false; }
     bool isConst() const override { return nested_column->isConst(); }
     bool isFixed() const override { return nested_column->isFixed(); }
+    size_t sizeOfField() const override;
     bool isNullable() const override { return true; }
     ColumnPtr cloneResized(size_t size) const override;
     size_t size() const override { return nested_column->size(); }

@@ -82,16 +82,27 @@ class MergeTreeData;
 struct MergeTreeDataPart : public ActiveDataPartSet::Part
 {
     using Checksums = MergeTreeDataPartChecksums;
+    using Checksum = MergeTreeDataPartChecksums::Checksum;
 
     MergeTreeDataPart(MergeTreeData & storage_) : storage(storage_) {}
 
+    /// Returns checksum of column's binary file.
+    const Checksum * tryGetBinChecksum(const String & name) const;
+
     /// Returns the size of .bin file for column `name` if found, zero otherwise
     size_t getColumnCompressedSize(const String & name) const;
+    size_t getColumnUncompressedSize(const String & name) const;
 
-    /** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
-      * If no checksums are present returns the name of the first physically existing column.
-      */
+    /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
+    /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const;
+
+    /// If part has column with fixed size, will return exact size of part (in rows)
+    /// Otherwise will return approximate size and set flag to false
+    std::pair<size_t, bool> tryGetExactSizeRows() const;
+
+    /// Returns full path to part dir
+    String getFullPath() const;
 
     MergeTreeData & storage;
 
@@ -104,7 +115,7 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
     /// Если true, деструктор удалит директорию с куском.
     bool is_temp = false;
 
-    /// Для перешардирования.
+    /// For resharding.
     bool is_sharded = false;
     size_t shard_no = 0;
 
@@ -116,13 +127,13 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
 
     Checksums checksums;
 
-    /// Описание столбцов.
+    /// Columns description.
     NamesAndTypesList columns;
 
     using ColumnToSize = std::map<std::string, size_t>;
 
     /** Блокируется на запись при изменении columns, checksums или любых файлов куска.
-        * Блокируется на чтение при    чтении columns, checksums или любых файлов куска.
+        * Блокируется на чтение при чтении columns, checksums или любых файлов куска.
         */
     mutable Poco::RWLock columns_lock;
 
@@ -147,21 +158,24 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
     /// Переименовывает кусок, дописав к имени префикс. to_detached - также перенести в директорию detached.
     void renameAddPrefix(bool to_detached, const String & prefix) const;
 
-    /// Загрузить индекс и вычислить размер. Если size=0, вычислить его тоже.
+    /// Loads index file. Also calculates this->size if size=0
     void loadIndex();
 
-    /// Прочитать контрольные суммы, если есть.
+    /// If checksums.txt exists, reads files' checksums (and sizes) from it
     void loadChecksums(bool require);
 
+    /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & column_to_size) const;
 
+    /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
 
     void checkNotBroken(bool require_part_metadata);
 
+    /// Checks that .bin and .mrk files exist
     bool hasColumnFiles(const String & column) const;
 
-    /// For data in RAM ('index').
+    /// For data in RAM ('index')
     size_t getIndexSizeInBytes() const;
     size_t getIndexSizeInAllocatedBytes() const;
 };

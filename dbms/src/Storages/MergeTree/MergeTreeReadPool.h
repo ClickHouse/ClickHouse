@@ -2,45 +2,12 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <mutex>
 
 
 namespace DB
 {
-
-
-/// A batch of work for MergeTreeThreadBlockInputStream
-struct MergeTreeReadTask
-{
-    /// data part which should be read while performing this task
-    MergeTreeData::DataPartPtr data_part;
-    /** Ranges to read from `data_part`.
-     *    Specified in reverse order for MergeTreeThreadBlockInputStream's convenience of calling .pop_back(). */
-    MarkRanges mark_ranges;
-    /// for virtual `part_index` virtual column
-    std::size_t part_index_in_query;
-    /// ordered list of column names used in this query, allows returning blocks with consistent ordering
-    const Names & ordered_names;
-    /// used to determine whether column should be filtered during PREWHERE or WHERE
-    const NameSet & column_name_set;
-    /// column names to read during WHERE
-    const NamesAndTypesList & columns;
-    /// column names to read during PREWHERE
-    const NamesAndTypesList & pre_columns;
-    /// should PREWHERE column be returned to requesting side?
-    const bool remove_prewhere_column;
-    /// resulting block may require reordering in accordance with `ordered_names`
-    const bool should_reorder;
-
-    MergeTreeReadTask(
-        const MergeTreeData::DataPartPtr & data_part, const MarkRanges & ranges, const std::size_t part_index_in_query,
-        const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
-        const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder)
-        : data_part{data_part}, mark_ranges{ranges}, part_index_in_query{part_index_in_query},
-          ordered_names{ordered_names}, column_name_set{column_name_set}, columns{columns}, pre_columns{pre_columns},
-          remove_prewhere_column{remove_prewhere_column}, should_reorder{should_reorder}
-    {}
-};
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 
@@ -121,14 +88,6 @@ private:
         const std::size_t threads, const std::size_t sum_marks, std::vector<std::size_t> per_part_sum_marks,
         RangesInDataParts & parts, const std::size_t min_marks_for_concurrent_read);
 
-
-    /** Если некоторых запрошенных столбцов нет в куске,
-      *    то выясняем, какие столбцы может быть необходимо дополнительно прочитать,
-      *    чтобы можно было вычислить DEFAULT выражение для этих столбцов.
-      *    Добавляет их в columns.
-      */
-    NameSet injectRequiredColumns(const MergeTreeData::DataPartPtr & part, Names & columns) const;
-
     std::vector<std::unique_ptr<Poco::ScopedReadRWLock>> per_part_columns_lock;
     MergeTreeData & data;
     Names column_names;
@@ -170,6 +129,5 @@ private:
 };
 
 using MergeTreeReadPoolPtr = std::shared_ptr<MergeTreeReadPool>;
-
 
 }

@@ -14,26 +14,64 @@ namespace ErrorCodes
 }
 
 
+MergeTreeBaseBlockInputStream::MergeTreeBaseBlockInputStream(
+    MergeTreeData & storage,
+    const ExpressionActionsPtr & prewhere_actions,
+    const String & prewhere_column,
+    size_t max_block_size_rows,
+    size_t preferred_block_size_bytes,
+    size_t min_bytes_to_use_direct_io,
+    size_t max_read_buffer_size,
+    bool use_uncompressed_cache,
+    bool save_marks_in_cache,
+    const Names & virt_column_names)
+:
+    storage(storage),
+    prewhere_actions(prewhere_actions),
+    prewhere_column(prewhere_column),
+    max_block_size_rows(max_block_size_rows),
+    preferred_block_size_bytes(preferred_block_size_bytes),
+    min_bytes_to_use_direct_io(min_bytes_to_use_direct_io),
+    max_read_buffer_size(max_read_buffer_size),
+    use_uncompressed_cache(use_uncompressed_cache),
+    save_marks_in_cache(save_marks_in_cache),
+    max_block_size_marks(max_block_size_rows / storage.index_granularity)
+{
+}
+
+
 MergeTreeThreadBlockInputStream::~MergeTreeThreadBlockInputStream() = default;
 
 
 MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
-    const std::size_t thread,
-    const MergeTreeReadPoolPtr & pool, const std::size_t min_marks_to_read, const std::size_t block_size,
-    MergeTreeData & storage, const bool use_uncompressed_cache, const ExpressionActionsPtr & prewhere_actions,
-    const String & prewhere_column, const Settings & settings, const Names & virt_column_names)
-    : thread{thread}, pool{pool}, block_size_marks{block_size / storage.index_granularity},
-        /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
-        min_marks_to_read{block_size
-                        ? (min_marks_to_read * storage.index_granularity + block_size - 1)
-                            / block_size * block_size / storage.index_granularity
-                        : min_marks_to_read
-        },
-        storage{storage}, use_uncompressed_cache{use_uncompressed_cache}, prewhere_actions{prewhere_actions},
-        prewhere_column{prewhere_column}, min_bytes_to_use_direct_io{settings.min_bytes_to_use_direct_io},
-        max_read_buffer_size{settings.max_read_buffer_size}, virt_column_names{virt_column_names},
-        log{&Logger::get("MergeTreeThreadBlockInputStream")}
-{}
+    const size_t thread,
+    const MergeTreeReadPoolPtr & pool,
+    const size_t min_marks_to_read_,
+    const size_t max_block_size_rows,
+    //size_t preferred_block_size_bytes,
+    MergeTreeData & storage,
+    const bool use_uncompressed_cache,
+    const ExpressionActionsPtr & prewhere_actions,
+    const String & prewhere_column,
+    const Settings & settings,
+    const Names & virt_column_names)
+    :
+    MergeTreeBaseBlockInputStream{storage, prewhere_actions, prewhere_column, max_block_size_rows, 0 /* preferred_block_size_bytes */,
+        settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, use_uncompressed_cache, true, virt_column_names},
+    thread{thread},
+    pool{pool}
+{
+    /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
+    if (max_block_size_rows)
+    {
+        min_marks_to_read = (min_marks_to_read_ * storage.index_granularity + max_block_size_rows - 1)
+                            / max_block_size_rows * max_block_size_rows / storage.index_granularity;
+    }
+    else
+        min_marks_to_read = min_marks_to_read_;
+
+    log = &Logger::get("MergeTreeThreadBlockInputStream");
+}
 
 
 String MergeTreeThreadBlockInputStream::getID() const
@@ -54,10 +92,10 @@ Block MergeTreeThreadBlockInputStream::readImpl()
         if (!task && !getNewTask())
             break;
 
-        res = readFromPart();
+        res = readFromPart(task.get());
 
         if (res)
-            injectVirtualColumns(res);
+            injectVirtualColumns(res, task.get());
 
         if (task->mark_ranges.empty())
             task = {};
@@ -83,7 +121,7 @@ bool MergeTreeThreadBlockInputStream::getNewTask()
         return false;
     }
 
-    const auto path = storage.getFullPath() + task->data_part->name + '/';
+    const std::string path = task->data_part->getFullPath();
 
     /// Allows pool to reduce number of threads in case of too slow reads.
     auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info) { pool->profileFeedback(info); };
@@ -96,12 +134,12 @@ bool MergeTreeThreadBlockInputStream::getNewTask()
         owned_mark_cache = storage.context.getMarkCache();
 
         reader = std::make_unique<MergeTreeReader>(
-            path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), true,
+            path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
             storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size, MergeTreeReader::ValueSizeMap{}, profile_callback);
 
         if (prewhere_actions)
             pre_reader = std::make_unique<MergeTreeReader>(
-                path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), true,
+                path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
                 storage, task->mark_ranges, min_bytes_to_use_direct_io,
                 max_read_buffer_size, MergeTreeReader::ValueSizeMap{}, profile_callback);
     }
@@ -109,13 +147,13 @@ bool MergeTreeThreadBlockInputStream::getNewTask()
     {
         /// retain avg_value_size_hints
         reader = std::make_unique<MergeTreeReader>(
-            path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), true,
+            path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
             storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size,
             reader->getAvgValueSizeHints(), profile_callback);
 
         if (prewhere_actions)
             pre_reader = std::make_unique<MergeTreeReader>(
-                path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), true,
+                path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
                 storage, task->mark_ranges, min_bytes_to_use_direct_io,
                 max_read_buffer_size, pre_reader->getAvgValueSizeHints(), profile_callback);
     }
@@ -124,23 +162,42 @@ bool MergeTreeThreadBlockInputStream::getNewTask()
 }
 
 
-Block MergeTreeThreadBlockInputStream::readFromPart()
+Block MergeTreeBaseBlockInputStream::readFromPart(MergeTreeReadTask * task)
 {
     Block res;
+
+    LOG_TRACE(log, "Try Read block with ~" << max_block_size_marks * storage.index_granularity << " rows");
+
+    // For preferred_block_size_bytes
+    size_t res_block_size_bytes = 0;
+    bool bytes_exceeded = false;
 
     if (prewhere_actions)
     {
         do
         {
             /// Let's read the full block of columns needed to calculate the expression in PREWHERE.
-            size_t space_left = std::max(1LU, block_size_marks);
+            size_t space_left = std::max(1LU, max_block_size_marks);
             MarkRanges ranges_to_read;
 
             while (!task->mark_ranges.empty() && space_left && !isCancelled())
             {
+                res_block_size_bytes = res.bytes();
+                if (preferred_block_size_bytes && res_block_size_bytes >= preferred_block_size_bytes)
+                {
+                    bytes_exceeded = true;
+                    break;
+                }
+
                 auto & range = task->mark_ranges.back();
 
                 size_t marks_to_read = std::min(range.end - range.begin, space_left);
+                if (preferred_block_size_bytes)
+                {
+                    size_t recommended_marks = task->size_predictor->estimateNumMarks(preferred_block_size_bytes - res_block_size_bytes);
+                    marks_to_read = std::min(marks_to_read, std::max(1UL, recommended_marks));
+                }
+
                 pre_reader->readRange(range.begin, range.begin + marks_to_read, res);
 
                 ranges_to_read.emplace_back(range.begin, range.begin + marks_to_read);
@@ -278,14 +335,30 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
     }
     else
     {
-        size_t space_left = std::max(1LU, block_size_marks);
+        size_t space_left = std::max(1LU, max_block_size_marks);
 
         while (!task->mark_ranges.empty() && space_left && !isCancelled())
         {
+            res_block_size_bytes = res.bytes();
+            if (preferred_block_size_bytes && res_block_size_bytes >= preferred_block_size_bytes)
+            {
+                bytes_exceeded = true;
+                break;
+            }
+
             auto & range = task->mark_ranges.back();
 
-            const size_t marks_to_read = std::min(range.end - range.begin, space_left);
+            size_t marks_to_read = std::min(range.end - range.begin, space_left);
+            if (preferred_block_size_bytes)
+            {
+                size_t recommended_marks = task->size_predictor->estimateNumMarks(preferred_block_size_bytes - res_block_size_bytes);
+                marks_to_read = std::min(marks_to_read, std::max(1UL, recommended_marks));
+            }
+
             reader->readRange(range.begin, range.begin + marks_to_read, res);
+
+            if (preferred_block_size_bytes)
+                task->size_predictor->update(res, marks_to_read);
 
             space_left -= marks_to_read;
             range.begin += marks_to_read;
@@ -301,11 +374,20 @@ Block MergeTreeThreadBlockInputStream::readFromPart()
         reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
     }
 
+    LOG_TRACE(log, "Read block with " << res.rows() << " rows");
+
+    if (preferred_block_size_bytes && bytes_exceeded)
+    {
+        res_block_size_bytes = res.bytes();
+        double accuracy = static_cast<double>(res_block_size_bytes) / preferred_block_size_bytes - 1.;
+        LOG_TRACE(log, "Read block with " << res_block_size_bytes << " bytes (" << task->size_predictor->block_size_bytes << "), " << res.rows() << " rows, accuracy " << accuracy * 100 << " percent");
+    }
+
     return res;
 }
 
 
-void MergeTreeThreadBlockInputStream::injectVirtualColumns(Block & block)
+void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block, const MergeTreeReadTask * task)
 {
     const auto rows = block.rows();
 
@@ -334,6 +416,9 @@ void MergeTreeThreadBlockInputStream::injectVirtualColumns(Block & block)
         }
     }
 }
+
+
+MergeTreeBaseBlockInputStream::~MergeTreeBaseBlockInputStream() = default;
 
 
 }
