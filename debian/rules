@@ -2,12 +2,29 @@
 # -*- makefile -*-
 
 # Uncomment this to turn on verbose mode.
-#export DH_VERBOSE=1
+export DH_VERBOSE=1
+
+export DEB_BUILD_MAINT_OPTIONS=hardening=+all
+CPPFLAGS:=$(shell dpkg-buildflags --get CPPFLAGS)
+CFLAGS:=$(shell dpkg-buildflags --get CFLAGS) $(CPPFLAGS)
+CXXFLAGS:=$(shell dpkg-buildflags --get CXXFLAGS) $(CPPFLAGS)
+LDFLAGS:=$(shell dpkg-buildflags --get LDFLAGS)
+
+DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+
+include /usr/share/dpkg/pkg-info.mk
+export LIBCOMMON_REVISION=$(DEB_VERSION_UPSTREAM)
+
 ifndef THREADS_COUNT
     THREADS_COUNT=`nproc || grep -c ^processor /proc/cpuinfo`
 endif
 
-BUILD_TARGETS=clickhouse $(DAEMONS)
+#BUILD_TARGETS=clickhouse $(DAEMONS)
+BUILD_TARGETS=clickhouse clickhouse-client clickhouse-server clickhouse-compressor
+#BUILD_TARGETS=clickhouse-compressor
+#BUILD_TARGETS=clickhouse-utils
+#BUILD_TARGETS=clickhouse clickhouse-client clickhouse-server clickhouse-utils
+#clickhouse-utils
 
 DEB_COMPILER_VERSION ?= -6
 DEB_CC ?= gcc
@@ -33,7 +50,14 @@ ifdef USE_STATIC_LIBRARIES
 	CMAKE_FLAGS += -DUSE_STATIC_LIBRARIES=$(USE_STATIC_LIBRARIES)
 endif
 
-configure-stamp:
+%:
+	dh $@ --parallel --buildsystem=cmake
+#--sourcedir=debian/tmp
+# --with=systemd  --max-parallel=4
+
+override_dh_auto_configure:
+
+zzzzconfigure-stamp:
 	dh_testdir
 	rm -rf build
 	make clean 1> /dev/null 2>&1 || echo "Nothing to clean"
@@ -41,13 +65,18 @@ configure-stamp:
 	mkdir -p build
 	touch configure-stamp
 
-build: build-stamp
-build-stamp: configure-stamp
+override_dh_auto_test:
+	#TODO
+	#./debian/tests_wrapper.sh
+
+#build: build-stamp
+#build-stamp: configure-stamp
+override_dh_auto_build:
 	dh_testdir
 	# если не задан тип сборки запускаем cmake без указания типа, если задан - передаём его
 	# for building Debug run: debuild -e CMAKE_BUILD_TYPE=Debug
 	# for building with shared libs run: debuild -e USE_STATIC_LIBRARIES=0
-	cd build && pwd && cmake .. $(CMAKE_FLAGS)
+	mkdir -p build && cd build && pwd && cmake .. $(CMAKE_FLAGS)
 	# TODO: возможно надо исправить
 	# последовательно запускаем make для каждой из целей.
 	# т.к. при параллельном запуске (make target1 target2) несколько раз одновременно создаются бинарники
@@ -55,22 +84,32 @@ build-stamp: configure-stamp
 	for target in ${BUILD_TARGETS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$target || exit $$?; done
 	touch $@
 
-clean:
+#clean:
+#override_dh_auto_clean:
+
+ZZoverride_dh_auto_clean:
 	dh_testdir
 	dh_testroot
-	rm -f configure-stamp build-stamp
 	rm -rf build
+	rm -rf obj-x86_64-linux-gnu
+	rm -f override_dh_auto_build
+	#rm -f configure-stamp build-stamp
+	#rm -rf build
 	# Удалим созданные ссылки на файлы документации
-	find ./debian/ -name "*.docs" -type l -delete
-	rm -f ./debian/copyright
+	#find ./debian/ -name "*.docs" -type l -delete
+	#rm -f ./debian/copyright
 	# Удалим созданные *.install файлы
-	for DAEMON_PKG in ${DAEMONS}; do AUTO=`grep "# automatically created" debian/$$DAEMON_PKG.install`; if [ "x$$AUTO" != "x" ]; then rm -f debian/$$DAEMON_PKG.install; fi; done
+	#for DAEMON_PKG in ${DAEMONS}; do AUTO=`grep "# automatically created" debian/$$DAEMON_PKG.install`; if [ "x$$AUTO" != "x" ]; then rm -f debian/$$DAEMON_PKG.install; fi; done
 	dh_clean
 
-install: build
-	dh_testdir
-	dh_testroot
-	dh_prep
+#dh_install:
+install:
+
+#install: build
+override_dh_auto_install:
+	#dh_testdir
+	#dh_testroot
+	#dh_prep
 	cd build && \
 	for target in ${BUILD_TARGETS}; do DESTDIR=../debian/tmp cmake -DCOMPONENT=$$target -P cmake_install.cmake; done
 
@@ -83,37 +122,38 @@ install: build
 	# cron_name имеет вид daemonname
 	# Для ClickHouse не должно быть лишних зависимостей.
 	# Making necessary *.install files
-	for DAEMON_PKG in ${DAEMONS}; do \
-		if [ ! -e "debian/$$DAEMON_PKG.install" ]; then \
-			echo "# automatically created" > debian/$$DAEMON_PKG.install; \
-			echo "/etc/$$DAEMON_PKG/config.xml" >> debian/$$DAEMON_PKG.install; \
-			echo "/usr/bin/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.install; \
-			echo "/etc/cron.d/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.install; \
-			if [ -e "debian/tmp/etc/monrun/conf.d/$$DAEMON_PKG.conf" ]; then \
-				echo "/etc/monrun/conf.d/$$DAEMON_PKG.conf" >> debian/$$DAEMON_PKG.install; \
-			fi;\
-		fi;  \
-	done
+# ???? 
+	#for DAEMON_PKG in ${DAEMONS}; do \
+	#	if [ ! -e "debian/$$DAEMON_PKG.install" ]; then \
+	#		echo "# automatically created" > debian/$$DAEMON_PKG.install; \
+	#		echo "/etc/$$DAEMON_PKG/config.xml" >> debian/$$DAEMON_PKG.install; \
+	#		echo "/usr/bin/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.install; \
+	#		echo "/etc/cron.d/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.install; \
+	#		if [ -e "debian/tmp/etc/monrun/conf.d/$$DAEMON_PKG.conf" ]; then \
+	#			echo "/etc/monrun/conf.d/$$DAEMON_PKG.conf" >> debian/$$DAEMON_PKG.install; \
+	#		fi;\
+	#	fi;  \
+	#done
 
 	# Making necessary *.postinst files
-	for DAEMON_PKG in ${DAEMONS}; do \
-		if [ ! -e "debian/$$DAEMON_PKG.postinst" ]; then \
-			echo "# automatically created" > debian/$$DAEMON_PKG.postinst; \
-			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d" >> debian/$$DAEMON_PKG.postinst; \
-			echo "chown -R clickhouse: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
-			if [ -e "debian/tmp/etc/init.d/$$DAEMON_PKG" ]; then \
-				if echo $$DAEMON_PKG | grep server > /dev/null; then\
-					echo "update-rc.d $$DAEMON_PKG defaults > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG.postinst; \
-				else\
-					echo "update-rc.d $$DAEMON_PKG start 30 2 3 4 5 . stop 70 0 1 6 . > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG.postinst; \
-				fi\
-			fi\
-			\
-		else \
-			echo >> debian/$$DAEMON_PKG.postinst; \
-			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d; chown -R clickhouse: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
-		fi;  \
-	done
+	#for DAEMON_PKG in ${DAEMONS}; do \
+	#	if [ ! -e "debian/$$DAEMON_PKG.postinst" ]; then \
+	#		echo "# automatically created" > debian/$$DAEMON_PKG.postinst; \
+	#		echo "mkdir -p /etc/$$DAEMON_PKG/conf.d" >> debian/$$DAEMON_PKG.postinst; \
+	#		echo "chown -R clickhouse: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
+	#		if [ -e "debian/tmp/etc/init.d/$$DAEMON_PKG" ]; then \
+	#			if echo $$DAEMON_PKG | grep server > /dev/null; then\
+	#				echo "update-rc.d $$DAEMON_PKG defaults > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG.postinst; \
+	#			else\
+	#				echo "update-rc.d $$DAEMON_PKG start 30 2 3 4 5 . stop 70 0 1 6 . > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG.postinst; \
+	#			fi\
+	#		fi\
+	#		\
+	#	else \
+	#		echo >> debian/$$DAEMON_PKG.postinst; \
+	#		echo "mkdir -p /etc/$$DAEMON_PKG/conf.d; chown -R clickhouse: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
+	#	fi;  \
+	#done
 
 
 	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
@@ -130,9 +170,9 @@ install: build
 		echo "README.md" >> debian/$$DAEMON_PKG.docs; \
 	done
 
-	ln -s clickhouse-server.docs debian/clickhouse-server-base.docs
-	ln -s clickhouse-server.docs debian/clickhouse-server-common.docs
-	ln -s clickhouse-server.docs debian/clickhouse-server-metrika.docs
+	#ln -s clickhouse-server.docs debian/clickhouse-server-base.docs
+	#ln -s clickhouse-server.docs debian/clickhouse-server-common.docs
+	#ln -s clickhouse-server.docs debian/clickhouse-server-metrika.docs
 
 	mkdir -p debian/tmp/etc/security/limits.d
 	cp debian/clickhouse-server.limits debian/tmp/etc/security/limits.d/clickhouse.conf
@@ -141,12 +181,17 @@ install: build
 	mkdir -p debian/tmp/etc/cron.d
 	cp debian/clickhouse-server.cron.d debian/tmp/etc/cron.d/clickhouse-server
 
+	dh_auto_install --sourcedir=debian/tmp
+	#dh_install --sourcedir=debian/tmp
+	#touch $@
+
+
 # Build architecture-independent files here.
-binary-indep: build install
+zzzbinary-indep: build install
 # We have nothing to do by default.
 
 # Build architecture-dependent files here.
-binary-arch: build install
+zzzbinary-arch: build install
 	dh_testdir
 	dh_testroot
 	dh_installdocs
@@ -165,5 +210,5 @@ binary-arch: build install
 	dh_md5sums
 	dh_builddeb -- -Zgzip -z3
 
-binary: binary-indep binary-arch
-.PHONY: build clean binary-indep binary-arch binary install
+zzzbinary: binary-indep binary-arch
+#.PHONY: build clean binary-indep binary-arch binary install

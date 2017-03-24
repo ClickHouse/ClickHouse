@@ -1,1 +1,2 @@
+/usr/bin/clickhouse-client
 /etc/clickhouse-client/config.xml
