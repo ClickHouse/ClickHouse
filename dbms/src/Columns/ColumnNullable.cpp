@@ -40,6 +40,15 @@ ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
 }
 
 
+size_t ColumnNullable::sizeOfField() const
+{
+    if (nested_column->isFixed())
+        return getNullMapConcreteColumn().sizeOfField() + nested_column->sizeOfField();
+
+    throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD);
+}
+
+
 ColumnPtr ColumnNullable::convertToFullColumnIfConst() const
 {
     ColumnPtr new_col_holder;

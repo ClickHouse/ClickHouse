@@ -264,7 +264,8 @@ struct Settings
      * If false, use default value of corresponding columns data type. \
      */ \
     M(SettingBool, join_use_nulls, 0) \
-
+    /* */ \
+    M(SettingUInt64, preferred_block_size_bytes, 0)
 
     /// Possible limits for query execution.
     Limits limits;

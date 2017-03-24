@@ -708,9 +708,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
                 }
 
                 BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
-                    data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
-                    part.data_part, ranges_to_get_from_part, use_uncompressed_cache,
-                    prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true);
+                    data, part.data_part, max_block_size, settings.preferred_block_size_bytes, column_names, ranges_to_get_from_part,
+                    use_uncompressed_cache, prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io,
+                    settings.max_read_buffer_size, true);
 
                 res.push_back(source_stream);
 
@@ -765,8 +765,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
         RangesInDataPart & part = parts[part_index];
 
         BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
-            data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
-            part.data_part, part.ranges, use_uncompressed_cache,
+            data, part.data_part, max_block_size, settings.preferred_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
             prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true);
 
         for (const String & virt_column : virt_columns)

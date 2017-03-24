@@ -535,11 +535,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
     for (size_t i = 0; i < parts.size(); ++i)
     {
-        String part_path = data.getFullPath() + parts[i]->name + '/';
-
         auto input = std::make_unique<MergeTreeBlockInputStream>(
-            part_path, DEFAULT_MERGE_BLOCK_SIZE, merging_column_names, data, parts[i],
-            MarkRanges(1, MarkRange(0, parts[i]->size)), false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
+            data, parts[i], DEFAULT_MERGE_BLOCK_SIZE, 0, merging_column_names, MarkRanges(1, MarkRange(0, parts[i]->size)),
+            false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         input->setProgressCallback(
             MergeProgressCallback{merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg});
@@ -666,12 +664,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
             for (size_t part_num = 0; part_num < parts.size(); ++part_num)
             {
-                String part_path = data.getFullPath() + parts[part_num]->name + '/';
-
                 auto column_part_stream = std::make_shared<MergeTreeBlockInputStream>(
-                    part_path, DEFAULT_MERGE_BLOCK_SIZE, column_name_, data, parts[part_num],
-                    MarkRanges(1, MarkRange(0, parts[part_num]->size)), false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE,
-                    false, true);
+                    data, parts[part_num], DEFAULT_MERGE_BLOCK_SIZE, 0, column_name_, MarkRanges(1, MarkRange(0, parts[part_num]->size)),
+                    false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false, true);
 
                 column_part_stream->setProgressCallback(
                     MergeProgressCallbackVerticalStep{merge_entry, sum_input_rows_exact, column_sizes, column_name, watch_prev_elapsed});
@@ -885,11 +880,9 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
     {
         MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 
-        String part_path = data.getFullPath() + parts[i]->name + '/';
-
         auto input = std::make_unique<MergeTreeBlockInputStream>(
-            part_path, DEFAULT_MERGE_BLOCK_SIZE, column_names, data,
-            parts[i], ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
+            data, parts[i], DEFAULT_MERGE_BLOCK_SIZE, 0, column_names,
+            ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
             {
