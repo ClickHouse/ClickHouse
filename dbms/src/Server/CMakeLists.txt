@@ -13,8 +13,16 @@ target_link_libraries(clickhouse-server daemon storages_system)
 add_library(clickhouse-local LocalServer.cpp)
 target_link_libraries(clickhouse-local dbms)
 
+add_library(clickhouse-extract-from-config ExtractFromConfig.cpp)
+target_link_libraries(clickhouse-extract-from-config dbms)
+
 add_executable(clickhouse main.cpp)
-target_link_libraries(clickhouse clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark)
+target_link_libraries(clickhouse
+	clickhouse-server
+	clickhouse-client
+	clickhouse-local
+	clickhouse-benchmark
+	clickhouse-extract-from-config)
 INSTALL(TARGETS clickhouse RUNTIME DESTINATION bin COMPONENT clickhouse)
 
 # make symbolic links to concrete clickhouse applications
