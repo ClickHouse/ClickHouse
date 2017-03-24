@@ -60,10 +60,6 @@ clean:
 	dh_testroot
 	rm -f configure-stamp build-stamp
 	rm -rf build
-	# Удалим созданные для dh_installinit файлы
-	find ./debian/ -name "*.init" -type l -delete
-	# Удалим созданные для dh_installcron файлы
-	find ./debian/ -name "*.cron.d" -type f -delete
 	# Удалим созданные ссылки на файлы документации
 	find ./debian/ -name "*.docs" -type l -delete
 	rm -f ./debian/copyright
@@ -79,9 +75,9 @@ install: build
 	for target in ${BUILD_TARGETS}; do DESTDIR=../debian/tmp cmake -DCOMPONENT=$$target -P cmake_install.cmake; done
 
 	# Создаём нужные файлы для dh_installinit, т.к. он их понимает только внутри debian/
-	for I in debian/tmp/etc/init.d/*; do echo $$I; ln -s tmp/etc/init.d/`basename $$I` debian/`basename $$I`.init; done
+	#for I in debian/tmp/etc/init.d/*; do echo $$I; ln -s tmp/etc/init.d/`basename $$I` debian/`basename $$I`.init; done
 	# Хотим, чтобы для пакета clickhouse-server-base init file назывался clickhouse-server
-	if [ -e debian/tmp/etc/init.d/clickhouse-server ]; then ln -s tmp/etc/init.d/clickhouse-server debian/clickhouse-server-base.clickhouse-server.init; fi
+	#if [ -e debian/tmp/etc/init.d/clickhouse-server ]; then ln -s tmp/etc/init.d/clickhouse-server debian/clickhouse-server-base.clickhouse-server.init; fi
 
 	# создаем дефолтный cron, если нет крон-файла созданного пользователем
 	# cron_name имеет вид daemonname
