@@ -21,7 +21,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
 {
 	ssize_t bytes_read = 0;
 
-	/// Добавляем в эксепшены более подробную информацию.
+	/// Add more details to exceptions.
 	try
 	{
 		bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size());

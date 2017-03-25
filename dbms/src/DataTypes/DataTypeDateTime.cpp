@@ -43,7 +43,7 @@ void DataTypeDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
 	assertChar('\'', istr);
 	readDateTimeText(x, istr);
 	assertChar('\'', istr);
-	static_cast<ColumnUInt32 &>(column).getData().push_back(x);	/// Важно делать это в конце - для exception safety.
+	static_cast<ColumnUInt32 &>(column).getData().push_back(x);	/// It's important to do this at the end - for exception safety.
 }
 
 void DataTypeDateTime::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const

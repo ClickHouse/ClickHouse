@@ -26,7 +26,7 @@ static void glue(BlockInputStreamPtr & node, IDsMap & ids_map, ForksMap & forks_
 	String id = node->getID();
 	if (ids_map.end() != ids_map.find(id) && ids_map[id].size() > 1)
 	{
-		/// Вставить "вилку" или использовать уже готовую.
+		/// Insert a "fork" or use an existing one.
 		if (forks_map.end() == forks_map.find(id))
 		{
 			forks_map[id] = std::make_shared<ForkBlockInputStreams>(node);

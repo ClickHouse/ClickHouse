@@ -1,4 +1,4 @@
-/** Запускать так (пример):
+/** Run this (example)
   * ./arena_with_free_lists 5000000 < ../../Server/data/test/hits/20140317_20140323_2_178_4/Title.bin
   */
 
@@ -25,7 +25,7 @@
 using namespace DB;
 
 
-/// Реализация ArenaWithFreeLists, которая содержит баг. Используется, чтобы воспроизвести баг.
+/// Implementation of ArenaWithFreeLists, which contains a bug. Used to reproduce the bug.
 #if USE_BAD_ARENA
 
 class ArenaWithFreeLists : private Allocator<false>
@@ -47,7 +47,7 @@ private:
 	static auto sizeToPreviousPowerOfTwo(const int size)
 	{
 		return _bit_scan_reverse(size - 1);
-		/// Баг расположен в строчке выше. Если заменить на следующую строчку, то баг исправляется.
+		/// The bug is located in the line above. If you change to the next line, then the bug is fixed.
 		//return size <= 1 ? 0 : _bit_scan_reverse(size - 1);
 	}
 
@@ -110,7 +110,7 @@ public:
 		block->next = old;
 	}
 
-	/// Размер выделенного пула в байтах
+	/// Size of the allocated pool in bytes
 	size_t size() const
 	{
 		return pool.size();
@@ -120,7 +120,7 @@ public:
 #endif
 
 
-/// Небольшой кусочек, выдранный из CacheDictionary. Используется только для того, чтобы продемонстрировать проблему.
+/// A small piece copied from the CacheDictionary. It is used only to demonstrate the problem.
 struct Dictionary
 {
 	template <typename Value> using ContainerType = Value[];
@@ -158,7 +158,7 @@ struct Dictionary
 
 	std::unique_ptr<ArenaWithFreeLists> string_arena;
 
-	/// Эта функция компилируется в точно такой же машинный код, как в продакшене, когда был баг.
+	/// This function is compiled into exactly the same machine code as in production, when there was a bug.
 	void NO_INLINE setAttributeValue(Attribute & attribute, const UInt64 idx, const Field & value) const
 	{
 		switch (attribute.type)

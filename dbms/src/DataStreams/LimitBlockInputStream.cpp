@@ -18,7 +18,7 @@ Block LimitBlockInputStream::readImpl()
 	Block res;
 	size_t rows = 0;
 
-	/// pos - сколько строк было прочитано, включая последний прочитанный блок
+	/// pos - how many lines were read, including the last read block
 
 	if (pos >= offset + limit)
 	{
@@ -41,11 +41,11 @@ Block LimitBlockInputStream::readImpl()
 		pos += rows;
 	} while (pos <= offset);
 
-	/// отдать целый блок
+	/// give away the whole block
 	if (pos >= offset + rows && pos <= offset + limit)
 		return res;
 
-	/// отдать кусок блока
+	/// give away a piece of the block
 	size_t start = std::max(
 		static_cast<Int64>(0),
 		static_cast<Int64>(offset) - static_cast<Int64>(pos) + static_cast<Int64>(rows));

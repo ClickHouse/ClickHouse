@@ -27,7 +27,7 @@ CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & sample_, 
 
 static void skipEndOfLine(ReadBuffer & istr)
 {
-	/// \n (Unix) или \r\n (DOS/Windows) или \n\r (Mac OS Classic)
+	/// \n (Unix) or \r\n (DOS/Windows) or \n\r (Mac OS Classic)
 
 	if (*istr.position() == '\n')
 	{
@@ -56,7 +56,7 @@ static void skipDelimiter(ReadBuffer & istr, const char delimiter, bool is_last_
 		if (istr.eof())
 			return;
 
-		/// поддерживаем лишний разделитель на конце строки
+		/// we support the extra delimiter at the end of the line
 		if (*istr.position() == delimiter)
 		{
 			++istr.position();
@@ -71,7 +71,7 @@ static void skipDelimiter(ReadBuffer & istr, const char delimiter, bool is_last_
 }
 
 
-/// Пропустить допустимые в CSV пробельные символы.
+/// Skip `whitespace` symbols allowed in CSV.
 static inline void skipWhitespacesAndTabs(ReadBuffer & buf)
 {
 	while (!buf.eof()
@@ -143,7 +143,7 @@ String CSVRowInputStream::getDiagnosticInfo()
 	WriteBufferFromString out(res);
 	Block block = sample.cloneEmpty();
 
-	/// Вывести подробную диагностику возможно лишь если последняя и предпоследняя строка ещё находятся в буфере для чтения.
+	/// It is possible to display detailed diagnostics only if the last and next to last rows are still in the read buffer.
 	size_t bytes_read_at_start_of_buffer = istr.count() - istr.offset();
 	if (bytes_read_at_start_of_buffer != bytes_read_at_start_of_buffer_on_prev_row)
 	{
@@ -161,7 +161,7 @@ String CSVRowInputStream::getDiagnosticInfo()
 		if (sample.safeGetByPosition(i).type->getName().size() > max_length_of_data_type_name)
 			max_length_of_data_type_name = sample.safeGetByPosition(i).type->getName().size();
 
-	/// Откатываем курсор для чтения на начало предыдущей или текущей строки и парсим всё заново. Но теперь выводим подробную информацию.
+	/// Roll back the cursor to the beginning of the previous or current row and parse all over again. But now we derive detailed information.
 
 	if (pos_of_prev_row)
 	{
@@ -228,7 +228,7 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
 
 		if (data_types[i]->isNumeric())
 		{
-			/// Пустая строка вместо числа.
+			/// An empty string instead of a number.
 			if (curr_position == prev_position)
 			{
 				out << "ERROR: text ";
@@ -271,13 +271,13 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
 			}
 		}
 
-		/// Разделители
+		/// Delimiters
 		if (i + 1 == size)
 		{
 			if (istr.eof())
 				return false;
 
-			/// поддерживаем лишний разделитель на конце строки
+			/// we support the extra delimiter at the end of the line
 			if (*istr.position() == delimiter)
 			{
 				++istr.position();
