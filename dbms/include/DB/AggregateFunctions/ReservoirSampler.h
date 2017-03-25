@@ -13,14 +13,14 @@
 #include <boost/random.hpp>
 
 
-/// Реализация алгоритма Reservoir Sampling. Инкрементально выбирает из добавленных объектов случайное подмножество размера sample_count.
-/// Умеет приближенно получать квантили.
-/// Вызов quantile занимает O(sample_count log sample_count), если после предыдущего вызова quantile был хотя бы один вызов insert. Иначе, O(1).
-/// То есть, имеет смысл сначала добавлять, потом получать квантили, не добавляя.
+/// Implementing the Reservoir Sampling algorithm. Incrementally selects from the added objects a random subset of the sample_count size.
+/// Can approximately get quantiles.
+/// Call `quantile` takes O(sample_count log sample_count), if after the previous call `quantile` there was at least one call `insert`. Otherwise O(1).
+/// That is, it makes sense to first add, then get quantiles without adding.
 
 const size_t DEFAULT_SAMPLE_COUNT = 8192;
 
-/// Что делать, если нет ни одного значения - кинуть исключение, или вернуть 0 или NaN в случае double?
+/// What if there is not a single value - throw an exception, or return 0 or NaN in the case of double?
 namespace ReservoirSamplerOnEmpty
 {
 	enum Enum
@@ -99,8 +99,8 @@ public:
 		return samples[int_index];
 	}
 
-	/** Если T не числовой тип, использование этого метода вызывает ошибку компиляции,
-	  *  но использование класса ошибки не вызывает. SFINAE.
+	/** If T is not a numeric type, using this method causes a compilation error,
+	  *  but use of error class does not. SFINAE.
 	  */
 	double quantileInterpolated(double level)
 	{
@@ -111,7 +111,7 @@ public:
 
 		double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
 
-		/// Чтобы получить значение по дробному индексу линейно интерполируем между соседними значениями.
+		/// To get the value of a fractional index, we linearly interpolate between neighboring values.
 		size_t left_index = static_cast<size_t>(index);
 		size_t right_index = left_index + 1;
 		if (right_index == samples.size())
@@ -189,7 +189,7 @@ private:
 	friend void qdigest_test(int normal_size, UInt64 value_limit, const std::vector<UInt64> & values, int queries_count, bool verbose);
 	friend void rs_perf_test();
 
-	/// Будем выделять немного памяти на стеке - чтобы избежать аллокаций, когда есть много объектов с маленьким количеством элементов.
+	/// We allocate a little memory on the stack - to avoid allocations when there are many objects with a small number of elements.
 	static constexpr size_t bytes_on_stack = 64;
 	using Array = DB::PODArray<T, bytes_on_stack / sizeof(T), AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
 
@@ -202,7 +202,7 @@ private:
 
 	UInt64 genRandom(size_t lim)
 	{
-		/// При большом количестве значений будем генерировать случайные числа в несколько раз медленнее.
+		/// With a large number of values, we will generate random numbers several times slower.
 		if (lim <= static_cast<UInt64>(rng.max()))
 			return static_cast<UInt32>(rng()) % static_cast<UInt32>(lim);
 		else

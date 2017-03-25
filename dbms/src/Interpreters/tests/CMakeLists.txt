@@ -8,7 +8,7 @@ add_executable (create_query create_query.cpp)
 target_link_libraries (create_query dbms)
 
 add_executable (select_query select_query.cpp)
-target_link_libraries (select_query dbms)
+target_link_libraries (select_query dbms storages_system)
 
 add_executable (aggregate aggregate.cpp)
 target_link_libraries (aggregate dbms)
@@ -37,9 +37,6 @@ target_link_libraries (hash_map_string_small dbms)
 add_executable (two_level_hash_map two_level_hash_map.cpp)
 target_link_libraries (two_level_hash_map dbms)
 
-add_executable (address_patterns address_patterns.cpp)
-target_link_libraries (address_patterns dbms)
-
 add_executable (compiler_test compiler_test.cpp)
 target_link_libraries (compiler_test dbms)
 
@@ -51,4 +48,4 @@ target_link_libraries (in_join_subqueries_preprocessor dbms)
 add_check(in_join_subqueries_preprocessor)
 
 add_executable (users users.cpp)
-target_link_libraries (users dbms ${Boost_FILESYSTEM_LIBRARY})
+target_link_libraries (users dbms ${Boost_FILESYSTEM_LIBRARY} zkutil dbms)

@@ -2,10 +2,10 @@
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
-#include <DB/Columns/ColumnVector.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 #include <cmath>
 
@@ -15,10 +15,10 @@ namespace DB
 namespace
 {
 
-/// Эта функция возвращает true если оба значения велики и сравнимы.
-/// Она употребляется для вычисления среднего значения путём слияния двух источников.
-/// Ибо если размеры обоих источников велики и сравнимы, то надо применить особенную
-///	формулу гарантирующую больше стабильности.
+/// This function returns true if both values are large and comparable.
+/// It is used to calculate the mean value by merging two sources.
+/// It means that if the sizes of both sources are large and comparable, then we must apply a special
+///  formula guaranteeing more stability.
 bool areComparable(UInt64 a, UInt64 b)
 {
 	const Float64 sensitivity = 0.001;
@@ -33,18 +33,18 @@ bool areComparable(UInt64 a, UInt64 b)
 
 }
 
-/** Статистические аггрегатные функции:
-  * varSamp - выборочная дисперсия
-  * stddevSamp - среднее выборочное квадратичное отклонение
-  * varPop - дисперсия
-  * stddevPop - среднее квадратичное отклонение
-  * covarSamp - выборочная ковариация
-  * covarPop - ковариация
-  * corr - корреляция
+/** Statistical aggregate functions
+  * varSamp - sample variance
+  * stddevSamp - mean sample quadratic deviation
+  * varPop - variance
+  * stddevPop - standard deviation
+  * covarSamp - selective covariance
+  * covarPop - covariance
+  * corr - correlation
   */
 
-/** Параллельный и инкрементальный алгоритм для вычисления дисперсии.
-  * Источник: "Updating formulae and a pairwise algorithm for computing sample variances"
+/** Parallel and incremental algorithm for calculating variance.
+  * Source: "Updating formulae and a pairwise algorithm for computing sample variances"
   * (Chan et al., Stanford University, 12.1979)
   */
 template<typename T, typename Op>
@@ -107,7 +107,7 @@ private:
 	Float64 m2 = 0.0;
 };
 
-/** Основной код для реализации функций varSamp, stddevSamp, varPop, stddevPop.
+/** The main code for the implementation of varSamp, stddevSamp, varPop, stddevPop.
   */
 template<typename T, typename Op>
 class AggregateFunctionVariance final
@@ -158,7 +158,7 @@ public:
 namespace
 {
 
-/** Реализации функции varSamp.
+/** Implementing the varSamp function.
   */
 struct VarSampImpl
 {
@@ -173,7 +173,7 @@ struct VarSampImpl
 	}
 };
 
-/** Реализация функции stddevSamp.
+/** Implementing the stddevSamp function.
   */
 struct StdDevSampImpl
 {
@@ -185,7 +185,7 @@ struct StdDevSampImpl
 	}
 };
 
-/** Реализация функции varPop.
+/** Implementing the varPop function.
   */
 struct VarPopImpl
 {
@@ -202,7 +202,7 @@ struct VarPopImpl
 	}
 };
 
-/** Реализация функции stddevPop.
+/** Implementing the stddevPop function.
   */
 struct StdDevPopImpl
 {
@@ -216,8 +216,8 @@ struct StdDevPopImpl
 
 }
 
-/** Если флаг compute_marginal_moments установлен, этот класс предоставялет наследнику
-  * CovarianceData поддержку маргинальных моментов для вычисления корреляции.
+/** If `compute_marginal_moments` flag is set this class provides the heir
+  * CovarianceData support of marginal moments for calculating the correlation.
   */
 template<bool compute_marginal_moments>
 class BaseCovarianceData
@@ -262,8 +262,8 @@ protected:
 	Float64 right_m2 = 0.0;
 };
 
-/** Параллельный и инкрементальный алгоритм для вычисления ковариации.
-  * Источник: "Numerically Stable, Single-Pass, Parallel Statistics Algorithms"
+/** Parallel and incremental algorithm for calculating covariance.
+  * Source: "Numerically Stable, Single-Pass, Parallel Statistics Algorithms"
   * (J. Bennett et al., Sandia National Laboratories,
   *  2009 IEEE International Conference on Cluster Computing)
   */
@@ -292,7 +292,7 @@ public:
 		right_mean += right_delta / count;
 		co_moment += (left_val - left_mean) * (right_val - old_right_mean);
 
-		/// Обновить маргинальные моменты, если они есть.
+		/// Update the marginal moments, if any.
 		if (compute_marginal_moments)
 		{
 			Float64 left_incr = left_delta * (left_val - left_mean);
@@ -325,7 +325,7 @@ public:
 		co_moment += source.co_moment + left_delta * right_delta * factor;
 		count = total_count;
 
-		/// Обновить маргинальные моменты, если они есть.
+		/// Update the marginal moments, if any.
 		if (compute_marginal_moments)
 		{
 			Float64 left_incr = left_delta * left_delta * factor;
@@ -426,7 +426,7 @@ public:
 namespace
 {
 
-/** Реализация функции covarSamp.
+/** Implementing the covarSamp function.
   */
 struct CovarSampImpl
 {
@@ -441,7 +441,7 @@ struct CovarSampImpl
 	}
 };
 
-/** Реализация функции covarPop.
+/** Implementing the covarPop function.
   */
 struct CovarPopImpl
 {
@@ -458,7 +458,7 @@ struct CovarPopImpl
 	}
 };
 
-/** Реализация функции corr.
+/** `corr` function implementation.
   */
 struct CorrImpl
 {

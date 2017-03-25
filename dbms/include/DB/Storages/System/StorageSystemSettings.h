@@ -10,7 +10,7 @@ namespace DB
 class Context;
 
 
-/** Реализует системную таблицу settings, которая позволяет получить информацию о текущих настройках.
+/** implements system table "settings", which allows to get information about the current settings.
   */
 class StorageSystemSettings : private ext::shared_ptr_helper<StorageSystemSettings>, public IStorage
 {

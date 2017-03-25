@@ -14,13 +14,15 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNullable.h>
+
+#include <DB/Interpreters/Settings.h>
 
 #include <Poco/Path.h>
 #include <Poco/DirectoryIterator.h>
@@ -98,9 +100,9 @@ private:
 	Names column_names;
 	DataTypes column_types;
 	StorageLog & storage;
-	size_t mark_number;		/// С какой засечки читать данные
+	size_t mark_number;     /// from what mark to read data
 	size_t null_mark_number;
-	size_t rows_limit;		/// Максимальное количество строк, которых можно прочитать
+	size_t rows_limit;      /// The maximum number of rows that can be read
 	size_t rows_read = 0;
 	size_t max_read_buffer_size;
 
@@ -172,7 +174,7 @@ private:
 		WriteBufferFromFile plain;
 		CompressedWriteBuffer compressed;
 
-		size_t plain_offset;	/// Сколько байт было в файле на момент создания LogBlockOutputStream.
+		size_t plain_offset;    /// How many bytes were in the file at the time the LogBlockOutputStream was created.
 
 		void finalize()
 		{
@@ -188,7 +190,7 @@ private:
 
 	using OffsetColumns = std::set<std::string>;
 
-	WriteBufferFromFile marks_stream; /// Объявлен ниже lock, чтобы файл открывался при захваченном rwlock.
+	WriteBufferFromFile marks_stream; /// Declared below `lock` to make the file open when rwlock is captured.
 	std::unique_ptr<WriteBufferFromFile> null_marks_stream;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
@@ -211,7 +213,7 @@ Block LogBlockInputStream::readImpl()
 	if (Poco::DirectoryIterator(storage.getFullPath()) == Poco::DirectoryIterator())
 		return res;
 
-	/// Если файлы не открыты, то открываем их.
+	/// If the files are not open, then open them.
 	if (streams.empty())
 	{
 		Poco::ScopedReadRWLock lock(storage.rwlock);
@@ -224,10 +226,10 @@ Block LogBlockInputStream::readImpl()
 		}
 	}
 
-	/// Сколько строк читать для следующего блока.
+	/// How many rows to read for the next block.
 	size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
 
-	/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
+	/// Pointers to offset columns, mutual for columns from nested data structures
 	using OffsetColumns = std::map<std::string, ColumnPtr>;
 	OffsetColumns offset_columns;
 
@@ -256,7 +258,7 @@ Block LogBlockInputStream::readImpl()
 			is_nullable = false;
 		}
 
-		/// Для вложенных структур запоминаем указатели на столбцы со смещениями
+		/// For nested structures, remember pointers to columns with offsets
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type))
 		{
 			String name = DataTypeNested::extractNestedTableName(column.name);
@@ -264,7 +266,7 @@ Block LogBlockInputStream::readImpl()
 			if (offset_columns.count(name) == 0)
 				offset_columns[name] = std::make_shared<ColumnArray::ColumnOffsets_t>();
 			else
-				read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
+				read_offsets = false; /// on previous iterations the offsets were already read by `readData`
 
 			column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
 			if (is_nullable)
@@ -292,9 +294,9 @@ Block LogBlockInputStream::readImpl()
 
 	if (!res || rows_read == rows_limit)
 	{
-		/** Закрываем файлы (ещё до уничтожения объекта).
-		  * Чтобы при создании многих источников, но одновременном чтении только из нескольких,
-		  *  буферы не висели в памяти.
+		/** Close the files (before destroying the object).
+		  * When many sources are created, but simultaneously reading only a few of them,
+		  * buffers don't waste memory.
 		  */
 		streams.clear();
 	}
@@ -325,7 +327,7 @@ void LogBlockInputStream::addStream(const String & name, const IDataType & type,
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		/// Для массивов используются отдельные потоки для размеров.
+		/// For arrays, separate threads are used for sizes.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
 			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
@@ -366,7 +368,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		/// Для массивов требуется сначала десериализовать размеры, а потом значения.
+		/// For arrays, you first need to deserialize the dimensions, and then the values.
 		if (read_offsets)
 		{
 			type_arr->deserializeOffsets(
@@ -384,7 +386,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 				level + 1);
 	}
 	else
-		type.deserializeBinaryBulk(column, streams[name]->compressed, max_rows_to_read, 0);	/// TODO Использовать avg_value_size_hint.
+		type.deserializeBinaryBulk(column, streams[name]->compressed, max_rows_to_read, 0);	/// TODO Use avg_value_size_hint.
 }
 
 
@@ -392,7 +394,7 @@ void LogBlockOutputStream::write(const Block & block)
 {
 	storage.check(block, true);
 
-	/// Множество записанных столбцов со смещениями, чтобы не писать общие для вложенных структур столбцы несколько раз
+	/// The set of written offset columns so that you do not write mutual columns for nested structures multiple times
 	OffsetColumns offset_columns;
 
 	MarksForColumns marks;
@@ -420,7 +422,7 @@ void LogBlockOutputStream::writeSuffix()
 		return;
 	done = true;
 
-	/// Заканчиваем запись.
+	/// Finish write.
 	marks_stream.next();
 	if (null_marks_stream)
 		null_marks_stream->next();
@@ -456,7 +458,7 @@ void LogBlockOutputStream::addStream(const String & name, const IDataType & type
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		/// Для массивов используются отдельные потоки для размеров.
+		/// For arrays separate threads are used for sizes.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
 			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
@@ -498,7 +500,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
+		/// For arrays, you first need to serialize the dimensions, and then the values.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
 		if (offset_columns.count(size_name) == 0)
@@ -575,7 +577,7 @@ StorageLog::StorageLog(
 	if (columns->empty())
 		throw Exception("Empty list of columns passed to StorageLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-	/// создаём файлы, если их нет
+	 /// create files if they do not exist
 	Poco::File(path + escapeForFileName(name) + '/').createDirectories();
 
 	for (const auto & column : getColumnsList())
@@ -748,7 +750,7 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_databa
 {
 	Poco::ScopedWriteRWLock lock(rwlock);
 
-	/// Переименовываем директорию с данными.
+	/// Rename directory with data.
 	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
 
 	path = new_path_to_db;
@@ -781,8 +783,8 @@ const Marks & StorageLog::getMarksWithRealRowCount() const
 	const IDataType & column_type = *init_column_type();
 	String filename;
 
-	/** Засечки достаём из первого столбца.
-	  * Если это - массив, то берём засечки, соответствующие размерам, а не внутренностям массивов.
+	/** We take marks from first column.
+	  * If this is an array, then we take the marks corresponding to the sizes, and not to the internals of the arrays.
 	  */
 
 	if (typeid_cast<const DataTypeArray *>(&column_type))
@@ -810,106 +812,87 @@ BlockInputStreams StorageLog::read(
 	size_t max_block_size,
 	unsigned threads)
 {
-	/** Если читаем все данные в один поток, то засечки не требуются.
-	  * Отсутствие необходимости загружать засечки позволяет уменьшить потребление памяти.
-	  */
-	bool read_all_data_in_one_thread = (threads == 1 && from_mark == 0 && to_mark == std::numeric_limits<size_t>::max());
-	if (!read_all_data_in_one_thread)
-		loadMarks();
-
 	check(column_names);
-
 	processed_stage = QueryProcessingStage::FetchColumns;
+	loadMarks();
 
 	Poco::ScopedReadRWLock lock(rwlock);
 
 	BlockInputStreams res;
 
-	if (read_all_data_in_one_thread)
+	const Marks & marks = getMarksWithRealRowCount();
+	size_t marks_size = marks.size();
+
+	/// Given a thread, return the start of the area from which
+	/// it can read data, i.e. a mark number.
+	auto mark_from_thread = [&](size_t thread)
 	{
-		res.push_back(std::make_shared<LogBlockInputStream>(
-			max_block_size,
-			column_names,
-			*this,
-			0, marksCount() ? std::numeric_limits<size_t>::max() : 0,
-			settings.max_read_buffer_size));
+		/// The computation below reflects the fact that marks
+		/// are uniformly distributed among threads.
+		return from_mark + thread * (to_mark - from_mark) / threads;
+	};
+
+	/// Given a thread, get the parameters that specify the area
+	/// from which it can read data, i.e. a mark number and a
+	/// maximum number of rows.
+	auto get_reader_parameters = [&](size_t thread)
+	{
+		size_t mark_number = mark_from_thread(thread);
+
+		size_t cur_total_row_count = ((thread == 0 && from_mark == 0)
+					? 0
+					: marks[mark_number - 1].rows);
+		size_t next_total_row_count = marks[mark_from_thread(thread + 1) - 1].rows;
+		size_t rows_limit = next_total_row_count - cur_total_row_count;
+
+		return std::make_pair(mark_number, rows_limit);
+	};
+
+	if (to_mark == std::numeric_limits<size_t>::max())
+		to_mark = marks_size;
+
+	if (to_mark > marks_size || to_mark < from_mark)
+		throw Exception("Marks out of range in StorageLog::read", ErrorCodes::LOGICAL_ERROR);
+
+	if (threads > to_mark - from_mark)
+		threads = to_mark - from_mark;
+
+	if (has_nullable_columns)
+	{
+		for (size_t thread = 0; thread < threads; ++thread)
+		{
+			size_t mark_number;
+			size_t rows_limit;
+			std::tie(mark_number, rows_limit) = get_reader_parameters(thread);
+
+			/// This works since we have the same number of marks and null marks.
+			size_t null_mark_number = from_null_mark + (mark_number - from_mark);
+
+			res.push_back(std::make_shared<LogBlockInputStream>(
+				max_block_size,
+				column_names,
+				*this,
+				mark_number,
+				null_mark_number,
+				rows_limit,
+				settings.max_read_buffer_size));
+		}
 	}
 	else
 	{
-		const Marks & marks = getMarksWithRealRowCount();
-		size_t marks_size = marks.size();
-
-		/// Given a thread, return the start of the area from which
-		/// it can read data, i.e. a mark number.
-		auto mark_from_thread = [&](size_t thread)
+		for (size_t thread = 0; thread < threads; ++thread)
 		{
-			/// The computation below reflects the fact that marks
-			/// are uniformly distributed among threads.
-			return from_mark + thread * (to_mark - from_mark) / threads;
-		};
+			size_t mark_number;
+			size_t rows_limit;
+			std::tie(mark_number, rows_limit) = get_reader_parameters(thread);
 
-		/// Given a thread, get the parameters that specify the area
-		/// from which it can read data, i.e. a mark number and a
-		/// maximum number of rows.
-		auto get_reader_parameters = [&](size_t thread)
-		{
-			size_t mark_number = mark_from_thread(thread);
-
-			size_t cur_total_row_count = ((thread == 0 && from_mark == 0)
-						? 0
-						: marks[mark_number - 1].rows);
-			size_t next_total_row_count = marks[mark_from_thread(thread + 1) - 1].rows;
-			size_t rows_limit = next_total_row_count - cur_total_row_count;
-
-			return std::make_pair(mark_number, rows_limit);
-		};
-
-		if (to_mark == std::numeric_limits<size_t>::max())
-			to_mark = marks_size;
-
-		if (to_mark > marks_size || to_mark < from_mark)
-			throw Exception("Marks out of range in StorageLog::read", ErrorCodes::LOGICAL_ERROR);
-
-		if (threads > to_mark - from_mark)
-			threads = to_mark - from_mark;
-
-		if (has_nullable_columns)
-		{
-			for (size_t thread = 0; thread < threads; ++thread)
-			{
-				size_t mark_number;
-				size_t rows_limit;
-				std::tie(mark_number, rows_limit) = get_reader_parameters(thread);
-
-				/// This works since we have the same number of marks and null marks.
-				size_t null_mark_number = from_null_mark + (mark_number - from_mark);
-
-				res.push_back(std::make_shared<LogBlockInputStream>(
-					max_block_size,
-					column_names,
-					*this,
-					mark_number,
-					null_mark_number,
-					rows_limit,
-					settings.max_read_buffer_size));
-			}
-		}
-		else
-		{
-			for (size_t thread = 0; thread < threads; ++thread)
-			{
-				size_t mark_number;
-				size_t rows_limit;
-				std::tie(mark_number, rows_limit) = get_reader_parameters(thread);
-
-				res.push_back(std::make_shared<LogBlockInputStream>(
-					max_block_size,
-					column_names,
-					*this,
-					mark_number,
-					rows_limit,
-					settings.max_read_buffer_size));
-			}
+			res.push_back(std::make_shared<LogBlockInputStream>(
+				max_block_size,
+				column_names,
+				*this,
+				mark_number,
+				rows_limit,
+				settings.max_read_buffer_size));
 		}
 	}
 

@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 
 LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(ASTFunction * or_function_,
-	const std::string & expression_, const std::string & alias_)
+	const IAST::Hash & expression_, const std::string & alias_)
 	: or_function(or_function_), expression(expression_), alias(alias_)
 {
 }
@@ -130,7 +130,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 							auto literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
 							if (literal != nullptr)
 							{
-								auto expr_lhs = equals_expression_list->children[0]->getTreeID();
+								auto expr_lhs = equals_expression_list->children[0]->getTreeHash();
 								OrWithExpression or_with_expression{function, expr_lhs, function->tryGetAlias()};
 								disjunctive_equality_chains_map[or_with_expression].functions.push_back(equals);
 								found_chain = true;

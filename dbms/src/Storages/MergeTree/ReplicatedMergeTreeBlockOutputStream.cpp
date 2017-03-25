@@ -27,13 +27,13 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
 	: storage(storage_), insert_id(insert_id_), quorum(quorum_), quorum_timeout_ms(quorum_timeout_ms_),
 	log(&Logger::get(storage.data.getLogName() + " (Replicated OutputStream)"))
 {
-	/// Значение кворума 1 имеет такой же смысл, как если он отключён.
+	/// The quorum value `1` has the same meaning as if it is disabled.
 	if (quorum == 1)
 		quorum = 0;
 }
 
 
-/// Позволяет проверить, что сессия в ZooKeeper ещё жива.
+/// Allow to verify that the session in ZooKeeper is still alive.
 static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 {
 	if (!zookeeper)
@@ -46,17 +46,17 @@ static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 
 void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 {
-	/// TODO Можно ли здесь не блокировать структуру таблицы?
+	/// TODO Can I not lock the table structure here?
 	storage.data.delayInsertIfNeeded(&storage.restarting_thread->getWakeupEvent());
 
 	auto zookeeper = storage.getZooKeeper();
 
 	assertSessionIsNotExpired(zookeeper);
 
-	/** Если запись с кворумом, то проверим, что требуемое количество реплик сейчас живо,
-	  *  а также что для всех предыдущих кусков, для которых требуется кворум, этот кворум достигнут.
-	  * А также будем проверять, что во время вставки, реплика не была переинициализирована или выключена (по значению узла is_active).
-	  * TODO Слишком сложная логика, можно сделать лучше.
+	/** If write is with quorum, then we check that the required number of replicas is now live,
+	  *  and also that for all previous pieces for which quorum is required, this quorum is reached.
+	  * And also check that during the insertion, the replica was not reinitialized or disabled (by the value of `is_active` node).
+	  * TODO Too complex logic, you can do better.
 	  */
 	String quorum_status_path = storage.zookeeper_path + "/quorum/status";
 	String is_active_node_value;
@@ -68,7 +68,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 		zkutil::ZooKeeper::TryGetFuture is_active_future = zookeeper->asyncTryGet(storage.replica_path + "/is_active");
 		zkutil::ZooKeeper::TryGetFuture host_future = zookeeper->asyncTryGet(storage.replica_path + "/host");
 
-		/// Список живых реплик. Все они регистрируют эфемерную ноду для leader_election.
+		/// List of live replicas. All of them register an ephemeral node for leader_election.
 
 		zkutil::Stat leader_election_stat;
 		zookeeper->get(storage.zookeeper_path + "/leader_election", &leader_election_stat);
@@ -78,19 +78,19 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 				+ toString(leader_election_stat.numChildren) + ") is less than requested quorum (" + toString(quorum) + ").",
 				ErrorCodes::TOO_LESS_LIVE_REPLICAS);
 
-		/** Достигнут ли кворум для последнего куска, для которого нужен кворум?
-			* Запись всех кусков с включенным кворумом линейно упорядочена.
-			* Это значит, что в любой момент времени может быть только один кусок,
-			*  для которого нужен, но ещё не достигнут кворум.
-			* Информация о таком куске будет расположена в ноде /quorum/status.
-			* Если кворум достигнут, то нода удаляется.
+		/** Is there a quorum for the last piece for which a quorum is needed?
+			* Write of all the pieces with the included quorum is linearly ordered.
+			* This means that at any time there can be only one piece,
+			*  for which you need, but not yet reach the quorum.
+			* Information about this piece will be located in `/quorum/status` node.
+			* If the quorum is reached, then the node is deleted.
 			*/
 
 		auto quorum_status = quorum_status_future.get();
 		if (quorum_status.exists)
 			throw Exception("Quorum for previous write has not been satisfied yet. Status: " + quorum_status.value, ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
 
-		/// Обе проверки неявно делаются и позже (иначе был бы race condition).
+		/// Both checks are implicitly made also later (otherwise there would be a race condition).
 
 		auto is_active = is_active_future.get();
 		auto host = host_future.get();
@@ -120,7 +120,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 		MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, part_number);
 		String part_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
 
-		/// Хэш от данных.
+		/// Hash from the data.
 		SipHash hash;
 		part->checksums.summaryDataChecksum(hash);
 		union
@@ -132,9 +132,9 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
 		String checksum(hash_value.bytes, 16);
 
-		/// Если в запросе не указан ID, возьмем в качестве ID хеш от данных. То есть, не вставляем одинаковые данные дважды.
-		/// NOTE: Если такая дедупликация не нужна, можно вместо этого оставлять block_id пустым.
-		///       Можно для этого сделать настройку или синтаксис в запросе (например, ID=null).
+		/// If no ID is specified in query, we take the hash from the data as ID. That is, do not insert the same data twice.
+		/// NOTE: If you do not need this deduplication, you can leave `block_id` empty instead.
+		///       Setting or syntax in the query (for example, `ID = null`) could be done for this.
 		if (block_id.empty())
 		{
 			block_id = toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
@@ -153,9 +153,9 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 		log_entry.quorum = quorum;
 		log_entry.block_id = block_id;
 
-		/// Одновременно добавим информацию о куске во все нужные места в ZooKeeper и снимем block_number_lock.
+		/// Simultaneously add information about the part to all the necessary places in ZooKeeper and remove block_number_lock.
 
-		/// Информация о блоке.
+		/// Information about the block.
 		zkutil::Ops ops;
 		auto acl = zookeeper->getDefaultACL();
 
@@ -178,22 +178,22 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 				acl,
 				zkutil::CreateMode::Persistent));
 
-		/// Информация о куске, в данных реплики.
+		/// Information about the part, in the replica data.
 		storage.addNewPartToZooKeeper(part, ops, part_name);
 
-		/// Лог репликации.
+		/// Replication log.
 		ops.emplace_back(std::make_unique<zkutil::Op::Create>(
 			storage.zookeeper_path + "/log/log-",
 			log_entry.toString(),
 			acl,
 			zkutil::CreateMode::PersistentSequential));
 
-		/// Удаление информации о том, что номер блока используется для записи.
+		/// Deletes the information that the block number is used for writing.
 		block_number_lock.getUnlockOps(ops);
 
-		/** Если нужен кворум - создание узла, в котором отслеживается кворум.
-			* (Если такой узел уже существует - значит кто-то успел одновременно сделать другую кворумную запись, но для неё кворум ещё не достигнут.
-			*  Делать в это время следующую кворумную запись нельзя.)
+		/** If you need a quorum - create a node in which the quorum is monitored.
+			* (If such a node already exists, then someone has managed to make another quorum record at the same time, but for it the quorum has not yet been reached.
+			*  You can not do the next quorum record at this time.)
 			*/
 		if (quorum)
 		{
@@ -202,11 +202,11 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 			quorum_entry.required_number_of_replicas = quorum;
 			quorum_entry.replicas.insert(storage.replica_name);
 
-			/** В данный момент, этот узел будет содержать информацию о том, что текущая реплика получила кусок.
-				* Когда другие реплики будут получать этот кусок (обычным способом, обрабатывая лог репликации),
-				*  они будут добавлять себя в содержимое этого узла.
-				* Когда в нём будет информация о quorum количестве реплик, этот узел удаляется,
-				*  что говорит о том, что кворум достигнут.
+			/** At this point, this node will contain information that the current replica received a piece.
+				* When other replicas will receive this piece (in the usual way, processing the replication log),
+				*  they will add themselves to the contents of this node.
+				* When it contains information about `quorum` number of replicas, this node is deleted,
+				*  which indicates that the quorum has been reached.
 				*/
 
 			ops.emplace_back(
@@ -216,22 +216,22 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 					acl,
 					zkutil::CreateMode::Persistent));
 
-			/// Удостоверяемся, что за время вставки, реплика не была переинициализирована или выключена (при завершении сервера).
+			/// Make sure that during the insertion time, the replica was not reinitialized or disabled (when the server is finished).
 			ops.emplace_back(
 				std::make_unique<zkutil::Op::Check>(
 					storage.replica_path + "/is_active",
 					is_active_node_version));
 
-			/// К сожалению, одной лишь проверки выше недостаточно, потому что узел is_active может удалиться и появиться заново с той же версией.
-			/// Но тогда изменится значение узла host. Будем проверять это.
-			/// Замечательно, что эти два узла меняются в одной транзакции (см. MergeTreeRestartingThread).
+			/// Unfortunately, just checking the above is not enough, because `is_active` node can be deleted and reappear with the same version.
+			/// But then the `host` value will change. We will check this.
+			/// It's great that these two nodes change in the same transaction (see MergeTreeRestartingThread).
 			ops.emplace_back(
 				std::make_unique<zkutil::Op::Check>(
 					storage.replica_path + "/host",
 					host_node_version));
 		}
 
-		MergeTreeData::Transaction transaction; /// Если не получится добавить кусок в ZK, снова уберем его из рабочего набора.
+		MergeTreeData::Transaction transaction; /// If you can not add a piece to ZK, we'll remove it again from the working set.
 		storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
 
 		try
@@ -244,14 +244,14 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 			}
 			else if (code == ZNODEEXISTS)
 			{
-				/// Если блок с таким ID уже есть в таблице, откатим его вставку.
+				/// If the block with such ID already exists in the table, roll back its insertion.
 				String expected_checksum;
 				if (!block_id.empty() && zookeeper->tryGet(
 					storage.zookeeper_path + "/blocks/" + block_id + "/checksum", expected_checksum))
 				{
 					LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
 
-					/// Если данные отличались от тех, что были вставлены ранее с тем же ID, бросим исключение.
+					/// If the data is different from the ones that were inserted earlier with the same ID, throw an exception.
 					if (expected_checksum != checksum)
 					{
 						if (!insert_id.empty())
@@ -270,7 +270,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 				}
 				else
 				{
-					/// Сюда можем попасть также, если узел с кворумом существовал, но потом быстро был удалён.
+					/// if the node with the quorum existed, but was quickly removed.
 
 					throw Exception("Unexpected ZNODEEXISTS while adding block " + toString(part_number) + " with ID " + block_id + ": "
 						+ zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
@@ -284,8 +284,8 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 		}
 		catch (const zkutil::KeeperException & e)
 		{
-			/** Если потерялось соединение, и мы не знаем, применились ли изменения, нельзя удалять локальный кусок:
-				*  если изменения применились, в /blocks/ появился вставленный блок, и его нельзя будет вставить снова.
+			/** If the connection is lost, and we do not know if the changes were applied, you can not delete the local chunk
+				*  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
 				*/
 			if (e.code == ZOPERATIONTIMEOUT ||
 				e.code == ZCONNECTIONLOSS)
@@ -293,7 +293,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 				transaction.commit();
 				storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
 
-				/// Мы не знаем, были или не были вставлены данные.
+				/// We do not know whether or not data has been inserted.
 				throw Exception("Unknown status, client must retry. Reason: " + e.displayText(), ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
 			}
 
@@ -302,7 +302,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
 		if (quorum)
 		{
-			/// Дожидаемся достижения кворума.
+			/// We are waiting for the quorum to be reached.
 			LOG_TRACE(log, "Waiting for quorum");
 
 			try
@@ -312,13 +312,13 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 					zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
 					std::string value;
-					/// get вместо exists, чтобы не утек watch, если ноды уже нет.
+					/// `get` instead of `exists` so that `watch` does not leak if the node is no longer there.
 					if (!zookeeper->tryGet(quorum_status_path, value, nullptr, event))
 						break;
 
 					ReplicatedMergeTreeQuorumEntry quorum_entry(value);
 
-					/// Если нода успела исчезнуть, а потом появиться снова уже для следующей вставки.
+					/// If the node has time to disappear, and then appear again for the next insert.
 					if (quorum_entry.part_name != part_name)
 						break;
 
@@ -326,7 +326,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 						throw Exception("Timeout while waiting for quorum");
 				}
 
-				/// А вдруг возможно, что текущая реплика в это время перестала быть активной и кворум помечен как неудавшийся, и удалён?
+				/// And what if it is possible that the current replica at this time has ceased to be active and the quorum is marked as failed and deleted?
 				String value;
 				if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, nullptr)
 					|| value != is_active_node_value)
@@ -334,8 +334,8 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 			}
 			catch (...)
 			{
-				/// Мы не знаем, были или не были вставлены данные
-				/// - успели или не успели другие реплики скачать кусок и пометить кворум как выполненный.
+				/// We do not know whether or not data has been inserted
+				/// - whether other replicas have time to download the part and mark the quorum as done.
 				throw Exception("Unknown status, client must retry. Reason: " + getCurrentExceptionMessage(false),
 					ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
 			}

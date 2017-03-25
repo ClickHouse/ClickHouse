@@ -2,6 +2,8 @@
 
 #include <DB/Dictionaries/IDictionary.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <common/singleton.h>
+
 
 namespace DB
 {

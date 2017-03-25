@@ -42,7 +42,7 @@ protected:
 			Block src = *it;
 			Block res;
 
-			/// Добавляем только нужные столбцы в res.
+			/// Add only required columns to `res`.
 			for (size_t i = 0, size = column_names.size(); i < size; ++i)
 				res.insert(src.getByName(column_names[i]));
 

@@ -4,18 +4,16 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <Poco/Condition.h>
-#include <Poco/Net/IPAddress.h>
 #include <DB/Common/Stopwatch.h>
 #include <DB/Core/Defines.h>
 #include <DB/Core/Progress.h>
-#include <DB/Common/Exception.h>
 #include <DB/Common/MemoryTracker.h>
-#include <DB/IO/WriteHelpers.h>
 #include <DB/Interpreters/QueryPriorities.h>
 #include <DB/Interpreters/ClientInfo.h>
-#include <DB/Storages/IStorage.h>
 #include <DB/Common/CurrentMetrics.h>
+#include <DB/DataStreams/BlockIO.h>
 
 
 namespace CurrentMetrics
@@ -25,6 +23,13 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
+using Tables = std::map<String, StoragePtr>;
+struct Settings;
+class IAST;
+
 
 /** List of currently executing queries.
   * Also implements limit on their number.
@@ -70,6 +75,21 @@ struct ProcessListElement
 
 	/// Temporary tables could be registered here. Modify under mutex.
 	Tables temporary_tables;
+
+protected:
+
+	mutable std::mutex query_streams_mutex;
+
+	/// Streams with query results, point to BlockIO from executeQuery()
+	/// This declaration is compatible with notes about BlockIO::process_list_entry:
+	///  there are no cyclic dependencies: BlockIO::in,out point to objects inside ProcessListElement (not whole object)
+	BlockInputStreamPtr query_stream_in;
+	BlockOutputStreamPtr query_stream_out;
+
+	bool query_streams_initialized{false};
+	bool query_streams_released{false};
+
+public:
 
 
 	ProcessListElement(
@@ -126,6 +146,18 @@ struct ProcessListElement
 
 		return res;
 	}
+
+	/// Copies pointers to in/out streams
+	void setQueryStreams(const BlockIO & io);
+
+	/// Frees in/out streams
+	void releaseQueryStreams();
+
+	/// It means that ProcessListEntry still exists, but stream was already destroyed
+	bool streamsAreReleased();
+
+	/// Get query in/out pointers from BlockIO
+	bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
 };
 
 
@@ -192,6 +224,9 @@ private:
 	/// Limit and counter for memory of all simultaneously running queries.
 	MemoryTracker total_memory_tracker;
 
+	/// Call under lock. Finds process with specified current_user and current_query_id.
+	ProcessListElement * tryGetProcessListElement(const String & current_query_id, const String & current_user);
+
 public:
 	ProcessList(size_t max_size_ = 0) : cur_size(0), max_size(max_size_) {}
 
@@ -200,8 +235,9 @@ public:
 	/** Register running query. Returns refcounted object, that will remove element from list in destructor.
 	  * If too much running queries - wait for not more than specified (see settings) amount of time.
 	  * If timeout is passed - throw an exception.
+	  * Don't count KILL QUERY queries.
 	  */
-	EntryPtr insert(const String & query_, const ClientInfo & client_info, const Settings & settings);
+	EntryPtr insert(const String & query_, const IAST * ast, const ClientInfo & client_info, const Settings & settings);
 
 	/// Number of currently executing queries.
 	size_t size() const { return cur_size; }
@@ -230,6 +266,19 @@ public:
 
 	/// Find temporary table by query_id and name. NOTE: doesn't work fine if there are many queries with same query_id.
 	StoragePtr tryGetTemporaryTable(const String & query_id, const String & table_name) const;
+
+
+	enum class CancellationCode
+	{
+		NotFound = 0, 					/// already cancelled
+		QueryIsNotInitializedYet = 1,
+		CancelCannotBeSent = 2,
+		CancelSent = 3,
+		Unknown
+	};
+
+	/// Try call cancel() for input and output streams of query with specified id and user
+	CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
 };
 
 }

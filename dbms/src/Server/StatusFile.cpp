@@ -7,7 +7,7 @@
 
 #include <Poco/File.h>
 #include <common/logger_useful.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 #include <common/LocalDateTime.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
@@ -23,7 +23,7 @@ namespace DB
 StatusFile::StatusFile(const std::string & path_)
 	: path(path_)
 {
-	/// Если файл уже существует. NOTE Незначительный race condition.
+	/// If file already exists. NOTE Minor race condition.
 	if (Poco::File(path).exists())
 	{
 		std::string contents;
@@ -61,7 +61,7 @@ StatusFile::StatusFile(const std::string & path_)
 		if (0 != lseek(fd, 0, SEEK_SET))
 			throwFromErrno("Cannot lseek " + path);
 
-		/// Записываем в файл информацию о текущем экземпляре сервера.
+		/// Write information about current server instance to the file.
 		{
 			WriteBufferFromFileDescriptor out(fd, 1024);
 			out

@@ -1,9 +1,10 @@
 #include <DB/Core/Block.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
@@ -20,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-Field evaluateConstantExpression(ASTPtr & node, const Context & context)
+std::pair<Field, std::shared_ptr<IDataType>> evaluateConstantExpression(std::shared_ptr<IAST> & node, const Context & context)
 {
 	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(
 		node, context, nullptr, NamesAndTypesList{{ "_dummy", std::make_shared<DataTypeUInt8>() }}).getConstActions();
@@ -38,12 +39,13 @@ Field evaluateConstantExpression(ASTPtr & node, const Context & context)
 	if (!block_with_constants.has(name))
 		throw Exception("Element of set in IN or VALUES is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
 
-	const IColumn & result_column = *block_with_constants.getByName(name).column;
+	const ColumnWithTypeAndName & result = block_with_constants.getByName(name);
+	const IColumn & result_column = *result.column;
 
 	if (!result_column.isConst())
 		throw Exception("Element of set in IN or VALUES is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
 
-	return result_column[0];
+	return std::make_pair(result_column[0], result.type);
 }
 
 
@@ -53,7 +55,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(ASTPtr & node, const Context & contex
 		return node;
 
 	return std::make_shared<ASTLiteral>(node->range,
-		evaluateConstantExpression(node, context));
+		evaluateConstantExpression(node, context).first);
 }
 
 

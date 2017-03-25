@@ -83,8 +83,7 @@ bool ValuesRowInputStream::read(Block & block)
 				|| e.code() == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
 				|| e.code() == ErrorCodes::CANNOT_PARSE_DATE
 				|| e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
-				|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
-				|| e.code() == ErrorCodes::CANNOT_PARSE_DATE)
+				|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT)
 			{
 				/// TODO Работоспособность, если выражение не помещается целиком до конца буфера.
 
@@ -110,7 +109,8 @@ bool ValuesRowInputStream::read(Block & block)
 
 				istr.position() = const_cast<char *>(max_parsed_pos);
 
-				Field value = convertFieldToType(evaluateConstantExpression(ast, context), type);
+				std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
+				Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
 
 				if (value.isNull())
 				{

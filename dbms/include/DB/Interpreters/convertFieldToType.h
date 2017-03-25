@@ -15,6 +15,6 @@ class IDataType;
   * Проверяет совместимость типов, проверяет попадание значений в диапазон допустимых значений типа, делает преобразование типа.
   * Если значение не попадает в диапазон - возвращает Null.
   */
-Field convertFieldToType(const Field & src, const IDataType & type);
+Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr);
 
 }

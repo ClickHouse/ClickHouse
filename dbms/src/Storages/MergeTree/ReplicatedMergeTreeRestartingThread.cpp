@@ -29,7 +29,7 @@ namespace ErrorCodes
 }
 
 
-/// Используется для проверки, выставили ли ноду is_active мы, или нет.
+/// Used to check whether it's us who set node `is_active`, or not.
 static String generateActiveNodeIdentifier()
 {
 	return "pid: " + toString(getpid()) + ", random: " + toString(randomSeed());
@@ -49,19 +49,19 @@ void ReplicatedMergeTreeRestartingThread::run()
 {
 	constexpr auto retry_period_ms = 10 * 1000;
 
-	/// Периодичность проверки истечения сессии в ZK.
+	/// The frequency of checking expiration of session in ZK.
 	Int64 check_period_ms = storage.data.settings.zookeeper_session_expiration_check_period * 1000;
 
-	/// Периодичность проверки величины отставания реплики.
+	/// Periodicity of checking lag of replica.
 	if (check_period_ms > static_cast<Int64>(storage.data.settings.check_delay_period) * 1000)
 		check_period_ms = storage.data.settings.check_delay_period * 1000;
 
 	setThreadName("ReplMTRestart");
 
-	bool first_time = true;					/// Активация реплики в первый раз.
+	bool first_time = true;                 /// Activate replica for the first time.
 	time_t prev_time_of_check_delay = 0;
 
-	/// Запуск реплики при старте сервера/создании таблицы. Перезапуск реплики при истечении сессии с ZK.
+	/// Starts the replica when the server starts/creates a table. Restart the replica when session expires with ZK.
 	while (!need_stop)
 	{
 		try
@@ -90,7 +90,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 					}
 					catch (const zkutil::KeeperException & e)
 					{
-						/// Исключение при попытке zookeeper_init обычно бывает, если не работает DNS. Будем пытаться сделать это заново.
+						/// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
 						tryLogCurrentException(__PRETTY_FUNCTION__);
 
 						wakeup_event.tryWait(retry_period_ms);
@@ -115,7 +115,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 			time_t current_time = time(0);
 			if (current_time >= prev_time_of_check_delay + static_cast<time_t>(storage.data.settings.check_delay_period))
 			{
-				/// Выясняем отставания реплик.
+				/// Find out lag of replicas.
 				time_t absolute_delay = 0;
 				time_t relative_delay = 0;
 
@@ -126,7 +126,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 
 				prev_time_of_check_delay = current_time;
 
-				/// Уступаем лидерство, если относительное отставание больше порога.
+				/// We give up leadership if the relative gap is greater than threshold.
 				if (storage.is_leader_node
 					&& relative_delay > static_cast<time_t>(storage.data.settings.min_relative_delay_to_yield_leadership))
 				{
@@ -201,13 +201,13 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
 		storage.leader_election = std::make_shared<zkutil::LeaderElection>(
 			storage.zookeeper_path + "/leader_election",
-			*storage.current_zookeeper,		/// current_zookeeper живёт в течение времени жизни leader_election,
-											///  так как до изменения current_zookeeper, объект leader_election уничтожается в методе partialShutdown.
+			*storage.current_zookeeper,     /// current_zookeeper lives for the lifetime of leader_election,
+											///  since before changing `current_zookeeper`, `leader_election` object is destroyed in `partialShutdown` method.
 			[this] { storage.becomeLeader(); CurrentMetrics::add(CurrentMetrics::LeaderReplica); },
 			storage.replica_name);
 
-		/// Все, что выше, может бросить KeeperException, если что-то не так с ZK.
-		/// Все, что ниже, не должно бросать исключений.
+		/// Anything above can throw a KeeperException if something is wrong with ZK.
+		/// Anything below should not throw exceptions.
 
 		storage.shutdown_called = false;
 		storage.shutdown_event.reset();
@@ -302,7 +302,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 	auto host_port = storage.context.getInterserverIOAddress();
 	auto zookeeper = storage.getZooKeeper();
 
-	/// Как другие реплики могут обращаться к данной.
+	/// How other replicas can access this.
 	ReplicatedMergeTreeAddress address;
 	address.host = host_port.first;
 	address.replication_port = host_port.second;
@@ -312,8 +312,8 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 
 	String is_active_path = storage.replica_path + "/is_active";
 
-	/** Если нода отмечена как активная, но отметка сделана в этом же экземпляре, удалим ее.
-	  * Такое возможно только при истечении сессии в ZooKeeper.
+	/** If the node is marked as active, but the mark is made in the same instance, delete it.
+	  * This is possible only when session in ZooKeeper expires.
 	  */
 	String data;
 	Stat stat;
@@ -331,7 +331,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 			throw zkutil::KeeperException(code, is_active_path);
 	}
 
-	/// Одновременно объявим, что эта реплика активна, и обновим хост.
+	/// Simultaneously declare that this replica is active, and update the host.
 	zkutil::Ops ops;
 	ops.emplace_back(std::make_unique<zkutil::Op::Create>(is_active_path,
 		active_node_identifier, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
@@ -350,8 +350,8 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 		throw;
 	}
 
-	/// current_zookeeper живёт в течение времени жизни replica_is_active_node,
-	///  так как до изменения current_zookeeper, объект replica_is_active_node уничтожается в методе partialShutdown.
+	/// `current_zookeeper` lives for the lifetime of `replica_is_active_node`,
+	///  since before changing `current_zookeeper`, `replica_is_active_node` object is destroyed in `partialShutdown` method.
 	storage.replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *storage.current_zookeeper);
 }
 

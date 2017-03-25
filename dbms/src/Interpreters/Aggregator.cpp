@@ -19,7 +19,8 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 
 #include <DB/Interpreters/Aggregator.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
+#include <DB/Interpreters/config_compile.h>
 
 
 namespace ProfileEvents
@@ -353,7 +354,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 	  *  по окончании которой вызывается колбэк on_ready.
 	  */
 	SharedLibraryPtr lib = params.compiler->getOrCount(key, params.min_count_to_compile,
-		"-include /usr/share/clickhouse/headers/dbms/include/DB/Interpreters/SpecializedAggregator.h",
+		"-include " INTERNAL_COMPILER_HEADERS "/dbms/include/DB/Interpreters/SpecializedAggregator.h",
 		get_code, on_ready);
 
 	/// Если результат уже готов.
@@ -460,17 +461,6 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 			if ((std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes) <= 32)
 				return AggregatedDataVariants::Type::nullable_keys256;
 		}
-
-		/// XXX Aggregation with Array(Nullable(T)) keys can be done much more efficiently.
-		if (has_arrays_of_nullable)
-			return AggregatedDataVariants::Type::serialized;
-
-		/// For the following two cases, see the comments below on the non-nullable variant,
-		/// since it is similar.
-		if (num_array_keys == 1 && !has_arrays_of_non_fixed_elems && all_non_array_keys_are_fixed)
-			return AggregatedDataVariants::Type::nullable_concat;
-		if (num_array_keys == 0 && !has_tuples)
-			return AggregatedDataVariants::Type::nullable_concat;
 
 		/// Fallback case.
 		return AggregatedDataVariants::Type::serialized;
@@ -2316,49 +2306,42 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 	size_t rows = source.rows();
 	size_t columns = source.columns();
 
-	/// Для каждого номера корзины создадим фильтр, где будут отмечены строки, относящиеся к этой корзине.
-	std::vector<IColumn::Filter> filters(destinations.size());
+	/// Create a 'selector' that will contain bucket index for every row. It will be used to scatter rows to buckets.
+	IColumn::Selector selector(rows);
 
-	/// Для всех строчек.
+	/// For every row.
 	for (size_t i = 0; i < rows; ++i)
 	{
-		/// Получаем ключ. Вычисляем на его основе номер корзины.
+		/// Obtain a key. Calculate bucket number from it.
 		typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *pool);
 
 		auto hash = method.data.hash(key);
 		auto bucket = method.data.getBucketFromHash(hash);
 
-		/// Этот ключ нам больше не нужен.
+		selector[i] = bucket;
+
+		/// We don't need to store this key in pool.
 		method.onExistingKey(key, keys, *pool);
-
-		auto & filter = filters[bucket];
-
-		if (unlikely(filter.empty()))
-			filter.resize_fill(rows);
-
-		filter[i] = 1;
 	}
 
-	ssize_t size_hint = ((source.rows() + method.data.NUM_BUCKETS - 1)
-		/ method.data.NUM_BUCKETS) * 1.1;	/// Число 1.1 выбрано наугад.
+	size_t num_buckets = destinations.size();
 
-	for (size_t bucket = 0, size = destinations.size(); bucket < size; ++bucket)
+	for (size_t column_idx = 0; column_idx < columns; ++column_idx)
 	{
-		const auto & filter = filters[bucket];
+		const ColumnWithTypeAndName & src_col = source.getByPosition(column_idx);
+		Columns scattered_columns = src_col.column->scatter(num_buckets, selector);
 
-		if (filter.empty())
-			continue;
-
-		Block & dst = destinations[bucket];
-		dst.info.bucket_num = bucket;
-
-		for (size_t j = 0; j < columns; ++j)
+		for (size_t bucket = 0, size = num_buckets; bucket < size; ++bucket)
 		{
-			const ColumnWithTypeAndName & src_col = source.getByPosition(j);
-			dst.insert({src_col.column->filter(filter, size_hint), src_col.type, src_col.name});
+			if (!scattered_columns[bucket]->empty())
+			{
+				Block & dst = destinations[bucket];
+				dst.info.bucket_num = bucket;
+				dst.insert({scattered_columns[bucket], src_col.type, src_col.name});
+			}
 
-			/** Вставленные в блок столбцы типа ColumnAggregateFunction будут владеть состояниями агрегатных функций
-			  *  путём удержания shared_ptr-а на исходный столбец. См. ColumnAggregateFunction.h
+			/** Inserted columns of type ColumnAggregateFunction will own states of aggregate functions
+			  *  by holding shared_ptr to source column. See ColumnAggregateFunction.h
 			  */
 		}
 	}

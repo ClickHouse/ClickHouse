@@ -60,7 +60,7 @@ private:
 	String name;
 	NamesAndTypesListPtr columns;
 
-    StorageNull(
+	StorageNull(
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
 		const NamesAndTypesList & materialized_columns_,

@@ -1,6 +1,6 @@
 #include <DB/Common/Exception.h>
 #include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Storages/System/StorageSystemNumbers.h>
 
@@ -30,8 +30,8 @@ protected:
 		ColumnUInt64::Container_t & vec = column->getData();
 		column_with_type_and_name.column = column;
 
-		size_t curr = next;		/// Локальная переменная почему-то работает быстрее (>20%), чем член класса.
-		UInt64 * pos = &vec[0];	/// Это тоже ускоряет код.
+		size_t curr = next;     /// The local variable for some reason works faster (>20%) than member of class.
+		UInt64 * pos = &vec[0]; /// This also accelerates the code.
 		UInt64 * end = &vec[block_size];
 		while (pos < end)
 			*pos++ = curr++;

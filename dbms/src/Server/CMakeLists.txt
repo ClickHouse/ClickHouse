@@ -8,13 +8,21 @@ add_library(clickhouse-server
 	StatusFile.cpp
 	ReplicasStatusHandler.cpp
 )
-target_link_libraries(clickhouse-server daemon)
+target_link_libraries(clickhouse-server daemon storages_system)
 
 add_library(clickhouse-local LocalServer.cpp)
 target_link_libraries(clickhouse-local dbms)
 
+add_library(clickhouse-extract-from-config ExtractFromConfig.cpp)
+target_link_libraries(clickhouse-extract-from-config dbms)
+
 add_executable(clickhouse main.cpp)
-target_link_libraries(clickhouse clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark)
+target_link_libraries(clickhouse
+	clickhouse-server
+	clickhouse-client
+	clickhouse-local
+	clickhouse-benchmark
+	clickhouse-extract-from-config)
 INSTALL(TARGETS clickhouse RUNTIME DESTINATION bin COMPONENT clickhouse)
 
 # make symbolic links to concrete clickhouse applications
@@ -31,22 +39,3 @@ INSTALL(
 	FILES config.xml users.xml
 	DESTINATION  ${CLICKHOUSE_ETC_DIR}/clickhouse-server
 	COMPONENT clickhouse)
-
-if (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
-	INSTALL(
-		FILES ${CLICKHOUSE_PRIVATE_DIR}/Server/metrika/config.xml ${CLICKHOUSE_PRIVATE_DIR}/Server/metrika/users.xml
-		DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-server/metrika
-		COMPONENT clickhouse
-	OPTIONAL)
-endif ()
-
-if (NOT CMAKE_SYSTEM MATCHES "FreeBSD")
-	INSTALL(
-		FILES metrika.conf
-		DESTINATION /etc/security/limits.d
-		COMPONENT clickhouse)
-
-	# Adding init.d support
-	include (${ClickHouse_SOURCE_DIR}/cmake/create_init_script.cmake)
-	create_init_script (clickhouse-server clickhouse-server)
-endif ()

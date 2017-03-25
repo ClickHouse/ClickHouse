@@ -1,27 +1,29 @@
 #pragma once
 
 #include <experimental/optional>
-
-#include <Poco/Net/HTTPServerResponse.h>
-
-#include <DB/Common/Exception.h>
-
+#include <mutex>
+#include <Poco/Version.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ZlibDeflatingWriteBuffer.h>
 #include <DB/IO/HTTPCommon.h>
 #include <DB/Common/NetException.h>
+#include <DB/Common/Stopwatch.h>
+#include <DB/Core/Progress.h>
+
+
+namespace Poco
+{
+	namespace Net
+	{
+		class HTTPServerResponse;
+	}
+}
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-	extern const int LOGICAL_ERROR;
-}
-
 
 /// The difference from WriteBufferFromOStream is that this buffer gets the underlying std::ostream
 /// (using response.send()) only after data is flushed for the first time. This is needed in HTTP
@@ -32,82 +34,66 @@ namespace ErrorCodes
 ///
 /// Additionally, supports HTTP response compression (in this case corresponding Content-Encoding
 /// header will be set).
+///
+/// Also this class write and flush special X-ClickHouse-Progress HTTP headers
+///  if no data was sent at the time of progress notification.
+/// This allows to implement progress bar in HTTP clients.
 class WriteBufferFromHTTPServerResponse : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
 	Poco::Net::HTTPServerResponse & response;
 
-	bool add_cors_header;
-	bool compress;
+	bool add_cors_header = false;
+	bool compress = false;
 	ZlibCompressionMethod compression_method;
 	int compression_level = Z_DEFAULT_COMPRESSION;
 
-	std::unique_ptr<WriteBufferFromOStream> out_raw;
+	std::ostream * response_body_ostr = nullptr;
+
+#if POCO_CLICKHOUSE_PATCH
+	std::ostream * response_header_ostr = nullptr;
+#endif
+
+	std::experimental::optional<WriteBufferFromOStream> out_raw;
 	std::experimental::optional<ZlibDeflatingWriteBuffer> deflating_buf;
 
 	WriteBuffer * out = nullptr; 	/// Uncompressed HTTP body is written to this buffer. Points to out_raw or possibly to deflating_buf.
 
-	void sendHeaders()
-	{
-		if (!out)
-		{
-			if (add_cors_header)
-			{
-				response.set("Access-Control-Allow-Origin","*");
-			}
+	bool headers_started_sending = false;
+	bool headers_finished_sending = false;	/// If true, you could not add any headers.
 
-			setResponseDefaultHeaders(response);
+	Progress accumulated_progress;
+	size_t send_progress_interval_ms = 100;
+	Stopwatch progress_watch;
 
-			if (compress && offset())	/// Empty response need not be compressed.
-			{
-				if (compression_method == ZlibCompressionMethod::Gzip)
-					response.set("Content-Encoding", "gzip");
-				else if (compression_method == ZlibCompressionMethod::Zlib)
-					response.set("Content-Encoding", "deflate");
-				else
-					throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
-						ErrorCodes::LOGICAL_ERROR);
+	std::mutex mutex;	/// progress callback could be called from different threads.
 
-				out_raw = std::make_unique<WriteBufferFromOStream>(response.send());
-				/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
-				deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
-				out = &deflating_buf.value();
-			}
-			else
-			{
-				out_raw = std::make_unique<WriteBufferFromOStream>(response.send(), working_buffer.size(), working_buffer.begin());
-				out = out_raw.get();
-			}
-		}
-	}
 
-	void nextImpl() override
-	{
-		if (!offset())
-			return;
+	/// Must be called under locked mutex.
+	/// This method send headers, if this was not done already,
+	///  but not finish them with \r\n, allowing to send more headers subsequently.
+	void startSendHeaders();
 
-		sendHeaders();
+	/// This method finish headers with \r\n, allowing to start to send body.
+	void finishSendHeaders();
 
-		out->position() = position();
-		out->next();
-	}
+	void nextImpl() override;
 
 public:
 	WriteBufferFromHTTPServerResponse(
 		Poco::Net::HTTPServerResponse & response_,
 		bool compress_ = false,		/// If true - set Content-Encoding header and compress the result.
 		ZlibCompressionMethod compression_method_ = ZlibCompressionMethod::Gzip,
-		size_t size = DBMS_DEFAULT_BUFFER_SIZE)
-		: BufferWithOwnMemory<WriteBuffer>(size), response(response_),
-		compress(compress_), compression_method(compression_method_) {}
+		size_t size = DBMS_DEFAULT_BUFFER_SIZE);
+
+	/// Writes progess in repeating HTTP headers.
+	void onProgress(const Progress & progress);
 
 	/// Send at least HTTP headers if no data has been sent yet.
 	/// Use after the data has possibly been sent and no error happened (and thus you do not plan
 	/// to change response HTTP code.
-	void finalize()
-	{
-		sendHeaders();
-	}
+	/// This method is idempotent.
+	void finalize();
 
 	/// Turn compression on or off.
 	/// The setting has any effect only if HTTP headers haven't been sent yet.
@@ -130,20 +116,13 @@ public:
 		add_cors_header = enable_cors;
 	}
 
-	~WriteBufferFromHTTPServerResponse()
+	/// Don't send HTTP headers with progress more frequently.
+	void setSendProgressInterval(size_t send_progress_interval_ms_)
 	{
-		if (!offset())
-			return;
-
-		try
-		{
-			next();
-		}
-		catch (...)
-		{
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
+		send_progress_interval_ms = send_progress_interval_ms_;
 	}
+
+	~WriteBufferFromHTTPServerResponse();
 };
 
 }

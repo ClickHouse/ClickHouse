@@ -18,7 +18,7 @@ namespace DB
 class FlatDictionary final : public IDictionary
 {
 public:
-    FlatDictionary(const std::string & name, const DictionaryStructure & dict_struct,
+	FlatDictionary(const std::string & name, const DictionaryStructure & dict_struct,
 		DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime, bool require_nonempty);
 
 	FlatDictionary(const FlatDictionary & other);

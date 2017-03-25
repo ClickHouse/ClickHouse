@@ -7,10 +7,10 @@
 # curl https://raw.githubusercontent.com/yandex/ClickHouse/master/doc/build_freebsd.sh | sh
 
 # install compiler and libs
-sudo pkg install -y git cmake gcc6 bash glib mysql57-client icu libltdl unixODBC
+sudo pkg install git cmake bash mysql57-client icu libltdl unixODBC google-perftools
 
 # install testing only stuff if you want:
-sudo pkg install -y python py27-lxml py27-termcolor curl perl5
+sudo pkg install python py27-lxml py27-termcolor curl perl5
 
 # Checkout ClickHouse sources
 git clone https://github.com/yandex/ClickHouse.git
@@ -18,11 +18,18 @@ git clone https://github.com/yandex/ClickHouse.git
 # Build!
 mkdir -p ClickHouse/build
 cd ClickHouse/build
-cmake .. -DCMAKE_CXX_COMPILER=`which g++6` -DCMAKE_C_COMPILER=`which gcc6`
+cmake .. -DUSE_INTERNAL_GPERFTOOLS_LIBRARY=0
+#  WIP: variant with libs from ports:
+# sudo pkg install devel/boost-libs devel/libzookeeper devel/libdouble-conversion archivers/zstd archivers/liblz4 devel/sparsehash devel/re2
+#  Check UNIXODBC option:
+# make -C /usr/ports/devel/poco config reinstall
+# cmake .. -DUNBUNDLED=1 -DUSE_STATIC_LIBRARIES=0 -DNO_WERROR=1
 
-# WIP: variant with libs from ports:
-# pkg install boost-libs poco google-perftools
-# cmake .. -DCMAKE_CXX_COMPILER=`which g++6` -DCMAKE_C_COMPILER=`which gcc6` -DUSE_INTERNAL_BOOST_LIBRARY=0 -DUSE_INTERNAL_POCO_LIBRARY=0 -DUSE_INTERNAL_GPERFTOOLS_LIBRARY=0 -DCXX11_ABI= -DUSE_STATIC_LIBRARIES=0
+make -C dbms/src/Server -j $(nproc || sysctl -n hw.ncpu || echo 2)
+cd ../..
 
-make -j $(nproc || sysctl -n hw.ncpu || echo 2)
-cd ..
+# run server:
+# ClickHouse/build/dbms/src/Server/clickhouse --server --config-file=ClickHouse/dbms/src/Server/config.xml &
+
+# run client:
+# ClickHouse/build/dbms/src/Server/clickhouse --client

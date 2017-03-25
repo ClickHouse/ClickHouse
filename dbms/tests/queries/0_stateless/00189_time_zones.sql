@@ -40,11 +40,11 @@ SELECT toStartOfQuarter(toDateTime(1412106600), 'Pacific/Pitcairn');
 
 /* toTime */
 
-SELECT toTime(toDateTime(1420102800), 'Europe/Moscow'), toTime(toDateTime(1428310800), 'Europe/Moscow');
-SELECT toTime(toDateTime(1420102800), 'Europe/Paris'), toTime(toDateTime(1428310800), 'Europe/Paris');
-SELECT toTime(toDateTime(1420102800), 'Europe/London'), toTime(toDateTime(1428310800), 'Europe/London');
-SELECT toTime(toDateTime(1420102800), 'Asia/Tokyo'), toTime(toDateTime(1428310800), 'Asia/Tokyo');
-SELECT toTime(toDateTime(1420102800), 'Pacific/Pitcairn'), toTime(toDateTime(1428310800), 'Pacific/Pitcairn');
+SELECT toString(toTime(toDateTime(1420102800), 'Europe/Moscow'), 'Europe/Moscow'), toString(toTime(toDateTime(1428310800), 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toTime(toDateTime(1420102800), 'Europe/Paris'), 'Europe/Paris'), toString(toTime(toDateTime(1428310800), 'Europe/Paris'), 'Europe/Paris');
+SELECT toString(toTime(toDateTime(1420102800), 'Europe/London'), 'Europe/London'), toString(toTime(toDateTime(1428310800), 'Europe/London'), 'Europe/London');
+SELECT toString(toTime(toDateTime(1420102800), 'Asia/Tokyo'), 'Asia/Tokyo'), toString(toTime(toDateTime(1428310800), 'Asia/Tokyo'), 'Asia/Tokyo');
+SELECT toString(toTime(toDateTime(1420102800), 'Pacific/Pitcairn'), 'Pacific/Pitcairn'), toString(toTime(toDateTime(1428310800), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
 
 /* toYear */
 
@@ -104,19 +104,19 @@ SELECT toSecond(toDateTime(1412106600), 'Pacific/Pitcairn');
 
 /* toStartOfMinute */
 
-SELECT toStartOfMinute(toDateTime(1412106600), 'Europe/Moscow');
-SELECT toStartOfMinute(toDateTime(1412106600), 'Europe/Paris');
-SELECT toStartOfMinute(toDateTime(1412106600), 'Europe/London');
-SELECT toStartOfMinute(toDateTime(1412106600), 'Asia/Tokyo');
-SELECT toStartOfMinute(toDateTime(1412106600), 'Pacific/Pitcairn');
+SELECT toString(toStartOfMinute(toDateTime(1412106600), 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfMinute(toDateTime(1412106600), 'Europe/Paris'), 'Europe/Paris');
+SELECT toString(toStartOfMinute(toDateTime(1412106600), 'Europe/London'), 'Europe/London');
+SELECT toString(toStartOfMinute(toDateTime(1412106600), 'Asia/Tokyo'), 'Asia/Tokyo');
+SELECT toString(toStartOfMinute(toDateTime(1412106600), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
 
 /* toStartOfHour */
 
-SELECT toStartOfHour(toDateTime(1412106600), 'Europe/Moscow');
-SELECT toStartOfHour(toDateTime(1412106600), 'Europe/Paris');
-SELECT toStartOfHour(toDateTime(1412106600), 'Europe/London');
-SELECT toStartOfHour(toDateTime(1412106600), 'Asia/Tokyo');
-SELECT toStartOfHour(toDateTime(1412106600), 'Pacific/Pitcairn');
+SELECT toString(toStartOfHour(toDateTime(1412106600), 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfHour(toDateTime(1412106600), 'Europe/Paris'), 'Europe/Paris');
+SELECT toString(toStartOfHour(toDateTime(1412106600), 'Europe/London'), 'Europe/London');
+SELECT toString(toStartOfHour(toDateTime(1412106600), 'Asia/Tokyo'), 'Asia/Tokyo');
+SELECT toString(toStartOfHour(toDateTime(1412106600), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
 
 /* toRelativeYearNum */
 
@@ -188,35 +188,6 @@ SELECT toDate(1412106600, 'Europe/London');
 SELECT toDate(1412106600, 'Asia/Tokyo');
 SELECT toDate(1412106600, 'Pacific/Pitcairn');
 
-DROP TABLE IF EXISTS foo;
-CREATE TABLE foo(x Int32, y String) ENGINE=Memory;
-INSERT INTO foo(x, y) VALUES(1420102800, 'Europe/Moscow');
-INSERT INTO foo(x, y) VALUES(1412106600, 'Europe/Paris');
-INSERT INTO foo(x, y) VALUES(1419800400, 'Europe/London');
-INSERT INTO foo(x, y) VALUES(1436956200, 'Asia/Tokyo');
-INSERT INTO foo(x, y) VALUES(1426415400, 'Pacific/Pitcairn');
-
-SELECT toMonday(toDateTime(x), y), toStartOfMonth(toDateTime(x), y), toStartOfQuarter(toDateTime(x), y), toTime(toDateTime(x), y) FROM foo ORDER BY y ASC;
-SELECT toYear(toDateTime(x), y), toMonth(toDateTime(x), y), toDayOfMonth(toDateTime(x), y), toDayOfWeek(toDateTime(x), y) FROM foo ORDER BY y ASC;
-SELECT toHour(toDateTime(x), y), toMinute(toDateTime(x), y), toSecond(toDateTime(x), y), toStartOfMinute(toDateTime(x), y) FROM foo ORDER BY y ASC;
-SELECT toStartOfHour(toDateTime(x), y), toRelativeYearNum(toDateTime(x), y), toRelativeMonthNum(toDateTime(x), y), toRelativeWeekNum(toDateTime(x), y) FROM foo ORDER BY y ASC;
-SELECT toRelativeDayNum(toDateTime(x), y), toRelativeHourNum(toDateTime(x), y), toRelativeMinuteNum(toDateTime(x), y), toRelativeSecondNum(toDateTime(x), y) FROM foo ORDER BY y ASC;
-SELECT toDate(toDateTime(x), y), toDate(x, y) FROM foo ORDER BY y ASC;
-
-SELECT toMonday(toDateTime(x), 'Europe/Paris'), toStartOfMonth(toDateTime(x), 'Europe/London'), toStartOfQuarter(toDateTime(x), 'Asia/Tokyo'), toTime(toDateTime(x), 'Pacific/Pitcairn') FROM foo ORDER BY x ASC;
-SELECT toYear(toDateTime(x), 'Europe/Paris'), toMonth(toDateTime(x), 'Europe/London'), toDayOfMonth(toDateTime(x), 'Asia/Tokyo'), toDayOfWeek(toDateTime(x), 'Pacific/Pitcairn') FROM foo ORDER BY y ASC;
-SELECT toHour(toDateTime(x), 'Europe/Paris'), toMinute(toDateTime(x), 'Europe/London'), toSecond(toDateTime(x), 'Asia/Tokyo'), toStartOfMinute(toDateTime(x), 'Pacific/Pitcairn') FROM foo ORDER BY y ASC;
-SELECT toStartOfHour(toDateTime(x), 'Europe/Paris'), toRelativeYearNum(toDateTime(x), 'Europe/London'), toRelativeMonthNum(toDateTime(x), 'Asia/Tokyo'), toRelativeWeekNum(toDateTime(x), 'Pacific/Pitcairn') FROM foo ORDER BY y ASC;
-SELECT toRelativeDayNum(toDateTime(x), 'Europe/Paris'), toRelativeHourNum(toDateTime(x), 'Europe/London'), toRelativeMinuteNum(toDateTime(x), 'Asia/Tokyo'), toRelativeSecondNum(toDateTime(x), 'Pacific/Pitcairn') FROM foo ORDER BY y ASC;
-SELECT toDate(toDateTime(x), 'Europe/Paris'), toDate(x, 'Europe/Paris') FROM foo ORDER BY y ASC;
-
-SELECT toMonday(toDateTime(1426415400), y), toStartOfMonth(toDateTime(1426415400), y), toStartOfQuarter(toDateTime(1426415400), y), toTime(toDateTime(1426415400), y) FROM foo ORDER BY y ASC;
-SELECT toYear(toDateTime(1426415400), y), toMonth(toDateTime(1426415400), y), toDayOfMonth(toDateTime(1426415400), y), toDayOfWeek(toDateTime(1426415400), y) FROM foo ORDER BY y ASC;
-SELECT toHour(toDateTime(1426415400), y), toMinute(toDateTime(1426415400), y), toSecond(toDateTime(1426415400), y), toStartOfMinute(toDateTime(1426415400), y) FROM foo ORDER BY y ASC;
-SELECT toStartOfHour(toDateTime(1426415400), y), toRelativeYearNum(toDateTime(1426415400), y), toRelativeMonthNum(toDateTime(1426415400), y), toRelativeWeekNum(toDateTime(1426415400), y) FROM foo ORDER BY y ASC;
-SELECT toRelativeDayNum(toDateTime(1426415400), y), toRelativeHourNum(toDateTime(1426415400), y), toRelativeMinuteNum(toDateTime(1426415400), y), toRelativeSecondNum(toDateTime(1426415400), y) FROM foo ORDER BY y ASC;
-SELECT toDate(toDateTime(1426415400), y), toDate(1426415400, y) FROM foo ORDER BY y ASC;
-
 /* toString */
 
 SELECT toString(toDateTime(1436956200), 'Europe/Moscow');
@@ -224,10 +195,6 @@ SELECT toString(toDateTime(1436956200), 'Europe/Paris');
 SELECT toString(toDateTime(1436956200), 'Europe/London');
 SELECT toString(toDateTime(1436956200), 'Asia/Tokyo');
 SELECT toString(toDateTime(1436956200), 'Pacific/Pitcairn');
-
-SELECT toString(toDateTime(x), y) FROM foo ORDER BY y ASC;
-SELECT toString(toDateTime(1436956200), y) FROM foo ORDER BY y ASC;
-SELECT toString(toDateTime(x), 'Europe/London') FROM foo ORDER BY x ASC;
 
 /* toUnixTimestamp */
 
@@ -242,7 +209,3 @@ SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Europe/Paris'), 'Europe
 SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Europe/London'), 'Europe/London');
 SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Asia/Tokyo'), 'Asia/Tokyo');
 SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
-
-SELECT toUnixTimestamp(toString(toDateTime(x), 'Europe/Moscow'), y) FROM foo ORDER BY y ASC;
-SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Europe/Moscow'), y) FROM foo ORDER BY y ASC;
-SELECT toUnixTimestamp(toString(toDateTime(x), 'Europe/Moscow'), 'Europe/Paris') FROM foo ORDER BY x ASC;

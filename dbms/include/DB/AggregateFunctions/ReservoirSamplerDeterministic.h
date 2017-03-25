@@ -15,10 +15,10 @@
 #include <boost/random.hpp>
 
 
-/// Реализация алгоритма Reservoir Sampling. Инкрементально выбирает из добавленных объектов случайное подмножество размера sample_count.
-/// Умеет приближенно получать квантили.
-/// Вызов quantile занимает O(sample_count log sample_count), если после предыдущего вызова quantile был хотя бы один вызов insert. Иначе, O(1).
-/// То есть, имеет смысл сначала добавлять, потом получать квантили, не добавляя.
+ /// Implementation of Reservoir Sampling algorithm. Incrementally selects from the added objects a random subset of the `sample_count` size.
+ /// Can approximately get quantiles.
+ /// The `quantile` call takes O(sample_count log sample_count), if after the previous call `quantile` there was at least one call to insert. Otherwise, O(1).
+ /// That is, it makes sense to first add, then get quantiles without adding.
 
 
 namespace DB
@@ -36,7 +36,7 @@ const size_t DEFAULT_SAMPLE_COUNT = 8192;
 const auto MAX_SKIP_DEGREE = sizeof(UInt32) * 8;
 }
 
-/// Что делать, если нет ни одного значения - кинуть исключение, или вернуть 0 или NaN в случае double?
+/// What if there is not a single value - throw an exception, or return 0 or NaN in the case of double?
 enum class ReservoirSamplerDeterministicOnEmpty
 {
 	THROW,
@@ -94,9 +94,9 @@ public:
 		return samples[int_index].first;
 	}
 
-	/** Если T не числовой тип, использование этого метода вызывает ошибку компиляции,
-	  *  но использование класса ошибки не вызывает. SFINAE.
-	  *  Не SFINAE. Функции члены шаблонов типов просто не проверяются, пока не используются.
+	/** If T is not a numeric type, using this method causes a compilation error,
+	  *  but use of error class does not cause. SFINAE.
+	  *  Not SFINAE. Functions members of type templates are simply not checked until they are used.
 	  */
 	double quantileInterpolated(double level)
 	{
@@ -107,7 +107,7 @@ public:
 
 		const double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
 
-		/// Чтобы получить значение по дробному индексу линейно интерполируем между соседними значениями.
+		/// To get a value from a fractional index, we linearly interpolate between adjacent values.
 		size_t left_index = static_cast<size_t>(index);
 		size_t right_index = left_index + 1;
 		if (right_index == samples.size())
@@ -160,7 +160,7 @@ public:
 	}
 
 private:
-	/// Будем выделять немного памяти на стеке - чтобы избежать аллокаций, когда есть много объектов с маленьким количеством элементов.
+	/// We allocate some memory on the stack to avoid allocations when there are many objects with a small number of elements.
 	static constexpr size_t bytes_on_stack = 64;
 	using Element = std::pair<T, UInt32>;
 	using Array = DB::PODArray<Element, bytes_on_stack / sizeof(Element), AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;

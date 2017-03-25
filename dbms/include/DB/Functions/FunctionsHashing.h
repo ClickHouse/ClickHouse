@@ -9,13 +9,14 @@
 #include <Poco/ByteOrder.h>
 
 #include <DB/Common/SipHash.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnFixedString.h>
@@ -173,7 +174,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringHash64>(); };
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -181,7 +181,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
@@ -191,7 +190,6 @@ public:
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.safeGetByPosition(arguments[0]).column.get()))
@@ -231,7 +229,6 @@ public:
 	static constexpr auto name = Impl::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringHashFixedString>(); };
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -239,7 +236,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
@@ -249,7 +245,6 @@ public:
 		return std::make_shared<DataTypeFixedString>(Impl::length);
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.safeGetByPosition(arguments[0]).column.get()))
@@ -326,7 +321,6 @@ private:
 	}
 
 public:
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -334,17 +328,15 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!arguments[0]->isNumeric())
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return std::make_shared<typename DataTypeFromFieldType<typename Impl::ReturnType>::Type>();
+		return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		IDataType * from_type = block.safeGetByPosition(arguments[0]).type.get();
@@ -552,7 +544,7 @@ private:
 
 	void executeForArgument(const IDataType * type, const IColumn * column, ColumnUInt64::Container_t & vec_to, bool & is_first)
 	{
-		/// Раскрытие кортежей.
+		/// Flattening of tuples.
 		if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
 		{
 			const Block & tuple_data = tuple->getData();
@@ -579,7 +571,6 @@ private:
 	}
 
 public:
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -588,13 +579,11 @@ public:
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t rows = block.rows();
@@ -605,11 +594,11 @@ public:
 
 		if (arguments.empty())
 		{
-			/// Случайное число из /dev/urandom используется как хеш пустого количества аргументов.
+			/// Constant random number from /dev/urandom is used as a hash value of empty list of arguments.
 			vec_to.assign(rows, 0xe28dbde7fe22e41c);
 		}
 
-		/// Функция поддерживает произвольное количество аргументов всевозможных типов.
+		/// The function supports arbitary number of arguments of arbitary types.
 
 		bool is_first_argument = true;
 		for (size_t i = 0; i < arguments.size(); ++i)
@@ -617,6 +606,21 @@ public:
 			const ColumnWithTypeAndName & col = block.safeGetByPosition(arguments[i]);
 			executeForArgument(col.type.get(), col.column.get(), vec_to, is_first_argument);
 		}
+
+		/// If all arguments are constants, we should return constant result.
+
+		bool all_constants = true;
+		for (size_t arg_idx : arguments)
+		{
+			if (!block.getByPosition(arg_idx).column->isConst())
+			{
+				all_constants = false;
+				break;
+			}
+		}
+
+		if (all_constants && block.rows() > 0)
+			block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(1, (*block.getByPosition(result).column)[0]);
 	}
 };
 

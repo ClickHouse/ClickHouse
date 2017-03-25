@@ -8,9 +8,9 @@
 namespace DB
 {
 
-/** Интерфейс для пулов соединений.
+/** Interface for connection pools.
   *
-  * Использование (на примере обычного ConnectionPool):
+  * Usage (using the usual `ConnectionPool` example)
   * ConnectionPool pool(...);
   *
   *	void thread()
@@ -27,16 +27,16 @@ public:
 public:
 	virtual ~IConnectionPool() {}
 
-	/** Выделяет соединение для работы. */
+	/** Selects the connection to work. */
 	Entry get(const Settings * settings = nullptr)
 	{
 		return doGet(settings);
 	}
 
-	/** Выделяет до указанного количества соединений для работы.
-	  * Соединения предоставляют доступ к разным репликам одного шарда.
-	  * Если флаг get_all установлен, все соединения достаются.
-	  * Выкидывает исключение, если не удалось выделить ни одного соединения.
+	/** Allocates up to the specified number of connections to work.
+	  * Connections provide access to different replicas of one shard.
+	  * If `get_all` flag is set, all connections are taken.
+	  * Throws an exception if no connections can be selected.
 	  */
 	std::vector<Entry> getMany(const Settings * settings = nullptr,
 		PoolMode pool_mode = PoolMode::GET_MANY)
@@ -58,7 +58,7 @@ using ConnectionPools = std::vector<ConnectionPoolPtr>;
 using ConnectionPoolsPtr = std::shared_ptr<ConnectionPools>;
 
 
-/** Обычный пул соединений, без отказоустойчивости.
+/** A common connection pool, without fault tolerance.
   */
 class ConnectionPool : public PoolBase<Connection>, public IConnectionPool
 {
@@ -106,7 +106,7 @@ public:
 	}
 
 protected:
-	/** Создает новый объект для помещения в пул. */
+	/** Creates a new object to put in the pool. */
 	ConnectionPtr allocObject() override
 	{
 		return std::make_shared<Connection>(
@@ -132,13 +132,13 @@ private:
 	String user;
 	String password;
 
-	/** Адрес может быть заранее отрезолвен и передан в конструктор. Тогда поля host и port имеют смысл только для логгирования.
-	  * Иначе адрес резолвится в конструкторе. То есть, DNS балансировка не поддерживается.
+	/** The address can be resolved in advance and passed to the constructor. Then `host` and `port` fields are meaningful only for logging.
+	  * Otherwise, address is resolved in constructor. That is, DNS balancing is not supported.
 	  */
 	Poco::Net::SocketAddress resolved_address;
 
 	String client_name;
-	Protocol::Compression::Enum compression;		/// Сжимать ли данные при взаимодействии с сервером.
+	Protocol::Compression::Enum compression;		/// Whether to compress data when interacting with the server.
 
 	Poco::Timespan connect_timeout;
 	Poco::Timespan receive_timeout;

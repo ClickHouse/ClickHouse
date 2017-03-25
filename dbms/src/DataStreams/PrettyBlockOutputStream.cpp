@@ -3,10 +3,13 @@
 
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/IFunction.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataStreams/PrettyBlockOutputStream.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnsNumber.h>
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB

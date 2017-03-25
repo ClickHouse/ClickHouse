@@ -3,7 +3,7 @@
 #include <DB/Functions/FunctionsComparison.h>
 #include <DB/Functions/FunctionsConditional.h>
 #include <DB/Functions/FunctionFactory.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeNull.h>
 #include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/Columns/ColumnConst.h>
@@ -20,6 +20,7 @@ void registerFunctionsNull(FunctionFactory & factory)
 	factory.registerFunction<FunctionIfNull>();
 	factory.registerFunction<FunctionNullIf>();
 	factory.registerFunction<FunctionAssumeNotNull>();
+	factory.registerFunction<FunctionToNullable>();
 }
 
 /// Implementation of isNull.
@@ -113,6 +114,14 @@ void FunctionIsNotNull::executeImpl(Block & block, const ColumnNumbers & argumen
 
 /// Implementation of coalesce.
 
+static const DataTypePtr getNestedDataType(const DataTypePtr & type)
+{
+	if (type->isNullable())
+		return static_cast<const DataTypeNullable &>(*type).getNestedType();
+
+	return type;
+}
+
 FunctionPtr FunctionCoalesce::create(const Context & context)
 {
 	return std::make_shared<FunctionCoalesce>();
@@ -130,52 +139,120 @@ bool FunctionCoalesce::hasSpecialSupportForNulls() const
 
 DataTypePtr FunctionCoalesce::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	DataTypes new_args;
-	for (size_t i = 0; i < arguments.size(); ++i)
+	/// Skip all NULL arguments. If any argument is non-Nullable, skip all next arguments.
+	DataTypes filtered_args;
+	filtered_args.reserve(arguments.size());
+	for (const auto & arg : arguments)
 	{
-		new_args.push_back(std::make_shared<DataTypeUInt8>());
-		new_args.push_back(arguments[i]);
-	}
-	new_args.push_back(std::make_shared<DataTypeNull>());
+		if (arg->isNull())
+			continue;
 
-	return FunctionMultiIf{}.getReturnTypeImpl(new_args);
+		filtered_args.push_back(arg);
+
+		if (!arg->isNullable())
+			break;
+	}
+
+	DataTypes new_args;
+	for (size_t i = 0; i < filtered_args.size(); ++i)
+	{
+		bool is_last = i + 1 == filtered_args.size();
+
+		if (is_last)
+		{
+			new_args.push_back(filtered_args[i]);
+		}
+		else
+		{
+			new_args.push_back(std::make_shared<DataTypeUInt8>());
+			new_args.push_back(getNestedDataType(filtered_args[i]));
+		}
+	}
+
+	if (new_args.empty())
+		return std::make_shared<DataTypeNull>();
+	if (new_args.size() == 1)
+		return new_args.front();
+
+	auto res = FunctionMultiIf{}.getReturnTypeImpl(new_args);
+
+	/// if last argument is not nullable, result should be also not nullable
+	if (!new_args.back()->isNullable() && res->isNullable())
+		res = getNestedDataType(res);
+
+	return res;
 }
 
 void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
 	/// coalesce(arg0, arg1, ..., argN) is essentially
-	/// multiIf(isNotNull(arg0), arg0, isNotNull(arg1), arg1, ..., isNotNull(argN), argN, NULL)
+	/// multiIf(isNotNull(arg0), assumeNotNull(arg0), isNotNull(arg1), assumeNotNull(arg1), ..., argN)
+	/// with constant NULL arguments removed.
+
+	ColumnNumbers filtered_args;
+	filtered_args.reserve(arguments.size());
+	for (const auto & arg : arguments)
+	{
+		const auto & column = block.getByPosition(arg).column;
+
+		if (column->isNull())
+			continue;
+
+		filtered_args.push_back(arg);
+
+		if (!column->isNullable())
+			break;
+	}
 
 	FunctionIsNotNull is_not_null;
+	FunctionAssumeNotNull assume_not_null;
 	ColumnNumbers multi_if_args;
 
 	Block temp_block = block;
 
-	for (size_t i = 0; i < arguments.size(); ++i)
+	for (size_t i = 0; i < filtered_args.size(); ++i)
 	{
 		size_t res_pos = temp_block.columns();
-		temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
+		bool is_last = i + 1 == filtered_args.size();
 
-		is_not_null.executeImpl(temp_block, {arguments[i]}, res_pos);
+		if (is_last)
+		{
+			multi_if_args.push_back(filtered_args[i]);
+		}
+		else
+		{
+			temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
+			is_not_null.executeImpl(temp_block, {filtered_args[i]}, res_pos);
+			temp_block.insert({nullptr, getNestedDataType(block.getByPosition(filtered_args[i]).type), ""});
+			assume_not_null.executeImpl(temp_block, {filtered_args[i]}, res_pos + 1);
 
-		multi_if_args.push_back(res_pos);
-		multi_if_args.push_back(arguments[i]);
+			multi_if_args.push_back(res_pos);
+			multi_if_args.push_back(res_pos + 1);
+		}
 	}
 
-	/// Argument corresponding to the fallback NULL value.
-	multi_if_args.push_back(temp_block.columns());
+	/// If all arguments appeared to be NULL.
+	if (multi_if_args.empty())
+	{
+		block.getByPosition(result).column = std::make_shared<ColumnNull>(block.rows(), Null());
+		return;
+	}
 
-	/// Append a fallback NULL column.
-	ColumnWithTypeAndName elem;
-	elem.column = std::make_shared<ColumnNull>(temp_block.rows(), Null());
-	elem.type = std::make_shared<DataTypeNull>();
-	elem.name = "NULL";
-
-	temp_block.insert(elem);
+	if (multi_if_args.size() == 1)
+	{
+		block.getByPosition(result).column = block.getByPosition(multi_if_args.front()).column;
+		return;
+	}
 
 	FunctionMultiIf{}.executeImpl(temp_block, multi_if_args, result);
 
-	block.safeGetByPosition(result).column = std::move(temp_block.safeGetByPosition(result).column);
+	auto res = std::move(temp_block.safeGetByPosition(result).column);
+
+	/// if last argument is not nullable, result should be also not nullable
+	if (!block.getByPosition(multi_if_args.back()).column->isNullable() && res->isNullable())
+		res = static_cast<ColumnNullable &>(*res).getNestedColumn();
+
+	block.safeGetByPosition(result).column = res;
 }
 
 /// Implementation of ifNull.
@@ -197,20 +274,43 @@ bool FunctionIfNull::hasSpecialSupportForNulls() const
 
 DataTypePtr FunctionIfNull::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	return FunctionMultiIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), arguments[0], arguments[1]});
+	if (arguments[0]->isNull())
+		return arguments[1];
+
+	if (!arguments[0]->isNullable())
+		return arguments[0];
+
+	return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), getNestedDataType(arguments[0]), arguments[1]});
 }
 
 void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-	/// ifNull(col1, col2) == multiIf(isNotNull(col1), col1, col2)
+	/// Always null.
+	if (block.getByPosition(arguments[0]).column->isNull())
+	{
+		block.getByPosition(result).column = block.getByPosition(arguments[1]).column;
+		return;
+	}
+
+	/// Could not contain nulls, so nullIf makes no sense.
+	if (!block.getByPosition(arguments[0]).column->isNullable())
+	{
+		block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
+		return;
+	}
+
+	/// ifNull(col1, col2) == if(isNotNull(col1), assumeNotNull(col1), col2)
 
 	Block temp_block = block;
 
-	size_t res_pos = temp_block.columns();
+	size_t is_not_null_pos = temp_block.columns();
 	temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
+	size_t assume_not_null_pos = temp_block.columns();
+	temp_block.insert({nullptr, getNestedDataType(block.getByPosition(arguments[0]).type), ""});
 
-	FunctionIsNotNull{}.executeImpl(temp_block, {arguments[0]}, res_pos);
-	FunctionMultiIf{}.executeImpl(temp_block, {res_pos, arguments[0], arguments[1]}, result);
+	FunctionIsNotNull{}.executeImpl(temp_block, {arguments[0]}, is_not_null_pos);
+	FunctionAssumeNotNull{}.executeImpl(temp_block, {arguments[0]}, assume_not_null_pos);
+	FunctionIf{}.executeImpl(temp_block, {is_not_null_pos, assume_not_null_pos, arguments[1]}, result);
 
 	block.safeGetByPosition(result).column = std::move(temp_block.safeGetByPosition(result).column);
 }
@@ -234,7 +334,7 @@ bool FunctionNullIf::hasSpecialSupportForNulls() const
 
 DataTypePtr FunctionNullIf::getReturnTypeImpl(const DataTypes & arguments) const
 {
-	return FunctionMultiIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeNull>(), arguments[0]});
+	return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeNull>(), arguments[0]});
 }
 
 void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -259,7 +359,7 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
 
 	temp_block.insert(null_elem);
 
-	FunctionMultiIf{}.executeImpl(temp_block, {res_pos, null_pos, arguments[0]}, result);
+	FunctionIf{}.executeImpl(temp_block, {res_pos, null_pos, arguments[0]}, result);
 
 	block.safeGetByPosition(result).column = std::move(temp_block.safeGetByPosition(result).column);
 }
@@ -285,13 +385,7 @@ DataTypePtr FunctionAssumeNotNull::getReturnTypeImpl(const DataTypes & arguments
 {
 	if (arguments[0]->isNull())
 		throw Exception{"NULL is an invalid value for function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-	else if (arguments[0]->isNullable())
-	{
-		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arguments[0]);
-		return nullable_type.getNestedType();
-	}
-	else
-		return arguments[0];
+	return getNestedDataType(arguments[0]);
 }
 
 void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -308,6 +402,41 @@ void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arg
 	}
 	else
 		res_col = col;
+}
+
+/// Implementation of toNullable.
+
+FunctionPtr FunctionToNullable::create(const Context & context)
+{
+	return std::make_shared<FunctionToNullable>();
+}
+
+std::string FunctionToNullable::getName() const
+{
+	return name;
+}
+
+bool FunctionToNullable::hasSpecialSupportForNulls() const
+{
+	return true;
+}
+
+DataTypePtr FunctionToNullable::getReturnTypeImpl(const DataTypes & arguments) const
+{
+	if (arguments[0]->isNull() || arguments[0]->isNullable())
+		return arguments[0];
+	return std::make_shared<DataTypeNullable>(arguments[0]);
+}
+
+void FunctionToNullable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+	const ColumnPtr & col = block.safeGetByPosition(arguments[0]).column;
+
+	if (col->isNull() || col->isNullable())
+		block.getByPosition(result).column = col;
+	else
+		block.getByPosition(result).column = std::make_shared<ColumnNullable>(col,
+			std::make_shared<ColumnConstUInt8>(block.rows(), 0)->convertToFullColumn());
 }
 
 }

@@ -9,10 +9,10 @@ namespace DB
 {
 
 
-/** Не агрегатная функция, а адаптер агрегатных функций,
-  * Агрегатные функции с суффиксом Merge принимают в качестве аргумента DataTypeAggregateFunction
-  *  (состояние агрегатной функции, полученное ранее с помощью применения агрегатной функции с суффиксом State)
-  *  и объединяют их при агрегации.
+/** Not an aggregate function, but an adapter of aggregate functions,
+  * Aggregate functions with the `Merge` suffix accept `DataTypeAggregateFunction` as an argument
+  * (state of the aggregate function obtained earlier using the aggregate function with the `State` suffix)
+  * and combine them with aggregation.
   */
 
 class AggregateFunctionMerge final : public IAggregateFunction
@@ -102,6 +102,11 @@ public:
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		nested_func->insertResultInto(place, to);
+	}
+
+	bool allocatesMemoryInArena() const override
+	{
+		return nested_func->allocatesMemoryInArena();
 	}
 
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)

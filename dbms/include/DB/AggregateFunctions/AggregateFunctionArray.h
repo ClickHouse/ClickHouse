@@ -2,17 +2,17 @@
 
 #include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
 {
 
 
-/** Не агрегатная функция, а адаптер агрегатных функций,
-  *  который любую агрегатную функцию agg(x) делает агрегатной функцией вида aggArray(x).
-  * Адаптированная агрегатная функция вычисляет вложенную агрегатную функцию для каждого элемента массива.
+/** Not an aggregate function, but an adapter of aggregate functions,
+  *  which any aggregate function `agg(x)` makes an aggregate function of the form `aggArray(x)`.
+  * The adapted aggregate function calculates nested aggregate function for each element of the array.
   */
 class AggregateFunctionArray final : public IAggregateFunction
 {
@@ -118,6 +118,11 @@ public:
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		nested_func->insertResultInto(place, to);
+	}
+
+	bool allocatesMemoryInArena() const override
+	{
+		return nested_func->allocatesMemoryInArena();
 	}
 
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)

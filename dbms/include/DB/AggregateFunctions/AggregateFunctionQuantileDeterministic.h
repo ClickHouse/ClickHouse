@@ -7,12 +7,13 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
 
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 
 namespace DB
@@ -22,14 +23,14 @@ template <typename ArgumentFieldType>
 struct AggregateFunctionQuantileDeterministicData
 {
 	using Sample = ReservoirSamplerDeterministic<ArgumentFieldType, ReservoirSamplerDeterministicOnEmpty::RETURN_NAN_OR_ZERO>;
-	Sample sample;	/// TODO Добавить MemoryTracker
+	Sample sample;  /// TODO Add MemoryTracker
 };
 
 
-/** Приближённо вычисляет квантиль.
-  * В качестве типа аргумента может быть только числовой тип (в том числе, дата и дата-с-временем).
-  * Если returns_float = true, то типом результата будет Float64, иначе - тип результата совпадает с типом аргумента.
-  * Для дат и дат-с-временем returns_float следует задавать равным false.
+/** Approximately calculates the quantile.
+  * The argument type can only be a numeric type (including date and date-time).
+  * If returns_float = true, the result type is Float64, otherwise - the result type is the same as the argument type.
+  * For dates and date-time, returns_float should be set to false.
   */
 template <typename ArgumentFieldType, bool returns_float = true>
 class AggregateFunctionQuantileDeterministic final
@@ -97,7 +98,7 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
-		/// Sample может отсортироваться при получении квантиля, но в этом контексте можно не считать это нарушением константности.
+		/// `Sample` can be sorted when a quantile is received, but in this context, you can not think of this as a violation of constancy.
 		Sample & sample = const_cast<Sample &>(this->data(place).sample);
 
 		if (returns_float)
@@ -108,9 +109,9 @@ public:
 };
 
 
-/** То же самое, но позволяет вычислить сразу несколько квантилей.
-  * Для этого, принимает в качестве параметров несколько уровней. Пример: quantiles(0.5, 0.8, 0.9, 0.95)(ConnectTiming).
-  * Возвращает массив результатов.
+/** The same, but allows you to calculate several quantiles at once.
+  * To do this, takes several levels as parameters. Example: quantiles(0.5, 0.8, 0.9, 0.95)(ConnectTiming).
+  * Returns an array of results.
   */
 template <typename ArgumentFieldType, bool returns_float = true>
 class AggregateFunctionQuantilesDeterministic final
@@ -181,7 +182,7 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
-		/// Sample может отсортироваться при получении квантиля, но в этом контексте можно не считать это нарушением константности.
+		/// `Sample` can be sorted when a quantile is received, but in this context, you can not think of this as a violation of constancy.
 		Sample & sample = const_cast<Sample &>(this->data(place).sample);
 
 		ColumnArray & arr_to = static_cast<ColumnArray &>(to);

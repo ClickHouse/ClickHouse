@@ -1,5 +1,5 @@
 #include <Poco/DirectoryIterator.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 #include <ext/unlock_guard.hpp>
 
 #include <DB/Common/SipHash.h>
@@ -12,6 +12,7 @@
 #include <DB/IO/WriteBufferFromFile.h>
 
 #include <DB/Interpreters/Compiler.h>
+#include <DB/Interpreters/config_compile.h>
 
 
 namespace ProfileEvents
@@ -182,31 +183,27 @@ void Compiler::compile(
 
 	/// Слегка неудобно.
 	command <<
-		"LD_LIBRARY_PATH=/usr/share/clickhouse/bin/"
-		" /usr/share/clickhouse/bin/clang"
-		" -B /usr/share/clickhouse/bin/"
-		" -x c++ -std=gnu++1y -O3 -g -Wall -Werror -Wnon-virtual-dtor -march=native -msse4 -mpopcnt -D NDEBUG"
-	#if _GLIBCXX_USE_CXX11_ABI == 0
-		" -D_GLIBCXX_USE_CXX11_ABI=0"
-	#elif _GLIBCXX_USE_CXX11_ABI == 1
-		" -D_GLIBCXX_USE_CXX11_ABI=1"
-	#endif
-		" -shared -fPIC -fvisibility=hidden -fno-implement-inlines"
-		" -isystem /usr/share/clickhouse/headers/usr/local/include/"
-		" -isystem /usr/share/clickhouse/headers/usr/include/"
-		" -isystem /usr/share/clickhouse/headers/usr/include/mysql/"
-		" -isystem /usr/share/clickhouse/headers/usr/include/c++/*/"
-		" -isystem /usr/share/clickhouse/headers/usr/include/x86_64-linux-gnu/"
-		" -isystem /usr/share/clickhouse/headers/usr/include/x86_64-linux-gnu/c++/*/"
-		" -isystem /usr/share/clickhouse/headers/usr/local/lib/clang/*/include/"
-		" -I /usr/share/clickhouse/headers/dbms/include/"
-		" -I /usr/share/clickhouse/headers/contrib/libcityhash/include/"
-		" -I /usr/share/clickhouse/headers/contrib/libdouble-conversion/"
-		" -I /usr/share/clickhouse/headers/contrib/libpoco/Foundation/include/"
-		" -I /usr/share/clickhouse/headers/contrib/libpoco/Util/include/"
-		" -I /usr/share/clickhouse/headers/contrib/libboost/boost_1_62_0/"
-		" -I /usr/share/clickhouse/headers/libs/libcommon/include/"
-		" -I /usr/share/clickhouse/headers/libs/libmysqlxx/include/"
+		"LD_LIBRARY_PATH=" PATH_SHARE "/clickhouse/bin/"
+		" " INTERNAL_COMPILER_EXECUTABLE
+		" -B " PATH_SHARE "/clickhouse/bin/"
+		" " INTERNAL_COMPILER_FLAGS
+#if INTERNAL_COMPILER_CUSTOM_ROOT
+		" -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/"
+		" -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/"
+		" -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/mysql/"
+		" -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/"
+		" -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/"
+		" -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*/"
+		" -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include/"
+#endif
+		" -I " INTERNAL_COMPILER_HEADERS "/dbms/include/"
+		" -I " INTERNAL_COMPILER_HEADERS "/contrib/libcityhash/include/"
+		" -I " INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
+		" -I " INTERNAL_Poco_Foundation_INCLUDE_DIR
+		" -I " INTERNAL_Poco_Util_INCLUDE_DIR
+		" -I " INTERNAL_Boost_INCLUDE_DIRS
+		" -I " INTERNAL_COMPILER_HEADERS "/libs/libcommon/include/"
+		" -I " INTERNAL_COMPILER_HEADERS "/libs/libmysqlxx/include/"
 		" " << additional_compiler_flags <<
 		" -o " << so_tmp_file_path << " " << cpp_file_path
 		<< " 2>&1 || echo Exit code: $?";

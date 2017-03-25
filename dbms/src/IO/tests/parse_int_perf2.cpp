@@ -1,7 +1,3 @@
-#if defined(__x86_64__)
-	#include <emmintrin.h>
-#endif
-
 #include <iostream>
 #include <iomanip>
 
@@ -9,22 +5,6 @@
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 
 #include <DB/Common/Stopwatch.h>
-
-
-#if defined(__x86_64__)
-std::ostream & operator<< (std::ostream & ostr, const __m128i vec)
-{
-	char digits[16];
-	_mm_store_si128(reinterpret_cast<__m128i *>(digits), vec);
-
-	ostr << "{";
-	for (size_t i = 0; i < 16; ++i)
-		ostr << (i ? ", " : "") << static_cast<int>(digits[i]);
-	ostr << "}";
-	
-	return ostr;
-}
-#endif
 
 
 namespace test

@@ -9,52 +9,6 @@
 #include <DB/Core/FieldVisitors.h>
 
 
-/// This is for Yandex.Metrica code.
-namespace mysqlxx
-{
-	std::ostream & operator<< (mysqlxx::EscapeManipResult res, const DB::Array & value)
-	{
-		return res.ostr << DB::applyVisitor(DB::FieldVisitorToString(), DB::Field(value));
-	}
-
-	std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Array & value)
-	{
-		throw Poco::Exception("Cannot quote Array with mysqlxx::quote.");
-	}
-
-	std::istream & operator>> (mysqlxx::UnEscapeManipResult res, DB::Array & value)
-	{
-		throw Poco::Exception("Cannot unescape Array with mysqlxx::unescape.");
-	}
-
-	std::istream & operator>> (mysqlxx::UnQuoteManipResult res, DB::Array & value)
-	{
-		throw Poco::Exception("Cannot unquote Array with mysqlxx::unquote.");
-	}
-
-
-	std::ostream & operator<< (mysqlxx::EscapeManipResult res, const DB::Tuple & value)
-	{
-		return res.ostr << DB::applyVisitor(DB::FieldVisitorToString(), DB::Field(value));
-	}
-
-	std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Tuple & value)
-	{
-		throw Poco::Exception("Cannot quote Tuple with mysqlxx::quote.");
-	}
-
-	std::istream & operator>> (mysqlxx::UnEscapeManipResult res, DB::Tuple & value)
-	{
-		throw Poco::Exception("Cannot unescape Tuple with mysqlxx::unescape.");
-	}
-
-	std::istream & operator>> (mysqlxx::UnQuoteManipResult res, DB::Tuple & value)
-	{
-		throw Poco::Exception("Cannot unquote Tuple with mysqlxx::unquote.");
-	}
-}
-
-
 namespace DB
 {
 	inline void readBinary(Array & x, ReadBuffer & buf)

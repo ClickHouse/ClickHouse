@@ -17,7 +17,7 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 
 /** Тест проверяет скорость работы хэш-таблиц, имитируя их использование для агрегации.

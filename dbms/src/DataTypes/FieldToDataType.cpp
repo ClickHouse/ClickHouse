@@ -3,6 +3,11 @@
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/DataTypes/DataTypeNull.h>
 #include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNull.h>
+#include <DB/Common/Exception.h>
 #include <ext/size.hpp>
 
 
@@ -13,6 +18,38 @@ namespace ErrorCodes
 {
 	extern const int EMPTY_DATA_PASSED;
 	extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+
+DataTypePtr FieldToDataType::operator() (Null & x) const
+{
+	return std::make_shared<DataTypeNull>();
+}
+
+DataTypePtr FieldToDataType::operator() (UInt64 & x) const
+{
+	if (x <= std::numeric_limits<UInt8>::max())		return std::make_shared<DataTypeUInt8>();
+	if (x <= std::numeric_limits<UInt16>::max())	return std::make_shared<DataTypeUInt16>();
+	if (x <= std::numeric_limits<UInt32>::max())	return std::make_shared<DataTypeUInt32>();
+	return std::make_shared<DataTypeUInt64>();
+}
+
+DataTypePtr FieldToDataType::operator() (Int64 & x) const
+{
+	if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min())		return std::make_shared<DataTypeInt8>();
+	if (x <= std::numeric_limits<Int16>::max() && x >= std::numeric_limits<Int16>::min())	return std::make_shared<DataTypeInt16>();
+	if (x <= std::numeric_limits<Int32>::max() && x >= std::numeric_limits<Int32>::min())	return std::make_shared<DataTypeInt32>();
+	return std::make_shared<DataTypeInt64>();
+}
+
+DataTypePtr FieldToDataType::operator() (Float64 & x) const
+{
+	return std::make_shared<DataTypeFloat64>();
+}
+
+DataTypePtr FieldToDataType::operator() (String & x) const
+{
+	return std::make_shared<DataTypeString>();
 }
 
 

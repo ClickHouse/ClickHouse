@@ -1,20 +1,30 @@
+#include <DB/Common/Arena.h>
+#include <DB/Common/SipHash.h>
+#include <DB/Common/NaNUtils.h>
 #include <DB/Columns/ColumnNullable.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-
-extern const int LOGICAL_ERROR;
-
+	extern const int LOGICAL_ERROR;
 }
+
 
 ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
 	: nested_column{nested_column_}, null_map{null_map_}
 {
 	if (nested_column->isNullable())
 		throw Exception{"A nullable column cannot contain another nullable column", ErrorCodes::LOGICAL_ERROR};
+
+	/// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
+	if (auto nested_column_materialized = nested_column->convertToFullColumnIfConst())
+		nested_column = nested_column_materialized;
+
+	if (null_map->isConst())
+		throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::LOGICAL_ERROR};
 }
 
 
@@ -141,10 +151,11 @@ void ColumnNullable::insert(const Field & x)
 	}
 }
 
-void ColumnNullable::insertDefault()
+void ColumnNullable::insertFrom(const IColumn & src, size_t n)
 {
-	nested_column->insertDefault();
-	getNullMap().push_back(1);
+	const ColumnNullable & src_concrete = static_cast<const ColumnNullable &>(src);
+	nested_column->insertFrom(*src_concrete.getNestedColumn(), n);
+	getNullMap().push_back(src_concrete.getNullMap()[n]);
 }
 
 void ColumnNullable::popBack(size_t n)
@@ -192,69 +203,75 @@ int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null
 	return nested_column->compareAt(n, m, nested_rhs, null_direction_hint);
 }
 
-void ColumnNullable::getPermutation(bool reverse, size_t limit, Permutation & res) const
+void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const
 {
-	nested_column->getPermutation(reverse, limit, res);
-	size_t s = res.size();
+	/// Cannot pass limit because of unknown amount of NULLs.
+	nested_column->getPermutation(reverse, 0, null_direction_hint, res);
 
-	/// Since we have created a permutation "res" that sorts a subset of the column values
-	/// and some of these values may actually be nulls, there is no guarantee that
-	/// these null values are well positioned. So we create a permutation "p" which
-	/// operates on the result of "res" by moving all the null values to the required
-	/// direction and leaving the order of the remaining elements unchanged.
-
-	/// Create the permutation p.
-	Permutation p;
-	p.resize(s);
-
-	size_t pos_left = 0;
-	size_t pos_right = s - 1;
-
-	if (reverse)
+	if ((null_direction_hint > 0) != reverse)
 	{
-		/// Move the null elements to the right.
-		for (size_t i = 0; i < s; ++i)
+		/// Shift all NULL values to the end.
+
+		size_t read_idx = 0;
+		size_t write_idx = 0;
+		size_t end_idx = res.size();
+
+		if (!limit)
+			limit = end_idx;
+
+		while (read_idx < limit && !isNullAt(res[read_idx]))
 		{
-			if (isNullAt(res[i]))
+			++read_idx;
+			++write_idx;
+		}
+
+		++read_idx;
+
+		/// Invariants:
+		///  write_idx < read_idx
+		///  write_idx points to NULL
+		///  read_idx will be incremented to position of next not-NULL
+		///  there are range of NULLs between write_idx and read_idx - 1,
+		/// We are moving elements from end to begin of this range,
+		///  so range will "bubble" towards the end.
+		/// Relative order of NULL elements could be changed,
+		///  but relative order of non-NULLs is preserved.
+
+		while (read_idx < end_idx && write_idx < limit)
+		{
+			if (!isNullAt(res[read_idx]))
 			{
-				p[i] = pos_right;
-				--pos_right;
+				std::swap(res[read_idx], res[write_idx]);
+				++write_idx;
 			}
-			else
-			{
-				p[i] = pos_left;
-				++pos_left;
-			}
+			++read_idx;
 		}
 	}
 	else
 	{
-		/// Move the null elements to the left.
-		for (size_t i = 0; i < s; ++i)
-		{
-			size_t j = s - i - 1;
+		/// Shift all NULL values to the begin.
 
-			if (isNullAt(res[j]))
+		ssize_t read_idx = res.size() - 1;
+		ssize_t write_idx = res.size() - 1;
+
+		while (read_idx >= 0 && !isNullAt(res[read_idx]))
+		{
+			--read_idx;
+			--write_idx;
+		}
+
+		--read_idx;
+
+		while (read_idx >= 0 && write_idx >= 0)
+		{
+			if (!isNullAt(res[read_idx]))
 			{
-				p[j] = pos_left;
-				++pos_left;
+				std::swap(res[read_idx], res[write_idx]);
+				--write_idx;
 			}
-			else
-			{
-				p[j] = pos_right;
-				--pos_right;
-			}
+			--read_idx;
 		}
 	}
-
-	/// Combine the permutations res and p.
-	Permutation res2;
-	res2.resize(s);
-
-	for (size_t i = 0; i < s; ++i)
-		res2[i] = res[p[i]];
-
-	res = std::move(res2);
 }
 
 void ColumnNullable::reserve(size_t n)
@@ -267,6 +284,12 @@ size_t ColumnNullable::byteSize() const
 {
 	return nested_column->byteSize() + getNullMapConcreteColumn().byteSize();
 }
+
+size_t ColumnNullable::allocatedSize() const
+{
+	return nested_column->allocatedSize() + getNullMapConcreteColumn().allocatedSize();
+}
+
 
 namespace
 {
@@ -374,16 +397,34 @@ ColumnPtr ColumnNullable::replicate(const Offsets_t & offsets) const
 }
 
 
-void ColumnNullable::applyNullValuesByteMap(const ColumnNullable & other)
+template <bool negative>
+void ColumnNullable::applyNullValuesByteMapImpl(const ColumnUInt8 & map)
 {
 	NullValuesByteMap & arr1 = getNullMap();
-	const NullValuesByteMap & arr2 = other.getNullMap();
+	const NullValuesByteMap & arr2 = map.getData();
 
 	if (arr1.size() != arr2.size())
 		throw Exception{"Inconsistent sizes of ColumnNullable objects", ErrorCodes::LOGICAL_ERROR};
 
 	for (size_t i = 0, size = arr1.size(); i < size; ++i)
-		arr1[i] |= arr2[i];
+		arr1[i] |= negative ^ arr2[i];
+}
+
+
+void ColumnNullable::applyNullValuesByteMap(const ColumnUInt8 & map)
+{
+	applyNullValuesByteMapImpl<false>(map);
+}
+
+void ColumnNullable::applyNegatedNullValuesByteMap(const ColumnUInt8 & map)
+{
+	applyNullValuesByteMapImpl<true>(map);
+}
+
+
+void ColumnNullable::applyNullValuesByteMap(const ColumnNullable & other)
+{
+	applyNullValuesByteMap(other.getNullMapConcreteColumn());
 }
 
 }

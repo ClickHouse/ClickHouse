@@ -9,19 +9,21 @@ endif
 
 BUILD_TARGETS=clickhouse $(DAEMONS)
 
-DEB_GCC_VERSION ?= -6
+DEB_COMPILER_VERSION ?= -6
+DEB_CC ?= gcc
+DEB_CXX ?= g++
 
 DEB_BUILD_GNU_TYPE := $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
 DEB_HOST_GNU_TYPE  := $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
 ifeq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
-CC := gcc$(DEB_GCC_VERSION)
-CXX := g++$(DEB_GCC_VERSION)
+CC := $(DEB_CC)$(DEB_COMPILER_VERSION)
+CXX := $(DEB_CXX)$(DEB_COMPILER_VERSION)
 else
-CC := $(DEB_HOST_GNU_TYPE)-gcc$(DEB_GCC_VERSION)
-CXX := $(DEB_HOST_GNU_TYPE)-g++$(DEB_GCC_VERSION)
+CC := $(DEB_HOST_GNU_TYPE)-$(DEB_CC)$(DEB_COMPILER_VERSION)
+CXX := $(DEB_HOST_GNU_TYPE)-$(DEB_CXX)$(DEB_COMPILER_VERSION)
 endif
 
-CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)`
+CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` $(CMAKE_FLAGS_ADD)
 
 ifdef CMAKE_BUILD_TYPE
 	CMAKE_FLAGS += -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
@@ -50,7 +52,7 @@ build-stamp: configure-stamp
 	# последовательно запускаем make для каждой из целей.
 	# т.к. при параллельном запуске (make target1 target2) несколько раз одновременно создаются бинарники
 	# и возникает raise с custom_command, использующие эти бинарники
-	for target in ${BUILD_TARGETS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$target; done
+	for target in ${BUILD_TARGETS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$target || exit $$?; done
 	touch $@
 
 clean:
@@ -66,7 +68,7 @@ clean:
 	find ./debian/ -name "*.docs" -type l -delete
 	rm -f ./debian/copyright
 	# Удалим созданные *.install файлы
-	for DAEMON_PKG in ${DAEMONS}; do AUTO=`grep "# automatically created" debian/$$DAEMON_PKG-metrika-yandex.install`; if [ "x$$AUTO" != "x" ]; then rm -f debian/$$DAEMON_PKG-metrika-yandex.install; fi; done
+	for DAEMON_PKG in ${DAEMONS}; do AUTO=`grep "# automatically created" debian/$$DAEMON_PKG.install`; if [ "x$$AUTO" != "x" ]; then rm -f debian/$$DAEMON_PKG.install; fi; done
 	dh_clean
 
 install: build
@@ -82,62 +84,48 @@ install: build
 	if [ -e debian/tmp/etc/init.d/clickhouse-server ]; then ln -s tmp/etc/init.d/clickhouse-server debian/clickhouse-server-base.clickhouse-server.init; fi
 
 	# создаем дефолтный cron, если нет крон-файла созданного пользователем
-	# cron_name имеет вид daemonname-metrika-yandex
+	# cron_name имеет вид daemonname
 	# Для ClickHouse не должно быть лишних зависимостей.
-	for I in debian/tmp/etc/init.d/*; \
-	do \
-		cron_name=`basename $$I`; \
-		if [ ! -d debian/tmp/etc/cron.d ]; then \
-			mkdir -p debian/tmp/etc/cron.d; \
-		fi; \
-		if [ ! -f debian/tmp/etc/cron.d/$$cron_name ]; then \
-			echo "#*/10 * * * * root /etc/init.d/$$cron_name condstart 1>/dev/null 2>&1" > debian/tmp/etc/cron.d/$$cron_name; \
-		fi; \
-	done; \
-	# Создаём нужные *.install файлы
-	# Только для демонов, т.к. пакеты ClickHouse не имеют суффикса metrika-yandex
+	# Making necessary *.install files
 	for DAEMON_PKG in ${DAEMONS}; do \
-		if [ ! -e "debian/$$DAEMON_PKG-metrika-yandex.install" ]; then \
-			echo "# automatically created" > debian/$$DAEMON_PKG-metrika-yandex.install; \
-			echo "/etc/$$DAEMON_PKG/config.xml" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
-			echo "/usr/bin/$$DAEMON_PKG" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
-			echo "/etc/cron.d/$$DAEMON_PKG-metrika-yandex" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
+		if [ ! -e "debian/$$DAEMON_PKG.install" ]; then \
+			echo "# automatically created" > debian/$$DAEMON_PKG.install; \
+			echo "/etc/$$DAEMON_PKG/config.xml" >> debian/$$DAEMON_PKG.install; \
+			echo "/usr/bin/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.install; \
+			echo "/etc/cron.d/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.install; \
 			if [ -e "debian/tmp/etc/monrun/conf.d/$$DAEMON_PKG.conf" ]; then \
-				echo "/etc/monrun/conf.d/$$DAEMON_PKG.conf" >> debian/$$DAEMON_PKG-metrika-yandex.install; \
+				echo "/etc/monrun/conf.d/$$DAEMON_PKG.conf" >> debian/$$DAEMON_PKG.install; \
 			fi;\
 		fi;  \
 	done
 
-	# Создаём нужные *.postinst файлы
-	# Note: Только для демонов, т.к. пакеты ClickHouse не имеют суффикса metrika-yandex
+	# Making necessary *.postinst files
 	for DAEMON_PKG in ${DAEMONS}; do \
-		if [ ! -e "debian/$$DAEMON_PKG-metrika-yandex.postinst" ]; then \
-			echo "# automatically created" > debian/$$DAEMON_PKG-metrika-yandex.postinst; \
-			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
-			echo "chown -R metrika: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
-			if [ -e "debian/tmp/etc/init.d/$$DAEMON_PKG-metrika-yandex" ]; then \
+		if [ ! -e "debian/$$DAEMON_PKG.postinst" ]; then \
+			echo "# automatically created" > debian/$$DAEMON_PKG.postinst; \
+			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d" >> debian/$$DAEMON_PKG.postinst; \
+			echo "chown -R clickhouse: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
+			if [ -e "debian/tmp/etc/init.d/$$DAEMON_PKG" ]; then \
 				if echo $$DAEMON_PKG | grep server > /dev/null; then\
-					echo "update-rc.d $$DAEMON_PKG-metrika-yandex defaults > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+					echo "update-rc.d $$DAEMON_PKG defaults > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG.postinst; \
 				else\
-					echo "update-rc.d $$DAEMON_PKG-metrika-yandex start 30 2 3 4 5 . stop 70 0 1 6 . > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+					echo "update-rc.d $$DAEMON_PKG start 30 2 3 4 5 . stop 70 0 1 6 . > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG.postinst; \
 				fi\
 			fi\
 			\
 		else \
-			echo >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
-			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d; chown -R metrika: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG-metrika-yandex.postinst; \
+			echo >> debian/$$DAEMON_PKG.postinst; \
+			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d; chown -R clickhouse: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
 		fi;  \
 	done
 
 
-	# В случае сборки clickhouse-server, добавим в пакет бинарник clang-а, ld и заголовочные файлы - для динамической компиляции.
-	if [ -e debian/tmp/etc/init.d/clickhouse-server ]; then \
-		mkdir -p debian/tmp/usr/share/clickhouse/bin debian/tmp/usr/share/clickhouse/headers; \
-		debian/copy_clang_binaries.sh debian/tmp/usr/share/clickhouse/bin/; \
-		./copy_headers.sh . debian/tmp/usr/share/clickhouse/headers; \
-	fi;
+	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
+	mkdir -p debian/tmp/usr/share/clickhouse/bin debian/tmp/usr/share/clickhouse/headers
+	debian/copy_clang_binaries.sh debian/tmp/usr/share/clickhouse/bin/
+	./copy_headers.sh . debian/tmp/usr/share/clickhouse/headers
 
-	# Создаём документацию
+	# Making docs
 	cp LICENSE debian/copyright
 
 	for DAEMON_PKG in ${DAEMONS}; do \
@@ -149,6 +137,13 @@ install: build
 	ln -s clickhouse-server.docs debian/clickhouse-server-base.docs
 	ln -s clickhouse-server.docs debian/clickhouse-server-common.docs
 	ln -s clickhouse-server.docs debian/clickhouse-server-metrika.docs
+
+	mkdir -p debian/tmp/etc/security/limits.d
+	cp tools/etc/security/limits.d/clickhouse.conf debian/tmp/etc/security/limits.d
+	mkdir -p debian/tmp/etc/init.d
+	cp tools/etc/init.d/clickhouse-server debian/tmp/etc/init.d
+	mkdir -p debian/tmp/etc/cron.d
+	cp tools/etc/cron.d/clickhouse-server debian/tmp/etc/cron.d
 
 # Build architecture-independent files here.
 binary-indep: build install

@@ -1,11 +1,10 @@
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/KeeperException.h>
 #include <iostream>
-#include <readline/readline.h>
-#include <readline/history.h>
 #include <sstream>
 #include <Poco/ConsoleChannel.h>
 #include <common/logger_useful.h>
+#include <common/readline_use.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/ReadBufferFromString.h>
 

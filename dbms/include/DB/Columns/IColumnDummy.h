@@ -14,8 +14,8 @@ namespace ErrorCodes
 }
 
 
-/** Базовый класс для столбцов-констант, содержащих значение, не входящее в Field.
-  * Не является полноценым столбцом и используется особым образом.
+/** Base class for columns-constants that contain a value that is not in the `Field`.
+  * Not a full-fledged column and is used in a special way.
   */
 class IColumnDummy : public IColumn
 {
@@ -30,6 +30,7 @@ public:
 	void insertDefault() override { ++s; }
 	void popBack(size_t n) override { s -= n; }
 	size_t byteSize() const override { return 0; }
+	size_t allocatedSize() const override { return 0; }
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override { return 0; }
 
 	Field operator[](size_t n) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
@@ -71,7 +72,7 @@ public:
 		return cloneDummy(limit ? std::min(s, limit) : s);
 	}
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
+	void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override
 	{
 		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
@@ -84,6 +85,22 @@ public:
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		return cloneDummy(s == 0 ? 0 : offsets.back());
+	}
+
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		if (s != selector.size())
+			throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		std::vector<size_t> counts(num_columns);
+		for (auto idx : selector)
+			++counts[idx];
+
+		Columns res(num_columns);
+		for (size_t i = 0; i < num_columns; ++i)
+			res[i] = cloneResized(counts[i]);
+
+		return res;
 	}
 
 	void getExtremes(Field & min, Field & max) const override

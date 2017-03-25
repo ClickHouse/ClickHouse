@@ -2,7 +2,7 @@
 
 #include <DB/Common/HashTable/HashMap.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
@@ -15,7 +15,7 @@ namespace DB
 {
 
 
-/** В качестве состояния используется хэш-таблица вида: значение -> сколько раз встретилось.
+/** The state is a hash table of the form: value -> how many times it happened.
   */
 template <typename T>
 struct AggregateFunctionQuantileExactWeightedData
@@ -23,7 +23,7 @@ struct AggregateFunctionQuantileExactWeightedData
 	using Key = T;
 	using Weight = UInt64;
 
-	/// При создании, хэш-таблица должна быть небольшой.
+	/// When creating, the hash table must be small.
 	using Map = HashMap<
 		Key, Weight,
 		HashCRC32<Key>,
@@ -35,11 +35,11 @@ struct AggregateFunctionQuantileExactWeightedData
 };
 
 
-/** Точно вычисляет квантиль по множеству значений, для каждого из которых задан вес - сколько раз значение встречалось.
-  * Можно рассматривать набор пар value, weight - как набор гистограмм,
-  *  в которых value - значение, округлённое до середины столбика, а weight - высота столбика.
-  * В качестве типа аргумента может быть только числовой тип (в том числе, дата и дата-с-временем).
-  * Тип результата совпадает с типом аргумента.
+/** Exactly calculates a quantile over a set of values, for each of which a weight is given - how many times the value was encountered.
+  * You can consider a set of pairs `values, weight` - as a set of histograms,
+  * where value is the value rounded to the middle of the column, and weight is the height of the column.
+  * The argument type can only be a numeric type (including date and date-time).
+  * The result type is the same as the argument type.
   */
 template <typename ValueType, typename WeightType>
 class AggregateFunctionQuantileExactWeighted final
@@ -118,7 +118,7 @@ public:
 			return;
 		}
 
-		/// Копируем данные во временный массив, чтобы получить нужный по порядку элемент.
+		/// Copy the data to a temporary array to get the element you need in order.
 		using Pair = typename AggregateFunctionQuantileExactWeightedData<ValueType>::Map::value_type;
 		std::unique_ptr<Pair[]> array_holder(new Pair[size]);
 		Pair * array = array_holder.get();
@@ -157,9 +157,9 @@ public:
 };
 
 
-/** То же самое, но позволяет вычислить сразу несколько квантилей.
-  * Для этого, принимает в качестве параметров несколько уровней. Пример: quantilesExactWeighted(0.5, 0.8, 0.9, 0.95)(ConnectTiming, Weight).
-  * Возвращает массив результатов.
+/** Same, but allows you to calculate several quantiles at once.
+  * For this, takes as parameters several levels. Example: quantilesExactWeighted(0.5, 0.8, 0.9, 0.95)(ConnectTiming, Weight).
+  * Returns an array of results.
   */
 template <typename ValueType, typename WeightType>
 class AggregateFunctionQuantilesExactWeighted final
@@ -248,7 +248,7 @@ public:
 			return;
 		}
 
-		/// Копируем данные во временный массив, чтобы получить нужный по порядку элемент.
+		/// Copy the data to a temporary array to get the element you need in order.
 		using Pair = typename AggregateFunctionQuantileExactWeightedData<ValueType>::Map::value_type;
 		std::unique_ptr<Pair[]> array_holder(new Pair[size]);
 		Pair * array = array_holder.get();

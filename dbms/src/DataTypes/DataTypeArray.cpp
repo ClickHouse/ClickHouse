@@ -6,7 +6,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadBufferFromString.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 
 
@@ -22,13 +22,13 @@ namespace ErrorCodes
 DataTypeArray::DataTypeArray(DataTypePtr nested_)
 	: enriched_nested(std::make_pair(nested_, std::make_shared<DataTypeVoid>())), nested{nested_}
 {
-	offsets = std::make_shared<DataTypeFromFieldType<ColumnArray::Offset_t>::Type>();
+	offsets = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();
 }
 
 DataTypeArray::DataTypeArray(DataTypeTraits::EnrichedDataTypePtr enriched_nested_)
 	: enriched_nested{enriched_nested_}, nested{enriched_nested.first}
 {
-	offsets = std::make_shared<DataTypeFromFieldType<ColumnArray::Offset_t>::Type>();
+	offsets = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();
 }
 
 void DataTypeArray::serializeBinary(const Field & field, WriteBuffer & ostr) const

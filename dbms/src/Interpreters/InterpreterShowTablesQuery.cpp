@@ -23,13 +23,9 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 {
 	const ASTShowTablesQuery & query = typeid_cast<const ASTShowTablesQuery &>(*query_ptr);
 
-	String format_or_nothing;
-	if (query.format)
-		format_or_nothing = " FORMAT " + typeid_cast<const ASTIdentifier &>(*query.format).name;
-
 	/// SHOW DATABASES
 	if (query.databases)
-		return "SELECT name FROM system.databases" + format_or_nothing;
+		return "SELECT name FROM system.databases";
 
 	String database = query.from.empty() ? context.getCurrentDatabase() : query.from;
 
@@ -44,8 +40,6 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
 	if (!query.like.empty())
 		rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << mysqlxx::quote << query.like;
-
-	rewritten_query << format_or_nothing;
 
 	return rewritten_query.str();
 }

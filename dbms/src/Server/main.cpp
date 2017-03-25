@@ -1,4 +1,5 @@
-#ifndef NO_TCMALLOC
+#include <common/config_common.h>
+#if USE_TCMALLOC
 #include <gperftools/malloc_extension.h>
 #endif
 #include "Server.h"
@@ -7,9 +8,10 @@
 
 /// Universal executable for various clickhouse applications
 int mainEntryClickHouseServer(int argc, char ** argv);
-int mainEntryClickhouseClient(int argc, char ** argv);
-int mainEntryClickhouseLocal(int argc, char ** argv);
-int mainEntryClickhouseBenchmark(int argc, char ** argv);
+int mainEntryClickHouseClient(int argc, char ** argv);
+int mainEntryClickHouseLocal(int argc, char ** argv);
+int mainEntryClickHouseBenchmark(int argc, char ** argv);
+int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 
 
 static bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
@@ -36,7 +38,7 @@ static bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> 
 
 int main(int argc_, char ** argv_)
 {
-#ifndef NO_TCMALLOC
+#if USE_TCMALLOC
 	MallocExtension::instance()->SetNumericProperty("tcmalloc.aggressive_memory_decommit", false);
 #endif
 
@@ -45,13 +47,15 @@ int main(int argc_, char ** argv_)
 	auto main_func = mainEntryClickHouseServer;
 
 	if (isClickhouseApp("local", argv))
-		main_func = mainEntryClickhouseLocal;
+		main_func = mainEntryClickHouseLocal;
 	else if (isClickhouseApp("client", argv))
-		main_func = mainEntryClickhouseClient;
+		main_func = mainEntryClickHouseClient;
 	else if (isClickhouseApp("benchmark", argv))
-		main_func = mainEntryClickhouseBenchmark;
+		main_func = mainEntryClickHouseBenchmark;
 	else if (isClickhouseApp("server", argv)) /// --server arg should be cut
 		main_func = mainEntryClickHouseServer;
+	else if (isClickhouseApp("extract-from-config", argv))
+		main_func = mainEntryClickHouseExtractFromConfig;
 
 	return main_func(static_cast<int>(argv.size()), argv.data());
 }

@@ -5,7 +5,7 @@
 
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 
 int main(int argc, char ** argv)

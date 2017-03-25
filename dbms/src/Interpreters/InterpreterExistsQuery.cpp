@@ -3,7 +3,8 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/DataStreams/BlockIO.h>
 #include <DB/DataStreams/copyData.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Interpreters/InterpreterExistsQuery.h>
 
 

@@ -6,6 +6,7 @@
 #include <common/logger_useful.h>
 
 #include <DB/Core/SortDescription.h>
+#include <DB/Core/SortCursor.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockInputStream.h>

@@ -1,17 +1,20 @@
+#include <vector>
+#include <string>
+#include <sstream>
+
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Element.h>
 
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/MongoDBBlockInputStream.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <ext/range.hpp>
-#include <vector>
-#include <string>
 #include <DB/Core/FieldVisitors.h>
 
 
@@ -34,8 +37,9 @@ MongoDBBlockInputStream::~MongoDBBlockInputStream() = default;
 
 String MongoDBBlockInputStream::getID() const
 {
-	using stream = std::ostringstream;
-	return "MongoDB(@" + static_cast<stream &>(stream{} << cursor.get()).str() + ")";
+	std::ostringstream stream;
+	stream << cursor.get();
+	return "MongoDB(@" + stream.str() + ")";
 }
 
 

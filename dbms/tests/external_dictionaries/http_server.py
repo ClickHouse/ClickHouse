@@ -1,16 +1,32 @@
 #!/usr/bin/env python
-from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
-from os import curdir, sep
+import os
+import socket
+import sys
+import BaseHTTPServer
+import SocketServer
+import ssl
+import argparse
 
-PORT_NUMBER = 58000
+parser = argparse.ArgumentParser(description = 'Simple http/https server')
+parser.add_argument('--https', action='store_true', help = 'Use https')
+parser.add_argument('--port', type = int, default = 80, help = 'server port')
+parser.add_argument('--host', default = "localhost", help = 'server host')
+args = parser.parse_args()
 
-class myHandler(BaseHTTPRequestHandler):
+if args.https and args.port == 80:
+    args.port = 443
+
+class myHTTPServer(SocketServer.ForkingMixIn, BaseHTTPServer.HTTPServer):
+    address_family = socket.AF_INET6
+    pass
+
+class myHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
             self.path = "/http_server.py"
 
         try:
-            f = open(curdir + sep + self.path)
+            f = open(os.curdir + os.sep + self.path)
             self.send_response(200)
             self.send_header('Content-type', 'text/plain')
             self.end_headers()
@@ -26,8 +42,12 @@ class myHandler(BaseHTTPRequestHandler):
         return
 
 try:
-    server = HTTPServer(('', PORT_NUMBER), myHandler)
-    print 'Started httpserver on port ' , PORT_NUMBER
+    server = myHTTPServer(('', args.port), myHandler)
+    if args.https:
+        os.system('openssl req -subj "/CN={host}" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout http_server.key -out http_server.crt'.format(host=args.host))
+        server.socket = ssl.wrap_socket(server.socket, keyfile="http_server.key", certfile='http_server.crt', server_side=True)
+
+    print 'Started http' + ( 's' if args.https else '' ) + ' server on port' , args.port
     server.serve_forever()
 
 except KeyboardInterrupt:

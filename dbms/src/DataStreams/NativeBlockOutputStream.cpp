@@ -1,4 +1,5 @@
 #include <DB/Core/Defines.h>
+#include <DB/Core/Block.h>
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/VarInt.h>
@@ -11,7 +12,7 @@
 
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 #include <DB/DataStreams/MarkInCompressedFile.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>

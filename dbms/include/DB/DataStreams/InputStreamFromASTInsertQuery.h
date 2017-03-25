@@ -1,9 +1,12 @@
 #pragma once
+
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/ConcatReadBuffer.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/BlockIO.h>
+#include <cstddef>
+
 
 namespace DB
 {
@@ -28,7 +31,7 @@ public:
 	void readSuffixImpl() override		{ return res_stream->readSuffix(); }
 
 	String getName() const override		{ return "InputStreamFromASTInsertQuery"; }
-	String getID() const override		{ return "InputStreamFromASTInsertQuery(" + toString(this) + ")"; }
+	String getID() const override		{ return "InputStreamFromASTInsertQuery(" + toString(std::intptr_t(this)) + ")"; }
 
 private:
 

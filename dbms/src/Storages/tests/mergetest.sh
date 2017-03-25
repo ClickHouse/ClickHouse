@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# См. таску CONV-8849.
-# Симулируем ситуацию, когда половина одного файла с засечками не успела записаться на диск
+# See the CONV-8849.
+# Simulate a situation where half of one mark file did not have time to be written to disk
 
-path='/opt/clickhouse/data/mergetest/a/'
+path='/var/lib/clickhouse/data/mergetest/a/'
 
 echo 'Creating table'
 echo 'CREATE DATABASE IF NOT EXISTS mergetest' | clickhouse-client || exit 1
@@ -29,7 +29,7 @@ echo 'Files (there should be few non-old_ pieces):'
 ls $path
 
 echo 'Stopping server'
-sudo /etc/init.d/clickhouse-server-metrika-yandex stop || exit 7
+sudo /etc/init.d/clickhouse-server stop || exit 7
 
 echo 'Truncating in half each non-old_ piece with level>1'
 pieces=`ls $path | grep -Pv '(^tmp_|^old_|_0$)' | grep -v 'increment.txt'` || exit 8
@@ -42,7 +42,7 @@ do
 done
 
 echo 'Starting server'
-sudo /etc/init.d/clickhouse-server-metrika-yandex start || exit 11
+sudo /etc/init.d/clickhouse-server start || exit 11
 
 until echo 'SHOW DATABASES' | clickhouse-client > /dev/null
 do

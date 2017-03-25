@@ -2,7 +2,7 @@
 #include <DB/IO/ReadHelpers.h>
 
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDate.h>
@@ -149,16 +149,19 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
 
 }
 
-Field convertFieldToType(const Field & src, const IDataType & type)
+Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
 {
-	if (type.isNullable())
+	if (from_type_hint && from_type_hint->equals(to_type))
+		return from_value;
+
+	if (to_type.isNullable())
 	{
-		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
+		const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(to_type);
 		const DataTypePtr & nested_type = nullable_type.getNestedType();
-		return convertFieldToTypeImpl(src, *nested_type);
+		return convertFieldToTypeImpl(from_value, *nested_type);
 	}
 	else
-		return convertFieldToTypeImpl(src, type);
+		return convertFieldToTypeImpl(from_value, to_type);
 }
 
 

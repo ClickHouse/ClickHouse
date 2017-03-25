@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/DataTypes/IDataType.h>
-#include <DB/Functions/EnrichedDataTypePtr.h>
+#include <DB/DataTypes/EnrichedDataTypePtr.h>
 
 
 namespace DB

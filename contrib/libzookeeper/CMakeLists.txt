@@ -6,7 +6,7 @@ endif()
 
 include_directories (include/zookeeper src)
 
-add_library (zookeeper
+add_library (zookeeper_mt
 src/zookeeper.c
 src/zookeeper.jute.c
 src/zk_hashtable.c

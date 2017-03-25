@@ -24,7 +24,7 @@ namespace DB
 {
 
 static constexpr auto threshold = 10;
-/// Решили убрать ограничение в виду отсутствия штрафа по скорости на перенос в PREWHERE
+/// We decided to remove the restriction due to the absence of a penalty for the transfer in PREWHERE
 static constexpr auto max_columns_relative_size = 1.0f;
 static constexpr auto and_function_name = "and";
 static constexpr auto equals_function_name = "equals";
@@ -68,7 +68,7 @@ void MergeTreeWhereOptimizer::calculateColumnSizes(const MergeTreeData & data, c
 {
 	for (const auto & column_name : column_names)
 	{
-		const auto column_size = data.getColumnSize(column_name);
+		const auto column_size = data.getColumnCompressedSize(column_name);
 
 		column_sizes[column_name] = column_size;
 		total_column_size += column_size;
@@ -372,7 +372,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const IAST * ptr) const
 			|| global_not_in_function_name == function_ptr->name)
 			return true;
 
-		/// indexHint - особая функция, которую не имеет смысла переносить в PREWHERE
+		/// indexHint is a special function that it does not make sense to transfer to PREWHERE
 		if ("indexHint" == function_ptr->name)
 			return true;
 	}

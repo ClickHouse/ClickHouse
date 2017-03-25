@@ -1,41 +1,25 @@
 #include "LocalServer.h"
+
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Util/OptionCallback.h>
 #include <Poco/String.h>
-
 #include <DB/Databases/DatabaseOrdinary.h>
-
-#include <DB/Storages/System/StorageSystemNumbers.h>
-#include <DB/Storages/System/StorageSystemTables.h>
-#include <DB/Storages/System/StorageSystemDatabases.h>
-#include <DB/Storages/System/StorageSystemProcesses.h>
-#include <DB/Storages/System/StorageSystemEvents.h>
-#include <DB/Storages/System/StorageSystemOne.h>
-#include <DB/Storages/System/StorageSystemSettings.h>
-#include <DB/Storages/System/StorageSystemDictionaries.h>
-#include <DB/Storages/System/StorageSystemColumns.h>
-#include <DB/Storages/System/StorageSystemFunctions.h>
-
+#include <DB/Storages/System/attachSystemTables.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/loadMetadata.h>
-
 #include <DB/Common/Exception.h>
 #include <DB/Common/Macros.h>
 #include <DB/Common/ConfigProcessor.h>
 #include <DB/Common/escapeForFileName.h>
-
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
-
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/IAST.h>
-
 #include <common/ErrorHandlers.h>
 #include <common/ApplicationServerExt.h>
-
 #include "StatusFile.h"
 
 
@@ -69,88 +53,78 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 	Poco::Util::Application::defineOptions (_options);
 
 	_options.addOption(
-		Poco::Util::Option ("config-file", "", "Load configuration from a given file")
+		Poco::Util::Option("config-file", "", "Load configuration from a given file")
 			.required(false)
 			.repeatable(false)
 			.argument("[config.xml]")
-			.binding("config-file")
-			);
+			.binding("config-file"));
 
 	/// Arguments that define first query creating initial table:
 	/// (If structure argument is omitted then initial query is not generated)
 	_options.addOption(
-		Poco::Util::Option ("structure", "S", "Structe of initial table(list columns names with their types)")
+		Poco::Util::Option("structure", "S", "Structe of initial table(list columns names with their types)")
 			.required(false)
 			.repeatable(false)
 			.argument("[name Type]")
-			.binding("table-structure")
-			);
+			.binding("table-structure"));
 
 	_options.addOption(
-		Poco::Util::Option ("table", "N", "Name of intial table")
+		Poco::Util::Option("table", "N", "Name of intial table")
 			.required(false)
 			.repeatable(false)
 			.argument("[table]")
-			.binding("table-name")
-			);
+			.binding("table-name"));
 
 	_options.addOption(
-		Poco::Util::Option ("file", "f", "Path to file with data of initial table (stdin if not specified)")
+		Poco::Util::Option("file", "f", "Path to file with data of initial table (stdin if not specified)")
 			.required(false)
 			.repeatable(false)
 			.argument(" stdin")
-			.binding("table-file")
-			);
+			.binding("table-file"));
 
 	_options.addOption(
-		Poco::Util::Option ("input-format", "if", "Input format of intial table data")
+		Poco::Util::Option("input-format", "if", "Input format of intial table data")
 			.required(false)
 			.repeatable(false)
-			.argument("[TabSeparated]")
-			.binding("table-data-format")
-			);
+			.argument("[TSV]")
+			.binding("table-data-format"));
 
 	/// List of queries to execute
 	_options.addOption(
-		Poco::Util::Option ("query", "q", "Queries to execute")
+		Poco::Util::Option("query", "q", "Queries to execute")
 			.required(false)
 			.repeatable(false)
 			.argument("<query>", true)
-			.binding("query")
-			);
+			.binding("query"));
 
 	/// Default Output format
 	_options.addOption(
-		Poco::Util::Option ("output-format", "of", "Default output format")
+		Poco::Util::Option("output-format", "of", "Default output format")
 			.required(false)
 			.repeatable(false)
-			.argument("[TabSeparated]", true)
-			.binding("output-format")
-			);
+			.argument("[TSV]", true)
+			.binding("output-format"));
 
 	/// Alias for previous one, required for clickhouse-client compability
 	_options.addOption(
-		Poco::Util::Option ("format", "", "Default ouput format")
+		Poco::Util::Option("format", "", "Default ouput format")
 			.required(false)
 			.repeatable(false)
-			.argument("[TabSeparated]", true)
-			.binding("format")
-			);
+			.argument("[TSV]", true)
+			.binding("format"));
 
 	_options.addOption(
-		Poco::Util::Option ("stacktrace", "", "Print stack traces of exceptions")
+		Poco::Util::Option("stacktrace", "", "Print stack traces of exceptions")
 			.required(false)
 			.repeatable(false)
-			.binding("stacktrace")
-			);
+			.binding("stacktrace"));
 
 	_options.addOption(
-		Poco::Util::Option ("verbose", "", "Print info about execution of queries")
+		Poco::Util::Option("verbose", "", "Print info about execution of queries")
 			.required(false)
 			.repeatable(false)
 			.noArgument()
-			.binding("verbose")
-			);
+			.binding("verbose"));
 
 	_options.addOption(
 		Poco::Util::Option("help", "", "Display help information")
@@ -174,16 +148,18 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 	nullptr};
 
 	for (const char ** name = settings_names; *name; ++name)
-		_options.addOption(Poco::Util::Option(*name, "", "Settings.h").group("Settings").required(false).repeatable(false).binding(*name));
+		_options.addOption(Poco::Util::Option(*name, "", "Settings.h").required(false).argument("<value>")
+		.repeatable(false).binding(*name));
 
 	for (const char ** name = limits_names; *name; ++name)
-		_options.addOption(Poco::Util::Option(*name, "", "Limits.h").group("Limits").required(false).repeatable(false).binding(*name));
+		_options.addOption(Poco::Util::Option(*name, "", "Limits.h").required(false).argument("<value>")
+		.repeatable(false).binding(*name));
 }
 
 
 void LocalServer::applyOptions()
 {
-	context->setDefaultFormat(config().getString("output-format", config().getString("format", "TabSeparated")));
+	context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
 
 	/// settings and limits could be specified in config file, but passed settings has higher priority
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
@@ -211,7 +187,7 @@ void LocalServer::displayHelp()
 		"After you can execute your SQL queries in the usual manner.\n"
 		"There are two ways to define initial table keeping your data:\n"
 		"either just in first query like this:\n"
-		"	CREATE TABLE <table> (<structure>) ENGINE = File(<format>, <file>);\n"
+		"	CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);\n"
 		"either through corresponding command line parameters."
 	);
 	helpFormatter.setWidth(132); /// 80 is ugly due to wide settings params
@@ -267,7 +243,9 @@ try
 	/// Load config files if exists
 	if (config().has("config-file") || Poco::File("config.xml").exists())
 	{
-		ConfigurationPtr processed_config = ConfigProcessor(false, true).loadConfig(config().getString("config-file", "config.xml"));
+		ConfigurationPtr processed_config = ConfigProcessor(false, true)
+			.loadConfig(config().getString("config-file", "config.xml"))
+			.configuration;
 		config().add(processed_config.duplicate(), PRIO_DEFAULT, false);
 	}
 
@@ -310,7 +288,9 @@ try
 		context->setMarkCache(mark_cache_size);
 
 	/// Load global settings from default profile.
-	context->setSetting("profile", config().getString("default_profile", "default"));
+	String default_profile_name = config().getString("default_profile", "default");
+	context->setDefaultProfileName(default_profile_name);
+	context->setSetting("profile", default_profile_name);
 
 	/** Init dummy default DB
 	  * NOTE: We force using isolated default database to avoid conflicts with default database from server enviroment
@@ -375,7 +355,7 @@ std::string LocalServer::getInitialCreateTableQuery()
 
 	auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
 	auto table_structure = config().getString("table-structure");
-	auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TabSeparated"));
+	auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TSV"));
 	String table_file;
 	if (!config().has("table-file") || config().getString("table-file") == "-") /// Use Unix tools stdin naming convention
 		table_file = "stdin";
@@ -401,15 +381,7 @@ void LocalServer::attachSystemTables()
 		context->addDatabase("system", system_database);
 	}
 
-	system_database->attachTable("one", 	StorageSystemOne::create("one"));
-	system_database->attachTable("numbers", StorageSystemNumbers::create("numbers"));
-	system_database->attachTable("numbers_mt", StorageSystemNumbers::create("numbers_mt", true));
-	system_database->attachTable("databases", 	StorageSystemDatabases::create("databases"));
-	system_database->attachTable("tables", 		StorageSystemTables::create("tables"));
-	system_database->attachTable("columns",   	StorageSystemColumns::create("columns"));
-	system_database->attachTable("functions", 	StorageSystemFunctions::create("functions"));
-	system_database->attachTable("events", 		StorageSystemEvents::create("events"));
-	system_database->attachTable("settings", 	StorageSystemSettings::create("settings"));
+	attachSystemTablesLocal(system_database);
 }
 
 
@@ -434,12 +406,11 @@ void LocalServer::processQueries()
 	{
 		ReadBufferFromString read_buf(query);
 		WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
-		BlockInputStreamPtr plan;
 
 		if (verbose)
 			LOG_INFO(log, "Executing query: " << query);
 
-		executeQuery(read_buf, write_buf, *context, plan, nullptr);
+		executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, {});
 	}
 }
 
@@ -471,7 +442,7 @@ void LocalServer::setupUsers()
 	if (config().has("users_config") || config().has("config-file") || Poco::File("config.xml").exists())
 	{
 		auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-		users_config = ConfigProcessor().loadConfig(users_config_path);
+		users_config = ConfigProcessor().loadConfig(users_config_path).configuration;
 	}
 	else
 	{
@@ -490,4 +461,4 @@ void LocalServer::setupUsers()
 
 }
 
-YANDEX_APP_MAIN_FUNC(DB::LocalServer, mainEntryClickhouseLocal);
+YANDEX_APP_MAIN_FUNC(DB::LocalServer, mainEntryClickHouseLocal);

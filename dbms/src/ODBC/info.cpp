@@ -22,10 +22,10 @@ SQLGetInfo(HDBC connection_handle,
 
 	LOG("GetInfo with info_type: " << info_type << ", out_value_max_length: " << out_value_max_length);
 
-	/** Как выбираются все эти значения?
-	  * В части них приведена правдивая информация о возможностях СУБД.
-	  * Но в большинстве случаев, возможности декларируются "про запас", чтобы посмотреть,
-	  *  какие запросы будет отправлять и что будет делать всякий софт, имея ввиду эти возможности.
+	/** How are all these values selected?
+	  * Part of them provides true information about the capabilities of the DBMS.
+	  * But in most cases, the possibilities are declared "in reserve" to see,
+	  * what requests will be sent and what any software will do, meaning these features.
 	  */
 
 	return doWith<Connection>(connection_handle, [&](Connection & connection)
@@ -74,7 +74,7 @@ SQLGetInfo(HDBC connection_handle,
 			CASE_FALLTHROUGH(SQL_ROW_UPDATES)
 			CASE_STRING(SQL_DESCRIBE_PARAMETER, "N")
 
-			/// UINTEGER одиночные значения
+		/// UINTEGER single values
 			CASE_NUM(SQL_ODBC_INTERFACE_CONFORMANCE, SQLUINTEGER, SQL_OIC_CORE)
 			CASE_NUM(SQL_ASYNC_MODE, SQLUINTEGER, SQL_AM_NONE)
 			CASE_NUM(SQL_ASYNC_NOTIFICATION, SQLUINTEGER, SQL_ASYNC_NOTIFICATION_NOT_CAPABLE)
@@ -84,7 +84,7 @@ SQLGetInfo(HDBC connection_handle,
 			CASE_NUM(SQL_PARAM_ARRAY_SELECTS, SQLUINTEGER, SQL_PAS_NO_SELECT)
 			CASE_NUM(SQL_SQL_CONFORMANCE, SQLUINTEGER, SQL_SC_SQL92_ENTRY)
 
-			/// USMALLINT одиночные значения
+		/// USMALLINT single values
 			CASE_NUM(SQL_GROUP_BY, SQLUSMALLINT, SQL_GB_GROUP_BY_CONTAINS_SELECT)
 			CASE_NUM(SQL_CATALOG_LOCATION, SQLUSMALLINT, SQL_CL_START)
 			CASE_NUM(SQL_FILE_USAGE, SQLUSMALLINT, SQL_FILE_NOT_SUPPORTED)
@@ -99,7 +99,7 @@ SQLGetInfo(HDBC connection_handle,
 			CASE_NUM(SQL_NULL_COLLATION, SQLUSMALLINT, SQL_NC_END)
 			CASE_NUM(SQL_TXN_CAPABLE, SQLUSMALLINT, SQL_TC_NONE)
 
-			/// UINTEGER непустые битмаски
+		/// UINTEGER non-empty bitmasks
 			CASE_NUM(SQL_CATALOG_USAGE, SQLUINTEGER, SQL_CU_DML_STATEMENTS | SQL_CU_TABLE_DEFINITION)
 			CASE_NUM(SQL_AGGREGATE_FUNCTIONS, SQLUINTEGER, SQL_AF_ALL | SQL_AF_AVG | SQL_AF_COUNT | SQL_AF_DISTINCT | SQL_AF_MAX | SQL_AF_MIN | SQL_AF_SUM)
 			CASE_NUM(SQL_ALTER_TABLE, SQLUINTEGER, SQL_AT_ADD_COLUMN_DEFAULT | SQL_AT_ADD_COLUMN_SINGLE | SQL_AT_DROP_COLUMN_DEFAULT | SQL_AT_SET_COLUMN_DEFAULT)
@@ -197,7 +197,7 @@ SQLGetInfo(HDBC connection_handle,
 
 			CASE_NUM(SQL_UNION, SQLUINTEGER, SQL_U_UNION | SQL_U_UNION_ALL)
 
-			/// UINTEGER пустые битмаски
+		/// UINTEGER empty bitmasks
 			CASE_FALLTHROUGH(SQL_ALTER_DOMAIN)
 			CASE_FALLTHROUGH(SQL_BATCH_ROW_COUNT)
 			CASE_FALLTHROUGH(SQL_BATCH_SUPPORT)
@@ -230,7 +230,7 @@ SQLGetInfo(HDBC connection_handle,
 			CASE_FALLTHROUGH(SQL_SQL92_REVOKE)
 			CASE_NUM(SQL_DDL_INDEX, SQLUINTEGER, 0)
 
-			/// Ограничения на максимальное число, USMALLINT.
+		/// Limits on the maximum number, USMALLINT.
 			CASE_FALLTHROUGH(SQL_ACTIVE_ENVIRONMENTS)
 			CASE_FALLTHROUGH(SQL_MAX_COLUMNS_IN_GROUP_BY)
 			CASE_FALLTHROUGH(SQL_MAX_COLUMNS_IN_INDEX)
@@ -249,7 +249,7 @@ SQLGetInfo(HDBC connection_handle,
 			CASE_FALLTHROUGH(SQL_MAX_TABLE_NAME_LEN)
 			CASE_NUM(SQL_MAX_CATALOG_NAME_LEN, SQLUSMALLINT, 0)
 
-			/// Ограничения на максимальное число, UINTEGER.
+		/// Limitations on the maximum number, UINTEGER.
 			CASE_FALLTHROUGH(SQL_MAX_ROW_SIZE)
 			CASE_FALLTHROUGH(SQL_MAX_STATEMENT_LEN)
 			CASE_FALLTHROUGH(SQL_MAX_BINARY_LITERAL_LEN)

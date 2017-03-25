@@ -32,6 +32,7 @@ public:
 	}
 
 	std::string getFunctionName() const { return function->getName(); }
+	AggregateFunctionPtr getFunction() const { return function; }
 
 	std::string getName() const override;
 
@@ -62,10 +63,7 @@ public:
 	ColumnPtr createColumn() const override;
 	ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
-	Field getDefault() const override
-	{
-		throw Exception("There is no default value for AggregateFunction data type", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
-	}
+	Field getDefault() const override;
 };
 
 

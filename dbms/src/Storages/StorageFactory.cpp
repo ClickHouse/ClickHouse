@@ -5,11 +5,13 @@
 #include <DB/Common/StringUtils.h>
 
 #include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/evaluateConstantExpression.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/getClusterName.h>
 
 #include <DB/Storages/StorageLog.h>
@@ -21,8 +23,6 @@
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageDistributed.h>
-#include <DB/Storages/System/StorageSystemNumbers.h>
-#include <DB/Storages/System/StorageSystemOne.h>
 #include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/StorageView.h>
 #include <DB/Storages/StorageMaterializedView.h>
@@ -49,12 +49,14 @@ namespace ErrorCodes
 	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 	extern const int UNKNOWN_IDENTIFIER;
 	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
+	extern const int TYPE_MISMATCH;
+	extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
 
-/** Для StorageMergeTree: достать первичный ключ в виде ASTExpressionList.
-  * Он может быть указан в кортеже: (CounterID, Date),
-  *  или как один столбец: CounterID.
+/** For StorageMergeTree: get the primary key as an ASTExpressionList.
+  * It can be specified in the tuple: (CounterID, Date),
+  *  or as one column: CounterID.
   */
 static ASTPtr extractPrimaryKey(const ASTPtr & node)
 {
@@ -62,21 +64,21 @@ static ASTPtr extractPrimaryKey(const ASTPtr & node)
 
 	if (primary_expr_func && primary_expr_func->name == "tuple")
 	{
-		/// Первичный ключ указан в кортеже.
+		/// Primary key is specified in tuple.
 		return primary_expr_func->children.at(0);
 	}
 	else
 	{
-		/// Первичный ключ состоит из одного столбца.
+		/// Primary key consists of one column.
 		auto res = std::make_shared<ASTExpressionList>();
 		res->children.push_back(node);
 		return res;
 	}
 }
 
-/** Для StorageMergeTree: достать список имён столбцов.
-  * Он может быть указан в кортеже: (Clicks, Cost),
-  *  или как один столбец: Clicks.
+/** For StorageMergeTree: get the list of column names.
+  * It can be specified in the tuple: (Clicks, Cost),
+  * or as one column: Clicks.
   */
 static Names extractColumnNames(const ASTPtr & node)
 {
@@ -99,8 +101,8 @@ static Names extractColumnNames(const ASTPtr & node)
 }
 
 
-/** Прочитать настройки прореживания старых данных Графита из конфига.
-  * Пример:
+/** Read the settings for decimation of old Graphite data from config.
+  * Example
   *
   * <graphite_rollup>
   * 	<path_column_name>Path</path_column_name>
@@ -149,7 +151,7 @@ static void appendGraphitePattern(const Context & context,
 		}
 		else if (key == "function")
 		{
-			/// TODO Не только Float64
+			/// TODO Not only Float64
 			pattern.function = context.getAggregateFunctionFactory().get(
 				config.getString(config_element + ".function"), { std::make_shared<DataTypeFloat64>() });
 		}
@@ -168,7 +170,11 @@ static void appendGraphitePattern(const Context & context,
 		throw Exception("Aggregate function is mandatory for retention patterns in GraphiteMergeTree",
 			ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-	/// retention-ы должны идти по убыванию возраста.
+	if (pattern.function->allocatesMemoryInArena())
+		throw Exception("Aggregate function " + pattern.function->getName() + " isn't supported in GraphiteMergeTree",
+						ErrorCodes::NOT_IMPLEMENTED);
+
+	/// retention should be in descending order of age.
 	std::sort(pattern.retentions.begin(), pattern.retentions.end(),
 		[] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
 
@@ -399,8 +405,8 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "Merge")
 	{
-		/** В запросе в качестве аргумента для движка указано имя БД, в которой находятся таблицы-источники,
-		  *  а также регексп для имён таблиц-источников.
+		/** In query, the name of database is specified as table engine argument which contains source tables,
+		  *  as well as regex for source-table names.
 		  */
 		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
@@ -464,6 +470,22 @@ StoragePtr StorageFactory::get(
 
 		const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;
 
+		/// Check that sharding_key exists in the table and has numeric type.
+		if (sharding_key)
+		{
+			auto sharding_expr = ExpressionAnalyzer(sharding_key, context, nullptr, *columns).getActions(true);
+			const Block & block = sharding_expr->getSampleBlock();
+
+			if (block.columns() != 1)
+				throw Exception("Sharding expression must return exactly one column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+
+			auto type = block.getByPosition(0).type;
+
+			if (!type->isNumeric())
+				throw Exception("Sharding expression has type " + type->getName() +
+					", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
+		}
+
 		return StorageDistributed::create(
 			table_name, columns,
 			materialized_columns, alias_columns, column_defaults,
@@ -474,9 +496,9 @@ StoragePtr StorageFactory::get(
 	{
 		/** Buffer(db, table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
 		  *
-		  * db, table - в какую таблицу сбрасывать данные из буфера.
-		  * num_buckets - уровень параллелизма.
-		  * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - условия вытеснения из буфера.
+		  * db, table - in which table to put data from buffer.
+		  * num_buckets - level of parallelism.
+		  * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for pushing out from the buffer.
 		  */
 
 		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
@@ -517,21 +539,21 @@ StoragePtr StorageFactory::get(
 	}
 	else if (endsWith(name, "MergeTree"))
 	{
-		/** Движки [Replicated][|Summing|Collapsing|Aggregating|Unsorted|Replacing|Graphite]MergeTree (2 * 7 комбинаций)
-		  * В качестве аргумента для движка должно быть указано:
-		  *  - (для Replicated) Путь к таблице в ZooKeeper
-		  *  - (для Replicated) Имя реплики в ZooKeeper
-		  *  - имя столбца с датой;
-		  *  - (не обязательно) выражение для семплирования
-		  *     (запрос с SAMPLE x будет выбирать строки, у которых в этом столбце значение меньше, чем x * UINT32_MAX);
-		  *  - выражение для сортировки (либо скалярное выражение, либо tuple из нескольких);
+		/** [Replicated][|Summing|Collapsing|Aggregating|Unsorted|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
+		  * The argument for the engine should be:
+		  *  - (for Replicated) The path to the table in ZooKeeper
+		  *  - (for Replicated) Replica name in ZooKeeper
+		  *  - the name of the column with the date;
+		  *  - (optional) expression for sampling
+		  *     (the query with `SAMPLE x` will select rows that have a lower value in this column than `x * UINT32_MAX`);
+		  *  - an expression for sorting (either a scalar expression or a tuple from several);
 		  *  - index_granularity;
-		  *  - (для Collapsing) имя столбца типа Int8, содержащего тип строчки с изменением "визита" (принимающего значения 1 и -1).
-		  * Например: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
-		  *  - (для Summing, не обязательно) кортеж столбцов, которых следует суммировать. Если не задано - используются все числовые столбцы, не входящие в первичный ключ.
-		  *  - (для Replacing, не обязательно) имя столбца одного из UInt типов, обозначающего "версию"
-		  * Например: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
-		  *  - (для Graphite) имя параметра в конфиге с настройками правил прореживания.
+		  *  - (for Collapsing) the name of Int8 column that contains `sign` type with the change of "visit" (taking values 1 and -1).
+		  * For example: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
+		  *  - (for Summing, optional) a tuple of columns to be summed. If not specified, all numeric columns that are not included in the primary key are used.
+		  *  - (for Replacing, optional) the column name of one of the UInt types, which stands for "version"
+		  * For example: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
+		  *  - (for Graphite) the parameter name in config file with settings of thinning rules.
 		  *
 		  * MergeTree(date, [sample_key], primary_key, index_granularity)
 		  * CollapsingMergeTree(date, [sample_key], primary_key, index_granularity, sign)
@@ -539,7 +561,7 @@ StoragePtr StorageFactory::get(
 		  * AggregatingMergeTree(date, [sample_key], primary_key, index_granularity)
 		  * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column])
 		  * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, 'config_element')
-		  * UnsortedMergeTree(date, index_granularity)	TODO Добавить описание ниже.
+		  * UnsortedMergeTree(date, index_granularity)  TODO Add description below.
 		  */
 
 		const char * verbose_help = R"(
@@ -551,8 +573,8 @@ MergeTrees is different in two ways:
 - it may do different actions on merge: nothing; sign collapse; sum; apply aggregete functions.
 
 So we have 14 combinations:
-    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, UnsortedMergeTree, GraphiteMergeTree
-    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedUnsortedMergeTree, ReplicatedGraphiteMergeTree
+	MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, UnsortedMergeTree, GraphiteMergeTree
+	ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedUnsortedMergeTree, ReplicatedGraphiteMergeTree
 
 In most of cases, you need MergeTree or ReplicatedMergeTree.
 
@@ -708,11 +730,11 @@ For further info please read the documentation: https://clickhouse.yandex/
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
 
-		/// Для Replicated.
+		/// For Replicated.
 		String zookeeper_path;
 		String replica_name;
 
-		/// Для всех.
+		/// For all.
 		String date_column_name;
 		ASTPtr primary_expr_list;
 		ASTPtr sampling_expression;
@@ -749,7 +771,7 @@ For further info please read the documentation: https://clickhouse.yandex/
 		}
 		else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
 		{
-			/// Если последний элемент - не index granularity (литерал), то это - имя столбца-версии.
+			/// If the last element is not an index granularity (literal), then this is the name of the version column.
 			if (!typeid_cast<const ASTLiteral *>(&*args.back()))
 			{
 				if (auto ast = typeid_cast<ASTIdentifier *>(&*args.back()))
@@ -762,7 +784,7 @@ For further info please read the documentation: https://clickhouse.yandex/
 		}
 		else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
 		{
-			/// Если последний элемент - не index granularity (литерал), то это - список суммируемых столбцов.
+			/// If the last element is not an index granularity (literal), then this is a list of summable columns.
 			if (!typeid_cast<const ASTLiteral *>(&*args.back()))
 			{
 				merging_params.columns_to_sum = extractColumnNames(args.back());
@@ -789,14 +811,14 @@ For further info please read the documentation: https://clickhouse.yandex/
 			setGraphitePatternsFromConfig(context, graphite_config_name, merging_params.graphite_params);
 		}
 
-		/// Если присутствует выражение для сэмплирования. MergeTree(date, [sample_key], primary_key, index_granularity)
+		/// If there is an expression for sampling. MergeTree(date, [sample_key], primary_key, index_granularity)
 		if (args.size() == 4)
 		{
 			sampling_expression = args[1];
 			args.erase(args.begin() + 1);
 		}
 
-		/// Теперь осталось только три параметра - date, primary_key, index_granularity.
+		/// Now only three parameters remain - date, primary_key, index_granularity.
 
 		if (auto ast = typeid_cast<ASTIdentifier *>(&*args[0]))
 			date_column_name = ast->name;
@@ -823,7 +845,7 @@ For further info please read the documentation: https://clickhouse.yandex/
 		else
 			return StorageMergeTree::create(
 				data_path, database_name, table_name,
-				columns, materialized_columns, alias_columns, column_defaults,
+				columns, materialized_columns, alias_columns, column_defaults, attach,
 				context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, merging_params,
 				has_force_restore_data_flag,

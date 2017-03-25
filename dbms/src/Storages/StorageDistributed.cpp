@@ -54,7 +54,7 @@ namespace ErrorCodes
 namespace
 {
 	/// select query has database and table names as AST pointers
-	/// Создает копию запроса, меняет имена базы данных и таблицы.
+	/// Creates a copy of query, changes database and table names.
 	inline ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 	{
 		auto modified_query_ast = query->clone();
@@ -63,7 +63,7 @@ namespace
 	}
 
 	/// insert query has database and table names as bare strings
-	/// Создает копию запроса, меняет имена базы данных и таблицы.
+	/// Creates a copy of query, changes the database and table names.
 	inline ASTPtr rewriteInsertQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 	{
 		auto modified_query_ast = query->clone();
@@ -98,6 +98,7 @@ StorageDistributed::StorageDistributed(
 	createDirectoryMonitors();
 }
 
+
 StorageDistributed::StorageDistributed(
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
@@ -120,6 +121,7 @@ StorageDistributed::StorageDistributed(
 {
 	createDirectoryMonitors();
 }
+
 
 StoragePtr StorageDistributed::create(
 	const std::string & name_,
@@ -162,6 +164,7 @@ StoragePtr StorageDistributed::create(
 	return res;
 }
 
+
 BlockInputStreams StorageDistributed::read(
 	const Names & column_names,
 	ASTPtr query,
@@ -187,12 +190,12 @@ BlockInputStreams StorageDistributed::read(
 	if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
 		external_tables = context.getExternalTables();
 
-	/// Отключаем мультиплексирование шардов, если есть ORDER BY без GROUP BY.
+	/// Disable multiplexing of shards if there is an ORDER BY without GROUP BY.
 	//const ASTSelectQuery & ast = *(static_cast<const ASTSelectQuery *>(modified_query_ast.get()));
 
-	/** Функциональность shard_multiplexing не доделана - выключаем её.
-	  * (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
-	  * Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
+	/** The functionality of shard_multiplexing is not completed - turn it off.
+	  * (Because connecting to different shards within a single thread is not done in parallel.)
+	  * For more information, see https: //███████████.yandex-team.ru/METR-18300
 	  */
 	//bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
 	bool enable_shard_multiplexing = false;
@@ -202,6 +205,7 @@ BlockInputStreams StorageDistributed::read(
 	return ClusterProxy::Query{select_query_constructor, cluster, modified_query_ast,
 		context, settings, enable_shard_multiplexing}.execute();
 }
+
 
 BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & settings)
 {
@@ -214,13 +218,13 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & se
 		throw Exception{
 			"Method write is not supported by storage " + getName() +
 			" with more than one shard and no sharding key provided",
-			ErrorCodes::STORAGE_REQUIRES_PARAMETER
-		};
+			ErrorCodes::STORAGE_REQUIRES_PARAMETER};
 
 	/// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
 	return std::make_shared<DistributedBlockOutputStream>(
 		*this, rewriteInsertQuery(query, remote_database, remote_table), cluster);
 }
+
 
 void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
 {
@@ -236,10 +240,12 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
 		*columns, materialized_columns, alias_columns, column_defaults, {});
 }
 
+
 void StorageDistributed::shutdown()
 {
 	directory_monitors.clear();
 }
+
 
 void StorageDistributed::reshardPartitions(ASTPtr query, const String & database_name,
 	const Field & first_partition, const Field & last_partition,
@@ -282,7 +288,7 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 
 	try
 	{
-		/// Создать запрос ALTER TABLE ... RESHARD [COPY] PARTITION ... COORDINATE WITH ...
+		/// Create query ALTER TABLE ... RESHARD [COPY] PARTITION ... COORDINATE WITH ...
 
 		ASTPtr alter_query_ptr = std::make_shared<ASTAlterQuery>();
 		auto & alter_query = static_cast<ASTAlterQuery &>(*alter_query_ptr);
@@ -316,9 +322,9 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 
 		resharding_worker.registerQuery(coordinator_id, queryToString(alter_query_ptr));
 
-		/** Функциональность shard_multiplexing не доделана - выключаем её.
-		* (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
-		* Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
+		/** The functionality of shard_multiplexing is not completed - turn it off.
+		* (Because connecting to different shards within a single thread is not done in parallel.)
+		* For more information, see https: //███████████.yandex-team.ru/METR-18300
 		*/
 		bool enable_shard_multiplexing = false;
 
@@ -383,9 +389,10 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
 	}
 }
 
+
 BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)
 {
-	/// Создать запрос DESCRIBE TABLE.
+	/// Create DESCRIBE TABLE query.
 	auto cluster = getCluster();
 
 	ASTPtr describe_query_ptr = std::make_shared<ASTDescribeQuery>();
@@ -394,9 +401,9 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 	describe_query.database = remote_database;
 	describe_query.table = remote_table;
 
-	/** Функциональность shard_multiplexing не доделана - выключаем её.
-	  * (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
-	  * Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
+	/** The functionality of shard_multiplexing is not completed - turn it off.
+	  * (Because connecting connections to different shards within a single thread is not done in parallel.)
+	  * For more information, see https: //███████████.yandex-team.ru/METR-18300
 	  */
 	bool enable_shard_multiplexing = false;
 
@@ -406,6 +413,7 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 		context, settings, enable_shard_multiplexing}.execute();
 }
 
+
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 {
 	if (const auto & type = VirtualColumnFactory::tryGetType(column_name))
@@ -414,15 +422,18 @@ NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 	return getRealColumn(column_name);
 }
 
+
 bool StorageDistributed::hasColumn(const String & column_name) const
 {
 	return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
 }
 
+
 void StorageDistributed::createDirectoryMonitor(const std::string & name)
 {
 	directory_monitors.emplace(name, std::make_unique<StorageDistributedDirectoryMonitor>(*this, name));
 }
+
 
 void StorageDistributed::createDirectoryMonitors()
 {
@@ -437,6 +448,7 @@ void StorageDistributed::createDirectoryMonitors()
 			createDirectoryMonitor(it.name());
 }
 
+
 void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 {
 	if (!directory_monitors.count(name))
@@ -447,6 +459,7 @@ size_t StorageDistributed::getShardCount() const
 {
 	return getCluster()->getRemoteShardCount();
 }
+
 
 ClusterPtr StorageDistributed::getCluster() const
 {

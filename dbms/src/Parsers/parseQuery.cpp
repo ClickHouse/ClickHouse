@@ -133,6 +133,8 @@ ASTPtr tryParseQuery(
 	/// Parsed query must end with end of data or semicolon.
 	if (!parse_res || (pos != end && *pos != ';'))
 	{
+		if (!expected || !*expected)
+			expected = "end of query";
 		out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, description);
 		return nullptr;
 	}

@@ -72,6 +72,7 @@ public:
 using StringArraySourcePtr = std::unique_ptr<StringArraySource>;
 using StringArraySources = std::vector<StringArraySourcePtr>;
 
+
 /// Implementation of StringArraySource specific to arrays of variable strings.
 class VarStringArraySource : public StringArraySource
 {
@@ -162,6 +163,7 @@ private:
 	};
 };
 
+
 /// Implementation of StringArraySource specific to arrays of constant strings.
 class ConstStringArraySource : public StringArraySource
 {
@@ -223,11 +225,11 @@ private:
 		for (size_t j = 0; j < array_size; ++j)
 		{
 			const std::string & str = data[j].get<const String &>();
-			size_t string_size = str.size() + 1;	/// Включая 0 на конце.
+			size_t string_size = str.size() + 1;	/// Including trailing zero byte.
 
 			to_data.resize(to_string_prev_offset + string_size);
-			memcpySmallAllowReadWriteOverflow15(&to_data[to_string_prev_offset], str.data(),
-				string_size * sizeof(std::string::value_type));
+			memcpy(&to_data[to_string_prev_offset], str.data(),
+				string_size * sizeof(std::string::value_type));	/// constant string have no padding bytes for memcpySmall... function.
 
 			to_string_prev_offset += string_size;
 			to_string_offsets.push_back(to_string_prev_offset);
@@ -237,6 +239,7 @@ private:
 	};
 
 };
+
 
 /// Access provider to the target array that receives the results of the
 /// execution of the function multiIf.
@@ -280,6 +283,7 @@ private:
 	size_t i = 0;
 };
 
+
 /// Create accessors for condition values.
 CondSources createConds(const Block & block, const ColumnNumbers & args)
 {
@@ -290,6 +294,7 @@ CondSources createConds(const Block & block, const ColumnNumbers & args)
 		conds.emplace_back(block, args, i);
 	return conds;
 }
+
 
 const Array null_array{String()};
 
@@ -340,6 +345,7 @@ bool createStringArraySources(StringArraySources & sources, const Block & block,
 	}
 	return append_source(elseArg(args));
 }
+
 
 auto computeResultSize(const StringArraySources & sources, size_t row_count)
 {

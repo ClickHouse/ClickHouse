@@ -1,7 +1,7 @@
 #include <iostream>
 #include <iomanip>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 
 #include <DB/Columns/ColumnsNumber.h>

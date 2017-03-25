@@ -100,7 +100,7 @@ protected:
 };
 
 
-/** NULL.
+/** NULL literal.
   */
 class ParserNull : public IParserBase
 {
@@ -110,7 +110,7 @@ protected:
 };
 
 
-/** Число.
+/** Numeric literal.
   */
 class ParserNumber : public IParserBase
 {
@@ -119,7 +119,7 @@ protected:
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
-/** Беззнаковое целое число, используется в качестве правой части оператора взятия элемента кортежа (x.1).
+/** Unsigned integer, used in right hand side of tuple access operator (x.1).
   */
 class ParserUnsignedInteger : public IParserBase
 {
@@ -129,7 +129,7 @@ protected:
 };
 
 
-/** Строка в одинарных кавычках.
+/** String in single quotes.
   */
 class ParserStringLiteral : public IParserBase
 {
@@ -226,8 +226,9 @@ using ParserWithOptionalAlias = ParserWithOptionalAliasImpl<ParserAlias>;
 using ParserCastExpressionWithOptionalAlias = ParserWithOptionalAliasImpl<ParserCastExpressionAlias>;
 
 
-/** Элемент выражения ORDER BY - то же самое, что и элемент выражения, но после него ещё может быть указано ASC[ENDING] | DESC[ENDING]
- * 	и, возможно, COLLATE 'locale'.
+/** Element of ORDER BY expression - same as expression element, but in addition, ASC[ENDING] | DESC[ENDING] could be specified
+  *  and optionally, NULLS LAST|FIRST
+  *  and optionally, COLLATE 'locale'.
   */
 class ParserOrderByElement : public IParserBase
 {

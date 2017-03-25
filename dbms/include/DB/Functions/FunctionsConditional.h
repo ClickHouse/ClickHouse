@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
@@ -11,6 +11,7 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnTuple.h>
+#include <DB/Columns/ColumnNullable.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/DataTypeTraits.h>
@@ -939,7 +940,7 @@ private:
 		}
 		else
 		{
-			if (!typeid_cast<const typename DataTypeFromFieldType<T1>::Type *>(
+			if (!typeid_cast<const DataTypeNumber<T1> *>(
 				typeid_cast<const DataTypeArray &>(*col_right_const_array->getDataType()).getNestedType().get()))
 				return false;
 
@@ -986,7 +987,7 @@ private:
 		}
 		else
 		{
-			if (!typeid_cast<const typename DataTypeFromFieldType<T1>::Type *>(
+			if (!typeid_cast<const DataTypeNumber<T1> *>(
 				typeid_cast<const DataTypeArray &>(*col_right_const_array->getDataType()).getNestedType().get()))
 				return false;
 
@@ -1081,7 +1082,7 @@ private:
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
 		else if (col_const_arr_left
-			&& typeid_cast<const typename DataTypeFromFieldType<T0>::Type *>(
+			&& typeid_cast<const DataTypeNumber<T0> *>(
 				typeid_cast<const DataTypeArray &>(*col_const_arr_left->getDataType()).getNestedType().get()))
 		{
 			if (	executeConstRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_const_arr_left)
@@ -1292,14 +1293,14 @@ private:
 		for (size_t i = 0; i < tuple_size; ++i)
 		{
 			temporary_block.insert({nullptr,
-				getReturnType({std::make_shared<DataTypeUInt8>(), type1.getElements()[i], type2.getElements()[i]}),
+				getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), type1.getElements()[i], type2.getElements()[i]}),
 				{}});
 
 			temporary_block.insert({col1->getData().safeGetByPosition(i).column, type1.getElements()[i], {}});
 			temporary_block.insert({col2->getData().safeGetByPosition(i).column, type2.getElements()[i], {}});
 
 			/// temporary_block will be: cond, res_0, ..., res_i, then_i, else_i
-			execute(temporary_block, {0, i + 2, i + 3}, i + 1);
+			executeImpl(temporary_block, {0, i + 2, i + 3}, i + 1);
 			temporary_block.erase(i + 3);
 			temporary_block.erase(i + 2);
 		}
@@ -1311,8 +1312,267 @@ private:
 		return true;
 	}
 
+	bool executeForNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnWithTypeAndName & arg_cond = block.safeGetByPosition(arguments[0]);
+		bool cond_is_null = arg_cond.column->isNull();
+		bool cond_is_nullable = arg_cond.column->isNullable();
+
+		if (cond_is_null)
+		{
+			block.safeGetByPosition(result).column = std::make_shared<ColumnNull>(block.rows(), Null());
+			return true;
+		}
+
+		if (cond_is_nullable)
+		{
+			Block temporary_block
+			{
+				{ static_cast<const ColumnNullable &>(*arg_cond.column).getNestedColumn(), arg_cond.type, arg_cond.name },
+				block.getByPosition(arguments[1]),
+				block.getByPosition(arguments[2]),
+				block.getByPosition(result)
+			};
+
+			executeImpl(temporary_block, {0, 1, 2}, 3);
+
+			ColumnPtr & result_column = block.getByPosition(result).column;
+			result_column = temporary_block.getByPosition(3).column;
+
+			if (ColumnNullable * result_nullable = typeid_cast<ColumnNullable *>(result_column.get()))
+			{
+				result_nullable->applyNullValuesByteMap(static_cast<const ColumnNullable &>(*arg_cond.column));
+			}
+			else if (result_column->isNull())
+			{
+				result_column = std::make_shared<ColumnNull>(block.rows(), Null());
+			}
+			else
+			{
+				result_column = std::make_shared<ColumnNullable>(
+					materializeColumnIfConst(result_column), static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumn());
+			}
+
+			return true;
+		}
+
+		return false;
+	}
+
+	static const ColumnPtr materializeColumnIfConst(const ColumnPtr & column)
+	{
+		if (auto res = column->convertToFullColumnIfConst())
+			return res;
+		return column;
+	}
+
+	static const ColumnPtr makeNullableColumnIfNot(const ColumnPtr & column)
+	{
+		if (column->isNullable())
+			return column;
+
+		return std::make_shared<ColumnNullable>(
+			materializeColumnIfConst(column), ColumnConstUInt8(column->size(), 0).convertToFullColumn());
+	}
+
+	static const DataTypePtr makeNullableDataTypeIfNot(const DataTypePtr & type)
+	{
+		if (type->isNullable())
+			return type;
+
+		return std::make_shared<DataTypeNullable>(type);
+	}
+
+	static const ColumnPtr getNestedColumn(const ColumnPtr & column)
+	{
+		if (column->isNullable())
+			return static_cast<const ColumnNullable &>(*column).getNestedColumn();
+
+		return column;
+	}
+
+	static const DataTypePtr getNestedDataType(const DataTypePtr & type)
+	{
+		if (type->isNullable())
+			return static_cast<const DataTypeNullable &>(*type).getNestedType();
+
+		return type;
+	}
+
+	bool executeForNullThenElse(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnWithTypeAndName & arg_cond = block.safeGetByPosition(arguments[0]);
+		const ColumnWithTypeAndName & arg_then = block.safeGetByPosition(arguments[1]);
+		const ColumnWithTypeAndName & arg_else = block.safeGetByPosition(arguments[2]);
+
+		bool then_is_null = arg_then.column->isNull();
+		bool else_is_null = arg_else.column->isNull();
+
+		if (!then_is_null && !else_is_null)
+			return false;
+
+		if (then_is_null && else_is_null)
+		{
+			block.safeGetByPosition(result).column = std::make_shared<ColumnNull>(block.rows(), Null());
+			return true;
+		}
+
+		const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(arg_cond.column.get());
+		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(arg_cond.column.get());
+
+		/// If then is NULL, we create Nullable column with null mask OR-ed with condition.
+		if (then_is_null)
+		{
+			if (cond_col)
+			{
+				if (arg_else.column->isNullable())
+				{
+					auto result_column = arg_else.column->clone();
+					static_cast<ColumnNullable &>(*result_column).applyNullValuesByteMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+					block.safeGetByPosition(result).column = result_column;
+				}
+				else
+				{
+					block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(
+						materializeColumnIfConst(arg_else.column), arg_cond.column->clone());
+				}
+			}
+			else if (cond_const_col)
+			{
+				block.safeGetByPosition(result).column = cond_const_col->getData()
+					? block.safeGetByPosition(result).type->createColumn()->cloneResized(block.rows())
+					: makeNullableColumnIfNot(arg_else.column);
+			}
+			else
+				throw Exception("Illegal column " + cond_col->getName() + " of first argument of function " + getName()
+					+ ". Must be ColumnUInt8 or ColumnConstUInt8.",
+					ErrorCodes::ILLEGAL_COLUMN);
+			return true;
+		}
+
+		/// If else is NULL, we create Nullable column with null mask OR-ed with negated condition.
+		if (else_is_null)
+		{
+			if (cond_col)
+			{
+				size_t size = block.rows();
+				auto & null_map_data = cond_col->getData();
+
+				auto negated_null_map = std::make_shared<ColumnUInt8>();
+				auto & negated_null_map_data = negated_null_map->getData();
+				negated_null_map_data.resize(size);
+
+				for (size_t i = 0; i < size; ++i)
+					negated_null_map_data[i] = !null_map_data[i];
+
+				if (arg_then.column->isNullable())
+				{
+					auto result_column = arg_then.column->clone();
+					static_cast<ColumnNullable &>(*result_column).applyNegatedNullValuesByteMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+					block.safeGetByPosition(result).column = result_column;
+				}
+				else
+				{
+					block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(
+						materializeColumnIfConst(arg_then.column), negated_null_map);
+				}
+			}
+			else if (cond_const_col)
+			{
+				block.safeGetByPosition(result).column = cond_const_col->getData()
+					? makeNullableColumnIfNot(arg_then.column)
+					: block.safeGetByPosition(result).type->createColumn()->cloneResized(block.rows());
+			}
+			else
+				throw Exception("Illegal column " + cond_col->getName() + " of first argument of function " + getName()
+					+ ". Must be ColumnUInt8 or ColumnConstUInt8.",
+					ErrorCodes::ILLEGAL_COLUMN);
+			return true;
+		}
+
+		return false;
+	}
+
+	bool executeForNullableThenElse(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnWithTypeAndName & arg_cond = block.safeGetByPosition(arguments[0]);
+		const ColumnWithTypeAndName & arg_then = block.safeGetByPosition(arguments[1]);
+		const ColumnWithTypeAndName & arg_else = block.safeGetByPosition(arguments[2]);
+
+		bool then_is_nullable = typeid_cast<const ColumnNullable *>(arg_then.column.get());
+		bool else_is_nullable = typeid_cast<const ColumnNullable *>(arg_else.column.get());
+
+		if (!then_is_nullable && !else_is_nullable)
+			return false;
+
+		/** Calculate null mask of result and nested column separately.
+		  */
+		ColumnPtr result_null_mask;
+
+		{
+			Block temporary_block(
+			{
+				arg_cond,
+				{
+					then_is_nullable
+						? static_cast<const ColumnNullable *>(arg_then.column.get())->getNullMapColumn()
+						: std::make_shared<ColumnConstUInt8>(block.rows(), 0),
+					std::make_shared<DataTypeUInt8>(),
+					""
+				},
+				{
+					else_is_nullable
+						? static_cast<const ColumnNullable *>(arg_else.column.get())->getNullMapColumn()
+						: std::make_shared<ColumnConstUInt8>(block.rows(), 0),
+					std::make_shared<DataTypeUInt8>(),
+					""
+				},
+				{
+					nullptr,
+					std::make_shared<DataTypeUInt8>(),
+					""
+				}
+			});
+
+			executeImpl(temporary_block, {0, 1, 2}, 3);
+
+			result_null_mask = temporary_block.getByPosition(3).column;
+		}
+
+		ColumnPtr result_nested_column;
+
+		{
+			Block temporary_block(
+			{
+				arg_cond,
+				{
+					getNestedColumn(arg_then.column),
+					getNestedDataType(arg_then.type),
+					""
+				},
+				{
+					getNestedColumn(arg_else.column),
+					getNestedDataType(arg_else.type),
+					""
+				},
+				{
+					nullptr,
+					getNestedDataType(block.getByPosition(result).type),
+					""
+				}
+			});
+
+			executeImpl(temporary_block, {0, 1, 2}, 3);
+
+			result_nested_column = temporary_block.getByPosition(3).column;
+		}
+
+		block.getByPosition(result).column = std::make_shared<ColumnNullable>(
+			materializeColumnIfConst(result_nested_column), materializeColumnIfConst(result_null_mask));
+		return true;
+	}
+
 public:
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -1320,10 +1580,38 @@ public:
 
 	size_t getNumberOfArguments() const override { return 3; }
 
+	bool hasSpecialSupportForNulls() const override { return true; }
+
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
-		if (!typeid_cast<const DataTypeUInt8 *>(&*arguments[0]))
+		bool cond_is_null = arguments[0]->isNull();
+		bool then_is_null = arguments[1]->isNull();
+		bool else_is_null = arguments[2]->isNull();
+
+		if (cond_is_null
+			|| (then_is_null && else_is_null))
+			return std::make_shared<DataTypeNull>();
+
+		if (then_is_null)
+			return makeNullableDataTypeIfNot(getNestedDataType(arguments[2]));
+
+		if (else_is_null)
+			return makeNullableDataTypeIfNot(getNestedDataType(arguments[1]));
+
+		bool cond_is_nullable = arguments[0]->isNullable();
+		bool then_is_nullable = arguments[1]->isNullable();
+		bool else_is_nullable = arguments[2]->isNullable();
+
+		if (cond_is_nullable || then_is_nullable || else_is_nullable)
+		{
+			return makeNullableDataTypeIfNot(getReturnTypeImpl({
+				getNestedDataType(arguments[0]),
+				getNestedDataType(arguments[1]),
+				getNestedDataType(arguments[2])}));
+		}
+
+		if (!typeid_cast<const DataTypeUInt8 *>(arguments[0].get()))
 			throw Exception("Illegal type of first argument (condition) of function if. Must be UInt8.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1353,7 +1641,7 @@ public:
 		else if (type_arr1 && type_arr2)
 		{
 			/// NOTE Сообщения об ошибках будут относится к типам элементов массивов, что немного некорректно.
-			return std::make_shared<DataTypeArray>(getReturnType({arguments[0], type_arr1->getNestedType(), type_arr2->getNestedType()}));
+			return std::make_shared<DataTypeArray>(getReturnTypeImpl({arguments[0], type_arr1->getNestedType(), type_arr2->getNestedType()}));
 		}
 		else if (type_tuple1 && type_tuple2)
 		{
@@ -1366,7 +1654,7 @@ public:
 			DataTypes result_tuple(tuple_size);
 
 			for (size_t i = 0; i < tuple_size; ++i)
-				result_tuple[i] = getReturnType({arguments[0], type_tuple1->getElements()[i], type_tuple2->getElements()[i]});
+				result_tuple[i] = getReturnTypeImpl({arguments[0], type_tuple1->getElements()[i], type_tuple2->getElements()[i]});
 
 			return std::make_shared<DataTypeTuple>(std::move(result_tuple));
 		}
@@ -1400,19 +1688,24 @@ public:
 		return arguments[1];
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(block.safeGetByPosition(arguments[0]).column.get());
-		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(block.safeGetByPosition(arguments[0]).column.get());
-		ColumnPtr materialized_cond_col;
+		if (executeForNullableCondition(block, arguments, result)
+			|| executeForNullThenElse(block, arguments, result)
+			|| executeForNullableThenElse(block, arguments, result))
+			return;
 
+		const ColumnWithTypeAndName & arg_cond = block.safeGetByPosition(arguments[0]);
 		const ColumnWithTypeAndName & arg_then = block.safeGetByPosition(arguments[1]);
 		const ColumnWithTypeAndName & arg_else = block.safeGetByPosition(arguments[2]);
 
+		const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(arg_cond.column.get());
+		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(arg_cond.column.get());
+		ColumnPtr materialized_cond_col;
+
 		if (cond_const_col)
 		{
-			if (arg_then.type->getName() == arg_else.type->getName())
+			if (arg_then.type->equals(*arg_else.type))
 			{
 				block.safeGetByPosition(result).column = cond_const_col->getData()
 					? arg_then.column

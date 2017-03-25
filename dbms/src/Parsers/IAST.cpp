@@ -1,6 +1,8 @@
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/IO/Operators.h>
+#include <DB/Common/SipHash.h>
 #include <DB/Parsers/IAST.h>
 
 
@@ -61,22 +63,53 @@ size_t IAST::checkSize(size_t max_size) const
 
 String IAST::getTreeID() const
 {
-	std::stringstream s;
-	s << getID();
+	String res;
+	{
+		WriteBufferFromString out(res);
+		getTreeIDImpl(out);
+	}
+	return res;
+}
+
+
+void IAST::getTreeIDImpl(WriteBuffer & out) const
+{
+	out << getID();
 
 	if (!children.empty())
 	{
-		s << "(";
+		out << '(';
 		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
 		{
 			if (it != children.begin())
-				s << ", ";
-			s << (*it)->getTreeID();
+				out << ", ";
+			(*it)->getTreeIDImpl(out);
 		}
-		s << ")";
+		out << ')';
 	}
+}
 
-	return s.str();
+
+IAST::Hash IAST::getTreeHash() const
+{
+	SipHash hash_state;
+	getTreeHashImpl(hash_state);
+	IAST::Hash res;
+	hash_state.get128(res.first, res.second);
+	return res;
+}
+
+
+void IAST::getTreeHashImpl(SipHash & hash_state) const
+{
+	auto id = getID();
+	hash_state.update(id.data(), id.size());
+
+	size_t num_children = children.size();
+	hash_state.update(reinterpret_cast<const char *>(&num_children), sizeof(num_children));
+
+	for (const auto & child : children)
+		child->getTreeHashImpl(hash_state);
 }
 
 

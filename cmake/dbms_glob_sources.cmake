@@ -11,3 +11,7 @@ endmacro()
 macro(add_headers_only prefix common_path)
 	add_glob(${prefix}_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} include/DB/${common_path}/*.h src/${common_path}/*.h)
 endmacro()
+
+macro(add_path_sources prefix common_path)
+	add_glob(${prefix}_sources ${common_path}/*.cpp)
+endmacro()

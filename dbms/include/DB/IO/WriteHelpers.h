@@ -7,10 +7,9 @@
 
 #include <common/Common.h>
 #include <common/DateLUT.h>
+#include <common/LocalDate.h>
+#include <common/LocalDateTime.h>
 #include <common/find_first_symbols.h>
-
-#include <mysqlxx/Row.h>
-#include <mysqlxx/Null.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
@@ -519,7 +518,7 @@ inline void writeDateText(LocalDate date, WriteBuffer & buf)
 
 /// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
 template <char date_delimeter = '-', char time_delimeter = ':'>
-inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
+inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
 	char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 
@@ -529,7 +528,6 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 		return;
 	}
 
-	const auto & date_lut = DateLUT::instance();
 	const auto & values = date_lut.getValues(datetime);
 
 	s[0] += values.year / 1000;
@@ -580,103 +578,45 @@ inline void writeDateTimeText(LocalDateTime datetime, WriteBuffer & buf)
 }
 
 
-/// Вывести mysqlxx::Row в tab-separated виде
-inline void writeEscapedRow(const mysqlxx::Row & row, WriteBuffer & buf)
-{
-	for (size_t i = 0; i < row.size(); ++i)
-	{
-		if (i != 0)
-			buf.write('\t');
-
-		if (unlikely(row[i].isNull()))
-		{
-			buf.write("\\N", 2);
-			continue;
-		}
-
-		writeAnyEscapedString<'\''>(row[i].data(), row[i].data() + row[i].length(), buf);
-	}
-}
-
-
 /// Методы вывода в бинарном виде
-inline void writeBinary(const UInt8 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UInt16 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UInt32 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UInt64 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Int8 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Int16 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Int32 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Int64 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
-#ifdef __APPLE__
-inline void writeBinary(const int64_t & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const uint64_t & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
-#endif
-inline void writeBinary(const Float32 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Float64 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const String & x,	WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const bool & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const uint128 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
+template <typename T>
+inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
-inline void writeBinary(const VisitID_t & x, 	WriteBuffer & buf) { writePODBinary(static_cast<const UInt64 &>(x), buf); }
+inline void writeBinary(const String & x,	WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const uint128 & x, 	WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDate & x,		WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x,	WriteBuffer & buf) { writePODBinary(x, buf); }
 
 
 /// Методы для вывода значения в текстовом виде для tab-separated формата.
-inline void writeText(const UInt8 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeText(const UInt16 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeText(const UInt32 & x,		WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeText(const UInt64 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeText(const Int8 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeText(const Int16 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeText(const Int32 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeText(const Int64 & x, 		WriteBuffer & buf) { writeIntText(x, buf); }
-#ifdef __APPLE__
-inline void writeText(const int64_t & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-inline void writeText(const uint64_t & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
-#endif
-inline void writeText(const Float32 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
-inline void writeText(const Float64 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
+template <typename T>
+inline typename std::enable_if<std::is_integral<T>::value, void>::type
+writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
+
+template <typename T>
+inline typename std::enable_if<std::is_floating_point<T>::value, void>::type
+writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
+
 inline void writeText(const String & x,		WriteBuffer & buf) { writeEscapedString(x, buf); }
-inline void writeText(const bool & x, 		WriteBuffer & buf) { writeBoolText(x, buf); }
+
+/// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
+template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }
+
 /// в отличие от метода для std::string
 /// здесь предполагается, что x null-terminated строка.
 inline void writeText(const char * x, 		WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
 inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
 
-inline void writeText(const VisitID_t & x, 	WriteBuffer & buf) { writeIntText(static_cast<const UInt64 &>(x), buf); }
 inline void writeText(const LocalDate & x,		WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x,	WriteBuffer & buf) { writeDateTimeText(x, buf); }
 
-template<typename T>
-inline void writeText(const mysqlxx::Null<T> & x,	WriteBuffer & buf)
-{
-	if (x.isNull())
-		writeCString("\\N", buf);
-	else
-		writeText(static_cast<const T &>(x), buf);
-}
-
-
 /// Строки, даты, даты-с-временем - в одинарных кавычках с C-style эскейпингом. Числа - без.
-inline void writeQuoted(const UInt8 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeQuoted(const UInt16 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeQuoted(const UInt32 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeQuoted(const UInt64 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeQuoted(const Int8 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeQuoted(const Int16 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeQuoted(const Int32 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeQuoted(const Int64 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeQuoted(const Float32 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeQuoted(const Float64 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeQuoted(const String & x,	WriteBuffer & buf) { writeQuotedString(x, buf); }
-inline void writeQuoted(const bool & x, 	WriteBuffer & buf) { writeText(x, buf); }
+template <typename T>
+inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
-inline void writeQuoted(const VisitID_t & x, 	WriteBuffer & buf)
-{
-	writeIntText(static_cast<const UInt64 &>(x), buf);
-}
+inline void writeQuoted(const String & x,	WriteBuffer & buf) { writeQuotedString(x, buf); }
 
 inline void writeQuoted(const LocalDate & x,		WriteBuffer & buf)
 {
@@ -692,34 +632,13 @@ inline void writeQuoted(const LocalDateTime & x,	WriteBuffer & buf)
 	writeChar('\'', buf);
 }
 
-template <typename T>
-inline void writeQuoted(const mysqlxx::Null<T> & x,		WriteBuffer & buf)
-{
-	if (x.isNull())
-		writeCString("NULL", buf);
-	else
-		writeText(static_cast<const T &>(x), buf);
-}
-
 
 /// Строки, даты, даты-с-временем - в двойных кавычках с C-style эскейпингом. Числа - без.
-inline void writeDoubleQuoted(const UInt8 & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeDoubleQuoted(const UInt16 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeDoubleQuoted(const UInt32 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeDoubleQuoted(const UInt64 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeDoubleQuoted(const Int8 & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeDoubleQuoted(const Int16 & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeDoubleQuoted(const Int32 & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeDoubleQuoted(const Int64 & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeDoubleQuoted(const Float32 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeDoubleQuoted(const Float64 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeDoubleQuoted(const String & x,		WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
-inline void writeDoubleQuoted(const bool & x, 		WriteBuffer & buf) { writeText(x, buf); }
+template <typename T>
+inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
-inline void writeDoubleQuoted(const VisitID_t & x, 	WriteBuffer & buf)
-{
-	writeIntText(static_cast<const UInt64 &>(x), buf);
-}
+inline void writeDoubleQuoted(const String & x,		WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
 inline void writeDoubleQuoted(const LocalDate & x,		WriteBuffer & buf)
 {
@@ -737,19 +656,11 @@ inline void writeDoubleQuoted(const LocalDateTime & x,	WriteBuffer & buf)
 
 
 /// Строки - в двойных кавычках и с CSV-эскейпингом; даты, даты-с-временем - в двойных кавычках. Числа - без.
-inline void writeCSV(const UInt8 & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeCSV(const UInt16 & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeCSV(const UInt32 & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeCSV(const UInt64 & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeCSV(const Int8 & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeCSV(const Int16 & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeCSV(const Int32 & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeCSV(const Int64 & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeCSV(const Float32 & x, 	WriteBuffer & buf) { writeText(x, buf); }
-inline void writeCSV(const Float64 & x, 	WriteBuffer & buf) { writeText(x, buf); }
+template <typename T>
+inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
+
 inline void writeCSV(const String & x,		WriteBuffer & buf) { writeCSVString<>(x, buf); }
-inline void writeCSV(const bool & x, 		WriteBuffer & buf) { writeText(x, buf); }
-inline void writeCSV(const VisitID_t & x, 	WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const LocalDate & x,	WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 

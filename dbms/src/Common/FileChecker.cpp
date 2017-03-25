@@ -14,16 +14,17 @@ namespace DB
 {
 
 
-FileChecker::FileChecker(const std::string & file_info_path_) :
-	files_info_path(file_info_path_)
+FileChecker::FileChecker(const std::string & file_info_path_)
 {
-	Poco::Path path(files_info_path);
-	tmp_files_info_path = path.parent().toString() + "tmp_" + path.getFileName();
+	setPath(file_info_path_);
 }
 
 void FileChecker::setPath(const std::string & file_info_path_)
 {
 	files_info_path = file_info_path_;
+
+	Poco::Path path(files_info_path);
+	tmp_files_info_path = path.parent().toString() + "tmp_" + path.getFileName();
 }
 
 void FileChecker::update(const Poco::File & file)

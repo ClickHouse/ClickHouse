@@ -1,6 +1,7 @@
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Common/StringUtils.h>
 
+#include <unordered_set>
 
 namespace DB
 {
@@ -231,6 +232,20 @@ std::size_t DictionaryStructure::getKeySize() const
 }
 
 
+static void CheckAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & keys)
+{
+	static const std::unordered_set<std::string> valid_keys =
+		{ "name", "type", "expression", "null_value", "hierarchical", "injective" };
+
+	for (const auto & key : keys)
+	{
+		if (valid_keys.find(key) == valid_keys.end())
+			throw Exception{
+				"Unknown key '" + key + "' inside attribute section",
+				ErrorCodes::BAD_ARGUMENTS};
+	}
+}
+
 std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 	const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
 	const bool hierarchy_allowed, const bool allow_null_values)
@@ -247,6 +262,10 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 			continue;
 
 		const auto prefix = config_prefix + '.' + key + '.';
+		Poco::Util::AbstractConfiguration::Keys attribute_keys;
+		config.keys(config_prefix + '.' + key, attribute_keys);
+
+		CheckAttributeKeys(attribute_keys);
 
 		const auto name = config.getString(prefix + "name");
 		const auto type_string = config.getString(prefix + "type");

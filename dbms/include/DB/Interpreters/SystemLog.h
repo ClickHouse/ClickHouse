@@ -2,6 +2,7 @@
 
 #include <thread>
 #include <boost/noncopyable.hpp>
+#include <common/logger_useful.h>
 #include <DB/Core/Types.h>
 #include <DB/Common/ConcurrentBoundedQueue.h>
 #include <DB/Storages/IStorage.h>

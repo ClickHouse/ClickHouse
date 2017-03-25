@@ -9,9 +9,9 @@ namespace DB
 {
 
 
-/** Не агрегатная функция, а адаптер агрегатных функций,
-  * Агрегатные функции с суффиксом State отличаются от соответствующих тем, что их состояния не финализируются.
-  * Возвращаемый тип - DataTypeAggregateFunction.
+/** Not an aggregate function, but an adapter of aggregate functions,
+  * Aggregate functions with the `State` suffix differ from the corresponding ones in that their states are not finalized.
+  * Return type - DataTypeAggregateFunction.
   */
 
 class AggregateFunctionState final : public IAggregateFunction
@@ -97,8 +97,13 @@ public:
 		static_cast<ColumnAggregateFunction &>(to).getData().push_back(const_cast<AggregateDataPtr>(place));
 	}
 
-	/// Аггрегатная функция или состояние аггрегатной функции.
+	/// Aggregate function or aggregate function state.
 	bool isState() const override { return true; }
+
+	bool allocatesMemoryInArena() const override
+	{
+		return nested_func->allocatesMemoryInArena();
+	}
 
 	AggregateFunctionPtr getNestedFunction() const { return nested_func_owner; }
 

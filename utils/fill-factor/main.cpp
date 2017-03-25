@@ -1,7 +1,9 @@
 #include <iostream>
 #include <iomanip>
 
+#if __SSE2__
 #include <emmintrin.h>
+#endif
 
 #include <common/Common.h>
 #include <Poco/NumberParser.h>
@@ -13,6 +15,7 @@
 
 int main(int argc, char ** argv)
 {
+#if __SSE2__
 	try
 	{
 		DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
@@ -54,6 +57,9 @@ int main(int argc, char ** argv)
 			<< std::endl;
 		throw;
 	}
+#else
+	std::cerr << "Only for x86_64 arch " << std::endl;
+#endif
 
     return 0;
 }

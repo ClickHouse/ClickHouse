@@ -1,15 +1,23 @@
-FROM ubuntu:14.04
+FROM ubuntu:16.04
 
-RUN mkdir -p /etc/apt/sources.list.d && \
-    echo "deb http://repo.yandex.ru/clickhouse/trusty/ dists/stable/main/binary-amd64/" | tee /etc/apt/sources.list.d/clickhouse.list && \
+ARG repository="deb https://repo.yandex.ru/clickhouse/xenial/ dists/stable/main/binary-amd64/"
+ARG version=\*
+
+RUN apt-get update && \
+    apt-get install -y apt-transport-https && \
+    mkdir -p /etc/apt/sources.list.d && \
+    echo $repository | tee /etc/apt/sources.list.d/clickhouse.list && \
     apt-get update && \
-    apt-get install --allow-unauthenticated -y clickhouse-server-common && \
-    rm -rf /var/lib/apt/lists/* /var/cache/
+    apt-get install --allow-unauthenticated -y clickhouse-server-common=$version && \
+    rm -rf /var/lib/apt/lists/* /var/cache/debconf && \
+    apt-get clean
 
-RUN chown -R metrika /etc/clickhouse-server/
+RUN sed -i 's,<listen_host>127.0.0.1</listen_host>,<listen_host>::</listen_host>,' /etc/clickhouse-server/config.xml
+RUN chown -R clickhouse /etc/clickhouse-server/
 
-USER metrika
+USER clickhouse
 EXPOSE 9000 8123 9009
+VOLUME /var/lib/clickhouse
 
 ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
 

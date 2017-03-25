@@ -8,11 +8,12 @@
 #include <DB/Common/HashTable/HashSet.h>
 #include <DB/Common/UInt128.h>
 
+
 namespace DB
 {
 
-/** Методы для разных вариантов реализации множеств.
-  * Используются в качестве параметра шаблона.
+/** Methods for different implementations of sets (used in right hand side of IN or for DISTINCT).
+  * To use as template parameter.
   */
 
 

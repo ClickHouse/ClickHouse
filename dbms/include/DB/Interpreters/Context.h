@@ -7,11 +7,16 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/ClientInfo.h>
-#include <DB/Storages/IStorage.h>
 #include <DB/IO/CompressedStream.h>
 
-#include <Poco/Net/IPAddress.h>
 
+namespace Poco
+{
+	namespace Net
+	{
+		class IPAddress;
+	}
+}
 
 namespace zkutil
 {
@@ -26,7 +31,7 @@ struct ContextShared;
 class QuotaForIntervals;
 class TableFunctionFactory;
 class AggregateFunctionFactory;
-class Dictionaries;
+class EmbeddedDictionaries;
 class ExternalDictionaries;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
@@ -42,9 +47,20 @@ class Macros;
 struct Progress;
 class Clusters;
 class QueryLog;
+class PartLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
+using Tables = std::map<String, StoragePtr>;
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+class IBlockInputStream;
+class IBlockOutputStream;
+using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
+using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
+class Block;
 
 
 /// (имя базы данных, имя таблицы)
@@ -172,9 +188,9 @@ public:
 
 	const TableFunctionFactory & getTableFunctionFactory() const;
 	const AggregateFunctionFactory & getAggregateFunctionFactory() const;
-	const Dictionaries & getDictionaries() const;
+	const EmbeddedDictionaries & getEmbeddedDictionaries() const;
 	const ExternalDictionaries & getExternalDictionaries() const;
-	void tryCreateDictionaries() const;
+	void tryCreateEmbeddedDictionaries() const;
 	void tryCreateExternalDictionaries() const;
 
 	/// Форматы ввода-вывода.
@@ -267,7 +283,12 @@ public:
 
 	Compiler & getCompiler();
 	QueryLog & getQueryLog();
+	std::shared_ptr<PartLog> getPartLog();
 	const MergeTreeSettings & getMergeTreeSettings();
+
+	/// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
+	void setMaxTableSizeToDrop(size_t max_size);
+	void checkTableCanBeDropped(const String & database, const String & table, size_t table_size);
 
 	/// Позволяет выбрать метод сжатия по условиям, описанным в конфигурационном файле.
 	CompressionMethod chooseCompressionMethod(size_t part_size, double part_size_ratio) const;
@@ -287,6 +308,10 @@ public:
 	ApplicationType getApplicationType() const;
 	void setApplicationType(ApplicationType type);
 
+	/// Set once
+	String getDefaultProfileName() const;
+	void setDefaultProfileName(const String & name);
+
 private:
 	/** Проверить, имеет ли текущий клиент доступ к заданной базе данных.
 	  * Если доступ запрещён, кинуть исключение.
@@ -294,28 +319,29 @@ private:
 	  */
 	void checkDatabaseAccessRights(const std::string & database_name) const;
 
-	const Dictionaries & getDictionariesImpl(bool throw_on_error) const;
+	const EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 	const ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
 
 	StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 };
 
 
-/** Кладёт элемент в map, в деструкторе - удаляет.
-  * Если элемент уже есть - кидает исключение.
-  */
+/// Puts an element into the map, erases it in the destructor.
+/// If the element already exists in the map, throws an exception containing provided message.
 class DDLGuard
 {
-	/// Имя объекта -> сообщение.
-	using Map = std::unordered_map<String, String>;
+public:
+	/// Element name -> message.
+	/// NOTE: using std::map here (and not std::unordered_map) to avoid iterator invalidation on insertion.
+	using Map = std::map<String, String>;
 
+	DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && lock, const String & elem, const String & message);
+	~DDLGuard();
+
+private:
 	Map & map;
 	Map::iterator it;
 	std::mutex & mutex;
-
-public:
-	DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && lock, const String & elem, const String & message);
-	~DDLGuard();
 };
 
 }

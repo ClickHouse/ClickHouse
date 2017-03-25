@@ -1,6 +1,7 @@
 #pragma once
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 
 
@@ -8,11 +9,11 @@ namespace DB
 {
 
 
-/** Не агрегатная функция, а адаптер агрегатных функций,
-  *  который любую агрегатную функцию agg(x) делает агрегатной функцией вида aggIf(x, cond).
-  * Адаптированная агрегатная функция принимает два аргумента - значение и условие,
-  *  и вычисляет вложенную агрегатную функцию для значений при выполненном условии.
-  * Например, avgIf(x, cond) вычисляет среднее x при условии cond.
+/** Not an aggregate function, but an adapter of aggregate functions,
+  * which any aggregate function `agg(x)` makes an aggregate function of the form `aggIf(x, cond)`.
+  * The adapted aggregate function takes two arguments - a value and a condition,
+  * and calculates the nested aggregate function for the values when the condition is satisfied.
+  * For example, avgIf(x, cond) calculates the average x if `cond`.
   */
 class AggregateFunctionIf final : public IAggregateFunction
 {
@@ -101,6 +102,16 @@ public:
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		nested_func->insertResultInto(place, to);
+	}
+
+	bool allocatesMemoryInArena() const override
+	{
+		return nested_func->allocatesMemoryInArena();
+	}
+
+	bool isState() const override
+	{
+		return nested_func->isState();
 	}
 
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)

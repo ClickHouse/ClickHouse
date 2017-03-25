@@ -2,7 +2,10 @@
 
 #include <DB/Databases/IDatabase.h>
 #include <DB/Common/UInt128.h>
+#include <DB/Storages/IStorage.h>
 
+
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -27,16 +30,16 @@ namespace DB
 		/tables                  - список таблиц
 			/database_name       - имя базы данных
 				/name_hash_mod -> compressed_table_list
-			                     - список таблиц сделан двухуровневым, чтобы уменьшить количество узлов в ZooKeeper при наличии большого количества таблиц
-			                     - узлы создаются для каждого остатка от деления хэша от имени таблицы, например, на 4096
-			                     - и в каждом узле хранится список таблиц (имя таблицы, имя локальной таблицы, хэш от структуры, список хостов) в сжатом виде
+								 - список таблиц сделан двухуровневым, чтобы уменьшить количество узлов в ZooKeeper при наличии большого количества таблиц
+								 - узлы создаются для каждого остатка от деления хэша от имени таблицы, например, на 4096
+								 - и в каждом узле хранится список таблиц (имя таблицы, имя локальной таблицы, хэш от структуры, список хостов) в сжатом виде
 		/local_tables            - список локальных таблиц, чтобы по имени локальной таблицы можно было определить её структуру
 			/database_name
 				/name_hash_mod -> compressed_table_list
-				                 - список пар (хэш от имени таблицы, хэш от структуры) в сжатом виде
+								 - список пар (хэш от имени таблицы, хэш от структуры) в сжатом виде
 		/locality_keys           - сериализованный список ключей локальности в порядке их появления
-			                     - ключ локальности - произвольная строка
-			                     - движок БД определяет серверы для расположения данных таким образом,
+								 - ключ локальности - произвольная строка
+								 - движок БД определяет серверы для расположения данных таким образом,
 								   чтобы, при одинаковом множестве живых серверов,
 								   одному ключу локальности соответствовала одна группа из N серверов для расположения данных.
 		/nodes                   - список серверов, на которых зарегистрированы облачные БД с таким путём в ZK
@@ -57,6 +60,7 @@ private:
 	const String hostname;
 	const String datacenter_name;
 
+	using Logger = Poco::Logger;
 	Logger * log;
 
 	Context & context;
@@ -92,13 +96,16 @@ public:
 
 	bool empty() const override;
 
-	void createTable(const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine) override;
+	void createTable(
+		const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings) override;
+
 	void removeTable(const String & table_name) override;
 
 	void attachTable(const String & table_name, const StoragePtr & table) override;
 	StoragePtr detachTable(const String & table_name) override;
 
-	void renameTable(const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name) override;
+	void renameTable(
+		const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings) override;
 
 	time_t getTableMetadataModificationTime(const String & name) override;
 

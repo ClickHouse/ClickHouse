@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <ctime>
 #include <fcntl.h>
 
 #include <DB/IO/ReadBuffer.h>

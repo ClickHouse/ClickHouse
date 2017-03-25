@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Core/Field.h>
+#include <common/DateLUT.h>
 
 
 class SipHash;

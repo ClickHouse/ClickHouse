@@ -27,6 +27,7 @@ class MongoDBDictionarySource final : public IDictionarySource
 	MongoDBDictionarySource(
 		const DictionaryStructure & dict_struct, const std::string & host, UInt16 port,
 		const std::string & user, const std::string & password,
+		const std::string & method,
 		const std::string & db, const std::string & collection,
 		const Block & sample_block);
 
@@ -37,7 +38,7 @@ public:
 
 	MongoDBDictionarySource(const MongoDBDictionarySource & other);
 
-    ~MongoDBDictionarySource() override;
+	~MongoDBDictionarySource() override;
 
 	BlockInputStreamPtr loadAll() override;
 
@@ -61,6 +62,7 @@ private:
 	const UInt16 port;
 	const std::string user;
 	const std::string password;
+	const std::string method;
 	const std::string db;
 	const std::string collection;
 	Block sample_block;

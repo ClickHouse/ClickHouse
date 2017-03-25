@@ -8,6 +8,7 @@ namespace ErrorCodes
 {
 	extern const int BAD_ARGUMENTS;
 	extern const int DICTIONARY_IS_EMPTY;
+	extern const int TYPE_MISMATCH;
 }
 
 

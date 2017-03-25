@@ -5,12 +5,14 @@
 #include <Poco/Mutex.h>
 #include <Poco/File.h>
 #include <Poco/UUIDGenerator.h>
+#include <Poco/Net/IPAddress.h>
 
 #include <common/logger_useful.h>
 
 #include <DB/Common/Macros.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/Stopwatch.h>
+#include <DB/Common/formatReadable.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
@@ -24,13 +26,14 @@
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/Users.h>
 #include <DB/Interpreters/Quota.h>
-#include <DB/Interpreters/Dictionaries.h>
+#include <DB/Interpreters/EmbeddedDictionaries.h>
 #include <DB/Interpreters/ExternalDictionaries.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/InterserverIOHandler.h>
 #include <DB/Interpreters/Compiler.h>
 #include <DB/Interpreters/QueryLog.h>
+#include <DB/Interpreters/PartLog.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/UncompressedCache.h>
@@ -64,11 +67,13 @@ namespace ErrorCodes
 	extern const int UNKNOWN_DATABASE;
 	extern const int UNKNOWN_TABLE;
 	extern const int TABLE_ALREADY_EXISTS;
+	extern const int TABLE_WAS_NOT_DROPPED;
 	extern const int DATABASE_ALREADY_EXISTS;
 	extern const int TABLE_METADATA_DOESNT_EXIST;
 	extern const int THERE_IS_NO_SESSION;
 	extern const int NO_ELEMENTS_IN_CONFIG;
 	extern const int DDL_GUARD_IS_ACTIVE;
+	extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
 }
 
 class TableFunctionFactory;
@@ -83,15 +88,16 @@ struct ContextShared
 
 	/// For access of most of shared objects. Recursive mutex.
 	mutable Poco::Mutex mutex;
-	/// Separate mutex for access of external dictionaries. Separate mutex to avoid locks when server doing request to itself.
+	/// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
+	mutable std::mutex embedded_dictionaries_mutex;
 	mutable std::mutex external_dictionaries_mutex;
 	/// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
 	mutable std::mutex zookeeper_mutex;
 
 	mutable zkutil::ZooKeeperPtr zookeeper;					/// Клиент для ZooKeeper.
 
-	String interserver_io_host;								/// Имя хоста         по которым это сервер доступен для других серверов.
-	int interserver_io_port;								///           и порт,
+	String interserver_io_host;								/// Имя хоста по которым это сервер доступен для других серверов.
+	int interserver_io_port;								///	и порт,
 
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	String tmp_path;										/// Путь ко временным файлам, возникающим при обработке запроса.
@@ -100,9 +106,10 @@ struct ContextShared
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
 	FormatFactory format_factory;							/// Форматы.
-	mutable std::shared_ptr<Dictionaries> dictionaries;		/// Словари Метрики. Инициализируются лениво.
+	mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;	/// Metrica's dictionaeis. Have lazy initialization.
 	mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
-	Users users;											/// Известные пользователи.
+	String default_profile_name;							/// Default profile name used for default values.
+	Users users;											/// Known users.
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
 	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
 	mutable MarkCachePtr mark_cache;						/// Кэш засечек в сжатых файлах.
@@ -113,12 +120,14 @@ struct ContextShared
 	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
 	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
 	ReshardingWorkerPtr resharding_worker;
-	Macros macros;											/// Подстановки из конфига.
-	std::unique_ptr<Compiler> compiler;						/// Для динамической компиляции частей запроса, при необходимости.
-	std::unique_ptr<QueryLog> query_log;					/// Для логгирования запросов.
+	Macros macros;											/// Substitutions extracted from config.
+	std::unique_ptr<Compiler> compiler;						/// Used for dynamic compilation of queries' parts if it necessary.
+	std::unique_ptr<QueryLog> query_log;					/// Used to log queries.
+	std::shared_ptr<PartLog> part_log;						/// Used to log operations with parts
 	/// Правила для выбора метода сжатия в зависимости от размера куска.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
-	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Настройки для движка MergeTree.
+	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Settings of MergeTree* engines.
+	size_t max_table_size_to_drop = 50000000000lu;			/// Protects MergeTree tables from accidental DROP (50GB by default)
 
 	/// Clusters for distributed tables
 	/// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -134,7 +143,7 @@ struct ContextShared
 	/// database -> table -> exception_message
 	/// На время выполнения операции, сюда помещается элемент, и возвращается объект, который в деструкторе удаляет элемент.
 	/// В случае, если элемент уже есть - кидается исключение. См. class DDLGuard ниже.
-	using DDLGuards = std::unordered_map<String, std::unordered_map<String, String>>;
+	using DDLGuards = std::unordered_map<String, DDLGuard::Map>;
 	DDLGuards ddl_guards;
 	/// Если вы захватываете mutex и ddl_guards_mutex, то захватывать их нужно строго в этом порядке.
 	mutable std::mutex ddl_guards_mutex;
@@ -166,6 +175,7 @@ struct ContextShared
 		shutdown_called = true;
 
 		query_log.reset();
+		part_log.reset();
 
 		/** В этот момент, некоторые таблицы могут иметь потоки, которые блокируют наш mutex.
 		  * Чтобы корректно их завершить, скопируем текущий список таблиц,
@@ -339,7 +349,12 @@ void Context::setUser(const String & name, const String & password, const Poco::
 	auto lock = getLock();
 
 	const User & user_props = shared->users.get(name, password, address.host());
-	setSetting("profile", user_props.profile);
+
+	/// Firstly set default settings from default profile
+	auto default_profile_name = getDefaultProfileName();
+	if (user_props.profile != default_profile_name)
+		settings.setProfile(default_profile_name, *shared->users_config);
+	settings.setProfile(user_props.profile, *shared->users_config);
 	setQuota(user_props.quota, quota_key, name, address.host());
 
 	client_info.current_user = name;
@@ -788,9 +803,9 @@ Context & Context::getGlobalContext()
 }
 
 
-const Dictionaries & Context::getDictionaries() const
+const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
-	return getDictionariesImpl(false);
+	return getEmbeddedDictionariesImpl(false);
 }
 
 
@@ -800,14 +815,14 @@ const ExternalDictionaries & Context::getExternalDictionaries() const
 }
 
 
-const Dictionaries & Context::getDictionariesImpl(const bool throw_on_error) const
+const EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
 {
-	auto lock = getLock();
+	std::lock_guard<std::mutex> lock(shared->embedded_dictionaries_mutex);
 
-	if (!shared->dictionaries)
-		shared->dictionaries = std::make_shared<Dictionaries>(throw_on_error);
+	if (!shared->embedded_dictionaries)
+		shared->embedded_dictionaries = std::make_shared<EmbeddedDictionaries>(throw_on_error);
 
-	return *shared->dictionaries;
+	return *shared->embedded_dictionaries;
 }
 
 
@@ -826,9 +841,9 @@ const ExternalDictionaries & Context::getExternalDictionariesImpl(const bool thr
 }
 
 
-void Context::tryCreateDictionaries() const
+void Context::tryCreateEmbeddedDictionaries() const
 {
-	static_cast<void>(getDictionariesImpl(true));
+	static_cast<void>(getEmbeddedDictionariesImpl(true));
 }
 
 
@@ -1055,6 +1070,34 @@ QueryLog & Context::getQueryLog()
 }
 
 
+std::shared_ptr<PartLog> Context::getPartLog()
+{
+	auto lock = getLock();
+
+	auto & config = Poco::Util::Application::instance().config();
+	if (!config.has("part_log"))
+		return nullptr;
+
+	if (!shared->part_log)
+	{
+		if (shared->shutdown_called)
+			throw Exception("Will not get part_log because shutdown was called", ErrorCodes::LOGICAL_ERROR);
+
+		if (!global_context)
+			throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
+
+		String database = config.getString("part_log.database", "system");
+		String table = config.getString("part_log.table", "part_log");
+		size_t flush_interval_milliseconds = parse<size_t>(
+			config.getString("part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
+		shared->part_log = std::make_unique<PartLog>(
+			*global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+	}
+
+	return shared->part_log;
+}
+
+
 CompressionMethod Context::chooseCompressionMethod(size_t part_size, double part_size_ratio) const
 {
 	auto lock = getLock();
@@ -1086,6 +1129,55 @@ const MergeTreeSettings & Context::getMergeTreeSettings()
 	}
 
 	return *shared->merge_tree_settings;
+}
+
+
+void Context::setMaxTableSizeToDrop(size_t max_size)
+{
+	// Is initialized at server startup
+	shared->max_table_size_to_drop = max_size;
+}
+
+void Context::checkTableCanBeDropped(const String & database, const String & table, size_t table_size)
+{
+	size_t max_table_size_to_drop = shared->max_table_size_to_drop;
+
+	if (!max_table_size_to_drop || table_size <= max_table_size_to_drop)
+		return;
+
+	Poco::File force_file(getFlagsPath() + "force_drop_table");
+	bool force_file_exists = force_file.exists();
+
+	if (force_file_exists)
+	{
+		try
+		{
+			force_file.remove();
+			return;
+		}
+		catch (...)
+		{
+			/// User should recreate force file on each drop, it shouldn't be protected
+			tryLogCurrentException("Drop table check", "Can't remove force file to enable table drop");
+		}
+	}
+
+	String table_size_str = formatReadableSizeWithDecimalSuffix(table_size);
+	String max_table_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_table_size_to_drop);
+	std::stringstream ostr;
+
+	ostr << "Table " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
+		 << "Reason:\n"
+		 << "1. Table size (" << table_size_str << ") is greater than max_table_size_to_drop (" << max_table_size_to_drop_str << ")\n"
+		 << "2. File '" << force_file.path() << "' intedned to force DROP "
+			<< (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
+
+	ostr << "How to fix this:\n"
+		 << "1. Either increase (or set to zero) max_table_size_to_drop in server config and restart ClickHouse\n"
+		 << "2. Either create forcing file " << force_file.path() << " and make sure that ClickHouse has write permission for it.\n"
+		 << "Example:\nsudo touch '" << force_file.path() << "' && sudo chmod 666 '" << force_file.path() << "'";
+
+	throw Exception(ostr.str(), ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT);
 }
 
 
@@ -1122,6 +1214,17 @@ void Context::setApplicationType(ApplicationType type)
 {
 	/// Lock isn't required, you should set it at start
 	shared->application_type = type;
+}
+
+
+String Context::getDefaultProfileName() const
+{
+	return shared->default_profile_name;
+}
+
+void Context::setDefaultProfileName(const String & name)
+{
+	shared->default_profile_name = name;
 }
 
 

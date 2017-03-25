@@ -38,7 +38,7 @@ std::string formatReadableSizeWithBinarySuffix(double value, int precision)
 	std::string res;
 	DB::WriteBufferFromString out(res);
 	formatReadableSizeWithBinarySuffix(value, out, precision);
-    return res;
+	return res;
 }
 
 
@@ -53,7 +53,7 @@ std::string formatReadableSizeWithDecimalSuffix(double value, int precision)
 	std::string res;
 	DB::WriteBufferFromString out(res);
 	formatReadableSizeWithDecimalSuffix(value, out, precision);
-    return res;
+	return res;
 }
 
 
@@ -68,5 +68,5 @@ std::string formatReadableQuantity(double value, int precision)
 	std::string res;
 	DB::WriteBufferFromString out(res);
 	formatReadableQuantity(value, out, precision);
-    return res;
+	return res;
 }

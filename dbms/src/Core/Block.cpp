@@ -1,24 +1,18 @@
-#include <iterator>
-
 #include <DB/Common/Exception.h>
 
 #include <DB/Core/Block.h>
 
-#include <DB/Storages/ColumnDefault.h>
-
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNullable.h>
+#include <DB/Columns/ColumnTuple.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/Operators.h>
 
-#include <DB/Parsers/ASTExpressionList.h>
+#include <iterator>
 #include <memory>
-
-#include <DB/Parsers/formatAST.h>
-
 
 namespace DB
 {
@@ -579,6 +573,35 @@ void Block::unshareColumns()
 			ColumnPtr & offsets = arr->getOffsetsColumn();
 			if (!pointers.insert(offsets.get()).second)
 				offsets = offsets->clone();
+
+			ColumnPtr & nested = arr->getDataPtr();
+			if (!pointers.insert(nested.get()).second)
+				nested = nested->clone();
+		}
+		else if (ColumnTuple * tuple = typeid_cast<ColumnTuple *>(elem.column.get()))
+		{
+			Block & tuple_block = tuple->getData();
+			Columns & tuple_columns = tuple->getColumns();
+
+			size_t size = tuple_block.columns();
+			for (size_t i = 0; i < size; ++i)
+			{
+				if (!pointers.insert(tuple_columns[i].get()).second)
+				{
+					tuple_columns[i] = tuple_columns[i]->clone();
+					tuple_block.getByPosition(i).column = tuple_columns[i];
+				}
+			}
+		}
+		else if (ColumnNullable * nullable = typeid_cast<ColumnNullable *>(elem.column.get()))
+		{
+			ColumnPtr & null_map = nullable->getNullMapColumn();
+			if (!pointers.insert(null_map.get()).second)
+				null_map = null_map->clone();
+
+			ColumnPtr & nested = nullable->getNestedColumn();
+			if (!pointers.insert(nested.get()).second)
+				nested = nested->clone();
 		}
 	}
 }

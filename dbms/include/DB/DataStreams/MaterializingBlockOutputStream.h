@@ -1,10 +1,8 @@
 #pragma once
 
-#include <DB/Columns/ColumnConst.h>
+#include <DB/Core/Block.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <ext/range.hpp>
+
 
 namespace DB
 {
@@ -19,7 +17,7 @@ public:
 
 	void write(const Block & block) override
 	{
-			output->write(materialize(block));
+		output->write(materialize(block));
 	}
 
 	void flush() 										override { output->flush(); }
@@ -34,31 +32,7 @@ public:
 private:
 	BlockOutputStreamPtr output;
 
-	static Block materialize(const Block & original_block)
-	{
-		/// copy block to get rid of const
-		auto block = original_block;
-
-		for (const auto i : ext::range(0, block.columns()))
-		{
-			auto & element = block.safeGetByPosition(i);
-			auto & src = element.column;
-			ColumnPtr converted = src->convertToFullColumnIfConst();
-			if (converted)
-			{
-				src = converted;
-				auto & type = element.type;
-				if (type->isNull())
-				{
-					/// A ColumnNull that is converted to a full column
-					/// has the type DataTypeNullable(DataTypeUInt8).
-					type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
-				}
-			}
-		}
-
-		return block;
-	}
+	static Block materialize(const Block & original_block);
 };
 
 }

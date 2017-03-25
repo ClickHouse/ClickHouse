@@ -122,7 +122,7 @@ public:
 	struct const_iterator : public boost::iterator_adaptor<const_iterator, const T*>
 	{
 		const_iterator() {}
-        const_iterator(const T * ptr_) : const_iterator::iterator_adaptor_(ptr_) {}
+		const_iterator(const T * ptr_) : const_iterator::iterator_adaptor_(ptr_) {}
 	};
 
 
@@ -216,7 +216,7 @@ public:
 		if (n > old_size)
 		{
 			reserve(n);
-			memset(c_end, 0, n - old_size);
+			memset(c_end, 0, byte_size(n - old_size));
 		}
 		c_end = c_start + byte_size(n);
 	}
@@ -461,5 +461,14 @@ void swap(PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & lhs, PODArray<T, I
 /** Для столбцов. Padding-а хватает, чтобы читать и писать xmm-регистр по адресу последнего элемента. */
 template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
 using PaddedPODArray = PODArray<T, INITIAL_SIZE, TAllocator, 15>;
+
+
+inline constexpr size_t integerRound(size_t value, size_t dividend)
+{
+	return ((value + dividend - 1) / dividend) * dividend;
+}
+
+template <typename T, size_t stack_size_in_bytes>
+using PODArrayWithStackMemory = PODArray<T, 0, AllocatorWithStackMemory<Allocator<false>, integerRound(stack_size_in_bytes, sizeof(T))>>;
 
 }

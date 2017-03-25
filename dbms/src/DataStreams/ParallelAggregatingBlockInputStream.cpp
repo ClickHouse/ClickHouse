@@ -2,7 +2,7 @@
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 
 
 namespace ProfileEvents

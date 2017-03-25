@@ -2,7 +2,7 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
@@ -19,11 +19,11 @@ namespace DB
 StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string & name_)
 	: name(name_)
 	, columns{
-		/// Свойства таблицы.
+		/// Table properties.
 		{ "database", 				std::make_shared<DataTypeString>()	},
 		{ "table", 					std::make_shared<DataTypeString>()	},
 		{ "replica_name",			std::make_shared<DataTypeString>()	},
-		/// Неизменяемые свойства элемента.
+		/// Constant element properties.
 		{ "position", 				std::make_shared<DataTypeUInt32>()	},
 		{ "node_name", 				std::make_shared<DataTypeString>()	},
 		{ "type", 					std::make_shared<DataTypeString>()	},
@@ -35,7 +35,7 @@ StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string &
 		{ "is_detach",				std::make_shared<DataTypeUInt8>()	},
 		{ "is_attach_unreplicated",	std::make_shared<DataTypeUInt8>()	},
 		{ "attach_source_part_name",std::make_shared<DataTypeString>()	},
-		/// Статус обработки элемента.
+		/// Processing status of item.
 		{ "is_currently_executing",	std::make_shared<DataTypeUInt8>()	},
 		{ "num_tries",				std::make_shared<DataTypeUInt32>()	},
 		{ "last_exception",			std::make_shared<DataTypeString>()	},
@@ -83,7 +83,7 @@ BlockInputStreams StorageSystemReplicationQueue::read(
 		}
 	}
 
-	/// Определяем, какие нужны таблицы, по условиям в запросе.
+	/// Determine what tables are needed by the conditions in the query.
 	{
 		Block filtered_block { col_database_to_filter, col_table_to_filter };
 

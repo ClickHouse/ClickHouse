@@ -10,10 +10,11 @@
 #include <DB/Common/RadixSort.h>
 #include <DB/Common/PODArray.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
 #include <DB/AggregateFunctions/QuantilesCommon.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 
 
@@ -25,16 +26,16 @@ namespace ErrorCodes
 }
 }
 
-/** Алгоритм реализовал Алексей Борзенков https://███████████.yandex-team.ru/snaury
-  * Ему принадлежит авторство кода и половины комментариев в данном namespace,
-  *  за исключением слияния, сериализации и сортировки, а также выбора типов и других изменений.
-  * Мы благодарим Алексея Борзенкова за написание изначального кода.
+/** The algorithm was implemented by Alexei Borzenkov https: //███████████.yandex-team.ru/snaury
+  * He owns the authorship of the code and half the comments in this namespace,
+  * except for merging, serialization, and sorting, as well as selecting types and other changes.
+  * We thank Alexei Borzenkov for writing the original code.
   */
 namespace tdigest
 {
 
 /**
-  * Центроид хранит вес точек вокруг их среднего значения
+  * The centroid stores the weight of points around their mean value
   */
 template <typename Value, typename Count>
 struct Centroid
@@ -63,13 +64,12 @@ struct Centroid
 };
 
 
-/** :param epsilon: значение \delta из статьи - погрешность в районе
-  *				    квантиля 0.5 (по-умолчанию 0.01, т.е. 1%)
-  * :param max_unmerged: при накоплении кол-ва новых точек сверх этого
-  *					     значения запускается компрессия центроидов
-  *					     (по-умолчанию 2048, чем выше значение - тем
-  *					     больше требуется памяти, но повышается
-  *					     амортизация времени выполнения)
+/** :param epsilon: value \delta from the article - error in the range
+  *				    quantile 0.5 (default is 0.01, i.e. 1%)
+  * :param max_unmerged: when accumulating count of new points beyond this
+  *                      value centroid compression is triggered
+  *                      (default is 2048, the higher the value - the
+  *                      more memory is required, but amortization of execution time increases)
   */
 template <typename Value>
 struct Params
@@ -79,17 +79,17 @@ struct Params
 };
 
 
-/** Реализация алгоритма t-digest (https://github.com/tdunning/t-digest).
-  * Этот вариант очень похож на MergingDigest на java, однако решение об
-  * объединении принимается на основе оригинального условия из статьи
-  * (через ограничение на размер, используя апроксимацию квантиля каждого
-  * центроида, а не расстояние на кривой положения их границ). MergingDigest
-  * на java даёт значительно меньше центроидов, чем данный вариант, что
-  * негативно влияет на точность при том же факторе компрессии, но даёт
-  * гарантии размера. Сам автор на предложение об этом варианте сказал, что
-  * размер дайжеста растёт как O(log(n)), в то время как вариант на java
-  * не зависит от предполагаемого кол-ва точек. Кроме того вариант на java
-  * использует asin, чем немного замедляет алгоритм.
+/** Implementation of t-digest algorithm (https://github.com/tdunning/t-digest).
+  * This option is very similar to MergingDigest on java, however the decision about
+  * the union is accepted based on the original condition from the article
+  * (via a size constraint, using the approximation of the quantile of each
+  * centroid, not the distance on the curve of the position of their boundaries). MergingDigest
+  * on java gives significantly fewer centroids than this variant, that
+  * negatively affects accuracy with the same compression factor, but gives
+  * size guarantees. The author himself on the proposal for this variant said that
+  * the size of the digest grows like O(log(n)), while the version on java
+  * does not depend on the expected number of points. Also an variant on java
+  * uses asin, which slows down the algorithm a bit.
   */
 template <typename Value, typename CentroidCount, typename TotalCount>
 class MergingDigest
@@ -97,7 +97,7 @@ class MergingDigest
 	using Params = tdigest::Params<Value>;
 	using Centroid = tdigest::Centroid<Value, CentroidCount>;
 
-	/// Сразу будет выделена память на несколько элементов так, чтобы состояние занимало 64 байта.
+	/// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
 	static constexpr size_t bytes_in_arena = 64 - sizeof(DB::PODArray<Centroid>) - sizeof(TotalCount) - sizeof(uint32_t);
 
 	using Summary = DB::PODArray<Centroid, bytes_in_arena / sizeof(Centroid), AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
@@ -106,7 +106,7 @@ class MergingDigest
 	TotalCount count = 0;
 	uint32_t unmerged = 0;
 
-	/** Линейная интерполяция в точке x на прямой (x1, y1)..(x2, y2)
+	/** Linear interpolation at the point x on the line (x1, y1)..(x2, y2)
 	  */
 	static Value interpolate(Value x, Value x1, Value y1, Value x2, Value y2)
 	{
@@ -126,19 +126,19 @@ class MergingDigest
 		using Transform = RadixSortFloatTransform<KeyBits>;
 		using Allocator = RadixSortMallocAllocator;
 
-		/// Функция получения ключа из элемента массива.
+		/// The function to get the key from an array element.
 		static Key & extractKey(Element & elem) { return elem.mean; }
 	};
 
 public:
-	/** Добавляет к дайджесту изменение x с весом cnt (по-умолчанию 1)
+	/** Adds to the digest a change in `x` with a weight of `cnt` (default 1)
 	  */
 	void add(const Params & params, Value x, CentroidCount cnt = 1)
 	{
 		add(params, Centroid(x, cnt));
 	}
 
-	/** Добавляет к дайджесту центроид c
+	/** Adds a centroid `c` to the digest
 	  */
 	void add(const Params & params, const Centroid & c)
 	{
@@ -149,9 +149,9 @@ public:
 			compress(params);
 	}
 
-	/** Выполняет компрессию накопленных центроидов
-	  * При объединении сохраняется инвариант на максимальный размер каждого
-	  * центроида, не превышающий 4 q (1 - q) \delta N.
+	/** Performs compression of accumulated centroids
+	  * When merging, the invariant is retained to the maximum size of each
+	  * centroid that does not exceed `4 q (1 - q) \ delta N`.
 	  */
 	void compress(const Params & params)
 	{
@@ -161,7 +161,7 @@ public:
 
 			if (summary.size() > 3)
 			{
-				/// Пара подряд идущих столбиков гистограммы.
+		/// A pair of consecutive bars of the histogram.
 				auto l = summary.begin();
 				auto r = std::next(l);
 
@@ -170,11 +170,11 @@ public:
 				{
 					// we use quantile which gives us the smallest error
 
-					/// Отношение части гистограммы до l, включая половинку l ко всей гистограмме. То есть, какого уровня квантиль в позиции l.
+		/// The ratio of the part of the histogram to l, including the half l to the entire histogram. That is, what level quantile in position l.
 					Value ql = (sum + l->count * 0.5) / count;
 					Value err = ql * (1 - ql);
 
-					/// Отношение части гистограммы до l, включая l и половинку r ко всей гистограмме. То есть, какого уровня квантиль в позиции r.
+		/// The ratio of the portion of the histogram to l, including l and half r to the entire histogram. That is, what level is the quantile in position r.
 					Value qr = (sum + l->count + r->count * 0.5) / count;
 					Value err2 = qr * (1 - qr);
 
@@ -183,15 +183,15 @@ public:
 
 					Value k = 4 * count * err * params.epsilon;
 
-					/** Отношение веса склеенной пары столбиков ко всем значениям не больше,
-					  *  чем epsilon умножить на некий квадратичный коэффициент, который в медиане равен 1 (4 * 1/2 * 1/2),
-					  *  а по краям убывает и примерно равен расстоянию до края * 4.
+		/** The ratio of the weight of the glued column pair to all values is not greater,
+		  *  than epsilon multiply by a certain quadratic coefficient, which in the median is 1 (4 * 1/2 * 1/2),
+		  *  and at the edges decreases and is approximately equal to the distance to the edge * 4.
 					  */
 
 					if (l->count + r->count <= k)
 					{
 						// it is possible to merge left and right
-						/// Левый столбик "съедает" правый.
+		/// The left column "eats" the right.
 						*l += *r;
 					}
 					else
@@ -200,14 +200,14 @@ public:
 						sum += l->count;
 						++l;
 
-						/// Пропускаем все "съеденные" ранее значения.
+		/// We skip all the values "eaten" earlier.
 						if (l != r)
 							*l = *r;
 					}
 					++r;
 				}
 
-				/// По окончании цикла, все значения правее l были "съедены".
+		/// At the end of the loop, all values to the right of l were "eaten".
 				summary.resize(l - summary.begin() + 1);
 			}
 
@@ -215,8 +215,8 @@ public:
 		}
 	}
 
-	/** Вычисляет квантиль q [0, 1] на основе дайджеста
-	  * Для пустого дайджеста возвращает NaN.
+	/** Calculates the quantile q [0, 1] based on the digest.
+	  * For an empty digest returns NaN.
 	  */
 	Value getQuantile(const Params & params, Value q)
 	{
@@ -248,10 +248,10 @@ public:
 		return summary.back().mean;
 	}
 
-	/** Получить несколько квантилей (size штук).
-	  * levels - массив уровней нужных квантилей. Они идут в произвольном порядке.
-	  * levels_permutation - массив-перестановка уровней. На i-ой позиции будет лежать индекс i-го по возрастанию уровня в массиве levels.
-	  * result - массив, куда сложить результаты, в порядке levels,
+	/** Get multiple quantiles (`size` pieces).
+	  * levels - an array of levels of the desired quantiles. They are in a random order.
+	  * levels_permutation - array-permutation levels. The i-th position will be the index of the i-th ascending level in the `levels` array.
+	  * result - the array where the results are added, in order of `levels`,
 	  */
 	template <typename ResultType>
 	void getManyQuantiles(const Params & params, const Value * levels, const size_t * levels_permutation, size_t size, ResultType * result)
@@ -303,7 +303,7 @@ public:
 			result[levels_permutation[result_num]] = rest_of_results;
 	}
 
-	/** Объединить с другим состоянием.
+	/** Combine with another state.
 	  */
 	void merge(const Params & params, const MergingDigest & other)
 	{
@@ -311,7 +311,7 @@ public:
 			add(params, c);
 	}
 
-	/** Записать в поток.
+	/** Write to the stream.
 	  */
 	void write(const Params & params, DB::WriteBuffer & buf)
 	{
@@ -320,7 +320,7 @@ public:
 		buf.write(reinterpret_cast<const char *>(&summary[0]), summary.size() * sizeof(summary[0]));
 	}
 
-	/** Прочитать из потока.
+	/** Read from the stream.
 	  */
 	void read(const Params & params, DB::ReadBuffer & buf)
 	{

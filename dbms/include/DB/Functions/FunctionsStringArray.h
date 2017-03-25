@@ -5,8 +5,11 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Common/StringUtils.h>
 #include <DB/Functions/IFunction.h>
-#include <DB/Functions/FunctionsStringSearch.h>
+#include <DB/Functions/Regexps.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
@@ -310,7 +313,6 @@ public:
 	static constexpr auto name = Generator::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTokens>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -318,7 +320,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return Generator::getNumberOfArguments(); }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		Generator::checkArguments(arguments);
@@ -326,7 +327,6 @@ public:
 		return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		Generator generator;
@@ -477,7 +477,6 @@ public:
 	static constexpr auto name = "arrayStringConcat";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayStringConcat>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -486,7 +485,6 @@ public:
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1 && arguments.size() != 2)
@@ -505,7 +503,6 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		String delimiter;

@@ -1725,7 +1725,15 @@ var data_sizes =
 
 var current_data_size = 1000000000;
 
-var systems = ["ClickHouse", "Vertica", "MemSQL", "InfiniDB", "MonetDB", "Infobright", "Hive", "MySQL", "Vertica (x3)", "Vertica (x6)", "Greenplum", "Greenplum(x2)"];
+var systems = [];
+var systems_uniq = {};
+for (r in results) {
+    if (systems_uniq[results[r].system])
+       continue;
+    systems_uniq[results[r].system] = 1;
+    systems.push(results[r].system);
+}
+
 var current_systems = ["ClickHouse", "Vertica", "InfiniDB", "Hive"];
 
 var runs = ["first (cold cache)", "second", "third"];

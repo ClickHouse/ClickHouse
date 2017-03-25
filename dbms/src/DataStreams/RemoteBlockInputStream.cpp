@@ -2,6 +2,9 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Common/NetException.h>
+#include <DB/Interpreters/Context.h>
+#include <DB/Storages/IStorage.h>
+
 
 namespace DB
 {
@@ -176,7 +179,8 @@ Block RemoteBlockInputStream::readImpl()
 				break;
 
 			case Protocol::Server::ProfileInfo:
-				info.setFrom(packet.profile_info);
+				/// Use own (client-side) info about read bytes, it is more correct info than server-side one.
+				info.setFrom(packet.profile_info, true);
 				break;
 
 			case Protocol::Server::Totals:

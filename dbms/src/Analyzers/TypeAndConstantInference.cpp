@@ -19,6 +19,7 @@
 #include <DB/DataTypes/FieldToDataType.h>
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/DataTypes/DataTypeExpression.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/IFunction.h>

@@ -1,11 +1,16 @@
 #pragma once
 
 #include <DB/DataStreams/IBlockOutputStream.h>
+#include <DB/Common/Exception.h>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CANNOT_WRITE_TO_EMPTY_BLOCK_OUTPUT_STREAM;
+}
 
 /** При попытке записать в этот поток блоков, кидает исключение.
   * Используется там, где, в общем случае, нужно передать поток блоков, но в некоторых случаях, он не должен быть использован.

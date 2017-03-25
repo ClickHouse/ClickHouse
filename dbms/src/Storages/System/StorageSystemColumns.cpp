@@ -2,9 +2,10 @@
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Parsers/queryToString.h>
@@ -23,7 +24,9 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
 		{ "type",               std::make_shared<DataTypeString>() },
 		{ "default_type",       std::make_shared<DataTypeString>() },
 		{ "default_expression", std::make_shared<DataTypeString>() },
-		{ "bytes",				std::make_shared<DataTypeUInt64>() },
+		{ "data_compressed_bytes",		std::make_shared<DataTypeUInt64>() },
+		{ "data_uncompressed_bytes",	std::make_shared<DataTypeUInt64>() },
+		{ "marks_bytes",				std::make_shared<DataTypeUInt64>() },
 	}
 {
 }
@@ -52,13 +55,13 @@ BlockInputStreams StorageSystemColumns::read(
 	{
 		Databases databases = context.getDatabases();
 
-		/// Добавляем столбец database.
+		/// Add `database` column.
 		ColumnPtr database_column = std::make_shared<ColumnString>();
 		for (const auto & database : databases)
 			database_column->insert(database.first);
 		block.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
 
-		/// Отфильтруем блок со столбцом database.
+		/// Filter block with `database` column.
 		VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 
 		if (!block.rows())
@@ -67,7 +70,7 @@ BlockInputStreams StorageSystemColumns::read(
 		database_column = block.getByName("database").column;
 		size_t rows = database_column->size();
 
-		/// Добавляем столбец table.
+		/// Add `table` column.
 		ColumnPtr table_column = std::make_shared<ColumnString>();
 		IColumn::Offsets_t offsets(rows);
 		for (size_t i = 0; i < rows; ++i)
@@ -96,7 +99,7 @@ BlockInputStreams StorageSystemColumns::read(
 		block.insert(ColumnWithTypeAndName(table_column, std::make_shared<DataTypeString>(), "table"));
 	}
 
-	/// Отфильтруем блок со столбцами database и table.
+	/// Filter block with `database` and `table` columns.
 	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 
 	if (!block.rows())
@@ -105,14 +108,16 @@ BlockInputStreams StorageSystemColumns::read(
 	ColumnPtr filtered_database_column = block.getByName("database").column;
 	ColumnPtr filtered_table_column = block.getByName("table").column;
 
-	/// Составляем результат.
+	/// We compose the result.
 	ColumnPtr database_column = std::make_shared<ColumnString>();
 	ColumnPtr table_column = std::make_shared<ColumnString>();
 	ColumnPtr name_column = std::make_shared<ColumnString>();
 	ColumnPtr type_column = std::make_shared<ColumnString>();
 	ColumnPtr default_type_column = std::make_shared<ColumnString>();
 	ColumnPtr default_expression_column = std::make_shared<ColumnString>();
-	ColumnPtr bytes_column = std::make_shared<ColumnUInt64>();
+	ColumnPtr data_compressed_bytes_column = std::make_shared<ColumnUInt64>();
+	ColumnPtr data_uncompressed_bytes_column = std::make_shared<ColumnUInt64>();
+	ColumnPtr marks_bytes_column = std::make_shared<ColumnUInt64>();
 
 	size_t rows = filtered_database_column->size();
 	for (size_t i = 0; i < rows; ++i)
@@ -122,11 +127,11 @@ BlockInputStreams StorageSystemColumns::read(
 
 		NamesAndTypesList columns;
 		ColumnDefaults column_defaults;
-		std::unordered_map<String, size_t> column_sizes;
+		MergeTreeData::ColumnSizes column_sizes;
 
 		{
 			StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-			IStorage::TableStructureReadLockPtr table_lock;
+			TableStructureReadLockPtr table_lock;
 
 			try
 			{
@@ -149,8 +154,8 @@ BlockInputStreams StorageSystemColumns::read(
 			columns.insert(std::end(columns), std::begin(storage->alias_columns), std::end(storage->alias_columns));
 			column_defaults = storage->column_defaults;
 
-			/** Данные о размерах столбцов для таблиц семейства MergeTree.
-			  * NOTE: В дальнейшем можно сделать интерфейс, позволяющий получить размеры столбцов у IStorage.
+			/** Info about sizes of columns for tables of MergeTree family.
+			  * NOTE: It is possible to add getter for this info to IStorage interface.
 			  */
 			if (auto storage_concrete = dynamic_cast<StorageMergeTree *>(storage.get()))
 			{
@@ -160,13 +165,8 @@ BlockInputStreams StorageSystemColumns::read(
 			{
 				column_sizes = storage_concrete->getData().getColumnSizes();
 
-				auto unreplicated_data = storage_concrete->getUnreplicatedData();
-				if (unreplicated_data)
-				{
-					auto unreplicated_column_sizes = unreplicated_data->getColumnSizes();
-					for (const auto & name_size : unreplicated_column_sizes)
-						column_sizes[name_size.first] += name_size.second;
-				}
+				/// Don't count 'unreplicated' data for simplicity reasons.
+				/// Feature to store 'unreplicated' data in replicated tables is rarely used and was removed from documentation.
 			}
 		}
 
@@ -194,9 +194,17 @@ BlockInputStreams StorageSystemColumns::read(
 			{
 				const auto it = column_sizes.find(column.name);
 				if (it == std::end(column_sizes))
-					bytes_column->insertDefault();
+				{
+					data_compressed_bytes_column->insertDefault();
+					data_uncompressed_bytes_column->insertDefault();
+					marks_bytes_column->insertDefault();
+				}
 				else
-					bytes_column->insert(it->second);
+				{
+					data_compressed_bytes_column->insert(it->second.data_compressed);
+					data_uncompressed_bytes_column->insert(it->second.data_uncompressed);
+					marks_bytes_column->insert(it->second.marks);
+				}
 			}
 		}
 	}
@@ -209,7 +217,9 @@ BlockInputStreams StorageSystemColumns::read(
 	block.insert(ColumnWithTypeAndName(type_column, std::make_shared<DataTypeString>(), "type"));
 	block.insert(ColumnWithTypeAndName(default_type_column, std::make_shared<DataTypeString>(), "default_type"));
 	block.insert(ColumnWithTypeAndName(default_expression_column, std::make_shared<DataTypeString>(), "default_expression"));
-	block.insert(ColumnWithTypeAndName(bytes_column, std::make_shared<DataTypeUInt64>(), "bytes"));
+	block.insert(ColumnWithTypeAndName(data_compressed_bytes_column, std::make_shared<DataTypeUInt64>(), "data_compressed_bytes"));
+	block.insert(ColumnWithTypeAndName(data_uncompressed_bytes_column, std::make_shared<DataTypeUInt64>(), "data_uncompressed_bytes"));
+	block.insert(ColumnWithTypeAndName(marks_bytes_column, std::make_shared<DataTypeUInt64>(), "marks_bytes"));
 
 	return BlockInputStreams{ 1, std::make_shared<OneBlockInputStream>(block) };
 }

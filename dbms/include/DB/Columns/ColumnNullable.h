@@ -39,18 +39,31 @@ public:
 	const char * deserializeAndInsertFromArena(const char * pos) override;
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;;
 	void insert(const Field & x) override;
-	void insertDefault() override;
+	void insertFrom(const IColumn & src, size_t n) override;
+
+	void insertDefault() override
+	{
+		nested_column->insertDefault();
+		getNullMap().push_back(1);
+	}
+
 	void popBack(size_t n) override;
 	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 	ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const override;
+	void getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
 	void reserve(size_t n) override;
 	size_t byteSize() const override;
+	size_t allocatedSize() const override;
 	ColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
 	ColumnPtr convertToFullColumnIfConst() const override;
 	void updateHashWithValue(size_t n, SipHash & hash) const override;
 	void getExtremes(Field & min, Field & max) const override;
+
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		return scatterImpl<ColumnNullable>(num_columns, selector);
+	}
 
 	/// Return the column that represents values.
 	ColumnPtr & getNestedColumn() { return nested_column; }
@@ -72,10 +85,15 @@ public:
 	/// map of the result column of a function taking one or more nullable
 	/// columns.
 	void applyNullValuesByteMap(const ColumnNullable & other);
+	void applyNullValuesByteMap(const ColumnUInt8 & map);
+	void applyNegatedNullValuesByteMap(const ColumnUInt8 & map);
 
 private:
 	ColumnPtr nested_column;
 	ColumnPtr null_map;
+
+	template <bool negative>
+	void applyNullValuesByteMapImpl(const ColumnUInt8 & map);
 };
 
 }

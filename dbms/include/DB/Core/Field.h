@@ -44,7 +44,7 @@ class Field
 public:
 	struct Types
 	{
-		/// Идентификатор типа.
+		/// Type tag.
 		enum Which
 		{
 			Null 				= 0,
@@ -52,7 +52,7 @@ public:
 			Int64				= 2,
 			Float64				= 3,
 
-			/// не POD типы. Для них предполагается relocatable.
+			/// Non-POD types.
 
 			String				= 16,
 			Array				= 17,
@@ -79,6 +79,7 @@ public:
 		}
 	};
 
+
 	/// Позволяет получить идентификатор для типа или наоборот.
 	template <typename T> struct TypeToEnum;
 	template <Types::Which which> struct EnumToType;
@@ -99,13 +100,14 @@ public:
 
 	Field(Field && rhs)
 	{
-		move(std::move(rhs));
+		create(std::move(rhs));
 	}
 
 	template <typename T>
-	Field(const T & rhs)
+	Field(T && rhs,
+		typename std::enable_if<!std::is_same<typename std::decay<T>::type, Field>::value, void>::type * unused = nullptr)
 	{
-		create(rhs);
+		createConcrete(std::forward<T>(rhs));
 	}
 
 	/// Создать строку inplace.
@@ -119,6 +121,7 @@ public:
 		create(data, size);
 	}
 
+	/// NOTE In case when field already has string type, more direct assign is possible.
 	void assignString(const char * data, size_t size)
 	{
 		destroy();
@@ -135,8 +138,13 @@ public:
 	{
 		if (this != &rhs)
 		{
-			destroy();
-			create(rhs);
+			if (which != rhs.which)
+			{
+				destroy();
+				create(rhs);
+			}
+			else
+				assign(rhs);	/// This assigns string or vector without deallocation of existing buffer.
 		}
 		return *this;
 	}
@@ -145,16 +153,29 @@ public:
 	{
 		if (this != &rhs)
 		{
-			move(std::move(rhs));
+			if (which != rhs.which)
+			{
+				destroy();
+				create(std::move(rhs));
+			}
+			else
+				assign(std::move(rhs));
 		}
 		return *this;
 	}
 
 	template <typename T>
-	Field & operator= (const T & rhs)
+	typename std::enable_if<!std::is_same<typename std::decay<T>::type, Field>::value, Field &>::type
+	operator= (T && rhs)
 	{
-		destroy();
-		create(rhs);
+		if (which != TypeToEnum<typename std::decay<T>::type>::value)
+		{
+			destroy();
+			createConcrete(std::forward<T>(rhs));
+		}
+		else
+			assignConcrete(std::forward<T>(rhs));
+
 		return *this;
 	}
 
@@ -186,7 +207,7 @@ public:
 
 	template <typename T> T & safeGet()
 	{
-		const Types::Which requested = TypeToEnum<typename std::remove_cv<typename std::remove_reference<T>::type>::type>::value;
+		const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
 		if (which != requested)
 			throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
 		return get<T>();
@@ -194,7 +215,7 @@ public:
 
 	template <typename T> const T & safeGet() const
 	{
-		const Types::Which requested = TypeToEnum<typename std::remove_cv<typename std::remove_reference<T>::type>::type>::value;
+		const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
 		if (which != requested)
 			throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
 		return get<T>();
@@ -289,38 +310,71 @@ private:
 	Types::Which which;
 
 
+	/// Assuming there was no allocated state or it was deallocated (see destroy).
 	template <typename T>
-	void create(const T & x)
+	void createConcrete(T && x)
 	{
-		which = TypeToEnum<T>::value;
-		T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
-		new (ptr) T(x);
+		using JustT = typename std::decay<T>::type;
+		JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(storage);
+		new (ptr) JustT(std::forward<T>(x));
+		which = TypeToEnum<JustT>::value;
 	}
 
-	void create(const Null & x)
+	/// Assuming same types.
+	template <typename T>
+	void assignConcrete(T && x)
 	{
-		which = Types::Null;
+		using JustT = typename std::decay<T>::type;
+		JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(storage);
+		*ptr = std::forward<T>(x);
 	}
 
-	void create(const Field & x)
+
+	template <typename F, typename Field>	/// Field template parameter may be const or non-const Field.
+	static void dispatch(F && f, Field & field)
 	{
-		switch (x.which)
+		switch (field.which)
 		{
-			case Types::Null: 				create(Null());							break;
-			case Types::UInt64: 			create(x.get<UInt64>());				break;
-			case Types::Int64: 				create(x.get<Int64>());					break;
-			case Types::Float64: 			create(x.get<Float64>());				break;
-			case Types::String: 			create(x.get<String>());				break;
-			case Types::Array: 				create(x.get<Array>());					break;
-			case Types::Tuple: 				create(x.get<Tuple>());					break;
+			case Types::Null: 		f(field.template get<Null>());		return;
+			case Types::UInt64: 	f(field.template get<UInt64>());	return;
+			case Types::Int64: 		f(field.template get<Int64>());		return;
+			case Types::Float64: 	f(field.template get<Float64>());	return;
+			case Types::String: 	f(field.template get<String>());	return;
+			case Types::Array: 		f(field.template get<Array>());		return;
+			case Types::Tuple: 		f(field.template get<Tuple>());		return;
+
+			default:
+				throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
 		}
 	}
 
+
+	void create(const Field & x)
+	{
+		dispatch([this] (auto & value) { createConcrete(value); }, x);
+	}
+
+	void create(Field && x)
+	{
+		dispatch([this] (auto & value) { createConcrete(std::move(value)); }, x);
+	}
+
+	void assign(const Field & x)
+	{
+		dispatch([this] (auto & value) { assignConcrete(value); }, x);
+	}
+
+	void assign(Field && x)
+	{
+		dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
+	}
+
+
 	void create(const char * data, size_t size)
 	{
-		which = Types::String;
 		String * __attribute__((__may_alias__)) ptr = reinterpret_cast<String*>(storage);
 		new (ptr) String(data, size);
+		which = Types::String;
 	}
 
 	void create(const unsigned char * data, size_t size)
@@ -347,6 +401,8 @@ private:
 			default:
  				break;
 		}
+
+		which = Types::Null;	/// for exception safety in subsequent calls to destroy and create, when create fails.
 	}
 
 	template <typename T>
@@ -354,31 +410,6 @@ private:
 	{
 		T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
 		ptr->~T();
-	}
-
-	template <typename T>
-	void moveValue(Field && x)
-	{
-		T * __attribute__((__may_alias__)) ptr_this = reinterpret_cast<T*>(storage);
-		T * __attribute__((__may_alias__)) ptr_x    = reinterpret_cast<T*>(x.storage);
-
-		new (ptr_this) T(std::move(*ptr_x));
-	}
-
-	void move(Field && x)
-	{
-		which = x.which;
-
-		switch (x.which)
-		{
-			case Types::Null: 				create(Null());							break;
-			case Types::UInt64: 			create(x.get<UInt64>());				break;
-			case Types::Int64: 				create(x.get<Int64>());					break;
-			case Types::Float64: 			create(x.get<Float64>());				break;
-			case Types::String: 			moveValue<String>(std::move(x));		break;
-			case Types::Array: 				moveValue<Array>(std::move(x));			break;
-			case Types::Tuple: 				moveValue<Tuple>(std::move(x));			break;
-		}
 	}
 };
 
@@ -393,7 +424,7 @@ template <> struct Field::TypeToEnum<String> 							{ static const Types::Which 
 template <> struct Field::TypeToEnum<Array> 							{ static const Types::Which value = Types::Array; };
 template <> struct Field::TypeToEnum<Tuple> 							{ static const Types::Which value = Types::Tuple; };
 
-template <> struct Field::EnumToType<Field::Types::Null> 				{ using Type = Null 					; };
+template <> struct Field::EnumToType<Field::Types::Null> 				{ using Type = Null 				; };
 template <> struct Field::EnumToType<Field::Types::UInt64> 				{ using Type = UInt64 				; };
 template <> struct Field::EnumToType<Field::Types::Int64> 				{ using Type = Int64 				; };
 template <> struct Field::EnumToType<Field::Types::Float64> 			{ using Type = Float64 				; };
@@ -447,7 +478,7 @@ template <> struct NearestFieldType<String> 	{ using Type = String ; };
 template <> struct NearestFieldType<Array> 		{ using Type = Array ; };
 template <> struct NearestFieldType<Tuple> 		{ using Type = Tuple	; };
 template <> struct NearestFieldType<bool> 		{ using Type = UInt64 ; };
-template <> struct NearestFieldType<Null>	{ using Type = Null; };
+template <> struct NearestFieldType<Null>		{ using Type = Null; };
 
 
 template <typename T>
@@ -456,55 +487,32 @@ typename NearestFieldType<T>::Type nearestFieldType(const T & x)
 	return typename NearestFieldType<T>::Type(x);
 }
 
-}
 
+class ReadBuffer;
+class WriteBuffer;
 
-/// Заглушки, чтобы DBObject-ы с полем типа Array компилировались.
-#include <mysqlxx/Manip.h>
+/// Предполагается что у всех элементов массива одинаковый тип.
+void readBinary(Array & x, ReadBuffer & buf);
 
-namespace mysqlxx
-{
-	std::ostream & operator<< (mysqlxx::EscapeManipResult res, const DB::Array & value);
-	std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Array & value);
-	std::istream & operator>> (mysqlxx::UnEscapeManipResult res, DB::Array & value);
-	std::istream & operator>> (mysqlxx::UnQuoteManipResult res, DB::Array & value);
+inline void readText(Array & x, ReadBuffer & buf) 			{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readQuoted(Array & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
 
-	std::ostream & operator<< (mysqlxx::EscapeManipResult res, const DB::Tuple & value);
-	std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Tuple & value);
-	std::istream & operator>> (mysqlxx::UnEscapeManipResult res, DB::Tuple & value);
-	std::istream & operator>> (mysqlxx::UnQuoteManipResult res, DB::Tuple & value);
-}
+/// Предполагается что у всех элементов массива одинаковый тип.
+void writeBinary(const Array & x, WriteBuffer & buf);
 
+void writeText(const Array & x, WriteBuffer & buf);
 
-namespace DB
-{
-	class ReadBuffer;
-	class WriteBuffer;
+inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 
-	/// Предполагается что у всех элементов массива одинаковый тип.
-	void readBinary(Array & x, ReadBuffer & buf);
+void readBinary(Tuple & x, ReadBuffer & buf);
 
-	inline void readText(Array & x, ReadBuffer & buf) 			{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
-	inline void readQuoted(Array & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readText(Tuple & x, ReadBuffer & buf) 			{ throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readQuoted(Tuple & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
 
-	/// Предполагается что у всех элементов массива одинаковый тип.
-	void writeBinary(const Array & x, WriteBuffer & buf);
+void writeBinary(const Tuple & x, WriteBuffer & buf);
 
-	void writeText(const Array & x, WriteBuffer & buf);
+void writeText(const Tuple & x, WriteBuffer & buf);
 
-	inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
-}
+inline void writeQuoted(const Tuple & x, WriteBuffer & buf) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 
-namespace DB
-{
-	void readBinary(Tuple & x, ReadBuffer & buf);
-
-	inline void readText(Tuple & x, ReadBuffer & buf) 			{ throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
-	inline void readQuoted(Tuple & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
-
-	void writeBinary(const Tuple & x, WriteBuffer & buf);
-
-	void writeText(const Tuple & x, WriteBuffer & buf);
-
-	inline void writeQuoted(const Tuple & x, WriteBuffer & buf) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 }

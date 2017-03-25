@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DB/IO/WriteBufferFromHTTPServerResponse.h>
 #include <DB/Common/CurrentMetrics.h>
 #include "Server.h"
 
@@ -13,16 +12,16 @@ namespace CurrentMetrics
 namespace DB
 {
 
+class WriteBufferFromHTTPServerResponse;
 
 class HTTPHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-	HTTPHandler(Server & server_)
-		: server(server_)
-		, log(&Logger::get("HTTPHandler"))
-	{
-	}
+	explicit HTTPHandler(Server & server_);
 
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
+
+private:
 	struct Output
 	{
 		std::shared_ptr<WriteBufferFromHTTPServerResponse> out;
@@ -30,13 +29,6 @@ public:
 		std::shared_ptr<WriteBuffer> out_maybe_compressed;
 	};
 
-	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
-
-	void trySendExceptionToClient(const std::string & s,
-		Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
-		Output & used_output);
-
-private:
 	Server & server;
 
 	CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
@@ -48,6 +40,10 @@ private:
 		Poco::Net::HTTPServerRequest & request,
 		HTMLForm & params,
 		Poco::Net::HTTPServerResponse & response,
+		Output & used_output);
+
+	void trySendExceptionToClient(const std::string & s, int exception_code,
+		Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
 		Output & used_output);
 };
 
