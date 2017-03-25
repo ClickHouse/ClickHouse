@@ -1338,6 +1338,8 @@ using FunctionDictGetDateOrDefault = FunctionDictGetOrDefault<DataTypeDate>;
 using FunctionDictGetDateTimeOrDefault = FunctionDictGetOrDefault<DataTypeDateTime>;
 
 
+/// Functions to work with hierarchies.
+
 class FunctionDictGetHierarchy final : public IFunction
 {
 public:
@@ -1409,7 +1411,8 @@ private:
 				"Dictionary does not have a hierarchy",
 				ErrorCodes::UNSUPPORTED_METHOD};
 
-		const auto get_hierarchies = [&] (const PaddedPODArray<UInt64> & in, PaddedPODArray<UInt64> & out, PaddedPODArray<UInt64> & offsets) {
+		const auto get_hierarchies = [&] (const PaddedPODArray<UInt64> & in, PaddedPODArray<UInt64> & out, PaddedPODArray<UInt64> & offsets)
+		{
 			const auto size = in.size();
 
 			/// copy of `in` array
