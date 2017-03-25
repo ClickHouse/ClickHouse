@@ -405,7 +405,7 @@ public:
 }
 
 
-int mainEntryClickhouseBenchmark(int argc, char ** argv)
+int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
 	using namespace DB;
 	bool print_stacktrace = true;

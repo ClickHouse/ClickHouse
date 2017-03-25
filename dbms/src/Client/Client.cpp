@@ -1352,7 +1352,7 @@ public:
 }
 
 
-int mainEntryClickhouseClient(int argc, char ** argv)
+int mainEntryClickHouseClient(int argc, char ** argv)
 {
 	DB::Client client;
 

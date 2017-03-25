@@ -461,4 +461,4 @@ void LocalServer::setupUsers()
 
 }
 
-YANDEX_APP_MAIN_FUNC(DB::LocalServer, mainEntryClickhouseLocal);
+YANDEX_APP_MAIN_FUNC(DB::LocalServer, mainEntryClickHouseLocal);
