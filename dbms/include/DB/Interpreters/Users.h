@@ -23,6 +23,8 @@
 
 #include <common/logger_useful.h>
 
+#include <ext/scope_guard.hpp>
+
 #include <unordered_set>
 
 namespace DB
@@ -137,38 +139,34 @@ private:
 		if (0 != ret)
 			throw Exception("Cannot getaddrinfo: " + std::string(gai_strerror(ret)), ErrorCodes::DNS_ERROR);
 
-		try
+		SCOPE_EXIT(
 		{
-			for (; ai != nullptr; ai = ai->ai_next)
+			freeaddrinfo(ai);
+		});
+
+		for (; ai != nullptr; ai = ai->ai_next)
+		{
+			if (ai->ai_addrlen && ai->ai_addr)
 			{
-				if (ai->ai_addrlen && ai->ai_addr)
+				if (ai->ai_family == AF_INET6)
 				{
-					if (ai->ai_family == AF_INET6)
+					if (addr_v6 == Poco::Net::IPAddress(
+						&reinterpret_cast<sockaddr_in6*>(ai->ai_addr)->sin6_addr, sizeof(in6_addr),
+						reinterpret_cast<sockaddr_in6*>(ai->ai_addr)->sin6_scope_id))
 					{
-						if (addr_v6 == Poco::Net::IPAddress(
-							&reinterpret_cast<sockaddr_in6*>(ai->ai_addr)->sin6_addr, sizeof(in6_addr),
-							reinterpret_cast<sockaddr_in6*>(ai->ai_addr)->sin6_scope_id))
-						{
-							return true;
-						}
+						return true;
 					}
-					else if (ai->ai_family == AF_INET)
+				}
+				else if (ai->ai_family == AF_INET)
+				{
+					if (addr_v6 == toIPv6(Poco::Net::IPAddress(
+						&reinterpret_cast<sockaddr_in*>(ai->ai_addr)->sin_addr, sizeof(in_addr))))
 					{
-						if (addr_v6 == toIPv6(Poco::Net::IPAddress(
-							&reinterpret_cast<sockaddr_in*>(ai->ai_addr)->sin_addr, sizeof(in_addr))))
-						{
-							return true;
-						}
+						return true;
 					}
 				}
 			}
 		}
-		catch (...)
-		{
-			freeaddrinfo(ai);
-			throw;
-		}
-		freeaddrinfo(ai);
 
 		return false;
 	}
