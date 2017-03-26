@@ -16,7 +16,6 @@ PROGRAM=clickhouse-server
 SYSCONFDIR=/etc/$PROGRAM
 CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 CLICKHOUSE_LOGDIR_USER=root
-CLICKHOUSE_DATADIR=/var/lib/$CLICKHOUSE_USER
 CLICKHOUSE_DATADIR_OLD=/opt/clickhouse
 LOCALSTATEDIR=/var/lock
 BINDIR=/usr/bin
@@ -77,8 +76,20 @@ wait_for_done()
 }
 
 
+die()
+{
+	echo $1 >&2
+	exit 1
+}
+
+
 initdb()
 {
+	CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -l $CLICKHOUSE_USER -s $SHELL -c "$BINDIR/$PROGRAM --extract-from-config --config-file=\"$CLICKHOUSE_CONFIG\" --key=path")
+	if [ ( "$?" -ne "0" ) -o ( -z "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ) ]; then
+		die "Cannot obtain value of path from config file: ${CLICKHOUSE_CONFIG}";
+	fi
+
 	if ! getent group ${CLICKHOUSE_USER} >/dev/null; then
 		echo "Can't chown to non-existing user ${CLICKHOUSE_USER}"
 		return
@@ -92,9 +103,9 @@ initdb()
 		echo "Warning! clickhouse config [${CLICKHOUSE_CONFIG}] not readable by user [${CLICKHOUSE_USER}]"
 	fi
 
-	if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -O ${CLICKHOUSE_DATADIR} && test -G ${CLICKHOUSE_DATADIR}"); then
-		echo "Changing owner of [${CLICKHOUSE_DATADIR}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
-		chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR}
+	if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -O ${CLICKHOUSE_DATADIR_FROM_CONFIG} && test -G ${CLICKHOUSE_DATADIR_FROM_CONFIG}"); then
+		echo "Changing owner of [${CLICKHOUSE_DATADIR_FROM_CONFIG}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
+		chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR_FROM_CONFIG}
 	fi
 
 	if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}"); then
