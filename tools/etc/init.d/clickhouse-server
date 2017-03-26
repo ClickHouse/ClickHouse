@@ -119,7 +119,7 @@ initdb()
 	fi
 
 	if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -O \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\" && test -G \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\""); then
-		if [ "$(dirname \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\")" == "/" ]; then
+		if [ $(dirname "${CLICKHOUSE_DATADIR_FROM_CONFIG}") == "/" ]; then
 			echo "Directory ${CLICKHOUSE_DATADIR_FROM_CONFIG} seems too dangerous to chown."
 		else
 			echo "Changing owner of [${CLICKHOUSE_DATADIR_FROM_CONFIG}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
