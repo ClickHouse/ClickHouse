@@ -124,7 +124,7 @@ initdb()
 		else
 			if [ ! -e "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ]; then
 				echo "Creating directory ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
-				su -l $CLICKHOUSE_USER -c "mkdir \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\""
+				su -s $SHELL -l $CLICKHOUSE_USER -c "mkdir -p \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\""
 			fi
 
 			echo "Changing owner of [${CLICKHOUSE_DATADIR_FROM_CONFIG}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
