@@ -13,6 +13,7 @@ CLICKHOUSE_USER=clickhouse
 CLICKHOUSE_GROUP=${CLICKHOUSE_USER}
 SHELL=/bin/bash
 PROGRAM=clickhouse-server
+GENERIC_PROGRAM=clickhouse
 SYSCONFDIR=/etc/$PROGRAM
 CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 CLICKHOUSE_LOGDIR_USER=root
@@ -85,9 +86,13 @@ die()
 
 initdb()
 {
-	CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -l $CLICKHOUSE_USER -s $SHELL -c "$BINDIR/$PROGRAM --extract-from-config --config-file=\"$CLICKHOUSE_CONFIG\" --key=path")
-	if [ ( "$?" -ne "0" ) -o ( -z "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ) ]; then
-		die "Cannot obtain value of path from config file: ${CLICKHOUSE_CONFIG}";
+	if [ -x "$BINDIR/$GENERIC_PROGRAM" ]; then
+		CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -l $CLICKHOUSE_USER -s $SHELL -c "$BINDIR/$PROGRAM --extract-from-config --config-file=\"$CLICKHOUSE_CONFIG\" --key=path")
+		if [ "(" "$?" -ne "0" ")" -o "(" -z "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ")" ]; then
+			die "Cannot obtain value of path from config file: ${CLICKHOUSE_CONFIG}";
+		fi
+	else
+		CLICKHOUSE_DATADIR_FROM_CONFIG="/var/lib/clickhouse"
 	fi
 
 	if ! getent group ${CLICKHOUSE_USER} >/dev/null; then
