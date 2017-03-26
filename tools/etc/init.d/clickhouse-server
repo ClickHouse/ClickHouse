@@ -118,9 +118,13 @@ initdb()
 		echo "Warning! clickhouse config [${CLICKHOUSE_CONFIG}] not readable by user [${CLICKHOUSE_USER}]"
 	fi
 
-	if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -O ${CLICKHOUSE_DATADIR_FROM_CONFIG} && test -G ${CLICKHOUSE_DATADIR_FROM_CONFIG}"); then
-		echo "Changing owner of [${CLICKHOUSE_DATADIR_FROM_CONFIG}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
-		chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR_FROM_CONFIG}
+	if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -O \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\" && test -G \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\""); then
+		if [ "$(dirname \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\")" == "/" ]; then
+			echo "Directory ${CLICKHOUSE_DATADIR_FROM_CONFIG} seems too dangerous to chown."
+		else
+			echo "Changing owner of [${CLICKHOUSE_DATADIR_FROM_CONFIG}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
+			chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} "${CLICKHOUSE_DATADIR_FROM_CONFIG}"
+		fi
 	fi
 
 	if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}"); then
