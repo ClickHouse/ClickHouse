@@ -80,7 +80,7 @@ void FlatDictionary::isInImpl(
 		while (id < loaded_size && id != null_value && id != ancestor_id)
 			id = attr[id];
 
-		out[row] = id == ancestor_id;
+		out[row] = id != null_value && id == ancestor_id;
 	}
 
 	query_count.fetch_add(rows, std::memory_order_relaxed);

@@ -79,14 +79,11 @@ void CacheDictionary::isInImpl(
 
 	const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
-	const PaddedPODArray<Key> * current_children = &child_ids;
 	PaddedPODArray<Key> children(size);
-	PaddedPODArray<Key> parents(size);
+	PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
 
 	while (true)
 	{
-		toParent(*current_children, parents);
-
 		size_t out_idx = 0;
 		size_t parents_idx = 0;
 		size_t new_children_idx = 0;
@@ -124,10 +121,11 @@ void CacheDictionary::isInImpl(
 		if (new_children_idx == 0)
 			break;
 
-		/// Will process new children at next loop iteration.
+		/// Transform all children to its parents.
 		children.resize(new_children_idx);
 		parents.resize(new_children_idx);
-		current_children = &children;
+
+		toParent(children, parents);
 	}
 }
 
