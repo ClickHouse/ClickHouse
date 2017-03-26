@@ -93,11 +93,11 @@ try
 	for (const auto & name_type : names_and_types_list)
 		column_names.push_back(name_type.name);
 
-	/// создаём объект существующей таблицы хит лога
+	/// create an object of an existing hit log table
 
 	StoragePtr table = StorageLog::create("./", "HitLog", std::make_shared<NamesAndTypesList>(names_and_types_list));
 
-	/// читаем из неё
+	/// read from it
 	if (argc == 2 && 0 == strcmp(argv[1], "read"))
 	{
 		QueryProcessingStage::Enum stage;
@@ -108,7 +108,7 @@ try
 		copyData(*in, out3);
 	}
 
-	/// читаем данные из native файла и одновременно пишем в таблицу
+	/// read the data from the native file and simultaneously write to the table
 	if (argc == 2 && 0 == strcmp(argv[1], "write"))
 	{
 		ReadBufferFromFileDescriptor in1(STDIN_FILENO);

@@ -113,7 +113,7 @@ void MultiplexedConnections::sendQuery(
 	{
 		if (settings == nullptr)
 		{
-			/// Каждый шард имеет один адрес.
+			/// Each shard has one address.
 			auto it = connections.begin();
 			for (size_t i = 0; i < shard_states.size(); ++i)
 			{
@@ -127,7 +127,7 @@ void MultiplexedConnections::sendQuery(
 		}
 		else
 		{
-			/// Каждый шард имеет одну или несколько реплик.
+			/// Each shard has one or more replicas.
 			auto it = connections.begin();
 			for (const auto & shard_state : shard_states)
 			{
@@ -244,7 +244,7 @@ Connection::Packet MultiplexedConnections::drain()
 
 			case Protocol::Server::Exception:
 			default:
-				/// Если мы получили исключение или неизвестный пакет, сохраняем его.
+				/// If we receive an exception or an unknown package, we save it.
 				res = std::move(packet);
 				break;
 		}
@@ -281,8 +281,8 @@ void MultiplexedConnections::initFromShard(IConnectionPool * pool)
 {
 	auto entries = pool->getMany(settings, pool_mode);
 
-	/// Если getMany() не выделил соединений и не кинул исключения, это значит, что была
-	/// установлена настройка skip_unavailable_shards. Тогда просто возвращаемся.
+	/// If getMany() did not allocate connections and did not throw exceptions, this means that
+	/// `skip_unavailable_shards` was set. Then just return.
 	if (entries.empty())
 		return;
 
@@ -396,8 +396,8 @@ MultiplexedConnections::ReplicaMap::iterator MultiplexedConnections::waitForRead
 	Poco::Net::Socket::SocketList read_list;
 	read_list.reserve(active_connection_total_count);
 
-	/// Сначала проверяем, есть ли данные, которые уже лежат в буфере
-	/// хоть одного соединения.
+	/// First, we check if there are data already in the buffer
+	/// of at least one connection.
 	for (const auto & e : replica_map)
 	{
 		const ReplicaState & state = e.second;
@@ -406,8 +406,8 @@ MultiplexedConnections::ReplicaMap::iterator MultiplexedConnections::waitForRead
 			read_list.push_back(connection->socket);
 	}
 
-	/// Если не было найдено никаких данных, то проверяем, есть ли соединения
-	/// готовые для чтения.
+	/// If no data was found, then we check if there are any connections
+	/// ready for reading.
 	if (read_list.empty())
 	{
 		Poco::Net::Socket::SocketList write_list;

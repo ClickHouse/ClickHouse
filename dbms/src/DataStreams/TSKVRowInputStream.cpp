@@ -22,16 +22,16 @@ TSKVRowInputStream::TSKVRowInputStream(ReadBuffer & istr_, const Block & sample_
 
 	size_t columns = sample.columns();
 	for (size_t i = 0; i < columns; ++i)
-		name_map[sample.safeGetByPosition(i).name] = i;		/// NOTE Можно было бы расположить имена более кэш-локально.
+		name_map[sample.safeGetByPosition(i).name] = i;		/// NOTE You could place names more cache-locally.
 }
 
 
-/** Прочитать имя поля в формате tskv.
-  * Вернуть true, если после имени поля идёт знак равенства,
-  *  иначе (поле без значения) вернуть false.
-  * Ссылка на имя поля будет записана в ref.
-  * Также может быть использован временный буфер tmp, чтобы скопировать туда имя поля.
-  * При чтении, пропускает имя и знак равенства после него.
+/** Read the field name in the `tskv` format.
+  * Return true if the field is followed by an equal sign,
+  *  otherwise (field with no value) return false.
+  * The reference to the field name will be written to `ref`.
+  * A temporary `tmp` buffer can also be used to copy the field name to it.
+  * When reading, skips the name and the equal sign after it.
   */
 static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
 {
@@ -48,26 +48,26 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
 			continue;
 		}
 
-		/// Дошли до конца имени.
+		/// Came to the end of the name.
 		if (*next_pos != '\\')
 		{
 			bool have_value = *next_pos == '=';
 			if (tmp.empty())
 			{
-				/// Данные не нужно копировать, можно ссылаться прямо на внутренность buf.
+				/// No need to copy data, you can refer directly to the `buf`.
 				ref = StringRef(buf.position(), next_pos - buf.position());
 				buf.position() += next_pos + have_value - buf.position();
 			}
 			else
 			{
-				/// Копируем данные во временную строку и возвращаем ссылку на неё.
+				/// Copy the data to a temporary string and return a reference to it.
 				tmp.append(buf.position(), next_pos - buf.position());
 				buf.position() += next_pos + have_value - buf.position();
 				ref = StringRef(tmp);
 			}
 			return have_value;
 		}
-		/// В имени есть эскейп-последовательность.
+		/// The name has an escape sequence.
 		else
 		{
 			tmp.append(buf.position(), next_pos - buf.position());
@@ -92,14 +92,14 @@ bool TSKVRowInputStream::read(Block & block)
 
 	size_t columns = block.columns();
 
-	/// Множество столбцов, для которых были считаны значения. Остальные затем заполним значениями по-умолчанию.
-	/// TODO Возможность предоставить свои DEFAULT-ы.
+	/// Set of columns for which the values were read. The rest will be filled with default values.
+	/// TODO Ability to provide your DEFAULTs.
 	bool read_columns[columns];
 	memset(read_columns, 0, columns);
 
 	if (unlikely(*istr.position() == '\n'))
 	{
-		/// Пустая строка. Допустимо, но непонятно зачем.
+		/// An empty string. It is permissible, but it is unclear why.
 		++istr.position();
 	}
 	else
@@ -111,8 +111,8 @@ bool TSKVRowInputStream::read(Block & block)
 
 			if (has_value)
 			{
-				/// NOTE Возможна оптимизация путём кэширования порядка полей (который почти всегда одинаковый)
-				/// и быстрой проверки на соответствие следующему ожидаемому полю, вместо поиска в хэш-таблице.
+				/// NOTE Optimization is possible by caching the order of fields (which is almost always the same)
+				/// and quickly checking for the next expected field, instead of searching the hash table.
 
 				auto it = name_map.find(name_ref);
 				if (name_map.end() == it)
@@ -120,7 +120,7 @@ bool TSKVRowInputStream::read(Block & block)
 					if (!skip_unknown)
 						throw Exception("Unknown field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
-					/// Если ключ не найден, то пропускаем значение.
+					/// If the key is not found, skip the value.
 					NullSink sink;
 					readEscapedStringInto(sink, istr);
 				}
@@ -139,7 +139,7 @@ bool TSKVRowInputStream::read(Block & block)
 			}
 			else
 			{
-				/// Единственное, что может идти без значения - это фрагмент tskv, который игнорируется.
+				/// The only thing that can go without value is `tskv` fragment that is ignored.
 				if (!(name_ref.size == 4 && 0 == memcmp(name_ref.data, "tskv", 4)))
 					throw Exception("Found field without value while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 			}
@@ -163,7 +163,7 @@ bool TSKVRowInputStream::read(Block & block)
 		}
 	}
 
-	/// Заполняем не встретившиеся столбцы значениями по-умолчанию.
+	/// Fill in the not met columns with default values.
 	for (size_t i = 0; i < columns; ++i)
 		if (!read_columns[i])
 			block.getByPosition(i).column.get()->insertDefault();

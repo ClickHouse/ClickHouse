@@ -29,38 +29,38 @@ namespace ErrorCodes
 	extern const int FUNCTION_IS_SPECIAL;
 }
 
-/** Вспомогательные функции:
+/** Helper functions
   *
-  * visibleWidth(x)	- вычисляет приблизительную ширину при выводе значения в текстовом (tab-separated) виде на консоль.
+  * visibleWidth(x) - calculates the approximate width when outputting the value in a text (tab-separated) form to the console.
   *
-  * toTypeName(x)	- получить имя типа
-  * blockSize()		- получить размер блока
-  * materialize(x)	- материализовать константу
-  * ignore(...)		- функция, принимающая любые аргументы, и всегда возвращающая 0.
-  * sleep(seconds)	- спит указанное количество секунд каждый блок.
+  * toTypeName(x) - get the type name
+  * blockSize() - get the block size
+  * materialize(x) - materialize the constant
+  * ignore(...) is a function that takes any arguments, and always returns 0.
+  * sleep(seconds) - the specified number of seconds sleeps each block.
   *
-  * in(x, set)		- функция для вычисления оператора IN
-  * notIn(x, set)	-  и NOT IN.
+  * in(x, set) - function for evaluating the IN
+  * notIn(x, set) - and NOT IN.
   *
-  * tuple(x, y, ...) - функция, позволяющая сгруппировать несколько столбцов
-  * tupleElement(tuple, n) - функция, позволяющая достать столбец из tuple.
+  * tuple(x, y, ...) is a function that allows you to group several columns
+  * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
   *
-  * arrayJoin(arr)	- особая функция - выполнить её напрямую нельзя;
-  *                   используется только чтобы получить тип результата соответствующего выражения.
+  * arrayJoin(arr) - a special function - it can not be executed directly;
+  *                     is used only to get the result type of the corresponding expression.
   *
-  * replicate(x, arr) - создаёт массив такого же размера как arr, все элементы которого равны x;
-  * 					например: replicate(1, ['a', 'b', 'c']) = [1, 1, 1].
+  * replicate(x, arr) - creates an array of the same size as arr, all elements of which are equal to x;
+  *                  for example: replicate(1, ['a', 'b', 'c']) = [1, 1, 1].
   *
-  * sleep(n)		- спит n секунд каждый блок.
+  * sleep(n) - sleeps n seconds for each block.
   *
-  * bar(x, min, max, width) - рисует полосу из количества символов, пропорционального (x - min) и равного width при x == max.
+  * bar(x, min, max, width) - draws a strip from the number of characters proportional to (x - min) and equal to width for x == max.
   *
-  * version()       - возвращает текущую версию сервера в строке.
+  * version() - returns the current version of the server on the line.
   *
-  * finalizeAggregation(agg_state) - по состоянию агрегации получить результат.
+  * finalizeAggregation(agg_state) - get the result from the aggregation state.
   *
-  * runningAccumulate(agg_state) - принимает состояния агрегатной функции и возвращает столбец со значениями,
-  *  являющимися результатом накопления этих состояний для множества строк блока, от первой до текущей строки.
+  * runningAccumulate(agg_state) - takes the states of the aggregate function and returns a column with values,
+  * are the result of the accumulation of these states for a set of block lines, from the first to the current line.
   */
 
 
@@ -125,7 +125,7 @@ public:
 		return 0;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get the result type by argument types. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeString>();
@@ -155,7 +155,7 @@ public:
 		return true;
 	}
 
-	/// Получить имя функции.
+	/// Get the name of the function.
 	String getName() const override
 	{
 		return name;
@@ -166,13 +166,13 @@ public:
 		return 1;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// Execute the function on the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
@@ -202,13 +202,13 @@ public:
 		return 1;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeString>();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// Execute the function on the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column
@@ -264,7 +264,7 @@ public:
 		return std::make_shared<FunctionBlockSize>();
 	}
 
-	/// Получить имя функции.
+	/// Get the function name.
 	String getName() const override
 	{
 		return name;
@@ -280,13 +280,13 @@ public:
 		return 0;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t size = block.rows();
@@ -304,7 +304,7 @@ public:
 		return std::make_shared<FunctionRowNumberInBlock>();
 	}
 
-	/// Получить имя функции.
+	/// Get the name of the function.
 	String getName() const override
 	{
 		return name;
@@ -320,13 +320,13 @@ public:
 		return false;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t size = block.rows();
@@ -341,7 +341,7 @@ public:
 };
 
 
-/** Инкрементальный номер блока среди вызовов этой функции. */
+/** Incremental block number among calls of this function. */
 class FunctionBlockNumber : public IFunction
 {
 private:
@@ -354,7 +354,7 @@ public:
 		return std::make_shared<FunctionBlockNumber>();
 	}
 
-	/// Получить имя функции.
+	/// Get the function name.
 	String getName() const override
 	{
 		return name;
@@ -370,13 +370,13 @@ public:
 		return false;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t current_block_number = block_number++;
@@ -398,7 +398,7 @@ public:
 		return std::make_shared<FunctionRowNumberInAllBlocks>();
 	}
 
-	/// Получить имя функции.
+	/// Get the name of the function.
 	String getName() const override
 	{
 		return name;
@@ -414,13 +414,13 @@ public:
 		return false;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get the result type by argument types. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t rows_in_block = block.rows();
@@ -446,7 +446,7 @@ public:
 		return std::make_shared<FunctionSleep>();
 	}
 
-	/// Получить имя функции.
+	/// Get the name of the function.
 	String getName() const override
 	{
 		return name;
@@ -463,7 +463,7 @@ public:
 		return 1;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeFloat64 *>(&*arguments[0]) && !typeid_cast<const DataTypeFloat32 *>(&*arguments[0])
@@ -477,7 +477,7 @@ public:
 		return std::make_shared<DataTypeUInt8>();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		IColumn * col = block.safeGetByPosition(arguments[0]).column.get();
@@ -505,7 +505,7 @@ public:
 		else
 			throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
-		/// Не спим, если блок пустой.
+		/// We do not sleep if the block is empty.
 		if (size > 0)
 			usleep(static_cast<unsigned>(seconds * 1e6));
 
@@ -524,7 +524,7 @@ public:
 		return std::make_shared<FunctionMaterialize>();
 	}
 
-	/// Получить имя функции.
+	/// Get the function name.
 	String getName() const override
 	{
 		return name;
@@ -535,13 +535,13 @@ public:
 		return 1;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return arguments[0];
 	}
 
-	/// Выполнить функцию над блоком.
+	/// Apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const auto & src = block.safeGetByPosition(arguments[0]).column;
@@ -595,13 +595,13 @@ public:
 		return 2;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt8>();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// Apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		/// Second argument must be ColumnSet.
@@ -730,7 +730,7 @@ public:
 		out_return_type = elems[index - 1]->clone();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.safeGetByPosition(arguments[0]).column.get());
@@ -800,7 +800,7 @@ public:
 		return std::make_shared<DataTypeUInt8>();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rows(), 0);
@@ -808,17 +808,17 @@ public:
 };
 
 
-/** Функция indexHint принимает любое количество любых аргументов и всегда возвращает единицу.
+/** The `indexHint` function takes any number of any arguments and always returns one.
   *
-  * Эта функция имеет особый смысл (см. ExpressionAnalyzer, PKCondition):
-  * - расположенные внутри неё выражения не вычисляются;
-  * - но при анализе индекса (выбора диапазонов для чтения), эта функция воспринимается так же,
-  *   как если бы вместо её применения было бы само выражение.
+  * This function has a special meaning (see ExpressionAnalyzer, PKCondition)
+  * - the expressions inside it are not evaluated;
+  * - but when analyzing the index (selecting ranges for reading), this function is treated the same way,
+  *   as if instead of using it the expression itself would be.
   *
-  * Пример: WHERE something AND indexHint(CounterID = 34)
-  * - не читать и не вычислять CounterID = 34, но выбрать диапазоны, в которых выражение CounterID = 34 может быть истинным.
+  * Example: WHERE something AND indexHint(CounterID = 34)
+  * - do not read or calculate CounterID = 34, but select ranges in which the CounterID = 34 expression can be true.
   *
-  * Функция может использоваться в отладочных целях, а также для (скрытых от пользователя) преобразований запроса.
+  * The function can be used for debugging purposes, as well as for (hidden from the user) query conversions.
   */
 class FunctionIndexHint : public IFunction
 {
@@ -852,7 +852,7 @@ public:
 		return std::make_shared<DataTypeUInt8>();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rows(), 1);
@@ -869,7 +869,7 @@ public:
 		return std::make_shared<FunctionIdentity>();
 	}
 
-	/// Получить имя функции.
+	/// Get the function name.
 	String getName() const override
 	{
 		return name;
@@ -880,13 +880,13 @@ public:
 		return 1;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return arguments.front()->clone();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.safeGetByPosition(result).column = block.safeGetByPosition(arguments.front()).column;
@@ -904,7 +904,7 @@ public:
 	}
 
 
-	/// Получить имя функции.
+	/// Get the function name.
 	String getName() const override
 	{
 		return name;
@@ -921,7 +921,7 @@ public:
 		return false;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		const DataTypeArray * arr = typeid_cast<const DataTypeArray *>(&*arguments[0]);
@@ -931,7 +931,7 @@ public:
 		return arr->getNestedType()->clone();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// Apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		throw Exception("Function " + getName() + " must not be executed directly.", ErrorCodes::FUNCTION_IS_SPECIAL);
@@ -1004,7 +1004,7 @@ public:
 		return 0;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3 && arguments.size() != 4)
@@ -1021,14 +1021,13 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	/// Выполнить функцию над блоком.
+	/// apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		Int64 min = extractConstant<Int64>(block, arguments, 1, "Second"); /// Уровень значения, при котором полоска имеет нулевую длину.
-		Int64 max
-			= extractConstant<Int64>(block, arguments, 2, "Third"); /// Уровень значения, при котором полоска имеет максимальную длину.
+		Int64 min = extractConstant<Int64>(block, arguments, 1, "Second"); /// The level at which the line has zero length.
+		Int64 max = extractConstant<Int64>(block, arguments, 2, "Third"); /// The level at which the line has the maximum length.
 
-		/// Максимальная ширина полоски в символах, по-умолчанию.
+		/// The maximum width of the bar in characters, by default.
 		Float64 max_width = arguments.size() == 4 ? extractConstant<Float64>(block, arguments, 3, "Fourth") : 80;
 
 		if (max_width < 1)
@@ -1109,7 +1108,7 @@ private:
 		size_t current_offset = 0;
 
 		dst_offsets.resize(size);
-		dst_chars.reserve(size * (UnicodeBar::getWidthInBytes(max_width) + 1)); /// строки 0-terminated.
+		dst_chars.reserve(size * (UnicodeBar::getWidthInBytes(max_width) + 1)); /// lines 0-terminated.
 
 		for (size_t i = 0; i < size; ++i)
 		{
@@ -1440,7 +1439,7 @@ public:
 		};
 		std::unique_ptr<char, decltype(deleter)> place{reinterpret_cast<char *>(malloc(agg_func.sizeOfData())), deleter};
 
-		agg_func.create(place.get()); /// Немного не exception-safe. Если здесь выкинется исключение, то зря вызовется destroy.
+		agg_func.create(place.get()); /// Not much exception-safe. If an exception is thrown out, destroy will be called in vain.
 
 		std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
 

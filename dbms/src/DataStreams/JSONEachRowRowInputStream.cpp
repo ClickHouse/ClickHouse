@@ -20,13 +20,13 @@ JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const B
 
 	size_t columns = sample.columns();
 	for (size_t i = 0; i < columns; ++i)
-		name_map[sample.safeGetByPosition(i).name] = i;		/// NOTE Можно было бы расположить имена более кэш-локально.
+		name_map[sample.safeGetByPosition(i).name] = i;		/// NOTE You could place names more cache-locally.
 }
 
 
-/** Прочитать имя поля в формате JSON.
-  * Ссылка на имя поля будет записана в ref.
-  * Также может быть использован временный буфер tmp, чтобы скопировать туда имя поля.
+/** Read the field name in JSON format.
+  * A reference to the field name will be written to ref.
+  * You can also use temporary `tmp` buffer to copy field name there.
   */
 static StringRef readName(ReadBuffer & buf, String & tmp)
 {
@@ -36,7 +36,7 @@ static StringRef readName(ReadBuffer & buf, String & tmp)
 
 		if (next_pos != buf.buffer().end() && *next_pos != '\\')
 		{
-			/// Наиболее вероятный вариант - в имени ключа нет эскейп-последовательностей и имя целиком поместилось в буфер.
+			/// The most likely option is that there is no escape sequence in the key name, and the entire name is placed in the buffer.
 			assertChar('"', buf);
 			StringRef res(buf.position(), next_pos - buf.position());
 			buf.position() += next_pos - buf.position();
@@ -68,8 +68,8 @@ bool JSONEachRowRowInputStream::read(Block & block)
 
 	size_t columns = block.columns();
 
-	/// Множество столбцов, для которых были считаны значения. Остальные затем заполним значениями по-умолчанию.
-	/// TODO Возможность предоставить свои DEFAULT-ы.
+	/// Set of columns for which the values were read. The rest will be filled with default values.
+	/// TODO Ability to provide your DEFAULTs.
 	bool read_columns[columns];
 	memset(read_columns, 0, columns);
 
@@ -96,8 +96,8 @@ bool JSONEachRowRowInputStream::read(Block & block)
 
 		StringRef name_ref = readName(istr, name_buf);
 
-		/// NOTE Возможна оптимизация путём кэширования порядка полей (который почти всегда одинаковый)
-		/// и быстрой проверки на соответствие следующему ожидаемому полю, вместо поиска в хэш-таблице.
+		/// NOTE Optimization is possible by caching the order of fields (which is almost always the same)
+		/// and a quick check to match the next expected field, instead of searching the hash table.
 
 		auto it = name_map.find(name_ref);
 		if (name_map.end() == it)
@@ -127,7 +127,7 @@ bool JSONEachRowRowInputStream::read(Block & block)
 	if (!istr.eof() && *istr.position() == ',')
 		++istr.position();
 
-	/// Заполняем не встретившиеся столбцы значениями по-умолчанию.
+	/// Fill non-visited columns with the default values.
 	for (size_t i = 0; i < columns; ++i)
 		if (!read_columns[i])
 			block.getByPosition(i).column.get()->insertDefault();

@@ -10,18 +10,18 @@ namespace DB
 {
 
 
-/** Управление состояниями агрегатных функций делается нетривиальным образом:
-  * - память для них нужно выделяется в пуле,
-  *   указатели на эти состояния могут передаваться между различными структурами данных,
-  *   при этом нельзя сделать RAII-обёртки для каждого отдельного состояния.
-  * Подробнее см. Aggregator.h.
+/** State management of aggregate functions is done in a non-trivial way:
+  * - the memory for them needs to be allocated in the pool,
+  *   pointers to these states can be passed between different data structures,
+  *   herewith, you can not make RAII wrappers for each individual state.
+  * For more information, see Aggregator.h.
   *
-  * В связи с этим, возникают трудно-отлаживаемые баги.
-  * Для упрощения воспроизведения багов, была написана агрегатная функция debug,
-  *  и её исходники решено не удалять после отладки.
+  * In this regard, there are difficult-debugging bugs.
+  * To simplify the playback of bugs, an aggregate `debug` function was written,
+  *  and its source code is decided not to delete after debugging.
   *
-  * Эта агрегатная функция принимает ноль аргументов и ничего не делает.
-  * Но у неё сделано состояние, которое нетривиально создаётся и уничтожается.
+  * This aggregate function takes zero arguments and does nothing.
+  * But it has a state that is non-trivially created and destroyed.
   */
 
 

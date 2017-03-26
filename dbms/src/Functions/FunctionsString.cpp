@@ -61,7 +61,7 @@ struct EmptyImpl
 };
 
 
-/** Вычисляет длину строки в байтах.
+/** Calculates the length of a string in bytes.
   */
 struct LengthImpl
 {
@@ -100,9 +100,9 @@ struct LengthImpl
 };
 
 
-/** Если строка представляет собой текст в кодировке UTF-8, то возвращает длину текста в кодовых точках.
-  * (не в символах: длина текста "ё" может быть как 1, так и 2, в зависимости от нормализации)
-  * Иначе - поведение не определено.
+/** If the string is UTF-8 encoded text, it returns the length of the text in code points.
+  * (not in characters: the length of the text "ё" can be either 1 or 2, depending on the normalization)
+  * Otherwise, the behavior is undefined.
   */
 struct LengthUTF8Impl
 {
@@ -227,7 +227,7 @@ private:
 	}
 };
 
-/** Разворачивает строку в байтах.
+/** Expands the string in bytes.
   */
 struct ReverseImpl
 {
@@ -269,9 +269,9 @@ struct ReverseImpl
 };
 
 
-/** Разворачивает последовательность кодовых точек в строке в кодировке UTF-8.
-  * Результат может не соответствовать ожидаемому, так как модифицирующие кодовые точки (например, диакритика) могут примениться не к тем символам.
-  * Если строка не в кодировке UTF-8, то поведение не определено.
+/** Expands the sequence of code points in a UTF-8 encoded string.
+  * The result may not match the expected result, because modifying code points (for example, diacritics) may be applied to another symbols.
+  * If the string is not encoded in UTF-8, then the behavior is undefined.
   */
 struct ReverseUTF8Impl
 {
@@ -413,14 +413,14 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 	}
 	else if (src + 1 < src_end && src[0] == 0xC2u)
 	{
-		/// Пунктуация U+0080 - U+00BF, UTF-8: C2 80 - C2 BF
+		/// Punctuation U+0080 - U+00BF, UTF-8: C2 80 - C2 BF
 		*dst++ = *src++;
 		*dst++ = *src++;
 	}
 	else if (src + 2 < src_end && src[0] == 0xE2u)
 	{
-		/// Символы U+2000 - U+2FFF, UTF-8: E2 80 80 - E2 BF BF
-		*dst++ = *src++;
+		/// Characters U+2000 - U+2FFF, UTF-8: E2 80 80 - E2 BF BF
+ 		*dst++ = *src++;
 		*dst++ = *src++;
 		*dst++ = *src++;
 	}
@@ -511,7 +511,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 }
 
 
-/** Выделяет подстроку в строке, как последовательности байт.
+/** Selects a substring in a string, as a sequence of bytes.
   */
 struct SubstringImpl
 {
@@ -585,8 +585,8 @@ struct SubstringImpl
 };
 
 
-/** Если строка в кодировке UTF-8, то выделяет в ней подстроку кодовых точек.
-  * Иначе - поведение не определено.
+/** If the string is encoded in UTF-8, then it selects a substring of code points in it.
+  * Otherwise, the behavior is undefined.
   */
 struct SubstringUTF8Impl
 {
@@ -741,7 +741,7 @@ public:
 		}
 		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column))
 		{
-			/// Для фиксированной строки, только функция lengthUTF8 возвращает не константу.
+			/// For a fixed string only `lengthUTF8` function returns not a constant.
 			if ("lengthUTF8" != getName())
 			{
 				ResultType res = 0;
@@ -793,7 +793,7 @@ public:
 };
 
 
-/// Также работает над массивами.
+/// Also works with arrays.
 class FunctionReverse : public IFunction
 {
 public:
@@ -997,7 +997,7 @@ private:
 		const ColumnConstString * c0_const = typeid_cast<const ColumnConstString *>(c0);
 		const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
 
-		/// Результат - const string
+		/// The result is const string
 		if (c0_const && c1_const)
 		{
 			auto c_res = std::make_shared<ColumnConstString>(c0_const->size(), "");

@@ -61,7 +61,7 @@ void RegionsNames::reload(const std::string & directory)
 		Chars new_chars;
 		StringRefs new_names_refs(initial_size, StringRef("", 0));
 
-		/// Выделим непрерывный кусок памяти, которого хватит для хранения всех имён.
+		/// Allocate a continuous slice of memory, which is enough to store all names.
 		new_chars.reserve(Poco::File(path).getSize());
 
 		while (!in.eof())

@@ -24,11 +24,11 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
 {
 	size_t bytes_read = 0;
 
-	/// Если в буфере есть непрочитанные байты, то скопируем сколько надо в to.
+	/// If there are unread bytes in the buffer, then we copy necessary to `to`.
 	if (pos < working_buffer.end())
 		bytes_read += read(to, std::min(static_cast<size_t>(working_buffer.end() - pos), n));
 
-	/// Если надо ещё прочитать - будем, по возможности, разжимать сразу в to.
+	/// If you need to read more - we will, if possible, uncompress at once to `to`.
 	while (bytes_read < n)
 	{
 		size_t size_decompressed;
@@ -37,7 +37,7 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
 		if (!readCompressedData(size_decompressed, size_compressed_without_checksum))
 			return bytes_read;
 
-		/// Если разжатый блок помещается целиком туда, куда его надо скопировать.
+		/// If the decompressed block is placed entirely where it needs to be copied.
 		if (size_decompressed <= n - bytes_read)
 		{
 			decompress(to + bytes_read, size_decompressed, size_compressed_without_checksum);

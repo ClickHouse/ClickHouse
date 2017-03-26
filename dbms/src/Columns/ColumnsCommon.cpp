@@ -12,9 +12,9 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
 {
 	size_t count = 0;
 
-	/** NOTE: По идее, filt должен содержать только нолики и единички.
-	  * Но, на всякий случай, здесь используется условие > 0 (на знаковые байты).
-	  * Лучше было бы использовать != 0, то это не позволяет SSE2.
+	/** NOTE: In theory, `filt` should only contain zeros and ones.
+	  * But, just in case, here the condition > 0 (to signed bytes) is used.
+	  * It would be better to use != 0, then this does not allow SSE2.
 	  */
 
 	const Int8 * pos = reinterpret_cast<const Int8 *>(&filt[0]);
@@ -69,7 +69,7 @@ void filterArraysImpl(
 
 		if (result_size_hint < 0)
 			res_elems.reserve(src_elems.size());
-		else if (result_size_hint < 1000000000 && src_elems.size() < 1000000000)	/// Избегаем переполнения.
+		else if (result_size_hint < 1000000000 && src_elems.size() < 1000000000)	/// Avoid overflow.
 			res_elems.reserve((result_size_hint * src_elems.size() + size - 1) / size);
 	}
 
@@ -166,7 +166,7 @@ void filterArraysImpl(
 }
 
 
-/// Явные инстанцирования - чтобы не размещать реализацию функции выше в заголовочном файле.
+/// Explicit instantiations - not to place the implementation of the function above in the header file.
 template void filterArraysImpl<UInt8>(
 	const PaddedPODArray<UInt8> &, const IColumn::Offsets_t &,
 	PaddedPODArray<UInt8> &, IColumn::Offsets_t &,

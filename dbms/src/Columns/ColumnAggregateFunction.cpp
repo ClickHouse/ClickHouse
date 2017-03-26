@@ -28,36 +28,35 @@ ColumnPtr ColumnAggregateFunction::convertToValues() const
 	const IAggregateFunction * function = func.get();
 	ColumnPtr res = function->getReturnType()->createColumn();
 
-	/** Если агрегатная функция возвращает нефинализированное состояние,
-		* то надо просто скопировать указатели на него а также разделяемое владение данными.
+	/** If the aggregate function returns an unfinalized/unfinished state,
+		* then you just need to copy pointers to it and also shared ownership of data.
 		*
-		* Также заменяем агрегатную функцию на вложенную.
-		* То есть, если этот столбец - состояния агрегатной функции aggState,
-		* то мы возвращаем такой же столбец, но с состояниями агрегатной функции agg.
-		* Это одни и те же состояния, меняем только функцию, которой они соответствуют.
+		* Also replace the aggregate function with the nested function.
+		* That is, if this column is the states of the aggregate function `aggState`,
+		* then we return the same column, but with the states of the aggregate function `agg`.
+		* These are the same states, changing only the function to which they correspond.
 		*
-		* Это довольно сложно для понимания.
-		* Пример, когда такое происходит:
+		* Further is quite difficult to understand.
+		* Example when this happens:
 		*
 		* SELECT k, finalizeAggregation(quantileTimingState(0.5)(x)) FROM ... GROUP BY k WITH TOTALS
 		*
-		* Здесь вычисляется агрегатная функция quantileTimingState.
-		* Её тип возвращаемого значения:
-		*  AggregateFunction(quantileTiming(0.5), UInt64).
-		* Из-за наличия WITH TOTALS, при агрегации будут сохранены состояния этой агрегатной функции
-		*  в столбце ColumnAggregateFunction, имеющего тип
+		* This calculates the aggregate function `quantileTimingState`.
+		* Its return type AggregateFunction(quantileTiming(0.5), UInt64)`.
+		* Due to the presence of WITH TOTALS, during aggregation the states of this aggregate function will be stored
+		*  in the ColumnAggregateFunction column of type
 		*  AggregateFunction(quantileTimingState(0.5), UInt64).
-		* Затем в TotalsHavingBlockInputStream у него будет вызван метод convertToValues,
-		*  чтобы получить "готовые" значения.
-		* Но он всего лишь преобразует столбец типа
-		*   AggregateFunction(quantileTimingState(0.5), UInt64)
-		* в AggregateFunction(quantileTiming(0.5), UInt64)
-		* - в такие же состояния.
+		* Then, in `TotalsHavingBlockInputStream`, it will be called `convertToValues` method,
+		*  to get the "ready" values.
+		* But it just converts a column of type
+		*   `AggregateFunction(quantileTimingState(0.5), UInt64)`
+		* into `AggregateFunction(quantileTiming(0.5), UInt64)`
+		* - in the same states.
 		*
-		* Затем будет вычислена функция finalizeAggregation, которая позовёт convertToValues уже от результата.
-		* И это преобразует столбец типа
+		* Then `finalizeAggregation` function will be calculated, which will call `convertToValues` already on the result.
+		* And this converts a column of type
 		*   AggregateFunction(quantileTiming(0.5), UInt64)
-		* в UInt16 - уже готовый результат работы quantileTiming.
+		* into UInt16 - already finished result of `quantileTiming`.
 		*/
 	if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(function))
 	{
@@ -132,7 +131,7 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 		if (filter[i])
 			res_data.push_back(getData()[i]);
 
-	/// Для экономии оперативки в случае слишком сильной фильтрации.
+	/// To save RAM in case of too strong filtering.
 	if (res_data.size() * 2 < res_data.capacity())
 		res_data = Container_t(res_data.cbegin(), res_data.cend());
 

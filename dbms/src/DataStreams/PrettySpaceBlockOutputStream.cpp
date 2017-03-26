@@ -15,7 +15,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 		return;
 	}
 
-	/// Будем вставлять суда столбцы с вычисленными значениями видимых длин.
+	/// We will insert here columns with the calculated values of visible lengths.
 	Block block = block_;
 
 	size_t rows = block.rows();
@@ -25,13 +25,13 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 	Widths_t name_widths;
 	calculateWidths(block, max_widths, name_widths);
 
-	/// Не будем выравнивать по слишком длинным значениям.
+	/// Do not align on too long values.
 	if (terminal_width > 80)
 		for (size_t i = 0; i < columns; ++i)
 			if (max_widths[i] > terminal_width / 2)
 				max_widths[i] = terminal_width / 2;
 
-	/// Имена
+	/// Names
 	for (size_t i = 0; i < columns; ++i)
 	{
 		if (i != 0)

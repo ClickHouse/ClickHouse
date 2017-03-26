@@ -6,7 +6,7 @@
 
 #include <DB/Common/SipHash.h>
 
-/// Адаптированный вариант https://www.131002.net/siphash/siphash24.c
+/// Adapted version https://www.131002.net/siphash/siphash24.c
 
 /*
    SipHash-2-4 output with

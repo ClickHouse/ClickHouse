@@ -63,7 +63,7 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		/** Для массивов требуется сначала десериализовать смещения, а потом значения.
+		/** For arrays, you first need to deserialize the offsets, and then the values.
 		*/
 		IColumn & offsets_column = *typeid_cast<ColumnArray &>(column).getOffsetsColumn();
 		type_arr->getOffsetsType()->deserializeBinaryBulk(offsets_column, istr, rows, 0);
@@ -79,7 +79,7 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
 				typeid_cast<const ColumnArray &>(column).getOffsets()[rows - 1]);
 	}
 	else
-		type.deserializeBinaryBulk(column, istr, rows, 0);	/// TODO Использовать avg_value_size_hint.
+		type.deserializeBinaryBulk(column, istr, rows, 0);	/// TODO Use avg_value_size_hint.
 
 	if (column.size() != rows)
 		throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
@@ -103,11 +103,11 @@ Block NativeBlockInputStream::readImpl()
 		return res;
 	}
 
-	/// Дополнительная информация о блоке.
+	/// Additional information about the block.
 	if (server_revision >= DBMS_MIN_REVISION_WITH_BLOCK_INFO)
 		res.info.read(istr);
 
-	/// Размеры
+	/// Dimensions
 	size_t columns = 0;
 	size_t rows = 0;
 
@@ -126,7 +126,7 @@ Block NativeBlockInputStream::readImpl()
 	{
 		if (use_index)
 		{
-			/// Если текущая позиция и так какая требуется, то реального seek-а не происходит.
+			/// If the current position is what is required, the real seek does not occur.
 			istr_concrete->seek(index_column_it->location.offset_in_compressed_file, index_column_it->location.offset_in_decompressed_block);
 		}
 

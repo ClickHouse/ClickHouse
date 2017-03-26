@@ -44,8 +44,8 @@ void NativeBlockOutputStream::flush()
 
 void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, size_t offset, size_t limit)
 {
-	/** Если есть столбцы-константы - то материализуем их.
-	  * (Так как тип данных не умеет сериализовывать/десериализовывать константы.)
+	/** If there are columns-constants - then we materialize them.
+	  * (Since the data type does not know how to serialize / deserialize constants.)
 	  */
 	ColumnPtr full_column;
 
@@ -69,7 +69,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		/** Для массивов требуется сначала сериализовать смещения, а потом значения.
+		/** For arrays, you first need to serialize the offsets, and then the values.
 		  */
 		const ColumnArray & column_array = typeid_cast<const ColumnArray &>(*full_column);
 		type_arr->getOffsetsType()->serializeBinaryBulk(*column_array.getOffsetsColumn(), ostr, offset, limit);
@@ -81,12 +81,12 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 			if (offset > offsets.size())
 				return;
 
-			/** offset - с какого массива писать.
-			  * limit - сколько массивов максимум записать, или 0, если писать всё, что есть.
-			  * end - до какого массива заканчивается записываемый кусок.
+			/** offset - from which array to write.
+			  * limit - how many arrays should be written, or 0, if you write everything that is.
+			  * end - up to which array written part finishes.
 			  *
-			  * nested_offset - с какого элемента внутренностей писать.
-			  * nested_limit - сколько элементов внутренностей писать, или 0, если писать всё, что есть.
+			  * nested_offset - from which nested element to write.
+			  * nested_limit - how many nested elements to write, or 0, if you write everything that is.
 			  */
 
 			size_t end = std::min(offset + limit, offsets.size());
@@ -118,19 +118,19 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 
 void NativeBlockOutputStream::write(const Block & block)
 {
-	/// Дополнительная информация о блоке.
+	/// Additional information about the block.
 	if (client_revision >= DBMS_MIN_REVISION_WITH_BLOCK_INFO)
 		block.info.write(ostr);
 
-	/// Размеры
+	/// Dimensions
 	size_t columns = block.columns();
 	size_t rows = block.rows();
 
 	writeVarUInt(columns, ostr);
 	writeVarUInt(rows, ostr);
 
-	/** Индекс имеет ту же структуру, что и поток с данными.
-	  * Но вместо значений столбца он содержит засечку, ссылающуюся на место в файле с данными, где находится этот кусочек столбца.
+	/** The index has the same structure as the data stream.
+	  * But instead of column values, it contains a mark that points to the location in the data file where this part of the column is located.
 	  */
 	if (index_ostr)
 	{
@@ -140,12 +140,12 @@ void NativeBlockOutputStream::write(const Block & block)
 
 	for (size_t i = 0; i < columns; ++i)
 	{
-		/// Для индекса.
+		/// For the index.
 		MarkInCompressedFile mark;
 
 		if (index_ostr)
 		{
-			ostr_concrete->next();	/// Заканчиваем сжатый блок.
+			ostr_concrete->next();  /// Finish compressed block.
 			mark.offset_in_compressed_file = initial_size_of_file + ostr_concrete->getCompressedBytes();
 			mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
 		}

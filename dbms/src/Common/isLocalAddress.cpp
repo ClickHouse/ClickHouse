@@ -19,9 +19,9 @@ bool isLocalAddress(const Poco::Net::SocketAddress & address)
 		return interfaces.end() != std::find_if(interfaces.begin(), interfaces.end(),
 			[&] (const Poco::Net::NetworkInterface & interface)
 			{
-				/** Сравниваем адреса без учёта scope.
-				  * Теоретически, это может быть неверно - зависит от настройки route
-				  *  - через какой интерфейс мы на самом деле будем обращаться к заданному адресу.
+				/** Compare the addresses without taking into account `scope`.
+				  * Theoretically, this may not be correct - depends on `route` setting
+				  *  - through which interface we will actually access the specified address.
 				  */
 				return interface.address().length() == address.host().length()
 					&& 0 == memcmp(interface.address().addr(), address.host().addr(), address.host().length());

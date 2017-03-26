@@ -12,13 +12,13 @@ namespace
 
 void copyDataImpl(ReadBuffer & from, WriteBuffer & to, bool check_bytes, size_t bytes, std::atomic<bool> * is_cancelled)
 {
-	/// Если дочитали до конца буфера, eof() либо заполнит буфер новыми данными и переместит курсор в начало, либо вернёт false.
+	/// If read to the end of the buffer, eof() either fills the buffer with new data and moves the cursor to the beginning, or returns false.
 	while (bytes > 0 && !from.eof())
 	{
 		if (is_cancelled && *is_cancelled)
 			return;
 
-		/// buffer() - кусок данных, доступных для чтения; position() - курсор места, до которого уже дочитали.
+		/// buffer() - a piece of data available for reading; position() - the cursor of the place to which you have already read.
 		size_t count = std::min(bytes, static_cast<size_t>(from.buffer().end() - from.position()));
 		to.write(from.position(), count);
 		from.position() += count;
@@ -31,13 +31,13 @@ void copyDataImpl(ReadBuffer & from, WriteBuffer & to, bool check_bytes, size_t 
 
 void copyDataImpl(ReadBuffer & from, WriteBuffer & to, bool check_bytes, size_t bytes, std::function<void()> cancellation_hook)
 {
-	/// Если дочитали до конца буфера, eof() либо заполнит буфер новыми данными и переместит курсор в начало, либо вернёт false.
+	/// If read to the end of the buffer, eof() either fills the buffer with new data and moves the cursor to the beginning, or returns false.
 	while (bytes > 0 && !from.eof())
 	{
 		if (cancellation_hook)
 			cancellation_hook();
 
-		/// buffer() - кусок данных, доступных для чтения; position() - курсор места, до которого уже дочитали.
+		/// buffer() - a piece of data available for reading; position() - the cursor of the place to which you have already read.
 		size_t count = std::min(bytes, static_cast<size_t>(from.buffer().end() - from.position()));
 		to.write(from.position(), count);
 		from.position() += count;

@@ -69,13 +69,13 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 	if (x.empty())
 		throw Exception("Cannot infer type of empty array", ErrorCodes::EMPTY_DATA_PASSED);
 
-	/** Тип массива нужно вывести по типу его элементов.
-	  * Если элементы - числа, то нужно выбрать наименьший общий тип, если такой есть,
-	  *  или кинуть исключение.
-	  * Код похож на NumberTraits::ResultOfIf, но тем кодом трудно здесь непосредственно воспользоваться.
+	/** The type of the array should be determined by the type of its elements.
+	  * If the elements are numbers, then select the smallest common type, if any,
+	  *  or throw an exception.
+	  * The code is similar to NumberTraits::ResultOfIf, but it's hard to use this code directly.
 	  *
-	  * Также заметим, что Float32 не выводится, вместо этого используется только Float64.
-	  * Это сделано потому что литералов типа Float32 не бывает в запросе.
+	  * Also notice that Float32 is not output, only Float64 is used instead.
+	  * This is done because Float32 type literals do not exist in the query.
 	  */
 
 	bool has_string = false;
@@ -209,7 +209,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 
 		if (max_unsigned_bits >= max_signed_bits)
 		{
-			/// Беззнаковый тип не помещается в знаковый. Надо увеличить количество бит.
+			/// An unsigned type does not fit into a signed type. It is necessary to increase the number of bits.
 			if (max_bits == 8)
 				return wrap_into_array(std::make_shared<DataTypeInt16>());
 			if (max_bits == 16)
@@ -221,7 +221,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 		}
 		else
 		{
-			/// Беззнаковый тип помещается в знаковый.
+			/// An unsigned type is placed in a signed type.
 			if (max_bits == 8)
 				return wrap_into_array(std::make_shared<DataTypeInt8>());
 			if (max_bits == 16)

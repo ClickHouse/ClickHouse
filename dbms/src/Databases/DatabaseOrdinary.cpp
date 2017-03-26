@@ -62,8 +62,8 @@ static void loadTable(
 		readStringUntilEOF(s, in);
 	}
 
-	/** Пустые файлы с метаданными образуются после грубого перезапуска сервера.
-	  * Удаляем эти файлы, чтобы чуть-чуть уменьшить работу админов по запуску.
+	/** Empty files with metadata are generated after a rough restart of the server.
+	  * Remove these files to slightly reduce the work of the admins on startup.
 	  */
 	if (s.empty())
 	{
@@ -110,11 +110,11 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
 		if (dir_it.name().at(0) == '.')
 			continue;
 
-		/// Есть файлы .sql.bak - пропускаем.
+		/// There are .sql.bak files - skip them.
 		if (endsWith(dir_it.name(), ".sql.bak"))
 			continue;
 
-		/// Есть файлы .sql.tmp - удаляем.
+		/// There are files .sql.tmp - delete.
 		if (endsWith(dir_it.name(), ".sql.tmp"))
 		{
 			LOG_INFO(log, "Removing file " << dir_it->path());
@@ -122,7 +122,7 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
 			continue;
 		}
 
-		/// Нужные файлы имеют имена вида table_name.sql
+		/// The required files have names like `table_name.sql`
 		if (endsWith(dir_it.name(), ".sql"))
 			file_names.push_back(dir_it.name());
 		else
@@ -130,9 +130,9 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
 				ErrorCodes::INCORRECT_FILE_NAME);
 	}
 
-	/** Таблицы быстрее грузятся, если их грузить в сортированном (по именам) порядке.
-	  * Иначе (для файловой системы ext4) DirectoryIterator перебирает их в некотором порядке,
-	  *  который не соответствует порядку создания таблиц и не соответствует порядку их расположения на диске.
+	/** Tables load faster if they are loaded in sorted (by name) order.
+	  * Otherwise (for the ext4 file system), `DirectoryIterator` iterates through them in some order,
+	  *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
 	  */
 	std::sort(file_names.begin(), file_names.end());
 
@@ -150,7 +150,7 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
 		{
 			const String & table = *it;
 
-			/// Сообщения, чтобы было не скучно ждать, когда сервер долго загружается.
+			/// Messages, so that it's not boring to wait for the server to load for a long time.
 			if ((++tables_processed) % PRINT_MESSAGE_EACH_N_TABLES == 0
 				|| watch.lockTestAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
 			{
@@ -162,8 +162,8 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
 		}
 	};
 
-	/** packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
-	  * Недостаток - исключения попадают в основной поток только после окончания работы всех task-ов.
+	/** `packaged_task` is used so that exceptions are automatically passed to the main thread.
+	  * Disadvantage - exceptions fall into the main thread only after the end of all tasks.
 	  */
 
 	const size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
@@ -192,17 +192,17 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
 void DatabaseOrdinary::createTable(
 	const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings)
 {
-	/// Создаём файл с метаданными, если нужно - если запрос не ATTACH.
-	/// В него записывается запрос на ATTACH таблицы.
+	/// Create a file with metadata if necessary - if the query is not ATTACH.
+	/// Write the query of `ATTACH table` to it.
 
-	/** Код исходит из допущения, что во всех потоках виден один и тот же порядок действий:
-	  * - создание файла .sql.tmp;
-	  * - добавление таблицы в tables;
-	  * - переименование .sql.tmp в .sql.
+	/** The code is based on the assumption that all threads share the same order of operations
+	  * - creating the .sql.tmp file;
+	  * - adding a table to `tables`;
+	  * - rename .sql.tmp to .sql.
 	  */
 
-	/// Был бы возможен race condition, если таблицу с одним именем одновременно создают с помощью CREATE и с помощью ATTACH.
-	/// Но от него есть защита - см. использование DDLGuard в InterpreterCreateQuery.
+	/// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
+	/// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
 	{
 		std::lock_guard<std::mutex> lock(mutex);
@@ -293,7 +293,7 @@ void DatabaseOrdinary::renameTable(
 	if (!table)
 		throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
-	/// Уведомляем таблицу о том, что она переименовывается. Если таблица не поддерживает переименование - кинется исключение.
+	/// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
 	try
 	{
 		table->rename(context.getPath() + "/data/" + escapeForFileName(to_database_concrete->name) + "/",
@@ -302,7 +302,7 @@ void DatabaseOrdinary::renameTable(
 	}
 	catch (const Poco::Exception & e)
 	{
-		/// Более хорошая диагностика.
+		/// More good diagnostics.
 		throw Exception{e};
 	}
 
@@ -310,7 +310,7 @@ void DatabaseOrdinary::renameTable(
 	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 	ast_create_query.table = to_table_name;
 
-	/// NOTE Неатомарно.
+	/// NOTE Non-atomic.
 	to_database_concrete->createTable(to_table_name, table, ast, table->getName(), settings);
 	removeTable(table_name);
 }
@@ -346,8 +346,8 @@ ASTPtr DatabaseOrdinary::getCreateQuery(const String & table_name) const
 
 void DatabaseOrdinary::shutdown()
 {
-	/// Нельзя удерживать блокировку во время shutdown.
-	/// Потому что таблицы могут внутри функции shutdown работать с БД, а mutex не рекурсивный.
+	/// You can not hold a lock during shutdown.
+	/// Because inside `shutdown` function the tables can work with database, and mutex is not recursive.
 
 	for (auto iterator = getIterator(); iterator->isValid(); iterator->next())
 		iterator->table()->shutdown();
@@ -359,7 +359,7 @@ void DatabaseOrdinary::shutdown()
 
 void DatabaseOrdinary::drop()
 {
-	/// Дополнительных действий по удалению не требуется.
+	/// No additional removal actions are required.
 }
 
 
@@ -372,7 +372,7 @@ void DatabaseOrdinary::alterTable(
 	const ColumnDefaults & column_defaults,
 	const ASTModifier & engine_modifier)
 {
-	/// Считываем определение таблицы и заменяем в нём нужные части на новые.
+	/// Read the definition of the table and replace the necessary parts with new ones.
 
 	String table_name_escaped = escapeForFileName(name);
 	String table_metadata_tmp_path = path + "/" + table_name_escaped + ".sql.tmp";
@@ -413,7 +413,7 @@ void DatabaseOrdinary::alterTable(
 
 	try
 	{
-		/// rename атомарно заменяет старый файл новым.
+		/// rename atomically replaces the old file with the new one.
 		Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
 	}
 	catch (...)

@@ -260,7 +260,7 @@ private:
 
 		try
 		{
-			/// В этих потоках не будем принимать сигнал INT.
+			/// In these threads we do not accept INT signal.
 			sigset_t sig_set;
 			if (sigemptyset(&sig_set)
 				|| sigaddset(&sig_set, SIGINT)
@@ -451,7 +451,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
 		print_stacktrace = options.count("stacktrace");
 
-		/// Извлекаем settings and limits из полученных options
+		/// Extract `settings` and `limits` from received `options`
 		Settings settings;
 
 		#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \

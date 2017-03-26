@@ -19,9 +19,9 @@ bool isAttributeTypeConvertibleTo(AttributeUnderlyingType from, AttributeUnderly
 	if (from == to)
 		return true;
 
-	/** Это перечисление может быть несколько неполным и смысл может не совпадать с NumberTraits.h.
-	  * (например тем, что целые числа нельзя преобразовать во float-ы)
-	  * Это нормально для ограниченной области применения.
+	/** This enum can be somewhat incomplete and the meaning may not coincide with NumberTraits.h.
+	  * (for example, because integers can not be converted to floats)
+	  * This is normal for a limited usage scope.
 	  */
 	if (	(from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::UInt16)
 		||	(from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::UInt32)

@@ -83,7 +83,7 @@ template <typename T>
 void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
 	bool has_quote = false;
-	if (!istr.eof() && *istr.position() == '"')		/// Понимаем число как в кавычках, так и без.
+	if (!istr.eof() && *istr.position() == '"')		/// We understand the number both in quotes and without.
 	{
 		has_quote = true;
 		++istr.position();
@@ -133,7 +133,7 @@ Field DataTypeNumberBase<T>::getDefault() const
 template <typename T>
 void DataTypeNumberBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-	/// ColumnVector<T>::value_type - более узкий тип. Например, UInt8, когда тип Field - UInt64
+	/// ColumnVector<T>::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
 	typename ColumnVector<T>::value_type x = get<typename NearestFieldType<FieldType>::Type>(field);
 	writeBinary(x, ostr);
 }

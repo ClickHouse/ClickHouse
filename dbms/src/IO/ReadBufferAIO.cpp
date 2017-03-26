@@ -35,8 +35,8 @@ namespace ErrorCodes
 }
 
 
-/// Примечание: выделяется дополнительная страница, которая содежрит те данные, которые
-/// не влезают в основной буфер.
+/// Note: an additional page is allocated that will contain the data that
+/// does not fit into the main buffer.
 ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, char * existing_memory_)
 	: ReadBufferFromFileBase(buffer_size_ + DEFAULT_AIO_FILE_BLOCK_SIZE, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
 	  fill_buffer(BufferWithOwnMemory<ReadBuffer>(internalBuffer().size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
@@ -83,8 +83,8 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 
 bool ReadBufferAIO::nextImpl()
 {
-	/// Если конец файла уже был достигнут при вызове этой функции,
-	/// то текущий вызов ошибочен.
+ /// If the end of the file has already been reached by calling this function,
+ /// then the current call is wrong.
 	if (is_eof)
 		return false;
 
@@ -111,11 +111,11 @@ bool ReadBufferAIO::nextImpl()
 
 	is_started = true;
 
-	/// Если конец файла только что достигнут, больше ничего не делаем.
+	/// If the end of the file is just reached, do nothing else.
 	if (is_eof)
 		return true;
 
-	/// Создать асинхронный запрос.
+	/// Create an asynchronous request.
 	prepare();
 
 	request.aio_lio_opcode = IOCB_CMD_PREAD;
@@ -124,7 +124,7 @@ bool ReadBufferAIO::nextImpl()
 	request.aio_nbytes = region_aligned_size;
 	request.aio_offset = region_aligned_begin;
 
-	/// Отправить запрос.
+	/// Send the request.
 	try
 	{
 		future_bytes_read = AIOContextPool::instance().post(request);
@@ -168,16 +168,16 @@ off_t ReadBufferAIO::doSeek(off_t off, int whence)
 		off_t first_read_pos_in_file = first_unread_pos_in_file - static_cast<off_t>(working_buffer.size());
 		if (hasPendingData() && (new_pos_in_file >= first_read_pos_in_file) && (new_pos_in_file <= first_unread_pos_in_file))
 		{
-			/// Свдинулись, но остались в пределах буфера.
+			/// Moved, but remained within the buffer.
 			pos = working_buffer.begin() + (new_pos_in_file - first_read_pos_in_file);
 		}
 		else
 		{
-			/// Сдвинулись за пределы буфера.
+			/// Moved past the buffer.
 			pos = working_buffer.end();
 			first_unread_pos_in_file = new_pos_in_file;
 
-			/// Не можем использовать результат текущего асинхронного запроса.
+			/// We can not use the result of the current asynchronous request.
 			skip();
 		}
 	}
@@ -238,7 +238,7 @@ void ReadBufferAIO::prepare()
 {
 	requested_byte_count = std::min(fill_buffer.internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE, max_bytes_read);
 
-	/// Регион диска, из которого хотим читать данные.
+	/// Region of the disk from which we want to read data.
 	const off_t region_begin = first_unread_pos_in_file;
 
 	if ((requested_byte_count > std::numeric_limits<off_t>::max()) ||
@@ -247,7 +247,7 @@ void ReadBufferAIO::prepare()
 
 	const off_t region_end = first_unread_pos_in_file + requested_byte_count;
 
-	/// Выровненный регион диска, из которого будем читать данные.
+	/// The aligned region of the disk from which we will read the data.
 	region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
 	const size_t region_right_padding = (DEFAULT_AIO_FILE_BLOCK_SIZE - (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE)) % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
@@ -267,10 +267,10 @@ void ReadBufferAIO::finalize()
 	if ((bytes_read < 0) || (static_cast<size_t>(bytes_read) < region_left_padding))
 		throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);
 
-	/// Игнорируем излишние байты слева.
+	/// Ignore redundant bytes on the left.
 	bytes_read -= region_left_padding;
 
-	/// Игнорируем излишние байты справа.
+	/// Ignore redundant bytes on the right.
 	bytes_read = std::min(bytes_read, static_cast<off_t>(requested_byte_count));
 
 	if (bytes_read > 0)
@@ -288,7 +288,7 @@ void ReadBufferAIO::finalize()
 	if (total_bytes_read == max_bytes_read)
 		is_eof = true;
 
-	/// Менять местами основной и дублирующий буферы.
+	/// Swap the main and duplicate buffers.
 	internalBuffer().swap(fill_buffer.internalBuffer());
 	buffer().swap(fill_buffer.buffer());
 	std::swap(position(), fill_buffer.position());

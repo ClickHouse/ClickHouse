@@ -54,8 +54,8 @@ const Block & TotalsHavingBlockInputStream::getTotals()
 {
 	if (!totals)
 	{
-		/** Если totals_mode == AFTER_HAVING_AUTO, нужно решить, добавлять ли в TOTALS агрегаты для строк,
-		  *  не прошедших max_rows_to_group_by.
+		/** If totals_mode == AFTER_HAVING_AUTO, you need to decide whether to add aggregates to TOTALS for strings,
+		  *  not passed max_rows_to_group_by.
 		  */
 		if (overflow_aggregates)
 		{
@@ -86,7 +86,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 	{
 		block = children[0]->read();
 
-		/// Блок со значениями, не вошедшими в max_rows_to_group_by. Отложим его.
+		/// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
 		if (overflow_row && block && block.info.is_overflows)
 		{
 			overflow_aggregates = block;
@@ -107,7 +107,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 		}
 		else
 		{
-			/// Вычисляем выражение в HAVING.
+			/// Compute the expression in HAVING.
 			expression->execute(finalized);
 
 			size_t filter_column_pos = finalized.getPositionByName(filter_column_name);
@@ -125,13 +125,13 @@ Block TotalsHavingBlockInputStream::readImpl()
 
 			IColumn::Filter & filter = filter_column->getData();
 
-			/// Прибавляем значения в totals (если это не было сделано ранее).
+			/// Add values to `totals` (if it was not already done).
 			if (totals_mode == TotalsMode::BEFORE_HAVING)
 				addToTotals(current_totals, block, nullptr);
 			else
 				addToTotals(current_totals, block, &filter);
 
-			/// Фильтруем блок по выражению в HAVING.
+			/// Filter the block by expression in HAVING.
 			size_t columns = finalized.columns();
 
 			for (size_t i = 0; i < columns; ++i)

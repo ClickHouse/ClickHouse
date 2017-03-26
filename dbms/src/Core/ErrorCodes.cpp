@@ -3,11 +3,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-	/** Раньше эти константы были расположены в одном enum-е.
-	  * Но в этом случае возникает проблема: при добавлении новой константы необходимо перекомпилировать
-	  *  все translation unit-ы, которые используют хотя бы одну константу (почти весь проект).
-	  * Поэтому сделано так, что определения констант расположены здесь, в одном файле,
-	  *  а их объявления - в разных файлах, по месту использования.
+	/** Previously, these constants were located in one enum.
+	  * But in this case there is a problem: when you add a new constant, you need to recompile
+	  *  all translation units that use at least one constant (almost the whole project).
+	  * Therefore it is made so that definitions of constants are located here, in one file,
+	  *  and their declaration are in different files, at the place of use.
 	  */
 
 	extern const int UNSUPPORTED_METHOD = 1;

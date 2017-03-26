@@ -22,7 +22,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Ничего не проверяет.
+/// Does not check anything.
 std::string trimRight(const std::string & in, const char * suffix)
 {
 	return in.substr(0, in.size() - strlen(suffix));
@@ -161,14 +161,14 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
 
 	if ((recursion_level == 0) && endsWith(name, "State"))
 	{
-		/// Для агрегатных функций вида aggState, где agg - имя другой агрегатной функции.
+		/// For aggregate functions of the form `aggState`, where `agg` is the name of another aggregate function.
 		AggregateFunctionPtr nested = get(trimRight(name, "State"), argument_types, recursion_level + 1);
 		return createAggregateFunctionState(nested);
 	}
 
 	if ((recursion_level <= 1) && endsWith(name, "Merge"))
 	{
-		/// Для агрегатных функций вида aggMerge, где agg - имя другой агрегатной функции.
+		/// For aggregate functions of the form `aggMerge`, where `agg` is the name of another aggregate function.
 		if (argument_types.size() != 1)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		const DataTypeAggregateFunction * function = typeid_cast<const DataTypeAggregateFunction *>(&*argument_types[0]);
@@ -193,7 +193,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
 			};
 
-		/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции.
+		/// For aggregate functions of the form `aggIf`, where `agg` is the name of another aggregate function.
 		DataTypes nested_dt = argument_types;
 		nested_dt.pop_back();
 		AggregateFunctionPtr nested = get(trimRight(name, "If"), nested_dt, recursion_level + 1);
@@ -202,7 +202,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
 
 	if ((recursion_level <= 3) && endsWith(name, "Array"))
 	{
-		/// Для агрегатных функций вида aggArray, где agg - имя другой агрегатной функции.
+		/// For aggregate functions of the form `aggArray`, where `agg` is the name of another aggregate function.
 		size_t num_agruments = argument_types.size();
 
 		DataTypes nested_arguments;
@@ -214,7 +214,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
 				throw Exception("Illegal type " + argument_types[i]->getName() + " of argument #" + toString(i + 1) +
 					" for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
-		/// + 3, чтобы ни один другой модификатор не мог идти перед Array
+		/// + 3, so that no other modifier can go before the `Array`
 		AggregateFunctionPtr nested = get(trimRight(name, "Array"), nested_arguments, recursion_level + 3);
 		return createAggregateFunctionArray(nested);
 	}
@@ -239,22 +239,22 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
 	if (recursion_level == 0 && case_insensitive_aggregate_functions.count(Poco::toLower(name)))
 		return true;
 
-	/// Для агрегатных функций вида aggState, где agg - имя другой агрегатной функции.
+	/// For aggregate functions of the form `aggState`, where `agg` is the name of another aggregate function.
 	if ((recursion_level <= 0) && endsWith(name, "State"))
 		return isAggregateFunctionName(trimRight(name, "State"), recursion_level + 1);
 
-	/// Для агрегатных функций вида aggMerge, где agg - имя другой агрегатной функции.
+	/// For aggregate functions of the form `aggMerge`, where `agg` is the name of another aggregate function.
 	if ((recursion_level <= 1) && endsWith(name, "Merge"))
 		return isAggregateFunctionName(trimRight(name, "Merge"), recursion_level + 1);
 
-	/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции.
+	/// For aggregate functions of the form `aggIf`, where `agg` is the name of another aggregate function.
 	if ((recursion_level <= 2) && endsWith(name, "If"))
 		return isAggregateFunctionName(trimRight(name, "If"), recursion_level + 1);
 
-	/// Для агрегатных функций вида aggArray, где agg - имя другой агрегатной функции.
+	/// For aggregate functions of the form `aggArray`, where `agg` is the name of another aggregate function.
 	if ((recursion_level <= 3) && endsWith(name, "Array"))
 	{
-		/// + 3, чтобы ни один другой модификатор не мог идти перед Array
+		/// + 3, so that no other modifier can go before `Array`
 		return isAggregateFunctionName(trimRight(name, "Array"), recursion_level + 3);
 	}
 

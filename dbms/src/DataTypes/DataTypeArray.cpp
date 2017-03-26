@@ -105,12 +105,12 @@ void DataTypeArray::serializeBinaryBulk(const IColumn & column, WriteBuffer & os
 	if (offset > offsets.size())
 		return;
 
-	/** offset - с какого массива писать.
-	  * limit - сколько массивов максимум записать, или 0, если писать всё, что есть.
-	  * end - до какого массива заканчивается записываемый кусок.
+	/** offset - from which array to write.
+	  * limit - how many arrays should be written, or 0, if you write everything that is.
+	  * end - up to which array the recorded piece ends.
 	  *
-	  * nested_offset - с какого элемента внутренностей писать.
-	  * nested_limit - сколько элементов внутренностей писать, или 0, если писать всё, что есть.
+	  * nested_offset - from which element of the innards to write.
+	  * nested_limit - how many elements of the innards to write, or 0, if you write everything that is.
 	  */
 
 	size_t end = std::min(offset + limit, offsets.size());
@@ -131,7 +131,7 @@ void DataTypeArray::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, s
 	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 	IColumn & nested_column = column_array.getData();
 
-	/// Должно быть считано согласнованное с offsets количество значений.
+	/// Number of values correlated with `offsets` must be read.
 	size_t last_offset = (offsets.empty() ? 0 : offsets.back());
 	if (last_offset < nested_column.size())
 		throw Exception("Nested column longer than last offset", ErrorCodes::LOGICAL_ERROR);
@@ -354,7 +354,7 @@ void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, Wri
 
 void DataTypeArray::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-	/// Хорошего способа сериализовать массив в CSV нет. Поэтому сериализуем его в строку, а затем полученную строку запишем в CSV.
+	/// There is no good way to serialize an array in CSV. Therefore, we serialize it into a string, and then write the resulting string in CSV.
 	String s;
 	{
 		WriteBufferFromString wb(s);
@@ -390,7 +390,7 @@ ColumnPtr DataTypeArray::createColumn() const
 
 ColumnPtr DataTypeArray::createConstColumn(size_t size, const Field & field) const
 {
-	/// Последним аргументом нельзя отдать this.
+	/// `this` can not be passed as the last argument.
 	return std::make_shared<ColumnConstArray>(size, get<const Array &>(field), std::make_shared<DataTypeArray>(nested));
 }
 

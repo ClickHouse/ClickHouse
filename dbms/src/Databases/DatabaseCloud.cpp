@@ -96,14 +96,14 @@ DatabaseCloud::DatabaseCloud(
 
 void loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag)
 {
-	/// Ничего не делаем - все таблицы загружаются лениво.
+	/// Do nothing - all tables are loaded lazily.
 }
 
 
 Hash DatabaseCloud::getTableHash(const String & table_name) const
 {
 	SipHash hash;
-	hash.update(name.data(), name.size() + 1);	/// Хэшируем также нулевой байт в качестве разделителя.
+	hash.update(name.data(), name.size() + 1);	/// Hashing also a zero byte as a separator.
 	hash.update(table_name.data(), table_name.size());
 
 	Hash res;
@@ -143,16 +143,16 @@ String DatabaseCloud::getTableDefinitionFromHash(Hash hash) const
 }
 
 
-/** Описание одной таблицы в списке таблиц в ZooKeeper.
-  * Без имени таблицы (правая часть отображения).
+/** Description of one table in the list of tables in ZooKeeper.
+  * No table name (right side of map).
   */
 struct TableDescription
 {
-	/// Хэш от структуры таблицы. Сама структура хранится отдельно.
+	/// Hash of the table structure. The structure itself is stored separately.
 	Hash definition_hash;
-	/// Имя локальной таблицы для хранения данных. Может быть пустым, если в таблицу ещё ничего не записывали.
+	/// The name of the local table to store data. It can be empty if nothing else has been written to the table.
 	String local_table_name;
-	/// Список хостов, на которых расположены данные таблицы. Может быть пустым, если в таблицу ещё ничего не записывали.
+	/// The list of hosts on which the table data is located. It can be empty if nothing else has been written to the table.
 	std::vector<String> hosts;
 
 	void write(WriteBuffer & buf) const
@@ -169,13 +169,13 @@ struct TableDescription
 };
 
 
-/** Множество таблиц в ZooKeeper.
-  * Точнее, его кусок, относящийся к одной ноде.
-  * (Всё множество разбито по TABLE_TO_NODE_DIVISOR нод.)
+/** Set of tables in ZooKeeper.
+  * More precisely, its part, referring to one node.
+  * (The whole set is broken into `TABLE_TO_NODE_DIVISOR` nodes.)
   */
 struct TableSet
 {
-	/// Имя -> описание. В упорядоченном виде, данные будут лучше сжиматься.
+	/// Name -> description. In an ordered form, the data will be better compressed.
 	using Container = std::map<String, TableDescription>;
 	Container map;
 
@@ -199,7 +199,7 @@ struct TableSet
 	{
 		writeCString("Version 1\n", buf);
 
-		CompressedWriteBuffer out(buf);		/// NOTE Можно уменьшить размер выделяемого буфера.
+		CompressedWriteBuffer out(buf);     /// NOTE You can reduce size of allocated buffer.
 		for (const auto & kv : map)
 		{
 			writeBinary(kv.first, out);
@@ -223,13 +223,13 @@ struct TableSet
 };
 
 
-/** Множество локальных таблиц в ZooKeeper.
-  * Точнее, его кусок, относящийся к одной ноде.
-  * (Всё множество разбито по TABLE_TO_NODE_DIVISOR нод.)
+/** Set of local tables in ZooKeeper.
+  * More precisely, its part, referring to one node.
+  * (The whole set is broken into `TABLE_TO_NODE_DIVISOR` nodes.)
   */
 struct LocalTableSet
 {
-	/// Хэш от имени -> хэш от структуры.
+	/// Hash of name -> hash of structure.
 	using Container = std::map<Hash, Hash>;
 	Container map;
 
@@ -253,7 +253,7 @@ struct LocalTableSet
 	{
 		writeCString("Version 1\n", buf);
 
-		CompressedWriteBuffer out(buf);		/// NOTE Можно уменьшить размер выделяемого буфера.
+		CompressedWriteBuffer out(buf);     /// NOTE You can reduce size of allocated buffer.
 		for (const auto & kv : map)
 		{
 			writePODBinary(kv.first, out);
@@ -277,9 +277,9 @@ struct LocalTableSet
 };
 
 
-/** Модифицировать TableSet или LocalTableSet, сериализованный в ZooKeeper, как единое целое.
-  * Делается compare-and-swap. Функция transform может вызываться много раз.
-  * Если transform возвращает false, то считается, что модифицировать нечего и результат не сохраняется в ZK.
+/** Modify TableSet or LocalTableSet, serialized in ZooKeeper, as a single unit.
+  * The compare-and-swap is done. `transform` function can be called many times.
+  * If `transform` returns false, it is considered that there is nothing to modify and the result is not saved in ZK.
   */
 template <typename TableSet, typename F>
 static void modifyTableSet(zkutil::ZooKeeperPtr & zookeeper, const String & path, F && transform)
@@ -300,7 +300,7 @@ static void modifyTableSet(zkutil::ZooKeeperPtr & zookeeper, const String & path
 		if (code == ZOK)
 			break;
 		else if (code == ZBADVERSION)
-			continue;	/// Узел успели поменять - попробуем ещё раз.
+			continue;   /// Node was changed meanwhile - we'll try again.
 			else
 				throw zkutil::KeeperException(code, path);
 	}
@@ -343,7 +343,7 @@ static void modifyTwoTableSets(zkutil::ZooKeeperPtr & zookeeper, const String & 
 		if (code == ZOK)
 			break;
 		else if (code == ZBADVERSION)
-			continue;	/// Узел успели поменять - попробуем ещё раз.
+			continue;   /// Node was changed meanwhile - we'll try again.
 		else
 			throw zkutil::KeeperException(code, path1 + ", " + path2);
 	}
@@ -352,8 +352,8 @@ static void modifyTwoTableSets(zkutil::ZooKeeperPtr & zookeeper, const String & 
 
 bool DatabaseCloud::isTableExist(const String & table_name) const
 {
-	/// Ищем локальную таблицу в кэше локальных таблиц или в файловой системе в path.
-	/// Если не нашли - ищем облачную таблицу в ZooKeeper.
+	/// We are looking for a local table in the local table cache or in the file system in `path`.
+	/// If you do not find it, look for the cloud table in ZooKeeper.
 
 	{
 		std::lock_guard<std::mutex> lock(local_tables_mutex);
@@ -378,8 +378,8 @@ bool DatabaseCloud::isTableExist(const String & table_name) const
 
 StoragePtr DatabaseCloud::tryGetTable(const String & table_name)
 {
-	/// Ищем локальную таблицу.
-	/// Если не нашли - ищем облачную таблицу в ZooKeeper.
+	/// We are looking for a local table.
+	/// If you do not find it, look for the cloud table in ZooKeeper.
 
 	{
 		std::lock_guard<std::mutex> lock(local_tables_mutex);
@@ -399,11 +399,11 @@ StoragePtr DatabaseCloud::tryGetTable(const String & table_name)
 		Hash table_hash = getTableHash(table_name);
 		String definition = getTableDefinitionFromHash(local_tables_info.map.at(table_hash));
 
-		/// Инициализируем локальную таблицу.
+		/// Initialize local table.
 		{
 			std::lock_guard<std::mutex> lock(local_tables_mutex);
 
-			/// А если таблицу только что создали?
+			/// And if the table has just been created?
 			auto it = local_tables_cache.find(table_name);
 			if (it != local_tables_cache.end())
 				return it->second;
@@ -426,13 +426,13 @@ StoragePtr DatabaseCloud::tryGetTable(const String & table_name)
 		const TableDescription & description = tables_info.at(table_name);
 		String definition = getTableDefinitionFromHash(description.definition_hash);
 
-		/// TODO Инициализация объекта StorageCloud
+		/// TODO Initialization of `StorageCloud` object
 		return {};
 	}
 }
 
 
-/// Список таблиц может быть неконсистентным, так как он получается неатомарно, а по кускам, по мере итерации.
+/// The list of tables can be inconsistent, as it is obtained not atomically, but in pieces, while iterating.
 class DatabaseCloudIterator : public IDatabaseIterator
 {
 private:
@@ -467,7 +467,7 @@ private:
 			table_set = TableSet(zookeeper->get(zookeeper_path + "/" + *nodes_iterator));
 			table_set_iterator = table_set.map.begin();
 		}
-		while (!table_set.map.empty());		/// Пропускаем пустые table set-ы.
+		while (!table_set.map.empty());		/// Skip empty table sets.
 
 		return true;
 	}
@@ -504,7 +504,7 @@ public:
 	{
 		String definition = parent().getTableDefinitionFromHash(table_set_iterator->second.definition_hash);
 
-		/// TODO Инициализация объекта StorageCloud
+		/// TODO Initialization of `StorageCloud` object
 		return {};
 	}
 };
@@ -518,7 +518,7 @@ DatabaseIteratorPtr DatabaseCloud::getIterator()
 
 bool DatabaseCloud::empty() const
 {
-	/// Есть хотя бы один непустой узел среди списков таблиц.
+	/// There is at least one non-empty node among the list of tables.
 
 	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 	Strings nodes = zookeeper->getChildren(zookeeper_path + "/tables/" + name);
@@ -597,7 +597,7 @@ void DatabaseCloud::createTable(
 {
 	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
-	/// Добавляем в ZK информацию о структуре таблицы.
+	/// Add information about the table structure to ZK.
 	String definition = getTableDefinitionFromCreateQuery(query);
 	Hash definition_hash = getHashForTableDefinition(definition);
 	String zookeeper_definition_path = zookeeper_path + "/table_definitions/" + hashToHex(definition_hash);
@@ -610,21 +610,21 @@ void DatabaseCloud::createTable(
 	}
 	else
 	{
-		/// Более редкая ветка, так как уникальных определений таблиц немного.
-		/// Есть race condition, при котором узел уже существует, но проверка на логическую ошибку (см. выше) не будет осуществлена.
-		/// Это не имеет значения.
-		/// Кстати, узлы в table_definitions никогда не удаляются.
+		/// A rarer branch, since there are few unique table definitions.
+		/// There is a race condition in which the node already exists, but a check for a logical error (see above) will not be performed.
+		/// It does not matter.
+		/// By the way, nodes in `table_definitions` are never deleted.
 		zookeeper->tryCreate(zookeeper_definition_path, definition, zkutil::CreateMode::Persistent);
 	}
 
 	if (engine != "Cloud")
 	{
-		/// Если локальная таблица.
+		/// If the local table.
 		String table_name_escaped = escapeForFileName(table_name);
 		Poco::File(data_path + table_name_escaped).createDirectory();
 		Hash table_hash = getTableHash(table_name);
 
-		/// Добавляем информация о локальной таблице в ZK.
+		/// Add information about the local table to ZK.
 		modifyTableSet<LocalTableSet>(
 			zookeeper,
 			zookeeper_path + "/local_tables/" + name + "/" + getNameOfNodeWithTables(table_name),
@@ -635,7 +635,7 @@ void DatabaseCloud::createTable(
 				return true;
 			});
 
-		/// Добавляем локальную таблицу в кэш.
+		/// Add the local table to the cache.
 		{
 			std::lock_guard<std::mutex> lock(local_tables_mutex);
 			if (!local_tables_cache.emplace(table_name, table).second)
@@ -644,8 +644,8 @@ void DatabaseCloud::createTable(
 	}
 	else
 	{
-		/// При создании пустой облачной таблицы, локальные таблицы не создаются и серверы для них не определяются.
-		/// Всё делается при первой записи в таблицу.
+		/// When creating an empty cloud table, no local tables are created and no servers are defined for them.
+		/// Everything is done when you first write to the table.
 
 		TableDescription description;
 		description.definition_hash = definition_hash;
@@ -667,15 +667,15 @@ void DatabaseCloud::removeTable(const String & table_name)
 {
 	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
-	/// Ищем локальную таблицу.
-	/// Если не нашли - ищем облачную таблицу в ZooKeeper.
+	/// Looking for a local table.
+	/// If you do not find it, look for the cloud table in ZooKeeper.
 
 	String table_name_escaped = escapeForFileName(table_name);
 	if (Poco::File(data_path + table_name_escaped).exists())
 	{
 		Hash table_hash = getTableHash(table_name);
 
-		/// Удаляем информация о локальной таблице из ZK.
+		/// Delete information about the local table from ZK.
 		modifyTableSet<LocalTableSet>(
 			zookeeper,
 			zookeeper_path + "/local_tables/" + name + "/" + getNameOfNodeWithTables(table_name),
@@ -683,13 +683,13 @@ void DatabaseCloud::removeTable(const String & table_name)
 			{
 				auto it = set.map.find(table_hash);
 				if (it == set.map.end())
-					return false;		/// Таблицу уже удалили.
+					return false;       /// The table has already been deleted.
 
 				set.map.erase(it);
 				return true;
 			});
 
-		/// Удаляем локальную таблицу из кэша.
+		/// Delete the local table from the cache.
 		{
 			std::lock_guard<std::mutex> lock(local_tables_mutex);
 			local_tables_cache.erase(table_name);
@@ -697,7 +697,7 @@ void DatabaseCloud::removeTable(const String & table_name)
 	}
 	else
 	{
-		/// Удаляем таблицу из ZK, а также запоминаем список серверов, на которых расположены локальные таблицы.
+		/// Delete the table from ZK, and also remember the list of servers on which local tables are located.
 		TableDescription description;
 
 		modifyTableSet<TableSet>(
@@ -707,7 +707,7 @@ void DatabaseCloud::removeTable(const String & table_name)
 			{
 				auto it = set.map.find(table_name);
 				if (it == set.map.end())
-					return false;		/// Таблицу уже удалили.
+					return false;       /// The table has already been deleted.
 
 				description = it->second;
 				set.map.erase(it);
@@ -716,7 +716,7 @@ void DatabaseCloud::removeTable(const String & table_name)
 
 		if (!description.local_table_name.empty() && !description.hosts.empty())
 		{
-			/// Удаление локальных таблиц. TODO То ли сразу здесь, то ли в отдельном фоновом потоке.
+			/// Deleting local tables. TODO Whether at once here, or in a separate background thread.
 		}
 	}
 }
@@ -725,8 +725,8 @@ void DatabaseCloud::removeTable(const String & table_name)
 void DatabaseCloud::renameTable(
 	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings)
 {
-	/// Переименовывать можно только облачные таблицы.
-	/// Перенос между БД не поддерживается.
+	/// Only cloud tables can be renamed.
+	/// The transfer between databases is not supported.
 
 	if (&to_database != this)
 		throw Exception("Moving of tables in Cloud database between databases is not supported", ErrorCodes::NOT_IMPLEMENTED);
@@ -765,8 +765,8 @@ time_t DatabaseCloud::getTableMetaModTime(const String & table_name)
 
 void DatabaseCloud::shutdown()
 {
-	/// Нельзя удерживать блокировку во время shutdown.
-	/// Потому что таблицы могут внутри функции shutdown работать с БД, а mutex не рекурсивный.
+	/// You can not hold a lock during shutdown.
+	/// Because inside `shutdown` function the tables can work with database, and mutex is not recursive.
 	Tables local_tables_snapshot;
 	{
 		std::lock_guard<std::mutex> lock(local_tables_mutex);

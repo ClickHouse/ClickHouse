@@ -34,15 +34,15 @@ Block AggregatingBlockInputStream::readImpl()
 		}
 		else
 		{
-			/** Если есть временные файлы с частично-агрегированными данными на диске,
-			  *  то читаем и мерджим их, расходуя минимальное количество памяти.
+			/** If there are temporary files with partially-aggregated data on the disk,
+			  *  then read and merge them, spending the minimum amount of memory.
 			  */
 
 			ProfileEvents::increment(ProfileEvents::ExternalAggregationMerge);
 
 			if (!isCancelled())
 			{
-				/// Сбросим имеющиеся в оперативке данные тоже на диск. Так проще.
+				/// Flush data in the RAM to disk also. It's easier.
 				size_t rows = data_variants->sizeWithoutOverflowRow();
 				if (rows)
 					aggregator.writeToTemporaryFile(*data_variants, rows);

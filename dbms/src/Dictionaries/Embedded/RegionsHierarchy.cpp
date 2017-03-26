@@ -69,8 +69,8 @@ void RegionsHierarchy::reload()
 		DB::assertChar('\t', in);
 		DB::readIntText(read_type, in);
 
-		/** Далее может быть перевод строки (старый вариант)
-			*  или таб, население региона, перевод строки (новый вариант).
+		/** Then there can be a newline (old version)
+			*  or tab, the region's population, line feed (new version).
 			*/
 		RegionPopulation population = 0;
 		if (!in.eof() && *in.position() == '\t')
@@ -126,7 +126,7 @@ void RegionsHierarchy::reload()
 	new_depths		.resize(max_region_id + 1);
 	types			.resize(max_region_id + 1);
 
-	/// пропишем города и страны для регионов
+	/// prescribe the cities and countries for the regions
 	for (RegionID i = 0; i <= max_region_id; ++i)
 	{
 		if (types[i] == REGION_TYPE_CITY)

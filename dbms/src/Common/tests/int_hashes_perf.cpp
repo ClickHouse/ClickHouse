@@ -9,7 +9,7 @@
 #include <DB/Common/HashTable/Hash.h>
 #include <DB/Common/Stopwatch.h>
 
-#include "AvalancheTest.h"	/// Взято из SMHasher.
+#include "AvalancheTest.h"  /// Taken from SMHasher.
 
 
 #ifdef __APPLE__
@@ -214,7 +214,7 @@ void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t
 template <size_t Func(UInt64)>
 static inline void test(size_t n, const UInt64 * data, const char * name)
 {
-	/// throughput. Вычисления хэш-функций от разных значений могут перекрываться.
+	/// throughput. Calculations of hash functions from different values may overlap.
 	{
 		Stopwatch watch;
 
@@ -232,7 +232,7 @@ static inline void test(size_t n, const UInt64 * data, const char * name)
 		report(name, n, watch.elapsedSeconds(), tsc_diff, res);
 	}
 
-	/// latency. Чтобы вычислить следующее значение, надо сначала вычислить предыдущее. Добавляется latency L1-кэша.
+	/// latency. To calculate the next value, you must first calculate the previous one. The latency of the L1 cache is added.
 	{
 		Stopwatch watch;
 
@@ -254,7 +254,7 @@ static inline void test(size_t n, const UInt64 * data, const char * name)
 		report(name, n, watch.elapsedSeconds(), tsc_diff, res);
 	}
 
-	/// quality. Методы взяты из SMHasher.
+	/// quality. Methods are taken from SMHasher.
 	{
 		auto wrapper = [](const void * blob, const int len, const uint32_t seed, void * out)
 		{

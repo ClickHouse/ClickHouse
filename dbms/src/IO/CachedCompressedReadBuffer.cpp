@@ -26,14 +26,14 @@ void CachedCompressedReadBuffer::initInput()
 
 bool CachedCompressedReadBuffer::nextImpl()
 {
-	/// Проверим наличие разжатого блока в кэше, захватим владение этим блоком, если он есть.
+	/// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.
 
 	UInt128 key = cache->hash(path, file_pos);
 	owned_cell = cache->get(key);
 
 	if (!owned_cell)
 	{
-		/// Если нет - надо прочитать его из файла.
+		/// If not, read it from the file.
 		initInput();
 		file_in->seek(file_pos);
 
@@ -48,7 +48,7 @@ bool CachedCompressedReadBuffer::nextImpl()
 			owned_cell->data.resize(size_decompressed);
 			decompress(owned_cell->data.m_data, size_decompressed, size_compressed_without_checksum);
 
-			/// Положим данные в кэш.
+			/// Put data into cache.
 			cache->set(key, owned_cell);
 		}
 	}
