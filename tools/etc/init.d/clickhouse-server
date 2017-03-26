@@ -88,7 +88,7 @@ die()
 check_config()
 {
 	if [ -x "$BINDIR/$GENERIC_PROGRAM" ]; then
-		su -l $CLICKHOUSE_USER -s $SHELL -c "$BINDIR/$GENERIC_PROGRAM --extract-from-config --config-file=\"$CLICKHOUSE_CONFIG\" --key=path" || die "Configuration file ${CLICKHOUSE_CONFIG} doesn't parse successfully. Won't restart server. You may use forcerestart if you are sure.";
+		su -l $CLICKHOUSE_USER -s $SHELL -c "$BINDIR/$GENERIC_PROGRAM --extract-from-config --config-file=\"$CLICKHOUSE_CONFIG\" --key=path" >/dev/null || die "Configuration file ${CLICKHOUSE_CONFIG} doesn't parse successfully. Won't restart server. You may use forcerestart if you are sure.";
 	fi
 }
 
