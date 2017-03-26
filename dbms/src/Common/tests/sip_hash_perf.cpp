@@ -8,7 +8,7 @@
 #include <DB/Common/Stopwatch.h>
 
 
-/** Тестировать так:
+/** Test this way:
   *
   * clickhouse-client --query="SELECT SearchPhrase AS k FROM test.hits WHERE k != ''" > phrases.tsv
   * clickhouse-client --query="SELECT URL AS k FROM test.hits" > urls.tsv

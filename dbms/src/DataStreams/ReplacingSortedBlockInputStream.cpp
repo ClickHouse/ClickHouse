@@ -52,7 +52,7 @@ void ReplacingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, st
 {
 	size_t merged_rows = 0;
 
-	/// Вынимаем строки в нужном порядке и кладём в merged_block, пока строк не больше max_block_size
+	/// Take the rows in needed order and put them into `merged_block` until rows no more than `max_block_size`
 	while (!queue.empty())
 	{
 		TSortCursor current = queue.top();
@@ -73,7 +73,7 @@ void ReplacingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, st
 
 		bool key_differs = next_key != current_key;
 
-		/// если накопилось достаточно строк и последняя посчитана полностью
+		/// if there are enough rows and the last one is calculated completely
 		if (key_differs && merged_rows >= max_block_size)
 			return;
 
@@ -82,12 +82,12 @@ void ReplacingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, st
 		if (key_differs)
 		{
 			max_version = 0;
-			/// Запишем данные для предыдущего первичного ключа.
+			/// Write the data for the previous primary key.
 			insertRow(merged_columns, merged_rows);
 			current_key.swap(next_key);
 		}
 
-		/// Нестрогое сравнение, так как мы выбираем последнюю строку для одинаковых значений версий.
+		/// A non-strict comparison, since we select the last row for the same version values.
 		if (version >= max_version)
 		{
 			max_version = version;
@@ -101,12 +101,12 @@ void ReplacingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, st
 		}
 		else
 		{
-			/// Достаём из соответствующего источника следующий блок, если есть.
+			/// We get the next block from the corresponding source, if there is one.
 			fetchNextBlock(current, queue);
 		}
 	}
 
-	/// Запишем данные для последнего первичного ключа.
+	/// We will write the data for the last primary key.
 	insertRow(merged_columns, merged_rows);
 
 	finished = true;

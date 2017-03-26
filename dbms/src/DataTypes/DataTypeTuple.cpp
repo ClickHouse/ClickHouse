@@ -62,7 +62,7 @@ void DataTypeTuple::serializeBinary(const IColumn & column, size_t row_num, Writ
 template <typename F>
 static void deserializeSafe(const DataTypes & elems, IColumn & column, ReadBuffer & istr, F && impl)
 {
-	/// Используем допущение, что кортежей нулевого размера не бывает.
+	/// We use the assumption that tuples of zero size do not exist.
 	size_t old_size = extractElementColumn(column, 0).size();
 
 	try

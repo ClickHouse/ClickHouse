@@ -1,4 +1,4 @@
-/// Взято из SMHasher.
+/// Taken from SMHasher.
 
 #pragma once
 

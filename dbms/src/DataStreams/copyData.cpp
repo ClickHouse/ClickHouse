@@ -32,7 +32,7 @@ void copyData(IBlockInputStream & from, IBlockOutputStream & to, std::atomic<boo
 	if (isAtomicSet(is_cancelled))
 		return;
 
-	/// Для вывода дополнительной информации в некоторых форматах.
+	/// For outputting additional information in some formats.
 	if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(&from))
 	{
 		if (input->getProfileInfo().hasAppliedLimit())

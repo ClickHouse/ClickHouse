@@ -150,7 +150,7 @@ void DataTypeEnum<Type>::serializeTextEscaped(const IColumn & column, size_t row
 template <typename Type>
 void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-	/// NOTE Неплохо было бы сделать без создания временного объекта - хотя бы вынести std::string наружу.
+	/// NOTE It would be nice to do without creating a temporary object - at least extract std::string out.
 	std::string name;
 	readEscapedString(name, istr);
 	static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
@@ -284,7 +284,7 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
 }
 
 
-/// Явные инстанцирования.
+/// Explicit instantiations.
 template class DataTypeEnum<Int8>;
 template class DataTypeEnum<Int16>;
 
