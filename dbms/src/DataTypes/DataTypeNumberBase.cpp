@@ -133,7 +133,7 @@ Field DataTypeNumberBase<T>::getDefault() const
 template <typename T>
 void DataTypeNumberBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    /// ColumnVector<T>::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
+	/// ColumnVector<T>::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
 	typename ColumnVector<T>::value_type x = get<typename NearestFieldType<FieldType>::Type>(field);
 	writeBinary(x, ostr);
 }

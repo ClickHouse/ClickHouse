@@ -27,7 +27,7 @@ std::string StackTrace::toString() const
 	{
 		for (size_t i = 0, size = frames_size; i < size; ++i)
 		{
-            /// We do "demangling" of names. The name is in parenthesis, before the '+' character.
+			/// We do "demangling" of names. The name is in parenthesis, before the '+' character.
 
 			char * name_start = nullptr;
 			char * name_end = nullptr;

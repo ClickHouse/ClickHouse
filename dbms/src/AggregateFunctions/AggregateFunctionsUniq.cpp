@@ -37,7 +37,7 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 	}
 	else if (argument_types.size() > 1)
 	{
-        /// If there are several arguments, then no tuples allowed among them.
+		/// If there are several arguments, then no tuples allowed among them.
 		for (const auto & type : argument_types)
 			if (typeid_cast<const DataTypeTuple *>(type.get()))
 				throw Exception("Tuple argument of function " + name + " must be the only argument",
@@ -75,7 +75,7 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 	}
 	else if (argument_types.size() > 1)
 	{
-        /// If there are several arguments, then no tuples allowed among them.
+		/// If there are several arguments, then no tuples allowed among them.
 		for (const auto & type : argument_types)
 			if (typeid_cast<const DataTypeTuple *>(type.get()))
 				throw Exception("Tuple argument of function " + name + " must be the only argument",

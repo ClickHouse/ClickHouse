@@ -26,19 +26,19 @@ Block AggregatingSortedBlockInputStream::readImpl()
 	{
 		next_key.columns.resize(description.size());
 
-        /// Fill in the column numbers that need to be aggregated.
+		/// Fill in the column numbers that need to be aggregated.
 		for (size_t i = 0; i < num_columns; ++i)
 		{
 			ColumnWithTypeAndName & column = merged_block.safeGetByPosition(i);
 
-            /// We leave only states of aggregate functions.
+			/// We leave only states of aggregate functions.
 			if (!startsWith(column.type->getName(), "AggregateFunction"))
 			{
 				column_numbers_not_to_aggregate.push_back(i);
 				continue;
 			}
 
-            /// Included into PK?
+			/// Included into PK?
 			SortDescription::const_iterator it = description.begin();
 			for (; it != description.end(); ++it)
 				if (it->column_name == column.name || (it->column_name.empty() && it->column_number == i))
@@ -72,7 +72,7 @@ void AggregatingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, 
 {
 	size_t merged_rows = 0;
 
-    /// We take the rows in the correct order and put them in `merged_block`, while the rows are no more than `max_block_size`
+	/// We take the rows in the correct order and put them in `merged_block`, while the rows are no more than `max_block_size`
 	while (!queue.empty())
 	{
 		TSortCursor current = queue.top();
@@ -81,7 +81,7 @@ void AggregatingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, 
 
 		bool key_differs;
 
-        if (current_key.empty())    /// The first key encountered.
+		if (current_key.empty())    /// The first key encountered.
 		{
 			current_key.columns.resize(description.size());
 			setPrimaryKeyRef(current_key, current);
@@ -100,7 +100,7 @@ void AggregatingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, 
 		{
 			current_key.swap(next_key);
 
-            /// We will write the data for the group. We copy the values of ordinary columns.
+			/// We will write the data for the group. We copy the values of ordinary columns.
 			for (size_t i = 0, size = column_numbers_not_to_aggregate.size(); i < size; ++i)
 			{
 				size_t j = column_numbers_not_to_aggregate[i];

@@ -44,8 +44,8 @@ void NativeBlockOutputStream::flush()
 
 void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, size_t offset, size_t limit)
 {
-    /** If there are columns-constants - then we materialize them.
-      * (Since the data type does not know how to serialize / deserialize constants.)
+	/** If there are columns-constants - then we materialize them.
+	  * (Since the data type does not know how to serialize / deserialize constants.)
 	  */
 	ColumnPtr full_column;
 
@@ -81,12 +81,12 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 			if (offset > offsets.size())
 				return;
 
-            /** offset - from which array to write.
-              * limit - how many arrays should be written, or 0, if you write everything that is.
-              * end - up to which array written part finishes.
+			/** offset - from which array to write.
+			  * limit - how many arrays should be written, or 0, if you write everything that is.
+			  * end - up to which array written part finishes.
 			  *
-              * nested_offset - from which nested element to write.
-              * nested_limit - how many nested elements to write, or 0, if you write everything that is.
+			  * nested_offset - from which nested element to write.
+			  * nested_limit - how many nested elements to write, or 0, if you write everything that is.
 			  */
 
 			size_t end = std::min(offset + limit, offsets.size());
@@ -130,7 +130,7 @@ void NativeBlockOutputStream::write(const Block & block)
 	writeVarUInt(rows, ostr);
 
 	/** The index has the same structure as the data stream.
-      * But instead of column values, it contains a mark that points to the location in the data file where this part of the column is located.
+	  * But instead of column values, it contains a mark that points to the location in the data file where this part of the column is located.
 	  */
 	if (index_ostr)
 	{
@@ -145,7 +145,7 @@ void NativeBlockOutputStream::write(const Block & block)
 
 		if (index_ostr)
 		{
-            ostr_concrete->next();  /// Finish compressed block.
+			ostr_concrete->next();  /// Finish compressed block.
 			mark.offset_in_compressed_file = initial_size_of_file + ostr_concrete->getCompressedBytes();
 			mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
 		}

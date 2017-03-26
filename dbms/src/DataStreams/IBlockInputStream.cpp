@@ -81,7 +81,7 @@ void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t mult
 		{
 			String id = (*it)->getTreeID();
 			size_t & subtree_multiplier = multipliers[id];
-            if (subtree_multiplier != 0)    /// Already printed subtrees are marked with zero in the array of multipliers.
+			if (subtree_multiplier != 0)    /// Already printed subtrees are marked with zero in the array of multipliers.
 			{
 				(*it)->dumpTree(ostr, indent, subtree_multiplier);
 				subtree_multiplier = 0;

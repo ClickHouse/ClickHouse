@@ -27,7 +27,7 @@ void WriteBufferFromPocoSocket::nextImpl()
 	{
 		ssize_t res = 0;
 
-        /// Add more details to exceptions.
+		/// Add more details to exceptions.
 		try
 		{
 			res = socket.impl()->sendBytes(working_buffer.begin() + bytes_written, offset() - bytes_written);

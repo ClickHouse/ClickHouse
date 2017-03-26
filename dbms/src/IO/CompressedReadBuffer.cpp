@@ -24,11 +24,11 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
 {
 	size_t bytes_read = 0;
 
-    /// If there are unread bytes in the buffer, then we copy necessary to `to`.
+	/// If there are unread bytes in the buffer, then we copy necessary to `to`.
 	if (pos < working_buffer.end())
 		bytes_read += read(to, std::min(static_cast<size_t>(working_buffer.end() - pos), n));
 
-    /// If you need to read more - we will, if possible, uncompress at once to `to`.
+	/// If you need to read more - we will, if possible, uncompress at once to `to`.
 	while (bytes_read < n)
 	{
 		size_t size_decompressed;

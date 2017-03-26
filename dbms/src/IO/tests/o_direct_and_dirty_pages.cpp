@@ -23,7 +23,7 @@ int main(int argc, char ** argv)
 
 		String test = "Hello, world! " + toString(rand);
 
-        /// Write to file as usual, read with O_DIRECT.
+		/// Write to file as usual, read with O_DIRECT.
 
 		{
 			WriteBufferFromFile wb("test1", BUF_SIZE);
@@ -41,7 +41,7 @@ int main(int argc, char ** argv)
 			std::cerr << "test: " << test << ", res: " << res << ", bytes: " << rb.count() << std::endl;
 		}
 
-        /// Write to file with O_DIRECT, read as usual.
+		/// Write to file with O_DIRECT, read as usual.
 
 		{
 			WriteBufferFromFile wb("test2", BUF_SIZE, O_WRONLY | O_CREAT | O_TRUNC | O_DIRECT, 0666, nullptr, 4096);

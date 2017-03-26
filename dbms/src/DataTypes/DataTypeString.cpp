@@ -126,7 +126,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, Column
 		if (size)
 		{
 #if __SSE2__
-            /// An optimistic branch in which more efficient copying is possible.
+			/// An optimistic branch in which more efficient copying is possible.
 			if (offset + 16 * UNROLL_TIMES <= data.allocated_size() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
 			{
 				const __m128i * sse_src_pos = reinterpret_cast<const __m128i *>(istr.position());
@@ -184,8 +184,8 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
 	}
 	else
 	{
-        /** A small heuristic to evaluate that there are a lot of empty lines in the column.
-          * In this case, to save RAM, we will say that the average size of the value is small.
+		/** A small heuristic to evaluate that there are a lot of empty lines in the column.
+		  * In this case, to save RAM, we will say that the average size of the value is small.
 		  */
 		if (istr.position() + sizeof(UInt32) <= istr.buffer().end()
 			&& unalignedLoad<UInt32>(istr.position()) == 0)	/// The first 4 rows are in the buffer and are empty.

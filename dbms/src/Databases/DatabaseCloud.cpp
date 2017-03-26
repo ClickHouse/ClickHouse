@@ -96,7 +96,7 @@ DatabaseCloud::DatabaseCloud(
 
 void loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag)
 {
-    /// Do nothing - all tables are loaded lazily.
+	/// Do nothing - all tables are loaded lazily.
 }
 
 
@@ -148,11 +148,11 @@ String DatabaseCloud::getTableDefinitionFromHash(Hash hash) const
   */
 struct TableDescription
 {
-    /// Hash of the table structure. The structure itself is stored separately.
+	/// Hash of the table structure. The structure itself is stored separately.
 	Hash definition_hash;
-    /// The name of the local table to store data. It can be empty if nothing else has been written to the table.
+	/// The name of the local table to store data. It can be empty if nothing else has been written to the table.
 	String local_table_name;
-    /// The list of hosts on which the table data is located. It can be empty if nothing else has been written to the table.
+	/// The list of hosts on which the table data is located. It can be empty if nothing else has been written to the table.
 	std::vector<String> hosts;
 
 	void write(WriteBuffer & buf) const
@@ -199,7 +199,7 @@ struct TableSet
 	{
 		writeCString("Version 1\n", buf);
 
-        CompressedWriteBuffer out(buf);     /// NOTE You can reduce size of allocated buffer.
+		CompressedWriteBuffer out(buf);     /// NOTE You can reduce size of allocated buffer.
 		for (const auto & kv : map)
 		{
 			writeBinary(kv.first, out);
@@ -229,7 +229,7 @@ struct TableSet
   */
 struct LocalTableSet
 {
-    /// Hash of name -> hash of structure.
+	/// Hash of name -> hash of structure.
 	using Container = std::map<Hash, Hash>;
 	Container map;
 
@@ -253,7 +253,7 @@ struct LocalTableSet
 	{
 		writeCString("Version 1\n", buf);
 
-        CompressedWriteBuffer out(buf);     /// NOTE You can reduce size of allocated buffer.
+		CompressedWriteBuffer out(buf);     /// NOTE You can reduce size of allocated buffer.
 		for (const auto & kv : map)
 		{
 			writePODBinary(kv.first, out);
@@ -300,7 +300,7 @@ static void modifyTableSet(zkutil::ZooKeeperPtr & zookeeper, const String & path
 		if (code == ZOK)
 			break;
 		else if (code == ZBADVERSION)
-            continue;   /// Node was changed meanwhile - we'll try again.
+			continue;   /// Node was changed meanwhile - we'll try again.
 			else
 				throw zkutil::KeeperException(code, path);
 	}
@@ -343,7 +343,7 @@ static void modifyTwoTableSets(zkutil::ZooKeeperPtr & zookeeper, const String & 
 		if (code == ZOK)
 			break;
 		else if (code == ZBADVERSION)
-            continue;   /// Node was changed meanwhile - we'll try again.
+			continue;   /// Node was changed meanwhile - we'll try again.
 		else
 			throw zkutil::KeeperException(code, path1 + ", " + path2);
 	}
@@ -352,8 +352,8 @@ static void modifyTwoTableSets(zkutil::ZooKeeperPtr & zookeeper, const String & 
 
 bool DatabaseCloud::isTableExist(const String & table_name) const
 {
-    /// We are looking for a local table in the local table cache or in the file system in `path`.
-    /// If you do not find it, look for the cloud table in ZooKeeper.
+	/// We are looking for a local table in the local table cache or in the file system in `path`.
+	/// If you do not find it, look for the cloud table in ZooKeeper.
 
 	{
 		std::lock_guard<std::mutex> lock(local_tables_mutex);
@@ -378,8 +378,8 @@ bool DatabaseCloud::isTableExist(const String & table_name) const
 
 StoragePtr DatabaseCloud::tryGetTable(const String & table_name)
 {
-    /// We are looking for a local table.
-    /// If you do not find it, look for the cloud table in ZooKeeper.
+	/// We are looking for a local table.
+	/// If you do not find it, look for the cloud table in ZooKeeper.
 
 	{
 		std::lock_guard<std::mutex> lock(local_tables_mutex);
@@ -426,7 +426,7 @@ StoragePtr DatabaseCloud::tryGetTable(const String & table_name)
 		const TableDescription & description = tables_info.at(table_name);
 		String definition = getTableDefinitionFromHash(description.definition_hash);
 
-        /// TODO Initialization of `StorageCloud` object
+		/// TODO Initialization of `StorageCloud` object
 		return {};
 	}
 }
@@ -504,7 +504,7 @@ public:
 	{
 		String definition = parent().getTableDefinitionFromHash(table_set_iterator->second.definition_hash);
 
-        /// TODO Initialization of `StorageCloud` object
+		/// TODO Initialization of `StorageCloud` object
 		return {};
 	}
 };
@@ -610,10 +610,10 @@ void DatabaseCloud::createTable(
 	}
 	else
 	{
-        /// A rarer branch, since there are few unique table definitions.
-        /// There is a race condition in which the node already exists, but a check for a logical error (see above) will not be performed.
-        /// It does not matter.
-        /// By the way, nodes in `table_definitions` are never deleted.
+		/// A rarer branch, since there are few unique table definitions.
+		/// There is a race condition in which the node already exists, but a check for a logical error (see above) will not be performed.
+		/// It does not matter.
+		/// By the way, nodes in `table_definitions` are never deleted.
 		zookeeper->tryCreate(zookeeper_definition_path, definition, zkutil::CreateMode::Persistent);
 	}
 
@@ -675,7 +675,7 @@ void DatabaseCloud::removeTable(const String & table_name)
 	{
 		Hash table_hash = getTableHash(table_name);
 
-        /// Delete information about the local table from ZK.
+		/// Delete information about the local table from ZK.
 		modifyTableSet<LocalTableSet>(
 			zookeeper,
 			zookeeper_path + "/local_tables/" + name + "/" + getNameOfNodeWithTables(table_name),
@@ -683,7 +683,7 @@ void DatabaseCloud::removeTable(const String & table_name)
 			{
 				auto it = set.map.find(table_hash);
 				if (it == set.map.end())
-                    return false;       /// The table has already been deleted.
+					return false;       /// The table has already been deleted.
 
 				set.map.erase(it);
 				return true;
@@ -707,7 +707,7 @@ void DatabaseCloud::removeTable(const String & table_name)
 			{
 				auto it = set.map.find(table_name);
 				if (it == set.map.end())
-                    return false;       /// The table has already been deleted.
+					return false;       /// The table has already been deleted.
 
 				description = it->second;
 				set.map.erase(it);
@@ -716,7 +716,7 @@ void DatabaseCloud::removeTable(const String & table_name)
 
 		if (!description.local_table_name.empty() && !description.hosts.empty())
 		{
-            /// Deleting local tables. TODO Whether at once here, or in a separate background thread.
+			/// Deleting local tables. TODO Whether at once here, or in a separate background thread.
 		}
 	}
 }
@@ -725,8 +725,8 @@ void DatabaseCloud::removeTable(const String & table_name)
 void DatabaseCloud::renameTable(
 	const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings)
 {
-    /// Only cloud tables can be renamed.
-    /// The transfer between databases is not supported.
+	/// Only cloud tables can be renamed.
+	/// The transfer between databases is not supported.
 
 	if (&to_database != this)
 		throw Exception("Moving of tables in Cloud database between databases is not supported", ErrorCodes::NOT_IMPLEMENTED);

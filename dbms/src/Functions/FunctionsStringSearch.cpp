@@ -390,13 +390,13 @@ struct MatchImpl
 
 			std::string required_substring;
 			bool is_trivial;
-            bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
+			bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
 
 			regexp->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
 
 			if (required_substring.empty())
 			{
-                if (!Regexp->getRE2()) /// An empty regexp. Always matches.
+				if (!Regexp->getRE2()) /// An empty regexp. Always matches.
 				{
 					memset(&res[0], 1, size * sizeof(res[0]));
 				}

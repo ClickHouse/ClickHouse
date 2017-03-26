@@ -85,7 +85,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 
 	/// Initialize the result.
 
-    /// We clone the structure of the first non-empty source block.
+	/// We clone the structure of the first non-empty source block.
 	{
 		auto it = source_blocks.cbegin();
 		for (; it != source_blocks.cend(); ++it)
@@ -178,8 +178,8 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 {
 	size_t merged_rows = 0;
 
-    /** Increase row counters.
-      * Return true if it's time to finish generating the current data block.
+	/** Increase row counters.
+	  * Return true if it's time to finish generating the current data block.
 	  */
 	auto count_row_and_check_limit = [&, this]()
 	{
@@ -202,7 +202,7 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 		return false;
 	};
 
-    /// Take rows in required order and put them into `merged_block`, while the rows are no more than `max_block_size`
+	/// Take rows in required order and put them into `merged_block`, while the rows are no more than `max_block_size`
 	while (!queue.empty())
 	{
 		TSortCursor current = queue.top();
@@ -210,8 +210,8 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 
 		while (true)
 		{
-            /** And what if the block is smaller or equal than the rest for the current cursor?
-              * Or is there only one data source left in the queue? Then you can take the entire block of current cursor.
+			/** And what if the block is smaller or equal than the rest for the current cursor?
+			  * Or is there only one data source left in the queue? Then you can take the entire block of current cursor.
 			  */
 			if (current.impl->isFirst() && (queue.empty() || current.totallyLessOrEquals(queue.top())))
 			{
@@ -286,7 +286,7 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 						return;
 					}
 
-                    /// Do not put the cursor back in the queue, but continue to work with the current cursor.
+					/// Do not put the cursor back in the queue, but continue to work with the current cursor.
 	//				std::cerr << "current is still on top, using current row\n";
 					continue;
 				}

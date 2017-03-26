@@ -69,13 +69,13 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 	if (x.empty())
 		throw Exception("Cannot infer type of empty array", ErrorCodes::EMPTY_DATA_PASSED);
 
-    /** The type of the array should be determined by the type of its elements.
-      * If the elements are numbers, then select the smallest common type, if any,
-      *  or throw an exception.
-      * The code is similar to NumberTraits::ResultOfIf, but it's hard to use this code directly.
+	/** The type of the array should be determined by the type of its elements.
+	  * If the elements are numbers, then select the smallest common type, if any,
+	  *  or throw an exception.
+	  * The code is similar to NumberTraits::ResultOfIf, but it's hard to use this code directly.
 	  *
-      * Also notice that Float32 is not output, only Float64 is used instead.
-      * This is done because Float32 type literals do not exist in the query.
+	  * Also notice that Float32 is not output, only Float64 is used instead.
+	  * This is done because Float32 type literals do not exist in the query.
 	  */
 
 	bool has_string = false;

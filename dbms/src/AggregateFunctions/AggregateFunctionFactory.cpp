@@ -161,14 +161,14 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
 
 	if ((recursion_level == 0) && endsWith(name, "State"))
 	{
-        /// For aggregate functions of the form `aggState`, where `agg` is the name of another aggregate function.
+		/// For aggregate functions of the form `aggState`, where `agg` is the name of another aggregate function.
 		AggregateFunctionPtr nested = get(trimRight(name, "State"), argument_types, recursion_level + 1);
 		return createAggregateFunctionState(nested);
 	}
 
 	if ((recursion_level <= 1) && endsWith(name, "Merge"))
 	{
-        /// For aggregate functions of the form `aggMerge`, where `agg` is the name of another aggregate function.
+		/// For aggregate functions of the form `aggMerge`, where `agg` is the name of another aggregate function.
 		if (argument_types.size() != 1)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		const DataTypeAggregateFunction * function = typeid_cast<const DataTypeAggregateFunction *>(&*argument_types[0]);
@@ -202,7 +202,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
 
 	if ((recursion_level <= 3) && endsWith(name, "Array"))
 	{
-        /// For aggregate functions of the form `aggArray`, where `agg` is the name of another aggregate function.
+		/// For aggregate functions of the form `aggArray`, where `agg` is the name of another aggregate function.
 		size_t num_agruments = argument_types.size();
 
 		DataTypes nested_arguments;
@@ -214,7 +214,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
 				throw Exception("Illegal type " + argument_types[i]->getName() + " of argument #" + toString(i + 1) +
 					" for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
-        /// + 3, so that no other modifier can go before the `Array`
+		/// + 3, so that no other modifier can go before the `Array`
 		AggregateFunctionPtr nested = get(trimRight(name, "Array"), nested_arguments, recursion_level + 3);
 		return createAggregateFunctionArray(nested);
 	}
@@ -239,11 +239,11 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
 	if (recursion_level == 0 && case_insensitive_aggregate_functions.count(Poco::toLower(name)))
 		return true;
 
-    /// For aggregate functions of the form `aggState`, where `agg` is the name of another aggregate function.
+	/// For aggregate functions of the form `aggState`, where `agg` is the name of another aggregate function.
 	if ((recursion_level <= 0) && endsWith(name, "State"))
 		return isAggregateFunctionName(trimRight(name, "State"), recursion_level + 1);
 
-    /// For aggregate functions of the form `aggMerge`, where `agg` is the name of another aggregate function.
+	/// For aggregate functions of the form `aggMerge`, where `agg` is the name of another aggregate function.
 	if ((recursion_level <= 1) && endsWith(name, "Merge"))
 		return isAggregateFunctionName(trimRight(name, "Merge"), recursion_level + 1);
 
@@ -251,10 +251,10 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
 	if ((recursion_level <= 2) && endsWith(name, "If"))
 		return isAggregateFunctionName(trimRight(name, "If"), recursion_level + 1);
 
-    /// For aggregate functions of the form `aggArray`, where `agg` is the name of another aggregate function.
+	/// For aggregate functions of the form `aggArray`, where `agg` is the name of another aggregate function.
 	if ((recursion_level <= 3) && endsWith(name, "Array"))
 	{
-        /// + 3, so that no other modifier can go before `Array`
+		/// + 3, so that no other modifier can go before `Array`
 		return isAggregateFunctionName(trimRight(name, "Array"), recursion_level + 3);
 	}
 

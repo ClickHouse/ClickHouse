@@ -12,9 +12,9 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
 {
 	size_t count = 0;
 
-    /** NOTE: In theory, `filt` should only contain zeros and ones.
-      * But, just in case, here the condition > 0 (to signed bytes) is used.
-      * It would be better to use != 0, then this does not allow SSE2.
+	/** NOTE: In theory, `filt` should only contain zeros and ones.
+	  * But, just in case, here the condition > 0 (to signed bytes) is used.
+	  * It would be better to use != 0, then this does not allow SSE2.
 	  */
 
 	const Int8 * pos = reinterpret_cast<const Int8 *>(&filt[0]);

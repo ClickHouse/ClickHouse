@@ -45,7 +45,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 	flush_buffer(BufferWithOwnMemory<WriteBuffer>(this->memory.size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
 	filename(filename_)
 {
-    /// Correct the buffer size information so that additional pages do not touch the base class `BufferBase`.
+	/// Correct the buffer size information so that additional pages do not touch the base class `BufferBase`.
 	this->buffer().resize(this->buffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
 	this->internalBuffer().resize(this->internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
 	flush_buffer.buffer().resize(this->buffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
@@ -92,7 +92,7 @@ void WriteBufferAIO::sync()
 {
 	flush();
 
-    /// Ask OS to flush data to disk.
+	/// Ask OS to flush data to disk.
 	int res = ::fsync(fd);
 	if (res == -1)
 		throwFromErrno("Cannot fsync " + getFileName(), ErrorCodes::CANNOT_FSYNC);
@@ -208,9 +208,9 @@ void WriteBufferAIO::prepare()
 	truncation_count = 0;
 
 	/*
-        A page on disk or in memory
+		A page on disk or in memory
 
-        start address (starting position in case of disk) is a multiply of DEFAULT_AIO_FILE_BLOCK_SIZE
+		start address (starting position in case of disk) is a multiply of DEFAULT_AIO_FILE_BLOCK_SIZE
 		:
 		:
 		+---------------+
@@ -229,7 +229,7 @@ void WriteBufferAIO::prepare()
 	*/
 
 	/*
-        Representation of data on a disk
+		Representation of data on a disk
 
 		XXX : the data you want to write
 		ZZZ : data that is already on disk or zeros, if there is no data
@@ -283,9 +283,9 @@ void WriteBufferAIO::prepare()
 	bytes_to_write = region_aligned_size;
 
 	/*
-        Representing data in the buffer before processing
+		Representing data in the buffer before processing
 
-        XXX : the data you want to write
+		XXX : the data you want to write
 
 		buffer_begin                                         buffer_end
 		:                                                             :
@@ -305,20 +305,20 @@ void WriteBufferAIO::prepare()
 									buffer_size
 	*/
 
-    /// The buffer of data that we want to write to the disk.
+	/// The buffer of data that we want to write to the disk.
 	buffer_begin = flush_buffer.buffer().begin();
 	Position buffer_end = buffer_begin + region_size;
 	size_t buffer_size = buffer_end - buffer_begin;
 
-    /// Process the buffer so that it reflects the structure of the disk region.
+	/// Process the buffer so that it reflects the structure of the disk region.
 
 	/*
-        Representation of data in the buffer after processing
+		Representation of data in the buffer after processing
 
 		XXX : the data you want to write
 		ZZZ : data from disk or zeros, if there is no data
 
-       `buffer_begin`                                            `buffer_end`   extra page
+	   `buffer_begin`                                            `buffer_end`   extra page
 		:                                                                  :       :
 		:                                                                  :       :
 		+---:-----------+---------------+---------------+---------------+--:------------+

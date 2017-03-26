@@ -28,8 +28,8 @@ namespace ErrorCodes
 
 void Block::addDefaults(const NamesAndTypesList & required_columns)
 {
-    /// For missing columns of nested structure, you need to create not a column of empty arrays, but a column of arrays of correct lengths.
-    /// First, remember the offset columns for all arrays in the block.
+	/// For missing columns of nested structure, you need to create not a column of empty arrays, but a column of arrays of correct lengths.
+	/// First, remember the offset columns for all arrays in the block.
 	std::map<String, ColumnPtr> offset_columns;
 
 	for (const auto & elem : data)
@@ -39,7 +39,7 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 			String offsets_name = DataTypeNested::extractNestedTableName(elem.name);
 			auto & offsets_column = offset_columns[offsets_name];
 
-            /// If for some reason there are different displacement columns for one nested structure, then we take nonempty.
+			/// If for some reason there are different displacement columns for one nested structure, then we take nonempty.
 			if (!offsets_column || offsets_column->empty())
 				offsets_column = array->getOffsetsColumn();
 		}
@@ -70,8 +70,8 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 		}
 		else
 		{
-            /** It is necessary to turn a constant column into a full column, since in part of blocks (from other parts),
-              *  it can be full (or the interpreter may decide that it is constant everywhere).
+			/** It is necessary to turn a constant column into a full column, since in part of blocks (from other parts),
+			  *  it can be full (or the interpreter may decide that it is constant everywhere).
 			  */
 			column_to_add.column = dynamic_cast<IColumnConst &>(
 				*column_to_add.type->createConstColumn(
@@ -450,7 +450,7 @@ void Block::optimizeNestedArraysOffsets()
 				if (!it->second->hasEqualOffsets(*column_array))
 					throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
-                /// make columns of arrays offsets inside one nested table point to the same place
+				/// make columns of arrays offsets inside one nested table point to the same place
 				column_array->getOffsetsColumn() = it->second->getOffsetsColumn();
 			}
 		}
@@ -479,8 +479,8 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff)
 {
-    /// The traditional task: the largest common subsequence (LCS).
-    /// Assume that order is important. If this becomes wrong once, let's simplify it: for example, make 2 sets.
+	/// The traditional task: the largest common subsequence (LCS).
+	/// Assume that order is important. If this becomes wrong once, let's simplify it: for example, make 2 sets.
 
 	std::vector<std::vector<int>> lcs(lhs.columns() + 1);
 	for (auto & v : lcs)
@@ -506,15 +506,15 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
 	{
 		if (lhs.safeGetByPosition(l - 1) == rhs.safeGetByPosition(r - 1))
 		{
-            /// This element is in both sequences, so it does not get into `diff`.
+			/// This element is in both sequences, so it does not get into `diff`.
 			--l;
 			--r;
 		}
 		else
 		{
-            /// Small heuristics: most often used when getting a difference for (expected_block, actual_block).
-            /// Therefore, the preference will be given to the field, which is in the left block (expected_block), therefore
-            /// in `diff` the column from `actual_block` will get.
+			/// Small heuristics: most often used when getting a difference for (expected_block, actual_block).
+			/// Therefore, the preference will be given to the field, which is in the left block (expected_block), therefore
+			/// in `diff` the column from `actual_block` will get.
 			if (lcs[l][r - 1] >= lcs[l - 1][r])
 				right_columns.push_back(rhs.safeGetByPosition(--r));
 			else

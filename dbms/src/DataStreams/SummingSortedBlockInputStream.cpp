@@ -93,7 +93,7 @@ Block SummingSortedBlockInputStream::readImpl()
 			}
 			else
 			{
-                /// Leave only numeric types. Note that dates and datetime here are not considered such.
+				/// Leave only numeric types. Note that dates and datetime here are not considered such.
 				if (!column.type->isNumeric() ||
 					column.type->getName() == "Date" ||
 					column.type->getName() == "DateTime" ||

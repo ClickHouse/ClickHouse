@@ -48,7 +48,7 @@ bool CachedCompressedReadBuffer::nextImpl()
 			owned_cell->data.resize(size_decompressed);
 			decompress(owned_cell->data.m_data, size_decompressed, size_compressed_without_checksum);
 
-            /// Put data into cache.
+			/// Put data into cache.
 			cache->set(key, owned_cell);
 		}
 	}

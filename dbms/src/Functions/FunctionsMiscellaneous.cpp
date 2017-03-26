@@ -286,7 +286,7 @@ public:
 		return std::make_shared<DataTypeUInt64>();
 	}
 
-    /// apply function to the block.
+	/// apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t size = block.rows();
@@ -320,7 +320,7 @@ public:
 		return false;
 	}
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
+	/// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return std::make_shared<DataTypeUInt64>();
@@ -477,7 +477,7 @@ public:
 		return std::make_shared<DataTypeUInt8>();
 	}
 
-    /// apply function to the block.
+	/// apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		IColumn * col = block.safeGetByPosition(arguments[0]).column.get();
@@ -880,7 +880,7 @@ public:
 		return 1;
 	}
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
+	/// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return arguments.front()->clone();
@@ -1024,7 +1024,7 @@ public:
 	/// apply function to the block.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-        Int64 min = extractConstant<Int64>(block, arguments, 1, "Second"); /// The level at which the line has zero length.
+		Int64 min = extractConstant<Int64>(block, arguments, 1, "Second"); /// The level at which the line has zero length.
 		Int64 max = extractConstant<Int64>(block, arguments, 2, "Third"); /// The level at which the line has the maximum length.
 
 		/// The maximum width of the bar in characters, by default.

@@ -414,7 +414,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 	else if (src + 1 < src_end && src[0] == 0xC2u)
 	{
 		/// Punctuation U+0080 - U+00BF, UTF-8: C2 80 - C2 BF
-        *dst++ = *src++;
+		*dst++ = *src++;
 		*dst++ = *src++;
 	}
 	else if (src + 2 < src_end && src[0] == 0xE2u)

@@ -41,9 +41,9 @@ bool ValuesRowInputStream::read(Block & block)
 	if (istr.eof() || *istr.position() == ';')
 		return false;
 
-    /** Typically, this is the usual format for streaming parsing.
-      * But as an exception, it also supports processing arbitrary expressions instead of values.
-      * This is very inefficient. But if there are no expressions, then there is no overhead.
+	/** Typically, this is the usual format for streaming parsing.
+	  * But as an exception, it also supports processing arbitrary expressions instead of values.
+	  * This is very inefficient. But if there are no expressions, then there is no overhead.
 	  */
 	ParserExpressionWithOptionalAlias parser(false);
 
@@ -75,8 +75,8 @@ bool ValuesRowInputStream::read(Block & block)
 			if (!interpret_expressions)
 				throw;
 
-            /** The normal streaming parser could not parse the value.
-              * Let's try to parse it with a SQL parser as a constant expression.
+			/** The normal streaming parser could not parse the value.
+			  * Let's try to parse it with a SQL parser as a constant expression.
 			  * This is an exceptional case.
 			  */
 			if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED

@@ -31,7 +31,7 @@ Block IProfilingBlockInputStream::read()
 			if (const IProfilingBlockInputStream * p_child = dynamic_cast<const IProfilingBlockInputStream *>(&*child))
 				info.nested_infos.push_back(&p_child->info);
 
-        /// Note that after this, `children` elements can not be deleted before you might need to work with `nested_info`.
+		/// Note that after this, `children` elements can not be deleted before you might need to work with `nested_info`.
 
 		info.started = true;
 	}
@@ -59,11 +59,11 @@ Block IProfilingBlockInputStream::read()
 	}
 	else
 	{
-        /** If the thread is over, then we will ask all children to abort the execution.
-          * This makes sense when running a query with LIMIT
-          * - there is a situation when all the necessary data has already been read,
-          *   but `children sources are still working,
-          *   herewith they can work in separate threads or even remotely.
+		/** If the thread is over, then we will ask all children to abort the execution.
+		  * This makes sense when running a query with LIMIT
+		  * - there is a situation when all the necessary data has already been read,
+		  *   but `children sources are still working,
+		  *   herewith they can work in separate threads or even remotely.
 		  */
 		cancel();
 	}
@@ -201,7 +201,7 @@ void IProfilingBlockInputStream::checkQuota(Block & block)
 	switch (limits.mode)
 	{
 		case LIMITS_TOTAL:
-            /// Checked in `progress` method.
+			/// Checked in `progress` method.
 			break;
 
 		case LIMITS_CURRENT:
@@ -239,8 +239,8 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 
 		size_t total_rows_estimate = std::max(rows_processed, process_list_elem->progress_in.total_rows.load(std::memory_order_relaxed));
 
-        /** Check the restrictions on the amount of data to read, the speed of the query, the quota on the amount of data to read.
-            * NOTE: Maybe it makes sense to have them checked directly in ProcessList?
+		/** Check the restrictions on the amount of data to read, the speed of the query, the quota on the amount of data to read.
+			* NOTE: Maybe it makes sense to have them checked directly in ProcessList?
 			*/
 
 		if (limits.mode == LIMITS_TOTAL
@@ -260,7 +260,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 			}
 			else if (limits.read_overflow_mode == OverflowMode::BREAK)
 			{
-                /// For `break`, we will stop only if so many lines were actually read, and not just supposed to be read.
+				/// For `break`, we will stop only if so many lines were actually read, and not just supposed to be read.
 				if ((limits.max_rows_to_read && rows_processed > limits.max_rows_to_read)
 					|| (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read))
 				{

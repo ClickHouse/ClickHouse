@@ -44,8 +44,8 @@ void FileChecker::update(const Files::const_iterator & begin, const Files::const
 
 bool FileChecker::check() const
 {
-    /** Read the files again every time you call `check` - so as not to violate the constancy.
-        * `check` method is rarely called.
+	/** Read the files again every time you call `check` - so as not to violate the constancy.
+		* `check` method is rarely called.
 		*/
 	Map local_map;
 	load(local_map);
@@ -100,7 +100,7 @@ void FileChecker::save() const
 			if (it != map.begin())
 				writeString(",", out);
 
-            /// `escapeForFileName` is not really needed. But it is left for compatibility with the old code.
+			/// `escapeForFileName` is not really needed. But it is left for compatibility with the old code.
 			writeJSONString(escapeForFileName(it->first), out);
 			writeString(":{\"size\":\"", out);
 			writeIntText(it->second, out);

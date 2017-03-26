@@ -69,8 +69,8 @@ void RegionsHierarchy::reload()
 		DB::assertChar('\t', in);
 		DB::readIntText(read_type, in);
 
-        /** Then there can be a newline (old version)
-            *  or tab, the region's population, line feed (new version).
+		/** Then there can be a newline (old version)
+			*  or tab, the region's population, line feed (new version).
 			*/
 		RegionPopulation population = 0;
 		if (!in.eof() && *in.position() == '\t')

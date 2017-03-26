@@ -61,19 +61,19 @@ Block FilterBlockInputStream::readImpl()
 
 		const Block & sample_block = expression->getSampleBlock();
 
-        /// Find the current position of the filter column in the block.
-        /** sample_block has the result structure of evaluating the expression.
-          * But this structure does not necessarily match expression->execute(res) below,
-          *  because the expression can be applied to a block that also contains additional,
-          *  columns unnecessary for this expression, but needed later, in the next stages of the query execution pipeline.
-          * There will be no such columns in sample_block.
-          * Therefore, the position of the filter column in it can be different.
+		/// Find the current position of the filter column in the block.
+		/** sample_block has the result structure of evaluating the expression.
+		  * But this structure does not necessarily match expression->execute(res) below,
+		  *  because the expression can be applied to a block that also contains additional,
+		  *  columns unnecessary for this expression, but needed later, in the next stages of the query execution pipeline.
+		  * There will be no such columns in sample_block.
+		  * Therefore, the position of the filter column in it can be different.
 		  */
 		ssize_t filter_column_in_sample_block = filter_column;
 		if (filter_column_in_sample_block == -1)
 			filter_column_in_sample_block = sample_block.getPositionByName(filter_column_name);
 
-        /// Let's check if the filter column is a constant containing 0 or 1.
+		/// Let's check if the filter column is a constant containing 0 or 1.
 		ColumnPtr column = sample_block.safeGetByPosition(filter_column_in_sample_block).column;
 
 		if (column)
@@ -99,7 +99,7 @@ Block FilterBlockInputStream::readImpl()
 			return res;
 	}
 
-    /// Until the block is encountered, after filtering which something remains, or the stream does not end.
+	/// Until the block is encountered, after filtering which something remains, or the stream does not end.
 	while (1)
 	{
 		res = children.back()->read();

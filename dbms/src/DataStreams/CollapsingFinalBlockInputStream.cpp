@@ -9,7 +9,7 @@ namespace DB
 
 CollapsingFinalBlockInputStream::~CollapsingFinalBlockInputStream()
 {
-    /// You must cancel all `MergingBlockPtr` so that they do not try to put blocks in `output_blocks`.
+	/// You must cancel all `MergingBlockPtr` so that they do not try to put blocks in `output_blocks`.
 	previous.block.cancel();
 	last_positive.block.cancel();
 

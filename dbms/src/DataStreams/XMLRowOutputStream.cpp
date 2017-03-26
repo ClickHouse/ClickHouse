@@ -19,8 +19,8 @@ XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample
 		if (!sample_.getByPosition(i).type->isNumeric())
 			have_non_numeric_columns = true;
 
-        /// As element names, we will use the column name if it has a valid form, or "field", otherwise.
-        /// The condition below is more strict than the XML standard requires.
+		/// As element names, we will use the column name if it has a valid form, or "field", otherwise.
+		/// The condition below is more strict than the XML standard requires.
 		bool is_column_name_suitable = true;
 		const char * begin = fields[i].name.data();
 		const char * end = begin + fields[i].name.size();

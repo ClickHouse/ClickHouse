@@ -41,7 +41,7 @@ static void localBackupImpl(Poco::Path source_path, Poco::Path destination_path,
 			std::string source_str = source.toString();
 			std::string destination_str = destination.toString();
 
-            /** We are trying to create a hard link.
+			/** We are trying to create a hard link.
 			  * If it already exists, we check that source and destination point to the same inode.
 			  */
 			if (0 != link(source_str.c_str(), destination_str.c_str()))
@@ -85,8 +85,8 @@ void localBackup(Poco::Path source_path, Poco::Path destination_path)
 	const size_t max_tries = 10;
 
 	/** Files in the directory can be permanently added and deleted.
-      * If some file is deleted during an attempt to make a backup, then try again,
-      *  because it's important to take into account any new files that might appear.
+	  * If some file is deleted during an attempt to make a backup, then try again,
+	  *  because it's important to take into account any new files that might appear.
 	  */
 	while (true)
 	{

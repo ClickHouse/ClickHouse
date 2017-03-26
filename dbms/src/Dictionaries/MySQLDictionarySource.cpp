@@ -52,7 +52,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadAll()
 
 BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    /// We do not log in here and do not update the modification time, as the request can be large, and often called.
+	/// We do not log in here and do not update the modification time, as the request can be large, and often called.
 
 	const auto query = query_builder.composeLoadIdsQuery(ids);
 	return std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size);
@@ -61,7 +61,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & i
 BlockInputStreamPtr MySQLDictionarySource::loadKeys(
 	const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
 {
-    /// We do not log in here and do not update the modification time, as the request can be large, and often called.
+	/// We do not log in here and do not update the modification time, as the request can be large, and often called.
 
 	const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
 	return std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size);

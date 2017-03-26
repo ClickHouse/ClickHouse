@@ -83,7 +83,7 @@ void InterserverWriteBuffer::nextImpl()
 	if (!offset() || finalized)
 		return;
 
-    /// For correct work with AsynchronousWriteBuffer, which replaces buffers.
+	/// For correct work with AsynchronousWriteBuffer, which replaces buffers.
 	impl->set(buffer().begin(), buffer().size());
 
 	impl->position() = pos;

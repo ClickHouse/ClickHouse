@@ -2737,7 +2737,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 
 	size_t rows = block.rows();
 
-    /// Aggregate functions do not support constant columns. Therefore, we materialize them.
+	/// Aggregate functions do not support constant columns. Therefore, we materialize them.
 	std::vector<ColumnPtr> materialized_columns;
 
 	std::vector<const IColumn *> aggregate_arguments_vec(arguments.size() - 1);

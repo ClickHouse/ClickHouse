@@ -282,7 +282,7 @@ void MultiplexedConnections::initFromShard(IConnectionPool * pool)
 	auto entries = pool->getMany(settings, pool_mode);
 
 	/// If getMany() did not allocate connections and did not throw exceptions, this means that
-    /// `skip_unavailable_shards` was set. Then just return.
+	/// `skip_unavailable_shards` was set. Then just return.
 	if (entries.empty())
 		return;
 
@@ -397,7 +397,7 @@ MultiplexedConnections::ReplicaMap::iterator MultiplexedConnections::waitForRead
 	read_list.reserve(active_connection_total_count);
 
 	/// First, we check if there are data already in the buffer
-    /// of at least one connection.
+	/// of at least one connection.
 	for (const auto & e : replica_map)
 	{
 		const ReplicaState & state = e.second;

@@ -36,7 +36,7 @@ static StringRef readName(ReadBuffer & buf, String & tmp)
 
 		if (next_pos != buf.buffer().end() && *next_pos != '\\')
 		{
-            /// The most likely option is that there is no escape sequence in the key name, and the entire name is placed in the buffer.
+			/// The most likely option is that there is no escape sequence in the key name, and the entire name is placed in the buffer.
 			assertChar('"', buf);
 			StringRef res(buf.position(), next_pos - buf.position());
 			buf.position() += next_pos - buf.position();
@@ -68,7 +68,7 @@ bool JSONEachRowRowInputStream::read(Block & block)
 
 	size_t columns = block.columns();
 
-    /// Set of columns for which the values were read. The rest will be filled with default values.
+	/// Set of columns for which the values were read. The rest will be filled with default values.
 	/// TODO Ability to provide your DEFAULTs.
 	bool read_columns[columns];
 	memset(read_columns, 0, columns);
@@ -127,7 +127,7 @@ bool JSONEachRowRowInputStream::read(Block & block)
 	if (!istr.eof() && *istr.position() == ',')
 		++istr.position();
 
-    /// Fill non-visited columns with the default values.
+	/// Fill non-visited columns with the default values.
 	for (size_t i = 0; i < columns; ++i)
 		if (!read_columns[i])
 			block.getByPosition(i).column.get()->insertDefault();

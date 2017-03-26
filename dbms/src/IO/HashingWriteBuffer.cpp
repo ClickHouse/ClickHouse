@@ -12,7 +12,7 @@ void IHashingBuffer<Buffer>::calculateHash(DB::BufferBase::Position data, size_t
 {
 	if (len)
 	{
-        /// if the data is less than `block_size`, then put them into buffer and calculate hash later
+		/// if the data is less than `block_size`, then put them into buffer and calculate hash later
 		if (block_pos + len < block_size)
 		{
 			memcpy(&BufferWithOwnMemory<Buffer>::memory[block_pos], data, len);
@@ -20,7 +20,7 @@ void IHashingBuffer<Buffer>::calculateHash(DB::BufferBase::Position data, size_t
 		}
 		else
 		{
-            /// if something is already written to the buffer, then we'll add it
+			/// if something is already written to the buffer, then we'll add it
 			if (block_pos)
 			{
 				size_t n = block_size - block_pos;
@@ -38,7 +38,7 @@ void IHashingBuffer<Buffer>::calculateHash(DB::BufferBase::Position data, size_t
 				data += block_size;
 			}
 
-            /// write the remainder to its buffer
+			/// write the remainder to its buffer
 			if (len)
 			{
 				memcpy(&BufferWithOwnMemory<Buffer>::memory[0], data, len);

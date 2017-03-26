@@ -126,7 +126,7 @@ Block NativeBlockInputStream::readImpl()
 	{
 		if (use_index)
 		{
-            /// If the current position is what is required, the real seek does not occur.
+			/// If the current position is what is required, the real seek does not occur.
 			istr_concrete->seek(index_column_it->location.offset_in_compressed_file, index_column_it->location.offset_in_decompressed_block);
 		}
 

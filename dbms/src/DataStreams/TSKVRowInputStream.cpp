@@ -54,7 +54,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
 			bool have_value = *next_pos == '=';
 			if (tmp.empty())
 			{
-                /// No need to copy data, you can refer directly to the `buf`.
+				/// No need to copy data, you can refer directly to the `buf`.
 				ref = StringRef(buf.position(), next_pos - buf.position());
 				buf.position() += next_pos + have_value - buf.position();
 			}
@@ -92,7 +92,7 @@ bool TSKVRowInputStream::read(Block & block)
 
 	size_t columns = block.columns();
 
-    /// Set of columns for which the values were read. The rest will be filled with default values.
+	/// Set of columns for which the values were read. The rest will be filled with default values.
 	/// TODO Ability to provide your DEFAULTs.
 	bool read_columns[columns];
 	memset(read_columns, 0, columns);

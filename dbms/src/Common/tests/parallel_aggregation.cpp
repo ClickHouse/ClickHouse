@@ -274,7 +274,7 @@ int main(int argc, char ** argv)
 
 	if (!method || method == 1)
 	{
-        /** Option 1.
+		/** Option 1.
 		  * In different threads, we aggregate independently into different hash tables.
 		  * Then merge them together.
 		  */
@@ -385,9 +385,9 @@ int main(int argc, char ** argv)
 
 	if (!method || method == 11)
 	{
-        /** Option 11.
-          * Same as option 1, but with merge, the order of the cycles is changed,
-          *  which potentially can give better cache locality.
+		/** Option 11.
+		  * Same as option 1, but with merge, the order of the cycles is changed,
+		  *  which potentially can give better cache locality.
 		  *
 		  * In practice, there is no difference.
 		  */
@@ -461,11 +461,11 @@ int main(int argc, char ** argv)
 	if (!method || method == 2)
 	{
 		/** Option 2.
-          * In different threads, we aggregate independently into different two-level hash tables.
-          * Then merge them together, parallelizing by the first level buckets.
-          * When using hash tables of large sizes (10 million elements or more),
-          *  and a large number of threads (8-32), the merge is a bottleneck,
-          *  and has a performance advantage of 4 times.
+		  * In different threads, we aggregate independently into different two-level hash tables.
+		  * Then merge them together, parallelizing by the first level buckets.
+		  * When using hash tables of large sizes (10 million elements or more),
+		  *  and a large number of threads (8-32), the merge is a bottleneck,
+		  *  and has a performance advantage of 4 times.
 		  */
 
 		std::vector<MapTwoLevel> maps(num_threads);
@@ -576,14 +576,14 @@ int main(int argc, char ** argv)
 
 	if (!method || method == 3)
 	{
-        /** Option 3.
-          * In different threads, we aggregate independently into different hash tables,
-          *  until their size becomes large enough.
-          * If the size of the local hash table is large, and there is no element in it,
-          *  then we insert it into one global hash table, protected by mutex,
-          *  and if mutex failed to capture, then insert it into the local one.
-          * Then merge all the local hash tables to the global one.
-          * This method is bad - a lot of contention.
+		/** Option 3.
+		  * In different threads, we aggregate independently into different hash tables,
+		  *  until their size becomes large enough.
+		  * If the size of the local hash table is large, and there is no element in it,
+		  *  then we insert it into one global hash table, protected by mutex,
+		  *  and if mutex failed to capture, then insert it into the local one.
+		  * Then merge all the local hash tables to the global one.
+		  * This method is bad - a lot of contention.
 		  */
 
 		std::vector<Map> local_maps(num_threads);
@@ -646,10 +646,10 @@ int main(int argc, char ** argv)
 
 	if (!method || method == 33)
 	{
-        /** Option 33.
-         * In different threads, we aggregate independently into different hash tables,
-         *  until their size becomes large enough.
-         * Then we insert the data to the global hash table, protected by mutex, and continue.
+		/** Option 33.
+		 * In different threads, we aggregate independently into different hash tables,
+		 *  until their size becomes large enough.
+		 * Then we insert the data to the global hash table, protected by mutex, and continue.
 		 */
 
 		std::vector<Map> local_maps(num_threads);
@@ -712,13 +712,13 @@ int main(int argc, char ** argv)
 
 	if (!method || method == 4)
 	{
-        /** Option 4.
-          * In different threads, we aggregate independently into different hash tables,
-          *  until their size becomes large enough.
-          * If the size of the local hash table is large, and there is no element in it,
-          *  then insert it into one of 256 global hash tables, each of which is under its mutex.
-          * Then merge all local hash tables into the global one.
-          * This method is not so bad with a lot of threads, but worse than the second one.
+		/** Option 4.
+		  * In different threads, we aggregate independently into different hash tables,
+		  *  until their size becomes large enough.
+		  * If the size of the local hash table is large, and there is no element in it,
+		  *  then insert it into one of 256 global hash tables, each of which is under its mutex.
+		  * Then merge all local hash tables into the global one.
+		  * This method is not so bad with a lot of threads, but worse than the second one.
 		  */
 
 		std::vector<Map> local_maps(num_threads);
@@ -783,12 +783,12 @@ int main(int argc, char ** argv)
 
 /*	if (!method || method == 5)
 	{
-    */  /** Option 5.
-          * In different threads, we aggregate independently into different hash tables,
-          *  until their size becomes large enough.
-          * If the size of the local hash table is large and there is no element in it,
-          *  then insert it into one global hash table containing small latches in each cell,
-          *  and if the latch can not be captured, then insert it into the local one.
+	*/  /** Option 5.
+		  * In different threads, we aggregate independently into different hash tables,
+		  *  until their size becomes large enough.
+		  * If the size of the local hash table is large and there is no element in it,
+		  *  then insert it into one global hash table containing small latches in each cell,
+		  *  and if the latch can not be captured, then insert it into the local one.
 		  * Then merge all local hash tables into the global one.
 		  */
 /*
@@ -850,10 +850,10 @@ int main(int argc, char ** argv)
 
 	/*if (!method || method == 6)
 	{
-        *//** Option 6.
+		*//** Option 6.
 		  * In different threads, we aggregate independently into different hash tables.
 		  * Then "merge" them, passing them in the same order of the keys.
-          * Quite a slow option.
+		  * Quite a slow option.
 		  */
 /*
 		std::vector<Map> maps(num_threads);

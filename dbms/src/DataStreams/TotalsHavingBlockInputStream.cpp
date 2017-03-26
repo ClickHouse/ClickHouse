@@ -54,7 +54,7 @@ const Block & TotalsHavingBlockInputStream::getTotals()
 {
 	if (!totals)
 	{
-        /** If totals_mode == AFTER_HAVING_AUTO, you need to decide whether to add aggregates to TOTALS for strings,
+		/** If totals_mode == AFTER_HAVING_AUTO, you need to decide whether to add aggregates to TOTALS for strings,
 		  *  not passed max_rows_to_group_by.
 		  */
 		if (overflow_aggregates)

@@ -38,7 +38,7 @@ String ParallelAggregatingBlockInputStream::getID() const
 	for (size_t i = 0; i < children.size(); ++i)
 		children_ids[i] = children[i]->getID();
 
-    /// Order does not matter.
+	/// Order does not matter.
 	std::sort(children_ids.begin(), children_ids.end());
 
 	for (size_t i = 0; i < children_ids.size(); ++i)
@@ -80,8 +80,8 @@ Block ParallelAggregatingBlockInputStream::readImpl()
 		}
 		else
 		{
-            /** If there are temporary files with partially-aggregated data on the disk,
-                *  then read and merge them, spending the minimum amount of memory.
+			/** If there are temporary files with partially-aggregated data on the disk,
+				*  then read and merge them, spending the minimum amount of memory.
 				*/
 
 			ProfileEvents::increment(ProfileEvents::ExternalAggregationMerge);
@@ -133,7 +133,7 @@ void ParallelAggregatingBlockInputStream::Handler::onFinishThread(size_t thread_
 {
 	if (!parent.isCancelled() && parent.aggregator.hasTemporaryFiles())
 	{
-        /// Flush data in the RAM to disk. So it's easier to unite them later.
+		/// Flush data in the RAM to disk. So it's easier to unite them later.
 		auto & data = *parent.many_data[thread_num];
 
 		if (data.isConvertibleToTwoLevel())
@@ -149,8 +149,8 @@ void ParallelAggregatingBlockInputStream::Handler::onFinish()
 {
 	if (!parent.isCancelled() && parent.aggregator.hasTemporaryFiles())
 	{
-        /// It may happen that some data has not yet been flushed,
-        ///  because at the time of `onFinishThread` call, no data has been flushed to disk, and then some were.
+		/// It may happen that some data has not yet been flushed,
+		///  because at the time of `onFinishThread` call, no data has been flushed to disk, and then some were.
 		for (auto & data : parent.many_data)
 		{
 			if (data->isConvertibleToTwoLevel())
