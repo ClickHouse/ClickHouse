@@ -122,6 +122,11 @@ initdb()
 		if [ $(dirname "${CLICKHOUSE_DATADIR_FROM_CONFIG}") == "/" ]; then
 			echo "Directory ${CLICKHOUSE_DATADIR_FROM_CONFIG} seems too dangerous to chown."
 		else
+			if [ ! -e "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ]; then
+				echo "Creating directory ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
+				su -l $CLICKHOUSE_USER -c "mkdir \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\""
+			fi
+
 			echo "Changing owner of [${CLICKHOUSE_DATADIR_FROM_CONFIG}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
 			chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} "${CLICKHOUSE_DATADIR_FROM_CONFIG}"
 		fi
