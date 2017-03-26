@@ -396,7 +396,7 @@ struct MatchImpl
 
 			if (required_substring.empty())
 			{
-				if (!Regexp->getRE2()) /// An empty regexp. Always matches.
+				if (!regexp->getRE2()) /// An empty regexp. Always matches.
 				{
 					memset(&res[0], 1, size * sizeof(res[0]));
 				}
