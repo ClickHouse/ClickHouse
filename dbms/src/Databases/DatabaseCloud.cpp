@@ -144,7 +144,7 @@ String DatabaseCloud::getTableDefinitionFromHash(Hash hash) const
 
 
 /** Description of one table in the list of tables in ZooKeeper.
-  * No table name (right side of display).
+  * No table name (right side of map).
   */
 struct TableDescription
 {
