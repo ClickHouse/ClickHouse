@@ -86,7 +86,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 	{
 		block = children[0]->read();
 
-		/// Block with values ​​not included in `max_rows_to_group_by`. We'll postpone it.
+		/// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
 		if (overflow_row && block && block.info.is_overflows)
 		{
 			overflow_aggregates = block;
@@ -125,7 +125,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 
 			IColumn::Filter & filter = filter_column->getData();
 
-			/// Add values ​​to `totals` (if it was not already done).
+			/// Add values to `totals` (if it was not already done).
 			if (totals_mode == TotalsMode::BEFORE_HAVING)
 				addToTotals(current_totals, block, nullptr);
 			else

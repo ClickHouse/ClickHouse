@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 
-/// Write values ​​in binary form. NOTE: You could use protobuf, but it would be overkill for this case.
+/// Write values in binary form. NOTE: You could use protobuf, but it would be overkill for this case.
 void BlockInfo::write(WriteBuffer & out) const
 {
  /// Set of pairs `FIELD_NUM`, value in binary form. Then 0.
@@ -31,7 +31,7 @@ void BlockInfo::write(WriteBuffer & out) const
 	writeVarUInt(0, out);
 }
 
-/// Read values ​​in binary form.
+/// Read values in binary form.
 void BlockInfo::read(ReadBuffer & in)
 {
 	UInt64 field_num = 0;

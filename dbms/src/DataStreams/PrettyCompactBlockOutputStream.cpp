@@ -118,7 +118,7 @@ void PrettyCompactBlockOutputStream::write(const Block & block_)
 		return;
 	}
 
-	/// We will insert columns here with the calculated values ​​of visible lengths.
+	/// We will insert columns here with the calculated values of visible lengths.
 	Block block = block_;
 
 	size_t rows = block.rows();

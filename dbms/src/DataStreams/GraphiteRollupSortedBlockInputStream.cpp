@@ -232,7 +232,7 @@ void GraphiteRollupSortedBlockInputStream::startNextRow(ColumnPlainPtrs & merged
 
 void GraphiteRollupSortedBlockInputStream::finishCurrentRow(ColumnPlainPtrs & merged_columns)
 {
-    /// Insert calculated values ​​of the columns `time`, `value`, `version`.
+    /// Insert calculated values of the columns `time`, `value`, `version`.
 	merged_columns[time_column_num]->insert(UInt64(current_time_rounded));
 	merged_columns[version_column_num]->insert(current_max_version);
 

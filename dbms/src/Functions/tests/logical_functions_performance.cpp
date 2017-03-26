@@ -69,7 +69,7 @@ struct AssociativeOperationImpl
 	AssociativeOperationImpl(UInt8ColumnPtrs & in)
 		: vec(in[in.size() - N]->getData()), continuation(in) {}
 
-	/// Returns a combination of values ​​in the i-th row of all columns stored in the constructor.
+	/// Returns a combination of values in the i-th row of all columns stored in the constructor.
 	inline UInt8 apply(size_t i) const
 	{
 		//return vec[i] ? continuation.apply(i) : 0;

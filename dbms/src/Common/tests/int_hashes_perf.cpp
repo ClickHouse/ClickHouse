@@ -214,7 +214,7 @@ void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t
 template <size_t Func(UInt64)>
 static inline void test(size_t n, const UInt64 * data, const char * name)
 {
-	/// throughput. Calculations of hash functions from different values ​​may overlap.
+	/// throughput. Calculations of hash functions from different values may overlap.
 	{
 		Stopwatch watch;
 

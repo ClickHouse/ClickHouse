@@ -8,7 +8,7 @@ void AddingDefaultBlockOutputStream::write(const DB::Block & block)
 {
 	Block res = block;
 
-    /// Computes explicitly specified values ​​(in column_defaults) by default.
+    /// Computes explicitly specified values (in column_defaults) by default.
 	/** @todo if somehow block does not contain values for implicitly-defaulted columns that are prerequisites
 		 *	for explicitly-defaulted ones, exception will be thrown during evaluating such columns
 		 *	(implicitly-defaulted columns are evaluated on the line after following one. */
