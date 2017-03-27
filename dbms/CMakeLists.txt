@@ -88,7 +88,7 @@ if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
 		src/IO/WriteBufferAIO.cpp)
 endif()
 
-if (USE_STATIC_LIBRARIES)
+if (MAKE_STATIC_LIBRARIES)
 	add_library(dbms ${dbms_headers} ${dbms_sources})
 else ()
 	add_library(dbms SHARED ${dbms_headers} ${dbms_sources})

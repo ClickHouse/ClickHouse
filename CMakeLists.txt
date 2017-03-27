@@ -47,6 +47,7 @@ option (TEST_COVERAGE "Enables flags for test coverage" OFF)
 option (ENABLE_TESTS "Enables tests" ON)
 
 option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
+option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
 if (USE_STATIC_LIBRARIES)
 	list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
@@ -105,7 +106,7 @@ if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
 	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
 endif ()
 
-if (NOT USE_STATIC_LIBRARIES)
+if (NOT MAKE_STATIC_LIBRARIES)
 	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
 
@@ -127,7 +128,7 @@ set (CMAKE_C_FLAGS_TSAN                  "${CMAKE_C_FLAGS_TSAN}    ${SAN_FLAGS} 
 
 # Flags for test coverage
 if (TEST_COVERAGE)
-	set (CMAKE_CXX_FLAGS_DEBUG "${COMPILER_FLAGS} -O0 -g -fprofile-arcs -ftest-coverage -fPIC -DIS_DEBUG")
+	set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fprofile-arcs -ftest-coverage -DIS_DEBUG")
 endif (TEST_COVERAGE)
 
 if (ENABLE_TESTS)
@@ -137,8 +138,8 @@ if (ENABLE_TESTS)
 endif (ENABLE_TESTS)
 
 # Installation prefix
-set (CMAKE_INSTALL_PREFIX /usr)
 if (NOT CMAKE_SYSTEM MATCHES "FreeBSD")
+	set (CMAKE_INSTALL_PREFIX /usr)
 	set (CLICKHOUSE_ETC_DIR /etc)
 else ()
 	set (CLICKHOUSE_ETC_DIR ${CMAKE_INSTALL_PREFIX}/etc)
@@ -151,7 +152,7 @@ else ()
 	set(NOT_UNBUNDLED 1)
 endif ()
 
-message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} UNBUNDLED=${UNBUNDLED}")
+message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} UNBUNDLED=${UNBUNDLED}")
 
 include (cmake/find_openssl.cmake)
 include (cmake/find_icu4c.cmake)
