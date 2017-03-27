@@ -3,6 +3,7 @@
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/IReadableWriteBuffer.h>
+#include <DB/Common/Allocator.h>
 #include <DB/Core/Defines.h>
 
 namespace DB
@@ -10,7 +11,7 @@ namespace DB
 
 /// Stores data in memory chunks, size of cunks are exponentially increasing during write
 /// Written data could be reread after write
-class MemoryWriteBuffer : public WriteBuffer, public IReadableWriteBuffer
+class MemoryWriteBuffer : public WriteBuffer, public IReadableWriteBuffer, boost::noncopyable, private Allocator<false>
 {
 public:
 
@@ -18,7 +19,8 @@ public:
 	MemoryWriteBuffer(
 		size_t max_total_size_ = 0,
 		size_t initial_chunk_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-		double growth_rate_ = 2.0);
+		double growth_rate_ = 2.0,
+		size_t max_chunk_size_ = 128 * DBMS_DEFAULT_BUFFER_SIZE);
 
 	void nextImpl() override;
 
@@ -30,6 +32,7 @@ protected:
 
 	const size_t max_total_size;
 	const size_t initial_chunk_size;
+	const size_t max_chunk_size;
 	const double growth_rate;
 
 	using Container = std::forward_list<BufferBase::Buffer>;

@@ -1,5 +1,4 @@
 #include <DB/IO/MemoryReadWriteBuffer.h>
-#include <DB/Common/Allocator.h>
 #include <common/likely.h>
 
 namespace DB
@@ -11,7 +10,7 @@ namespace ErrorCodes
 }
 
 
-class ReadBufferFromMemoryWriteBuffer : public ReadBuffer
+class ReadBufferFromMemoryWriteBuffer : public ReadBuffer, boost::noncopyable, private Allocator<false>
 {
 public:
 
@@ -37,7 +36,7 @@ public:
 	~ReadBufferFromMemoryWriteBuffer()
 	{
 		for (const auto & range : chunk_list)
-			Allocator<false>().free(range.begin(), range.size());
+			free(range.begin(), range.size());
 	}
 
 private:
@@ -74,8 +73,8 @@ private:
 };
 
 
-MemoryWriteBuffer::MemoryWriteBuffer(size_t max_total_size_, size_t initial_chunk_size_, double growth_rate_)
-: WriteBuffer(nullptr, 0), max_total_size(max_total_size_), initial_chunk_size(initial_chunk_size_), growth_rate(growth_rate_)
+MemoryWriteBuffer::MemoryWriteBuffer(size_t max_total_size_, size_t initial_chunk_size_, double growth_rate_, size_t max_chunk_size_)
+: WriteBuffer(nullptr, 0), max_total_size(max_total_size_), initial_chunk_size(initial_chunk_size_), max_chunk_size(max_chunk_size_), growth_rate(growth_rate_)
 {
 	addChunk();
 }
@@ -103,6 +102,7 @@ void MemoryWriteBuffer::addChunk()
 	else
 	{
 		next_chunk_size = std::max(1ul, static_cast<size_t>(chunk_tail->size() * growth_rate));
+		next_chunk_size = std::min(next_chunk_size, max_chunk_size);
 	}
 
 	if (max_total_size)
@@ -117,13 +117,11 @@ void MemoryWriteBuffer::addChunk()
 		}
 	}
 
-	Position begin = reinterpret_cast<Position>(Allocator<false>().alloc(next_chunk_size));
+	Position begin = reinterpret_cast<Position>(alloc(next_chunk_size));
 	chunk_tail = chunk_list.emplace_after(chunk_tail, begin, begin + next_chunk_size);
 	total_chunks_size += next_chunk_size;
 
 	set(chunk_tail->begin(), chunk_tail->size());
-// 	std::cerr << "MemoryWriteBuffer a count=" << count() << " bytes=" << bytes << " bytes+size=" << bytes + buffer().size() << " total_chunks_size="
-// 	<< total_chunks_size << "\n";
 }
 
 std::shared_ptr<ReadBuffer> MemoryWriteBuffer::getReadBufferImpl()
@@ -140,7 +138,7 @@ std::shared_ptr<ReadBuffer> MemoryWriteBuffer::getReadBufferImpl()
 MemoryWriteBuffer::~MemoryWriteBuffer()
 {
 	for (const auto & range : chunk_list)
-		Allocator<false>().free(range.begin(), range.size());
+		free(range.begin(), range.size());
 }
 
 }

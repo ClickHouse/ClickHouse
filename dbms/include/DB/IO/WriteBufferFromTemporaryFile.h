@@ -1,6 +1,8 @@
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/IReadableWriteBuffer.h>
 #include <DB/IO/WriteBufferFromFile.h>
+#include <Poco/TemporaryFile.h>
+
 
 namespace DB
 {
@@ -12,18 +14,21 @@ class WriteBufferFromTemporaryFile : public WriteBufferFromFile, public IReadabl
 public:
 	using Ptr = std::shared_ptr<WriteBufferFromTemporaryFile>;
 
-	/// path_template examle "/opt/clickhouse/tmp/data.XXXXXX"
-	static Ptr create(const std::string & path_template_);
+	static Ptr create(const std::string & tmp_dir);
 
 	~WriteBufferFromTemporaryFile() override;
 
 protected:
 
+	WriteBufferFromTemporaryFile(std::unique_ptr<Poco::TemporaryFile> && tmp_file);
+
 	std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
 
-	WriteBufferFromTemporaryFile(int fd, const std::string & tmp_path)
-	: WriteBufferFromFile(fd, tmp_path)
-	{}
+protected:
+
+	std::unique_ptr<Poco::TemporaryFile> tmp_file;
+
+	friend class ReadBufferFromTemporaryWriteBuffer;
 };
 
 }

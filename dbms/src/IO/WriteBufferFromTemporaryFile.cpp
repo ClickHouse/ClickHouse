@@ -1,9 +1,9 @@
 #include <DB/IO/WriteBufferFromTemporaryFile.h>
-
-#include <Poco/File.h>
-#include <Poco/Path.h>
-
 #include <DB/IO/ReadBufferFromFile.h>
+
+#include <Poco/Path.h>
+#include <fcntl.h>
+
 
 namespace DB
 {
@@ -15,30 +15,19 @@ namespace ErrorCodes
 }
 
 
-WriteBufferFromTemporaryFile::Ptr WriteBufferFromTemporaryFile::create(const std::string & path_template_)
+WriteBufferFromTemporaryFile::WriteBufferFromTemporaryFile(std::unique_ptr<Poco::TemporaryFile> && tmp_file_)
+:
+WriteBufferFromFile(tmp_file_->path(), DBMS_DEFAULT_BUFFER_SIZE, O_RDWR | O_TRUNC | O_CREAT, 0600),
+tmp_file(std::move(tmp_file_))
+{}
+
+
+WriteBufferFromTemporaryFile::Ptr WriteBufferFromTemporaryFile::create(const std::string & tmp_dir)
 {
-	std::string path_template = path_template_;
+	Poco::File(tmp_dir).createDirectories();
 
-	if (path_template.empty() || path_template.back() != 'X')
-		path_template += "XXXXXX";
-
-	Poco::File(Poco::Path(path_template).makeParent()).createDirectories();
-
-	int fd = mkstemp(const_cast<char *>(path_template.c_str()));
-	if (fd < 0)
-		throw Exception("Cannot create temporary file " + path_template, ErrorCodes::CANNOT_OPEN_FILE);
-
-	return Ptr(new WriteBufferFromTemporaryFile(fd, path_template));
-}
-
-
-WriteBufferFromTemporaryFile::~WriteBufferFromTemporaryFile()
-{
-	/// remove temporary file if it was not passed to ReadBuffer
-	if (getFD() >= 0 && !getFileName().empty())
-	{
-		Poco::File(getFileName()).remove();
-	}
+	/// NOTE: std::make_shared cannot use protected constructors
+	return Ptr{new WriteBufferFromTemporaryFile(std::make_unique<Poco::TemporaryFile>(tmp_dir))};
 }
 
 
@@ -55,25 +44,21 @@ public:
 		if (-1 == res)
 			throwFromErrno("Cannot reread temporary file " + file_name, ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-		return std::make_shared<ReadBufferFromTemporaryWriteBuffer>(fd, file_name);
+		return std::make_shared<ReadBufferFromTemporaryWriteBuffer>(fd, file_name, std::move(origin->tmp_file));
 	}
 
-	ReadBufferFromTemporaryWriteBuffer(int fd, const std::string & file_name)
-	: ReadBufferFromFile(fd, file_name)
+	ReadBufferFromTemporaryWriteBuffer(int fd, const std::string & file_name, std::unique_ptr<Poco::TemporaryFile> && tmp_file_)
+	: ReadBufferFromFile(fd, file_name), tmp_file(std::move(tmp_file_))
 	{}
 
-	~ReadBufferFromTemporaryWriteBuffer() override
-	{
-		/// remove temporary file
-		Poco::File(file_name).remove();
-	}
+	std::unique_ptr<Poco::TemporaryFile> tmp_file;
 };
 
 
 ReadBufferPtr WriteBufferFromTemporaryFile::getReadBufferImpl()
 {
-	/// ignore buffer, write all data to file and reread it from disk
-	sync();
+	/// ignore buffer, write all data to file and reread it
+	next();
 
 	auto res = ReadBufferFromTemporaryWriteBuffer::createFrom(this);
 
@@ -83,6 +68,9 @@ ReadBufferPtr WriteBufferFromTemporaryFile::getReadBufferImpl()
 
 	return res;
 }
+
+
+WriteBufferFromTemporaryFile::~WriteBufferFromTemporaryFile() = default;
 
 
 }
