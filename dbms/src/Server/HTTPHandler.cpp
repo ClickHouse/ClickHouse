@@ -253,7 +253,7 @@ void HTTPHandler::processQuery(
 
 		if (buffer_until_eof)
 		{
-			std::string tmp_path_template = context.getTemporaryPath() + "http_buffers/" + escapeForFileName(user) + ".XXXXXX";
+			std::string tmp_path_template = context.getTemporaryPath() + "http_buffers/";
 
 			auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
 			{

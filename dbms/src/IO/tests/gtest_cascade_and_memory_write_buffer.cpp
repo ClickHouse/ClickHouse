@@ -220,14 +220,14 @@ try
 {
 	for (size_t s = 0; s < 2500000; s += 500000)
 	{
-		std::string tmp_template = "tmp/TemporaryFileWriteBuffer.XXXXXX";
+		std::string tmp_template = "tmp/TemporaryFileWriteBuffer/";
 		std::string data = makeTestArray(s);
 
 		auto buf = WriteBufferFromTemporaryFile::create(tmp_template);
 		buf->write(&data[0], data.size());
 
 		std::string tmp_filename = buf->getFileName();
-		ASSERT_EQ(tmp_template.size(), tmp_filename.size());
+		ASSERT_EQ(tmp_template, tmp_filename.substr(0, tmp_template.size()));
 
 		auto reread_buf = buf->tryGetReadBuffer();
 		std::string decoded_data;
@@ -254,7 +254,7 @@ catch (...)
 TEST(CascadeWriteBuffer, RereadWithTemporaryFileWriteBuffer)
 try
 {
-	const std::string tmp_template = "tmp/RereadWithTemporaryFileWriteBuffer.XXXXXX";
+	const std::string tmp_template = "tmp/RereadWithTemporaryFileWriteBuffer/";
 
 	for (size_t s = 0; s < 4000000; s += 1000000)
 	{
