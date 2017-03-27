@@ -16,13 +16,14 @@
 #include <mutex>
 
 #include <DB/Common/config.h>
+#if Poco_MongoDB_FOUND
+	#include <DB/Dictionaries/MongoDBDictionarySource.h>
+#endif
 #if Poco_DataODBC_FOUND
 	#include <Poco/Data/ODBC/Connector.h>
 	#include <DB/Dictionaries/ODBCDictionarySource.h>
 #endif
-#if Poco_MongoDB_FOUND
-	#include <DB/Dictionaries/MongoDBDictionarySource.h>
-#endif
+
 
 
 namespace DB

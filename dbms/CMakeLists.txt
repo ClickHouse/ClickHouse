@@ -160,7 +160,6 @@ target_link_libraries(dbms
 	${Boost_SYSTEM_LIBRARY}
 	${Poco_Data_LIBRARY}
 	${Poco_Foundation_LIBRARY}
-	${Poco_NetSSL_LIBRARY}
 	${ICU_LIBS}
 	${PLATFORM_LIBS}
 	${CMAKE_DL_LIBS}
