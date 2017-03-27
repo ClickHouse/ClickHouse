@@ -115,7 +115,7 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
-	/// NOTE Лучше сделать map в IStorage, чем создавать его здесь каждый раз заново.
+	/// NOTE It's better to make a map in `IStorage` than to create it here every time again.
 	google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
 	types.set_empty_key(StringRef());
 

@@ -62,10 +62,10 @@ namespace
 		}
 	};
 
-	/// По этим кодам возврата из дочернего процесса мы узнаем (наверняка) об ошибках при его создании.
+	/// By these return codes from the child process, we learn (for sure) about errors when creating it.
 	enum class ReturnCodes : int
 	{
-		CANNOT_DUP_STDIN 	= 42,	/// Значение не принципиально, но выбрано так, чтобы редко конфликтовать с кодом возврата программы.
+		CANNOT_DUP_STDIN    = 42,   /// The value is not important, but it is chosen so that it's rare to conflict with the program return code.
 		CANNOT_DUP_STDOUT 	= 43,
 		CANNOT_DUP_STDERR 	= 44,
 		CANNOT_EXEC 		= 45,
@@ -79,10 +79,10 @@ namespace DB
 
 std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only)
 {
-	/** Тут написано, что при обычном вызове vfork, есть шанс deadlock-а в многопоточных программах,
-	  *  из-за резолвинга символов в shared-библиотеке:
+	/** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
+	  *  because of the resolving of characters in the shared library
 	  * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
-	  * Поэтому, отделим резолвинг символа от вызова.
+	  * Therefore, separate the resolving of the symbol from the call.
 	  */
 	static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
 
@@ -100,12 +100,12 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
 
 	if (0 == pid)
 	{
-		/// Находимся в свежесозданном процессе.
+		/// We are in the freshly created process.
 
-		/// Почему _exit а не exit? Потому что exit вызывает atexit и деструкторы thread local storage.
-		/// А там куча мусора (в том числе, например, блокируется mutex). А это нельзя делать после vfork - происходит deadlock.
+		/// Why `_exit` and not `exit`? Because `exit` calls `atexit` and destructors of thread local storage.
+		/// And there is a lot of garbage (including, for example, mutex is blocked). And this can not be done after `vfork` - deadlock happens.
 
-		/// Заменяем файловые дескрипторы на концы наших пайпов.
+		/// Replace the file descriptors with the ends of our pipes.
 		if (STDIN_FILENO != dup2(pipe_stdin.read_fd, STDIN_FILENO))
 			_exit(int(ReturnCodes::CANNOT_DUP_STDIN));
 
@@ -119,14 +119,14 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
 		}
 
 		execv(filename, argv);
-		/// Если процесс запущен, то execv не возвращает сюда.
+		/// If the process is running, then `execv` does not return here.
 
 		_exit(int(ReturnCodes::CANNOT_EXEC));
 	}
 
 	std::unique_ptr<ShellCommand> res(new ShellCommand(pid, pipe_stdin.write_fd, pipe_stdout.read_fd, pipe_stderr.read_fd));
 
-	/// Теперь владение файловыми дескрипторами передано в результат.
+	/// Now the ownership of the file descriptors is passed to the result.
 	pipe_stdin.write_fd = -1;
 	pipe_stdout.read_fd = -1;
 	pipe_stderr.read_fd = -1;
@@ -137,8 +137,8 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
 
 std::unique_ptr<ShellCommand> ShellCommand::execute(const std::string & command, bool pipe_stdin_only)
 {
-	/// Аргументы в неконстантных кусках памяти (как требуется для execv).
-	/// Причём, их копирование должно быть совершено раньше вызова vfork, чтобы после vfork делать минимум вещей.
+	/// Arguments in non-constant chunks of memory (as required for `execv`).
+	/// Moreover, their copying must be done before calling `vfork`, so after `vfork` do a minimum of things.
 	std::vector<char> argv0("sh", "sh" + strlen("sh") + 1);
 	std::vector<char> argv1("-c", "-c" + strlen("-c") + 1);
 	std::vector<char> argv2(command.data(), command.data() + command.size() + 1);

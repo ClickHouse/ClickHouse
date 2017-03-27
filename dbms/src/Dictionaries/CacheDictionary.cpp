@@ -61,6 +61,121 @@ void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<K
 }
 
 
+/// Allow to use single value in same way as array.
+static inline CacheDictionary::Key getAt(const PaddedPODArray<CacheDictionary::Key> & arr, const size_t idx) { return arr[idx]; }
+static inline CacheDictionary::Key getAt(const CacheDictionary::Key & value, const size_t idx) { return value; }
+
+
+template <typename AncestorType>
+void CacheDictionary::isInImpl(
+	const PaddedPODArray<Key> & child_ids,
+	const AncestorType & ancestor_ids,
+	PaddedPODArray<UInt8> & out) const
+{
+	/// Transform all children to parents until ancestor id or null_value will be reached.
+
+	size_t size = out.size();
+	memset(out.data(), 0xFF, size);		/// 0xFF means "not calculated"
+
+	const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+
+	PaddedPODArray<Key> children(size);
+	PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
+
+	while (true)
+	{
+		size_t out_idx = 0;
+		size_t parents_idx = 0;
+		size_t new_children_idx = 0;
+
+		while (out_idx < size)
+		{
+			/// Already calculated
+			if (out[out_idx] != 0xFF)
+			{
+				++out_idx;
+				continue;
+			}
+
+			/// No parent
+			if (parents[parents_idx] == null_value)
+			{
+				out[out_idx] = 0;
+			}
+			/// Found ancestor
+			else if (parents[parents_idx] == getAt(ancestor_ids, parents_idx))
+			{
+				out[out_idx] = 1;
+			}
+			/// Found intermediate parent, add this value to search at next loop iteration
+			else
+			{
+				children[new_children_idx] = parents[parents_idx];
+				++new_children_idx;
+			}
+
+			++out_idx;
+			++parents_idx;
+		}
+
+		if (new_children_idx == 0)
+			break;
+
+		/// Transform all children to its parents.
+		children.resize(new_children_idx);
+		parents.resize(new_children_idx);
+
+		toParent(children, parents);
+	}
+}
+
+void CacheDictionary::isInVectorVector(
+	const PaddedPODArray<Key> & child_ids,
+	const PaddedPODArray<Key> & ancestor_ids,
+	PaddedPODArray<UInt8> & out) const
+{
+	isInImpl(child_ids, ancestor_ids, out);
+}
+
+void CacheDictionary::isInVectorConstant(
+	const PaddedPODArray<Key> & child_ids,
+	const Key ancestor_id,
+	PaddedPODArray<UInt8> & out) const
+{
+	isInImpl(child_ids, ancestor_id, out);
+}
+
+void CacheDictionary::isInConstantVector(
+	const Key child_id,
+	const PaddedPODArray<Key> & ancestor_ids,
+	PaddedPODArray<UInt8> & out) const
+{
+	/// Special case with single child value.
+
+	const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+
+	PaddedPODArray<Key> child(1, child_id);
+	PaddedPODArray<Key> parent(1);
+	std::vector<Key> ancestors(1, child_id);
+
+	/// Iteratively find all ancestors for child.
+	while (true)
+	{
+		toParent(child, parent);
+
+		if (parent[0] == null_value)
+			break;
+
+		child[0] = parent[0];
+		ancestors.push_back(parent[0]);
+	}
+
+	/// Assuming short hierarchy, so linear search is Ok.
+	for (size_t i = 0, size = out.size(); i < size; ++i)
+		out[i] = std::find(ancestors.begin(), ancestors.end(), ancestor_ids[i]) != ancestors.end();
+}
+
+
 #define DECLARE(TYPE)\
 void CacheDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const\
 {\
@@ -457,15 +572,18 @@ void CacheDictionary::getItemsNumberImpl(
 		[] (auto & pair) { return pair.first; });
 
 	/// request new values
-	update(required_ids, [&] (const auto id, const auto cell_idx) {
-		const auto attribute_value = attribute_array[cell_idx];
+	update(required_ids, [&] (const auto id, const auto cell_idx)
+		{
+			const auto attribute_value = attribute_array[cell_idx];
 
-		for (const auto row : outdated_ids[id])
-			out[row] = attribute_value;
-	}, [&] (const auto id, const auto cell_idx) {
-		for (const auto row : outdated_ids[id])
-			out[row] = get_default(row);
-	});
+			for (const auto row : outdated_ids[id])
+				out[row] = attribute_value;
+		},
+		[&] (const auto id, const auto cell_idx)
+		{
+			for (const auto row : outdated_ids[id])
+				out[row] = get_default(row);
+		});
 }
 
 template <typename DefaultGetter>

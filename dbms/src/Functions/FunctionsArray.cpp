@@ -144,7 +144,7 @@ bool tryAddField(DataTypePtr type_res, const Field & f, Array & arr)
 
 bool FunctionArray::addField(DataTypePtr type_res, const Field & f, Array & arr) const
 {
-	/// Иначе необходимо
+	/// Otherwise, it is necessary
 	if (	tryAddField<DataTypeUInt8, DataTypeUInt64>(type_res, f, arr)
 		||	tryAddField<DataTypeUInt16, DataTypeUInt64>(type_res, f, arr)
 		||	tryAddField<DataTypeUInt32, DataTypeUInt64>(type_res, f, arr)
@@ -251,14 +251,14 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 
 			if (DataTypeTraits::removeNullable(elem.type)->getName() == observed_type->getName())
 			{
-				/// Если элемент такого же типа как результат, просто добавляем его в ответ
+				/// If an element of the same type as the result, just add it in response
 				arr.push_back((*elem.column)[0]);
 			}
 			else if (elem.type->isNull())
 				arr.emplace_back();
 			else
 			{
-				/// Иначе необходимо привести его к типу результата
+				/// Otherwise, you need to cast it to the result type
 				addField(observed_type, (*elem.column)[0], arr);
 			}
 		}
@@ -553,7 +553,7 @@ struct ArrayElementStringImpl
 			}
 			else
 			{
-				/// Вставим пустую строку.
+				/// Insert an empty row.
 				result_data.resize(current_result_offset + 1);
 				result_data[current_result_offset] = 0;
 				current_result_offset += 1;
@@ -1007,20 +1007,20 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
 	Block & tuple_block = col_nested->getData();
 	size_t tuple_size = tuple_block.columns();
 
-	/** Будем вычислять функцию для кортежа внутренностей массива.
-	  * Для этого создадим временный блок.
-	  * Он будет состоять из следующих столбцов:
-	  * - индекс массива, который нужно взять;
-	  * - массив из первых элементов кортежей;
-	  * - результат взятия элементов по индексу для массива из первых элементов кортежей;
-	  * - массив из вторых элементов кортежей;
-	  * - результат взятия элементов по индексу для массива из вторых элементов кортежей;
+	/** We will calculate the function for the tuple of the internals of the array.
+	  * To do this, create a temporary block.
+	  * It will consist of the following columns
+	  * - the index of the array to be taken;
+	  * - an array of the first elements of the tuples;
+	  * - the result of taking the elements by the index for an array of the first elements of the tuples;
+	  * - array of the second elements of the tuples;
+	  * - result of taking elements by index for an array of second elements of tuples;
 	  * ...
 	  */
 	Block block_of_temporary_results;
 	block_of_temporary_results.insert(block.safeGetByPosition(arguments[1]));
 
-	/// результаты взятия элементов по индексу для массивов из каждых элементов кортежей;
+	/// results of taking elements by index for arrays from each element of the tuples;
 	Block result_tuple_block;
 
 	for (size_t i = 0; i < tuple_size; ++i)
@@ -2168,7 +2168,7 @@ bool FunctionEmptyArrayToSingle::executeString(
 			}
 			else
 			{
-				res_data.push_back(0);	/// Пустая строка, включая ноль на конце.
+				res_data.push_back(0);  /// An empty string, including zero at the end.
 
 				++res_string_prev_offset;
 				res_string_offsets.push_back(res_string_prev_offset);
@@ -2641,7 +2641,7 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
 	DataTypePtr & out_return_type,
 	std::vector<ExpressionAction> & out_prerequisites)
 {
-	/// Первый аргумент - константная строка с именем агрегатной функции (возможно, с параметрами в скобках, например: "quantile(0.99)").
+	/// The first argument is a constant string with the name of the aggregate function (possibly with parameters in parentheses, for example: "quantile(0.99)").
 
 	if (arguments.size() < 2)
 		throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -2737,7 +2737,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 
 	size_t rows = block.rows();
 
-	/// Агрегатные функции не поддерживают константные столбцы. Поэтому, материализуем их.
+	/// Aggregate functions do not support constant columns. Therefore, we materialize them.
 	std::vector<ColumnPtr> materialized_columns;
 
 	std::vector<const IColumn *> aggregate_arguments_vec(arguments.size() - 1);

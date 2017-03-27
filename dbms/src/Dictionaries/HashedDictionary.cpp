@@ -50,6 +50,65 @@ void HashedDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<
 }
 
 
+/// Allow to use single value in same way as array.
+static inline HashedDictionary::Key getAt(const PaddedPODArray<HashedDictionary::Key> & arr, const size_t idx) { return arr[idx]; }
+static inline HashedDictionary::Key getAt(const HashedDictionary::Key & value, const size_t idx) { return value; }
+
+template <typename ChildType, typename AncestorType>
+void HashedDictionary::isInImpl(
+	const ChildType & child_ids,
+	const AncestorType & ancestor_ids,
+	PaddedPODArray<UInt8> & out) const
+{
+	const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+	const auto & attr = *std::get<CollectionPtrType<Key>>(hierarchical_attribute->maps);
+	const auto rows = out.size();
+
+	for (const auto row : ext::range(0, rows))
+	{
+		auto id = getAt(child_ids, row);
+		const auto ancestor_id = getAt(ancestor_ids, row);
+
+		while (id != null_value && id != ancestor_id)
+		{
+			auto it = attr.find(id);
+			if (it != std::end(attr))
+				id = it->second;
+			else
+				break;
+		}
+
+		out[row] = id != null_value && id == ancestor_id;
+	}
+
+	query_count.fetch_add(rows, std::memory_order_relaxed);
+}
+
+void HashedDictionary::isInVectorVector(
+	const PaddedPODArray<Key> & child_ids,
+	const PaddedPODArray<Key> & ancestor_ids,
+	PaddedPODArray<UInt8> & out) const
+{
+	isInImpl(child_ids, ancestor_ids, out);
+}
+
+void HashedDictionary::isInVectorConstant(
+	const PaddedPODArray<Key> & child_ids,
+	const Key ancestor_id,
+	PaddedPODArray<UInt8> & out) const
+{
+	isInImpl(child_ids, ancestor_id, out);
+}
+
+void HashedDictionary::isInConstantVector(
+	const Key child_id,
+	const PaddedPODArray<Key> & ancestor_ids,
+	PaddedPODArray<UInt8> & out) const
+{
+	isInImpl(child_id, ancestor_ids, out);
+}
+
+
 #define DECLARE(TYPE)\
 void HashedDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const\
 {\

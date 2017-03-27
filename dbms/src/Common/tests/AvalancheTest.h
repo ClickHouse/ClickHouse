@@ -1,4 +1,4 @@
-/// Взято из SMHasher.
+/// Taken from SMHasher.
 
 //-----------------------------------------------------------------------------
 // Flipping a single bit of a key should cause an "avalanche" of changes in

@@ -11,8 +11,8 @@ namespace ErrorCodes
 }
 
 
-/** Эти функции определены в отдельных translation unit-ах.
-  * Это сделано для того, чтобы уменьшить потребление оперативки при сборке, и ускорить параллельную сборку.
+/** These functions are defined in a separate translation units.
+  * This is done in order to reduce the consumption of RAM during build, and to speed up the parallel build.
   */
 void registerFunctionsArithmetic(FunctionFactory &);
 void registerFunctionsArray(FunctionFactory &);
@@ -21,7 +21,8 @@ void registerFunctionsComparison(FunctionFactory &);
 void registerFunctionsConditional(FunctionFactory &);
 void registerFunctionsConversion(FunctionFactory &);
 void registerFunctionsDateTime(FunctionFactory &);
-void registerFunctionsDictionaries(FunctionFactory &);
+void registerFunctionsEmbeddedDictionaries(FunctionFactory &);
+void registerFunctionsExternalDictionaries(FunctionFactory &);
 void registerFunctionsFormatting(FunctionFactory &);
 void registerFunctionsHashing(FunctionFactory &);
 void registerFunctionsHigherOrder(FunctionFactory &);
@@ -51,7 +52,8 @@ FunctionFactory::FunctionFactory()
 	registerFunctionsConditional(*this);
 	registerFunctionsConversion(*this);
 	registerFunctionsDateTime(*this);
-	registerFunctionsDictionaries(*this);
+	registerFunctionsEmbeddedDictionaries(*this);
+	registerFunctionsExternalDictionaries(*this);
 	registerFunctionsFormatting(*this);
 	registerFunctionsHashing(*this);
 	registerFunctionsHigherOrder(*this);

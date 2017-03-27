@@ -38,7 +38,7 @@ String ParallelAggregatingBlockInputStream::getID() const
 	for (size_t i = 0; i < children.size(); ++i)
 		children_ids[i] = children[i]->getID();
 
-	/// Порядок не имеет значения.
+	/// Order does not matter.
 	std::sort(children_ids.begin(), children_ids.end());
 
 	for (size_t i = 0; i < children_ids.size(); ++i)
@@ -74,14 +74,14 @@ Block ParallelAggregatingBlockInputStream::readImpl()
 
 		if (!aggregator.hasTemporaryFiles())
 		{
-			/** Если все частично-агрегированные данные в оперативке, то мерджим их параллельно, тоже в оперативке.
+			/** If all partially-aggregated data is in RAM, then merge them in parallel, also in RAM.
 				*/
 			impl = aggregator.mergeAndConvertToBlocks(many_data, final, max_threads);
 		}
 		else
 		{
-			/** Если есть временные файлы с частично-агрегированными данными на диске,
-				*  то читаем и мерджим их, расходуя минимальное количество памяти.
+			/** If there are temporary files with partially-aggregated data on the disk,
+				*  then read and merge them, spending the minimum amount of memory.
 				*/
 
 			ProfileEvents::increment(ProfileEvents::ExternalAggregationMerge);
@@ -133,7 +133,7 @@ void ParallelAggregatingBlockInputStream::Handler::onFinishThread(size_t thread_
 {
 	if (!parent.isCancelled() && parent.aggregator.hasTemporaryFiles())
 	{
-		/// Сбросим имеющиеся в оперативке данные тоже на диск. Так проще их потом объединять.
+		/// Flush data in the RAM to disk. So it's easier to unite them later.
 		auto & data = *parent.many_data[thread_num];
 
 		if (data.isConvertibleToTwoLevel())
@@ -149,8 +149,8 @@ void ParallelAggregatingBlockInputStream::Handler::onFinish()
 {
 	if (!parent.isCancelled() && parent.aggregator.hasTemporaryFiles())
 	{
-		/// Может так получиться, что какие-то данные ещё не сброшены на диск,
-		///  потому что во время вызова onFinishThread ещё никакие данные не были сброшены на диск, а потом какие-то - были.
+		/// It may happen that some data has not yet been flushed,
+		///  because at the time of `onFinishThread` call, no data has been flushed to disk, and then some were.
 		for (auto & data : parent.many_data)
 		{
 			if (data->isConvertibleToTwoLevel())

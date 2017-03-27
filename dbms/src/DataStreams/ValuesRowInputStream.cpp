@@ -41,9 +41,9 @@ bool ValuesRowInputStream::read(Block & block)
 	if (istr.eof() || *istr.position() == ';')
 		return false;
 
-	/** Как правило, это обычный формат для потокового парсинга.
-	  * Но в качестве исключения, поддерживается также обработка произвольных выражений вместо значений.
-	  * Это очень неэффективно. Но если выражений нет, то оверхед отсутствует.
+	/** Typically, this is the usual format for streaming parsing.
+	  * But as an exception, it also supports processing arbitrary expressions instead of values.
+	  * This is very inefficient. But if there are no expressions, then there is no overhead.
 	  */
 	ParserExpressionWithOptionalAlias parser(false);
 
@@ -75,9 +75,9 @@ bool ValuesRowInputStream::read(Block & block)
 			if (!interpret_expressions)
 				throw;
 
-			/** Обычный потоковый парсер не смог распарсить значение.
-			  * Попробуем распарсить его SQL-парсером как константное выражение.
-			  * Это исключительный случай.
+			/** The normal streaming parser could not parse the value.
+			  * Let's try to parse it with a SQL parser as a constant expression.
+			  * This is an exceptional case.
 			  */
 			if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
 				|| e.code() == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
@@ -85,9 +85,9 @@ bool ValuesRowInputStream::read(Block & block)
 				|| e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
 				|| e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT)
 			{
-				/// TODO Работоспособность, если выражение не помещается целиком до конца буфера.
+				/// TODO Performance if the expression does not fit entirely to the end of the buffer.
 
-				/// Если начало значения уже не лежит в буфере.
+				/// If the beginning of the value is no longer in the buffer.
 				if (istr.count() - istr.offset() != prev_istr_bytes)
 					throw;
 

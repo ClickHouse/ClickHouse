@@ -58,7 +58,7 @@ struct PositionCaseSensitiveASCII
 
 struct PositionCaseInsensitiveASCII
 {
-	/// Здесь не используется Volnitsky, потому что один человек померял, что так лучше. Будет хорошо, если вы подвергнете это сомнению.
+	/// `Volnitsky` is not used here, because one person has measured that this is better. It will be good if you question it.
 	using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
 	using SearcherInSmallHaystack = LibCASCIICaseInsensitiveStringSearcher;
 
@@ -115,7 +115,7 @@ struct PositionCaseSensitiveUTF8
 struct PositionCaseInsensitiveUTF8
 {
 	using SearcherInBigHaystack = VolnitskyImpl<false, false>;
-	using SearcherInSmallHaystack = UTF8CaseInsensitiveStringSearcher; /// TODO Очень неоптимально.
+	using SearcherInSmallHaystack = UTF8CaseInsensitiveStringSearcher; /// TODO Very suboptimal.
 
 	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
 	{
@@ -147,7 +147,7 @@ struct PositionImpl
 {
 	using ResultType = UInt64;
 
-	/// Поиск одной подстроки во многих строках.
+	/// Find one substring in many strings.
 	static void vector_constant(const ColumnString::Chars_t & data,
 		const ColumnString::Offsets_t & offsets,
 		const std::string & needle,
@@ -157,22 +157,22 @@ struct PositionImpl
 		const UInt8 * pos = begin;
 		const UInt8 * end = pos + data.size();
 
-		/// Текущий индекс в массиве строк.
+		/// Current index in the array of strings.
 		size_t i = 0;
 
 		typename Impl::SearcherInBigHaystack searcher = Impl::createSearcherInBigHaystack(needle.data(), needle.size(), end - pos);
 
-		/// Искать будем следующее вхождение сразу во всех строках.
+		/// We will search for the next occurrence in all strings at once.
 		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 		{
-			/// Определим, к какому индексу оно относится.
+			/// Determine which index it refers to.
 			while (begin + offsets[i] <= pos)
 			{
 				res[i] = 0;
 				++i;
 			}
 
-			/// Проверяем, что вхождение не переходит через границы строк.
+			/// We check that the entry does not pass through the boundaries of strings.
 			if (pos + needle.size() < begin + offsets[i])
 			{
 				size_t prev_offset = i != 0 ? offsets[i - 1] : 0;
@@ -188,7 +188,7 @@ struct PositionImpl
 		memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
 	}
 
-	/// Поиск одной подстроки в одной строке.
+	/// Search for substring in string.
 	static void constant_constant(std::string data, std::string needle, UInt64 & res)
 	{
 		Impl::toLowerIfNeed(data);
@@ -201,7 +201,7 @@ struct PositionImpl
 			res = 1 + Impl::countChars(data.data(), data.data() + res);
 	}
 
-	/// Поиск каждой раз разной одной подстроки в каждой раз разной строке.
+	/// Search each time for a different single substring inside each time different string.
 	static void vector_vector(const ColumnString::Chars_t & haystack_data,
 		const ColumnString::Offsets_t & haystack_offsets,
 		const ColumnString::Chars_t & needle_data,
@@ -220,17 +220,17 @@ struct PositionImpl
 
 			if (0 == needle_size)
 			{
-				/// Пустая строка всегда находится в самом начале haystack.
+				/// An empty string is always at the very beginning of `haystack`.
 				res[i] = 1;
 			}
 			else
 			{
-				/// Предполагается, что StringSearcher не очень сложно инициализировать.
+				/// It is assumed that the StringSearcher is not very difficult to initialize.
 				typename Impl::SearcherInSmallHaystack searcher
 					= Impl::createSearcherInSmallHaystack(reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
-						needle_offsets[i] - prev_needle_offset - 1); /// нулевой байт на конце
+						needle_offsets[i] - prev_needle_offset - 1); /// zero byte at the end
 
-				/// searcher возвращает указатель на найденную подстроку или на конец haystack.
+				/// searcher returns a pointer to the found substring or to the end of `haystack`.
 				size_t pos = searcher.search(&haystack_data[prev_haystack_offset], &haystack_data[haystack_offsets[i] - 1])
 					- &haystack_data[prev_haystack_offset];
 
@@ -248,13 +248,13 @@ struct PositionImpl
 		}
 	}
 
-	/// Поиск многих подстрок в одной строке.
+	/// Find many substrings in one line.
 	static void constant_vector(const String & haystack,
 		const ColumnString::Chars_t & needle_data,
 		const ColumnString::Offsets_t & needle_offsets,
 		PaddedPODArray<UInt64> & res)
 	{
-		// NOTE Можно было бы использовать индексацию haystack. Но это - редкий случай.
+		// NOTE You could use haystack indexing. But this is a rare case.
 
 		ColumnString::Offset_t prev_needle_offset = 0;
 
@@ -291,7 +291,7 @@ struct PositionImpl
 };
 
 
-/// Сводится ли выражение LIKE к поиску подстроки в строке?
+/// Is the LIKE expression reduced to finding a substring in a string?
 inline bool likePatternIsStrstr(const String & pattern, String & res)
 {
 	res = "";
@@ -346,30 +346,30 @@ struct MatchImpl
 		PaddedPODArray<UInt8> & res)
 	{
 		String strstr_pattern;
-		/// Простой случай, когда выражение LIKE сводится к поиску подстроки в строке
+		/// A simple case where the LIKE expression reduces to finding a substring in a string
 		if (like && likePatternIsStrstr(pattern, strstr_pattern))
 		{
 			const UInt8 * begin = &data[0];
 			const UInt8 * pos = begin;
 			const UInt8 * end = pos + data.size();
 
-			/// Текущий индекс в массиве строк.
+			/// The current index in the array of strings.
 			size_t i = 0;
 
-			/// TODO Надо сделать так, чтобы searcher был общим на все вызовы функции.
+			/// TODO You need to make that `searcher` is common to all the calls of the function.
 			Volnitsky searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
 
-			/// Искать будем следующее вхождение сразу во всех строках.
+			/// We will search for the next occurrence in all rows at once.
 			while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 			{
-				/// Определим, к какому индексу оно относится.
+				/// Let's determine which index it refers to.
 				while (begin + offsets[i] <= pos)
 				{
 					res[i] = revert;
 					++i;
 				}
 
-				/// Проверяем, что вхождение не переходит через границы строк.
+				/// We check that the entry does not pass through the boundaries of strings.
 				if (pos + strstr_pattern.size() < begin + offsets[i])
 					res[i] = !revert;
 				else
@@ -379,7 +379,7 @@ struct MatchImpl
 				++i;
 			}
 
-			/// Хвостик, в котором не может быть подстрок.
+			/// Tail, in which there can be no substring.
 			memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
 		}
 		else
@@ -390,13 +390,13 @@ struct MatchImpl
 
 			std::string required_substring;
 			bool is_trivial;
-			bool required_substring_is_prefix; /// для anchored выполнения регекспа.
+			bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
 
 			regexp->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
 
 			if (required_substring.empty())
 			{
-				if (!regexp->getRE2()) /// Пустой регексп. Всегда матчит.
+				if (!regexp->getRE2()) /// An empty regexp. Always matches.
 				{
 					memset(&res[0], 1, size * sizeof(res[0]));
 				}
@@ -420,31 +420,31 @@ struct MatchImpl
 			}
 			else
 			{
-				/// NOTE Это почти совпадает со случаем likePatternIsStrstr.
+				/// NOTE This almost matches with the case of LikePatternIsStrstr.
 
 				const UInt8 * begin = &data[0];
 				const UInt8 * pos = begin;
 				const UInt8 * end = pos + data.size();
 
-				/// Текущий индекс в массиве строк.
+				/// The current index in the array of strings.
 				size_t i = 0;
 
 				Volnitsky searcher(required_substring.data(), required_substring.size(), end - pos);
 
-				/// Искать будем следующее вхождение сразу во всех строках.
+				/// We will search for the next occurrence in all rows at once.
 				while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 				{
-					/// Определим, к какому индексу оно относится.
+					/// Determine which index it refers to.
 					while (begin + offsets[i] <= pos)
 					{
 						res[i] = revert;
 						++i;
 					}
 
-					/// Проверяем, что вхождение не переходит через границы строк.
+					/// We check that the entry does not pass through the boundaries of strings.
 					if (pos + strstr_pattern.size() < begin + offsets[i])
 					{
-						/// И если не переходит - при необходимости, проверяем регекспом.
+						/// And if it does not, if necessary, we check the regexp.
 
 						if (is_trivial)
 							res[i] = !revert;
@@ -453,9 +453,9 @@ struct MatchImpl
 							const char * str_data = reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]);
 							size_t str_size = (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1;
 
-							/** Даже в случае required_substring_is_prefix используем UNANCHORED проверку регекспа,
-							  *  чтобы он мог сматчиться, когда required_substring встречается в строке несколько раз,
-							  *  и на первом вхождении регексп не матчит.
+							/** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
+							  *  so that it can match when `required_substring` occurs into the line several times,
+							  *  and at the first occurrence, the regexp is not a match.
 							  */
 
 							if (required_substring_is_prefix)
@@ -769,21 +769,21 @@ struct ReplaceStringImpl
 		size_t size = offsets.size();
 		res_offsets.resize(size);
 
-		/// Текущий индекс в массиве строк.
+		/// The current index in the array of strings.
 		size_t i = 0;
 
 		Volnitsky searcher(needle.data(), needle.size(), end - pos);
 
-		/// Искать будем следующее вхождение сразу во всех строках.
+		/// We will search for the next occurrence in all rows at once.
 		while (pos < end)
 		{
 			const UInt8 * match = searcher.search(pos, end - pos);
 
-			/// Копируем данные без изменения
+			/// Copy the data without changing
 			res_data.resize(res_data.size() + (match - pos));
 			memcpy(&res_data[res_offset], pos, match - pos);
 
-			/// Определим, к какому индексу оно относится.
+			/// Determine which index it belongs to.
 			while (i < offsets.size() && begin + offsets[i] <= match)
 			{
 				res_offsets[i] = res_offset + ((begin + offsets[i]) - pos);
@@ -791,14 +791,14 @@ struct ReplaceStringImpl
 			}
 			res_offset += (match - pos);
 
-			/// Если дошли до конца, пора остановиться
+			/// If you have reached the end, it's time to stop
 			if (i == offsets.size())
 				break;
 
-			/// Правда ли, что с этой строкой больше не надо выполнять преобразования.
+			/// Is it true that this line no longer needs to perform transformations.
 			bool can_finish_current_string = false;
 
-			/// Проверяем, что вхождение не переходит через границы строк.
+			/// We check that the entry does not go through the boundaries of strings.
 			if (match + needle.size() < begin + offsets[i])
 			{
 				res_data.resize(res_data.size() + replacement.size());
@@ -842,21 +842,21 @@ struct ReplaceStringImpl
 		res_data.reserve(data.size());
 		res_offsets.resize(size);
 
-		/// Текущий индекс в массиве строк.
+		/// The current index in the string array.
 		size_t i = 0;
 
 		Volnitsky searcher(needle.data(), needle.size(), end - pos);
 
-		/// Искать будем следующее вхождение сразу во всех строках.
+		/// We will search for the next occurrence in all rows at once.
 		while (pos < end)
 		{
 			const UInt8 * match = searcher.search(pos, end - pos);
 
-			/// Копируем данные без изменения
+			/// Copy the data without changing
 			res_data.resize(res_data.size() + (match - pos));
 			memcpy(&res_data[res_offset], pos, match - pos);
 
-			/// Определим, к какому индексу оно относится.
+			/// Let's determine which index it belongs to.
 			while (i < size && begin + n * (i + 1) <= match)
 			{
 				res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos) + 1;
@@ -864,14 +864,14 @@ struct ReplaceStringImpl
 			}
 			res_offset += (match - pos);
 
-			/// Если дошли до конца, пора остановиться
+			/// If you have reached the end, it's time to stop
 			if (i == size)
 				break;
 
-			/// Правда ли, что с этой строкой больше не надо выполнять преобразования.
+			/// Is it true that this line no longer needs to perform conversions.
 			bool can_finish_current_string = false;
 
-			/// Проверяем, что вхождение не переходит через границы строк.
+			/// We check that the entry does not pass through the boundaries of strings.
 			if (match + needle.size() - 1 < begin + n * (i + 1))
 			{
 				res_data.resize(res_data.size() + replacement.size());

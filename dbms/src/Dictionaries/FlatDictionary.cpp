@@ -56,6 +56,62 @@ void FlatDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Ke
 		[&] (const std::size_t) { return null_value; });
 }
 
+
+/// Allow to use single value in same way as array.
+static inline FlatDictionary::Key getAt(const PaddedPODArray<FlatDictionary::Key> & arr, const size_t idx) { return arr[idx]; }
+static inline FlatDictionary::Key getAt(const FlatDictionary::Key & value, const size_t idx) { return value; }
+
+template <typename ChildType, typename AncestorType>
+void FlatDictionary::isInImpl(
+	const ChildType & child_ids,
+	const AncestorType & ancestor_ids,
+	PaddedPODArray<UInt8> & out) const
+{
+	const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+	const auto & attr = *std::get<ContainerPtrType<Key>>(hierarchical_attribute->arrays);
+	const auto rows = out.size();
+
+	size_t loaded_size = attr.size();
+	for (const auto row : ext::range(0, rows))
+	{
+		auto id = getAt(child_ids, row);
+		const auto ancestor_id = getAt(ancestor_ids, row);
+
+		while (id < loaded_size && id != null_value && id != ancestor_id)
+			id = attr[id];
+
+		out[row] = id != null_value && id == ancestor_id;
+	}
+
+	query_count.fetch_add(rows, std::memory_order_relaxed);
+}
+
+
+void FlatDictionary::isInVectorVector(
+	const PaddedPODArray<Key> & child_ids,
+	const PaddedPODArray<Key> & ancestor_ids,
+	PaddedPODArray<UInt8> & out) const
+{
+	isInImpl(child_ids, ancestor_ids, out);
+}
+
+void FlatDictionary::isInVectorConstant(
+	const PaddedPODArray<Key> & child_ids,
+	const Key ancestor_id,
+	PaddedPODArray<UInt8> & out) const
+{
+	isInImpl(child_ids, ancestor_id, out);
+}
+
+void FlatDictionary::isInConstantVector(
+	const Key child_id,
+	const PaddedPODArray<Key> & ancestor_ids,
+	PaddedPODArray<UInt8> & out) const
+{
+	isInImpl(child_id, ancestor_ids, out);
+}
+
+
 #define DECLARE(TYPE)\
 void FlatDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const\
 {\

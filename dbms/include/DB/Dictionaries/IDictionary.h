@@ -19,6 +19,7 @@ struct DictionaryLifetime;
 struct DictionaryStructure;
 class ColumnString;
 
+
 struct IDictionaryBase
 {
 	using Key = UInt64;
@@ -55,6 +56,7 @@ struct IDictionaryBase
 	virtual ~IDictionaryBase() = default;
 };
 
+
 struct IDictionary : IDictionaryBase
 {
 	virtual bool hasHierarchy() const = 0;
@@ -63,23 +65,28 @@ struct IDictionary : IDictionaryBase
 
 	virtual void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const = 0;
 
-	/// do not call unless you ensure that hasHierarchy() returns true
-	Key toParent(Key id) const
+	/// Methods for hierarchy.
+
+	virtual void isInVectorVector(const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
 	{
-		const PaddedPODArray<UInt64> ids(1, id);
-		PaddedPODArray<UInt64> out(1);
-
-		toParent(ids, out);
-
-		return out.front();
+		throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	bool in(Key child_id, const Key ancestor_id) const
+	virtual void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const
 	{
-		while (child_id != 0 && child_id != ancestor_id)
-			child_id = toParent(child_id);
+		throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
+	}
 
-		return child_id != 0;
+	virtual void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
+	{
+		throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	void isInConstantConstant(const Key child_id, const Key ancestor_id, UInt8 & out) const
+	{
+		PaddedPODArray<UInt8> out_arr(1);
+		isInVectorConstant(PaddedPODArray<Key>(1, child_id), ancestor_id, out_arr);
+		out = out_arr[0];
 	}
 };
 

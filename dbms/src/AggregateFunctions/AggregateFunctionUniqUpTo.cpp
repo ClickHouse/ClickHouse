@@ -31,7 +31,7 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
 	}
 	else if (argument_types.size() > 1)
 	{
-		/// Если аргументов несколько, то среди них недопустимо наличие кортежей.
+		/// If there are several arguments, then no tuples allowed among them.
 		for (const auto & type : argument_types)
 			if (typeid_cast<const DataTypeTuple *>(type.get()))
 				throw Exception("Tuple argument of function " + name + " must be the only argument",

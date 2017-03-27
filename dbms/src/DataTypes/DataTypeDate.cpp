@@ -43,7 +43,7 @@ void DataTypeDate::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) co
 	assertChar('\'', istr);
 	readDateText(x, istr);
 	assertChar('\'', istr);
-	static_cast<ColumnUInt16 &>(column).getData().push_back(x);	/// Важно делать это в конце - для exception safety.
+	static_cast<ColumnUInt16 &>(column).getData().push_back(x);	/// It's important to do this at the end - for exception safety.
 }
 
 void DataTypeDate::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const

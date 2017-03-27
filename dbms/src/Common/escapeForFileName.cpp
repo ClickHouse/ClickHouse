@@ -44,7 +44,7 @@ std::string unescapeForFileName(const std::string & s)
 			res += *pos;
 		else
 		{
-			/// пропустим '%'
+			/// skip '%'
 			if (++pos == end) break;
 
 			char val = unhex(*pos) * 16;

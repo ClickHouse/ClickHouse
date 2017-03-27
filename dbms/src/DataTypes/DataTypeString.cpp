@@ -126,7 +126,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, Column
 		if (size)
 		{
 #if __SSE2__
-			/// Оптимистичная ветка, в которой возможно более эффективное копирование.
+			/// An optimistic branch in which more efficient copying is possible.
 			if (offset + 16 * UNROLL_TIMES <= data.allocated_size() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
 			{
 				const __m128i * sse_src_pos = reinterpret_cast<const __m128i *>(istr.position());
@@ -135,7 +135,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, Column
 
 				while (sse_src_pos < sse_src_end)
 				{
-					/// NOTE gcc 4.9.2 разворачивает цикл, но почему-то использует только один xmm регистр.
+					/// NOTE gcc 4.9.2 expands the loop, but for some reason uses only one xmm register.
 					///for (size_t j = 0; j < UNROLL_TIMES; ++j)
 					///	_mm_storeu_si128(sse_dst_pos + j, _mm_loadu_si128(sse_src_pos + j));
 
@@ -177,18 +177,18 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
 
 	if (avg_value_size_hint && avg_value_size_hint > sizeof(offsets[0]))
 	{
-		/// Выбрано наугад.
+		/// Randomly selected.
 		constexpr auto avg_value_size_hint_reserve_multiplier = 1.2;
 
 		avg_chars_size = (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier;
 	}
 	else
 	{
-		/** Небольшая эвристика для оценки того, что в столбце много пустых строк.
-		  * В этом случае, для экономии оперативки, будем говорить, что средний размер значения маленький.
+		/** A small heuristic to evaluate that there are a lot of empty lines in the column.
+		  * In this case, to save RAM, we will say that the average size of the value is small.
 		  */
 		if (istr.position() + sizeof(UInt32) <= istr.buffer().end()
-			&& unalignedLoad<UInt32>(istr.position()) == 0)	/// Первые 4 строки находятся в буфере и являются пустыми.
+			&& unalignedLoad<UInt32>(istr.position()) == 0)	/// The first 4 rows are in the buffer and are empty.
 		{
 			avg_chars_size = 1;
 		}

@@ -18,7 +18,7 @@ void PrettyCompactBlockOutputStream::writeHeader(
 	const Widths_t & max_widths,
 	const Widths_t & name_widths)
 {
-	/// Имена
+	/// Names
 	writeCString("┌─", ostr);
 	for (size_t i = 0; i < max_widths.size(); ++i)
 	{
@@ -55,7 +55,7 @@ void PrettyCompactBlockOutputStream::writeHeader(
 
 void PrettyCompactBlockOutputStream::writeBottom(const Widths_t & max_widths)
 {
-	/// Создадим разделители
+	/// Create delimiters
 	std::stringstream bottom_separator;
 
 	bottom_separator 		<< "└";
@@ -118,7 +118,7 @@ void PrettyCompactBlockOutputStream::write(const Block & block_)
 		return;
 	}
 
-	/// Будем вставлять сюда столбцы с вычисленными значениями видимых длин.
+	/// We will insert columns here with the calculated values of visible lengths.
 	Block block = block_;
 
 	size_t rows = block.rows();

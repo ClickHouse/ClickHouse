@@ -84,7 +84,7 @@ try
 		{"WithHash",			std::make_shared<DataTypeUInt8>()},
 	};
 
-	/// создаём описание, как читать данные из tab separated дампа
+	/// we create a description of how to read data from the tab separated dump
 
 	Block sample;
 	for (const auto & name_type : names_and_types_list)
@@ -96,7 +96,7 @@ try
 		sample.insert(std::move(elem));
 	}
 
-	/// читаем данные из строчного tsv файла и одновременно пишем в блочный tsv файл
+	/// read the data from row tsv file and simultaneously write to the block tsv file
 	{
 		ReadBufferFromIStream in_buf(std::cin);
 		WriteBufferFromOStream out_buf(std::cout);

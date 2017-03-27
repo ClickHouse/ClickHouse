@@ -51,7 +51,7 @@ void CreatingSetsBlockInputStream::createAll()
 	{
 		for (auto & elem : subqueries_for_sets)
 		{
-			if (elem.second.source)	/// Бывают заранее подготовленные Set/Join - для них не указывается source.
+			if (elem.second.source) /// There could be prepared in advance Set/Join - no source is specified for them.
 			{
 				if (isCancelled())
 					return;
@@ -141,11 +141,11 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 		}
 	}
 
-//	subquery.source->readSuffix();	/// TODO Блокируется в RemoteBlockInputStream::readSuffixImpl при запросе SELECT number FROM system.numbers WHERE number IN (SELECT number FROM remote('127.0.0.{1,2}', system, numbers) WHERE number % 2 = 1 LIMIT 10) LIMIT 10
+// subquery.source->readSuffix();  /// TODO Blocked in `RemoteBlockInputStream::readSuffixImpl` when querying `SELECT number FROM system.numbers WHERE number IN (SELECT number FROM remote(`127.0.0.{1,2}', system, numbers) WHERE number % 2 = 1 LIMIT 10) LIMIT 10`
 	if (table_out)
 		table_out->writeSuffix();
 
-	/// Выведем информацию о том, сколько считано строк и байт.
+	/// We will display information about how many rows and bytes are read.
 	size_t rows = 0;
 	size_t bytes = 0;
 

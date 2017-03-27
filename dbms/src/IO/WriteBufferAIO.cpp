@@ -37,15 +37,15 @@ namespace ErrorCodes
 }
 
 
-/// Примечание: выделяется дополнительная страница, которая содежрит те данные, которые
-/// не влезают в основной буфер.
+/// Note: an additional page is allocated that will contain data that
+/// do not fit into the main buffer.
 WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, mode_t mode_,
 	char * existing_memory_)
 	: WriteBufferFromFileBase(buffer_size_ + DEFAULT_AIO_FILE_BLOCK_SIZE, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
 	flush_buffer(BufferWithOwnMemory<WriteBuffer>(this->memory.size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
 	filename(filename_)
 {
-	/// Исправить информацию о размере буферов, чтобы дополнительные страницы не касались базового класса BufferBase.
+	/// Correct the buffer size information so that additional pages do not touch the base class `BufferBase`.
 	this->buffer().resize(this->buffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
 	this->internalBuffer().resize(this->internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
 	flush_buffer.buffer().resize(this->buffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
@@ -92,7 +92,7 @@ void WriteBufferAIO::sync()
 {
 	flush();
 
-	/// Попросим ОС сбросить данные на диск.
+	/// Ask OS to flush data to disk.
 	int res = ::fsync(fd);
 	if (res == -1)
 		throwFromErrno("Cannot fsync " + getFileName(), ErrorCodes::CANNOT_FSYNC);
@@ -106,7 +106,7 @@ void WriteBufferAIO::nextImpl()
 	if (waitForAIOCompletion())
 		finalize();
 
-	/// Создать запрос на асинхронную запись.
+	/// Create a request for asynchronous write.
 	prepare();
 
 	request.aio_lio_opcode = IOCB_CMD_PWRITE;
@@ -115,7 +115,7 @@ void WriteBufferAIO::nextImpl()
 	request.aio_nbytes = region_aligned_size;
 	request.aio_offset = region_aligned_begin;
 
-	/// Отправить запрос.
+	/// Send the request.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
 	{
 		if (errno != EINTR)
@@ -201,16 +201,16 @@ bool WriteBufferAIO::waitForAIOCompletion()
 
 void WriteBufferAIO::prepare()
 {
-	/// Менять местами основной и дублирующий буферы.
+	/// Swap the main and duplicate buffers.
 	buffer().swap(flush_buffer.buffer());
 	std::swap(position(), flush_buffer.position());
 
 	truncation_count = 0;
 
 	/*
-		Страница на диске или в памяти
+		A page on disk or in memory
 
-		начальный адрес (начальная позиция в случае диска) кратен DEFAULT_AIO_FILE_BLOCK_SIZE
+		start address (starting position in case of disk) is a multiply of DEFAULT_AIO_FILE_BLOCK_SIZE
 		:
 		:
 		+---------------+
@@ -229,10 +229,10 @@ void WriteBufferAIO::prepare()
 	*/
 
 	/*
-		Представление данных на диске
+		Representation of data on a disk
 
-		XXX : данные, которые хотим записать
-		ZZZ : данные, которые уже на диске или нули, если отсутствуют данные
+		XXX : the data you want to write
+		ZZZ : data that is already on disk or zeros, if there is no data
 
 		region_aligned_begin                                           region_aligned_end
 		:   region_begin                                          region_end            :
@@ -258,7 +258,7 @@ void WriteBufferAIO::prepare()
 									  region_aligned_size
 	*/
 
-	/// Регион диска, в который хотим записать данные.
+	/// Region of the disk in which we want to write data.
 	const off_t region_begin = pos_in_file;
 
 	if ((flush_buffer.offset() > std::numeric_limits<off_t>::max()) ||
@@ -268,7 +268,7 @@ void WriteBufferAIO::prepare()
 	const off_t region_end = pos_in_file + flush_buffer.offset();
 	const size_t region_size = region_end - region_begin;
 
-	/// Выровненный регион диска, в который хотим записать данные.
+	/// The aligned region of the disk into which we want to write the data.
 	const size_t region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
 	const size_t region_right_padding = (DEFAULT_AIO_FILE_BLOCK_SIZE - (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE)) % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
@@ -283,9 +283,9 @@ void WriteBufferAIO::prepare()
 	bytes_to_write = region_aligned_size;
 
 	/*
-		Представление данных в буфере до обработки
+		Representing data in the buffer before processing
 
-		XXX : данные, которые хотим записать
+		XXX : the data you want to write
 
 		buffer_begin                                         buffer_end
 		:                                                             :
@@ -305,20 +305,20 @@ void WriteBufferAIO::prepare()
 									buffer_size
 	*/
 
-	/// Буфер данных, которые хотим записать на диск.
+	/// The buffer of data that we want to write to the disk.
 	buffer_begin = flush_buffer.buffer().begin();
 	Position buffer_end = buffer_begin + region_size;
 	size_t buffer_size = buffer_end - buffer_begin;
 
-	/// Обработать буфер, чтобы он отражал структуру региона диска.
+	/// Process the buffer so that it reflects the structure of the disk region.
 
 	/*
-		Представление данных в буфере после обработки
+		Representation of data in the buffer after processing
 
-		XXX : данные, которые хотим записать
-		ZZZ : данные из диска или нули, если отсутствуют данные
+		XXX : the data you want to write
+		ZZZ : data from disk or zeros, if there is no data
 
-		buffer_begin                                              buffer_end   дополнительная страница
+	   `buffer_begin`                                            `buffer_end`   extra page
 		:                                                                  :       :
 		:                                                                  :       :
 		+---:-----------+---------------+---------------+---------------+--:------------+
@@ -347,7 +347,7 @@ void WriteBufferAIO::prepare()
 
 		if (region_left_padding > 0)
 		{
-			/// Сдвинуть данные буфера вправо. Дополнить начало буфера данными из диска.
+			/// Move the buffer data to the right. Complete the beginning of the buffer with data from the disk.
 			buffer_size += region_left_padding;
 			buffer_end = buffer_begin + buffer_size;
 
@@ -364,7 +364,7 @@ void WriteBufferAIO::prepare()
 
 		if (region_right_padding > 0)
 		{
-			/// Дополнить конец буфера данными из диска.
+			/// Add the end of the buffer with data from the disk.
 			ssize_t read_count = ::pread(fd, memory_page, DEFAULT_AIO_FILE_BLOCK_SIZE, region_aligned_end - DEFAULT_AIO_FILE_BLOCK_SIZE);
 			if (read_count < 0)
 				throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
@@ -405,7 +405,7 @@ void WriteBufferAIO::finalize()
 
 	if (truncation_count > 0)
 	{
-		/// Укоротить файл, чтобы удалить из него излишние нули.
+		/// Truncate the file to remove unnecessary zeros from it.
 		int res = ::ftruncate(fd, max_pos_in_file);
 		if (res == -1)
 			throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);

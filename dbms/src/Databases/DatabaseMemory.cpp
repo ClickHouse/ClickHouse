@@ -99,8 +99,8 @@ ASTPtr DatabaseMemory::getCreateQuery(const String & table_name) const
 
 void DatabaseMemory::shutdown()
 {
-	/// Нельзя удерживать блокировку во время shutdown.
-	/// Потому что таблицы могут внутри функции shutdown работать с БД, а mutex не рекурсивный.
+	/// You can not hold a lock during shutdown.
+	/// Because inside `shutdown` function tables can work with database, and mutex is not recursive.
 
 	for (auto iterator = getIterator(); iterator->isValid(); iterator->next())
 		iterator->table()->shutdown();

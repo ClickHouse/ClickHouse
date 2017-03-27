@@ -183,7 +183,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
 		return Conditional::getReturnTypeForArithmeticArgs(args);
 	else if (Conditional::hasArrayBranches(args))
 	{
-		/// NOTE Сообщения об ошибках будут относится к типам элементов массивов, что немного некорректно.
+		/// NOTE Error messages will refer to the types of array elements, which is slightly incorrect.
 		DataTypes new_args;
 		new_args.reserve(args.size());
 

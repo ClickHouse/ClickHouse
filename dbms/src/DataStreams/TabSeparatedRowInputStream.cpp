@@ -58,7 +58,7 @@ void TabSeparatedRowInputStream::readPrefix()
 }
 
 
-/** Проверка на распространённый случай ошибки - использование Windows перевода строки.
+ /** Check for a common error case - usage of Windows line feed.
   */
 static void checkForCarriageReturn(ReadBuffer & istr)
 {
@@ -84,7 +84,7 @@ bool TabSeparatedRowInputStream::read(Block & block)
 	{
 		data_types[i].get()->deserializeTextEscaped(*block.getByPosition(i).column.get(), istr);
 
-		/// пропускаем разделители
+		/// skip separators
 		if (i + 1 == size)
 		{
 			if (!istr.eof())
@@ -112,7 +112,7 @@ String TabSeparatedRowInputStream::getDiagnosticInfo()
 	WriteBufferFromString out(res);
 	Block block = sample.cloneEmpty();
 
-	/// Вывести подробную диагностику возможно лишь если последняя и предпоследняя строка ещё находятся в буфере для чтения.
+	/// It is possible to display detailed diagnostics only if the last and next to last lines are still in the read buffer.
 	size_t bytes_read_at_start_of_buffer = istr.count() - istr.offset();
 	if (bytes_read_at_start_of_buffer != bytes_read_at_start_of_buffer_on_prev_row)
 	{
@@ -130,7 +130,7 @@ String TabSeparatedRowInputStream::getDiagnosticInfo()
 		if (sample.safeGetByPosition(i).type->getName().size() > max_length_of_data_type_name)
 			max_length_of_data_type_name = sample.safeGetByPosition(i).type->getName().size();
 
-	/// Откатываем курсор для чтения на начало предыдущей или текущей строки и парсим всё заново. Но теперь выводим подробную информацию.
+	/// Roll back the cursor to the beginning of the previous or current line and pars all over again. But now we derive detailed information.
 
 	if (pos_of_prev_row)
 	{
@@ -194,7 +194,7 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
 
 		if (data_types[i]->isNumeric())
 		{
-			/// Пустая строка вместо числа.
+			/// An empty string instead of a number.
 			if (curr_position == prev_position)
 			{
 				out << "ERROR: text ";
@@ -237,7 +237,7 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
 			}
 		}
 
-		/// Разделители
+		/// Delimiters
 		if (i + 1 == size)
 		{
 			if (!istr.eof())

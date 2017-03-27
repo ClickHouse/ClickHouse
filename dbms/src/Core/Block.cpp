@@ -28,8 +28,8 @@ namespace ErrorCodes
 
 void Block::addDefaults(const NamesAndTypesList & required_columns)
 {
-	/// Для недостающих столбцов из вложенной структуры нужно создавать не столбец пустых массивов, а столбец массивов правильных длин.
-	/// Сначала запомним столбцы смещений для всех массивов в блоке.
+	/// For missing columns of nested structure, you need to create not a column of empty arrays, but a column of arrays of correct lengths.
+	/// First, remember the offset columns for all arrays in the block.
 	std::map<String, ColumnPtr> offset_columns;
 
 	for (const auto & elem : data)
@@ -39,7 +39,7 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 			String offsets_name = DataTypeNested::extractNestedTableName(elem.name);
 			auto & offsets_column = offset_columns[offsets_name];
 
-			/// Если почему-то есть разные столбцы смещений для одной вложенной структуры, то берём непустой.
+			/// If for some reason there are different displacement columns for one nested structure, then we take nonempty.
 			if (!offsets_column || offsets_column->empty())
 				offsets_column = array->getOffsetsColumn();
 		}
@@ -70,8 +70,8 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 		}
 		else
 		{
-			/** Нужно превратить константный столбец в полноценный, так как в части блоков (из других кусков),
-			  *  он может быть полноценным (а то интерпретатор может посчитать, что он константный везде).
+			/** It is necessary to turn a constant column into a full column, since in part of blocks (from other parts),
+			  *  it can be full (or the interpreter may decide that it is constant everywhere).
 			  */
 			column_to_add.column = dynamic_cast<IColumnConst &>(
 				*column_to_add.type->createConstColumn(
@@ -389,7 +389,7 @@ NamesAndTypesList Block::getColumnsList() const
 
 void Block::checkNestedArraysOffsets() const
 {
-	/// Указатели на столбцы-массивы, для проверки равенства столбцов смещений во вложенных структурах данных
+	/// Pointers to array columns, to check the equality of offset columns in nested data structures
 	using ArrayColumns = std::map<String, const ColumnArray *>;
 	ArrayColumns array_columns;
 
@@ -423,7 +423,7 @@ void Block::checkNestedArraysOffsets() const
 
 void Block::optimizeNestedArraysOffsets()
 {
-	/// Указатели на столбцы-массивы, для проверки равенства столбцов смещений во вложенных структурах данных
+	/// Pointers to array columns, to check the equality of offset columns in nested data structures
 	using ArrayColumns = std::map<String, ColumnArray *>;
 	ArrayColumns array_columns;
 
@@ -450,7 +450,7 @@ void Block::optimizeNestedArraysOffsets()
 				if (!it->second->hasEqualOffsets(*column_array))
 					throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
-				/// делаем так, чтобы столбцы смещений массивов внутри одной вложенной таблицы указывали в одно место
+				/// make columns of arrays offsets inside one nested table point to the same place
 				column_array->getOffsetsColumn() = it->second->getOffsetsColumn();
 			}
 		}
@@ -479,8 +479,8 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff)
 {
-	/// Традиционная задача: наибольшая общая подпоследовательность (LCS).
-	/// Полагаем, что порядок важен. Если это когда-то станет не так, упростим: например, сделаем 2 set'а.
+	/// The traditional task: the largest common subsequence (LCS).
+	/// Assume that order is important. If this becomes wrong once, let's simplify it: for example, make 2 sets.
 
 	std::vector<std::vector<int>> lcs(lhs.columns() + 1);
 	for (auto & v : lcs)
@@ -497,7 +497,7 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
 		}
 	}
 
-	/// Теперь идем обратно и собираем ответ.
+	/// Now go back and collect the answer.
 	ColumnsWithTypeAndName left_columns;
 	ColumnsWithTypeAndName right_columns;
 	size_t l = lhs.columns();
@@ -506,15 +506,15 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
 	{
 		if (lhs.safeGetByPosition(l - 1) == rhs.safeGetByPosition(r - 1))
 		{
-			/// Данный элемент в обеих последовательностях, значит, в diff не попадает.
+			/// This element is in both sequences, so it does not get into `diff`.
 			--l;
 			--r;
 		}
 		else
 		{
-			/// Маленькая эвристика: чаще всего используется при получении разницы для (expected_block, actual_block).
-			/// Поэтому предпочтение будем отдавать полю, которое есть в левом блоке (expected_block), поэтому
-			/// в diff попадет столбец из actual_block.
+			/// Small heuristics: most often used when getting a difference for (expected_block, actual_block).
+			/// Therefore, the preference will be given to the field, which is in the left block (expected_block), therefore
+			/// in `diff` the column from `actual_block` will get.
 			if (lcs[l][r - 1] >= lcs[l - 1][r])
 				right_columns.push_back(rhs.safeGetByPosition(--r));
 			else

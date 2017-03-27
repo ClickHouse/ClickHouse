@@ -43,7 +43,7 @@ using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 template <typename Op, size_t N>
 struct AssociativeOperationImpl
 {
-	/// Выбрасывает N последних столбцов из in (если их меньше, то все) и кладет в result их комбинацию.
+	/// Throws the last N columns from `in` (if there are less, then all) and puts their combination into `result`.
 	static void execute(UInt8ColumnPtrs & in, UInt8Container & result)
 	{
 		if (N > in.size())
@@ -65,11 +65,11 @@ struct AssociativeOperationImpl
 	const UInt8Container & vec;
 	AssociativeOperationImpl<Op, N - 1> continuation;
 
-	/// Запоминает последние N столбцов из in.
+	/// Remembers the last N columns from in.
 	AssociativeOperationImpl(UInt8ColumnPtrs & in)
 		: vec(in[in.size() - N]->getData()), continuation(in) {}
 
-	/// Возвращает комбинацию значений в i-й строке всех столбцов, запомненных в конструкторе.
+	/// Returns a combination of values in the i-th row of all columns stored in the constructor.
 	inline UInt8 apply(size_t i) const
 	{
 		//return vec[i] ? continuation.apply(i) : 0;
@@ -194,7 +194,7 @@ public:
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	/// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
 		if (arguments.size() < 2)
@@ -224,11 +224,11 @@ public:
 		}
 		size_t n = in[0]->size();
 
-		/// Скомбинируем все константные столбцы в одно значение.
+		/// Combine all constant columns into a single value.
 		UInt8 const_val = 0;
 		bool has_consts = extractConstColumns(in, const_val);
 
-		// Если это значение однозначно определяет результат, вернем его.
+		// If this value uniquely determines the result, return it.
 		if (has_consts && (in.empty() || Impl<UInt8>::apply(const_val, 0) == Impl<UInt8>::apply(const_val, 1)))
 		{
 			if (!in.empty())
@@ -238,7 +238,7 @@ public:
 			return;
 		}
 
-		/// Если это значение - нейтральный элемент, забудем про него.
+		/// If this value is a neutral element, let's forget about it.
 		if (has_consts && Impl<UInt8>::apply(const_val, 0) == 0 && Impl<UInt8>::apply(const_val, 1) == 1)
 			has_consts = false;
 
@@ -256,8 +256,8 @@ public:
 			vec_res.resize(n);
 		}
 
-		/// Разделим входные столбцы на UInt8 и остальные. Первые обработаем более эффективно.
-		/// col_res в каждый момент будет либо находится в конце uint8_in, либо не содержаться в uint8_in.
+		/// Divide the input columns into UInt8 and the rest. The first will be processed more efficiently.
+		/// col_res at each moment will either be at the end of uint8_in, or not contained in uint8_in.
 		UInt8ColumnPtrs uint8_in;
 		ColumnPlainPtrs other_in;
 		for (IColumn * column : in)
@@ -268,7 +268,7 @@ public:
 				other_in.push_back(column);
 		}
 
-		/// Нужен хотя бы один столбец в uint8_in, чтобы было с кем комбинировать столбцы из other_in.
+		/// You need at least one column in uint8_in, so that you can combine columns with other_in.
 		if (uint8_in.empty())
 		{
 			if (other_in.empty())
@@ -279,14 +279,14 @@ public:
 			uint8_in.push_back(col_res.get());
 		}
 
-		/// Эффективно скомбинируем все столбцы правильного типа.
+		/// Effectively combine all the columns of the correct type.
 		while (uint8_in.size() > 1)
 		{
 			AssociativeOperationImpl<Impl<UInt8>, 10>::execute(uint8_in, vec_res);
 			uint8_in.push_back(col_res.get());
 		}
 
-		/// По одному добавим все столбцы неправильного типа.
+		/// One by one, add all the columns of the wrong type.
 		while (!other_in.empty())
 		{
 			executeUInt8Other(uint8_in[0]->getData(), other_in.back(), vec_res);
@@ -294,7 +294,7 @@ public:
 			uint8_in[0] = col_res.get();
 		}
 
-		/// Такое возможно, если среди аргументов ровно один неконстантный, и он имеет тип UInt8.
+		/// This is possible if there are exactly one non-constant among the arguments, and it is of type UInt8.
 		if (uint8_in[0] != col_res.get())
 		{
 			vec_res.assign(uint8_in[0]->getData());

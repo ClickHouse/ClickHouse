@@ -103,11 +103,11 @@ int main(int argc, char ** argv)
 		std::cerr << std::endl;
 		std::cerr << ast->getTreeID() << std::endl;
 
-		/// создаём объект существующей таблицы хит лога
+		/// create an object of an existing hit log table
 
 		StoragePtr table = StorageLog::create("./", "HitLog", std::make_shared<NamesAndTypesList>(names_and_types_list));
 
-		/// читаем из неё, применяем выражение, фильтруем, и пишем в tsv виде в консоль
+		/// read from it, apply the expression, filter, and write in tsv form to the console
 
 		ExpressionAnalyzer analyzer(ast, context, nullptr, names_and_types_list);
 		ExpressionActionsChain chain;

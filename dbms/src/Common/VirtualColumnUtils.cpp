@@ -93,7 +93,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 		asts.insert(asts.begin(), column_value);
 }
 
-/// Проверка, что функция зависит только от заданных столбцов
+/// Verifying that the function depends only on the specified columns
 static bool isValidFunction(ASTPtr expression, const NameSet & columns)
 {
 	for (size_t i = 0; i < expression->children.size(); ++i)
@@ -108,7 +108,7 @@ static bool isValidFunction(ASTPtr expression, const NameSet & columns)
 	return true;
 }
 
-/// Извлечь все подфункции главной конъюнкции, но зависящие только от заданных столбцов
+/// Extract all subfunctions of the main conjunction, but depending only on the specified columns
 static void extractFunctions(ASTPtr expression, const NameSet & columns, std::vector<ASTPtr> & result)
 {
 	const ASTFunction * function = typeid_cast<const ASTFunction *>(&*expression);
@@ -123,7 +123,7 @@ static void extractFunctions(ASTPtr expression, const NameSet & columns, std::ve
 	}
 }
 
-/// Построить конъюнкцию из заданных функций
+/// Construct a conjunction from given functions
 static ASTPtr buildWhereExpression(const ASTs & functions)
 {
 	if (functions.size() == 0) return nullptr;
@@ -148,7 +148,7 @@ bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
 	for (const auto & it : block.getColumnsList())
 		columns.insert(it.name);
 
-	/// Составим выражение, вычисляющее выражения в WHERE и PREWHERE, зависящие только от имеющихся столбцов.
+	/// We will create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
 	std::vector<ASTPtr> functions;
 	if (select.where_expression)
 		extractFunctions(select.where_expression, columns, functions);
@@ -158,12 +158,12 @@ bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
 	if (!expression_ast)
 		return false;
 
-	/// Распарсим и вычислим выражение.
+	/// Let's parse and calculate the expression.
 	ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getColumnsList());
 	ExpressionActionsPtr actions = analyzer.getActions(false);
 	actions->execute(block);
 
-	/// Отфильтруем блок.
+	/// Filter the block.
 	String filter_column_name = expression_ast->getColumnName();
 	ColumnPtr filter_column = block.getByName(filter_column_name).column;
 	if (auto converted = filter_column->convertToFullColumnIfConst())

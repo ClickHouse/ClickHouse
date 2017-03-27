@@ -423,7 +423,7 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
 	Offsets_t & res_string_offsets = typeid_cast<ColumnString &>(res->getData()).getOffsets();
 	Offsets_t & res_offsets = res->getOffsets();
 
-	if (result_size_hint < 0)	/// Остальные случаи не рассматриваем.
+	if (result_size_hint < 0)	/// Other cases are not considered.
 	{
 		res_chars.reserve(src_chars.size());
 		res_string_offsets.reserve(src_string_offsets.size());
@@ -438,12 +438,12 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
 
 	for (size_t i = 0; i < col_size; ++i)
 	{
-		/// Количество строк в массиве.
+		/// Number of rows in the array.
 		size_t array_size = src_offsets[i] - prev_src_offset;
 
 		if (filt[i])
 		{
-			/// Если массив не пуст - копируем внутренности.
+			/// If the array is not empty - copy content.
 			if (array_size)
 			{
 				size_t chars_to_copy = src_string_offsets[array_size + prev_src_offset - 1] - prev_src_string_offset;
@@ -494,8 +494,8 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
 	ssize_t nested_result_size_hint = 0;
 	if (result_size_hint < 0)
 		nested_result_size_hint = result_size_hint;
-	else if (result_size_hint && result_size_hint < 1000000000 && data->size() < 1000000000)	/// Избегаем переполнения.
-		nested_result_size_hint = result_size_hint * data->size() / size;
+	else if (result_size_hint && result_size_hint < 1000000000 && data->size() < 1000000000)	/// Avoid overflow.
+ 		nested_result_size_hint = result_size_hint * data->size() / size;
 
 	res->data = data->filter(nested_filt, nested_result_size_hint);
 
@@ -584,7 +584,7 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_h
 
 ColumnPtr ColumnArray::replicate(const Offsets_t & replicate_offsets) const
 {
-	/// Не получается реализовать в общем случае.
+	/// It does not work out in general case.
 
 	if (typeid_cast<const ColumnUInt8 *>(data.get()))		return replicateNumber<UInt8>(replicate_offsets);
 	if (typeid_cast<const ColumnUInt16 *>(data.get()))		return replicateNumber<UInt16>(replicate_offsets);
@@ -688,11 +688,11 @@ ColumnPtr ColumnArray::replicateString(const Offsets_t & replicate_offsets) cons
 
 	for (size_t i = 0; i < col_size; ++i)
 	{
-		/// Насколько размножить массив.
+		/// How much to replicate the array.
 		size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
-		/// Количество строк в массиве.
+		/// The number of rows in the array.
 		size_t value_size = src_offsets[i] - prev_src_offset;
-		/// Количество символов в строках массива, включая нулевые байты.
+		/// Number of characters in rows of the array, including zero/null bytes.
 		size_t sum_chars_size = value_size == 0 ? 0 : (src_string_offsets[prev_src_offset + value_size - 1] - prev_src_string_offset);
 
 		for (size_t j = 0; j < size_to_replicate; ++j)
@@ -703,7 +703,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets_t & replicate_offsets) cons
 			size_t prev_src_string_offset_local = prev_src_string_offset;
 			for (size_t k = 0; k < value_size; ++k)
 			{
-				/// Размер одной строки.
+				/// Size of one row.
 				size_t chars_size = src_string_offsets[k + prev_src_offset] - prev_src_string_offset_local;
 
 				current_res_string_offset += chars_size;
@@ -712,7 +712,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets_t & replicate_offsets) cons
 				prev_src_string_offset_local += chars_size;
 			}
 
-			/// Копирование символов массива строк.
+			/// Copies the characters of the array of rows.
 			res_chars.resize(res_chars.size() + sum_chars_size);
 			memcpySmallAllowReadWriteOverflow15(
 				&res_chars[res_chars.size() - sum_chars_size], &src_chars[prev_src_string_offset], sum_chars_size);

@@ -33,7 +33,7 @@ void CompressedWriteBuffer::nextImpl()
 	size_t compressed_size = 0;
 	char * compressed_buffer_ptr = nullptr;
 
-	/** Формат сжатого блока - см. CompressedStream.h
+	/** The format of compressed block - see CompressedStream.h
 		*/
 
 	switch (method)

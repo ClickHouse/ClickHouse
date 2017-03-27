@@ -37,9 +37,6 @@ target_link_libraries (hash_map_string_small dbms)
 add_executable (two_level_hash_map two_level_hash_map.cpp)
 target_link_libraries (two_level_hash_map dbms)
 
-add_executable (address_patterns address_patterns.cpp)
-target_link_libraries (address_patterns dbms)
-
 add_executable (compiler_test compiler_test.cpp)
 target_link_libraries (compiler_test dbms)
 

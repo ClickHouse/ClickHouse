@@ -119,6 +119,10 @@ public:
 
 	void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
+	void isInVectorVector(const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
+	void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
+	void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
+
 private:
 	template <typename Value> using CollectionType = HashMap<UInt64, Value>;
 	template <typename Value> using CollectionPtrType = std::unique_ptr<CollectionType<Value>>;
@@ -176,6 +180,12 @@ private:
 
 	template <typename T>
 	void has(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const;
+
+	template <typename ChildType, typename AncestorType>
+	void isInImpl(
+		const ChildType & child_ids,
+		const AncestorType & ancestor_ids,
+		PaddedPODArray<UInt8> & out) const;
 
 	const std::string name;
 	const DictionaryStructure dict_struct;

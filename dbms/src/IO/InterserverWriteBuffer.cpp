@@ -50,7 +50,7 @@ InterserverWriteBuffer::InterserverWriteBuffer(const std::string & host_, int po
 	session.setPort(port);
 	session.setKeepAlive(true);
 
-	/// устанавливаем таймаут
+	/// set the timeout
 #if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
 	session.setTimeout(connection_timeout, send_timeout, receive_timeout);
 #else
@@ -83,7 +83,7 @@ void InterserverWriteBuffer::nextImpl()
 	if (!offset() || finalized)
 		return;
 
-	/// Для корректной работы с AsynchronousWriteBuffer, который подменяет буферы.
+	/// For correct work with AsynchronousWriteBuffer, which replaces buffers.
 	impl->set(buffer().begin(), buffer().size());
 
 	impl->position() = pos;

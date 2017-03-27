@@ -93,6 +93,10 @@ public:
 
 	void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
 
+	void isInVectorVector(const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
+	void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
+	void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
+
 #define DECLARE(TYPE)\
 	void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const;
 	DECLARE(UInt8)
@@ -237,6 +241,12 @@ private:
 	};
 
 	FindResult findCellIdx(const Key & id, const CellMetadata::time_point_t now) const;
+
+	template <typename AncestorType>
+	void isInImpl(
+		const PaddedPODArray<Key> & child_ids,
+		const AncestorType & ancestor_ids,
+		PaddedPODArray<UInt8> & out) const;
 
 	const std::string name;
 	const DictionaryStructure dict_struct;

@@ -1,27 +1,11 @@
 #include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsDictionaries.h>
+#include <DB/Functions/FunctionsExternalDictionaries.h>
 
 namespace DB
 {
 
-void registerFunctionsDictionaries(FunctionFactory & factory)
+void registerFunctionsExternalDictionaries(FunctionFactory & factory)
 {
-	factory.registerFunction<FunctionRegionToCity>();
-	factory.registerFunction<FunctionRegionToArea>();
-	factory.registerFunction<FunctionRegionToDistrict>();
-	factory.registerFunction<FunctionRegionToCountry>();
-	factory.registerFunction<FunctionRegionToContinent>();
-	factory.registerFunction<FunctionRegionToTopContinent>();
-	factory.registerFunction<FunctionRegionToPopulation>();
-	factory.registerFunction<FunctionOSToRoot>();
-	factory.registerFunction<FunctionSEToRoot>();
-	factory.registerFunction<FunctionRegionIn>();
-	factory.registerFunction<FunctionOSIn>();
-	factory.registerFunction<FunctionSEIn>();
-	factory.registerFunction<FunctionRegionHierarchy>();
-	factory.registerFunction<FunctionOSHierarchy>();
-	factory.registerFunction<FunctionSEHierarchy>();
-	factory.registerFunction<FunctionRegionToName>();
 	factory.registerFunction<FunctionDictHas>();
 	factory.registerFunction<FunctionDictGetUInt8>();
 	factory.registerFunction<FunctionDictGetUInt16>();
