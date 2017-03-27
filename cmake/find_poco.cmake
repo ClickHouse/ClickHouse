@@ -4,10 +4,14 @@ if (NOT USE_INTERNAL_POCO_LIBRARY)
 	find_package (Poco COMPONENTS Net NetSSL XML Data Crypto DataODBC MongoDB)
 endif ()
 
-if (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY AND Poco_MongoDB_LIBRARY AND Poco_DataODBC_LIBRARY AND Poco_NetSSL_LIBRARY)
+if (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY)
+# AND Poco_MongoDB_LIBRARY AND Poco_DataODBC_LIBRARY AND Poco_NetSSL_LIBRARY)
 	include_directories (${Poco_INCLUDE_DIRS})
 else ()
 	set (USE_INTERNAL_POCO_LIBRARY 1)
+	set (Poco_MongoDB_FOUND 1)
+	set (Poco_DataODBC_FOUND 1)
+	set (Poco_NetSSL_FOUND 1)
 	set (Poco_INCLUDE_DIRS
 		"${ClickHouse_SOURCE_DIR}/contrib/libpoco/Foundation/include/"
 		"${ClickHouse_SOURCE_DIR}/contrib/libpoco/Util/include/"

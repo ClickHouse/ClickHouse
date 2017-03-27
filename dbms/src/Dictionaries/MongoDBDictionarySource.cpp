@@ -1,4 +1,7 @@
+#include <DB/Common/config.h>
+#if Poco_MongoDB_FOUND
 #include <Poco/Util/AbstractConfiguration.h>
+#include <DB/Dictionaries/MongoDBDictionarySource.h>
 #include <Poco/MD5Engine.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Database.h>
@@ -6,7 +9,6 @@
 #include <Poco/MongoDB/Array.h>
 #include <Poco/Version.h>
 #include <DB/Dictionaries/MongoDBBlockInputStream.h>
-#include <DB/Dictionaries/MongoDBDictionarySource.h>
 #include <DB/Core/FieldVisitors.h>
 #include <ext/enumerate.hpp>
 
@@ -264,3 +266,5 @@ std::string MongoDBDictionarySource::toString() const
 }
 
 }
+
+#endif

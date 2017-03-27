@@ -159,8 +159,6 @@ target_link_libraries(dbms
 	${OPENSSL_CRYPTO_LIBRARY}
 	${Boost_SYSTEM_LIBRARY}
 	${Poco_Data_LIBRARY}
-	${Poco_DataODBC_LIBRARY}
-	${Poco_MongoDB_LIBRARY}
 	${Poco_Foundation_LIBRARY}
 	${Poco_NetSSL_LIBRARY}
 	${ICU_LIBS}
@@ -169,3 +167,15 @@ target_link_libraries(dbms
 	${LTDL_LIB}
 	${CMAKE_THREAD_LIBS_INIT}
 	)
+
+if (Poco_DataODBC_FOUND)
+	target_link_libraries(dbms ${Poco_DataODBC_LIBRARY})
+endif()
+
+if (Poco_MongoDB_FOUND)
+	target_link_libraries(dbms ${Poco_MongoDB_LIBRARY})
+endif()
+
+if (Poco_NetSSL_FOUND)
+	target_link_libraries(dbms ${Poco_NetSSL_LIBRARY})
+endif()
