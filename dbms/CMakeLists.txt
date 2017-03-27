@@ -159,14 +159,7 @@ target_link_libraries(dbms
 	${OPENSSL_CRYPTO_LIBRARY}
 	${Boost_SYSTEM_LIBRARY}
 	${Poco_Data_LIBRARY}
-	${Poco_Foundation_LIBRARY}
-	${ICU_LIBS}
-	${PLATFORM_LIBS}
-	${CMAKE_DL_LIBS}
-	${LTDL_LIB}
-	${CMAKE_THREAD_LIBS_INIT}
-	)
-
+)
 if (Poco_DataODBC_FOUND)
 	target_link_libraries(dbms ${Poco_DataODBC_LIBRARY})
 endif()
@@ -178,3 +171,12 @@ endif()
 if (Poco_NetSSL_FOUND)
 	target_link_libraries(dbms ${Poco_NetSSL_LIBRARY})
 endif()
+target_link_libraries(dbms
+	${Poco_Foundation_LIBRARY}
+	${ICU_LIBS}
+	${PLATFORM_LIBS}
+	${CMAKE_DL_LIBS}
+	${LTDL_LIB}
+	${CMAKE_THREAD_LIBS_INIT}
+	)
+
