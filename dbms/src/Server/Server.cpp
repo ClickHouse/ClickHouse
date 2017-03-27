@@ -3,11 +3,9 @@
 #include <memory>
 #include <sys/resource.h>
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Net/Context.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/NetException.h>
-#include <Poco/Net/SecureServerSocket.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
@@ -34,6 +32,11 @@
 #include "StatusFile.h"
 #include "TCPHandler.h"
 
+#include <DB/Common/config.h>
+#if Poco_NetSSL_FOUND
+#include <Poco/Net/Context.h>
+#include <Poco/Net/SecureServerSocket.h>
+#endif
 
 namespace DB
 {
@@ -488,6 +491,7 @@ int Server::main(const std::vector<std::string> & args)
 			}
 
 			/// HTTPS
+#if Poco_NetSSL_FOUND
 			if (config().has("https_port"))
 			{
 				std::call_once(ssl_init_once, SSLInit);
@@ -501,7 +505,7 @@ int Server::main(const std::vector<std::string> & args)
 
 				LOG_INFO(log, "Listening https://" + http_socket_address.toString());
 			}
-
+#endif
 
 			/// TCP
 			if (config().has("tcp_port"))
