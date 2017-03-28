@@ -13,6 +13,7 @@ struct PartLogElement
 		NEW_PART = 1,
 		MERGE_PARTS = 2,
 		DOWNLOAD_PART = 3,
+		REMOVE_PART = 4,
 	};
 
 	Type event_type = NEW_PART;
