@@ -90,8 +90,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 {
 	/// For logging
 	Stopwatch stopwatch;
-	PartLogElement elem;
-	elem.event_time = time(0);
 
 	Block & block = block_with_dates.block;
 	UInt16 min_date = block_with_dates.min_date;
@@ -168,13 +166,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	std::shared_ptr<PartLog> part_log = context.getPartLog();
 	if (part_log)
 	{
+		PartLogElement elem;
+		elem.event_time = time(0);
+
 		elem.event_type = PartLogElement::NEW_PART;
 		elem.size_in_bytes = new_data_part->size_in_bytes;
 		elem.duration_ms = stopwatch.elapsed() / 1000000;
 
 		elem.database_name = new_data_part->storage.getDatabaseName();
 		elem.table_name = new_data_part->storage.getTableName();
-		elem.part_name = new_data_part->name;
+		elem.part_name = new_data_part->name.substr(4);
 
 		part_log->add(elem);
 	}

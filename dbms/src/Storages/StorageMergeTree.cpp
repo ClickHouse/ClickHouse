@@ -338,14 +338,8 @@ bool StorageMergeTree::merge(
 	MergeList::EntryPtr merge_entry_ptr = context.getMergeList().insert(database_name, table_name, merged_name, merging_tagger->parts);
 
 	/// Logging
-	PartLogElement elem;
 	Stopwatch stopwatch;
-	elem.event_time = time(0);
-
-	elem.merged_from.reserve(merging_tagger->parts.size());
-	for (const auto & part : merging_tagger->parts)
-		elem.merged_from.push_back(part->name);
-
+	
 	auto new_part = merger.mergePartsToTemporaryPart(
 		merging_tagger->parts, merged_name, *merge_entry_ptr, aio_threshold, time(0), merging_tagger->reserved_space.get());
 
@@ -354,6 +348,12 @@ bool StorageMergeTree::merge(
 	std::shared_ptr<PartLog> part_log = context.getPartLog();
 	if (part_log)
 	{
+		PartLogElement elem;
+		elem.event_time = time(0);
+
+		elem.merged_from.reserve(merging_tagger->parts.size());
+		for (const auto & part : merging_tagger->parts)
+			elem.merged_from.push_back(part->name);
 		elem.event_type = PartLogElement::MERGE_PARTS;
 		elem.size_in_bytes = new_part->size_in_bytes;
 
@@ -364,6 +364,17 @@ bool StorageMergeTree::merge(
 		elem.duration_ms = stopwatch.elapsed() / 1000000;
 
 		part_log->add(elem);
+
+		elem.duration_ms = 0;
+		elem.event_type = PartLogElement::REMOVE_PART;
+		elem.merged_from = Strings();
+
+		for (const auto & part : merging_tagger->parts)
+		{
+			elem.part_name = part->name;
+			elem.size_in_bytes = part->size_in_bytes;
+			part_log->add(elem);
+		}
 	}
 
 	return true;
