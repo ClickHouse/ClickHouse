@@ -270,7 +270,7 @@ struct SetMethodKeysFixed
 	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
 };
 
-/// Для остальных случаев. По 128 битному хэшу от ключа. (При этом, строки, содержащие нули посередине, могут склеиться.)
+/// Для остальных случаев. По 128 битному хэшу от ключа.
 template <typename TData>
 struct SetMethodHashed
 {
