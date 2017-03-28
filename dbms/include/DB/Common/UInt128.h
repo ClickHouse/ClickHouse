@@ -8,6 +8,11 @@
 namespace DB
 {
 
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 /// Для агрегации по SipHash или конкатенации нескольких полей.
 struct UInt128
 {
@@ -129,6 +134,11 @@ struct UInt256HashCRC32
 };
 
 #endif
+
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+
 
 inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
