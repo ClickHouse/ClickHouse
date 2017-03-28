@@ -460,11 +460,10 @@ int Server::main(const std::vector<std::string> & args)
 					)
 				{
 					LOG_ERROR(log,
-						"Cannot resolve listen_host (" << host << "), error: " << e.message()
-													   << ". "
-														  "If it is an IPv6 address and your host has disabled IPv6, then consider to "
-														  "specify IPv4 address to listen in <listen_host> element of configuration "
-														  "file. Example: <listen_host>0.0.0.0</listen_host>");
+						"Cannot resolve listen_host (" << host << "), error: " << e.message() << ". "
+													   << "If it is an IPv6 address and your host has disabled IPv6, then consider to "
+													   << "specify IPv4 address to listen in <listen_host> element of configuration "
+													   << "file. Example: <listen_host>0.0.0.0</listen_host>");
 				}
 
 				throw;
@@ -563,10 +562,36 @@ int Server::main(const std::vector<std::string> & args)
 
 			is_cancelled = true;
 
+			int current_connections = 0;
 			for (auto & server : servers)
+			{
 				server->stop();
+				current_connections += server->currentConnections();
+			}
 
-			LOG_DEBUG(log, "Closed all connections.");
+			LOG_DEBUG(log,
+				"Closed all listening sockets."
+					<< (current_connections ? " Waiting for " + std::to_string(current_connections) + " outstanding connections." : ""));
+
+			if (current_connections)
+			{
+				const int sleep_max_ms = 1000 * config().getInt("shutdown_wait_unfinished", 5);
+				const int sleep_one_ms = 100;
+				int sleep_current_ms = 0;
+				while (sleep_current_ms < sleep_max_ms)
+				{
+					current_connections = 0;
+					for (auto & server : servers)
+						current_connections += server->currentConnections();
+					if (!current_connections)
+						break;
+					sleep_current_ms += sleep_one_ms;
+					std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
+				}
+			}
+
+			LOG_DEBUG(
+				log, "Closed connections." << (current_connections ? " But " + std::to_string(current_connections) + " remains." : ""));
 
 			main_config_reloader.reset();
 			users_config_reloader.reset();
@@ -597,7 +622,6 @@ int Server::main(const std::vector<std::string> & args)
 		{
 			metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(async_metrics, graphite_key));
 		}
-
 
 		waitForTerminationRequest();
 	}
