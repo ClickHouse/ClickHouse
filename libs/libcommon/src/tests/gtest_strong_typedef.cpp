@@ -6,20 +6,19 @@
 #include <memory>
 #include <type_traits>
 
-#include <boost/test/included/unit_test.hpp>
+#include <gtest/gtest.h>
 
-BOOST_AUTO_TEST_SUITE(StrongTypedefSuite)
 
-BOOST_AUTO_TEST_CASE(TypedefsOfTheSameType)
+TEST(StrongTypedefSuite, TypedefsOfTheSameType)
 {
 	/// check that strong typedefs of same type differ
 	STRONG_TYPEDEF(int, Int);
 	STRONG_TYPEDEF(int, AnotherInt);
 
-	BOOST_CHECK(!(std::is_same<Int, AnotherInt>::value));
+	EXPECT_TRUE(!(std::is_same<Int, AnotherInt>::value));
 }
 
-BOOST_AUTO_TEST_CASE(Map)
+TEST(StrongTypedefSuite, Map)
 {
 	STRONG_TYPEDEF(int, Int);
 
@@ -30,28 +29,28 @@ BOOST_AUTO_TEST_CASE(Map)
 	int_unorderd_set.insert(Int(2));
 }
 
-BOOST_AUTO_TEST_CASE(CopyAndMoveCtor)
+TEST(StrongTypedefSuite, CopyAndMoveCtor)
 {
 	STRONG_TYPEDEF(int, Int);
 	Int a(1);
 	Int b(2);
 	a = b;
-	BOOST_CHECK_EQUAL(a.t, 2);
+	EXPECT_EQ(a.t, 2);
 
 	STRONG_TYPEDEF(std::unique_ptr<int>, IntPtr);
 	{
 		IntPtr ptr;
 		ptr = IntPtr(std::make_unique<int>(3));
-		BOOST_CHECK_EQUAL(*ptr.t, 3);
+		EXPECT_EQ(*ptr.t, 3);
 	}
 
 	{
 		IntPtr ptr(std::make_unique<int>(3));
-		BOOST_CHECK_EQUAL(*ptr.t, 3);
+		EXPECT_EQ(*ptr.t, 3);
 	}
 }
 
-BOOST_AUTO_TEST_CASE(NoDefaultCtor)
+TEST(StrongTypedefSuite, NoDefaultCtor)
 {
 	struct NoDefaultCtor
 	{
@@ -61,5 +60,3 @@ BOOST_AUTO_TEST_CASE(NoDefaultCtor)
 	STRONG_TYPEDEF(NoDefaultCtor, MyStruct);
 	MyStruct m(1);
 }
-
-BOOST_AUTO_TEST_SUITE_END()

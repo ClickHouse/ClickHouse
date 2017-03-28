@@ -34,44 +34,57 @@ Join::Join(const Names & key_names_left_, const Names & key_names_right_,
 }
 
 
-Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
+Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
 {
 	size_t keys_size = key_columns.size();
-
-	keys_fit_128_bits = true;
-	size_t keys_bytes = 0;
-	key_sizes.resize(keys_size);
 
 	if (keys_size == 0)
 		return Type::CROSS;
 
+	bool all_fixed = true;
+	size_t keys_bytes = 0;
+	key_sizes.resize(keys_size);
 	for (size_t j = 0; j < keys_size; ++j)
 	{
 		if (!key_columns[j]->isFixed())
 		{
-			keys_fit_128_bits = false;
+			all_fixed = false;
 			break;
 		}
 		key_sizes[j] = key_columns[j]->sizeOfField();
 		keys_bytes += key_sizes[j];
 	}
 
-	if (keys_bytes > 16)
-		keys_fit_128_bits = false;
-
 	/// Если есть один числовой ключ, который помещается в 64 бита
 	if (keys_size == 1 && key_columns[0]->isNumericNotNullable())
-		return Type::KEY_64;
+	{
+		size_t size_of_field = key_columns[0]->sizeOfField();
+		if (size_of_field == 1)
+			return Type::key8;
+		if (size_of_field == 2)
+			return Type::key16;
+		if (size_of_field == 4)
+			return Type::key32;
+		if (size_of_field == 8)
+			return Type::key64;
+		throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
+	}
 
-	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
-	if (keys_size == 1
-		&& (typeid_cast<const ColumnString *>(key_columns[0])
-			|| typeid_cast<const ColumnConstString *>(key_columns[0])
-			|| (typeid_cast<const ColumnFixedString *>(key_columns[0]) && !keys_fit_128_bits)))
-		return Type::KEY_STRING;
+	/// Если ключи помещаются в N бит, будем использовать хэш-таблицу по упакованным в N-бит ключам
+	if (all_fixed && keys_bytes <= 16)
+		return Type::keys128;
+	if (all_fixed && keys_bytes <= 32)
+		return Type::keys256;
 
-	/// Если много ключей - будем строить множество хэшей от них
-	return Type::HASHED;
+	/// If there is single string key, use hash table of it's values.
+	if (keys_size == 1 && (typeid_cast<const ColumnString *>(key_columns[0]) || typeid_cast<const ColumnConstString *>(key_columns[0])))
+		return Type::key_string;
+
+	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
+		return Type::key_fixed_string;
+
+	/// Otherwise, will use set of cryptographic hashes of unambiguously serialized values.
+	return Type::hashed;
 }
 
 
@@ -81,10 +94,12 @@ static void initImpl(Maps & maps, Join::Type type)
 	switch (type)
 	{
 		case Join::Type::EMPTY:			break;
-		case Join::Type::KEY_64:		maps.key64		= std::make_unique<typename Maps::MapUInt64>(); break;
-		case Join::Type::KEY_STRING:	maps.key_string	= std::make_unique<typename Maps::MapString>(); break;
-		case Join::Type::HASHED:		maps.hashed		= std::make_unique<typename Maps::MapHashed>();	break;
 		case Join::Type::CROSS:			break;
+
+	#define M(TYPE) \
+		case Join::Type::TYPE: maps.TYPE = std::make_unique<typename decltype(maps.TYPE)::element_type>(); break;
+		APPLY_FOR_JOIN_VARIANTS(M)
+	#undef M
 
 		default:
 			throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
@@ -92,30 +107,54 @@ static void initImpl(Maps & maps, Join::Type type)
 }
 
 template <typename Maps>
-static size_t getTotalRowCountImpl(const Maps & maps)
+static size_t getTotalRowCountImpl(const Maps & maps, Join::Type type)
 {
-	size_t rows = 0;
-	if (maps.key64)
-		rows += maps.key64->size();
-	if (maps.key_string)
-		rows += maps.key_string->size();
-	if (maps.hashed)
-		rows += maps.hashed->size();
-	return rows;
+	switch (type)
+	{
+		case Join::Type::EMPTY:			return 0;
+		case Join::Type::CROSS:			return 0;
+
+	#define M(NAME) \
+		case Join::Type::NAME: return maps.NAME ? maps.NAME->size() : 0;
+		APPLY_FOR_JOIN_VARIANTS(M)
+	#undef M
+
+		default:
+			throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+	}
 }
 
 template <typename Maps>
-static size_t getTotalByteCountImpl(const Maps & maps)
+static size_t getTotalByteCountImpl(const Maps & maps, Join::Type type)
 {
-	size_t bytes = 0;
-	if (maps.key64)
-		bytes += maps.key64->getBufferSizeInBytes();
-	if (maps.key_string)
-		bytes += maps.key_string->getBufferSizeInBytes();
-	if (maps.hashed)
-		bytes += maps.hashed->getBufferSizeInBytes();
-	return bytes;
+	switch (type)
+	{
+		case Join::Type::EMPTY:			return 0;
+		case Join::Type::CROSS:			return 0;
+
+	#define M(NAME) \
+		case Join::Type::NAME: return maps.NAME ? maps.NAME->getBufferSizeInBytes() : 0;
+		APPLY_FOR_JOIN_VARIANTS(M)
+	#undef M
+
+		default:
+			throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+	}
 }
+
+
+template <Join::Type type>
+struct KeyGetterForType;
+
+template <> struct KeyGetterForType<Join::Type::key8> { using Type = JoinKeyGetterOneNumber<UInt8>; };
+template <> struct KeyGetterForType<Join::Type::key16> { using Type = JoinKeyGetterOneNumber<UInt16>; };
+template <> struct KeyGetterForType<Join::Type::key32> { using Type = JoinKeyGetterOneNumber<UInt32>; };
+template <> struct KeyGetterForType<Join::Type::key64> { using Type = JoinKeyGetterOneNumber<UInt64>; };
+template <> struct KeyGetterForType<Join::Type::key_string> { using Type = JoinKeyGetterString; };
+template <> struct KeyGetterForType<Join::Type::key_fixed_string> { using Type = JoinKeyGetterFixedString; };
+template <> struct KeyGetterForType<Join::Type::keys128> { using Type = JoinKeyGetterFixed<UInt128>; };
+template <> struct KeyGetterForType<Join::Type::keys256> { using Type = JoinKeyGetterFixed<UInt256>; };
+template <> struct KeyGetterForType<Join::Type::hashed> { using Type = JoinKeyGetterHashed; };
 
 
 /// Нужно ли использовать хэш-таблицы maps_*_full, в которых запоминается, была ли строчка присоединена.
@@ -159,10 +198,10 @@ size_t Join::getTotalRowCount() const
 	}
 	else
 	{
-		res += getTotalRowCountImpl(maps_any);
-		res += getTotalRowCountImpl(maps_all);
-		res += getTotalRowCountImpl(maps_any_full);
-		res += getTotalRowCountImpl(maps_all_full);
+		res += getTotalRowCountImpl(maps_any, type);
+		res += getTotalRowCountImpl(maps_all, type);
+		res += getTotalRowCountImpl(maps_any_full, type);
+		res += getTotalRowCountImpl(maps_all_full, type);
 	}
 
 	return res;
@@ -179,10 +218,10 @@ size_t Join::getTotalByteCount() const
 	}
 	else
 	{
-		res += getTotalByteCountImpl(maps_any);
-		res += getTotalByteCountImpl(maps_all);
-		res += getTotalByteCountImpl(maps_any_full);
-		res += getTotalByteCountImpl(maps_all_full);
+		res += getTotalByteCountImpl(maps_any, type);
+		res += getTotalByteCountImpl(maps_all, type);
+		res += getTotalByteCountImpl(maps_any_full, type);
+		res += getTotalByteCountImpl(maps_all_full, type);
 		res += pool.size();
 	}
 
@@ -201,29 +240,14 @@ bool Join::checkSizeLimits() const
 
 
 /// Вставка элемента в хэш-таблицу вида ключ -> ссылка на строку, которая затем будет использоваться при JOIN-е.
-template <ASTTableJoin::Strictness STRICTNESS, typename Map>
+template <ASTTableJoin::Strictness STRICTNESS, typename Map, typename KeyGetter>
 struct Inserter
 {
 	static void insert(Map & map, const typename Map::key_type & key, Block * stored_block, size_t i, Arena & pool);
 };
 
-template <typename Map>
-struct Inserter<ASTTableJoin::Strictness::Any, Map>
-{
-	static void insert(Map & map, const typename Map::key_type & key, Block * stored_block, size_t i, Arena & pool)
-	{
-		typename Map::iterator it;
-		bool inserted;
-		map.emplace(key, it, inserted);
-
-		if (inserted)
-			new (&it->second) typename Map::mapped_type(stored_block, i);
-	}
-};
-
-/// Для строковых ключей отличается тем, что саму строчку надо разместить в пуле.
-template <typename Map>
-struct InserterAnyString
+template <typename Map, typename KeyGetter>
+struct Inserter<ASTTableJoin::Strictness::Any, Map, KeyGetter>
 {
 	static void insert(Map & map, const typename Map::key_type & key, Block * stored_block, size_t i, Arena & pool)
 	{
@@ -233,18 +257,14 @@ struct InserterAnyString
 
 		if (inserted)
 		{
-			it->first.data = pool.insert(key.data, key.size);
+			KeyGetter::onNewKey(it->first, pool);
 			new (&it->second) typename Map::mapped_type(stored_block, i);
 		}
 	}
 };
 
-template <> struct Inserter<ASTTableJoin::Strictness::Any, Join::MapsAny::MapString> : InserterAnyString<Join::MapsAny::MapString> {};
-template <> struct Inserter<ASTTableJoin::Strictness::Any, Join::MapsAnyFull::MapString> : InserterAnyString<Join::MapsAnyFull::MapString> {};
-
-
-template <typename Map>
-struct Inserter<ASTTableJoin::Strictness::All, Map>
+template <typename Map, typename KeyGetter>
+struct Inserter<ASTTableJoin::Strictness::All, Map, KeyGetter>
 {
 	static void insert(Map & map, const typename Map::key_type & key, Block * stored_block, size_t i, Arena & pool)
 	{
@@ -254,6 +274,7 @@ struct Inserter<ASTTableJoin::Strictness::All, Map>
 
 		if (inserted)
 		{
+			KeyGetter::onNewKey(it->first, pool);
 			new (&it->second) typename Map::mapped_type(stored_block, i);
 		}
 		else
@@ -272,109 +293,39 @@ struct Inserter<ASTTableJoin::Strictness::All, Map>
 	}
 };
 
-template <typename Map>
-struct InserterAllString
+
+template <ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
+void NO_INLINE Join::insertFromBlockImplType(Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block)
 {
-	static void insert(Map & map, const typename Map::key_type & key, Block * stored_block, size_t i, Arena & pool)
+	KeyGetter key_getter(key_columns);
+
+	for (size_t i = 0; i < rows; ++i)
 	{
-		typename Map::iterator it;
-		bool inserted;
-		map.emplace(key, it, inserted);
-
-		if (inserted)
-		{
-			it->first.data = pool.insert(key.data, key.size);
-			new (&it->second) typename Map::mapped_type(stored_block, i);
-		}
-		else
-		{
-			auto elem = reinterpret_cast<typename Map::mapped_type *>(pool.alloc(sizeof(typename Map::mapped_type)));
-
-			elem->next = it->second.next;
-			it->second.next = elem;
-			elem->block = stored_block;
-			elem->row_num = i;
-		}
+		auto key = key_getter.getKey(key_columns, keys_size, i, key_sizes);
+		Inserter<STRICTNESS, Map, KeyGetter>::insert(map, key, stored_block, i, pool);
 	}
-};
-
-template <> struct Inserter<ASTTableJoin::Strictness::All, Join::MapsAll::MapString> : InserterAllString<Join::MapsAll::MapString> {};
-template <> struct Inserter<ASTTableJoin::Strictness::All, Join::MapsAllFull::MapString> : InserterAllString<Join::MapsAllFull::MapString> {};
+}
 
 
 template <ASTTableJoin::Strictness STRICTNESS, typename Maps>
 void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block)
 {
-	if (type == Type::CROSS)
+	switch (type)
 	{
-		/// Ничего не делаем. Уже сохранили блок, и этого достаточно.
+		case Join::Type::EMPTY:			break;
+		case Join::Type::CROSS:			break;	/// Do nothing. We have already saved block, and it is enough.
+
+	#define M(TYPE) \
+		case Join::Type::TYPE: \
+			insertFromBlockImplType<STRICTNESS, typename KeyGetterForType<Join::Type::TYPE>::Type>(\
+				*maps.TYPE, rows, key_columns, keys_size, stored_block); \
+				break;
+		APPLY_FOR_JOIN_VARIANTS(M)
+	#undef M
+
+		default:
+			throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 	}
-	else if (type == Type::KEY_64)
-	{
-		using Map = typename Maps::MapUInt64;
-		Map & res = *maps.key64;
-		const IColumn & column = *key_columns[0];
-
-		/// Для всех строчек
-		for (size_t i = 0; i < rows; ++i)
-		{
-			/// Строим ключ
-			UInt64 key = column.get64(i);
-			Inserter<STRICTNESS, Map>::insert(res, key, stored_block, i, pool);
-		}
-	}
-	else if (type == Type::KEY_STRING)
-	{
-		using Map = typename Maps::MapString;
-		Map & res = *maps.key_string;
-		const IColumn & column = *key_columns[0];
-
-		if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&column))
-		{
-			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
-			const ColumnString::Chars_t & data = column_string->getChars();
-
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				StringRef key(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
-				Inserter<STRICTNESS, Map>::insert(res, key, stored_block, i, pool);
-			}
-		}
-		else if (const ColumnFixedString * column_string = typeid_cast<const ColumnFixedString *>(&column))
-		{
-			size_t n = column_string->getN();
-			const ColumnFixedString::Chars_t & data = column_string->getChars();
-
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				StringRef key(&data[i * n], n);
-				Inserter<STRICTNESS, Map>::insert(res, key, stored_block, i, pool);
-			}
-		}
-		else
-			throw Exception("Illegal type of column when creating join with string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
-	}
-	else if (type == Type::HASHED)
-	{
-		using Map = typename Maps::MapHashed;
-		Map & res = *maps.hashed;
-
-		/// Для всех строчек
-		for (size_t i = 0; i < rows; ++i)
-		{
-			UInt128 key = keys_fit_128_bits
-				? packFixed<UInt128>(i, keys_size, key_columns, key_sizes)
-				: hash128(i, keys_size, key_columns);
-
-			Inserter<STRICTNESS, Map>::insert(res, key, stored_block, i, pool);
-		}
-	}
-	else
-		throw Exception("Unknown JOIN variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 }
 
 
@@ -391,8 +342,8 @@ void Join::setSampleBlock(const Block & block)
 	for (size_t i = 0; i < keys_size; ++i)
 		key_columns[i] = block.getByName(key_names_right[i]).column.get();
 
-	/// Выберем, какую структуру данных для множества использовать.
-	init(chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
+	/// Choose data structure to use for JOIN.
+	init(chooseMethod(key_columns, key_sizes));
 
 	sample_block_with_columns_to_add = block;
 
@@ -423,7 +374,6 @@ bool Join::insertFromBlock(const Block & block)
 {
 	Poco::ScopedWriteRWLock lock(rwlock);
 
-	/// Какую структуру данных для множества использовать?
 	if (empty())
 		throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
 
@@ -482,7 +432,7 @@ bool Join::insertFromBlock(const Block & block)
 
 	if (kind != ASTTableJoin::Kind::Cross)
 	{
-		/// Заполняем нужную хэш-таблицу.
+		/// Fill the hash table.
 		if (!getFullness(kind))
 		{
 			if (strictness == ASTTableJoin::Strictness::Any)
@@ -610,6 +560,26 @@ struct Adder<KIND, ASTTableJoin::Strictness::All, Map>
 };
 
 
+template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
+void NO_INLINE Join::joinBlockImplType(
+	Block & block, const Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size,
+	size_t num_columns_to_add, size_t num_columns_to_skip, ColumnPlainPtrs & added_columns,
+	std::unique_ptr<IColumn::Filter> & filter,
+	IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate) const
+{
+	KeyGetter key_getter(key_columns);
+
+	for (size_t i = 0; i < rows; ++i)
+	{
+		auto key = key_getter.getKey(key_columns, keys_size, i, key_sizes);
+
+		Adder<KIND, STRICTNESS, Map>::add(
+			map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), num_columns_to_skip);
+	}
+}
+
+
+
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
 void Join::joinBlockImpl(Block & block, const Maps & maps) const
 {
@@ -686,76 +656,21 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 
 //	std::cerr << num_columns_to_skip << "\n" << block.dumpStructure() << "\n" << blocks.front().dumpStructure() << "\n";
 
-	if (type == Type::KEY_64)
+	switch (type)
 	{
-		using Map = typename Maps::MapUInt64;
-		const Map & map = *maps.key64;
-		const IColumn & column = *key_columns[0];
+	#define M(TYPE) \
+		case Join::Type::TYPE: \
+			Join::joinBlockImplType<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE>::Type>(\
+				block, *maps.TYPE, rows, key_columns, keys_size, \
+				num_columns_to_add, num_columns_to_skip, added_columns, \
+				filter, current_offset, offsets_to_replicate); \
+			break;
+		APPLY_FOR_JOIN_VARIANTS(M)
+	#undef M
 
-		/// Для всех строчек
-		for (size_t i = 0; i < rows; ++i)
-		{
-			/// Строим ключ
-			UInt64 key = column.get64(i);
-			Adder<KIND, STRICTNESS, Map>::add(
-				map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), num_columns_to_skip);
-		}
+		default:
+			throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 	}
-	else if (type == Type::KEY_STRING)
-	{
-		using Map = typename Maps::MapString;
-		const Map & map = *maps.key_string;
-		const IColumn & column = *key_columns[0];
-
-		if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&column))
-		{
-			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
-			const ColumnString::Chars_t & data = column_string->getChars();
-
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				StringRef key(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
-				Adder<KIND, STRICTNESS, Map>::add(
-					map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), num_columns_to_skip);
-			}
-		}
-		else if (const ColumnFixedString * column_string = typeid_cast<const ColumnFixedString *>(&column))
-		{
-			size_t n = column_string->getN();
-			const ColumnFixedString::Chars_t & data = column_string->getChars();
-
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				StringRef key(&data[i * n], n);
-				Adder<KIND, STRICTNESS, Map>::add(
-					map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), num_columns_to_skip);
-			}
-		}
-		else
-			throw Exception("Illegal type of column when creating set with string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
-	}
-	else if (type == Type::HASHED)
-	{
-		using Map = typename Maps::MapHashed;
-		Map & map = *maps.hashed;
-
-		/// Для всех строчек
-		for (size_t i = 0; i < rows; ++i)
-		{
-			UInt128 key = keys_fit_128_bits
-				? packFixed<UInt128>(i, keys_size, key_columns, key_sizes)
-				: hash128(i, keys_size, key_columns);
-
-			Adder<KIND, STRICTNESS, Map>::add(
-				map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), num_columns_to_skip);
-		}
-	}
-	else
-		throw Exception("Unknown JOIN variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 
 	/// Если ANY INNER|RIGHT JOIN - фильтруем все столбцы кроме новых.
 	if (filter)
@@ -828,7 +743,7 @@ void Join::checkTypesOfKeys(const Block & block_left, const Block & block_right)
 	size_t keys_size = key_names_left.size();
 
 	for (size_t i = 0; i < keys_size; ++i)
-		if (block_left.getByName(key_names_left[i]).type->getName() != block_right.getByName(key_names_right[i]).type->getName())
+		if (!block_left.getByName(key_names_left[i]).type->equals(*block_right.getByName(key_names_right[i]).type))
 			throw Exception("Type mismatch of columns to JOIN by: "
 				+ key_names_left[i] + " " + block_left.getByName(key_names_left[i]).type->getName() + " at left, "
 				+ key_names_right[i] + " " + block_right.getByName(key_names_right[i]).type->getName() + " at right",
@@ -1039,14 +954,19 @@ private:
 		}
 
 		size_t rows_added = 0;
-		if (parent.type == Join::Type::KEY_64)
-			rows_added = fillColumns<STRICTNESS>(*maps.key64, num_columns_left, columns_left, num_columns_right, columns_keys_and_right);
-		else if (parent.type == Join::Type::KEY_STRING)
-			rows_added = fillColumns<STRICTNESS>(*maps.key_string, num_columns_left, columns_left, num_columns_right, columns_keys_and_right);
-		else if (parent.type == Join::Type::HASHED)
-			rows_added = fillColumns<STRICTNESS>(*maps.hashed, num_columns_left, columns_left, num_columns_right, columns_keys_and_right);
-		else
-			throw Exception("Unknown JOIN variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+
+		switch (parent.type)
+		{
+		#define M(TYPE) \
+			case Join::Type::TYPE: \
+				rows_added = fillColumns<STRICTNESS>(*maps.TYPE, num_columns_left, columns_left, num_columns_right, columns_keys_and_right); \
+				break;
+			APPLY_FOR_JOIN_VARIANTS(M)
+		#undef M
+
+			default:
+				throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+		}
 
 //		std::cerr << "rows added: " << rows_added << "\n";
 

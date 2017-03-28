@@ -4,8 +4,6 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
 	add_definitions(-Wno-unused-but-set-variable)
 endif()
 
-include_directories (include/zookeeper src)
-
 add_library (zookeeper_mt
 src/zookeeper.c
 src/zookeeper.jute.c
@@ -15,4 +13,10 @@ src/mt_adaptor.c
 src/recordio.c
 src/hashtable/hashtable.c
 src/hashtable/hashtable_itr.c
+)
+
+target_include_directories (zookeeper_mt
+	PRIVATE include/zookeeper
+	PRIVATE src
+	INTERFACE include
 )

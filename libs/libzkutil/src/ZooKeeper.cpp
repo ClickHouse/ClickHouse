@@ -106,7 +106,7 @@ struct ZooKeeperArgs
 			if (startsWith(key, "node"))
 			{
 				hosts_strings.push_back(
-					config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port"));
+					config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port", "2181"));
 			}
 			else if (key == "session_timeout_ms")
 			{

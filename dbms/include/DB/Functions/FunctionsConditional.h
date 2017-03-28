@@ -1658,7 +1658,7 @@ public:
 
 			return std::make_shared<DataTypeTuple>(std::move(result_tuple));
 		}
-		else if (arguments[1]->getName() != arguments[2]->getName())
+		else if (!arguments[1]->equals(*arguments[2]))
 		{
 			const DataTypeString * type_string1 = typeid_cast<const DataTypeString *>(arguments[1].get());
 			const DataTypeString * type_string2 = typeid_cast<const DataTypeString *>(arguments[2].get());

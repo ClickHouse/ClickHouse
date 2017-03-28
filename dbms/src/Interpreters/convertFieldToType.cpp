@@ -151,6 +151,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
 
 Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
 {
+	if (from_value.isNull())
+		return from_value;
+
 	if (from_type_hint && from_type_hint->equals(to_type))
 		return from_value;
 

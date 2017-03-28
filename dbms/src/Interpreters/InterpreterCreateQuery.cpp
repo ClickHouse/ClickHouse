@@ -231,7 +231,7 @@ static ColumnsAndDefaults parseColumns(
 				const auto & deduced_type = tmp_column.type;
 
 				/// type mismatch between explicitly specified and deduced type, add conversion for non-array types
-				if (explicit_type->getName() != deduced_type->getName())
+				if (!explicit_type->equals(*deduced_type))
 				{
 					col_decl_ptr->default_expression = makeASTFunction("CAST", col_decl_ptr->default_expression,
 						std::make_shared<ASTLiteral>(StringRange(), explicit_type->getName()));

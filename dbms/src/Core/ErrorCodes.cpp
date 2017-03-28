@@ -364,6 +364,8 @@ namespace ErrorCodes
 	extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT = 359;
 	extern const int CANNOT_CREATE_CHARSET_CONVERTER = 360;
 	extern const int SEEK_POSITION_OUT_OF_BOUND = 361;
+	extern const int CURRENT_WRITE_BUFFER_IS_EXHAUSTED = 362;
+	extern const int CANNOT_CREATE_IO_BUFFER = 363;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;
