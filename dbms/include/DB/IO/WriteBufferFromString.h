@@ -41,7 +41,7 @@ public:
 		}
 	}
 
-    ~WriteBufferFromString() override
+	~WriteBufferFromString() override
 	{
 		finish();
 	}

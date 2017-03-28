@@ -5,7 +5,7 @@
 #include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
@@ -96,11 +96,11 @@ try
 		column_names.push_back(name_type.name);
 	}
 
-	/// создаём таблицу хит лога
+	/// create a hit log table
 
 	StoragePtr table = StorageLog::create("./", "HitLog", std::make_shared<NamesAndTypesList>(names_and_types_list));
 
-	/// создаём описание, как читать данные из tab separated дампа
+	/// create a description of how to read data from the tab separated dump
 
 	Block sample;
 	for (const auto & name_type : names_and_types_list)
@@ -112,7 +112,7 @@ try
 		sample.insert(std::move(elem));
 	}
 
-	/// читаем данные из tsv файла и одновременно пишем в таблицу
+	/// read the data from tsv file and simultaneously write to table
 	if (argc == 2 && 0 == strcmp(argv[1], "write"))
 	{
 		ReadBufferFromIStream in_buf(std::cin);
@@ -123,7 +123,7 @@ try
 		copyData(in, *out);
 	}
 
-	/// читаем из неё
+	/// read from it
 	if (argc == 2 && 0 == strcmp(argv[1], "read"))
 	{
 		WriteBufferFromOStream out_buf(std::cout);

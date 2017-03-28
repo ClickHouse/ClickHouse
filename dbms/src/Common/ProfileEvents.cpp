@@ -103,7 +103,12 @@
 	M(RegexpCreated) \
 	M(ContextLock) \
 	\
+	M(StorageBufferFlush) \
 	M(StorageBufferErrorOnFlush) \
+	M(StorageBufferPassedAllMinThresholds) \
+	M(StorageBufferPassedTimeMaxThreshold) \
+	M(StorageBufferPassedRowsMaxThreshold) \
+	M(StorageBufferPassedBytesMaxThreshold) \
 	\
 	M(DictCacheKeysRequested) \
 	M(DictCacheKeysRequestedMiss) \

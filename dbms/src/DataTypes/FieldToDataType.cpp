@@ -3,6 +3,11 @@
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/DataTypes/DataTypeNull.h>
 #include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNull.h>
+#include <DB/Common/Exception.h>
 #include <ext/size.hpp>
 
 
@@ -13,6 +18,38 @@ namespace ErrorCodes
 {
 	extern const int EMPTY_DATA_PASSED;
 	extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+
+DataTypePtr FieldToDataType::operator() (Null & x) const
+{
+	return std::make_shared<DataTypeNull>();
+}
+
+DataTypePtr FieldToDataType::operator() (UInt64 & x) const
+{
+	if (x <= std::numeric_limits<UInt8>::max())		return std::make_shared<DataTypeUInt8>();
+	if (x <= std::numeric_limits<UInt16>::max())	return std::make_shared<DataTypeUInt16>();
+	if (x <= std::numeric_limits<UInt32>::max())	return std::make_shared<DataTypeUInt32>();
+	return std::make_shared<DataTypeUInt64>();
+}
+
+DataTypePtr FieldToDataType::operator() (Int64 & x) const
+{
+	if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min())		return std::make_shared<DataTypeInt8>();
+	if (x <= std::numeric_limits<Int16>::max() && x >= std::numeric_limits<Int16>::min())	return std::make_shared<DataTypeInt16>();
+	if (x <= std::numeric_limits<Int32>::max() && x >= std::numeric_limits<Int32>::min())	return std::make_shared<DataTypeInt32>();
+	return std::make_shared<DataTypeInt64>();
+}
+
+DataTypePtr FieldToDataType::operator() (Float64 & x) const
+{
+	return std::make_shared<DataTypeFloat64>();
+}
+
+DataTypePtr FieldToDataType::operator() (String & x) const
+{
+	return std::make_shared<DataTypeString>();
 }
 
 
@@ -32,13 +69,13 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 	if (x.empty())
 		throw Exception("Cannot infer type of empty array", ErrorCodes::EMPTY_DATA_PASSED);
 
-	/** Тип массива нужно вывести по типу его элементов.
-	  * Если элементы - числа, то нужно выбрать наименьший общий тип, если такой есть,
-	  *  или кинуть исключение.
-	  * Код похож на NumberTraits::ResultOfIf, но тем кодом трудно здесь непосредственно воспользоваться.
+	/** The type of the array should be determined by the type of its elements.
+	  * If the elements are numbers, then select the smallest common type, if any,
+	  *  or throw an exception.
+	  * The code is similar to NumberTraits::ResultOfIf, but it's hard to use this code directly.
 	  *
-	  * Также заметим, что Float32 не выводится, вместо этого используется только Float64.
-	  * Это сделано потому что литералов типа Float32 не бывает в запросе.
+	  * Also notice that Float32 is not output, only Float64 is used instead.
+	  * This is done because Float32 type literals do not exist in the query.
 	  */
 
 	bool has_string = false;
@@ -172,7 +209,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 
 		if (max_unsigned_bits >= max_signed_bits)
 		{
-			/// Беззнаковый тип не помещается в знаковый. Надо увеличить количество бит.
+			/// An unsigned type does not fit into a signed type. It is necessary to increase the number of bits.
 			if (max_bits == 8)
 				return wrap_into_array(std::make_shared<DataTypeInt16>());
 			if (max_bits == 16)
@@ -184,7 +221,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 		}
 		else
 		{
-			/// Беззнаковый тип помещается в знаковый.
+			/// An unsigned type is placed in a signed type.
 			if (max_bits == 8)
 				return wrap_into_array(std::make_shared<DataTypeInt8>());
 			if (max_bits == 16)

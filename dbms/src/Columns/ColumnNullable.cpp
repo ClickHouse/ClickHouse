@@ -1,20 +1,42 @@
+#include <DB/Common/Arena.h>
+#include <DB/Common/SipHash.h>
+#include <DB/Common/NaNUtils.h>
 #include <DB/Columns/ColumnNullable.h>
+#include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnTuple.h>
+#include <DB/Columns/ColumnAggregateFunction.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-
-extern const int LOGICAL_ERROR;
-
+	extern const int LOGICAL_ERROR;
+	extern const int ILLEGAL_COLUMN;
 }
+
 
 ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
 	: nested_column{nested_column_}, null_map{null_map_}
 {
 	if (nested_column->isNullable())
-		throw Exception{"A nullable column cannot contain another nullable column", ErrorCodes::LOGICAL_ERROR};
+		throw Exception{"A nullable column cannot contain another nullable column", ErrorCodes::ILLEGAL_COLUMN};
+
+	/// TODO Also check for Nullable(Array(...)). But they are occasionally used somewhere in tests.
+
+	if (typeid_cast<const ColumnTuple *>(nested_column.get()))
+		throw Exception{"Nullable(Tuple(...)) is illegal", ErrorCodes::ILLEGAL_COLUMN};
+
+	if (typeid_cast<const ColumnAggregateFunction *>(nested_column.get()))
+		throw Exception{"Nullable(AggregateFunction(...)) is illegal", ErrorCodes::ILLEGAL_COLUMN};
+
+	/// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
+	if (auto nested_column_materialized = nested_column->convertToFullColumnIfConst())
+		nested_column = nested_column_materialized;
+
+	if (null_map->isConst())
+		throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
 }
 
 
@@ -193,46 +215,74 @@ int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null
 	return nested_column->compareAt(n, m, nested_rhs, null_direction_hint);
 }
 
-void ColumnNullable::getPermutation(bool reverse, size_t limit, Permutation & res) const
+void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const
 {
 	/// Cannot pass limit because of unknown amount of NULLs.
-	nested_column->getPermutation(reverse, 0, res);
+	nested_column->getPermutation(reverse, 0, null_direction_hint, res);
 
-	/// Shift all NULL values to the end.
-
-	size_t read_idx = 0;
-	size_t write_idx = 0;
-	size_t end_idx = res.size();
-
-	if (!limit)
-		limit = end_idx;
-
-	while (read_idx < limit && !isNullAt(res[read_idx]))
+	if ((null_direction_hint > 0) != reverse)
 	{
-		++read_idx;
-		++write_idx;
-	}
+		/// Shift all NULL values to the end.
 
-	++read_idx;
+		size_t read_idx = 0;
+		size_t write_idx = 0;
+		size_t end_idx = res.size();
 
-	/// Invariants:
-	///  write_idx < read_idx
-	///  write_idx points to NULL
-	///  read_idx will be incremented to position of next not-NULL
-	///  there are range of NULLs between write_idx and read_idx - 1,
-	/// We are moving elements from end to begin of this range,
-	///  so range will "bubble" towards the end.
-	/// Relative order of NULL elements could be changed,
-	///  but relative order of non-NULLs is preserved.
+		if (!limit)
+			limit = end_idx;
 
-	while (read_idx < end_idx && write_idx < limit)
-	{
-		if (!isNullAt(res[read_idx]))
+		while (read_idx < limit && !isNullAt(res[read_idx]))
 		{
-			std::swap(res[read_idx], res[write_idx]);
+			++read_idx;
 			++write_idx;
 		}
+
 		++read_idx;
+
+		/// Invariants:
+		///  write_idx < read_idx
+		///  write_idx points to NULL
+		///  read_idx will be incremented to position of next not-NULL
+		///  there are range of NULLs between write_idx and read_idx - 1,
+		/// We are moving elements from end to begin of this range,
+		///  so range will "bubble" towards the end.
+		/// Relative order of NULL elements could be changed,
+		///  but relative order of non-NULLs is preserved.
+
+		while (read_idx < end_idx && write_idx < limit)
+		{
+			if (!isNullAt(res[read_idx]))
+			{
+				std::swap(res[read_idx], res[write_idx]);
+				++write_idx;
+			}
+			++read_idx;
+		}
+	}
+	else
+	{
+		/// Shift all NULL values to the begin.
+
+		ssize_t read_idx = res.size() - 1;
+		ssize_t write_idx = res.size() - 1;
+
+		while (read_idx >= 0 && !isNullAt(res[read_idx]))
+		{
+			--read_idx;
+			--write_idx;
+		}
+
+		--read_idx;
+
+		while (read_idx >= 0 && write_idx >= 0)
+		{
+			if (!isNullAt(res[read_idx]))
+			{
+				std::swap(res[read_idx], res[write_idx]);
+				--write_idx;
+			}
+			--read_idx;
+		}
 	}
 }
 
@@ -359,16 +409,34 @@ ColumnPtr ColumnNullable::replicate(const Offsets_t & offsets) const
 }
 
 
-void ColumnNullable::applyNullValuesByteMap(const ColumnNullable & other)
+template <bool negative>
+void ColumnNullable::applyNullValuesByteMapImpl(const ColumnUInt8 & map)
 {
 	NullValuesByteMap & arr1 = getNullMap();
-	const NullValuesByteMap & arr2 = other.getNullMap();
+	const NullValuesByteMap & arr2 = map.getData();
 
 	if (arr1.size() != arr2.size())
 		throw Exception{"Inconsistent sizes of ColumnNullable objects", ErrorCodes::LOGICAL_ERROR};
 
 	for (size_t i = 0, size = arr1.size(); i < size; ++i)
-		arr1[i] |= arr2[i];
+		arr1[i] |= negative ^ arr2[i];
+}
+
+
+void ColumnNullable::applyNullValuesByteMap(const ColumnUInt8 & map)
+{
+	applyNullValuesByteMapImpl<false>(map);
+}
+
+void ColumnNullable::applyNegatedNullValuesByteMap(const ColumnUInt8 & map)
+{
+	applyNullValuesByteMapImpl<true>(map);
+}
+
+
+void ColumnNullable::applyNullValuesByteMap(const ColumnNullable & other)
+{
+	applyNullValuesByteMap(other.getNullMapConcreteColumn());
 }
 
 }

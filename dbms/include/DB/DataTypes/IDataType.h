@@ -141,6 +141,12 @@ public:
 		throw Exception("getSizeOfField() method is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
+	/// Checks that two instances belong to the same type
+	inline bool equals(const IDataType & rhs) const
+	{
+		return getName() == rhs.getName();
+	}
+
 	virtual ~IDataType() {}
 };
 

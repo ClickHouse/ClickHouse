@@ -1,5 +1,5 @@
 #include <unistd.h>
-#include <zstd/zstd.h>
+#include <zstd.h>
 #include <vector>
 #include <stdexcept>
 

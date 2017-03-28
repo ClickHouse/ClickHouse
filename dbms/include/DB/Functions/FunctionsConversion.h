@@ -10,7 +10,7 @@
 #include <DB/IO/Operators.h>
 #include <DB/IO/ReadBufferFromMemory.h>
 #include <DB/DataTypes/DataTypeFactory.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDate.h>
@@ -24,6 +24,7 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNullable.h>
+#include <DB/Columns/ColumnTuple.h>
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Functions/IFunction.h>
@@ -45,6 +46,7 @@ namespace ErrorCodes
 	extern const int CANNOT_PARSE_DATE;
 	extern const int CANNOT_PARSE_DATETIME;
 	extern const int CANNOT_PARSE_TEXT;
+	extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -183,7 +185,7 @@ struct FormatImpl<DataTypeEnum<FieldType>>
 
 /// DataTypeEnum<T> to DataType<T> free conversion
 template <typename FieldType, typename Name>
-struct ConvertImpl<DataTypeEnum<FieldType>, typename DataTypeFromFieldType<FieldType>::Type, Name>
+struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name>
 {
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
@@ -670,7 +672,6 @@ public:
 	size_t getNumberOfArguments() const override { return 0; }
 	bool isInjective(const Block &) override { return std::is_same<Name, NameToString>::value; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		return getReturnTypeInternal(arguments);
@@ -891,7 +892,6 @@ public:
 	static constexpr auto name = "toFixedString";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToFixedString>(); };
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -919,7 +919,6 @@ public:
 		out_return_type = std::make_shared<DataTypeFixedString>(n);
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto n = getSize(block.safeGetByPosition(arguments[1]));
@@ -993,7 +992,7 @@ private:
 	template <typename T>
 	bool getSizeTyped(const ColumnWithTypeAndName & column, size_t & out_size)
 	{
-		if (!typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(column.type.get()))
+		if (!typeid_cast<const DataTypeNumber<T> *>(column.type.get()))
 			return false;
 		const ColumnConst<T> * column_const = typeid_cast<const ColumnConst<T> *>(column.column.get());
 		if (!column_const)
@@ -1053,7 +1052,7 @@ struct ToIntMonotonicity
 			return { true };
 
 		/// If type is same, too. (Enum has separate case, because it is different data type)
-		if (typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(&type) ||
+		if (typeid_cast<const DataTypeNumber<T> *>(&type) ||
 			typeid_cast<const DataTypeEnum<T> *>(&type))
 			return { true };
 
@@ -1175,7 +1174,7 @@ template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTim
 template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
 template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
 template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
-	: FunctionTo<typename DataTypeFromFieldType<FieldType>::Type>
+	: FunctionTo<DataTypeNumber<FieldType>>
 {
 };
 
@@ -1498,19 +1497,11 @@ private:
 		};
 	}
 
-	/// Only trivial NULL -> NULL case
-	WrapperType createNullWrapper(const DataTypePtr & from_type, const DataTypeNull * to_type)
+	WrapperType createIdentityWrapper(const DataTypePtr &)
 	{
-		if (!typeid_cast<const DataTypeNull *>(from_type.get()))
-			throw Exception("Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
-				ErrorCodes::CANNOT_CONVERT_TYPE);
-
 		return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
 		{
-			// just copy pointer to Null column
-			ColumnWithTypeAndName & res_col = block.safeGetByPosition(result);
-			const ColumnWithTypeAndName & src_col = block.safeGetByPosition(arguments.front());
-			res_col.column = src_col.column;
+			block.safeGetByPosition(result).column = block.safeGetByPosition(arguments.front()).column;
 		};
 	}
 
@@ -1602,7 +1593,9 @@ private:
 
 	WrapperType prepareImpl(const DataTypePtr & from_type, const IDataType * const to_type)
 	{
-		if (const auto to_actual_type = typeid_cast<const DataTypeUInt8 *>(to_type))
+		if (from_type->equals(*to_type))
+			return createIdentityWrapper(from_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeUInt8 *>(to_type))
 			return createWrapper(from_type, to_actual_type);
 		else if (const auto to_actual_type = typeid_cast<const DataTypeUInt16 *>(to_type))
 			return createWrapper(from_type, to_actual_type);
@@ -1638,8 +1631,6 @@ private:
 			return createEnumWrapper(from_type, type_enum);
 		else if (const auto type_enum = typeid_cast<const DataTypeEnum16 *>(to_type))
 			return createEnumWrapper(from_type, type_enum);
-		else if (const auto type_null = typeid_cast<const DataTypeNull *>(to_type))
-			return createNullWrapper(from_type, type_null);
 
 		/// It's possible to use ConvertImplGenericFromString to convert from String to AggregateFunction,
 		///  but it is disabled because deserializing aggregate functions state might be unsafe.
@@ -1691,7 +1682,7 @@ private:
 			else if (const auto type = typeid_cast<const DataTypeEnum16 *>(to_type))
 				monotonicity_for_range = monotonicityForType(type);
 		}
-		/// other types like FixedString, Array and Tuple have no monotonicity defined
+		/// other types like Null, FixedString, Array and Tuple have no monotonicity defined
 	}
 
 public:

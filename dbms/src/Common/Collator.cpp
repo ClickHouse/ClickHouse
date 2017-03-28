@@ -39,7 +39,7 @@ int Collator::compare(const char * str1, size_t length1, const char * str2, size
 	UCollationResult compare_result = ucol_strcollIter(collator, &iter1, &iter2, &status);
 
 	if (status != U_ZERO_ERROR)
-		throw DB::Exception("ICU collation comparison failed with error code: " + DB::toString(status),
+		throw DB::Exception("ICU collation comparison failed with error code: " + DB::toString<int>(status),
 							DB::ErrorCodes::COLLATION_COMPARISON_FAILED);
 
 	/** Values of enum UCollationResult are equals to what exactly we need:

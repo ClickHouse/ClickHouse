@@ -1,12 +1,18 @@
 #include <DB/IO/HTTPCommon.h>
 
-#include <Poco/Util/Application.h>
+#include <Poco/Net/AcceptCertificateHandler.h>
+#include <Poco/Net/Context.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/InvalidCertificateHandler.h>
+#include <Poco/Net/PrivateKeyPassphraseHandler.h>
+#include <Poco/Net/RejectCertificateHandler.h>
+#include <Poco/Net/SSLManager.h>
+#include <Poco/Util/Application.h>
+#include <Poco/Util/Application.h>
 
 
 namespace DB
 {
-
 void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response)
 {
 	if (!response.getKeepAlive())
@@ -17,4 +23,11 @@ void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response)
 		response.set("Keep-Alive", "timeout=" + std::to_string(keep_alive_timeout.totalSeconds()));
 }
 
+std::once_flag ssl_init_once;
+
+void SSLInit()
+{
+	// http://stackoverflow.com/questions/18315472/https-request-in-c-using-poco
+	Poco::Net::initializeSSL();
+}
 }

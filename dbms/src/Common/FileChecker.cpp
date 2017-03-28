@@ -44,8 +44,8 @@ void FileChecker::update(const Files::const_iterator & begin, const Files::const
 
 bool FileChecker::check() const
 {
-	/** Читаем файлы заново при каждом вызове check - чтобы не нарушать константность.
-		* Метод check вызывается редко.
+	/** Read the files again every time you call `check` - so as not to violate the constancy.
+		* `check` method is rarely called.
 		*/
 	Map local_map;
 	load(local_map);
@@ -92,7 +92,7 @@ void FileChecker::save() const
 	{
 		WriteBufferFromFile out(tmp_files_info_path);
 
-		/// Столь сложная структура JSON-а - для совместимости со старым форматом.
+		/// So complex JSON structure - for compatibility with the old format.
 		writeCString("{\"yandex\":{", out);
 
 		for (auto it = map.begin(); it != map.end(); ++it)
@@ -100,7 +100,7 @@ void FileChecker::save() const
 			if (it != map.begin())
 				writeString(",", out);
 
-			/// escapeForFileName на самом деле не нужен. Но он оставлен для совместимости со старым кодом.
+			/// `escapeForFileName` is not really needed. But it is left for compatibility with the old code.
 			writeJSONString(escapeForFileName(it->first), out);
 			writeString(":{\"size\":\"", out);
 			writeIntText(it->second, out);
@@ -136,7 +136,7 @@ void FileChecker::load(Map & map) const
 		ReadBufferFromFile in(files_info_path);
 		WriteBufferFromString out(content);
 
-		/// Библиотека JSON не поддерживает пробельные символы. Удаляем их. Неэффективно.
+		/// The JSON library does not support whitespace. We delete them. Ineffective.
 		while (!in.eof())
 		{
 			char c;

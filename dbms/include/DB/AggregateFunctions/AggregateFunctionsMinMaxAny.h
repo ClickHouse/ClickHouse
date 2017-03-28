@@ -13,18 +13,18 @@
 namespace DB
 {
 
-/** Агрегатные функции, запоминающие одно какое-либо переданное значение.
-  * Например, min, max, any, anyLast.
+/** Aggregate functions that store one of any passed values.
+  * For example: min, max, any, anyLast.
   */
 
 
-/// Для числовых значений.
+/// For numeric values.
 template <typename T>
 struct SingleValueDataFixed
 {
 	using Self = SingleValueDataFixed<T>;
 
-	bool has_value = false;	/// Надо запомнить, было ли передано хотя бы одно значение. Это нужно для AggregateFunctionIf.
+	bool has_value = false; /// You need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
 	T value;
 
 
@@ -164,21 +164,21 @@ struct SingleValueDataFixed
 };
 
 
-/** Для строк. Короткие строки хранятся в самой структуре, а длинные выделяются отдельно.
-  * NOTE Могло бы подойти также для массивов чисел.
+/** For strings. Short lines are stored in the structure itself, and long lines are allocated separately.
+  * NOTE It could also be suitable for arrays of numbers.
   */
 struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
 {
 	using Self = SingleValueDataString;
 
-	Int32 size = -1;	/// -1 обозначает, что значения нет.
+	Int32 size = -1;    /// -1 indicates that there is no value.
 
 	static constexpr Int32 AUTOMATIC_STORAGE_SIZE = 64;
 	static constexpr Int32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size);
 
 	union __attribute__((__packed__, __aligned__(1)))
 	{
-		char small_data[MAX_SMALL_STRING_SIZE];	/// Включая завершающий ноль.
+		char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
 		char * __attribute__((__packed__, __aligned__(1))) large_data;
 	};
 
@@ -396,7 +396,7 @@ static_assert(
 	"Incorrect size of SingleValueDataString struct");
 
 
-/// Для любых других типов значений.
+/// For any other value types.
 struct SingleValueDataGeneric
 {
 	using Self = SingleValueDataGeneric;
@@ -561,9 +561,9 @@ struct SingleValueDataGeneric
 };
 
 
-/** То, чем отличаются друг от другая агрегатные функции min, max, any, anyLast
-  *  (условием, при котором сохранённое значение заменяется на новое,
-  *   а также, конечно, именем).
+/** What is the difference between the aggregate functions min, max, any, anyLast
+  *  (the condition that the stored value is replaced by a new one,
+  *   as well as, of course, the name).
   */
 
 template <typename Data>

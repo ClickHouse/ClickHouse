@@ -28,7 +28,7 @@ public:
 		MergeTreeData & storage, const bool use_uncompressed_cache, const ExpressionActionsPtr & prewhere_actions,
 		const String & prewhere_column, const Settings & settings, const Names & virt_column_names);
 
-    ~MergeTreeThreadBlockInputStream() override;
+	~MergeTreeThreadBlockInputStream() override;
 
 	String getName() const override { return "MergeTreeThread"; }
 

@@ -2,7 +2,7 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 
 #include <DB/Common/Stopwatch.h>
 
@@ -69,7 +69,7 @@ void TCPHandler::runImpl()
 	{
 		receiveHello();
 	}
-	catch (const Exception & e)	/// Типично при неправильном имени пользователя, пароле, адресе.
+	catch (const Exception & e) /// Typical for an incorrect username, password, or address.
 	{
 		if (e.code() == ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT)
 		{
@@ -85,7 +85,7 @@ void TCPHandler::runImpl()
 
 		try
 		{
-			/// Пытаемся отправить информацию об ошибке клиенту.
+		/// We try to send error information to the client.
 			sendException(e);
 		}
 		catch (...) {}
@@ -93,7 +93,7 @@ void TCPHandler::runImpl()
 		throw;
 	}
 
-	/// При соединении может быть указана БД по умолчанию.
+	/// When connecting, the default database can be specified.
 	if (!default_database.empty())
 	{
 		if (!connection_context.isDatabaseExist(default_database))
@@ -114,43 +114,43 @@ void TCPHandler::runImpl()
 
 	while (1)
 	{
-		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
+		/// We are waiting for package from client. Thus, every `POLL_INTERVAL` seconds check whether you do not need to complete the work.
 		while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !BaseDaemon::instance().isCancelled())
 			;
 
-		/// Если требуется завершить работу, или клиент отсоединился.
+		/// If you need to quit, or client disconnects.
 		if (BaseDaemon::instance().isCancelled() || in->eof())
 			break;
 
 		Stopwatch watch;
 		state.reset();
 
-		/** Исключение во время выполнения запроса (его надо отдать по сети клиенту).
-		  * Клиент сможет его принять, если оно не произошло во время отправки другого пакета и клиент ещё не разорвал соединение.
+		/** An exception during the execution of request (it must be sent over the network to the client).
+		  * The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
 		  */
 		std::unique_ptr<Exception> exception;
 
 		try
 		{
-			/// Восстанавливаем контекст запроса.
+		/// Restore context of request.
 			query_context = connection_context;
 
-			/** Если Query - обрабатываем. Если Ping или Cancel - возвращаемся в начало.
-			  * Могут прийти настройки на отдельный запрос, которые модифицируют query_context.
+		/** If Query - process it. If Ping or Cancel - go back to the beginning.
+			  * There may come settings for a separate query that modify `query_context`.
 			  */
 			if (!receivePacket())
 				continue;
 
-			/// Получить блоки временных таблиц
+		/// Get blocks of temporary tables
 			if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 				readData(global_settings);
 
-			/// Очищаем, так как, получая данные внешних таблиц, мы получили пустой блок.
-			/// А значит, stream помечен как cancelled и читать из него нельзя.
+		/// We are clearing, as we received an empty block from the external table data.
+		/// So, stream is marked as cancelled and can not be read from it.
 			state.block_in.reset();
-			state.maybe_compressed_in.reset();	/// Для более корректного учёта MemoryTracker-ом.
+		state.maybe_compressed_in.reset();  /// For more accurate accounting of MemoryTracker.
 
-			/// Обрабатываем Query
+		/// Processing Query
 			state.io = executeQuery(state.query, query_context, false, state.stage);
 
 			if (state.io.out)
@@ -159,7 +159,7 @@ void TCPHandler::runImpl()
 			after_check_cancelled.restart();
 			after_send_progress.restart();
 
-			/// Запрос требует приёма данных от клиента?
+		/// Does the request require receive data from client?
 			if (state.need_receive_data_for_insert)
 				processInsertQuery(global_settings);
 			else
@@ -179,11 +179,11 @@ void TCPHandler::runImpl()
 		}
 		catch (const Poco::Net::NetException & e)
 		{
-			/** Сюда мы можем попадать, если была ошибка в соединении с клиентом,
-			  *  или в соединении с удалённым сервером, который использовался для обработки запроса.
-			  * Здесь не получается отличить эти два случая.
-			  * Хотя в одном из них, мы должны отправить эксепшен клиенту, а в другом - не можем.
-			  * Будем пытаться отправить эксепшен клиенту в любом случае - см. ниже.
+		/** We can get here if there was an error during connection to the client,
+		  *  or in connection with a remote server that was used to process the request.
+		  * It is not possible to distinguish between these two cases.
+		  * Although in one of them, we have to send exception to the client, but in the other - we can not.
+		  * We will try to send exception to the client in any case - see below.
 			  */
 			state.io.onException();
 			exception = std::make_unique<Exception>(e.displayText(), ErrorCodes::POCO_EXCEPTION);
@@ -213,7 +213,7 @@ void TCPHandler::runImpl()
 		}
 		catch (...)
 		{
-			/** Не удалось отправить информацию об эксепшене клиенту. */
+		/** Could not send exception information to the client. */
 			network_error = true;
 			LOG_WARNING(log, "Client has gone away.");
 		}
@@ -224,10 +224,10 @@ void TCPHandler::runImpl()
 		}
 		catch (...)
 		{
-			/** В процессе обработки запроса было исключение, которое мы поймали и, возможно, отправили клиенту.
-			  * При уничтожении конвейера выполнения запроса, было второе исключение.
-			  * Например, конвейер мог выполняться в нескольких потоках, и в каждом из них могло возникнуть исключение.
-			  * Проигнорируем его.
+		/** During the processing of request, there was an exception that we caught and possibly sent to client.
+		  * When destroying the request pipeline execution there was a second exception.
+		  * For example, a pipeline could run in multiple threads, and an exception could occur in each of them.
+			  * Ignore it.
 			  */
 		}
 
@@ -248,29 +248,29 @@ void TCPHandler::readData(const Settings & global_settings)
 	{
 		Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
-		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
+		/// We are waiting for package from the client. Thus, every `POLL_INTERVAL` seconds check whether you do not need to complete the work.
 		while (1)
 		{
 			if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000))
 				break;
 
-			/// Если требуется завершить работу.
+		/// If you need to shut down work.
 			if (BaseDaemon::instance().isCancelled())
 				return;
 
-			/** Если ждём данных уже слишком долго.
-			  * Если периодически poll-ить соединение, то receive_timeout у сокета сам по себе не срабатывает.
-			  * Поэтому, добавлена дополнительная проверка.
+		/** If we wait for data for too long.
+		  * If we periodically poll, the receive_timeout of the socket itself does not work.
+			  * Therefore, an additional check is added.
 			  */
 			if (watch.elapsedSeconds() > global_settings.receive_timeout.totalSeconds())
 				throw Exception("Timeout exceeded while receiving data from client", ErrorCodes::SOCKET_TIMEOUT);
 		}
 
-		/// Если клиент отсоединился.
+		/// If client disconnected.
 		if (in->eof())
 			return;
 
-		/// Принимаем и обрабатываем данные. А если они закончились, то выходим.
+		/// We accept and process data. And if they are over, then we leave.
 		if (!receivePacket())
 			break;
 	}
@@ -279,12 +279,12 @@ void TCPHandler::readData(const Settings & global_settings)
 
 void TCPHandler::processInsertQuery(const Settings & global_settings)
 {
-	/** Сделано выше остальных строк, чтобы в случае, когда функция writePrefix кидает эксепшен,
-	  *  клиент получил эксепшен до того, как начнёт отправлять данные.
+	/** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
+	  *  client receive exception before sending data.
 	  */
 	state.io.out->writePrefix();
 
-	/// Отправляем клиенту блок - структура таблицы.
+	/// Send block to the client - table structure.
 	Block block = state.io.out_sample;
 	sendData(block);
 
@@ -314,7 +314,7 @@ void TCPHandler::processOrdinaryQuery()
 			{
 				if (isQueryCancelled())
 				{
-					/// Получен пакет с просьбой прекратить выполнение запроса.
+		/// A package was received requesting to stop execution of the request.
 					async_in.cancel();
 					break;
 				}
@@ -322,26 +322,26 @@ void TCPHandler::processOrdinaryQuery()
 				{
 					if (state.progress.rows && after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
 					{
-						/// Прошло некоторое время и есть прогресс.
+						/// Some time passed and there is a progress.
 						after_send_progress.restart();
 						sendProgress();
 					}
 
 					if (async_in.poll(query_context.getSettingsRef().interactive_delay / 1000))
 					{
-						/// Есть следующий блок результата.
+						/// There is the following result block.
 						block = async_in.read();
 						break;
 					}
 				}
 			}
 
-			/** Если закончились данные, то отправим данные профайлинга и тотальные значения до
-			  *  последнего нулевого блока, чтобы иметь возможность использовать
-			  *  эту информацию в выводе суффикса output stream'а.
-			  * Если запрос был прерван, то вызывать методы sendTotals и другие нельзя,
-			  *  потому что мы прочитали ещё не все данные, и в это время могут производиться какие-то
-			  *  вычисления в других потоках.
+		/** If data has run out, we will send the profiling data and total values to
+		  * the last zero block to be able to use
+		  * this information in the suffix output of stream.
+		  * If the request was interrupted, then `sendTotals` and other methods could not be called,
+		  *  because we have not read all the data yet,
+		  *  and there could be ongoing calculations in other threads at the same time.
 			  */
 			if (!block && !isQueryCancelled())
 			{
@@ -420,7 +420,7 @@ void TCPHandler::sendExtremes()
 
 void TCPHandler::receiveHello()
 {
-	/// Получить hello пакет.
+	/// Receive `hello` packet.
 	UInt64 packet_type = 0;
 	String user = "default";
 	String password;
@@ -428,8 +428,8 @@ void TCPHandler::receiveHello()
 	readVarUInt(packet_type, *in);
 	if (packet_type != Protocol::Client::Hello)
 	{
-		/** Если случайно обратились по протоколу HTTP на порт, предназначенный для внутреннего TCP-протокола,
-		  *  то вместо номера пакета будет G (GET) или P (POST), в большинстве случаев.
+		/** If you accidentally accessed the HTTP protocol for a port destined for an internal TCP protocol,
+		  * Then instead of the package number, there will be G (GET) or P (POST), in most cases.
 		  */
 		if (packet_type == 'G' || packet_type == 'P')
 		{
@@ -572,29 +572,29 @@ bool TCPHandler::receiveData()
 {
 	initBlockInput();
 
-	/// Имя временной таблицы для записи данных, по умолчанию пустая строка
+	/// The name of the temporary table for writing data, default to empty string
 	String external_table_name;
 	if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 		readStringBinary(external_table_name, *in);
 
-	/// Прочитать из сети один блок и записать его
+	/// Read one block from the network and write it down
 	Block block = state.block_in->read();
 
 	if (block)
 	{
-		/// Если запрос на вставку, то данные нужно писать напрямую в state.io.out.
-		/// Иначе пишем блоки во временную таблицу external_table_name.
+		/// If there is an insert request, then the data should be written directly to `state.io.out`.
+		/// Otherwise, we write the blocks in the temporary `external_table_name` table.
 		if (!state.need_receive_data_for_insert)
 		{
 			StoragePtr storage;
-			/// Если такой таблицы не существовало, создаем ее.
+			/// If such a table does not exist, create it.
 			if (!(storage = query_context.tryGetExternalTable(external_table_name)))
 			{
 				NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(block.getColumnsList());
 				storage = StorageMemory::create(external_table_name, columns);
 				query_context.addExternalTable(external_table_name, storage);
 			}
-			/// Данные будем писать напрямую в таблицу.
+			/// The data will be written directly to the table.
 			state.io.out = storage->write(ASTPtr(), query_context.getSettingsRef());
 		}
 		if (block)
@@ -649,7 +649,7 @@ bool TCPHandler::isQueryCancelled()
 
 	after_check_cancelled.restart();
 
-	/// Во время выполнения запроса, единственный пакет, который может прийти от клиента - это остановка выполнения запроса.
+	/// During request execution the only packet that can come from the client is stopping the query.
 	if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(0))
 	{
 		UInt64 packet_type = 0;
@@ -728,7 +728,7 @@ void TCPHandler::run()
 	}
 	catch (Poco::Exception & e)
 	{
-		/// Таймаут - не ошибка.
+		/// Timeout - not an error.
 		if (!strcmp(e.what(), "Timeout"))
 		{
 			LOG_DEBUG(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()

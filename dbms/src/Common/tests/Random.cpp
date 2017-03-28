@@ -1,4 +1,4 @@
-/// Взято из SMHasher.
+/// Taken from SMHasher.
 #ifdef __APPLE__
 #include <common/apple_rt.h>
 #endif

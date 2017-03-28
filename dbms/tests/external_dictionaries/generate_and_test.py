@@ -6,6 +6,7 @@ import json
 import subprocess
 import time
 import lxml.etree as et
+import atexit
 from itertools import chain
 from os import system
 from argparse import ArgumentParser
@@ -28,73 +29,90 @@ MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", "yellow", attrs=['bold'])
 MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUARE_BRACKET
 MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
-#Not complete disable
-use_mysql = True
-use_mongo = True
-use_http  = True
-http_port = 58000
-
 wait_for_loading_sleep_time_sec = 3
 
 failures = 0
 SERVER_DIED = False
-no_break = False
 
 prefix = base_dir = os.path.dirname(os.path.realpath(__file__))
 generated_prefix = prefix + '/generated/'
 
 
-# [ name, key_type, has_parent ]
-dictionaries = [
-    # Simple key dictionaries
-    [ 'file_flat', 0, True ],
-    [ 'clickhouse_flat', 0, True ],
-    [ 'mysql_flat', 0, True ],
-    [ 'mongodb_flat', 0, True ],
-    [ 'executable_flat', 0, True ],
-    [ 'http_flat', 0, True ],
+dictionaries = []
 
-    [ 'file_hashed', 0, True ],
-    [ 'clickhouse_hashed', 0, True ],
-    [ 'mysql_hashed', 0, True ],
-    [ 'mongodb_hashed', 0, True ],
-    [ 'executable_hashed', 0, True ],
-    [ 'http_hashed', 0, True ],
+def generate_structure(args):
+    global dictionaries
+      # [ name, key_type, has_parent ]
+    dictionaries.extend([
+        # Simple key dictionaries
+        [ 'file_flat', 0, True ],
+        [ 'clickhouse_flat', 0, True ],
+        [ 'executable_flat', 0, True ],
+        [ 'http_flat', 0, True ],
 
-    [ 'clickhouse_cache', 0, True ],
-    [ 'mysql_cache', 0, True ],
-    [ 'mongodb_cache', 0, True ],
-    [ 'executable_cache', 0, True ],
-    [ 'http_cache', 0, True ],
+        [ 'file_hashed', 0, True ],
+        [ 'clickhouse_hashed', 0, True ],
+        [ 'executable_hashed', 0, True ],
+        [ 'http_hashed', 0, True ],
 
-    # Complex key dictionaries with (UInt8, UInt8) key
-    [ 'file_complex_integers_key_hashed', 1, False ],
-    [ 'clickhouse_complex_integers_key_hashed', 1, False ],
-    [ 'mysql_complex_integers_key_hashed', 1, False ],
-    [ 'mongodb_complex_integers_key_hashed', 1, False ],
-    [ 'executable_complex_integers_key_hashed', 1, False ],
-    [ 'http_complex_integers_key_hashed', 1, False ],
+        [ 'clickhouse_cache', 0, True ],
+        [ 'executable_cache', 0, True ],
+        [ 'http_cache', 0, True ],
 
-    [ 'clickhouse_complex_integers_key_cache', 1, False ],
-    [ 'mysql_complex_integers_key_cache', 1, False ],
-    [ 'mongodb_complex_integers_key_cache', 1, False ],
-    [ 'executable_complex_integers_key_cache', 1, False ],
-    [ 'http_complex_integers_key_cache', 1, False ],
+        # Complex key dictionaries with (UInt8, UInt8) key
+        [ 'file_complex_integers_key_hashed', 1, False ],
+        [ 'clickhouse_complex_integers_key_hashed', 1, False ],
+        [ 'executable_complex_integers_key_hashed', 1, False ],
+        [ 'http_complex_integers_key_hashed', 1, False ],
 
-    # Complex key dictionaries with (String, UInt8) key
-    [ 'file_complex_mixed_key_hashed', 2, False ],
-    [ 'clickhouse_complex_mixed_key_hashed', 2, False ],
-    [ 'mysql_complex_mixed_key_hashed', 2, False ],
-    [ 'mongodb_complex_mixed_key_hashed', 2, False ],
-    [ 'executable_complex_mixed_key_hashed', 2, False ],
-    [ 'http_complex_mixed_key_hashed', 2, False ],
+        [ 'clickhouse_complex_integers_key_cache', 1, False ],
+        [ 'executable_complex_integers_key_cache', 1, False ],
+        [ 'http_complex_integers_key_cache', 1, False ],
 
-    [ 'clickhouse_complex_mixed_key_cache', 2, False ],
-    [ 'mysql_complex_mixed_key_cache', 2, False ],
-    [ 'mongodb_complex_mixed_key_cache', 2, False ],
-    [ 'executable_complex_mixed_key_hashed', 2, False ],
-    [ 'http_complex_mixed_key_hashed', 2, False ],
-]
+        # Complex key dictionaries with (String, UInt8) key
+        [ 'file_complex_mixed_key_hashed', 2, False ],
+        [ 'clickhouse_complex_mixed_key_hashed', 2, False ],
+        [ 'executable_complex_mixed_key_hashed', 2, False ],
+        [ 'http_complex_mixed_key_hashed', 2, False ],
+
+        [ 'clickhouse_complex_mixed_key_cache', 2, False ],
+        [ 'executable_complex_mixed_key_hashed', 2, False ],
+        [ 'http_complex_mixed_key_hashed', 2, False ],
+    ])
+
+    if args.use_https:
+        dictionaries.extend([
+            [ 'https_flat', 0, True ],
+            [ 'https_hashed', 0, True ],
+            [ 'https_cache', 0, True ],
+        ])
+
+    if not args.no_mysql:
+        dictionaries.extend([
+            [ 'mysql_flat', 0, True ],
+            [ 'mysql_hashed', 0, True ],
+            [ 'mysql_cache', 0, True ],
+            [ 'mysql_complex_integers_key_hashed', 1, False ],
+            [ 'mysql_complex_integers_key_cache', 1, False ],
+            [ 'mysql_complex_mixed_key_hashed', 2, False ],
+            [ 'mysql_complex_mixed_key_cache', 2, False ],
+        ])
+
+    if not args.no_mongo:
+        dictionaries.extend([
+            [ 'mongodb_flat', 0, True ],
+            [ 'mongodb_hashed', 0, True ],
+            [ 'mongodb_cache', 0, True ],
+            [ 'mongodb_complex_integers_key_hashed', 1, False ],
+            [ 'mongodb_complex_integers_key_cache', 1, False ],
+            [ 'mongodb_complex_mixed_key_hashed', 2, False ],
+            [ 'mongodb_complex_mixed_key_cache', 2, False ],
+        ])
+
+    if args.use_mongo_user:
+        dictionaries.extend([
+            [ 'mongodb_user_flat', 0, True ],
+        ])
 
 
 files = [ 'key_simple.tsv', 'key_complex_integers.tsv', 'key_complex_mixed.tsv' ]
@@ -182,7 +200,7 @@ def generate_data(args):
         call([ args.client, '--port', args.port, '--query', query ], 'generated/' + file)
 
     # create MySQL table from complete_query
-    if use_mysql:
+    if not args.no_mysql:
         print 'Creating MySQL table'
         subprocess.check_call('echo "'
                   'create database if not exists test;'
@@ -198,7 +216,10 @@ def generate_data(args):
                   .format(prefix), shell=True)
 
     # create MongoDB collection from complete_query via JSON file
-    if use_mongo:
+    if not args.no_mongo:
+        print 'Creating MongoDB test_user'
+        subprocess.call([ 'mongo', '--eval', 'db.createUser({ user: "test_user", pwd: "test_pass", roles: [ { role: "readWrite", db: "test" } ] })' ])
+
         print 'Creating MongoDB collection'
         table_rows = json.loads(subprocess.check_output([
             args.client,
@@ -292,14 +313,25 @@ def generate_dictionaries(args):
 
     source_mongodb = '''
     <mongodb>
-        <host>localhost</host>
+        <host>{mongo_host}</host>
         <port>27017</port>
         <user></user>
         <password></password>
         <db>test</db>
         <collection>dictionary_source</collection>
     </mongodb>
-    '''
+    '''.format(mongo_host=args.mongo_host)
+
+    source_mongodb_user = '''
+    <mongodb>
+        <host>{mongo_host}</host>
+        <port>27017</port>
+        <user>test_user</user>
+        <password>test_pass</password>
+        <db>test</db>
+        <collection>dictionary_source</collection>
+    </mongodb>
+    '''.format(mongo_host=args.mongo_host)
 
     source_executable = '''
     <executable>
@@ -310,10 +342,17 @@ def generate_dictionaries(args):
 
     source_http = '''
     <http>
-        <url>http://localhost:{http_port}/generated/%s</url>
+        <url>http://{http_host}:{http_port}{http_path}%s</url>
         <format>TabSeparated</format>
     </http>
-    '''.format(http_port=http_port)
+    '''.format(http_host=args.http_host, http_port=args.http_port, http_path=args.http_path)
+
+    source_https = '''
+    <http>
+        <url>https://{https_host}:{https_port}{https_path}%s</url>
+        <format>TabSeparated</format>
+    </http>
+    '''.format(https_host=args.https_host, https_port=args.https_port, https_path=args.https_path)
 
     layout_flat = '<flat />'
     layout_hashed = '<hashed />'
@@ -368,52 +407,72 @@ def generate_dictionaries(args):
         # Simple key dictionaries
         [ source_file % (generated_prefix + files[0]), layout_flat],
         [ source_clickhouse, layout_flat ],
-        [ source_mysql, layout_flat ],
-        [ source_mongodb, layout_flat ],
         [ source_executable % (generated_prefix + files[0]), layout_flat ],
         [ source_http % (files[0]), layout_flat ],
 
         [ source_file % (generated_prefix + files[0]), layout_hashed],
         [ source_clickhouse, layout_hashed ],
-        [ source_mysql, layout_hashed ],
-        [ source_mongodb, layout_hashed ],
         [ source_executable % (generated_prefix + files[0]), layout_hashed ],
         [ source_http % (files[0]), layout_hashed ],
 
         [ source_clickhouse, layout_cache ],
-        [ source_mysql, layout_cache ],
-        [ source_mongodb, layout_cache ],
         [ source_executable % (generated_prefix + files[0]), layout_cache ],
         [ source_http % (files[0]), layout_cache ],
 
         # Complex key dictionaries with (UInt8, UInt8) key
         [ source_file % (generated_prefix + files[1]), layout_complex_key_hashed],
         [ source_clickhouse, layout_complex_key_hashed ],
-        [ source_mysql, layout_complex_key_hashed ],
-        [ source_mongodb, layout_complex_key_hashed ],
         [ source_executable % (generated_prefix + files[1]), layout_complex_key_hashed ],
         [ source_http % (files[1]), layout_complex_key_hashed ],
 
         [ source_clickhouse, layout_complex_key_cache ],
-        [ source_mysql, layout_complex_key_cache ],
-        [ source_mongodb, layout_complex_key_cache ],
         [ source_executable % (generated_prefix + files[1]), layout_complex_key_cache ],
         [ source_http % (files[1]), layout_complex_key_cache ],
 
         # Complex key dictionaries with (String, UInt8) key
         [ source_file % (generated_prefix + files[2]), layout_complex_key_hashed],
         [ source_clickhouse, layout_complex_key_hashed ],
-        [ source_mysql, layout_complex_key_hashed ],
-        [ source_mongodb, layout_complex_key_hashed ],
         [ source_executable % (generated_prefix + files[2]), layout_complex_key_hashed ],
         [ source_http % (files[2]), layout_complex_key_hashed ],
 
         [ source_clickhouse, layout_complex_key_cache ],
-        [ source_mysql, layout_complex_key_cache ],
-        [ source_mongodb, layout_complex_key_cache ],
         [ source_executable % (generated_prefix + files[2]), layout_complex_key_cache ],
         [ source_http % (files[2]), layout_complex_key_cache ],
     ]
+
+    if args.use_https:
+        sources_and_layouts.extend([
+        [ source_https % (files[0]), layout_flat ],
+        [ source_https % (files[0]), layout_hashed ],
+        [ source_https % (files[0]), layout_cache ],
+    ])
+
+    if not args.no_mysql:
+        sources_and_layouts.extend([
+        [ source_mysql, layout_flat ],
+        [ source_mysql, layout_hashed ],
+        [ source_mysql, layout_cache ],
+        [ source_mysql, layout_complex_key_hashed ],
+        [ source_mysql, layout_complex_key_cache ],
+        [ source_mysql, layout_complex_key_hashed ],
+        [ source_mysql, layout_complex_key_cache ],
+    ])
+
+    if not args.no_mongo:
+        sources_and_layouts.extend([
+        [ source_mongodb, layout_flat ],
+        [ source_mongodb, layout_hashed ],
+        [ source_mongodb, layout_cache ],
+        [ source_mongodb, layout_complex_key_cache ],
+        [ source_mongodb, layout_complex_key_hashed ],
+        [ source_mongodb, layout_complex_key_hashed ],
+        [ source_mongodb, layout_complex_key_cache ],
+    ])
+
+    if args.use_mongo_user:
+        sources_and_layouts.extend( [
+        [ source_mongodb_user, layout_flat ],
+    ])
 
     for (name, key_idx, has_parent), (source, layout) in zip(dictionaries, sources_and_layouts):
         filename = os.path.join(args.generated, 'dictionary_%s.xml' % name)
@@ -424,8 +483,18 @@ def generate_dictionaries(args):
 
 
 def run_tests(args):
-    if use_http:
-        http_server = subprocess.Popen(["python", "http_server.py", str(http_port)]);
+    if args.use_http:
+        http_server = subprocess.Popen(["python", "http_server.py", "--port", str(args.http_port), "--host", args.http_host]);
+        @atexit.register
+        def http_killer():
+           http_server.kill()
+
+    if args.use_https:
+        https_server = subprocess.Popen(["python", "http_server.py", "--port", str(args.https_port), "--host", args.https_host, '--https']);
+        @atexit.register
+        def https_killer():
+           https_server.kill()
+
     keys = [ 'toUInt64(n)', '(n, n)', '(toString(n), n)' ]
     dict_get_query_skeleton = "select dictGet{type}('{name}', '{type}_', {key}) from system.one array join range(8) as n;"
     dict_has_query_skeleton = "select dictHas('{name}', {key}) from system.one array join range(8) as n;"
@@ -449,7 +518,7 @@ def run_tests(args):
         start_time = datetime.now()
         while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
             sleep(0)
-            
+
         if proc.returncode is None:
             try:
                 proc.kill()
@@ -466,45 +535,45 @@ def run_tests(args):
             stdout = unicode(stdout, errors='replace', encoding='utf-8')
             stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
             stderr = unicode(stderr, errors='replace', encoding='utf-8')
-            
+
             if proc.returncode != 0:
                 failure = et.Element("failure", attrib = {"message": "return code {}".format(proc.returncode)})
                 report_testcase.append(failure)
-                
+
                 stdout_element = et.Element("system-out")
                 stdout_element.text = et.CDATA(stdout)
                 report_testcase.append(stdout_element)
-                
+
                 failures = failures + 1
                 print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
-                
+
                 if stderr:
                     stderr_element = et.Element("system-err")
                     stderr_element.text = et.CDATA(stderr)
                     report_testcase.append(stderr_element)
                     print(stderr)
-                
+
                 if 'Connection refused' in stderr or 'Attempt to read after eof' in stderr:
                     SERVER_DIED = True
-            
+
             elif stderr:
                 failure = et.Element("failure", attrib = {"message": "having stderror"})
                 report_testcase.append(failure)
-                
+
                 stderr_element = et.Element("system-err")
                 stderr_element.text = et.CDATA(stderr)
                 report_testcase.append(stderr_element)
-                
+
                 failures = failures + 1
                 print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr.encode('utf-8')))
             elif 'Exception' in stdout:
                 failure = et.Element("error", attrib = {"message": "having exception"})
                 report_testcase.append(failure)
-                
+
                 stdout_element = et.Element("system-out")
                 stdout_element.text = et.CDATA(stdout)
                 report_testcase.append(stdout_element)
-                
+
                 failures = failures + 1
                 print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout.encode('utf-8')))
             elif not os.path.isfile(reference_file):
@@ -513,15 +582,15 @@ def run_tests(args):
                 print("{0} - no reference file".format(MSG_UNKNOWN))
             else:
                 (diff, _) = Popen(['diff', reference_file, stdout_file], stdout = PIPE).communicate()
-                
+
                 if diff:
                     failure = et.Element("failure", attrib = {"message": "result differs with reference"})
                     report_testcase.append(failure)
-                    
+
                     stdout_element = et.Element("system-out")
                     stdout_element.text = et.CDATA(diff)
                     report_testcase.append(stdout_element)
-                    
+
                     failures = failures + 1
                     print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff))
                 else:
@@ -530,16 +599,16 @@ def run_tests(args):
                         os.remove(stdout_file)
                     if os.path.exists(stderr_file):
                         os.remove(stderr_file)
-        
+
         dump_report(args.output, dict, name, report_testcase)
 
-    
+
     print 'Waiting for dictionaries to load...'
     time.sleep(wait_for_loading_sleep_time_sec)
 
     # the actual tests
     for (name, key_idx, has_parent) in dictionaries:
-        if SERVER_DIED and not no_break:
+        if SERVER_DIED and not args.no_break:
             break
         key = keys[key_idx]
         print 'Testing dictionary', name
@@ -549,7 +618,7 @@ def run_tests(args):
 
         # query dictGet*
         for type, default in zip(types, explicit_defaults):
-            if SERVER_DIED and not no_break:
+            if SERVER_DIED and not args.no_break:
                 break
             test_query(name,
                 dict_get_query_skeleton.format(**locals()),
@@ -564,9 +633,6 @@ def run_tests(args):
                 dict_hierarchy_query_skeleton.format(**locals()),
                 'hierarchy', ' for dictGetHierarchy, dictIsIn')
 
-    if use_http:
-        http_server.kill()
-
     if failures > 0:
         print(colored("\nHaving {0} errors!".format(failures), "red", attrs=["bold"]))
         sys.exit(1)
@@ -576,6 +642,7 @@ def run_tests(args):
 
 
 def main(args):
+    generate_structure(args)
     generate_dictionaries(args)
     generate_data(args)
     run_tests(args)
@@ -590,6 +657,22 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--port', default = '9001', help = 'ClickHouse port')
     parser.add_argument('-o', '--output', default = 'output', help = 'Output xUnit compliant test report directory')
     parser.add_argument('-t', '--timeout', type = int, default = 10, help = 'Timeout for each test case in seconds')
+
+    # Not complete disable. Now only skip data prepare. Todo: skip requests too. Now can be used with --no_break
+    parser.add_argument('--no_mysql', action='store_true', help = 'Dont use mysql dictionaries')
+    parser.add_argument('--no_mongo', action='store_true', help = 'Use mongodb dictionaries')
+    parser.add_argument('--mongo_host', default = 'localhost', help = 'mongo server host')
+    parser.add_argument('--use_mongo_user', action='store_true', help = 'Test mongodb with user-pass')
+
+    parser.add_argument('--use_http', default = True, help = 'Use http dictionaries')
+    parser.add_argument('--http_port', default = 58000, help = 'http server port')
+    parser.add_argument('--http_host', default = 'localhost', help = 'http server host')
+    parser.add_argument('--http_path', default = '/generated/', help = 'http server path')
+    parser.add_argument('--use_https', default = True, help = 'Use https dictionaries')
+    parser.add_argument('--https_port', default = 58443, help = 'https server port')
+    parser.add_argument('--https_host', default = 'localhost', help = 'https server host')
+    parser.add_argument('--https_path', default = '/generated/', help = 'https server path')
+    parser.add_argument('--no_break', action='store_true', help = 'Dont stop on errors')
 
     args = parser.parse_args()
 

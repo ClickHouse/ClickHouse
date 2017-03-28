@@ -2,11 +2,12 @@
 
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeExpression.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
-
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/Interpreters/ExpressionActions.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnExpression.h>
-
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
 
@@ -601,7 +602,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayMapped>(); };
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -689,17 +689,17 @@ public:
 
 			/// Попросим добавить в блок все столбцы, упоминаемые в выражении, размноженные в массив, параллельный обрабатываемому.
 			const ExpressionActions & expression = *column_expression->getExpression();
-			Names required_columns = expression.getRequiredColumns();
+			const NamesAndTypesList & required_columns = expression.getRequiredColumnsWithTypes();
 
 			Names argument_name_vector = column_expression->getArgumentNames();
 			NameSet argument_names(argument_name_vector.begin(), argument_name_vector.end());
 
-			for (size_t i = 0; i < required_columns.size(); ++i)
+			for (const auto & required_column : required_columns)
 			{
-				if (argument_names.count(required_columns[i]))
+				if (argument_names.count(required_column.name))
 					continue;
 				Names replicate_arguments;
-				replicate_arguments.push_back(required_columns[i]);
+				replicate_arguments.push_back(required_column.name);
 				replicate_arguments.push_back(arguments[1].name);
 				out_prerequisites.push_back(ExpressionAction::applyFunction(std::make_shared<FunctionReplicate>(), replicate_arguments));
 			}
@@ -715,7 +715,6 @@ public:
 		}
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result) override
 	{
 		if (arguments.size() == 1)

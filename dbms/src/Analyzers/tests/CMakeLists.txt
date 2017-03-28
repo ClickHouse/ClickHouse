@@ -2,22 +2,22 @@ add_executable(collect_aliases collect_aliases.cpp)
 target_link_libraries(collect_aliases dbms)
 
 add_executable(collect_tables collect_tables.cpp)
-target_link_libraries(collect_tables dbms)
+target_link_libraries(collect_tables dbms storages_system)
 
 add_executable(analyze_columns analyze_columns.cpp)
-target_link_libraries(analyze_columns dbms)
+target_link_libraries(analyze_columns dbms storages_system)
 
 add_executable(type_and_constant_inference type_and_constant_inference.cpp)
-target_link_libraries(type_and_constant_inference dbms)
+target_link_libraries(type_and_constant_inference dbms storages_system)
 
 add_executable(analyze_result_of_query analyze_result_of_query.cpp)
-target_link_libraries(analyze_result_of_query dbms)
+target_link_libraries(analyze_result_of_query dbms storages_system)
 
 add_executable(translate_positional_arguments translate_positional_arguments.cpp)
 target_link_libraries(translate_positional_arguments dbms)
 
 add_executable(optimize_group_order_limit_by optimize_group_order_limit_by.cpp)
-target_link_libraries(optimize_group_order_limit_by dbms)
+target_link_libraries(optimize_group_order_limit_by dbms storages_system)
 
 add_executable(analyze_lambdas analyze_lambdas.cpp)
 target_link_libraries(analyze_lambdas dbms)

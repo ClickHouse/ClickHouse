@@ -61,7 +61,7 @@ size_t IBlockInputStream::checkDepthImpl(size_t max_depth, size_t level) const
 
 void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t multiplier)
 {
-	/// Не будем отображать в дереве обёртку потока блоков в AsynchronousBlockInputStream.
+	/// We will not display the wrapper of the block stream in the AsynchronousBlockInputStream in the tree.
 	if (getName() != "Asynchronous")
 	{
 		ostr << String(indent, ' ') << getName();
@@ -70,7 +70,7 @@ void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t mult
 		ostr << std::endl;
 		++indent;
 
-		/// Если поддерево повторяется несколько раз, то будем выводить его один раз с множителем.
+		/// If the subtree is repeated several times, then we output it once with the multiplier.
 		using Multipliers = std::map<String, size_t>;
 		Multipliers multipliers;
 
@@ -81,7 +81,7 @@ void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t mult
 		{
 			String id = (*it)->getTreeID();
 			size_t & subtree_multiplier = multipliers[id];
-			if (subtree_multiplier != 0)	/// Уже выведенные поддеревья помечаем нулём в массиве множителей.
+			if (subtree_multiplier != 0)    /// Already printed subtrees are marked with zero in the array of multipliers.
 			{
 				(*it)->dumpTree(ostr, indent, subtree_multiplier);
 				subtree_multiplier = 0;

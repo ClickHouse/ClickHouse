@@ -16,7 +16,7 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
 	ASTPtr query_clone = query->clone();
 	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_clone.get());
 
-	/// Удаляем из запроса всё, что не нужно для ATTACH.
+	/// We remove everything that is not needed for ATTACH from the query.
 	create.attach = true;
 	create.database.clear();
 	create.as_database.clear();
@@ -26,7 +26,7 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
 
 	String engine = typeid_cast<ASTFunction &>(*create.storage).name;
 
-	/// Для engine VIEW необходимо сохранить сам селект запрос, для остальных - наоборот
+	/// For engine VIEW it is necessary to save the SELECT query itself, for the rest - on the contrary
 	if (engine != "View" && engine != "MaterializedView")
 		create.select = nullptr;
 
@@ -52,9 +52,9 @@ std::pair<String, StoragePtr> createTableFromDefinition(
 	ast_create_query.attach = true;
 	ast_create_query.database = database_name;
 
-	/// Не используем напрямую InterpreterCreateQuery::execute, так как:
-	/// - база данных ещё не создана;
-	/// - код проще, так как запрос уже приведён к подходящему виду.
+	/// We do not directly use `InterpreterCreateQuery::execute`, because
+	/// - the database has not been created yet;
+	/// - the code is simpler, since the query is already brought to a suitable form.
 
 	InterpreterCreateQuery::ColumnsInfo columns_info = InterpreterCreateQuery::getColumnsInfo(ast_create_query.columns, context);
 

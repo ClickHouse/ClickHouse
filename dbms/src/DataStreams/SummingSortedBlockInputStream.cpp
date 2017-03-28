@@ -63,19 +63,19 @@ Block SummingSortedBlockInputStream::readImpl()
 	if (merged_columns.empty())
 		return Block();
 
-	/// Дополнительная инициализация.
+	/// Additional initialization.
 	if (current_row.empty())
 	{
 		current_row.resize(num_columns);
 		next_key.columns.resize(description.size());
 
-		/// Имя вложенной структуры -> номера столбцов, которые к ней относятся.
+		/// name of nested structure -> the column numbers that refer to it.
 		std::unordered_map<std::string, std::vector<size_t>> discovered_maps;
 
-		/** Заполним номера столбцов, которые должны быть просуммированы.
-		  * Это могут быть только числовые столбцы, не входящие в ключ сортировки.
-		  * Если задан непустой список column_names_to_sum, то берём только эти столбцы.
-		  * Часть столбцов из column_names_to_sum может быть не найдена. Это игнорируется.
+		/** Fill in the column numbers, which must be summed.
+		  * This can only be numeric columns that are not part of the sort key.
+		  * If a non-empty column_names_to_sum is specified, then we only take these columns.
+		  * Some columns from column_names_to_sum may not be found. This is ignored.
 		  */
 		for (size_t i = 0; i < num_columns; ++i)
 		{
@@ -93,7 +93,7 @@ Block SummingSortedBlockInputStream::readImpl()
 			}
 			else
 			{
-				/// Оставляем только числовые типы. При чём, даты и даты-со-временем здесь такими не считаются.
+				/// Leave only numeric types. Note that dates and datetime here are not considered such.
 				if (!column.type->isNumeric() ||
 					column.type->getName() == "Date" ||
 					column.type->getName() == "DateTime" ||
@@ -101,7 +101,7 @@ Block SummingSortedBlockInputStream::readImpl()
 					column.type->getName() == "Nullable(DateTime)")
 					continue;
 
-				/// Входят ли в PK?
+				/// Do they enter the PK?
 				if (isInPrimaryKey(description, column.name, i))
 					continue;
 
@@ -180,7 +180,7 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 {
 	size_t merged_rows = 0;
 
-	/// Вынимаем строки в нужном порядке и кладём в merged_block, пока строк не больше max_block_size
+	/// Take the rows in needed order and put them in `merged_block` until rows no more than `max_block_size`
 	while (!queue.empty())
 	{
 		TSortCursor current = queue.top();
@@ -189,8 +189,8 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 
 		bool key_differs;
 
-		if (current_key.empty())	/// Первый встретившийся ключ.
-		{
+		if (current_key.empty())	/// The first key encountered.
+ 		{
 			current_key.columns.resize(description.size());
 			setPrimaryKeyRef(current_key, current);
 			key_differs = true;
@@ -198,7 +198,7 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 		else
 			key_differs = next_key != current_key;
 
-		/// если накопилось достаточно строк и последняя посчитана полностью
+		/// if there are enough rows and the last one is calculated completely
 		if (key_differs && merged_rows >= max_block_size)
 			return;
 
@@ -206,7 +206,7 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 
 		if (key_differs)
 		{
-			/// Запишем данные для предыдущей группы.
+			/// Write the data for the previous group.
 			if (!current_row_is_zero)
 			{
 				++merged_rows;
@@ -231,13 +231,13 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 		}
 		else
 		{
-			/// Достаём из соответствующего источника следующий блок, если есть.
+			/// We get the next block from the corresponding source, if there is one.
 			fetchNextBlock(current, queue);
 		}
 	}
 
-	/// Запишем данные для последней группы, если она ненулевая.
-	/// Если она нулевая, и без нее выходной поток окажется пустым, запишем ее все равно.
+	/// We will write the data for the last group, if it is non-zero.
+	/// If it is zero, and without it the output stream will be empty, we will write it anyway.
 	if (!current_row_is_zero || !output_is_non_empty)
 	{
 		++merged_rows;
@@ -248,8 +248,8 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 }
 
 
-/** Реализует операцию +=.
- * Возвращает false, если результат получился нулевым.
+/** Implements `+=` operation.
+ *  Returns false if the result is zero.
  */
 class FieldVisitorSum : public StaticVisitor<bool>
 {
@@ -285,7 +285,7 @@ bool SummingSortedBlockInputStream::mergeMaps(Row & row, TSortCursor & cursor)
 template <class TSortCursor>
 bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & row, TSortCursor & cursor)
 {
-	/// Сильно неоптимально.
+	/// Strongly non-optimal.
 
 	Row & left = row;
 	Row right(left.size());
@@ -369,7 +369,7 @@ bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & 
 template <class TSortCursor>
 bool SummingSortedBlockInputStream::addRow(Row & row, TSortCursor & cursor)
 {
-	bool res = mergeMaps(row, cursor);	/// Есть ли хотя бы одно ненулевое число или непустой массив
+	bool res = mergeMaps(row, cursor);	/// Is there at least one non-zero number or non-empty array
 
 	for (size_t i = 0, size = column_numbers_to_sum.size(); i < size; ++i)
 	{

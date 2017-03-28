@@ -4,7 +4,7 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeEnum.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 
@@ -12,12 +12,12 @@
 namespace DB
 {
 
-/** Создать агрегатную функцию с числовым типом в параметре шаблона, в зависимости от типа аргумента.
+/** Create an aggregate function with a numeric type in the template parameter, depending on the type of the argument.
   */
 template <template <typename> class AggregateFunctionTemplate>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
 {
-	     if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8>;
+		 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8>;
 	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt16>;
 	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt32>;
 	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt64>;
@@ -36,7 +36,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 template <template <typename, typename> class AggregateFunctionTemplate, class Data>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
 {
-	     if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8, Data>;
+		 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8, Data>;
 	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt16, Data>;
 	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt32, Data>;
 	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt64, Data>;
@@ -56,7 +56,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
 {
-	     if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8, Data<UInt8> >;
+		 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8, Data<UInt8> >;
 	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt16, Data<UInt16> >;
 	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt32, Data<UInt32> >;
 	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt64, Data<UInt64> >;
@@ -73,12 +73,12 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 }
 
 
-/** Для шаблона с двумя аргументами.
+/** For template with two arguments.
   */
 template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate>
 static IAggregateFunction * createWithTwoNumericTypesSecond(const IDataType & second_type)
 {
-	     if (typeid_cast<const DataTypeUInt8 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt8>;
+		 if (typeid_cast<const DataTypeUInt8 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt8>;
 	else if (typeid_cast<const DataTypeUInt16 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt16>;
 	else if (typeid_cast<const DataTypeUInt32 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt32>;
 	else if (typeid_cast<const DataTypeUInt64 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt64>;
@@ -97,7 +97,7 @@ static IAggregateFunction * createWithTwoNumericTypesSecond(const IDataType & se
 template <template <typename, typename> class AggregateFunctionTemplate>
 static IAggregateFunction * createWithTwoNumericTypes(const IDataType & first_type, const IDataType & second_type)
 {
-	     if (typeid_cast<const DataTypeUInt8 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt8, AggregateFunctionTemplate>(second_type);
+		 if (typeid_cast<const DataTypeUInt8 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt8, AggregateFunctionTemplate>(second_type);
 	else if (typeid_cast<const DataTypeUInt16 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt16, AggregateFunctionTemplate>(second_type);
 	else if (typeid_cast<const DataTypeUInt32 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt32, AggregateFunctionTemplate>(second_type);
 	else if (typeid_cast<const DataTypeUInt64 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt64, AggregateFunctionTemplate>(second_type);

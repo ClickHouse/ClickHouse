@@ -185,8 +185,8 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
 BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf,
 	const Block & sample, const Context & context) const
 {
-	/** Материализация нужна, так как форматы могут использовать функции IDataType,
-	  *  которые допускают работу только с полными столбцами.
+	/** Materialization is needed, because formats can use the functions `IDataType`,
+	  *  which only work with full columns.
 	  */
 	return std::make_shared<MaterializingBlockOutputStream>(getOutputImpl(name, buf, sample, context));
 }

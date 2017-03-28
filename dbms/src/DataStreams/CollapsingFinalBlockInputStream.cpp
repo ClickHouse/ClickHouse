@@ -1,6 +1,6 @@
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
 
-/// Максимальное количество сообщений о некорректных данных в логе.
+/// Maximum number of messages about incorrect data in the log.
 #define MAX_ERROR_MESSAGES 10
 
 
@@ -9,7 +9,7 @@ namespace DB
 
 CollapsingFinalBlockInputStream::~CollapsingFinalBlockInputStream()
 {
-	/// Нужно обезвредить все MergingBlockPtr, чтобы они не пытались класть блоки в output_blocks.
+	/// You must cancel all `MergingBlockPtr` so that they do not try to put blocks in `output_blocks`.
 	previous.block.cancel();
 	last_positive.block.cancel();
 
@@ -26,7 +26,7 @@ CollapsingFinalBlockInputStream::~CollapsingFinalBlockInputStream()
 
 void CollapsingFinalBlockInputStream::reportBadCounts()
 {
-	/// При неконсистентных данных, это - неизбежная ошибка, которая не может быть легко исправлена админами. Поэтому Warning.
+	/// With inconsistent data, this is an unavoidable error that can not be easily fixed by admins. Therefore Warning.
 	LOG_WARNING(log, "Incorrect data: number of rows with sign = 1 (" << count_positive
 		<< ") differs with number of rows with sign = -1 (" << count_negative
 		<< ") by more than one");
@@ -82,7 +82,7 @@ Block CollapsingFinalBlockInputStream::readImpl()
 		first = false;
 	}
 
-	/// Будем формировать блоки для ответа, пока не получится непустой блок.
+	/// We will create blocks for the answer until we get a non-empty block.
 	while (true)
 	{
 		while (!queue.empty() && output_blocks.empty())
@@ -93,7 +93,7 @@ Block CollapsingFinalBlockInputStream::readImpl()
 			bool has_next = !queue.empty();
 			Cursor next = has_next ? queue.top() : Cursor();
 
-			/// Будем продвигаться в текущем блоке, не используя очередь, пока возможно.
+			/// We will advance in the current block, not using the queue, as long as possible.
 			while (true)
 			{
 				if (!current.equal(previous))
@@ -121,7 +121,7 @@ Block CollapsingFinalBlockInputStream::readImpl()
 				{
 					fetchNextBlock(current.block->stream_index);
 
-					/// Все потоки кончились. Обработаем последний ключ.
+					/// All streams are over. We'll process the last key.
 					if (!has_next)
 						commitCurrent();
 
@@ -140,7 +140,7 @@ Block CollapsingFinalBlockInputStream::readImpl()
 			}
 		}
 
-		/// Конец потока.
+		/// End of the stream.
 		if (output_blocks.empty())
 		{
 			if (blocks_fetched != blocks_output)

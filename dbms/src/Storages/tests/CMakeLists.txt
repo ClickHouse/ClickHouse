@@ -1,7 +1,7 @@
 include_directories (${CMAKE_CURRENT_BINARY_DIR})
 
 add_executable (system_numbers system_numbers.cpp)
-target_link_libraries (system_numbers dbms)
+target_link_libraries (system_numbers dbms storages_system)
 
 add_executable (storage_log storage_log.cpp)
 target_link_libraries (storage_log dbms)

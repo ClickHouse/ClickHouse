@@ -14,9 +14,11 @@
 #include <DB/Parsers/ASTOrderByElement.h>
 
 #include <DB/DataTypes/DataTypeSet.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/DataTypes/DataTypeExpression.h>
 #include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnExpression.h>
@@ -704,7 +706,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 	ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level)
 {
 	if (level > settings.limits.max_ast_depth)
-		throw Exception("Normalized AST is too deep. Maximum: " + toString(settings.limits.max_ast_depth), ErrorCodes::TOO_DEEP_AST);
+		throw Exception("Normalized AST is too deep. Maximum: " + settings.limits.max_ast_depth.toString(), ErrorCodes::TOO_DEEP_AST);
 
 	if (finished_asts.count(ast))
 	{
@@ -2754,7 +2756,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
 		if (!typeid_cast<ASTSelectQuery *>(child.get())
 			&& !typeid_cast<ASTArrayJoin *>(child.get()))
 			getRequiredColumnsImpl(child, required_columns, ignored_names, available_joined_columns, required_joined_columns);
-    }
+	}
 }
 
 }

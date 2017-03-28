@@ -29,7 +29,7 @@ alter table test.merge drop column dummy;
 describe table test.merge;
 show create table test.merge;
 
---error: должно правильно упасть в alter
+--error: must correctly fall into the alter
 alter table test.merge add column dummy1 String after CounterID;
 select CounterID, dummy1 from test.merge where dummy1 <> '' limit 10;
 

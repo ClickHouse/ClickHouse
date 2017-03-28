@@ -48,7 +48,8 @@ fi
 
 if [[ $TEST != 'yes' ]]
 then
-	gen_revision_author
+	# now incrementing done in external release scripts via --version
+	get_revision_author
 else
 	REVISION=99999
 fi
@@ -60,7 +61,7 @@ make_control "$CONTROL" "$DAEMONS"
 gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG" "$DAEMONS"
 
 # Build (only binary packages).
-debuild -e DAEMONS="${DAEMONS}" -e ENABLE_MONGODB -e GLIBC_COMPATIBILITY -e CC -e CXX -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+debuild -e DAEMONS="${DAEMONS}" -e DEB_CC -e DEB_CXX -e DEB_COMPILER_VERSION -e CMAKE_FLAGS_ADD -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 
 if [[ $STANDALONE != 'yes' ]]
 then

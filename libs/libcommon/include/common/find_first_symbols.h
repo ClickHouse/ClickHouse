@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #if __SSE2__
 	#include <emmintrin.h>
 #endif
@@ -66,7 +68,7 @@ inline const char * find_first_symbols_sse2(const char * begin, const char * end
 
 		__m128i eq = mm_is_in<symbols...>(bytes);
 
-		UInt16 bit_mask = _mm_movemask_epi8(eq);
+		uint16_t bit_mask = _mm_movemask_epi8(eq);
 		if (bit_mask)
 			return begin + __builtin_ctz(bit_mask);
 	}

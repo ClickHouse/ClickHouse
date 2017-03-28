@@ -93,6 +93,10 @@ public:
 
 	void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
 
+	void isInVectorVector(const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
+	void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
+	void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
+
 #define DECLARE(TYPE)\
 	void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const;
 	DECLARE(UInt8)
@@ -229,13 +233,37 @@ private:
 
 	Attribute & getAttribute(const std::string & attribute_name) const;
 
+	struct FindResult
+	{
+		const size_t cell_idx;
+		const bool valid;
+		const bool outdated;
+	};
+
+	FindResult findCellIdx(const Key & id, const CellMetadata::time_point_t now) const;
+
+	template <typename AncestorType>
+	void isInImpl(
+		const PaddedPODArray<Key> & child_ids,
+		const AncestorType & ancestor_ids,
+		PaddedPODArray<UInt8> & out) const;
+
 	const std::string name;
 	const DictionaryStructure dict_struct;
 	const DictionarySourcePtr source_ptr;
 	const DictionaryLifetime dict_lifetime;
 
 	mutable Poco::RWLock rw_lock;
+
+	/// Actual size will be increased to match power of 2
 	const std::size_t size;
+
+	/// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
+	const std::size_t size_overlap_mask;
+
+	/// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
+	static constexpr std::size_t max_collision_length = 10;
+
 	const UInt64 zero_cell_idx{getCellIdx(0)};
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	mutable std::vector<Attribute> attributes;

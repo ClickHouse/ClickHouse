@@ -10,7 +10,7 @@
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergeTreeDataPart.h>
 
@@ -33,6 +33,7 @@ namespace ErrorCodes
 	extern const int NO_SUCH_COLUMN_IN_TABLE;
 	extern const int TABLE_DIFFERS_TOO_MUCH;
 }
+
 
 /// Data structure for *MergeTree engines.
 /// Merge tree is used for incremental sorting of data.
@@ -77,7 +78,7 @@ namespace ErrorCodes
 /// - MergeTreeDataWriter
 /// - MergeTreeDataMerger
 
- class MergeTreeData : public ITableDeclaration
+class MergeTreeData : public ITableDeclaration
 {
 	friend class ReshardingWorker;
 
@@ -229,7 +230,8 @@ public:
 	/// index_granularity - how many rows correspond to one primary key value.
 	/// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
 	/// attach - whether the existing table is attached or the new table is created.
-	MergeTreeData(	const String & full_path_, NamesAndTypesListPtr columns_,
+	MergeTreeData(	const String & database_, const String & table_,
+					const String & full_path_, NamesAndTypesListPtr columns_,
 					const NamesAndTypesList & materialized_columns_,
 					const NamesAndTypesList & alias_columns_,
 					const ColumnDefaults & column_defaults_,
@@ -261,11 +263,6 @@ public:
 
 	Int64 getMaxDataPartIndex();
 
-	std::string getTableName() const override
-	{
-		throw Exception("Logical error: calling method getTableName of not a table.", ErrorCodes::LOGICAL_ERROR);
-	}
-
 	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 
 	NameAndTypePair getColumn(const String & column_name) const override
@@ -287,6 +284,10 @@ public:
 			|| column_name == "_part_index"
 			|| column_name == "_sample_factor";
 	}
+
+	String getDatabaseName() const { return database_name; }
+
+	String getTableName() const override { return table_name; }
 
 	String getFullPath() const { return full_path; }
 
@@ -474,6 +475,7 @@ public:
 private:
 	friend struct MergeTreeDataPart;
 	friend class StorageMergeTree;
+	friend class ReplicatedMergeTreeAlterThread;
 	friend class MergeTreeDataMerger;
 
 	bool require_part_metadata;
@@ -481,6 +483,8 @@ private:
 	ExpressionActionsPtr primary_expr;
 	SortDescription sort_descr;
 
+	String database_name;
+	String table_name;
 	String full_path;
 
 	NamesAndTypesListPtr columns;

@@ -5,7 +5,7 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -19,7 +19,7 @@ static IAggregateFunction * createAggregateFunctionSingleValue(const String & na
 
 	const IDataType & argument_type = *argument_types[0];
 
-	     if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt8>>>;
+		 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt8>>>;
 	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt16>>>;
 	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt32>>>;
 	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt64>>>;
@@ -44,7 +44,7 @@ static IAggregateFunction * createAggregateFunctionSingleValue(const String & na
 template <template <typename> class MinMaxData, typename ResData>
 static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const String & name, const IDataType & val_type)
 {
-	     if (typeid_cast<const DataTypeUInt8 	*>(&val_type))
+		 if (typeid_cast<const DataTypeUInt8 	*>(&val_type))
 		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<UInt8>>>>;
 	else if (typeid_cast<const DataTypeUInt16 	*>(&val_type))
 		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<UInt16>>>>;
@@ -83,7 +83,7 @@ static IAggregateFunction * createAggregateFunctionArgMinMax(const String & name
 	const IDataType & res_type = *argument_types[0];
 	const IDataType & val_type = *argument_types[1];
 
-	     if (typeid_cast<const DataTypeUInt8 	*>(&res_type))
+		 if (typeid_cast<const DataTypeUInt8 	*>(&res_type))
 		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<UInt8>>(name, val_type);
 	else if (typeid_cast<const DataTypeUInt16 	*>(&res_type))
 		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<UInt16>>(name, val_type);

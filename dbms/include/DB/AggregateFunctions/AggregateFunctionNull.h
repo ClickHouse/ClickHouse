@@ -147,6 +147,16 @@ public:
 			to_concrete.insertDefault();
 		}
 	}
+
+	bool allocatesMemoryInArena() const override
+	{
+		return nested_function->allocatesMemoryInArena();
+	}
+
+	bool isState() const override
+	{
+		return nested_function->isState();
+	}
 };
 
 
@@ -206,7 +216,7 @@ public:
 			throw Exception("Logical error: single argument is passed to AggregateFunctionNullVariadic", ErrorCodes::LOGICAL_ERROR);
 
 		if (number_of_arguments > MAX_ARGS)
-			throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(MAX_ARGS),
+			throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(size_t(MAX_ARGS)),
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		DataTypes nested_args;
@@ -253,6 +263,11 @@ public:
 
 		setFlag(place);
 		nested_function->add(nestedPlace(place), nested_columns, row_num, arena);
+	}
+
+	bool allocatesMemoryInArena() const override
+	{
+		return nested_function->allocatesMemoryInArena();
 	}
 
 	static void addFree(const IAggregateFunction * that, AggregateDataPtr place,

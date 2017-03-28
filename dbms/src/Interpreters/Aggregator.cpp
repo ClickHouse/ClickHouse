@@ -19,7 +19,8 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 
 #include <DB/Interpreters/Aggregator.h>
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
+#include <DB/Interpreters/config_compile.h>
 
 
 namespace ProfileEvents
@@ -353,7 +354,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 	  *  по окончании которой вызывается колбэк on_ready.
 	  */
 	SharedLibraryPtr lib = params.compiler->getOrCount(key, params.min_count_to_compile,
-		"-include /usr/share/clickhouse/headers/dbms/include/DB/Interpreters/SpecializedAggregator.h",
+		"-include " INTERNAL_COMPILER_HEADERS "/dbms/include/DB/Interpreters/SpecializedAggregator.h",
 		get_code, on_ready);
 
 	/// Если результат уже готов.

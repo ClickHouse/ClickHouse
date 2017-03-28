@@ -7,7 +7,6 @@
 #include <sys/fcntl.h>
 #include <sys/time.h>
 #include <errno.h>
-
 #include <string.h>
 #include <signal.h>
 #include <cxxabi.h>
@@ -17,16 +16,13 @@
 #define _XOPEN_SOURCE
 #endif
 #include <ucontext.h>
-
 #include <typeinfo>
-
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
-
 #include <sys/time.h>
 #include <sys/resource.h>
-
 #include <iostream>
+#include <memory>
 #include <Poco/Observer.h>
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
@@ -48,14 +44,13 @@
 #include <Poco/NumberFormatter.h>
 #include <Poco/Condition.h>
 #include <Poco/SyslogChannel.h>
-
 #include <DB/Common/Exception.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
-
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/getMultipleKeysFromConfig.h>
+#include <DB/Common/ClickHouseRevision.h>
 #include <daemon/OwnPatternFormatter.h>
 
 using Poco::Logger;
@@ -428,7 +423,7 @@ static void terminate_handler()
 	char buf[buf_size];
 	DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
 
-	DB::writeBinary(SignalListener::StdTerminate, out);
+	DB::writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
 	DB::writeBinary(Poco::ThreadNumber::get(), out);
 	DB::writeBinary(log_message, out);
 	out.next();
@@ -456,6 +451,20 @@ static std::string createDirectory(const std::string & _path)
 	return str;
 };
 
+static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path)
+{
+	try
+	{
+		Poco::File(path).createDirectories();
+		return true;
+	}
+	catch (...)
+	{
+		LOG_WARNING(logger, __PRETTY_FUNCTION__ << ": when creating " << path << ", " << DB::getCurrentExceptionMessage(true));
+	}
+	return false;
+}
+
 
 void BaseDaemon::reloadConfiguration()
 {
@@ -466,8 +475,9 @@ void BaseDaemon::reloadConfiguration()
 	  * При этом, параметры логгирования, заданные в командной строке, не игнорируются.
 	  */
 	std::string log_command_line_option = config().getString("logger.log", "");
-	ConfigurationPtr processed_config = ConfigProcessor(false, true).loadConfig(config().getString("config-file", "config.xml"));
-	config().add(processed_config.duplicate(), PRIO_DEFAULT, false);
+	config_path = config().getString("config-file", "config.xml");
+	loaded_config = ConfigProcessor(false, true).loadConfig(config_path, /* allow_zk_includes = */ true);
+	config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
 	log_to_console = !config().getBool("application.runAsDaemon", false) && log_command_line_option.empty();
 }
 
@@ -630,7 +640,7 @@ void BaseDaemon::closeLogs()
 		logger().warning("Logging to console but received signal to close log file (ignoring).");
 }
 
-std::string BaseDaemon::getDefaultCorePath () const
+std::string BaseDaemon::getDefaultCorePath() const
 {
 	return "/opt/cores/";
 }
@@ -723,13 +733,14 @@ void BaseDaemon::initialize(Application& self)
 		std::string core_path = config().getString("core_path", "");
 		if (core_path.empty())
 			core_path = getDefaultCorePath();
-		Poco::File(core_path).createDirectories();
+
+		tryCreateDirectories(&logger(), core_path);
 
 		Poco::File cores = core_path;
-		if (!( cores.exists() && cores.isDirectory() ))
+		if (!(cores.exists() && cores.isDirectory()))
 		{
 			core_path = !log_path.empty() ? log_path : "/opt/";
-			Poco::File(core_path).createDirectories();
+			tryCreateDirectories(&logger(), core_path);
 		}
 
 		if (0 != chdir(core_path.c_str()))
@@ -776,7 +787,10 @@ void BaseDaemon::initialize(Application& self)
 	signal_listener.reset(new SignalListener(*this));
 	signal_listener_thread.start(*signal_listener);
 
-	graphite_writer.reset(new GraphiteWriter("graphite"));
+	for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
+	{
+		graphite_writers.emplace(key, std::make_unique<GraphiteWriter>(key));
+	}
 }
 
 void BaseDaemon::logRevision() const

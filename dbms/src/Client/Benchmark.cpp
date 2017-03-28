@@ -260,7 +260,7 @@ private:
 
 		try
 		{
-			/// В этих потоках не будем принимать сигнал INT.
+			/// In these threads we do not accept INT signal.
 			sigset_t sig_set;
 			if (sigemptyset(&sig_set)
 				|| sigaddset(&sig_set, SIGINT)
@@ -371,11 +371,11 @@ private:
 
 		double seconds = info.watch.elapsedSeconds();
 		print_key_value("QPS", info.queries / seconds);
-		print_key_value("RPS", info.queries / seconds);
-		print_key_value("MiBPS", info.queries / seconds);
-		print_key_value("RPS_result", info.queries / seconds);
-		print_key_value("MiBPS_result", info.queries / seconds);
-		print_key_value("num_queries", info.queries / seconds, false);
+		print_key_value("RPS", info.read_rows / seconds);
+		print_key_value("MiBPS", info.read_bytes / seconds);
+		print_key_value("RPS_result", info.result_rows / seconds);
+		print_key_value("MiBPS_result", info.result_bytes / seconds);
+		print_key_value("num_queries", info.queries.load(), false);
 
 		json_out << "},\n";
 
@@ -405,7 +405,7 @@ public:
 }
 
 
-int mainEntryClickhouseBenchmark(int argc, char ** argv)
+int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
 	using namespace DB;
 	bool print_stacktrace = true;
@@ -451,7 +451,7 @@ int mainEntryClickhouseBenchmark(int argc, char ** argv)
 
 		print_stacktrace = options.count("stacktrace");
 
-		/// Извлекаем settings and limits из полученных options
+		/// Extract `settings` and `limits` from received `options`
 		Settings settings;
 
 		#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \

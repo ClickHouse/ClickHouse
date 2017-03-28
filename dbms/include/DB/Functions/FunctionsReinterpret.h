@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/IO/ReadBufferFromString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDate.h>
@@ -26,7 +26,6 @@ public:
 	static constexpr auto name = Name::name;
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionReinterpretAsStringImpl>(); };
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -34,7 +33,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		const IDataType * type = &*arguments[0];
@@ -93,7 +91,6 @@ public:
 		return true;
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!(	executeType<UInt8>(block, arguments, result)
@@ -121,7 +118,6 @@ public:
 
 	using ToFieldType = typename ToDataType::FieldType;
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -129,7 +125,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		const IDataType * type = &*arguments[0];
@@ -140,7 +135,6 @@ public:
 		return std::make_shared<ToDataType>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (ColumnString * col_from = typeid_cast<ColumnString *>(block.safeGetByPosition(arguments[0]).column.get()))

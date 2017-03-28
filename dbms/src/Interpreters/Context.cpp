@@ -33,6 +33,7 @@
 #include <DB/Interpreters/InterserverIOHandler.h>
 #include <DB/Interpreters/Compiler.h>
 #include <DB/Interpreters/QueryLog.h>
+#include <DB/Interpreters/PartLog.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/UncompressedCache.h>
@@ -95,8 +96,8 @@ struct ContextShared
 
 	mutable zkutil::ZooKeeperPtr zookeeper;					/// Клиент для ZooKeeper.
 
-	String interserver_io_host;								/// Имя хоста         по которым это сервер доступен для других серверов.
-	int interserver_io_port;								///           и порт,
+	String interserver_io_host;								/// Имя хоста по которым это сервер доступен для других серверов.
+	int interserver_io_port;								///	и порт,
 
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	String tmp_path;										/// Путь ко временным файлам, возникающим при обработке запроса.
@@ -105,9 +106,10 @@ struct ContextShared
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
 	FormatFactory format_factory;							/// Форматы.
-	mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;	/// Словари Метрики. Инициализируются лениво.
+	mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;	/// Metrica's dictionaeis. Have lazy initialization.
 	mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
-	Users users;											/// Известные пользователи.
+	String default_profile_name;							/// Default profile name used for default values.
+	Users users;											/// Known users.
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
 	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
 	mutable MarkCachePtr mark_cache;						/// Кэш засечек в сжатых файлах.
@@ -121,6 +123,7 @@ struct ContextShared
 	Macros macros;											/// Substitutions extracted from config.
 	std::unique_ptr<Compiler> compiler;						/// Used for dynamic compilation of queries' parts if it necessary.
 	std::unique_ptr<QueryLog> query_log;					/// Used to log queries.
+	std::shared_ptr<PartLog> part_log;						/// Used to log operations with parts
 	/// Правила для выбора метода сжатия в зависимости от размера куска.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
 	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Settings of MergeTree* engines.
@@ -140,7 +143,7 @@ struct ContextShared
 	/// database -> table -> exception_message
 	/// На время выполнения операции, сюда помещается элемент, и возвращается объект, который в деструкторе удаляет элемент.
 	/// В случае, если элемент уже есть - кидается исключение. См. class DDLGuard ниже.
-	using DDLGuards = std::unordered_map<String, std::unordered_map<String, String>>;
+	using DDLGuards = std::unordered_map<String, DDLGuard::Map>;
 	DDLGuards ddl_guards;
 	/// Если вы захватываете mutex и ddl_guards_mutex, то захватывать их нужно строго в этом порядке.
 	mutable std::mutex ddl_guards_mutex;
@@ -172,6 +175,7 @@ struct ContextShared
 		shutdown_called = true;
 
 		query_log.reset();
+		part_log.reset();
 
 		/** В этот момент, некоторые таблицы могут иметь потоки, которые блокируют наш mutex.
 		  * Чтобы корректно их завершить, скопируем текущий список таблиц,
@@ -345,7 +349,12 @@ void Context::setUser(const String & name, const String & password, const Poco::
 	auto lock = getLock();
 
 	const User & user_props = shared->users.get(name, password, address.host());
-	setSetting("profile", user_props.profile);
+
+	/// Firstly set default settings from default profile
+	auto default_profile_name = getDefaultProfileName();
+	if (user_props.profile != default_profile_name)
+		settings.setProfile(default_profile_name, *shared->users_config);
+	settings.setProfile(user_props.profile, *shared->users_config);
 	setQuota(user_props.quota, quota_key, name, address.host());
 
 	client_info.current_user = name;
@@ -1061,6 +1070,34 @@ QueryLog & Context::getQueryLog()
 }
 
 
+std::shared_ptr<PartLog> Context::getPartLog()
+{
+	auto lock = getLock();
+
+	auto & config = Poco::Util::Application::instance().config();
+	if (!config.has("part_log"))
+		return nullptr;
+
+	if (!shared->part_log)
+	{
+		if (shared->shutdown_called)
+			throw Exception("Will not get part_log because shutdown was called", ErrorCodes::LOGICAL_ERROR);
+
+		if (!global_context)
+			throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
+
+		String database = config.getString("part_log.database", "system");
+		String table = config.getString("part_log.table", "part_log");
+		size_t flush_interval_milliseconds = parse<size_t>(
+			config.getString("part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
+		shared->part_log = std::make_unique<PartLog>(
+			*global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+	}
+
+	return shared->part_log;
+}
+
+
 CompressionMethod Context::chooseCompressionMethod(size_t part_size, double part_size_ratio) const
 {
 	auto lock = getLock();
@@ -1177,6 +1214,17 @@ void Context::setApplicationType(ApplicationType type)
 {
 	/// Lock isn't required, you should set it at start
 	shared->application_type = type;
+}
+
+
+String Context::getDefaultProfileName() const
+{
+	return shared->default_profile_name;
+}
+
+void Context::setDefaultProfileName(const String & name)
+{
+	shared->default_profile_name = name;
 }
 
 

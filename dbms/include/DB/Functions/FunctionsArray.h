@@ -3,7 +3,7 @@
 #include <DB/Core/FieldVisitors.h>
 
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -73,14 +73,11 @@ public:
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
-	/// Получить имя функции.
 	String getName() const override;
 
 	bool addField(DataTypePtr type_res, const Field & f, Array & arr) const;
@@ -102,15 +99,12 @@ public:
 	static constexpr auto name = "arrayElement";
 	static FunctionPtr create(const Context & context);
 
-	/// Получить имя функции.
 	String getName() const override;
 
 	size_t getNumberOfArguments() const override { return 2; }
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
@@ -1012,7 +1006,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 2; }
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
@@ -1026,14 +1019,14 @@ public:
 			const IDataType * observed_type1 = DataTypeTraits::removeNullable(arguments[1]).get();
 
 			if (!(observed_type0->behavesAsNumber() && observed_type1->behavesAsNumber())
-				&& observed_type0->getName() != observed_type1->getName())
+				&& !observed_type0->equals(*observed_type1))
 				throw Exception("Types of array and 2nd argument of function "
 					+ getName() + " must be identical up to nullability. Passed: "
 					+ arguments[0]->getName() + " and " + arguments[1]->getName() + ".",
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
 
-		return std::make_shared<typename DataTypeFromFieldType<typename IndexConv::ResultType>::Type>();
+		return std::make_shared<DataTypeNumber<typename IndexConv::ResultType>>();
 	}
 
 	/// Perform function on the given block.
@@ -1178,15 +1171,12 @@ public:
 	static constexpr auto name = "arrayEnumerate";
 	static FunctionPtr create(const Context & context);
 
-	/// Получить имя функции.
 	String getName() const override;
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
@@ -1199,16 +1189,13 @@ public:
 	static constexpr auto name = "arrayUniq";
 	static FunctionPtr create(const Context & context);
 
-	/// Получить имя функции.
 	String getName() const override;
 
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
@@ -1242,16 +1229,13 @@ public:
 	static constexpr auto name = "arrayEnumerateUniq";
 	static FunctionPtr create(const Context & context);
 
-	/// Получить имя функции.
 	String getName() const override;
 
 	bool isVariadic() const override { return true; }
 	size_t getNumberOfArguments() const override { return 0; }
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
@@ -1346,15 +1330,12 @@ public:
 	static constexpr auto name = "emptyArrayToSingle";
 	static FunctionPtr create(const Context & context);
 
-	/// Получить имя функции.
 	String getName() const override;
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
@@ -1387,15 +1368,12 @@ public:
 	static constexpr auto name = "reverse";
 	static FunctionPtr create(const Context & context);
 
-	/// Получить имя функции.
 	String getName() const override;
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
@@ -1434,7 +1412,6 @@ public:
 	static constexpr auto name = "arrayReduce";
 	static FunctionPtr create(const Context & context);
 
-	/// Получить имя функции.
 	String getName() const override;
 
 	bool isVariadic() const override { return true; }

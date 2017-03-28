@@ -1,9 +1,12 @@
 #include <DB/Functions/IFunction.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnVector.h>
+#include <DB/Columns/ColumnConst.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/IO/WriteBufferFromVector.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/WriteHelpers.h>
 #include <DB/Common/formatReadable.h>
 
 
@@ -24,8 +27,7 @@ public:
 	static constexpr auto name = "bitmaskToList";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBitmaskToList>(); }
 
-	/// Получить основное имя функции.
-	virtual String getName() const override
+	String getName() const override
 	{
 		return name;
 	}
@@ -33,8 +35,7 @@ public:
 	size_t getNumberOfArguments() const override { return 1; }
 	bool isInjective(const Block &) override { return true; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	virtual DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		const IDataType * type = &*arguments[0];
 
@@ -51,7 +52,6 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!(	executeType<UInt8>(block, arguments, result)
@@ -135,16 +135,14 @@ public:
 	static constexpr auto name = "formatReadableSize";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionFormatReadableSize>(); }
 
-	/// Получить основное имя функции.
-	virtual String getName() const override
+	String getName() const override
 	{
 		return name;
 	}
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	virtual DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		const IDataType & type = *arguments[0];
 
@@ -154,7 +152,6 @@ public:
 		return std::make_shared<DataTypeString>();
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!(	executeType<UInt8>(block, arguments, result)

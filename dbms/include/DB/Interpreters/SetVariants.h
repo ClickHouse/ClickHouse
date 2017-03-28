@@ -8,11 +8,12 @@
 #include <DB/Common/HashTable/HashSet.h>
 #include <DB/Common/UInt128.h>
 
+
 namespace DB
 {
 
-/** Методы для разных вариантов реализации множеств.
-  * Используются в качестве параметра шаблона.
+/** Methods for different implementations of sets (used in right hand side of IN or for DISTINCT).
+  * To use as template parameter.
   */
 
 
@@ -269,7 +270,7 @@ struct SetMethodKeysFixed
 	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
 };
 
-/// Для остальных случаев. По 128 битному хэшу от ключа. (При этом, строки, содержащие нули посередине, могут склеиться.)
+/// Для остальных случаев. По 128 битному хэшу от ключа.
 template <typename TData>
 struct SetMethodHashed
 {
@@ -318,7 +319,7 @@ struct SetVariants
 	std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>>> 		keys256;
 	std::unique_ptr<SetMethodHashed<HashSet<UInt128, UInt128TrivialHash>>> 			hashed;
 
-	/// Support for nullable keys.
+	/// Support for nullable keys (for DISTINCT implementation).
 	std::unique_ptr<SetMethodKeysFixed<HashSet<UInt128, UInt128HashCRC32>, true>> 		nullable_keys128;
 	std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>, true>> 		nullable_keys256;
 

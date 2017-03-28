@@ -7,6 +7,8 @@
 
 # install compiler and libs
 sudo apt install -y git bash cmake gcc-6 g++-6 libicu-dev libreadline-dev libmysqlclient-dev unixodbc-dev libltdl-dev libssl-dev
+# for -DUNBUNDLED=1 mode:
+#sudo apt install -y libboost-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libzstd-dev libre2-dev libzookeeper-mt-dev libsparsehash-dev  #  libpoco-dev
 
 # install testing only stuff if you want:
 sudo apt install -y python python-lxml python-termcolor curl perl

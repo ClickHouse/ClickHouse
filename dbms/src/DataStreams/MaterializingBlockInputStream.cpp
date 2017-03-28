@@ -1,7 +1,7 @@
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 namespace DB
 {

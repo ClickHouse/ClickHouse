@@ -3,7 +3,7 @@
 #include <DB/IO/VarInt.h>
 
 #include <array>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeNullable.h>
 #include <DB/AggregateFunctions/INullaryAggregateFunction.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
@@ -131,7 +131,7 @@ public:
 			throw Exception("Logical error: single argument is passed to AggregateFunctionCountNotNullVariadic", ErrorCodes::LOGICAL_ERROR);
 
 		if (number_of_arguments > MAX_ARGS)
-			throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(MAX_ARGS),
+			throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(size_t(MAX_ARGS)),
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		for (size_t i = 0; i < number_of_arguments; ++i)

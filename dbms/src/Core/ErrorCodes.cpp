@@ -3,11 +3,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-	/** Раньше эти константы были расположены в одном enum-е.
-	  * Но в этом случае возникает проблема: при добавлении новой константы необходимо перекомпилировать
-	  *  все translation unit-ы, которые используют хотя бы одну константу (почти весь проект).
-	  * Поэтому сделано так, что определения констант расположены здесь, в одном файле,
-	  *  а их объявления - в разных файлах, по месту использования.
+	/** Previously, these constants were located in one enum.
+	  * But in this case there is a problem: when you add a new constant, you need to recompile
+	  *  all translation units that use at least one constant (almost the whole project).
+	  * Therefore it is made so that definitions of constants are located here, in one file,
+	  *  and their declaration are in different files, at the place of use.
 	  */
 
 	extern const int UNSUPPORTED_METHOD = 1;
@@ -348,7 +348,7 @@ namespace ErrorCodes
 	extern const int METADATA_MISMATCH = 342;
 	extern const int SUPPORT_IS_DISABLED = 344;
 	extern const int TABLE_DIFFERS_TOO_MUCH = 345;
-	extern const int CANNOT_ICONV = 346;
+	extern const int CANNOT_CONVERT_CHARSET = 346;
 	extern const int CANNOT_LOAD_CONFIG = 347;
 	extern const int RESHARDING_NULLABLE_SHARDING_KEY = 348;
 	extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN = 349;
@@ -362,6 +362,8 @@ namespace ErrorCodes
 	extern const int RESERVED_IDENTIFIER_NAME = 357;
 	extern const int INTO_OUTFILE_NOT_ALLOWED = 358;
 	extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT = 359;
+	extern const int CANNOT_CREATE_CHARSET_CONVERTER = 360;
+	extern const int SEEK_POSITION_OUT_OF_BOUND = 361;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;

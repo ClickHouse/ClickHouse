@@ -18,7 +18,7 @@ namespace DB
 struct Range;
 
 
-/** Структура данных для реализации выражения IN.
+/** Data structure for implementation of IN expression.
   */
 class Set
 {
@@ -33,33 +33,50 @@ public:
 
 	bool empty() const { return data.empty(); }
 
-	/** Создать множество по выражению (для перечисления в самом запросе).
-	  * types - типы того, что стоит слева от IN.
-	  * node - это список значений: 1, 2, 3 или список tuple-ов: (1, 2), (3, 4), (5, 6).
-	  * create_ordered_set - создавать ли вектор упорядоченных элементов. Нужен для работы индекса
+	/** Create a Set from expression (specified literally in the query).
+	  * 'types' - types of what are on the left hand side of IN.
+	  * 'node' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
+	  * 'create_ordered_set' - if true, create ordered vector of elements. For primary key to work.
 	  */
 	void createFromAST(const DataTypes & types, ASTPtr node, const Context & context, bool create_ordered_set);
 
-	// Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
+	// Returns false, if some limit was exceeded and no need to insert more data.
 	bool insertFromBlock(const Block & block, bool create_ordered_set = false);
 
-	/** Для столбцов блока проверить принадлежность их значений множеству.
-	  * Записать результат в столбец в позиции result.
+	/** For columns of 'block', check belonging of corresponding rows to the set.
+	  * Return UInt8 column with the result.
 	  */
 	ColumnPtr execute(const Block & block, bool negative) const;
 
 	std::string describe() const;
 
-	/// проверяет есть ли в Set элементы для заданного диапазона индекса
+	/// Check, if the Set could possibly contain elements for specified range.
 	BoolMask mayBeTrueInRange(const Range & range) const;
 
 	size_t getTotalRowCount() const { return data.getTotalRowCount(); }
 	size_t getTotalByteCount() const { return data.getTotalByteCount(); }
 
+	using ConstNullMapPtr = const PaddedPODArray<UInt8> *;
+
 private:
 	Sizes key_sizes;
 
 	SetVariants data;
+
+	/** How IN works with Nullable types.
+	  *
+	  * For simplicity reasons, all NULL values and any tuples with at least one NULL element are ignored in the Set.
+	  * And for left hand side values, that are NULLs or contain any NULLs, we return 0 (means that element is not in Set).
+	  *
+	  * If we want more standard compliant behaviour, we must return NULL
+	  *  if lhs is NULL and set is not empty or if lhs is not in set, but set contains at least one NULL.
+	  * It is more complicated with tuples.
+	  * For example,
+	  *      (1, NULL, 2) IN ((1, NULL, 3)) must return 0,
+	  *  but (1, NULL, 2) IN ((1, 1111, 2)) must return NULL.
+	  *
+	  * We have not implemented such sophisticated behaviour.
+	  */
 
 	/** Типы данных, из которых было создано множество.
 	  * При проверке на принадлежность множеству, типы проверяемых столбцов должны с ними совпадать.
@@ -77,7 +94,11 @@ private:
 	void executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const;
 
 	/// Если в левой части набор столбцов тех же типов, что элементы множества.
-	void executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8::Container_t & vec_res, bool negative) const;
+	void executeOrdinary(
+		const ConstColumnPlainPtrs & key_columns,
+		ColumnUInt8::Container_t & vec_res,
+		bool negative,
+		const PaddedPODArray<UInt8> * null_map) const;
 
 	/// Проверить не превышены ли допустимые размеры множества ключей
 	bool checkSetSizeLimits() const;
@@ -101,7 +122,16 @@ private:
 		Method & method,
 		const ConstColumnPlainPtrs & key_columns,
 		size_t rows,
-		SetVariants & variants);
+		SetVariants & variants,
+		ConstNullMapPtr null_map);
+
+	template <typename Method, bool has_null_map>
+	void insertFromBlockImplCase(
+		Method & method,
+		const ConstColumnPlainPtrs & key_columns,
+		size_t rows,
+		SetVariants & variants,
+		ConstNullMapPtr null_map);
 
 	template <typename Method>
 	void executeImpl(
@@ -109,7 +139,17 @@ private:
 		const ConstColumnPlainPtrs & key_columns,
 		ColumnUInt8::Container_t & vec_res,
 		bool negative,
-		size_t rows) const;
+		size_t rows,
+		ConstNullMapPtr null_map) const;
+
+	template <typename Method, bool has_null_map>
+	void executeImplCase(
+		Method & method,
+		const ConstColumnPlainPtrs & key_columns,
+		ColumnUInt8::Container_t & vec_res,
+		bool negative,
+		size_t rows,
+		ConstNullMapPtr null_map) const;
 
 	template <typename Method>
 	void executeArrayImpl(

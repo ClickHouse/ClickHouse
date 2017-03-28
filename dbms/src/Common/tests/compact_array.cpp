@@ -1,4 +1,4 @@
-/// Баг в GCC: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=59124
+/// Bug in GCC: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=59124
 #if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"

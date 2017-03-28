@@ -17,7 +17,12 @@
 
 namespace ProfileEvents
 {
+	extern const Event StorageBufferFlush;
 	extern const Event StorageBufferErrorOnFlush;
+	extern const Event StorageBufferPassedAllMinThresholds;
+	extern const Event StorageBufferPassedTimeMaxThreshold;
+	extern const Event StorageBufferPassedRowsMaxThreshold;
+	extern const Event StorageBufferPassedBytesMaxThreshold;
 }
 
 namespace CurrentMetrics
@@ -70,7 +75,7 @@ StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr col
 }
 
 
-/// Читает из одного буфера (из одного блока) под его mutex-ом.
+/// Reads from one buffer (from one block) under its mutex.
 class BufferBlockInputStream : public IProfilingBlockInputStream
 {
 public:
@@ -141,8 +146,8 @@ BlockInputStreams StorageBuffer::read(
 		if (destination.get() == this)
 			throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-		/** Отключаем оптимизацию "перенос в PREWHERE",
-		  *  так как Buffer не поддерживает PREWHERE.
+		/** Turn off the optimization "transfer to PREWHERE",
+		  *  since Buffer does not support PREWHERE.
 		  */
 		Settings modified_settings = settings;
 		modified_settings.optimize_move_to_prewhere = false;
@@ -155,8 +160,8 @@ BlockInputStreams StorageBuffer::read(
 	for (auto & buf : buffers)
 		streams_from_buffers.push_back(std::make_shared<BufferBlockInputStream>(column_names, buf));
 
-	/** Если источники из таблицы были обработаны до какой-то не начальной стадии выполнения запроса,
-	  * то тогда источники из буферов надо тоже обернуть в конвейер обработки до той же стадии.
+	/** If the sources from the table were processed before some non-initial stage of query execution,
+	  * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
 	  */
 	if (processed_stage > QueryProcessingStage::FetchColumns)
 		for (auto & stream : streams_from_buffers)
@@ -202,6 +207,9 @@ static void appendBlock(const Block & from, Block & to)
 		/// Rollback changes.
 		try
 		{
+			/// Avoid "memory limit exceeded" exceptions during rollback.
+			TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
+
 			for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
 			{
 				ColumnPtr & col_to = to.safeGetByPosition(column_no).column;
@@ -244,7 +252,7 @@ public:
 				if (destination.get() == &storage)
 					throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-				/// Проверяем структуру таблицы.
+				/// Check table structure.
 				try
 				{
 					destination->check(block, true);
@@ -259,7 +267,7 @@ public:
 
 		size_t bytes = block.bytes();
 
-		/// Если блок уже превышает максимальные ограничения, то пишем минуя буфер.
+		/// If the block already exceeds the maximum limit, then we skip the buffer.
 		if (rows > storage.max_thresholds.rows || bytes > storage.max_thresholds.bytes)
 		{
 			if (!storage.no_destination)
@@ -270,29 +278,39 @@ public:
 			return;
 		}
 
-		/// Распределяем нагрузку по шардам по номеру потока.
+		/// We distribute the load on the shards by the stream number.
 		const auto start_shard_num = Poco::ThreadNumber::get() % storage.num_shards;
 
-		/// Перебираем буферы по кругу, пытаясь заблокировать mutex. Не более одного круга.
+		/// We loop through the buffers, trying to lock mutex. No more than one lap.
 		auto shard_num = start_shard_num;
-		size_t try_no = 0;
-		for (; try_no != storage.num_shards; ++try_no)
+
+		StorageBuffer::Buffer * least_busy_buffer = nullptr;
+		std::unique_lock<std::mutex> least_busy_lock;
+		size_t least_busy_shard_rows = 0;
+
+		for (size_t try_no = 0; try_no < storage.num_shards; ++try_no)
 		{
 			std::unique_lock<std::mutex> lock(storage.buffers[shard_num].mutex, std::try_to_lock_t());
+
 			if (lock.owns_lock())
 			{
-				insertIntoBuffer(block, storage.buffers[shard_num], std::move(lock));
-				break;
+				size_t num_rows = storage.buffers[shard_num].data.rows();
+				if (!least_busy_buffer || num_rows < least_busy_shard_rows)
+				{
+					least_busy_buffer = &storage.buffers[shard_num];
+					least_busy_lock = std::move(lock);
+					least_busy_shard_rows = num_rows;
+				}
 			}
 
-			++shard_num;
-			if (shard_num == storage.num_shards)
-				shard_num = 0;
+			shard_num = (shard_num + 1) % storage.num_shards;
 		}
 
-		/// Если так и не удалось ничего сразу заблокировать, то будем ждать на mutex-е.
-		if (try_no == storage.num_shards)
+		/// If you still can not lock anything at once, then we'll wait on mutex.
+		if (!least_busy_buffer)
 			insertIntoBuffer(block, storage.buffers[start_shard_num], std::unique_lock<std::mutex>(storage.buffers[start_shard_num].mutex));
+		else
+			insertIntoBuffer(block, *least_busy_buffer, std::move(least_busy_lock));
 	}
 private:
 	StorageBuffer & storage;
@@ -301,7 +319,7 @@ private:
 	{
 		time_t current_time = time(0);
 
-		/// Сортируем столбцы в блоке. Это нужно, чтобы было проще потом конкатенировать блоки.
+		/// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
 		Block sorted_block = block.sortColumns();
 
 		if (!buffer.data)
@@ -310,9 +328,9 @@ private:
 		}
 		else if (storage.checkThresholds(buffer, current_time, sorted_block.rows(), sorted_block.bytes()))
 		{
-			/** Если после вставки в буфер, ограничения будут превышены, то будем сбрасывать буфер.
-			  * Это также защищает от неограниченного потребления оперативки, так как в случае невозможности записать в таблицу,
-			  *  будет выкинуто исключение, а новые данные не будут добавлены в буфер.
+			/** If, after inserting the buffer, the constraints are exceeded, then we will reset the buffer.
+			  * This also protects against unlimited consumption of RAM, since if it is impossible to write to the table,
+			  *  an exception will be thrown, and new data will not be added to the buffer.
 			  */
 
 			lock.unlock();
@@ -390,9 +408,31 @@ bool StorageBuffer::checkThresholds(const Buffer & buffer, time_t current_time, 
 
 bool StorageBuffer::checkThresholdsImpl(size_t rows, size_t bytes, time_t time_passed) const
 {
-	return
-	       (time_passed > min_thresholds.time && rows > min_thresholds.rows && bytes > min_thresholds.bytes)
-		|| (time_passed > max_thresholds.time || rows > max_thresholds.rows || bytes > max_thresholds.bytes);
+	if (time_passed > min_thresholds.time && rows > min_thresholds.rows && bytes > min_thresholds.bytes)
+	{
+		ProfileEvents::increment(ProfileEvents::StorageBufferPassedAllMinThresholds);
+		return true;
+	}
+
+	if (time_passed > max_thresholds.time)
+	{
+		ProfileEvents::increment(ProfileEvents::StorageBufferPassedTimeMaxThreshold);
+		return true;
+	}
+
+	if (rows > max_thresholds.rows)
+	{
+		ProfileEvents::increment(ProfileEvents::StorageBufferPassedRowsMaxThreshold);
+		return true;
+	}
+
+	if (bytes > max_thresholds.bytes)
+	{
+		ProfileEvents::increment(ProfileEvents::StorageBufferPassedBytesMaxThreshold);
+		return true;
+	}
+
+	return false;
 }
 
 
@@ -439,6 +479,8 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 		CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_to_write.rows());
 		CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
+		ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
+
 		LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
 
 		if (no_destination)
@@ -458,7 +500,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 		{
 			ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
 
-			/// Возвращаем блок на место в буфер.
+			/// Return the block to its place in the buffer.
 
 			CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
 			CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
@@ -468,7 +510,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 			if (!buffer.first_write_time)
 				buffer.first_write_time = current_time;
 
-			/// Через некоторое время будет следующая попытка записать.
+			/// After a while, the next write attempt will happen.
 			throw;
 		}
 	}
@@ -491,8 +533,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 	insert->database = destination_database;
 	insert->table = destination_table;
 
-	/** Будем вставлять столбцы, являющиеся пересечением множества столбцов таблицы-буфера и подчинённой таблицы.
-	  * Это позволит поддержать часть случаев (но не все), когда структура таблицы не совпадает.
+	/** We will insert columns that are the intersection set of columns of the buffer table and the subordinate table.
+	  * This will support some of the cases (but not all) when the table structure does not match.
 	  */
 	Block structure_of_destination_table = table->getSampleBlock();
 	Names columns_intersection;
@@ -564,7 +606,7 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
 
 	auto lock = lockStructureForAlter();
 
-	/// Чтобы не осталось блоков старой структуры.
+	/// So that no blocks of the old structure remain.
 	optimize({}, {}, context.getSettings());
 
 	params.apply(*columns, materialized_columns, alias_columns, column_defaults);

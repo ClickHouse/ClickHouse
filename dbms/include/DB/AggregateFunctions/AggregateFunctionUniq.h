@@ -8,7 +8,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeTuple.h>
 
@@ -38,7 +38,7 @@ struct AggregateFunctionUniqUniquesHashSetData
 	static String getName() { return "uniq"; }
 };
 
-/// Для функции, принимающей несколько аргументов. Такая функция сама заранее их хэширует, поэтому здесь используется TrivialHash.
+/// For a function that takes multiple arguments. Such a function pre-hashes them in advance, so TrivialHash is used here.
 struct AggregateFunctionUniqUniquesHashSetDataForVariadic
 {
 	using Set = UniquesHashSet<TrivialHash>;
@@ -84,7 +84,7 @@ struct AggregateFunctionUniqExactData
 {
 	using Key = T;
 
-	/// При создании, хэш-таблица должна быть небольшой.
+	/// When creating, the hash table must be small.
 	typedef HashSet<
 		Key,
 		HashCRC32<Key>,
@@ -97,13 +97,13 @@ struct AggregateFunctionUniqExactData
 	static String getName() { return "uniqExact"; }
 };
 
-/// Для строк будем класть в хэш-таблицу значения SipHash-а (128 бит).
+/// For rows, we put the SipHash values (128 bits) into the hash table.
 template <>
 struct AggregateFunctionUniqExactData<String>
 {
 	using Key = UInt128;
 
-	/// При создании, хэш-таблица должна быть небольшой.
+	/// When creating, the hash table must be small.
 	typedef HashSet<
 		Key,
 		UInt128TrivialHash,
@@ -154,9 +154,9 @@ struct BaseUniqCombinedData<String, mode>
 	Set set;
 };
 
-/// Агрегатные функции uniqCombinedRaw, uniqCombinedLinearCounting, и uniqCombinedBiasCorrected
-/// предназначены для разработки новых версий функции uniqCombined.
-/// Пользователи должны использовать только uniqCombined.
+/// Aggregate functions uniqCombinedRaw, uniqCombinedLinearCounting, and uniqCombinedBiasCorrected
+///  are intended for development of new versions of the uniqCombined function.
+/// Users should only use uniqCombined.
 
 template <typename T>
 struct AggregateFunctionUniqCombinedRawData
@@ -189,7 +189,7 @@ struct AggregateFunctionUniqCombinedData
 namespace detail
 {
 
-/** Хэш-функция для uniq.
+/** Hash function for uniq.
   */
 template <typename T> struct AggregateFunctionUniqTraits
 {
@@ -216,7 +216,7 @@ template <> struct AggregateFunctionUniqTraits<Float64>
 	}
 };
 
-/** Хэш-функция для uniqCombined.
+/** Hash function for uniqCombined.
   */
 template <typename T> struct AggregateFunctionUniqCombinedTraits
 {
@@ -243,8 +243,8 @@ template <> struct AggregateFunctionUniqCombinedTraits<Float64>
 	}
 };
 
-/** Структура для делегации работы по добавлению одного элемента в агрегатные функции uniq.
-  * Используется для частичной специализации для добавления строк.
+/** The structure for the delegation work to add one element to the `uniq` aggregate functions.
+  * Used for partial specialization to add strings.
   */
 template <typename T, typename Data, typename Enable = void>
 struct OneAdder;
@@ -324,7 +324,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 }
 
 
-/// Приближённо или точно вычисляет количество различных значений.
+/// Calculates the number of different values approximately or exactly.
 template <typename T, typename Data>
 class AggregateFunctionUniq final : public IUnaryAggregateFunction<Data, AggregateFunctionUniq<T, Data> >
 {
@@ -367,9 +367,9 @@ public:
 };
 
 
-/** Для нескольких аргументов. Для вычисления, хэширует их.
-  * Можно передать несколько аргументов как есть; также можно передать один аргумент - кортеж.
-  * Но (для возможности эффективной реализации), нельзя передать несколько аргументов, среди которых есть кортежи.
+/** For multiple arguments. To compute, hashes them.
+  * You can pass multiple arguments as is; You can also pass one argument - a tuple.
+  * But (for the possibility of effective implementation), you can not pass several arguments, among which there are tuples.
   */
 template <typename Data, bool argument_is_tuple>
 class AggregateFunctionUniqVariadic final : public IAggregateFunctionHelper<Data>

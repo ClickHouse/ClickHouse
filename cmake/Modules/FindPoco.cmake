@@ -11,7 +11,7 @@
 # Crypto
 # Data
 # Net
-# NetSSL_OpenSSL
+# NetSSL
 # OSP
 #
 # Usage:
@@ -121,10 +121,16 @@ foreach( component ${components} )
 		else ()
 			set (component_in_data "")
 		endif ()
+		if (${component} STREQUAL "NetSSL")
+			set (component_alt "Net")
+		else ()
+			set (component_alt ${component})
+		endif ()
 		find_path(Poco_${component}_INCLUDE_DIR
 			NAMES 
 				Poco/${component}.h 	# e.g. Foundation.h
 				Poco/${component}/${component}.h # e.g. OSP/OSP.h Util/Util.h
+				Poco/${component_alt}/${component}.h # e.g. Net/NetSSL.h
 				Poco/Data/${component_in_data}/${component_in_data}.h # e.g. Data/ODBC/ODBC.h
 			HINTS
 				${Poco_ROOT_DIR}

@@ -29,11 +29,11 @@ void Progress::read(ReadBuffer & in, UInt64 server_revision)
 
 void Progress::write(WriteBuffer & out, UInt64 client_revision) const
 {
-	writeVarUInt(rows, out);
-	writeVarUInt(bytes, out);
+	writeVarUInt(rows.load(), out);
+	writeVarUInt(bytes.load(), out);
 
 	if (client_revision >= DBMS_MIN_REVISION_WITH_TOTAL_ROWS_IN_PROGRESS)
-		writeVarUInt(total_rows, out);
+		writeVarUInt(total_rows.load(), out);
 }
 
 
@@ -43,11 +43,11 @@ void Progress::writeJSON(WriteBuffer & out) const
 	///  of 64-bit integers after interpretation by JavaScript.
 
 	writeCString("{\"read_rows\":\"", out);
-	writeText(rows, out);
+	writeText(rows.load(), out);
 	writeCString("\",\"read_bytes\":\"", out);
-	writeText(bytes, out);
+	writeText(bytes.load(), out);
 	writeCString("\",\"total_rows\":\"", out);
-	writeText(total_rows, out);
+	writeText(total_rows.load(), out);
 	writeCString("\"}", out);
 }
 

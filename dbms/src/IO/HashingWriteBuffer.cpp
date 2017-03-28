@@ -5,14 +5,14 @@
 namespace DB
 {
 
-/// вычисление хэша зависит от разбиения по блокам
-/// поэтому нужно вычислить хэш от n полных кусочков и одного неполного
+/// computation of the hash depends on the partitioning of blocks
+/// so you need to compute a hash of n complete pieces and one incomplete
 template <class Buffer>
 void IHashingBuffer<Buffer>::calculateHash(DB::BufferBase::Position data, size_t len)
 {
 	if (len)
 	{
-		/// если данных меньше, чем block_size то сложим их в свой буффер и посчитаем от них hash позже
+		/// if the data is less than `block_size`, then put them into buffer and calculate hash later
 		if (block_pos + len < block_size)
 		{
 			memcpy(&BufferWithOwnMemory<Buffer>::memory[block_pos], data, len);
@@ -20,7 +20,7 @@ void IHashingBuffer<Buffer>::calculateHash(DB::BufferBase::Position data, size_t
 		}
 		else
 		{
-			/// если в буффер уже что-то записано, то допишем его
+			/// if something is already written to the buffer, then we'll add it
 			if (block_pos)
 			{
 				size_t n = block_size - block_pos;
@@ -38,7 +38,7 @@ void IHashingBuffer<Buffer>::calculateHash(DB::BufferBase::Position data, size_t
 				data += block_size;
 			}
 
-			/// запишем остаток в свой буфер
+			/// write the remainder to its buffer
 			if (len)
 			{
 				memcpy(&BufferWithOwnMemory<Buffer>::memory[0], data, len);
@@ -53,7 +53,7 @@ template class IHashingBuffer<DB::WriteBuffer>;
 
 }
 
-/// UInt64 это 39 символов в 10 системе счисления
+/// UInt64 is 39 characters in 10th number system
 static const size_t UINT64_DECIMAL_SIZE = 39;
 std::string uint128ToString(uint128 data)
 {

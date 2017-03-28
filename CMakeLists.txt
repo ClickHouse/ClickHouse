@@ -3,8 +3,6 @@ cmake_minimum_required (VERSION 2.6)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/cmake/Modules/")
 
-message(STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
-
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 	# Require at least gcc 5
 	if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
@@ -37,7 +35,6 @@ message (STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE} )
 # TSan is not supported due to false positive errors in libstdc++ and necessity to rebuild libstdc++ with TSan
 set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel;ASan;UBSan" CACHE STRING "" FORCE)
 
-
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*)")
 	set (AARCH64 1)
 endif ()
@@ -53,34 +50,6 @@ option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 if (USE_STATIC_LIBRARIES)
 	list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
-
-
-option (UNBUNDLED "Try find all libraries in system (if fail - use bundled from contrib/)" OFF)
-if (UNBUNDLED)
-	set(NOT_UNBUNDLED 0)
-else ()
-	set(NOT_UNBUNDLED 1)
-endif ()
-
-option (USE_INTERNAL_BOOST_LIBRARY "Set to FALSE to use system boost library instead of bundled" ${NOT_UNBUNDLED})
-
-if (USE_INTERNAL_BOOST_LIBRARY)
-	add_definitions(-DBOOST_SYSTEM_NO_DEPRECATED)
-endif ()
-
-option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ${NOT_UNBUNDLED})
-
-if (CMAKE_SYSTEM MATCHES "FreeBSD")
-	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" OFF)
-else ()
-	option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ON)
-endif ()
-
-option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
-
-option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc." ON)
-
-option (DEBUG_LIBTCMALLOC "Set to TRUE to use debug version of libtcmalloc." OFF)
 
 option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
 
@@ -111,7 +80,6 @@ if (ARCHNATIVE)
 	set (COMPILER_FLAGS                   "${COMPILER_FLAGS} -march=native")
 endif ()
 
-
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} -std=gnu++1y ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
 #set (CMAKE_CXX_FLAGS_RELEASE             "${CMAKE_CXX_FLAGS_RELEASE}")
@@ -138,8 +106,7 @@ if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
 endif ()
 
 if (NOT USE_STATIC_LIBRARIES)
-	set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -fPIC")
-	set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} -fPIC")
+	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
 
 set (SAN_FLAGS "-O3 -g -fno-omit-frame-pointer")
@@ -174,26 +141,43 @@ if (ENABLE_TESTS)
 endif (ENABLE_TESTS)
 
 # Installation prefix
+set (CMAKE_INSTALL_PREFIX /usr)
 if (NOT CMAKE_SYSTEM MATCHES "FreeBSD")
-	set (CMAKE_INSTALL_PREFIX /usr)
 	set (CLICKHOUSE_ETC_DIR /etc)
 else ()
 	set (CLICKHOUSE_ETC_DIR ${CMAKE_INSTALL_PREFIX}/etc)
 endif ()
 
+
+option (UNBUNDLED "Try find all libraries in system (if fail - use bundled from contrib/)" OFF)
+if (UNBUNDLED)
+	set(NOT_UNBUNDLED 0)
+else ()
+	set(NOT_UNBUNDLED 1)
+endif ()
+
+message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} UNBUNDLED=${UNBUNDLED}")
+
 include (cmake/find_openssl.cmake)
 include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
+# zlib before poco
 include (cmake/find_zlib.cmake)
+include (cmake/find_zstd.cmake)
 include (cmake/find_poco.cmake)
+include (cmake/find_lz4.cmake)
+include (cmake/find_sparsehash.cmake)
 include (cmake/find_libtool.cmake)
 include (cmake/find_rt.cmake)
 include (cmake/find_readline_edit.cmake)
-include (cmake/find_gperftools.cmake)
-include (cmake/find_jemalloc.cmake)
+include (cmake/find_zookeeper.cmake)
+include (cmake/find_double-conversion.cmake)
+include (cmake/find_re2.cmake)
+include (libs/libcommon/cmake/find_gperftools.cmake)
+include (libs/libcommon/cmake/find_jemalloc.cmake)
 
-set(FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")
-set(FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")
+set (FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")
+set (FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")
 message (STATUS "C_FLAGS    = ${FULL_C_FLAGS}")
 message (STATUS "CXX_FLAGS  = ${FULL_CXX_FLAGS}")
 message (STATUS "LINK_FLAGS = ${CMAKE_EXE_LINKER_FLAGS}")

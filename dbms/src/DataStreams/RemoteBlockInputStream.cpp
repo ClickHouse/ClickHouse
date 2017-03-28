@@ -54,9 +54,9 @@ RemoteBlockInputStream::RemoteBlockInputStream(ConnectionPoolsPtr & pools_, cons
 
 RemoteBlockInputStream::~RemoteBlockInputStream()
 {
-	/** Если прервались в середине цикла общения с репликами, то прервываем
-	  * все соединения, затем читаем и пропускаем оставшиеся пакеты чтобы
-	  * эти соединения не остались висеть в рассихронизированном состоянии.
+	/** If interrupted in the middle of the loop of communication with replicas, then interrupt
+	  * all connections, then read and skip the remaining packets to make sure
+	  * these connections did not remain hanging in the out-of-sync state.
 	  */
 	if (established || isQueryPending())
 		multiplexed_connections->disconnect();
@@ -87,7 +87,7 @@ void RemoteBlockInputStream::cancel()
 	{
 		std::lock_guard<std::mutex> lock(external_tables_mutex);
 
-		/// Останавливаем отправку внешних данных.
+		/// Stop sending external data.
 		for (auto & vec : external_tables_data)
 			for (auto & elem : vec)
 				if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(elem.first.get()))
@@ -150,10 +150,10 @@ Block RemoteBlockInputStream::readImpl()
 		switch (packet.type)
 		{
 			case Protocol::Server::Data:
-				/// Если блок не пуст и не является заголовочным блоком
+				/// If the block is not empty and is not a header block
 				if (packet.block && (packet.block.rows() > 0))
 					return packet.block;
-				break;	/// Если блок пуст - получим другие пакеты до EndOfStream.
+				break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
 			case Protocol::Server::Exception:
 				got_exception_from_replica = true;
@@ -169,11 +169,11 @@ Block RemoteBlockInputStream::readImpl()
 				break;
 
 			case Protocol::Server::Progress:
-				/** Используем прогресс с удалённого сервера.
-				  * В том числе, запишем его в ProcessList,
-				  * и будем использовать его для проверки
-				  * ограничений (например, минимальная скорость выполнения запроса)
-				  * и квот (например, на количество строчек для чтения).
+				/** We use the progress from a remote server.
+				  * We also include in ProcessList,
+				  * and we use it to check
+				  * constraints (for example, the minimum speed of query execution)
+				  * and quotas (for example, the number of lines to read).
 				  */
 				progressImpl(packet.progress);
 				break;
@@ -200,24 +200,25 @@ Block RemoteBlockInputStream::readImpl()
 
 void RemoteBlockInputStream::readSuffixImpl()
 {
-	/** Если одно из:
-	  * - ничего не начинали делать;
-	  * - получили все пакеты до EndOfStream;
+	/** If one of:
+	  * - nothing started to do;
+	  * - received all packets before EndOfStream;
 	  * - получили с одной реплики эксепшен;
-	  * - получили с одной реплики неизвестный пакет;
-	  * то больше читать ничего не нужно.
+	  * - received exception from one replica;
+	  * - received an unknown packet from one replica;
+	  * then you do not need to read anything.
 	  */
 	if (!isQueryPending() || hasThrownException())
 		return;
 
-	/** Если ещё прочитали не все данные, но они больше не нужны.
-	  * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT).
+	/** If you have not read all the data yet, but they are no longer needed.
+	  * This may be due to the fact that the data is sufficient (for example, when using LIMIT).
 	  */
 
-	/// Отправим просьбу прервать выполнение запроса, если ещё не отправляли.
+	/// Send the request to abort the execution of the request, if not already sent.
 	tryCancel("Cancelling query because enough data has been read");
 
-	/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединениях с репликами.
+	/// Get the remaining packages so that there is no out of sync in the connections to the replicas.
 	Connection::Packet packet = multiplexed_connections->drain();
 	switch (packet.type)
 	{

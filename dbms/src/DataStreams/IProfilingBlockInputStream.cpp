@@ -31,7 +31,7 @@ Block IProfilingBlockInputStream::read()
 			if (const IProfilingBlockInputStream * p_child = dynamic_cast<const IProfilingBlockInputStream *>(&*child))
 				info.nested_infos.push_back(&p_child->info);
 
-		/// Заметим, что после такого, элементы children нельзя удалять до того, как может потребоваться работать с nested_info.
+		/// Note that after this, `children` elements can not be deleted before you might need to work with `nested_info`.
 
 		info.started = true;
 	}
@@ -59,11 +59,11 @@ Block IProfilingBlockInputStream::read()
 	}
 	else
 	{
-		/** Если поток закончился, то ещё попросим всех детей прервать выполнение.
-		  * Это имеет смысл при выполнении запроса с LIMIT-ом:
-		  * - бывает ситуация, когда все необходимые данные уже прочитали,
-		  *   но источники-дети ещё продолжают работать,
-		  *   при чём они могут работать в отдельных потоках или даже удалённо.
+		/** If the thread is over, then we will ask all children to abort the execution.
+		  * This makes sense when running a query with LIMIT
+		  * - there is a situation when all the necessary data has already been read,
+		  *   but `children sources are still working,
+		  *   herewith they can work in separate threads or even remotely.
 		  */
 		cancel();
 	}
@@ -152,7 +152,7 @@ bool IProfilingBlockInputStream::checkLimits()
 		if (limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
 		{
 			if (limits.read_overflow_mode == OverflowMode::THROW)
-				throw Exception(std::string("Limit for result rows ")
+				throw Exception(std::string("Limit for result rows")
 					+ " exceeded: read " + toString(info.rows)
 					+ " rows, maximum: " + toString(limits.max_rows_to_read),
 					ErrorCodes::TOO_MUCH_ROWS);
@@ -201,7 +201,7 @@ void IProfilingBlockInputStream::checkQuota(Block & block)
 	switch (limits.mode)
 	{
 		case LIMITS_TOTAL:
-			/// Проверяется в методе progress.
+			/// Checked in `progress` method.
 			break;
 
 		case LIMITS_CURRENT:
@@ -232,15 +232,15 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 		if (!process_list_elem->updateProgressIn(value))
 			cancel();
 
-		/// Общее количество данных, обработанных или предполагаемых к обработке во всех листовых источниках, возможно, на удалённых серверах.
+		/// The total amount of data processed or intended for processing in all leaf sources, possibly on remote servers.
 
 		size_t rows_processed = process_list_elem->progress_in.rows;
 		size_t bytes_processed = process_list_elem->progress_in.bytes;
 
 		size_t total_rows_estimate = std::max(rows_processed, process_list_elem->progress_in.total_rows.load(std::memory_order_relaxed));
 
-		/** Проверяем ограничения на объём данных для чтения, скорость выполнения запроса, квоту на объём данных для чтения.
-			* NOTE: Может быть, имеет смысл сделать, чтобы они проверялись прямо в ProcessList?
+		/** Check the restrictions on the amount of data to read, the speed of the query, the quota on the amount of data to read.
+			* NOTE: Maybe it makes sense to have them checked directly in ProcessList?
 			*/
 
 		if (limits.mode == LIMITS_TOTAL
@@ -260,7 +260,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 			}
 			else if (limits.read_overflow_mode == OverflowMode::BREAK)
 			{
-				/// Для break будем останавливаться только если действительно было прочитано столько строк, а не только предполагается к чтению.
+				/// For `break`, we will stop only if so many lines were actually read, and not just supposed to be read.
 				if ((limits.max_rows_to_read && rows_processed > limits.max_rows_to_read)
 					|| (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read))
 				{
@@ -286,7 +286,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 
 				size_t total_rows = process_list_elem->progress_in.total_rows;
 
-				/// Если предсказанное время выполнения больше, чем max_execution_time.
+				/// If the predicted execution time is longer than `max_execution_time`.
 				if (limits.max_execution_time != 0 && total_rows)
 				{
 					double estimated_execution_time_seconds = total_elapsed * (static_cast<double>(total_rows) / rows_processed);

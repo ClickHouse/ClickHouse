@@ -13,10 +13,10 @@ CLICKHOUSE_USER=clickhouse
 CLICKHOUSE_GROUP=${CLICKHOUSE_USER}
 SHELL=/bin/bash
 PROGRAM=clickhouse-server
+GENERIC_PROGRAM=clickhouse
 SYSCONFDIR=/etc/$PROGRAM
 CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 CLICKHOUSE_LOGDIR_USER=root
-CLICKHOUSE_DATADIR=/var/lib/$CLICKHOUSE_USER
 CLICKHOUSE_DATADIR_OLD=/opt/clickhouse
 LOCALSTATEDIR=/var/lock
 BINDIR=/usr/bin
@@ -27,6 +27,7 @@ RETVAL=0
 
 CLICKHOUSE_PIDDIR=/var/run/$PROGRAM
 CLICKHOUSE_PIDFILE="$CLICKHOUSE_PIDDIR/$PROGRAM.pid"
+
 
 # Override defaults from optional config file
 test -f /etc/default/clickhouse && . /etc/default/clickhouse
@@ -54,63 +55,56 @@ if uname -mpi | grep -q 'x86_64'; then
 	fi
 fi
 
+
 SUPPORTED_COMMANDS="{start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload|initdb}"
 is_supported_command()
 {
-	echo $SUPPORTED_COMMANDS | grep -E "(\{|\|)$1(\||})" &> /dev/null
+	echo "$SUPPORTED_COMMANDS" | grep -E "(\{|\|)$1(\||})" &> /dev/null
 }
 
-generate_program_name()
-{
-	echo $PROGRAM
-}
-
-generate_pid_name()
-{
-	echo $CLICKHOUSE_PIDFILE
-}
-
-specific_log_file_for_each_process()
-{
-	echo ""
-}
 
 is_running()
 {
-	pidfile=$1
-
-	[ -r $pidfile ] && pgrep -s $(cat "$pidfile") 1> /dev/null 2> /dev/null
+	[ -r "$CLICKHOUSE_PIDFILE" ] && pgrep -s $(cat "$CLICKHOUSE_PIDFILE") 1> /dev/null 2> /dev/null
 }
 
-running_processes()
-{
-	running=0
-	if is_running $CLICKHOUSE_PIDFILE; then
-		running=$(($running + 1))
-	fi
-	echo $running
-}
 
-any_runs()
+wait_for_done()
 {
-	if [ $(running_processes) -gt 0 ]; then return 0; else return 1; fi
-}
-
-all_runs()
-{
-	[ $(running_processes) -eq 1 ]
-}
-
-wait4done()
-{
-	while any_runs; do
+	while is_running; do
 		sleep 1
 	done
 }
 
 
+die()
+{
+	echo $1 >&2
+	exit 1
+}
+
+
+# Check that configuration file is Ok.
+check_config()
+{
+	if [ -x "$BINDIR/$GENERIC_PROGRAM" ]; then
+		su -l $CLICKHOUSE_USER -s $SHELL -c "$BINDIR/$GENERIC_PROGRAM --extract-from-config --config-file=\"$CLICKHOUSE_CONFIG\" --key=path" >/dev/null || die "Configuration file ${CLICKHOUSE_CONFIG} doesn't parse successfully. Won't restart server. You may use forcerestart if you are sure.";
+	fi
+}
+
+
 initdb()
 {
+	if [ -x "$BINDIR/$GENERIC_PROGRAM" ]; then
+		CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -l $CLICKHOUSE_USER -s $SHELL -c "$BINDIR/$GENERIC_PROGRAM --extract-from-config --config-file=\"$CLICKHOUSE_CONFIG\" --key=path")
+		if [ "(" "$?" -ne "0" ")" -o "(" -z "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ")" ]; then
+			die "Cannot obtain value of path from config file: ${CLICKHOUSE_CONFIG}";
+		fi
+		echo "Path to data directory in ${CLICKHOUSE_CONFIG}: ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
+	else
+		CLICKHOUSE_DATADIR_FROM_CONFIG="/var/lib/clickhouse"
+	fi
+
 	if ! getent group ${CLICKHOUSE_USER} >/dev/null; then
 		echo "Can't chown to non-existing user ${CLICKHOUSE_USER}"
 		return
@@ -120,26 +114,38 @@ initdb()
 		return
 	fi
 
-	if ! `su -s $SHELL ${CLICKHOUSE_USER} -c "test -r ${CLICKHOUSE_CONFIG}"`; then
+	if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -r ${CLICKHOUSE_CONFIG}"); then
 		echo "Warning! clickhouse config [${CLICKHOUSE_CONFIG}] not readable by user [${CLICKHOUSE_USER}]"
 	fi
 
-	if ! `su -s $SHELL ${CLICKHOUSE_USER} -c "test -O ${CLICKHOUSE_DATADIR} && test -G ${CLICKHOUSE_DATADIR}"`; then
-		echo "Changing owner of [${CLICKHOUSE_DATADIR}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
-		chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR}
+	if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -O \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\" && test -G \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\""); then
+		if [ $(dirname "${CLICKHOUSE_DATADIR_FROM_CONFIG}") == "/" ]; then
+			echo "Directory ${CLICKHOUSE_DATADIR_FROM_CONFIG} seems too dangerous to chown."
+		else
+			if [ ! -e "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ]; then
+				echo "Creating directory ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
+				mkdir -p "${CLICKHOUSE_DATADIR_FROM_CONFIG}"
+			fi
+
+			echo "Changing owner of [${CLICKHOUSE_DATADIR_FROM_CONFIG}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
+			chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} "${CLICKHOUSE_DATADIR_FROM_CONFIG}"
+		fi
 	fi
 
-	if ! `su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}"`; then
+	if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}"); then
+		echo "Changing owner of [${CLICKHOUSE_LOGDIR}/*] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
+		chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}/*
 		echo "Changing owner of [${CLICKHOUSE_LOGDIR}] to [${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP}]"
-		chown -R ${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}
+		chown ${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}
 	fi
 
-	#Temporary fix for old metrika user, remove after 2017-06-01
-	if [ ! -z ${CLICKHOUSE_DATADIR_OLD} ] && [ -d ${CLICKHOUSE_DATADIR_OLD} ] && [ ! `su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_DATADIR_OLD}"` ]; then
+	# Temporary fix for old metrika user, remove after 2017-06-01
+	if [ ! -z ${CLICKHOUSE_DATADIR_OLD} ] && [ -d ${CLICKHOUSE_DATADIR_OLD} ] && ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_DATADIR_OLD}") ; then
 		echo "Changing owner of old [${CLICKHOUSE_DATADIR_OLD}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
-		chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR_OLD}
+		chown -RL ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR_OLD}
 	fi
 }
+
 
 start()
 {
@@ -150,22 +156,23 @@ start()
 	echo -n "Start $PROGRAM service: "
 	ulimit -n 262144
 
-	if all_runs; then
+	if is_running; then
 		echo -n "already running "
 		EXIT_STATUS=1
 	else
 		mkdir -p $CLICKHOUSE_PIDDIR
 		chown -R $CLICKHOUSE_USER:$CLICKHOUSE_GROUP $CLICKHOUSE_PIDDIR
 		initdb
-			if ! is_running $CLICKHOUSE_PIDFILE; then
-				rm -f $CLICKHOUSE_PIDFILE
-				# чтобы лок не удерживался в течении времени жизни дочернего процесса, освободим лок
-				su -l $CLICKHOUSE_USER -s $SHELL -c "flock -u 9; exec -a $(generate_program_name $i) \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$CLICKHOUSE_PIDFILE\" --config-file=\"$CLICKHOUSE_CONFIG\" $(specific_log_file_for_each_process $i)"
-				EXIT_STATUS=$?
-				if [ $EXIT_STATUS -ne 0 ]; then
-					break
-				fi
+		if ! is_running; then
+			rm -f $CLICKHOUSE_PIDFILE
+			# Lock should not be held while running child process, so we release the lock. Note: obviously, there is race condition.
+			# But clickhouse-server has protection from simultaneous runs with same data directory.
+			su -l $CLICKHOUSE_USER -s $SHELL -c "flock -u 9; exec -a \"$PROGRAM\" \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$CLICKHOUSE_PIDFILE\" --config-file=\"$CLICKHOUSE_CONFIG\""
+			EXIT_STATUS=$?
+			if [ $EXIT_STATUS -ne 0 ]; then
+				break
 			fi
+		fi
 	fi
 
 	if [ $EXIT_STATUS -eq 0 ]; then
@@ -177,6 +184,7 @@ start()
 	return $EXIT_STATUS
 }
 
+
 stop()
 {
 	local EXIT_STATUS
@@ -186,35 +194,39 @@ stop()
 
 		echo -n "Stop $PROGRAM service: "
 
-		kill -TERM `cat "$CLICKHOUSE_PIDFILE"`
+		kill -TERM $(cat "$CLICKHOUSE_PIDFILE")
 
-		wait4done
+		wait_for_done
 
 		echo "DONE"
 	fi
 	return $EXIT_STATUS
 }
 
+
 restart()
 {
+	check_config
 	stop
 	start
 }
+
 
 forcestop()
 {
 	local EXIT_STATUS
 	EXIT_STATUS=0
 
-	echo -n "Stop $PROGRAM service: "
+	echo -n "Stop forcefully $PROGRAM service: "
 
-	kill -9 `cat "$CLICKHOUSE_PIDFILE"`
+	kill -KILL $(cat "$CLICKHOUSE_PIDFILE")
 
-	wait4done
+	wait_for_done
 
 	echo "DONE"
 	return $EXIT_STATUS
 }
+
 
 forcerestart()
 {
@@ -222,21 +234,28 @@ forcerestart()
 	start
 }
 
+
 enable_cron()
 {
-	[ ! -z $CLICKHOUSE_CRONFILE ] && sed -i 's/^#*//' "$CLICKHOUSE_CRONFILE"
+	[ ! -z "$CLICKHOUSE_CRONFILE" ] && sed -i 's/^#*//' "$CLICKHOUSE_CRONFILE"
 }
+
 
 disable_cron()
 {
-	[ ! -z $CLICKHOUSE_CRONFILE ] && sed -i 's/^#*/#/' "$CLICKHOUSE_CRONFILE"
+	[ ! -z "$CLICKHOUSE_CRONFILE" ] && sed -i 's/^#*/#/' "$CLICKHOUSE_CRONFILE"
 }
+
 
 is_cron_disabled()
 {
-	[ -z $CLICKHOUSE_CRONFILE ] && return 0
-	[[ `grep -E "^#.*" $CLICKHOUSE_CRONFILE` == `cat $CLICKHOUSE_CRONFILE` ]];
+	[ -z "$CLICKHOUSE_CRONFILE" ] && return 0
+
+	# Assumes that either no lines are commented or all lines are commented.
+	# Also please note, that currently cron file for ClickHouse has only one line (but some time ago there was more).
+	grep -q -E '^#' "$CLICKHOUSE_CRONFILE";
 }
+
 
 main()
 {
@@ -262,28 +281,33 @@ main()
 		restart
 		;;
 	condstart)
-		all_runs || start
+		is_running || start
 		;;
 	condstop)
-		any_runs && stop
+		is_running && stop
 		;;
 	condrestart)
-		any_runs && restart
+		is_running && restart
 		;;
 	condreload)
-		any_runs && restart
+		is_running && restart
 		;;
 	initdb)
 		initdb
+		;;
+	*)
+		echo "Usage: $0 $SUPPORTED_COMMANDS"
+		exit 2
 		;;
 	esac
 
 	exit $EXIT_STATUS
 }
 
+
 status()
 {
-	if [ $(running_processes) -eq 1 ]; then
+	if is_running; then
 		echo "$PROGRAM service is running"
 	else
 		if is_cron_disabled; then
@@ -294,16 +318,15 @@ status()
 	fi
 }
 
-# Running commands whith not need blocking
-if ! is_supported_command "$1"; then
-	echo "Usage: ${0##*/} $SUPPORTED_COMMANDS"
-	exit 2
-fi
 
-if [ "$1" == "status" ]; then
+# Running commands without need of locking
+case "$1" in
+status)
 	status
 	exit 0
-fi
+	;;
+esac
+
 
 (
 	if flock -n 9; then

@@ -2,7 +2,7 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 
 #include <DB/Core/Defines.h>
 #include <DB/Common/Exception.h>

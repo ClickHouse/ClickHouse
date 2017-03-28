@@ -1,9 +1,11 @@
 #pragma once
 
 #include <DB/Functions/NumberTraits.h>
-#include <DB/Functions/EnrichedDataTypePtr.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/EnrichedDataTypePtr.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/DataTypes/DataTypeNull.h>
+
 
 namespace DB
 {
@@ -20,7 +22,7 @@ struct DataTypeFromFieldTypeOrError
 {
 	static DataTypePtr getDataType()
 	{
-		return std::make_shared<typename DataTypeFromFieldType<T>::Type>();
+		return std::make_shared<DataTypeNumber<T>>();
 	}
 };
 
@@ -84,8 +86,8 @@ private:
 
 public:
 	using Type = std::tuple<
-		typename DataTypeFromFieldType<Type0>::Type,
-		typename DataTypeFromFieldType<Type1>::Type,
+		DataTypeNumber<Type0>,
+		DataTypeNumber<Type1>,
 		Nullability
 	>;
 };

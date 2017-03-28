@@ -24,7 +24,7 @@ brew install boost --cc=gcc-6
 ## Install required libraries
 
 ```
-brew install icu4c mysql openssl unixodbc libtool gettext homebrew/dupes/libiconv homebrew/dupes/zlib
+brew install icu4c mysql openssl unixodbc libtool gettext homebrew/dupes/zlib
 ```
 
 ## Install optional libraries
@@ -53,11 +53,6 @@ For the latest release candidate, switch to the `testing` branch.
 ```
 export CC=gcc-6
 export CXX=g++-6
-```
-
-## Disable MongoDB binding
-```
-export ENABLE_MONGODB=0
 ```
 
 ## Detect number of threads

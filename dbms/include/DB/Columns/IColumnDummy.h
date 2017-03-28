@@ -14,8 +14,8 @@ namespace ErrorCodes
 }
 
 
-/** Базовый класс для столбцов-констант, содержащих значение, не входящее в Field.
-  * Не является полноценым столбцом и используется особым образом.
+/** Base class for columns-constants that contain a value that is not in the `Field`.
+  * Not a full-fledged column and is used in a special way.
   */
 class IColumnDummy : public IColumn
 {
@@ -72,7 +72,7 @@ public:
 		return cloneDummy(limit ? std::min(s, limit) : s);
 	}
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
+	void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override
 	{
 		res.resize(s);
 		for (size_t i = 0; i < s; ++i)

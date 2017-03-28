@@ -74,7 +74,7 @@ BlockIO InterpreterAlterQuery::execute()
 				break;
 
 			default:
-				throw Exception("Bad PartitionCommand::Type: " + toString(command.type), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+				throw Exception("Bad PartitionCommand::Type: " + toString<int>(command.type), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 		}
 	}
 

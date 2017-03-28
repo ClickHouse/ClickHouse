@@ -5,13 +5,10 @@
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-
+#include <Poco/Net/HTTPSClientSession.h>
 #include <DB/IO/ReadBufferFromIStream.h>
-
 #include <DB/Common/SimpleCache.h>
-
 #include <common/logger_useful.h>
-
 
 namespace DB
 {
@@ -45,18 +42,22 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 	ReadBuffer(nullptr, 0),
 	uri{uri},
 	method{!method.empty() ? method : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET},
-	timeouts{timeouts}
+	timeouts{timeouts},
+	is_ssl{uri.getScheme() == "https"},
+	session{ std::unique_ptr<Poco::Net::HTTPClientSession>(is_ssl ? new Poco::Net::HTTPSClientSession : new Poco::Net::HTTPClientSession) }
 {
-	session.setHost(resolveHost(uri.getHost()).toString());	/// Cache DNS forever (until server restart)
-	session.setPort(uri.getPort());
+	session->setHost(resolveHost(uri.getHost()).toString());	/// Cache DNS forever (until server restart)
+	session->setPort(uri.getPort());
 
 #if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
-	session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
+	session->setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
 #else
-	session.setTimeout(timeouts.connection_timeout);
+	session->setTimeout(timeouts.connection_timeout);
 #endif
 
 	Poco::Net::HTTPRequest request(method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+	request.setHost(uri.getHost()); // use original, not resolved host name in header
+
 	if (out_stream_callback)
 		request.setChunkedTransferEncoding(true);
 
@@ -64,12 +65,12 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 
 	LOG_TRACE((&Logger::get("ReadWriteBufferFromHTTP")), "Sending request to " << uri.toString());
 
-	auto & stream_out = session.sendRequest(request);
+	auto & stream_out = session->sendRequest(request);
 
 	if (out_stream_callback)
 		out_stream_callback(stream_out);
 
-	istr = &session.receiveResponse(response);
+	istr = &session->receiveResponse(response);
 
 	auto status = response.getStatus();
 

@@ -8,5 +8,5 @@ using StringView = std::experimental::string_view;
 template <typename TChar, size_t size>
 constexpr inline std::experimental::basic_string_view<TChar> makeStringView(const TChar (&str)[size])
 {
-    return std::experimental::basic_string_view<TChar>(str, size - 1);
+	return std::experimental::basic_string_view<TChar>(str, size - 1);
 }

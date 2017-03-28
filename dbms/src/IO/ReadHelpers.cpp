@@ -180,8 +180,8 @@ void readStringUntilEOF(String & s, ReadBuffer & buf)
 template void readStringUntilEOFInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 
-/** Распарсить escape-последовательность, которая может быть простой (один символ после бэкслеша) или более сложной (несколько символов).
-  * Предполагается, что курсор расположен на символе \
+/** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
+  * It is assumed that the cursor is located on the `\` symbol
   */
 template <typename Vector>
 static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
@@ -193,7 +193,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 	if (*buf.position() == 'x')
 	{
 		++buf.position();
-		/// escape-последовательность вида \xAA
+		/// escape sequence of the form \ xAA
 		UInt8 c1;
 		UInt8 c2;
 		readPODBinary(c1, buf);
@@ -207,14 +207,14 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 	}
 	else
 	{
-		/// Обычная escape-последовательность из одного символа.
+		/// The usual escape sequence of a single character.
 		s.push_back(parseEscapeSequence(*buf.position()));
 		++buf.position();
 	}
 }
 
 
-/// TODO Обобщить с кодом в FunctionsVisitParam.h и JSON.h
+/// TODO Compute with the code in FunctionsVisitParam.h and JSON.h
 template <typename Vector>
 static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 {
@@ -255,8 +255,8 @@ static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 			char hex_code[4];
 			readPODBinary(hex_code, buf);
 
-			/// \u0000 - частый случай.
-			if (0 == memcmp(hex_code, "0000", 4))
+			/// \u0000 - special case
+ 			if (0 == memcmp(hex_code, "0000", 4))
 			{
 				s.push_back(0);
 				return;
@@ -279,7 +279,7 @@ static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 			}
 			else
 			{
-				/// Суррогатная пара.
+				/// Surrogate pair.
 				if (code_point >= 0xD800 && code_point <= 0xDBFF)
 				{
 					assertString("\\u", buf);
@@ -439,7 +439,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter)
 
 	char maybe_quote = *buf.position();
 
-	/// Пустота и даже не в кавычках.
+	/// Emptiness and not even in quotation marks.
 	if (maybe_quote == delimiter)
 		return;
 
@@ -447,7 +447,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter)
 	{
 		++buf.position();
 
-		/// Закавыченный случай. Ищем следующую кавычку.
+		/// The quoted case. We are looking for the next quotation mark.
 		while (!buf.eof())
 		{
 			const char * next_pos = reinterpret_cast<const char *>(memchr(buf.position(), maybe_quote, buf.buffer().end() - buf.position()));
@@ -461,7 +461,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter)
 			if (!buf.hasPendingData())
 				continue;
 
-			/// Сейчас под курсором кавычка. Есть ли следующая?
+			/// Now there is a quotation mark under the cursor. Is there any following?
 			++buf.position();
 			if (buf.eof())
 				return;
@@ -478,12 +478,12 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter)
 	}
 	else
 	{
-		/// Незакавыченный случай. Ищем delimiter или \r или \n.
+		/// Unquoted case. Look for delimiter or \r or \n.
 		while (!buf.eof())
 		{
 			const char * next_pos = buf.position();
 			while (next_pos < buf.buffer().end()
-				&& *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')	/// NOTE Можно сделать SIMD версию.
+				&& *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')	/// NOTE You can make a SIMD version.
 				++next_pos;
 
 			appendToStringOrVector(s, buf.position(), next_pos);
@@ -492,9 +492,9 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter)
 			if (!buf.hasPendingData())
 				continue;
 
-			/** CSV формат может содержать незначащие пробелы и табы.
-			  * Обычно задача их пропускать - у вызывающего кода.
-			  * Но в данном случае, сделать это будет сложно, поэтому удаляем концевые пробельные символы самостоятельно.
+			/** CSV format can contain insignificant spaces and tabs.
+			  * Usually the task of skipping them is for the calling code.
+			  * But in this case, it will be difficult to do this, so remove the trailing whitespace by yourself.
 			  */
 			size_t size = s.size();
 			while (size > 0
@@ -566,7 +566,7 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUT
 	char s[DATE_TIME_BROKEN_DOWN_LENGTH];
 	char * s_pos = s;
 
-	/// Кусок, похожий на unix timestamp.
+	/// A piece similar to unix timestamp.
 	while (s_pos < s + UNIX_TIMESTAMP_MAX_LENGTH && !buf.eof() && isNumericASCII(*buf.position()))
 	{
 		*s_pos = *buf.position();

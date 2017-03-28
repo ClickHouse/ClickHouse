@@ -43,21 +43,41 @@ bool Set::checkSetSizeLimits() const
 	return true;
 }
 
+
 template <typename Method>
 void NO_INLINE Set::insertFromBlockImpl(
 	Method & method,
 	const ConstColumnPlainPtrs & key_columns,
 	size_t rows,
-	SetVariants & variants)
+	SetVariants & variants,
+	ConstNullMapPtr null_map)
+{
+	if (null_map)
+		insertFromBlockImplCase<Method, true>(method, key_columns, rows, variants, null_map);
+	else
+		insertFromBlockImplCase<Method, false>(method, key_columns, rows, variants, null_map);
+}
+
+
+template <typename Method, bool has_null_map>
+void NO_INLINE Set::insertFromBlockImplCase(
+	Method & method,
+	const ConstColumnPlainPtrs & key_columns,
+	size_t rows,
+	SetVariants & variants,
+	ConstNullMapPtr null_map)
 {
 	typename Method::State state;
 	state.init(key_columns);
 	size_t keys_size = key_columns.size();
 
-	/// Для всех строчек
+	/// For all rows
 	for (size_t i = 0; i < rows; ++i)
 	{
-		/// Строим ключ
+		if (has_null_map && (*null_map)[i])
+			continue;
+
+		/// Obtain a key to insert to the set
 		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
 
 		typename Method::Data::iterator it = method.data.find(key);
@@ -66,6 +86,52 @@ void NO_INLINE Set::insertFromBlockImpl(
 
 		if (inserted)
 			method.onNewKey(*it, keys_size, i, variants.string_pool);
+	}
+}
+
+
+/** Replace Nullable key_columns to corresponding nested columns.
+  * In 'null_map' return a map of positions where at least one column was NULL.
+  * null_map_holder could take ownership of null_map, if required.
+  */
+static void extractNestedColumnsAndNullMap(ConstColumnPlainPtrs & key_columns, ColumnPtr & null_map_holder, Set::ConstNullMapPtr & null_map)
+{
+	if (key_columns.size() == 1)
+	{
+		auto & column = key_columns[0];
+		if (!column->isNullable())
+			return;
+
+		const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(*column);
+		null_map = &column_nullable.getNullMap();
+		column = column_nullable.getNestedColumn().get();
+	}
+	else
+	{
+		PaddedPODArray<UInt8> * mutable_null_map = nullptr;
+
+		for (auto & column : key_columns)
+		{
+			if (column->isNullable())
+			{
+				const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(*column);
+				column = column_nullable.getNestedColumn().get();
+
+				if (!null_map_holder)
+				{
+					null_map_holder = column_nullable.getNullMapColumn()->clone();
+					mutable_null_map = &static_cast<ColumnUInt8 &>(*null_map_holder).getData();
+				}
+				else
+				{
+					const PaddedPODArray<UInt8> & other_null_map = column_nullable.getNullMap();
+					for (size_t i = 0, size = mutable_null_map->size(); i < size; ++i)
+						(*mutable_null_map)[i] |= other_null_map[i];
+				}
+			}
+		}
+
+		null_map = mutable_null_map;
 	}
 }
 
@@ -100,12 +166,18 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 			materialized_columns.emplace_back(converted);
 			key_columns.back() = materialized_columns.back().get();
 		}
+	}
 
-		/** Flatten tuples. For case when written
-		  *  (a, b) IN (SELECT (a, b) FROM table)
-		  * instead of more typical
-		  *  (a, b) IN (SELECT a, b FROM table)
-		  */
+	/** Flatten tuples. For case when written
+	  *  (a, b) IN (SELECT (a, b) FROM table)
+	  * instead of more typical
+	  *  (a, b) IN (SELECT a, b FROM table)
+	  *
+	  * Avoid flatten in case then we have more than one column:
+	  * Ex.: 1, (2, 3) become just 1, 2, 3
+	  */
+	if (keys_size == 1)
+	{
 		if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(key_columns.back()))
 		{
 			key_columns.pop_back();
@@ -125,7 +197,12 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 
 	size_t rows = block.rows();
 
-	/// Какую структуру данных для множества использовать?
+	/// We will insert to the Set only keys, where all components are not NULL.
+	ColumnPtr null_map_holder;
+	ConstNullMapPtr null_map{};
+	extractNestedColumnsAndNullMap(key_columns, null_map_holder, null_map);
+
+	/// Choose data structure to use for the set.
 	if (empty())
 		data.init(data.chooseMethod(key_columns, key_sizes));
 
@@ -135,7 +212,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 			break;
 #define M(NAME) \
 		case SetVariants::Type::NAME: \
-			insertFromBlockImpl(*data.NAME, key_columns, rows, data); \
+			insertFromBlockImpl(*data.NAME, key_columns, rows, data, null_map); \
 			break;
 		APPLY_FOR_SET_VARIANTS(M)
 #undef M
@@ -143,7 +220,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 
 	if (create_ordered_set)
 		for (size_t i = 0; i < rows; ++i)
-			ordered_set_elements->push_back((*key_columns[0])[i]); /// ordered_set для индекса работает только если IN по одному ключу, а не кортажам
+			ordered_set_elements->push_back((*key_columns[0])[i]); /// ordered_set for index works only for single key, not for tuples
 
 	if (!checkSetSizeLimits())
 	{
@@ -168,9 +245,14 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 static Field extractValueFromNode(ASTPtr & node, const IDataType & type, const Context & context)
 {
 	if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(node.get()))
+	{
 		return convertFieldToType(lit->value, type);
+	}
 	else if (typeid_cast<ASTFunction *>(node.get()))
-		return convertFieldToType(evaluateConstantExpression(node, context), type);
+	{
+		std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(node, context);
+		return convertFieldToType(value_raw.first, type, value_raw.second.get());
+	}
 	else
 		throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 }
@@ -180,7 +262,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 {
 	data_types = types;
 
-	/// Засунем множество в блок.
+	/// Will form a block with values from the set.
 	Block block;
 	for (size_t i = 0, size = data_types.size(); i < size; ++i)
 	{
@@ -224,7 +306,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 				if (value.isNull())
 					break;
 
-				tuple_values[j] = value;	/// TODO Сделать move семантику для Field.
+				tuple_values[j] = value;
 			}
 
 			if (j == tuple_size)
@@ -261,7 +343,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
 	Poco::ScopedReadRWLock lock(rwlock);
 
-	/// Если множество пусто
+	/// If the set is empty.
 	if (data_types.empty())
 	{
 		if (negative)
@@ -275,10 +357,17 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
 	if (array_type)
 	{
+		/// Special treatment of Arrays in left hand side of IN:
+		///  check that at least one array element is in Set.
+		/// This is deprecated functionality and will be removed.
+
 		if (data_types.size() != 1 || num_key_columns != 1)
 			throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-		if (DataTypeTraits::removeNullable(array_type->getNestedType())->getName() !=
-			DataTypeTraits::removeNullable(data_types[0])->getName())
+
+		if (array_type->getNestedType()->isNullable())
+			throw Exception("Array(Nullable(...)) for left hand side of IN is not supported.", ErrorCodes::NOT_IMPLEMENTED);
+
+		if (!array_type->getNestedType()->equals(*data_types[0]))
 			throw Exception(std::string() + "Types in section IN don't match: " + data_types[0]->getName() +
 				" on the right, " + array_type->getNestedType()->getName() + " on the left.",
 				ErrorCodes::TYPE_MISMATCH);
@@ -329,7 +418,12 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 			}
 		}
 
-		executeOrdinary(key_columns, vec_res, negative);
+		/// We will check existence in Set only for keys, where all components are not NULL.
+		ColumnPtr null_map_holder;
+		ConstNullMapPtr null_map{};
+		extractNestedColumnsAndNullMap(key_columns, null_map_holder, null_map);
+
+		executeOrdinary(key_columns, vec_res, negative, null_map);
 	}
 
 	return res;
@@ -342,7 +436,24 @@ void NO_INLINE Set::executeImpl(
 	const ConstColumnPlainPtrs & key_columns,
 	ColumnUInt8::Container_t & vec_res,
 	bool negative,
-	size_t rows) const
+	size_t rows,
+	ConstNullMapPtr null_map) const
+{
+	if (null_map)
+		executeImplCase<Method, true>(method, key_columns, vec_res, negative, rows, null_map);
+	else
+		executeImplCase<Method, false>(method, key_columns, vec_res, negative, rows, null_map);
+}
+
+
+template <typename Method, bool has_null_map>
+void NO_INLINE Set::executeImplCase(
+	Method & method,
+	const ConstColumnPlainPtrs & key_columns,
+	ColumnUInt8::Container_t & vec_res,
+	bool negative,
+	size_t rows,
+	ConstNullMapPtr null_map) const
 {
 	typename Method::State state;
 	state.init(key_columns);
@@ -353,9 +464,14 @@ void NO_INLINE Set::executeImpl(
 	/// Для всех строчек
 	for (size_t i = 0; i < rows; ++i)
 	{
-		/// Строим ключ
-		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
-		vec_res[i] = negative ^ (method.data.end() != method.data.find(key));
+		if (has_null_map && (*null_map)[i])
+			vec_res[i] = negative;
+		else
+		{
+			/// Строим ключ
+			typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
+			vec_res[i] = negative ^ method.data.has(key);
+		}
 	}
 }
 
@@ -382,7 +498,7 @@ void NO_INLINE Set::executeArrayImpl(
 		{
 			/// Строим ключ
 			typename Method::Key key = state.getKey(key_columns, keys_size, j, key_sizes);
-			res |= negative ^ (method.data.end() != method.data.find(key));
+			res |= negative ^ method.data.has(key);
 			if (res)
 				break;
 		}
@@ -392,7 +508,11 @@ void NO_INLINE Set::executeArrayImpl(
 }
 
 
-void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8::Container_t & vec_res, bool negative) const
+void Set::executeOrdinary(
+	const ConstColumnPlainPtrs & key_columns,
+	ColumnUInt8::Container_t & vec_res,
+	bool negative,
+	ConstNullMapPtr null_map) const
 {
 	size_t rows = key_columns[0]->size();
 
@@ -402,7 +522,7 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 			break;
 #define M(NAME) \
 		case SetVariants::Type::NAME: \
-			executeImpl(*data.NAME, key_columns, vec_res, negative, rows); \
+			executeImpl(*data.NAME, key_columns, vec_res, negative, rows, null_map); \
 			break;
 	APPLY_FOR_SET_VARIANTS(M)
 #undef M

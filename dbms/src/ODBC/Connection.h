@@ -28,7 +28,7 @@ struct Connection
 		session.setKeepAlive(true);
 		session.setKeepAliveTimeout(Poco::Timespan(86400, 0));
 
-		/// TODO Таймаут.
+		/// TODO Timeout.
 	}
 
 	void init(
@@ -57,7 +57,7 @@ struct Connection
 
 	void init(const std::string & connection_string)
 	{
-		/// connection_string - строка вида DSN=ClickHouse;UID=default;PWD=password
+		/// connection_string - string of the form `DSN=ClickHouse;UID=default;PWD=password`
 
 		const char * pos = connection_string.data();
 		const char * end = pos + connection_string.size();

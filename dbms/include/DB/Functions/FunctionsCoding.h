@@ -1,12 +1,15 @@
 #pragma once
 
 #include <DB/IO/ReadBufferFromString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnArray.h>
@@ -598,7 +601,7 @@ public:
 
 		if (const auto col_in = typeid_cast<const ColumnString *>(column.get()))
 		{
-		    const auto col_res = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
+			const auto col_res = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
 			block.safeGetByPosition(result).column = col_res;
 
 			auto & vec_res = col_res->getChars();
@@ -640,7 +643,6 @@ public:
 	static constexpr auto name = "IPv4NumToString";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv4NumToString>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -649,7 +651,6 @@ public:
 	size_t getNumberOfArguments() const override { return 1; }
 	bool isInjective(const Block &) override { return true; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeUInt32 *>(&*arguments[0]))
@@ -693,7 +694,6 @@ public:
 		*(out++) = '\0';
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr & column = block.safeGetByPosition(arguments[0]).column;
@@ -744,7 +744,6 @@ public:
 	static constexpr auto name = "IPv4StringToNum";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv4StringToNum>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -752,7 +751,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
@@ -785,7 +783,6 @@ public:
 		return res;
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr & column = block.safeGetByPosition(arguments[0]).column;
@@ -827,7 +824,6 @@ public:
 	static constexpr auto name = "IPv4NumToStringClassC";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv4NumToStringClassC>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -835,7 +831,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeUInt32 *>(&*arguments[0]))
@@ -882,7 +877,6 @@ public:
 		*(out++) = '\0';
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr & column = block.safeGetByPosition(arguments[0]).column;
@@ -1272,7 +1266,6 @@ public:
 	static constexpr auto name = "hex";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionHex>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -1281,7 +1274,6 @@ public:
 	size_t getNumberOfArguments() const override { return 1; }
 	bool isInjective(const Block &) override { return true; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) &&
@@ -1491,7 +1483,6 @@ public:
 		}
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const IColumn * column = block.safeGetByPosition(arguments[0]).column.get();
@@ -1518,7 +1509,6 @@ public:
 	static constexpr auto name = "unhex";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUnhex>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -1527,7 +1517,6 @@ public:
 	size_t getNumberOfArguments() const override { return 1; }
 	bool isInjective(const Block &) override { return true; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
@@ -1561,7 +1550,6 @@ public:
 		*(out++) = '\0';
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr & column = block.safeGetByPosition(arguments[0]).column;
@@ -1624,7 +1612,6 @@ public:
 	static constexpr auto name = "bitmaskToArray";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBitmaskToArray>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -1633,7 +1620,6 @@ public:
 	size_t getNumberOfArguments() const override { return 1; }
 	bool isInjective(const Block &) override { return true; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeUInt8 *>(&*arguments[0]) &&
@@ -1697,7 +1683,7 @@ public:
 			}
 
 			out_column = std::make_shared<ColumnConstArray>(
-				col_from->size(), res, std::make_shared<DataTypeArray>(std::make_shared<typename DataTypeFromFieldType<T>::Type>()));
+				col_from->size(), res, std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>()));
 
 			return true;
 		}
@@ -1707,7 +1693,6 @@ public:
 		}
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const IColumn * in_column = block.safeGetByPosition(arguments[0]).column.get();
@@ -1735,7 +1720,6 @@ public:
 	static constexpr auto name = "toStringCutToZero";
 	static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToStringCutToZero>(); }
 
-	/// Получить имя функции.
 	String getName() const override
 	{
 		return name;
@@ -1743,7 +1727,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 1; }
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		if (!typeid_cast<const DataTypeFixedString *>(&*arguments[0]) &&
@@ -1854,7 +1837,6 @@ public:
 		}
 	}
 
-	/// Выполнить функцию над блоком.
 	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const IColumn * column = block.safeGetByPosition(arguments[0]).column.get();

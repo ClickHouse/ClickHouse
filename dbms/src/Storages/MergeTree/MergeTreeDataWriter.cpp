@@ -3,6 +3,9 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/IO/HashingWriteBuffer.h>
+#include <DB/Common/Stopwatch.h>
+#include <DB/Interpreters/PartLog.h>
+#include <DB/Interpreters/Context.h>
 #include <Poco/File.h>
 
 
@@ -28,11 +31,11 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 	size_t rows = block.rows();
 	size_t columns = block.columns();
 
-	/// Достаём столбец с датой.
+	/// We retrieve column with date.
 	const ColumnUInt16::Container_t & dates =
 		typeid_cast<const ColumnUInt16 &>(*block.getByName(data.date_column_name).column).getData();
 
-	/// Минимальная и максимальная дата.
+	/// Minimum and maximum date.
 	UInt16 min_date = std::numeric_limits<UInt16>::max();
 	UInt16 max_date = std::numeric_limits<UInt16>::min();
 	for (auto it = dates.begin(); it != dates.end(); ++it)
@@ -48,7 +51,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 	UInt16 min_month = date_lut.toFirstDayNumOfMonth(DayNum_t(min_date));
 	UInt16 max_month = date_lut.toFirstDayNumOfMonth(DayNum_t(max_date));
 
-	/// Типичный случай - когда месяц один (ничего разделять не нужно).
+	/// A typical case is when the month is one (you do not need to split anything).
 	if (min_month == max_month)
 	{
 		res.push_back(BlockWithDateInterval(block, min_date, max_date));
@@ -85,6 +88,9 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 
 MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDateInterval & block_with_dates, Int64 temp_index)
 {
+	/// For logging
+	Stopwatch stopwatch;
+
 	Block & block = block_with_dates.block;
 	UInt16 min_date = block_with_dates.min_date;
 	UInt16 max_date = block_with_dates.max_date;
@@ -99,9 +105,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 
 	size_t part_size = (block.rows() + data.index_granularity - 1) / data.index_granularity;
 
-	String tmp_part_name = "tmp_" + ActiveDataPartSet::getPartName(
+	
+	String part_name = ActiveDataPartSet::getPartName(
 		DayNum_t(min_date), DayNum_t(max_date),
 		temp_index, temp_index, 0);
+	String tmp_part_name = "tmp_" + part_name;
 
 	String part_tmp_path = data.getFullPath() + tmp_part_name + "/";
 
@@ -111,7 +119,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	new_data_part->name = tmp_part_name;
 	new_data_part->is_temp = true;
 
-	/// Если для сортировки надо вычислить некоторые столбцы - делаем это.
+	/// If you need to compute some columns to sort, we do it.
 	if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
 		data.getPrimaryExpression()->execute(block);
 
@@ -119,7 +127,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocks);
 
-	/// Сортируем.
+	/// Sort.
 	IColumn::Permutation * perm_ptr = nullptr;
 	IColumn::Permutation perm;
 	if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
@@ -156,6 +164,22 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->size_in_bytes);
+
+	if (std::shared_ptr<PartLog> part_log = context.getPartLog())
+	{
+		PartLogElement elem;
+		elem.event_time = time(0);
+
+		elem.event_type = PartLogElement::NEW_PART;
+		elem.size_in_bytes = new_data_part->size_in_bytes;
+		elem.duration_ms = stopwatch.elapsed() / 1000000;
+
+		elem.database_name = new_data_part->storage.getDatabaseName();
+		elem.table_name = new_data_part->storage.getTableName();
+		elem.part_name = part_name;
+
+		part_log->add(elem);
+	}
 
 	return new_data_part;
 }

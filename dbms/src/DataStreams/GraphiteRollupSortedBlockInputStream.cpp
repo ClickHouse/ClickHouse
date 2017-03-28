@@ -36,16 +36,16 @@ UInt32 GraphiteRollupSortedBlockInputStream::selectPrecision(const Graphite::Ret
 }
 
 
-/** Округлить unix timestamp до precision секунд.
-  * При этом, дата не должна измениться. Дата исчисляется с помощью локального часового пояса.
+/** Round the unix timestamp to seconds precision.
+  * In this case, the date should not change. The date is calculated using the local time zone.
   *
-  * Если величина округления не больше часа,
-  *  то, исходя из допущения, что часовые пояса, отличающиеся от UTC на нецелое количество часов не поддерживаются,
-  *  достаточно просто округлить unix timestamp вниз до числа, кратного 3600.
-  * А если величина округления больше,
-  *  то будем подвергать округлению число секунд от начала суток в локальном часовом поясе.
+  * If the rounding value is less than an hour,
+  *  then, assuming that time zones that differ from UTC by a non-integer number of hours are not supported,
+  *  just simply round the unix timestamp down to a multiple of 3600.
+  * And if the rounding value is greater,
+  *  then we will round down the number of seconds from the beginning of the day in the local time zone.
   *
-  * Округление более чем до суток не поддерживается.
+  * Rounding to more than a day is not supported.
   */
 static time_t roundTimeToPrecision(const DateLUTImpl & date_lut, time_t time, UInt32 precision)
 {
@@ -114,7 +114,7 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 
 	size_t merged_rows = 0;
 
-	/// Вынимаем строки в нужном порядке и кладём в merged_block, пока строк не больше max_block_size
+	/// Take rows in needed order and put them into `merged_block` until rows no more than `max_block_size`
 	while (!queue.empty())
 	{
 		TSortCursor current = queue.top();
@@ -195,7 +195,7 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 		}
 		else
 		{
-			/// Достаём из соответствующего источника следующий блок, если есть.
+			/// We get the next block from the appropriate source, if there is one.
 			fetchNextBlock(current, queue);
 		}
 	}
@@ -218,7 +218,7 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 template <class TSortCursor>
 void GraphiteRollupSortedBlockInputStream::startNextRow(ColumnPlainPtrs & merged_columns, TSortCursor & cursor)
 {
-	/// Копируем не модифицированные значения столбцов.
+	/// Copy unmodified column values.
 	for (size_t i = 0, size = unmodified_column_numbers.size(); i < size; ++i)
 	{
 		size_t j = unmodified_column_numbers[i];
@@ -232,7 +232,7 @@ void GraphiteRollupSortedBlockInputStream::startNextRow(ColumnPlainPtrs & merged
 
 void GraphiteRollupSortedBlockInputStream::finishCurrentRow(ColumnPlainPtrs & merged_columns)
 {
-	/// Вставляем вычисленные значения столбцов time, value, version.
+	/// Insert calculated values of the columns `time`, `value`, `version`.
 	merged_columns[time_column_num]->insert(UInt64(current_time_rounded));
 	merged_columns[version_column_num]->insert(current_max_version);
 

@@ -25,6 +25,7 @@
 #include <DB/Common/Increment.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/IO/Operators.h>
 
 #include <algorithm>
@@ -57,6 +58,7 @@ namespace ErrorCodes
 
 
 MergeTreeData::MergeTreeData(
+	const String & database_, const String & table_,
 	const String & full_path_, NamesAndTypesListPtr columns_,
 	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
@@ -71,12 +73,13 @@ MergeTreeData::MergeTreeData(
 	bool require_part_metadata_,
 	bool attach,
 	BrokenPartCallback broken_part_callback_)
-    : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
+	: ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
 	index_granularity(index_granularity_),
 	merging_params(merging_params_),
 	settings(settings_), primary_expr_ast(primary_expr_ast_ ? primary_expr_ast_->clone() : nullptr),
 	require_part_metadata(require_part_metadata_),
+	database_name(database_), table_name(table_),
 	full_path(full_path_), columns(columns_),
 	broken_part_callback(broken_part_callback_),
 	log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
@@ -109,14 +112,14 @@ MergeTreeData::MergeTreeData(
 
 	merging_params.check(*columns);
 
+	if (!primary_expr_ast && merging_params.mode != MergingParams::Unsorted)
+		throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
+
+	initPrimaryKey();
+
 	/// Creating directories, if not exist.
 	Poco::File(full_path).createDirectories();
 	Poco::File(full_path + "detached").createDirectory();
-
-	if (primary_expr_ast)
-		initPrimaryKey();
-	else if (merging_params.mode != MergingParams::Unsorted)
-		throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
 }
 
 
@@ -143,13 +146,16 @@ void MergeTreeData::checkNoMultidimensionalArrays(const NamesAndTypesList & colu
 
 void MergeTreeData::initPrimaryKey()
 {
+	if (!primary_expr_ast)
+		return;
+
 	/// Initialize description of sorting.
 	sort_descr.clear();
 	sort_descr.reserve(primary_expr_ast->children.size());
 	for (const ASTPtr & ast : primary_expr_ast->children)
 	{
 		String name = ast->getColumnName();
-		sort_descr.emplace_back(name, 1);
+		sort_descr.emplace_back(name, 1, 1);
 	}
 
 	primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(false);
@@ -258,7 +264,7 @@ String MergeTreeData::MergingParams::getModeName() const
 		case Graphite: 		return "Graphite";
 
 		default:
-			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(mode), ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(mode), ErrorCodes::LOGICAL_ERROR);
 	}
 }
 

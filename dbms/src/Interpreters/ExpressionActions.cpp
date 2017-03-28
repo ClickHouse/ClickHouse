@@ -534,7 +534,7 @@ void ExpressionActions::checkLimits(Block & block) const
 	const Limits & limits = settings.limits;
 	if (limits.max_temporary_columns && block.columns() > limits.max_temporary_columns)
 		throw Exception("Too many temporary columns: " + block.dumpNames()
-			+ ". Maximum: " + toString(limits.max_temporary_columns),
+			+ ". Maximum: " + limits.max_temporary_columns.toString(),
 			ErrorCodes::TOO_MUCH_TEMPORARY_COLUMNS);
 
 	if (limits.max_temporary_non_const_columns)
@@ -552,7 +552,7 @@ void ExpressionActions::checkLimits(Block & block) const
 					list_of_non_const_columns << "\n" << block.safeGetByPosition(i).name;
 
 			throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-				+ ". Maximum: " + toString(limits.max_temporary_non_const_columns),
+				+ ". Maximum: " + limits.max_temporary_non_const_columns.toString(),
 				ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
 		}
 	}

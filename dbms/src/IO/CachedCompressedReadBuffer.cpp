@@ -1,4 +1,5 @@
 #include <DB/IO/CachedCompressedReadBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
@@ -6,7 +7,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int ARGUMENT_OUT_OF_BOUND;
+	extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
 
@@ -25,14 +26,14 @@ void CachedCompressedReadBuffer::initInput()
 
 bool CachedCompressedReadBuffer::nextImpl()
 {
-	/// Проверим наличие разжатого блока в кэше, захватим владение этим блоком, если он есть.
+	/// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.
 
 	UInt128 key = cache->hash(path, file_pos);
 	owned_cell = cache->get(key);
 
 	if (!owned_cell)
 	{
-		/// Если нет - надо прочитать его из файла.
+		/// If not, read it from the file.
 		initInput();
 		file_in->seek(file_pos);
 
@@ -47,7 +48,7 @@ bool CachedCompressedReadBuffer::nextImpl()
 			owned_cell->data.resize(size_decompressed);
 			decompress(owned_cell->data.m_data, size_decompressed, size_compressed_without_checksum);
 
-			/// Положим данные в кэш.
+			/// Put data into cache.
 			cache->set(key, owned_cell);
 		}
 	}
@@ -93,7 +94,9 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
 		nextImpl();
 
 		if (offset_in_decompressed_block > working_buffer.size())
-			throw Exception("Seek position is beyond the decompressed block", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+			throw Exception("Seek position is beyond the decompressed block"
+				" (pos: " + toString(offset_in_decompressed_block) + ", block size: " + toString(working_buffer.size()) + ")",
+				ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
 		pos = working_buffer.begin() + offset_in_decompressed_block;
 		bytes -= offset();

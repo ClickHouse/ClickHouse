@@ -32,7 +32,7 @@ String MergingSortedBlockInputStream::getID() const
 	for (size_t i = 0; i < children.size(); ++i)
 		children_ids[i] = children[i]->getID();
 
-	/// Порядок не имеет значения.
+	/// The order does not matter.
 	std::sort(children_ids.begin(), children_ids.end());
 
 	for (size_t i = 0; i < children_ids.size(); ++i)
@@ -47,7 +47,7 @@ String MergingSortedBlockInputStream::getID() const
 
 void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs & merged_columns)
 {
-	/// Читаем первые блоки, инициализируем очередь.
+	/// Read the first blocks, initialize the queue.
 	if (first)
 	{
 		first = false;
@@ -83,9 +83,9 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 			initQueue(queue);
 	}
 
-	/// Инициализируем результат.
+	/// Initialize the result.
 
-	/// Клонируем структуру первого непустого блока источников.
+	/// We clone the structure of the first non-empty source block.
 	{
 		auto it = source_blocks.cbegin();
 		for (; it != source_blocks.cend(); ++it)
@@ -99,12 +99,12 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 			}
 		}
 
-		/// Если все входные блоки пустые.
+		/// If all the input blocks are empty.
 		if (it == source_blocks.cend())
 			return;
 	}
 
-	/// Проверим, что у всех блоков-источников одинаковая структура.
+	/// Let's check that all source blocks have the same structure.
 	for (auto it = source_blocks.cbegin(); it != source_blocks.cend(); ++it)
 	{
 		const SharedBlockPtr & shared_block_ptr = *it;
@@ -178,8 +178,8 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 {
 	size_t merged_rows = 0;
 
-	/** Увеличить счётчики строк.
-	  * Вернуть true, если пора закончить формировать текущий блок данных.
+	/** Increase row counters.
+	  * Return true if it's time to finish generating the current data block.
 	  */
 	auto count_row_and_check_limit = [&, this]()
 	{
@@ -202,7 +202,7 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 		return false;
 	};
 
-	/// Вынимаем строки в нужном порядке и кладём в merged_block, пока строк не больше max_block_size
+	/// Take rows in required order and put them into `merged_block`, while the rows are no more than `max_block_size`
 	while (!queue.empty())
 	{
 		TSortCursor current = queue.top();
@@ -210,14 +210,14 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 
 		while (true)
 		{
-			/** А вдруг для текущего курсора блок целиком меньше или равен, чем остальные?
-			  * Или в очереди остался только один источник данных? Тогда можно целиком взять блок текущего курсора.
+			/** And what if the block is smaller or equal than the rest for the current cursor?
+			  * Or is there only one data source left in the queue? Then you can take the entire block of current cursor.
 			  */
 			if (current.impl->isFirst() && (queue.empty() || current.totallyLessOrEquals(queue.top())))
 			{
 	//			std::cerr << "current block is totally less or equals\n";
 
-				/// Если в текущем блоке уже есть данные, то сначала вернём его. Мы попадём сюда снова при следующем вызове функции merge.
+				/// If there are already data in the current block, we first return it. We'll get here again the next time we call the merge function.
 				if (merged_rows != 0)
 				{
 	//				std::cerr << "merged rows is non-zero\n";
@@ -286,7 +286,7 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 						return;
 					}
 
-					/// Не кладём курсор обратно в очередь, а продолжаем работать с текущим курсором.
+					/// Do not put the cursor back in the queue, but continue to work with the current cursor.
 	//				std::cerr << "current is still on top, using current row\n";
 					continue;
 				}
@@ -298,7 +298,7 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 			}
 			else
 			{
-				/// Достаём из соответствующего источника следующий блок, если есть.
+				/// We get the next block from the corresponding source, if there is one.
 	//			std::cerr << "It was last row, fetching next block\n";
 				fetchNextBlock(current, queue);
 			}

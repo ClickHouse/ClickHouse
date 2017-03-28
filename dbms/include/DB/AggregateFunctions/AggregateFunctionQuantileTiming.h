@@ -8,7 +8,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
@@ -16,6 +16,7 @@
 #include <DB/AggregateFunctions/QuantilesCommon.h>
 
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 #include <ext/range.hpp>
 
@@ -23,21 +24,21 @@
 namespace DB
 {
 
-/** Вычисляет квантиль для времени в миллисекундах, меньшего 30 сек.
-  * Если значение больше 30 сек, то значение приравнивается к 30 сек.
+/** Calculates quantile for time in milliseconds, less than 30 seconds.
+  * If the value is greater than 30 seconds, the value is set to 30 seconds.
   *
-  * Если всего значений не больше примерно 5670, то вычисление точное.
+  * If total values is not greater than about 5670, then the calculation is accurate.
   *
-  * Иначе:
-  *  Если время меньше 1024 мс., то вычисление точное.
-  *  Иначе вычисление идёт с округлением до числа, кратного 16 мс.
+  * Otherwise
+  *  If time less that 1024 ms, than calculation is accurate.
+  *  Otherwise, the computation is rounded to a multiple of 16 ms.
   *
-  * Используется три разные структуры данных:
-  * - плоский массив (всех встреченных значений) фиксированной длины, выделяемый inplace, размер 64 байта; хранит 0..31 значений;
-  * - плоский массив (всех встреченных значений), выделяемый отдельно, увеличивающейся длины;
-  * - гистограмма (то есть, отображение значение -> количество), состоящая из двух частей:
-  * -- для значений от 0 до 1023 - с шагом 1;
-  * -- для значений от 1024 до 30000 - с шагом 16;
+  * Three different data structures are used:
+  * - flat array (of all met values) of fixed length, allocated inplace, size 64 bytes; Stores 0..31 values;
+  * - flat array (of all values encountered), allocated separately, increasing length;
+  * - a histogram (that is, value -> number), consisting of two parts
+  * -- for values from 0 to 1023 - in increments of 1;
+  * -- for values from 1024 to 30,000 - in increments of 16;
   */
 
 #define TINY_MAX_ELEMS 31
@@ -45,20 +46,20 @@ namespace DB
 
 namespace detail
 {
-	/** Вспомогательная структура для оптимизации в случае маленького количества значений
-	  * - плоский массив фиксированного размера "на стеке", в который кладутся все встреченные значения подряд.
-	  * Размер - 64 байта. Должна быть POD-типом (используется в union).
+	/** Helper structure for optimization in the case of a small number of values
+	  * - flat array of a fixed size "on the stack" in which all encountered values placed in succession.
+	  * Size - 64 bytes. Must be a POD-type (used in union).
 	  */
 	struct QuantileTimingTiny
 	{
-		mutable UInt16 elems[TINY_MAX_ELEMS];	/// mutable потому что сортировка массива не считается изменением состояния.
-		/// Важно, чтобы count был в конце структуры, так как начало структуры будет впоследствии перезатёрто другими объектами.
-		/// Вы должны сами инициализировать его нулём.
-		/// Почему? Поле count переиспользуется и в тех случаях, когда в union-е лежат другие структуры
-		///  (размер которых не дотягивает до этого поля.)
+		mutable UInt16 elems[TINY_MAX_ELEMS];	/// mutable because array sorting is not considered a state change.
+		/// It's important that `count` be at the end of the structure, since the beginning of the structure will be subsequently rewritten by other objects.
+		/// You must initialize it by zero itself.
+		/// Why? `count` field is reused even in cases where the union contains other structures
+		///  (the size of which falls short of this field.)
 		UInt16 count;
 
-		/// Можно использовать только пока count < TINY_MAX_ELEMS.
+		/// Can only be used while `count < TINY_MAX_ELEMS`.
 		void insert(UInt64 x)
 		{
 			if (unlikely(x > BIG_THRESHOLD))
@@ -68,7 +69,7 @@ namespace detail
 			++count;
 		}
 
-		/// Можно использовать только пока count + rhs.count <= TINY_MAX_ELEMS.
+		/// Can only be used while `count + rhs.count <= TINY_MAX_ELEMS`.
 		void merge(const QuantileTimingTiny & rhs)
 		{
 			for (size_t i = 0; i < rhs.count; ++i)
@@ -90,7 +91,7 @@ namespace detail
 			buf.readStrict(reinterpret_cast<char *>(elems), count * sizeof(elems[0]));
 		}
 
-		/** Эту функцию обязательно нужно позвать перед get-функциями. */
+		/** This function must be called before get-functions. */
 		void prepare() const
 		{
 			std::sort(elems, elems + count);
@@ -116,7 +117,7 @@ namespace detail
 			}
 		}
 
-		/// То же самое, но в случае пустого состояния возвращается NaN.
+		/// The same, but in the case of an empty state NaN is returned.
 		float getFloat(double level) const
 		{
 			return count
@@ -135,14 +136,14 @@ namespace detail
 	};
 
 
-	/** Вспомогательная структура для оптимизации в случае среднего количества значений
-	  *  - плоский массив, выделенный отдельно, в который кладутся все встреченные значения подряд.
+	/** Auxiliary structure for optimization in case of average number of values
+	  *  - a flat array, allocated separately, into which all found values are put in succession.
 	  */
 	struct QuantileTimingMedium
 	{
-		/// sizeof - 24 байта.
+		/// sizeof - 24 bytes.
 		using Array = PODArray<UInt16, 128>;
-		mutable Array elems;	/// mutable потому что сортировка массива не считается изменением состояния.
+		mutable Array elems;    /// mutable because array sorting is not considered a state change.
 
 		QuantileTimingMedium() {}
 		QuantileTimingMedium(const UInt16 * begin, const UInt16 * end) : elems(begin, end) {}
@@ -184,7 +185,7 @@ namespace detail
 					? level * elems.size()
 					: (elems.size() - 1);
 
-				/// Сортировка массива не будет считаться нарушением константности.
+		/// Sorting an array will not be considered a violation of constancy.
 				auto & array = const_cast<Array &>(elems);
 				std::nth_element(array.begin(), array.begin() + n, array.end());
 				quantile = array[n];
@@ -214,7 +215,7 @@ namespace detail
 			}
 		}
 
-		/// То же самое, но в случае пустого состояния возвращается NaN.
+		/// Same, but in the case of an empty state, NaN is returned.
 		float getFloat(double level) const
 		{
 			return !elems.empty()
@@ -240,30 +241,30 @@ namespace detail
 	#define SIZE_OF_LARGE_WITHOUT_COUNT ((SMALL_THRESHOLD + BIG_SIZE) * sizeof(UInt64))
 
 
-	/** Для большого количества значений. Размер около 22 680 байт.
+	/** For a large number of values. The size is about 22 680 bytes.
 	  */
 	class QuantileTimingLarge
 	{
 	private:
-		/// Общее число значений.
+		/// Total number of values.
 		UInt64 count;
-		/// Использование UInt64 весьма расточительно.
-		/// Но UInt32 точно не хватает, а изобретать 6-байтные значения слишком сложно.
+		/// Use of UInt64 is very wasteful.
+		/// But UInt32 is definitely not enough, and it's too hard to invent 6-byte values.
 
-		/// Число значений для каждого значения меньше small_threshold.
+		/// Number of values for each value is smaller than `small_threshold`.
 		UInt64 count_small[SMALL_THRESHOLD];
 
-		/// Число значений для каждого значения от small_threshold до big_threshold, округлённого до big_precision.
+		/// The number of values for each value from `small_threshold` to `big_threshold`, rounded to `big_precision`.
 		UInt64 count_big[BIG_SIZE];
 
-		/// Получить значение квантиля по индексу в массиве count_big.
+		/// Get value of quantile by index in array `count_big`.
 		static inline UInt16 indexInBigToValue(size_t i)
 		{
 			return (i * BIG_PRECISION) + SMALL_THRESHOLD
-				+ (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));	/// Небольшая рандомизация, чтобы не было заметно, что все значения чётные.
+				+ (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));	/// A small randomization so that it is not noticeable that all the values are even.
 		}
 
-		/// Позволяет перебрать значения гистограммы, пропуская нули.
+		/// Lets you scroll through the histogram values, skipping zeros.
 		class Iterator
 		{
 		private:
@@ -340,12 +341,12 @@ namespace detail
 
 			if (count * 2 > SMALL_THRESHOLD + BIG_SIZE)
 			{
-				/// Простая сериализация для сильно заполненного случая.
+		/// Simple serialization for a heavily dense case.
 				buf.write(reinterpret_cast<const char *>(this) + sizeof(count), SIZE_OF_LARGE_WITHOUT_COUNT);
 			}
 			else
 			{
-				/// Более компактная сериализация для разреженного случая.
+		/// More compact serialization for a sparse case.
 
 				for (size_t i = 0; i < SMALL_THRESHOLD; ++i)
 				{
@@ -365,7 +366,7 @@ namespace detail
 					}
 				}
 
-				/// Символизирует конец данных.
+		/// Symbolizes end of data.
 				writeBinary(UInt16(BIG_THRESHOLD), buf);
 			}
 		}
@@ -399,7 +400,7 @@ namespace detail
 		}
 
 
-		/// Получить значение квантиля уровня level. Уровень должен быть от 0 до 1.
+		/// Get the value of the `level` quantile. The level must be between 0 and 1.
 		UInt16 get(double level) const
 		{
 			UInt64 pos = std::ceil(count * level);
@@ -420,8 +421,8 @@ namespace detail
 			return it.isValid() ? it.key() : BIG_THRESHOLD;
 		}
 
-		/// Получить значения size квантилей уровней levels. Записать size результатов начиная с адреса result.
-		/// indices - массив индексов levels такой, что соответствующие элементы будут идти в порядке по возрастанию.
+		/// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
+		/// indices - an array of index levels such that the corresponding elements will go in ascending order.
 		template <typename ResultType>
 		void getMany(const double * levels, const size_t * indices, size_t size, ResultType * result) const
 		{
@@ -458,7 +459,7 @@ namespace detail
 			}
 		}
 
-		/// То же самое, но в случае пустого состояния возвращается NaN.
+		/// The same, but in the case of an empty state, NaN is returned.
 		float getFloat(double level) const
 		{
 			return count
@@ -478,8 +479,8 @@ namespace detail
 }
 
 
-/** sizeof - 64 байта.
-  * Если их не хватает - выделяет дополнительно до 20 КБ памяти.
+/** sizeof - 64 bytes.
+  * If there are not enough of them - allocates up to 20 KB of memory in addition.
   */
 class QuantileTiming : private boost::noncopyable
 {
@@ -519,7 +520,7 @@ private:
 		if (current_memory_tracker)
 			current_memory_tracker->alloc(sizeof(detail::QuantileTimingLarge));
 
-		/// На время копирования данных из medium, устанавливать значение large ещё нельзя (иначе оно перезатрёт часть данных).
+		/// While the data is copied from medium, it is not possible to set `large` value (otherwise it will overwrite some data).
 		detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
 
 		for (const auto & elem : medium.elems)
@@ -535,7 +536,7 @@ private:
 		if (current_memory_tracker)
 			current_memory_tracker->alloc(sizeof(detail::QuantileTimingLarge));
 
-		/// На время копирования данных из medium, устанавливать значение large ещё нельзя (иначе оно перезатрёт часть данных).
+		/// While the data is copied from `medium` it is not possible to set `large` value (otherwise it will overwrite some data).
 		detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
 
 		for (size_t i = 0; i < tiny.count; ++i)
@@ -601,7 +602,7 @@ public:
 
 	void insertWeighted(UInt64 x, size_t weight)
 	{
-		/// NOTE: Первое условие - для того, чтобы избежать переполнения.
+		/// NOTE: First condition is to avoid overflow.
 		if (weight < TINY_MAX_ELEMS && tiny.count + weight <= TINY_MAX_ELEMS)
 		{
 			for (size_t i = 0; i < weight; ++i)
@@ -610,13 +611,13 @@ public:
 		else
 		{
 			if (unlikely(tiny.count <= TINY_MAX_ELEMS))
-				tinyToLarge();	/// Для weighted варианта medium не используем - предположительно, нецелесообразно.
+				tinyToLarge();	/// For the weighted variant we do not use `medium` - presumably, it is impractical.
 
 			large->insertWeighted(x, weight);
 		}
 	}
 
-	/// NOTE Слишком сложный код.
+	/// NOTE Too complicated.
 	void merge(const QuantileTiming & rhs)
 	{
 		if (tiny.count + rhs.tiny.count <= TINY_MAX_ELEMS)
@@ -628,7 +629,7 @@ public:
 			auto kind = which();
 			auto rhs_kind = rhs.which();
 
-			/// Если то, с чем сливаем, имеет бОльшую структуру данных, то приводим текущую структуру к такой же.
+			/// If one with which we merge has a larger data structure, then we bring the current structure to the same one.
 			if (kind == Kind::Tiny && rhs_kind == Kind::Medium)
 			{
 				tinyToMedium();
@@ -644,7 +645,7 @@ public:
 				mediumToLarge();
 				kind = Kind::Large;
 			}
-			/// Случай, когда два состояния маленькие, но при их слиянии, они превратятся в средние.
+		/// Case when two states are small, but when merged, they will turn into average.
 			else if (kind == Kind::Tiny && rhs_kind == Kind::Tiny)
 			{
 				tinyToMedium();
@@ -676,8 +677,8 @@ public:
 			else
 				throw Exception("Logical error in QuantileTiming::merge function: not all cases are covered", ErrorCodes::LOGICAL_ERROR);
 
-			/// Для детерминированности, мы должны всегда переводить в large при достижении условия на размер
-			///  - независимо от порядка мерджей.
+		/// For determinism, we should always convert to `large` when size condition is reached
+		///  - regardless of merge order.
 			if (kind == Kind::Medium && unlikely(mediumIsWorthToConvertToLarge()))
 			{
 				mediumToLarge();
@@ -698,7 +699,7 @@ public:
 			large->serialize(buf);
 	}
 
-	/// Вызывается для пустого объекта.
+	/// Called for an empty object.
 	void deserialize(ReadBuffer & buf)
 	{
 		Kind kind;
@@ -720,7 +721,7 @@ public:
 		}
 	}
 
-	/// Получить значение квантиля уровня level. Уровень должен быть от 0 до 1.
+	/// Get the value of the `level` quantile. The level must be between 0 and 1.
 	UInt16 get(double level) const
 	{
 		Kind kind = which();
@@ -740,7 +741,7 @@ public:
 		}
 	}
 
-	/// Получить значения size квантилей уровней levels. Записать size результатов начиная с адреса result.
+	/// Get the size values of the quantiles of the `levels` levels. Record `size` results starting with `result` address.
 	template <typename ResultType>
 	void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result) const
 	{
@@ -761,7 +762,7 @@ public:
 		}
 	}
 
-	/// То же самое, но в случае пустого состояния возвращается NaN.
+	/// The same, but in the case of an empty state, NaN is returned.
 	float getFloat(double level) const
 	{
 		return tiny.count
@@ -842,7 +843,7 @@ public:
 };
 
 
-/** То же самое, но с двумя аргументами. Второй аргумент - "вес" (целое число) - сколько раз учитывать значение.
+/** Same, but with two arguments. The second argument is "weight" (integer) - how many times to consider the value.
   */
 template <typename ArgumentFieldType, typename WeightFieldType>
 class AggregateFunctionQuantileTimingWeighted final
@@ -902,9 +903,9 @@ public:
 };
 
 
-/** То же самое, но позволяет вычислить сразу несколько квантилей.
-  * Для этого, принимает в качестве параметров несколько уровней. Пример: quantilesTiming(0.5, 0.8, 0.9, 0.95)(ConnectTiming).
-  * Возвращает массив результатов.
+/** Same, but allows you to calculate several quantiles at once.
+  * To do this, takes several levels as parameters. Example: quantilesTiming(0.5, 0.8, 0.9, 0.95)(ConnectTiming).
+  * Returns an array of results.
   */
 template <typename ArgumentFieldType>
 class AggregateFunctionQuantilesTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTiming<ArgumentFieldType> >

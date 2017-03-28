@@ -86,7 +86,7 @@ void BlockStreamProfileInfo::calculateRowsBeforeLimit() const
 {
 	calculated_rows_before_limit = true;
 
-	/// есть ли Limit?
+	/// is there a Limit?
 	BlockStreamProfileInfos limits;
 	collectInfosForStreamsWithName("Limit", limits);
 
@@ -94,8 +94,8 @@ void BlockStreamProfileInfo::calculateRowsBeforeLimit() const
 	{
 		applied_limit = true;
 
-		/** Берём количество строчек, прочитанных ниже PartialSorting-а, если есть, или ниже Limit-а.
-		  * Это нужно, потому что сортировка может вернуть только часть строк.
+		/** Take the number of lines read below `PartialSorting`, if any, or below `Limit`.
+		  * This is necessary, because sorting can return only part of the rows.
 		  */
 		BlockStreamProfileInfos partial_sortings;
 		collectInfosForStreamsWithName("PartialSorting", partial_sortings);
@@ -108,7 +108,7 @@ void BlockStreamProfileInfo::calculateRowsBeforeLimit() const
 	}
 	else
 	{
-		/// Тогда данные о rows_before_limit могут быть в RemoteBlockInputStream-е (приехать с удалённого сервера).
+		/// Then the data about `rows_before_limit` can be in `RemoteBlockInputStream` (come from a remote server).
 		BlockStreamProfileInfos remotes;
 		collectInfosForStreamsWithName("Remote", remotes);
 

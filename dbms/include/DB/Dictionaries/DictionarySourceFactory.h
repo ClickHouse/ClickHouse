@@ -22,7 +22,7 @@ struct DictionaryStructure;
 class DictionarySourceFactory : public Singleton<DictionarySourceFactory>
 {
 public:
-    DictionarySourceFactory();
+	DictionarySourceFactory();
 
 	DictionarySourcePtr create(
 		const std::string & name, Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,

@@ -3,9 +3,13 @@
 #include <string>
 #include <vector>
 #include <memory>
-
+#include <DB/Common/config.h>
 #include <re2/re2.h>
-#include <re2_st/re2.h>
+#if USE_RE2_ST
+	#include <re2_st/re2.h>
+#else
+	#define re2_st re2
+#endif
 
 
 /** Использует два способа оптимизации регулярного выражения:

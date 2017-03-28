@@ -20,7 +20,7 @@
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
@@ -166,9 +166,9 @@ Block TinyLogBlockInputStream::readImpl()
 
 	if (finished || (!streams.empty() && streams.begin()->second->compressed.eof()))
 	{
-		/** Закрываем файлы (ещё до уничтожения объекта).
-		  * Чтобы при создании многих источников, но одновременном чтении только из нескольких,
-		  *  буферы не висели в памяти.
+		/** Close the files (before destroying the object).
+		  * When many sources are created, but simultaneously reading only a few of them,
+		  * buffers don't waste memory.
 		  */
 		finished = true;
 		streams.clear();
@@ -176,12 +176,12 @@ Block TinyLogBlockInputStream::readImpl()
 	}
 
 	{
-		/// если в папке нет файлов, то это значит, что таблица пока пуста
+		/// if there are no files in the folder, it means that the table is empty
 		if (Poco::DirectoryIterator(storage.full_path()) == Poco::DirectoryIterator())
 			return res;
 	}
 
-	/// Если файлы не открыты, то открываем их.
+	/// If the files are not open, then open them.
 	if (streams.empty())
 	{
 		for (size_t i = 0, size = column_names.size(); i < size; ++i)
@@ -192,7 +192,7 @@ Block TinyLogBlockInputStream::readImpl()
 		}
 	}
 
-	/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
+	/// Pointers to offset columns, mutual for columns from nested data structures
 	using OffsetColumns = std::map<std::string, ColumnPtr>;
 	OffsetColumns offset_columns;
 
@@ -221,7 +221,7 @@ Block TinyLogBlockInputStream::readImpl()
 			is_nullable = false;
 		}
 
-		/// Для вложенных структур запоминаем указатели на столбцы со смещениями
+		/// For nested structures, remember pointers to columns with offsets
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type))
 		{
 			String nested_name = DataTypeNested::extractNestedTableName(column.name);
@@ -229,7 +229,7 @@ Block TinyLogBlockInputStream::readImpl()
 			if (offset_columns.count(nested_name) == 0)
 				offset_columns[nested_name] = std::make_shared<ColumnArray::ColumnOffsets_t>();
 			else
-				read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
+				read_offsets = false; /// on previous iterations, the offsets were already calculated by `readData`
 
 			column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
 			if (is_nullable)
@@ -277,7 +277,7 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		/// Для массивов используются отдельные потоки для размеров.
+		/// For arrays separate threads are used for sizes.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
 			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), max_read_buffer_size)));
@@ -310,7 +310,7 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		/// Для массивов требуется сначала десериализовать размеры, а потом значения.
+		/// For arrays you first need to deserialize dimensions, and then the values.
 		if (read_offsets)
 		{
 			type_arr->deserializeOffsets(
@@ -330,7 +330,7 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 		}
 	}
 	else
-		type.deserializeBinaryBulk(column, streams[name]->compressed, limit, 0);	/// TODO Использовать avg_value_size_hint.
+		type.deserializeBinaryBulk(column, streams[name]->compressed, limit, 0);    /// TODO Use avg_value_size_hint.
 }
 
 
@@ -350,7 +350,7 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		/// Для массивов используются отдельные потоки для размеров.
+		/// For arrays separate threads are used for sizes.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
 			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size)));
@@ -382,7 +382,7 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 	}
 	else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		/// Для массивов требуется сначала сериализовать размеры, а потом значения.
+		/// For arrays, you first need to serialize the dimensions, and then the values.
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
 		if (offset_columns.count(size_name) == 0)
@@ -404,7 +404,7 @@ void TinyLogBlockOutputStream::writeSuffix()
 		return;
 	done = true;
 
-	/// Заканчиваем запись.
+	/// Finish write.
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		it->second->finalize();
 
@@ -422,7 +422,7 @@ void TinyLogBlockOutputStream::write(const Block & block)
 {
 	storage.check(block, true);
 
-	/// Множество записанных столбцов со смещениями, чтобы не писать общие для вложенных структур столбцы несколько раз
+	/// The set of written offset columns so that you do not write mutual columns for nested structures multiple times
 	OffsetColumns offset_columns;
 
 	for (size_t i = 0; i < block.columns(); ++i)
@@ -454,7 +454,7 @@ StorageTinyLog::StorageTinyLog(
 	String full_path = path + escapeForFileName(name) + '/';
 	if (!attach)
 	{
-		/// создаём файлы, если их нет
+		/// create files if they do not exist
 		if (0 != mkdir(full_path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
 			throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
 	}
@@ -529,7 +529,7 @@ void StorageTinyLog::addFile(const String & column_name, const IDataType & type,
 
 void StorageTinyLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
-	/// Переименовываем директорию с данными.
+	/// Rename directory with data.
 	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
 
 	path = new_path_to_db;

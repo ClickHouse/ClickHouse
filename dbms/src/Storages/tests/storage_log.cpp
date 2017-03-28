@@ -6,7 +6,7 @@
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Interpreters/Context.h>
 
@@ -18,7 +18,7 @@ try
 
 	const size_t rows = 10000000;
 
-	/// создаём таблицу с парой столбцов
+	/// create table with a pair of columns
 
 	NamesAndTypesListPtr names_and_types = std::make_shared<NamesAndTypesList>();
 	names_and_types->push_back(NameAndTypePair("a", std::make_shared<DataTypeUInt64>()));
@@ -26,7 +26,7 @@ try
 
 	StoragePtr table = StorageLog::create("./", "test", names_and_types);
 
-	/// пишем в неё
+	/// write into it
 	{
 		Block block;
 
@@ -58,7 +58,7 @@ try
 		out->write(block);
 	}
 
-	/// читаем из неё
+	/// read from it
 	{
 		Names column_names;
 		column_names.push_back("a");

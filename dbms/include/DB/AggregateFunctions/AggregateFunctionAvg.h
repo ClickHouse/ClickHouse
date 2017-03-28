@@ -3,7 +3,8 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 
@@ -22,7 +23,7 @@ struct AggregateFunctionAvgData
 };
 
 
-/// Считает арифметическое среднее значение чисел.
+/// Calculates arithmetic mean of numbers.
 template <typename T>
 class AggregateFunctionAvg final : public IUnaryAggregateFunction<AggregateFunctionAvgData<typename NearestFieldType<T>::Type>, AggregateFunctionAvg<T> >
 {

@@ -1,5 +1,6 @@
 #include <DB/IO/CompressedReadBufferFromFile.h>
 #include <DB/IO/createReadBufferFromFileBase.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
@@ -7,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int ARGUMENT_OUT_OF_BOUND;
+	extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
 
@@ -46,7 +47,7 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
 	{
 		bytes += offset();
 		pos = working_buffer.begin() + offset_in_decompressed_block;
-		/// bytes может переполниться и получиться отрицательным, но в count() все переполнится обратно и получится правильно.
+		/// `bytes` can overflow and get negative, but in `count()` everything will overflow back and get right.
 		bytes -= offset();
 	}
 	else
@@ -57,7 +58,9 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
 		nextImpl();
 
 		if (offset_in_decompressed_block > working_buffer.size())
-			throw Exception("Seek position is beyond the decompressed block", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+			throw Exception("Seek position is beyond the decompressed block"
+			" (pos: " + toString(offset_in_decompressed_block) + ", block size: " + toString(working_buffer.size()) + ")",
+			ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
 		pos = working_buffer.begin() + offset_in_decompressed_block;
 		bytes -= offset();
@@ -69,22 +72,22 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 {
 	size_t bytes_read = 0;
 
-	/// Если в буфере есть непрочитанные байты, то скопируем сколько надо в to.
+	/// If there are unread bytes in the buffer, then we copy needed to `to`.
 	if (pos < working_buffer.end())
 		bytes_read += read(to, std::min(static_cast<size_t>(working_buffer.end() - pos), n));
 
-	/// Если надо ещё прочитать - будем, по возможности, разжимать сразу в to.
+	/// If you need to read more - we will, if possible, decompress at once to `to`.
 	while (bytes_read < n)
 	{
 		size_t size_decompressed = 0;
 		size_t size_compressed_without_checksum = 0;
 
 		size_t new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum);
-		size_compressed = 0; /// file_in больше не указывает на конец блока в working_buffer.
+		size_compressed = 0; /// file_in no longer points to the end of the block in working_buffer.
 		if (!new_size_compressed)
 			return bytes_read;
 
-		/// Если разжатый блок помещается целиком туда, куда его надо скопировать.
+		/// If the decompressed block fits entirely where it needs to be copied.
 		if (size_decompressed <= n - bytes_read)
 		{
 			decompress(to + bytes_read, size_decompressed, size_compressed_without_checksum);

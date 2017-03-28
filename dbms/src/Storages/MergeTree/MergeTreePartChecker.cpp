@@ -3,7 +3,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/DataTypes/DataTypeArray.h>
@@ -45,7 +45,7 @@ struct Stream
 {
 public:
 	Stream(const String & path, const String & name, const DataTypePtr & type,
-	       const std::string & extension_, const std::string & mrk_extension_)
+		   const std::string & extension_, const std::string & mrk_extension_)
 		: path(path), name(name), type(type),
 		extension{extension_}, mrk_extension{mrk_extension_},
 		file_buf(path + name + extension), compressed_hashing_buf(file_buf),
@@ -54,7 +54,7 @@ public:
 		mrk_file_buf(path + name + mrk_extension),
 		mrk_hashing_buf(mrk_file_buf)
 	{
-		/// Stream создаётся для типа - внутренностей массива. Случай, когда внутренность массива - массив - не поддерживается.
+		/// Stream is created for the type - internals of the array. Case when the array's content is an array is not supported.
 		if (typeid_cast<const DataTypeArray *>(type.get()))
 			throw Exception("Multidimensional arrays are not supported", ErrorCodes::NOT_IMPLEMENTED);
 	}
@@ -98,11 +98,11 @@ public:
 		MarkInCompressedFile alternative_data_mark;
 		MarkInCompressedFile data_mark;
 
-		/// Если засечка должна быть ровно на границе блоков, нам подходит и засечка, указывающая на конец предыдущего блока,
-		///  и на начало следующего.
+		/// If the mark should be exactly at the border of blocks, we can also use a mark pointing to the end of previous block,
+		///  and the beginning of next.
 		if (!uncompressed_hashing_buf.hasPendingData())
 		{
-			/// Получим засечку, указывающую на конец предыдущего блока.
+			/// Get a mark pointing to the end of previous block.
 			has_alternative_mark = true;
 			alternative_data_mark.offset_in_compressed_file = compressed_hashing_buf.count() - uncompressing_buf.getSizeCompressed();
 			alternative_data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
@@ -112,8 +112,8 @@ public:
 
 			uncompressed_hashing_buf.next();
 
-			/// В конце файла compressed_hashing_buf.count() указывает на конец файла даже до вызова next(),
-			///  и только что выполненная проверка работает неправильно. Для простоты не будем проверять последнюю засечку.
+			/// At the end of file `compressed_hashing_buf.count()` points to the end of the file even before `calling next()`,
+			///  and the check you just performed does not work correctly. For simplicity, we will not check the last mark.
 			if (uncompressed_hashing_buf.eof())
 				return;
 		}
@@ -301,7 +301,7 @@ void MergeTreePartChecker::checkDataPart(
 
 	NamesAndTypesList columns;
 
-	/// Чексуммы из файла checksums.txt. Могут отсутствовать. Если присутствуют - впоследствии сравниваются с реальными чексуммами данных.
+	/// Checksums from file checksums.txt. May be absent. If present, they are subsequently compared with the actual data checksums.
 	MergeTreeData::DataPart::Checksums checksums_txt;
 
 	{
@@ -317,7 +317,7 @@ void MergeTreePartChecker::checkDataPart(
 		assertEOF(buf);
 	}
 
-	/// Реальные чексуммы по содержимому данных. Их несоответствие checksums_txt будет говорить о битых данных.
+	/// Real checksum based on contents of data. Their discrepancy with checksums_txt will talk about broken data.
 	MergeTreeData::DataPart::Checksums checksums_data;
 
 	size_t marks_in_primary_key = 0;

@@ -39,11 +39,11 @@ static int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct times
 #endif
 
 
-/** Пока существует объект этого класса - блокирует сигнал INT, при этом позволяет узнать, не пришёл ли он.
-  * Это нужно, чтобы можно было прервать выполнение запроса с помощью Ctrl+C.
-  * В один момент времени используйте только один экземпляр этого класса.
-  * Если метод check вернул true (пришёл сигнал), то следующие вызовы будут ждать следующий сигнал.
-  */
+/** As long as there exists an object of this class - it blocks the INT signal, at the same time it lets you know if it came.
+  * This is necessary so that you can interrupt the execution of the request with Ctrl+C.
+  * Use only one instance of this class at a time.
+  * If `check` method returns true (the signal has arrived), the next call will wait for the next signal.
+  */
 class InterruptListener
 {
 private:
@@ -94,7 +94,7 @@ public:
 		}
 	}
 
-	/// Можно прекратить блокировать сигнал раньше, чем в деструкторе.
+	/// You can stop blocking the signal earlier than in the destructor.
 	void unblock()
 	{
 		if (active)

@@ -5,7 +5,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
@@ -18,14 +18,14 @@ namespace DB
 {
 
 
-/** В качестве состояния используется массив, в который складываются все значения.
-  * NOTE Если различных значений мало, то это не оптимально.
-  * Для 8 и 16-битных значений возможно, было бы лучше использовать lookup-таблицу.
+/** The state is an array, into which all values are added.
+  * NOTE If there are few different values then this is not optimal.
+  * For 8 and 16-bit values it might be better to use a lookup table.
   */
 template <typename T>
 struct AggregateFunctionQuantileExactData
 {
-	/// Сразу будет выделена память на несколько элементов так, чтобы состояние занимало 64 байта.
+	/// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
 	static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<T>);
 
 	using Array = PODArray<T, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
@@ -33,9 +33,9 @@ struct AggregateFunctionQuantileExactData
 };
 
 
-/** Точно вычисляет квантиль.
-  * В качестве типа аргумента может быть только числовой тип (в том числе, дата и дата-с-временем).
-  * Тип результата совпадает с типом аргумента.
+/** Exactly calculates the quantile.
+  * The argument type can only be a numeric type (including date and date-time).
+  * The result type is the same as the argument type.
   */
 template <typename T>
 class AggregateFunctionQuantileExact final
@@ -99,7 +99,7 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
-		/// Сортировка массива не будет считаться нарушением константности.
+		/// Sorting an array will not be considered a violation of constancy.
 		auto & array = const_cast<typename AggregateFunctionQuantileExactData<T>::Array &>(this->data(place).array);
 
 		T quantile = T();
@@ -110,7 +110,7 @@ public:
 				? level * array.size()
 				: (array.size() - 1);
 
-			std::nth_element(array.begin(), array.begin() + n, array.end());	/// NOTE Можно придумать алгоритм radix-select.
+		std::nth_element(array.begin(), array.begin() + n, array.end());    /// NOTE You can think of the radix-select algorithm.
 
 			quantile = array[n];
 		}
@@ -120,9 +120,9 @@ public:
 };
 
 
-/** То же самое, но позволяет вычислить сразу несколько квантилей.
-  * Для этого, принимает в качестве параметров несколько уровней. Пример: quantilesExact(0.5, 0.8, 0.9, 0.95)(ConnectTiming).
-  * Возвращает массив результатов.
+/** The same, but allows you to calculate several quantiles at once.
+  * To do this, takes several levels as parameters. Example: quantilesExact(0.5, 0.8, 0.9, 0.95)(ConnectTiming).
+  * Returns an array of results.
   */
 template <typename T>
 class AggregateFunctionQuantilesExact final
@@ -181,7 +181,7 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
-		/// Сортировка массива не будет считаться нарушением константности.
+		/// Sorting an array will not be considered a violation of constancy.
 		auto & array = const_cast<typename AggregateFunctionQuantileExactData<T>::Array &>(this->data(place).array);
 
 		ColumnArray & arr_to = static_cast<ColumnArray &>(to);

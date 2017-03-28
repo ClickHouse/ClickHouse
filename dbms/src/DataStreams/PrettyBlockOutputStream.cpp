@@ -3,10 +3,13 @@
 
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/IFunction.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataStreams/PrettyBlockOutputStream.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnsNumber.h>
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
@@ -98,7 +101,7 @@ void PrettyBlockOutputStream::write(const Block & block_)
 		return;
 	}
 
-	/// Будем вставлять суда столбцы с вычисленными значениями видимых длин.
+	/// We will insert here columns with the calculated values of visible lengths.
 	Block block = block_;
 
 	size_t rows = block.rows();
@@ -108,7 +111,7 @@ void PrettyBlockOutputStream::write(const Block & block_)
 	Widths_t name_widths;
 	calculateWidths(block, max_widths, name_widths);
 
-	/// Создадим разделители
+	/// Create separators
 	std::stringstream top_separator;
 	std::stringstream middle_names_separator;
 	std::stringstream middle_values_separator;
@@ -146,10 +149,10 @@ void PrettyBlockOutputStream::write(const Block & block_)
 	std::string middle_values_separator_s = middle_values_separator.str();
 	std::string bottom_separator_s = bottom_separator.str();
 
-	/// Выведем блок
+	/// Output the block
 	writeString(top_separator_s, ostr);
 
-	/// Имена
+	/// Names
 	writeCString("┃ ", ostr);
 	for (size_t i = 0; i < columns; ++i)
 	{

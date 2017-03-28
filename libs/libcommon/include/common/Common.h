@@ -25,7 +25,10 @@ using UInt64 = Poco::UInt64;
 	using size_t = UInt64;
 #endif
 
-		
+
+/// The following is for Yandex.Metrika code. Not used by ClickHouse.
+
+
 /** Тип данных для хранения идентификатора пользователя. */
 using UserID_t = UInt64;
 
@@ -37,6 +40,12 @@ using WatchID_t = UInt64;
 
 /** Идентификатор визита */
 STRONG_TYPEDEF(UInt64, VisitID_t);
+
+namespace std
+{
+	template <> struct is_integral<VisitID_t> : std::true_type {};
+	template <> struct is_arithmetic<VisitID_t> : std::true_type {};
+}
 
 /** Идентификатор клика */
 using ClickID_t = UInt64;

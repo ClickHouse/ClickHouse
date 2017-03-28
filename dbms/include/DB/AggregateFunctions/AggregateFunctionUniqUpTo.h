@@ -3,33 +3,33 @@
 #include <DB/Core/FieldVisitors.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/AggregateFunctions/UniqVariadicHash.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeTuple.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 
 namespace DB
 {
 
 
-/** Считает количество уникальных значений до не более чем указанного в параметре.
+/** Counts the number of unique values up to no more than specified in the parameter.
   *
-  * Пример: uniqUpTo(3)(UserID)
-  * - посчитает количество уникальных посетителей, вернёт 1, 2, 3 или 4, если их >= 4.
+  * Example: uniqUpTo(3)(UserID)
+  * - will count the number of unique visitors, return 1, 2, 3 or 4 if visitors > = 4.
   *
-  * Для строк используется некриптографическая хэш-функция, за счёт чего рассчёт может быть немного неточным.
+  * For strings, a non-cryptographic hash function is used, due to which the calculation may be a bit inaccurate.
   */
 
 template <typename T>
 struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 {
-	/** Если count == threshold + 1 - это значит, что "переполнилось" (значений больше threshold).
-	  * В этом случае (например, после вызова функции merge), массив data не обязательно содержит инициализированные значения
-	  * - пример: объединяем состояние, в котором мало значений, с другим состоянием, которое переполнилось;
-	  *   тогда выставляем count в threshold + 1, а значения из другого состояния не копируем.
-	  */
+/** If count == threshold + 1 - this means that it is "overflowed" (values greater than threshold).
+  * In this case (for example, after calling the merge function), the `data` array does not necessarily contain the initialized values
+  * - example: combine a state in which there are few values, with another state that has overflowed;
+  *   then set count to `threshold + 1`, and values from another state are not copied.
+  */
 	UInt8 count = 0;
 
-	/// Данные идут после конца структуры. При вставке, делается линейный поиск.
 	T data[0];
 
 
@@ -38,23 +38,23 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 		return count;
 	}
 
-	/// threshold - для скольки элементов есть место в data.
+	/// threshold - for how many elements there is room in a `data`.
 	void insert(T x, UInt8 threshold)
 	{
-		/// Состояние уже переполнено - ничего делать не нужно.
+		/// The state is already full - nothing needs to be done.
 		if (count > threshold)
 			return;
 
-		/// Линейный поиск совпадающего элемента.
+		/// Linear search for the matching element.
 		for (size_t i = 0; i < count; ++i)
 			if (data[i] == x)
 				return;
 
-		/// Не нашли совпадающий элемент. Если есть место ещё для одного элемента - вставляем его.
+		/// Did not find the matching element. If there is room for one more element, insert it.
 		if (count < threshold)
 			data[count] = x;
 
-		/// После увеличения count, состояние может оказаться переполненным.
+		/// After increasing count, the state may be overflowed.
 		++count;
 	}
 
@@ -65,7 +65,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 
 		if (rhs.count > threshold)
 		{
-			/// Если rhs переполнено, то выставляем у текущего состояния count тоже переполненным.
+		/// If `rhs` is overflowed, then set `count` too also overflowed for the current state.
 			count = rhs.count;
 			return;
 		}
@@ -78,7 +78,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 	{
 		writeBinary(count, wb);
 
-		/// Пишем значения, только если состояние не переполнено. Иначе они не нужны, а важен только факт того, что состояние переполнено.
+		/// Write values only if the state is not overflowed. Otherwise, they are not needed, and only the fact that the state is overflowed is important.
 		if (count <= threshold)
 			wb.write(reinterpret_cast<const char *>(&data[0]), count * sizeof(data[0]));
 	}
@@ -99,13 +99,13 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 };
 
 
-/// Для строк, запоминаются их хэши.
+/// For strings, their hashes are remembered.
 template <>
 struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UInt64>
 {
 	void addImpl(const IColumn & column, size_t row_num, UInt8 threshold)
 	{
-		/// Имейте ввиду, что вычисление приближённое.
+		/// Keep in mind that calculations are approximate.
 		StringRef value = column.getDataAt(row_num);
 		insert(CityHash64(value.data, value.size), threshold);
 	}
@@ -118,7 +118,7 @@ template <typename T>
 class AggregateFunctionUniqUpTo final : public IUnaryAggregateFunction<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T> >
 {
 private:
-	UInt8 threshold = 5;	/// Значение по-умолчанию, если параметр не указан.
+	UInt8 threshold = 5;    /// Default value if the parameter is not specified.
 
 public:
 	size_t sizeOfData() const override
@@ -178,16 +178,16 @@ public:
 };
 
 
-/** Для нескольких аргументов. Для вычисления, хэширует их.
-  * Можно передать несколько аргументов как есть; также можно передать один аргумент - кортеж.
-  * Но (для возможности эффективной реализации), нельзя передать несколько аргументов, среди которых есть кортежи.
+/** For multiple arguments. To compute, hashes them.
+  * You can pass multiple arguments as is; You can also pass one argument - a tuple.
+  * But (for the possibility of effective implementation), you can not pass several arguments, among which there are tuples.
   */
 template <bool argument_is_tuple>
 class AggregateFunctionUniqUpToVariadic final : public IAggregateFunctionHelper<AggregateFunctionUniqUpToData<UInt64>>
 {
 private:
 	size_t num_args = 0;
-	UInt8 threshold = 5;	/// Значение по-умолчанию, если параметр не указан.
+	UInt8 threshold = 5;    /// Default value if the parameter is not specified.
 
 public:
 	size_t sizeOfData() const override

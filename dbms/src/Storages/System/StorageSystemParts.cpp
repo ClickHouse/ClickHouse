@@ -1,6 +1,6 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
@@ -219,7 +219,7 @@ BlockInputStreams StorageSystemParts::read(
 			else
 				all_parts = active_parts;
 
-			/// Наконец пройдем по списку кусочков.
+			/// Finally, we'll go through the list of parts.
 			for (const MergeTreeData::DataPartPtr & part : all_parts)
 			{
 				LocalDate partition_date {part->month};

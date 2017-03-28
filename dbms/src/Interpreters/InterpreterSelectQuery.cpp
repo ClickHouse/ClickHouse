@@ -73,7 +73,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 	original_max_threads = settings.max_threads;
 
 	if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
-		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
+		throw Exception("Too deep subqueries. Maximum: " + settings.limits.max_subquery_depth.toString(),
 			ErrorCodes::TOO_DEEP_SUBQUERIES);
 
 	if (is_first_select_inside_union_all)
@@ -583,7 +583,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 		if (second_stage)
 		{
-			bool need_second_distinct_pass = query.distinct;
+			bool need_second_distinct_pass;
 
 			if (need_aggregate)
 			{
@@ -601,9 +601,12 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 				need_second_distinct_pass = query.distinct && hasMoreThanOneStream();
 			}
-			else if (query.group_by_with_totals && !aggregate_final)
+			else
 			{
-				executeTotalsAndHaving(false, nullptr, aggregate_overflow_row);
+				need_second_distinct_pass = query.distinct && hasMoreThanOneStream();
+
+				if (query.group_by_with_totals && !aggregate_final)
+					executeTotalsAndHaving(false, nullptr, aggregate_overflow_row);
 			}
 
 			if (has_order_by)
@@ -636,14 +639,14 @@ void InterpreterSelectQuery::executeSingleQuery()
 			if (query.limit_length && hasMoreThanOneStream() && !query.distinct && !query.limit_by_expression_list)
 				executePreLimit();
 
-			if (need_second_distinct_pass)
+			if (union_within_single_query || stream_with_non_joined_data || need_second_distinct_pass)
 				union_within_single_query = true;
 
 			/// To execute LIMIT BY we should merge all streams together.
 			if (query.limit_by_expression_list && hasMoreThanOneStream())
 				union_within_single_query = true;
 
-			if (union_within_single_query || stream_with_non_joined_data)
+			if (union_within_single_query)
 				executeUnion();
 
 			if (streams.size() == 1)
@@ -784,7 +787,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 	if (settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
 		throw Exception("Limit for number of columns to read exceeded. "
 			"Requested: " + toString(required_columns.size())
-			+ ", maximum: " + toString(settings.limits.max_columns_to_read),
+			+ ", maximum: " + settings.limits.max_columns_to_read.toString(),
 			ErrorCodes::TOO_MUCH_COLUMNS);
 
 	size_t limit_length = 0;
@@ -1038,7 +1041,7 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
 		if (order_by_elem.collation)
 			collator = std::make_shared<Collator>(typeid_cast<const ASTLiteral &>(*order_by_elem.collation).value.get<String>());
 
-		order_descr.emplace_back(name, order_by_elem.direction, collator);
+		order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
 	}
 
 	return order_descr;

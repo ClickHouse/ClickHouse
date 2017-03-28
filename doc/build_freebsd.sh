@@ -20,10 +20,10 @@ mkdir -p ClickHouse/build
 cd ClickHouse/build
 cmake .. -DUSE_INTERNAL_GPERFTOOLS_LIBRARY=0
 #  WIP: variant with libs from ports:
-# sudo pkg install boost-libs
+# sudo pkg install devel/boost-libs devel/libzookeeper devel/libdouble-conversion archivers/zstd archivers/liblz4 devel/sparsehash devel/re2
 #  Check UNIXODBC option:
 # make -C /usr/ports/devel/poco config reinstall
-# cmake .. -DUSE_INTERNAL_BOOST_LIBRARY=0 -DUSE_INTERNAL_POCO_LIBRARY=0 -DUSE_INTERNAL_GPERFTOOLS_LIBRARY=0
+# cmake .. -DUNBUNDLED=1 -DUSE_STATIC_LIBRARIES=0 -DNO_WERROR=1
 
 make -C dbms/src/Server -j $(nproc || sysctl -n hw.ncpu || echo 2)
 cd ../..

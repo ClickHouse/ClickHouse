@@ -3,7 +3,8 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/Columns/ColumnVector.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 
@@ -20,7 +21,7 @@ struct AggregateFunctionSumData
 };
 
 
-/// Считает сумму чисел.
+/// Counts the sum of the numbers.
 template <typename T>
 class AggregateFunctionSum final : public IUnaryAggregateFunction<AggregateFunctionSumData<typename NearestFieldType<T>::Type>, AggregateFunctionSum<T> >
 {
@@ -29,7 +30,7 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return std::make_shared<typename DataTypeFromFieldType<typename NearestFieldType<T>::Type>::Type>();
+		return std::make_shared<DataTypeNumber<typename NearestFieldType<T>::Type>>();
 	}
 
 	void setArgument(const DataTypePtr & argument)

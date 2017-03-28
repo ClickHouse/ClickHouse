@@ -22,14 +22,14 @@ namespace ErrorCodes
 }
 
 
-/** Пул соединений с отказоустойчивостью.
-  * Инициализируется несколькими другими IConnectionPool-ами.
-  * При получении соединения, пытается создать или выбрать живое соединение из какого-нибудь пула,
-  *  перебирая их в некотором порядке, используя не более указанного количества попыток.
-  * Предпочитаются пулы с меньшим количеством ошибок;
-  *  пулы с одинаковым количеством ошибок пробуются в случайном порядке.
+/** Connection pool with fault tolerance.
+  * Initialized by several other IConnectionPools.
+  * When a connection is received, it tries to create or select a live connection from a pool,
+  *  fetch them in some order, using no more than the specified number of attempts.
+  * Pools with fewer errors are preferred;
+  *  pools with the same number of errors are tried in random order.
   *
-  * Замечание: если один из вложенных пулов заблокируется из-за переполнения, то этот пул тоже заблокируется.
+  * Note: if one of the nested pools is blocked due to overflow, then this pool will also be blocked.
   */
 class ConnectionPoolWithFailover : public PoolWithFailoverBase<IConnectionPool>, public IConnectionPool
 {
@@ -81,15 +81,15 @@ protected:
 	}
 
 private:
-	/** Выделяет соединение для работы. */
+	/** Allocates connection to work. */
 	Entry doGet(const Settings * settings) override
 	{
 		applyLoadBalancing(settings);
 		return Base::get(settings);
 	}
 
-	/** Выделяет до указанного количества соединений для работы.
-	  * Соединения предоставляют доступ к разным репликам одного шарда.
+	/** Allocates up to the specified number of connections to work.
+	  * Connections provide access to different replicas of one shard.
 	  */
 	std::vector<Entry> doGetMany(const Settings * settings, PoolMode pool_mode) override
 	{
@@ -117,7 +117,7 @@ private:
 	}
 
 private:
-	std::vector<size_t> hostname_differences; /// Расстояния от имени этого хоста до имен хостов пулов.
+	std::vector<size_t> hostname_differences; /// Distances from name of this host to the names of hosts of pools.
 	LoadBalancing default_load_balancing;
 };
 

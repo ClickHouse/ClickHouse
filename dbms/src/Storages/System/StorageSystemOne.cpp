@@ -1,7 +1,7 @@
 #include <DB/Common/Exception.h>
 
 #include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Storages/System/StorageSystemOne.h>
 

@@ -26,6 +26,22 @@ public:
 	bool isConst() const override { return true; }
 	virtual ColumnPtr convertToFullColumn() const = 0;
 	ColumnPtr convertToFullColumnIfConst() const override { return convertToFullColumn(); }
+
+	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+	{
+		if (size() != selector.size())
+			throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+		std::vector<size_t> counts(num_columns);
+		for (auto idx : selector)
+			++counts[idx];
+
+		Columns res(num_columns);
+		for (size_t i = 0; i < num_columns; ++i)
+			res[i] = cloneResized(counts[i]);
+
+		return res;
+	}
 };
 
 
@@ -37,7 +53,7 @@ namespace ColumnConstDetails
 		return x == y;
 	}
 
-	/// Проверяет побитовую идентичность элементов, даже если они являются NaN-ами.
+	/// Checks the bitwise identity of elements, even if they are NaNs.
 	template <>
 	inline bool equals(const Float32 & x, const Float32 & y)
 	{
@@ -52,15 +68,15 @@ namespace ColumnConstDetails
 }
 
 
-/** Столбец-константа может содержать внутри себя само значение,
-  *  или, в случае массивов, std::shared_ptr от значения-массива,
-  *  чтобы избежать проблем производительности при копировании очень больших массивов.
+/** A constant column can contain the value itself,
+  *  or, in the case of arrays, std::shared_ptr from the value-array,
+  *  to avoid performance problems when copying very large arrays.
   *
-  * T - тип значения,
-  * DataHolder - как значение хранится в таблице (либо T, либо std::shared_ptr<T>)
-  * Derived должен реализовать методы getDataFromHolderImpl - получить ссылку на значение из holder-а.
+  * T - the value type,
+  * DataHolder - how the value is stored in a table (either T, or std::shared_ptr<T>)
+  * Derived must implement the `getDataFromHolderImpl` methods - get a reference to the value from the holder.
   *
-  * Для строк и массивов реализации sizeOfField и byteSize могут быть некорректными.
+  * For rows and arrays `sizeOfField` and `byteSize` implementations may be incorrect.
   */
 template <typename T, typename DataHolder, typename Derived>
 class ColumnConstBase : public IColumnConst
@@ -158,22 +174,6 @@ public:
 		return std::make_shared<Derived>(replicated_size, data, data_type);
 	}
 
-	Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
-	{
-		if (s != selector.size())
-			throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-		std::vector<size_t> counts(num_columns);
-		for (auto idx : selector)
-			++counts[idx];
-
-		Columns res(num_columns);
-		for (size_t i = 0; i < num_columns; ++i)
-			res[i] = cloneResized(counts[i]);
-
-		return res;
-	}
-
 	size_t byteSize() const override { return sizeof(data) + sizeof(s); }
 	size_t allocatedSize() const override { return byteSize(); }
 
@@ -193,14 +193,14 @@ public:
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 	{
 		const Derived & rhs = static_cast<const Derived &>(rhs_);
-		return getDataFromHolder() < rhs.getDataFromHolder()	/// TODO: правильное сравнение NaN-ов в константных столбцах.
+		return getDataFromHolder() < rhs.getDataFromHolder()    /// TODO: correct comparison of NaNs in constant columns.
 			? -1
 			: (data == rhs.data
 				? 0
 				: 1);
 	}
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
+	void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override
 	{
 		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
@@ -212,7 +212,7 @@ public:
 };
 
 
-/** шаблон для столбцов-констант (столбцов одинаковых значений).
+/** template for columns-constants (columns of the same values).
   */
 template <typename T>
 class ColumnConst final : public ColumnConstBase<T, T, ColumnConst<T>>
@@ -224,9 +224,9 @@ private:
 	const T & getDataFromHolderImpl() const { return this->data; }
 
 public:
-	/// Для ColumnConst<Array> data_type_ должен быть ненулевым.
-	/// Для ColumnConst<Tuple> data_type_ должен быть ненулевым.
-	/// Для ColumnConst<String> data_type_ должен быть ненулевым, если тип данных FixedString.
+	/// For ColumnConst<Array> data_type_ must be not null.
+	/// For ColumnConst<Tuple> data_type_ must be not null.
+	/// For ColumnConst<String> data_type_ must be not null if data type is FixedString.
 	ColumnConst(size_t s_, const T & data_, DataTypePtr data_type_ = DataTypePtr())
 		: ColumnConstBase<T, T, ColumnConst<T>>(s_, data_, data_type_) {}
 
@@ -235,11 +235,11 @@ public:
 	StringRef getDataAtWithTerminatingZero(size_t n) const override;
 	UInt64 get64(size_t n) const override;
 
-	/** Более эффективные методы манипуляции */
+	/** More efficient methods of manipulation */
 	T & getData() { return this->data; }
 	const T & getData() const { return this->data; }
 
-	/** Преобразование из константы в полноценный столбец */
+	/** Converting from a constant to a full-blown column */
 	ColumnPtr convertToFullColumn() const override;
 
 	void getExtremes(Field & min, Field & max) const override
@@ -260,7 +260,7 @@ private:
 	const Array & getDataFromHolderImpl() const { return *data; }
 
 public:
-	/// data_type_ должен быть ненулевым.
+	/// data_type_ must be not null.
 	ColumnConst(size_t s_, const Array & data_, DataTypePtr data_type_)
 		: ColumnConstBase<Array, std::shared_ptr<Array>, ColumnConst<Array>>(s_, std::make_shared<Array>(data_), data_type_) {}
 
@@ -271,10 +271,10 @@ public:
 	StringRef getDataAtWithTerminatingZero(size_t n) const override;
 	UInt64 get64(size_t n) const override;
 
-	/** Более эффективные методы манипуляции */
+	/** More efficient methods of manipulation */
 	const Array & getData() const { return *data; }
 
-	/** Преобразование из константы в полноценный столбец */
+	/** Converting from a constant to a full-blown column */
 	ColumnPtr convertToFullColumn() const override;
 
 	void getExtremes(Field & min, Field & max) const override
@@ -295,7 +295,7 @@ private:
 	const Tuple & getDataFromHolderImpl() const { return *data; }
 
 public:
-	/// data_type_ должен быть ненулевым.
+	/// data_type_ must be not null.
 	ColumnConst(size_t s_, const Tuple & data_, DataTypePtr data_type_)
 		: ColumnConstBase<Tuple, std::shared_ptr<Tuple>, ColumnConst<Tuple>>(s_, std::make_shared<Tuple>(data_), data_type_) {}
 
@@ -306,10 +306,10 @@ public:
 	StringRef getDataAtWithTerminatingZero(size_t n) const override;
 	UInt64 get64(size_t n) const override;
 
-	/** Более эффективные методы манипуляции */
+	/** More efficient methods of manipulation */
 	const Tuple & getData() const { return *data; }
 
-	/** Преобразование из константы в полноценный столбец */
+	/** Converting from a constant to a full-blown column */
 	ColumnPtr convertToFullColumn() const override;
 
 	/** Create ColumnTuple of constant columns as elements. */
@@ -363,7 +363,7 @@ template <typename T> UInt64 ColumnConst<T>::get64(size_t n) const
 	throw Exception("Method get64 is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-/// Для элементарных типов.
+/// For elementary types.
 template <typename T> StringRef getDataAtImpl(const T & data)
 {
 	return StringRef(reinterpret_cast<const char *>(&data), sizeof(data));

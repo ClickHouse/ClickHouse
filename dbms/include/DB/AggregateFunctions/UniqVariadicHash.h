@@ -10,17 +10,17 @@
 namespace DB
 {
 
-/** Хэширует набор аргументов агрегатной функции
-  *  для вычисления количества уникальных значений
-  *  и добавляет их в множество.
+/** Hashes a set of arguments to the aggregate function
+  *  to calculate the number of unique values
+  *  and adds them to the set.
   *
-  * Четыре варианта (2 x 2):
+  * Four options (2 x 2)
   *
-  * - для приближённого вычисления, использует некриптографическую 64-битную хэш-функцию;
-  * - для точного вычисления, использует криптографическую 128-битную хэш-функцию;
+  * - for approximate calculation, uses a non-cryptographic 64-bit hash function;
+  * - for an accurate calculation, uses a cryptographic 128-bit hash function;
   *
-  * - для нескольких аргументов, переданных обычным способом;
-  * - для одного аргумента-кортежа.
+  * - for several arguments passed in the usual way;
+  * - for one argument-tuple.
   */
 
 template <bool exact, bool for_tuple>

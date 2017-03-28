@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# См. таску CONV-8849.
-# Симулируем ситуацию, когда половина одного файла с засечками не успела записаться на диск
+# See the CONV-8849.
+# Simulate a situation where half of one mark file did not have time to be written to disk
 
 path='/var/lib/clickhouse/data/mergetest/a/'
 

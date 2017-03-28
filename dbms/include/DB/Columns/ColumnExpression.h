@@ -9,8 +9,8 @@ namespace DB
 
 class ExpressionActions;
 
-/** Столбец, содержащий лямбда-выражение.
-  * Ведёт себя как столбец-константа. Содержит выражение, но не входные или выходные данные.
+/** A column containing a lambda expression.
+  * Behaves like a constant-column. Contains an expression, but not input or output data.
   */
 class ColumnExpression final : public IColumnDummy
 {

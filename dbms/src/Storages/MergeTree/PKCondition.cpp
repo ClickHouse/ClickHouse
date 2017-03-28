@@ -1,6 +1,6 @@
 #include <DB/Storages/MergeTree/PKCondition.h>
 #include <DB/Storages/MergeTree/BoolMask.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/DataTypes/DataTypeEnum.h>
@@ -38,7 +38,7 @@ String Range::toString() const
 }
 
 
-/// Пример: для строки Hello\_World%... возвращает Hello_World, а для строки %test% возвращает пустую строку.
+/// Example: for `Hello\_World% ...` string it returns `Hello_World`, and for `%test%` returns an empty string.
 static String extractFixedPrefixFromLikePattern(const String & like_pattern)
 {
 	String fixed_prefix;
@@ -69,17 +69,17 @@ static String extractFixedPrefixFromLikePattern(const String & like_pattern)
 }
 
 
-/** Для заданной строки получить минимальную строку, которая строго больше всех строк с таким префиксом,
-  *  или вернуть пустую строку, если таких строк не существует.
+/** For a given string, get a minimum string that is strictly greater than all strings with this prefix,
+  *  or return an empty string if there are no such strings.
   */
 static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix)
 {
-	/** Увеличиваем последний байт префикса на единицу. Но если он равен 255, то убираем его и увеличиваем предыдущий.
-	  * Пример (для удобства, представим, что максимальное значение байта равно z):
+	/** Increment the last byte of the prefix by one. But if it is 255, then remove it and increase the previous one.
+	  * Example (for convenience, suppose that the maximum value of byte is `z`)
 	  * abcx -> abcy
 	  * abcz -> abd
-	  * zzz -> пустая строка
-	  * z -> пустая строка
+	  * zzz -> empty string
+	  * z -> empty string
 	  */
 
 	String res = prefix;
@@ -95,7 +95,7 @@ static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & pr
 }
 
 
-/// Словарь, содержащий действия к соответствующим функциям по превращению их в RPNElement
+/// A dictionary containing actions to the corresponding functions to turn them into `RPNElement`
 const PKCondition::AtomMap PKCondition::atom_map
 {
 	{
@@ -229,8 +229,8 @@ PKCondition::PKCondition(ASTPtr & query, const Context & context, const NamesAnd
 			pk_columns[name] = i;
 	}
 
-	/** Вычисление выражений, зависящих только от констант.
-	  * Чтобы индекс мог использоваться, если написано, например WHERE Date = toDate(now()).
+	/** Evaluation of expressions that depend only on constants.
+	  * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
 	  */
 	Block block_with_constants = getBlockWithConstants(query, context, all_columns);
 
@@ -310,8 +310,8 @@ void PKCondition::traverseAST(ASTPtr & node, const Context & context, Block & bl
 			{
 				traverseAST(args[i], context, block_with_constants);
 
-				/** Первая часть условия - для корректной поддержки функций and и or произвольной арности
-				  * - в этом случае добавляется n - 1 элементов (где n - количество аргументов).
+				/** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
+				  * - in this case `n - 1` elements are added (where `n` is the number of arguments).
 				  */
 				if (i != 0 || element.function == RPNElement::FUNCTION_NOT)
 					rpn.push_back(element);
@@ -365,8 +365,8 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 	DataTypePtr & out_primary_key_column_type,
 	std::vector<const ASTFunction *> & out_functions_chain)
 {
-	/** Сам по себе, столбец первичного ключа может быть функциональным выражением. Например, intHash32(UserID).
-	  * Поэтому, используем полное имя выражения для поиска.
+	/** By itself, the primary key column can be a functional expression. for example, `intHash32(UserID)`.
+	  * Therefore, use the full name of the expression for search.
 	  */
 	String name = node->getColumnName();
 
@@ -399,7 +399,7 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 
 static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const ASTPtr & node)
 {
-	if (desired_type->getName() == src_type->getName())
+	if (desired_type->equals(*src_type))
 		return;
 
 	try
@@ -419,9 +419,9 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 
 bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
 {
-	/** Функции < > = != <= >= in notIn, у которых один агрумент константа, другой - один из столбцов первичного ключа,
-	  *  либо он же, завёрнутый в цепочку возможно-монотонных функций,
-	  *  либо константное выражение - число.
+	/** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of primary key,
+	  *  or itself, wrapped in a chain of possibly-monotone functions,
+	  *  or constant expression - number.
 	  */
 	Field const_value;
 	DataTypePtr const_type;
@@ -489,13 +489,13 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 
 		return atom_it->second(out, const_value, node);
 	}
-	else if (getConstant(node, block_with_constants, const_value, const_type))	/// Для случаев, когда написано, например, WHERE 0 AND something
+	else if (getConstant(node, block_with_constants, const_value, const_type))	/// For cases where it says, for example, `WHERE 0 AND something`
 	{
 		if (const_value.getType() == Field::Types::UInt64
 			|| const_value.getType() == Field::Types::Int64
 			|| const_value.getType() == Field::Types::Float64)
 		{
-			/// Ноль во всех типах представлен в памяти так же, как в UInt64.
+			/// Zero in all types is represented in memory the same way as in UInt64.
 			out.function = const_value.get<UInt64>()
 				? RPNElement::ALWAYS_TRUE
 				: RPNElement::ALWAYS_FALSE;
@@ -509,9 +509,9 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
 
 bool PKCondition::operatorFromAST(const ASTFunction * func, RPNElement & out)
 {
-	/// Функции AND, OR, NOT.
-	/** Также особая функция indexHint - работает так, как будто вместо вызова функции стоят просто скобки
-	  * (или, то же самое - вызов функции and из одного аргумента).
+	/// Functions AND, OR, NOT.
+	/** Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
+	  * (or, the same thing - calling the function `and` from one argument).
 	  */
 	const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
@@ -567,41 +567,41 @@ static void applyFunction(
 }
 
 
-/** Индекс представляет собой значение первичного ключа каждые index_granularity строк.
-  * Такое значение называется "засечкой" (mark). То есть, индекс состоит из засечек.
+/** Index is the value of primary key every `index_granularity` rows.
+  * This value is called a "mark". That is, the index consists of marks.
   *
-  * Первичный ключ - это кортеж.
-  * Данные отсортированы по первичному ключу в смысле лексикографического порядка над кортежами.
+  * The primary key is the tuple.
+  * The data is sorted by primary key in the sense of lexicographic order over tuples.
   *
-  * Пара засечек задаёт отрезок в отношении порядка над кортежами.
-  * Обозначим его так: [ x1 y1 z1 .. x2 y2 z2 ],
-  *  где x1 y1 z1 - кортеж - значение первичного ключа в левой границе отрезка;
-  *      x2 y2 z2 - кортеж - значение первичного ключа в правой границе отрезка.
-  * В этом отрезке лежат данные, находящиеся между этими засечками.
+  * A pair of marks specifies a segment with respect to the order over the tuples.
+  * Denote it like this: [ x1 y1 z1 .. x2 y2 z2 ],
+  *  where x1 y1 z1 - tuple - value of primary key in left border of segment;
+  *      x2 y2 z2 - tuple - value of primary key in right boundary of segment.
+  * In this section there are data between these marks.
   *
-  * Или, последняя засечка задаёт открытый справа диапазон: [ a b c .. +inf )
+  * Or, the last mark specifies the range open on the right: [ a b c .. + inf )
   *
-  * Множество всех возможных кортежей можно рассматривать как n-мерное пространство, где n - размер кортежа.
-  * Диапазон кортежей задаёт какое-то подмножество этого пространства.
+  * The set of all possible tuples can be considered as an n-dimensional space, where n is the size of the tuple.
+  * A range of tuples specifies some subset of this space.
   *
-  * Паралелограммами (также можно встретить термин "брус")
-  *  будем называть поднможества n-мерного пространства, являющиеся прямым произведением одномерных диапазонов.
-  * При этом, одномерным диапазоном может быть: точка, отрезок, интервал, полуинтервал, неограниченный слева, неограниченный справа...
+  * Parallelograms (you can also find the term "rail")
+  *  will be the subrange of an n-dimensional space that is a direct product of one-dimensional ranges.
+  * In this case, the one-dimensional range can be: a period, a segment, an interval, a half-interval, unlimited on the left, unlimited on the right ...
   *
-  * Диапазон кортежей всегда можно представить в виде объединения параллелограммов.
-  * Например, диапазон [ x1 y1 .. x2 y2 ] при x1 != x2 равен объединению следующих трёх параллелограммов:
+  * The range of tuples can always be represented as a combination of parallelograms.
+  * For example, the range [ x1 y1 .. x2 y2 ] given x1 != x2 is equal to the union of the following three parallelograms:
   * [x1]       x [y1 .. +inf)
   * (x1 .. x2) x (-inf .. +inf)
   * [x2]       x (-inf .. y2]
   *
-  * Или, например, диапазон [ x1 y1 .. +inf ] равен объединению следующих двух параллелограммов:
+  * Or, for example, the range [ x1 y1 .. +inf ] is equal to the union of the following two parallelograms:
   * [x1]         x [y1 .. +inf)
   * (x1 .. +inf) x (-inf .. +inf)
-  * Легко заметить, что это является частным случаем варианта выше.
+  * It's easy to see that this is a special case of the variant above.
   *
-  * Это важно, потому что нам легко проверять выполнимость условия над параллелограммом,
-  *  и поэтому, выполнимость условия над диапазоном кортежей будем проверять через выполнимость условия
-  *  над хотя бы одним параллелограммом, из которого этот диапазон состоит.
+  * This is important because it is easy for us to check the feasibility of the condition over the parallelogram,
+  *  and therefore, feasibility of condition on the range of tuples will be checked by feasibility of condition
+  *  over at least one parallelogram from which this range consists.
   */
 
 template <typename F>
@@ -620,12 +620,12 @@ static bool forAnyParallelogram(
 
 	if (left_bounded && right_bounded)
 	{
-		/// Пройдём по совпадающим элементам ключа.
+		/// Let's go through the matching elements of the key.
 		while (prefix_size < key_size)
 		{
 			if (key_left[prefix_size] == key_right[prefix_size])
 			{
-				/// Точечные диапазоны.
+				/// Point ranges.
 				parallelogram[prefix_size] = Range(key_left[prefix_size]);
 				++prefix_size;
 			}
@@ -741,7 +741,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
 		{
 			const Range * key_range = &key_ranges[element.key_column];
 
-			/// Случай, когда столбец обёрнут в цепочку возможно-монотонных функций.
+			/// The case when the column is wrapped in a chain of possibly monotone functions.
 			Range key_range_transformed;
 			bool evaluation_is_not_possible = false;
 			if (!element.monotonic_functions_chain.empty())
@@ -750,7 +750,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
 				DataTypePtr current_type = data_types[element.key_column];
 				for (auto & func : element.monotonic_functions_chain)
 				{
-					/// Проверяем монотонность каждой функции на конкретном диапазоне.
+					/// We check the monotonicity of each function on a specific range.
 					IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
 						*current_type.get(), key_range_transformed.left, key_range_transformed.right);
 
@@ -766,7 +766,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
 						break;
 					}
 
-					/// Вычисляем функцию.
+					/// Compute the function.
 					DataTypePtr new_type;
 					if (!key_range_transformed.left.isNull())
 						applyFunction(func, current_type, key_range_transformed.left, new_type, key_range_transformed.left);

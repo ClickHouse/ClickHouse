@@ -18,7 +18,7 @@ namespace DB
 class FlatDictionary final : public IDictionary
 {
 public:
-    FlatDictionary(const std::string & name, const DictionaryStructure & dict_struct,
+	FlatDictionary(const std::string & name, const DictionaryStructure & dict_struct,
 		DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime, bool require_nonempty);
 
 	FlatDictionary(const FlatDictionary & other);
@@ -62,6 +62,10 @@ public:
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
 	void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
+
+	void isInVectorVector(const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
+	void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
+	void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
 #define DECLARE(TYPE)\
 	void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const;
@@ -180,6 +184,12 @@ private:
 
 	template <typename T>
 	void has(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const;
+
+	template <typename ChildType, typename AncestorType>
+	void isInImpl(
+		const ChildType & child_ids,
+		const AncestorType & ancestor_ids,
+		PaddedPODArray<UInt8> & out) const;
 
 	const std::string name;
 	const DictionaryStructure dict_struct;

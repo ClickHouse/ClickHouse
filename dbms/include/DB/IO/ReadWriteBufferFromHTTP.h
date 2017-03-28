@@ -27,7 +27,8 @@ private:
 	std::string method;
 	HTTPTimeouts timeouts;
 
-	Poco::Net::HTTPClientSession session;
+	bool is_ssl;
+	std::unique_ptr<Poco::Net::HTTPClientSession> session;
 	std::istream * istr;	/// owned by session
 	std::unique_ptr<ReadBuffer> impl;
 

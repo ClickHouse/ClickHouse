@@ -1,6 +1,6 @@
 #include <DB/IO/ReadHelpers.h>
 
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -21,6 +21,7 @@
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTEnumElement.h>
 #include <DB/Parsers/ParserEnumElement.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/DataTypes/DataTypeEnum.h>

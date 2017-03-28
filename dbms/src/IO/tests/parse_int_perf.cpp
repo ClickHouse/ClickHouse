@@ -1044,7 +1044,7 @@ static const UInt8 length_table[10000] =
 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-/// Далее нули
+/// Further zeros
 };
 
 
@@ -1104,7 +1104,7 @@ void writeIntTextTable(T x, DB::WriteBuffer & buf)
 	}
 	else if (x < 0)
 	{
-		/// Особый случай для самого маленького отрицательного числа
+		/// A special case for the smallest negative number
 		if (unlikely(x == std::numeric_limits<T>::min()))
 		{
 			if (sizeof(x) == 1)
@@ -1132,12 +1132,12 @@ void writeIntTextTable(T x, DB::WriteBuffer & buf)
 UInt64 rdtsc()
 {
 #if __x86_64__
-    UInt64 val;
-    __asm__ __volatile__("rdtsc" : "=A" (val) : );
-    return val;
+	UInt64 val;
+	__asm__ __volatile__("rdtsc" : "=A" (val) : );
+	return val;
 #else
-    // TODO: make for arm
-    return 0;
+	// TODO: make for arm
+	return 0;
 #endif
 }
 

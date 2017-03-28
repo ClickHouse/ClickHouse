@@ -61,19 +61,19 @@ Block FilterBlockInputStream::readImpl()
 
 		const Block & sample_block = expression->getSampleBlock();
 
-		/// Найдём настоящую позицию столбца с фильтром в блоке.
-		/** sample_block имеет структуру результата вычисления выражения.
-		  * Но эта структура не обязательно совпадает с expression->execute(res) ниже,
-		  *  потому что выражение может применяться к блоку, который также содержит дополнительные,
-		  *  ненужные для данного выражения столбцы, но нужные позже, в следующих стадиях конвейера выполнения запроса.
-		  * Таких столбцов в sample_block не будет.
-		  * Поэтому, позиция столбца-фильтра в нём может быть другой.
+		/// Find the current position of the filter column in the block.
+		/** sample_block has the result structure of evaluating the expression.
+		  * But this structure does not necessarily match expression->execute(res) below,
+		  *  because the expression can be applied to a block that also contains additional,
+		  *  columns unnecessary for this expression, but needed later, in the next stages of the query execution pipeline.
+		  * There will be no such columns in sample_block.
+		  * Therefore, the position of the filter column in it can be different.
 		  */
 		ssize_t filter_column_in_sample_block = filter_column;
 		if (filter_column_in_sample_block == -1)
 			filter_column_in_sample_block = sample_block.getPositionByName(filter_column_name);
 
-		/// Проверим, не является ли столбец с фильтром константой, содержащей 0 или 1.
+		/// Let's check if the filter column is a constant containing 0 or 1.
 		ColumnPtr column = sample_block.safeGetByPosition(filter_column_in_sample_block).column;
 
 		if (column)
@@ -99,7 +99,7 @@ Block FilterBlockInputStream::readImpl()
 			return res;
 	}
 
-	/// Пока не встретится блок, после фильтрации которого что-нибудь останется, или поток не закончится.
+	/// Until the block is encountered, after filtering which something remains, or the stream does not end.
 	while (1)
 	{
 		res = children.back()->read();
@@ -111,7 +111,7 @@ Block FilterBlockInputStream::readImpl()
 		if (filter_always_true)
 			return res;
 
-		/// Найдём настоящую позицию столбца с фильтром в блоке.
+		/// Find the current position of the filter column in the block.
 		if (filter_column == -1)
 			filter_column = res.getPositionByName(filter_column_name);
 
@@ -135,10 +135,10 @@ Block FilterBlockInputStream::readImpl()
 		const ColumnUInt8 * column_vec = typeid_cast<const ColumnUInt8 *>(observed_column);
 		if (!column_vec)
 		{
-			/** Бывает, что на этапе анализа выражений (в sample_block) столбцы-константы ещё не вычислены,
-			  *  а сейчас - вычислены. То есть, не все случаи покрываются кодом выше.
-			  * Это происходит, если функция возвращает константу для неконстантного аргумента.
-			  * Например, функция ignore.
+			/** It happens that at the stage of analysis of expressions (in sample_block) the columns-constants have not been calculated yet,
+			  *  and now - are calculated. That is, not all cases are covered by the code above.
+			  * This happens if the function returns a constant for a non-constant argument.
+			  * For example, `ignore` function.
 			  */
 			const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(observed_column);
 
@@ -184,9 +184,9 @@ Block FilterBlockInputStream::readImpl()
 
 		const IColumn::Filter & filter = column_vec->getData();
 
-		/** Выясним, сколько строк будет в результате.
-		  * Для этого отфильтруем первый попавшийся неконстантный столбец
-		  *  или же посчитаем количество выставленных байт в фильтре.
+		/** Let's find out how many rows will be in result.
+		  * To do this, we filter out the first non-constant column
+		  *  or calculate number of set bytes in the filter.
 		  */
 		size_t first_non_constant_column = 0;
 		for (size_t i = 0; i < columns; ++i)
@@ -212,27 +212,27 @@ Block FilterBlockInputStream::readImpl()
 			filtered_rows = countBytesInFilter(filter);
 		}
 
-		/// Если текущий блок полностью отфильтровался - перейдём к следующему.
+		/// If the current block is completely filtered out, let's move on to the next one.
 		if (filtered_rows == 0)
 			continue;
 
-		/// Если через фильтр проходят все строчки.
+		/// If all the rows pass through the filter.
 		if (filtered_rows == filter.size())
 		{
-			/// Заменим столбец с фильтром на константу.
+			/// Replace the column with the filter by a constant.
 			res.safeGetByPosition(filter_column).column = std::make_shared<ColumnConstUInt8>(filtered_rows, 1);
-			/// Остальные столбцы трогать не нужно.
+			/// No need to touch the rest of the columns.
 			return res;
 		}
 
-		/// Фильтруем остальные столбцы.
+		/// Filter the rest of the columns.
 		for (size_t i = 0; i < columns; ++i)
 		{
 			ColumnWithTypeAndName & current_column = res.safeGetByPosition(i);
 
 			if (i == static_cast<size_t>(filter_column))
 			{
-				/// Сам столбец с фильтром заменяем на столбец с константой 1, так как после фильтрации в нём ничего другого не останется.
+				/// The column with filter itself is replaced with a column with a constant `1`, since after filtering, nothing else will remain.
 				current_column.column = std::make_shared<ColumnConstUInt8>(filtered_rows, 1);
 				continue;
 			}

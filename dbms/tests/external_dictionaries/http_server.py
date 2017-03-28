@@ -4,10 +4,17 @@ import socket
 import sys
 import BaseHTTPServer
 import SocketServer
+import ssl
+import argparse
 
-PORT_NUMBER = 80
-if len(sys.argv) > 1 and int(sys.argv[1]):
-    PORT_NUMBER = int(sys.argv[1])
+parser = argparse.ArgumentParser(description = 'Simple http/https server')
+parser.add_argument('--https', action='store_true', help = 'Use https')
+parser.add_argument('--port', type = int, default = 80, help = 'server port')
+parser.add_argument('--host', default = "localhost", help = 'server host')
+args = parser.parse_args()
+
+if args.https and args.port == 80:
+    args.port = 443
 
 class myHTTPServer(SocketServer.ForkingMixIn, BaseHTTPServer.HTTPServer):
     address_family = socket.AF_INET6
@@ -35,8 +42,12 @@ class myHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         return
 
 try:
-    server = myHTTPServer(('', PORT_NUMBER), myHandler)
-    print 'Started httpserver on port' , PORT_NUMBER
+    server = myHTTPServer(('', args.port), myHandler)
+    if args.https:
+        os.system('openssl req -subj "/CN={host}" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout http_server.key -out http_server.crt'.format(host=args.host))
+        server.socket = ssl.wrap_socket(server.socket, keyfile="http_server.key", certfile='http_server.crt', server_side=True)
+
+    print 'Started http' + ( 's' if args.https else '' ) + ' server on port' , args.port
     server.serve_forever()
 
 except KeyboardInterrupt:

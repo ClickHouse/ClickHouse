@@ -43,42 +43,31 @@ void check(int32_t code, const std::string path = "")
 	}
 }
 
-struct WatchWithEvent
+struct WatchContext
 {
-	/// существует все время существования WatchWithEvent
+	/// ZooKeeper instance exists for the entire WatchContext lifetime.
 	ZooKeeper & zk;
-	EventPtr event;
+	WatchCallback callback;
 	CurrentMetrics::Increment metric_increment{CurrentMetrics::ZooKeeperWatch};
 
-	WatchWithEvent(ZooKeeper & zk_, EventPtr event_) : zk(zk_), event(event_) {}
+	WatchContext(ZooKeeper & zk_, WatchCallback callback_) : zk(zk_), callback(std::move(callback_)) {}
 
-	void process(zhandle_t * zh, int32_t event_type, int32_t state, const char * path)
+	void process(int32_t event_type, int32_t state, const char * path)
 	{
-		if (event)
-		{
-			event->set();
-			event = nullptr;
-		}
+		if (callback)
+			callback(zk, event_type, state, path);
 	}
 };
 
-void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * path, void * watcherCtx)
+void ZooKeeper::processCallback(zhandle_t * zh, int type, int state, const char * path, void * watcher_ctx)
 {
-	if (watcherCtx)
-	{
-		WatchWithEvent * watch = static_cast<WatchWithEvent *>(watcherCtx);
-		watch->process(zh, type, state, path);
+	WatchContext * context = static_cast<WatchContext *>(watcher_ctx);
+	context->process(type, state, path);
 
-		/// Гарантируется, что не-ZOO_SESSION_EVENT событие придет ровно один раз (https://issues.apache.org/jira/browse/ZOOKEEPER-890).
-		if (type != ZOO_SESSION_EVENT)
-		{
-			{
-				std::lock_guard<std::mutex> lock(watch->zk.mutex);
-				watch->zk.watch_store.erase(watch);
-			}
-			delete watch;
-		}
-	}
+	/// It is guaranteed that non-ZOO_SESSION_EVENT notification will be delivered only once
+	/// (https://issues.apache.org/jira/browse/ZOOKEEPER-890)
+	if (type != ZOO_SESSION_EVENT)
+		destroyContext(context);
 }
 
 void ZooKeeper::init(const std::string & hosts_, int32_t session_timeout_ms_)
@@ -126,7 +115,7 @@ struct ZooKeeperArgs
 			else throw KeeperException(std::string("Unknown key ") + key + " in config file");
 		}
 
-		/// перемешиваем порядок хостов, чтобы сделать нагрузку на zookeeper более равномерной
+		/// Shuffle the hosts to distribute the load among ZooKeeper nodes.
 		std::random_shuffle(hosts_strings.begin(), hosts_strings.end());
 
 		for (auto & host : hosts_strings)
@@ -147,40 +136,62 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 	init(args.hosts, args.session_timeout_ms);
 }
 
-void * ZooKeeper::watchForEvent(EventPtr event)
+WatchCallback ZooKeeper::callbackForEvent(const EventPtr & event)
 {
+	WatchCallback callback;
 	if (event)
 	{
-		WatchWithEvent * res = new WatchWithEvent(*this, event);
+		callback = [e=event](ZooKeeper &, int, int, const char *) mutable
+		{
+			if (e)
+			{
+				e->set();
+				e.reset(); /// The event is set only once, even if the callback can fire multiple times due to session events.
+			}
+		};
+	}
+	return callback;
+}
+
+WatchContext * ZooKeeper::createContext(WatchCallback && callback)
+{
+	if (callback)
+	{
+		WatchContext * res = new WatchContext(*this, std::move(callback));
 		{
 			std::lock_guard<std::mutex> lock(mutex);
-			watch_store.insert(res);
-			if (watch_store.size() % 10000 == 0)
+			watch_context_store.insert(res);
+			if (watch_context_store.size() % 10000 == 0)
 			{
-				LOG_ERROR(log, "There are " << watch_store.size() << " active watches. There must be a leak somewhere.");
+				LOG_ERROR(log, "There are " << watch_context_store.size() << " active watches. There must be a leak somewhere.");
 			}
 		}
 		return res;
 	}
 	else
-	{
 		return nullptr;
-	}
 }
 
-watcher_fn ZooKeeper::callbackForEvent(EventPtr event)
+void ZooKeeper::destroyContext(WatchContext * context)
 {
-	return event ? processEvent : nullptr;
+	if (context)
+	{
+		std::lock_guard<std::mutex> lock(context->zk.mutex);
+		context->zk.watch_context_store.erase(context);
+	}
+	delete context;
 }
 
 int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
 					Stat * stat_,
-					EventPtr watch)
+					WatchCallback watch_callback)
 {
 	String_vector strings;
 	int code;
 	Stat stat;
-	code = zoo_wget_children2(impl, path.c_str(), callbackForEvent(watch), watchForEvent(watch), &strings, &stat);
+	watcher_fn watcher = watch_callback ? processCallback : nullptr;
+	WatchContext * context = createContext(std::move(watch_callback));
+	code = zoo_wget_children2(impl, path.c_str(), watcher, context, &strings, &stat);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperGetChildren);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
@@ -193,11 +204,16 @@ int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
 			res[i] = std::string(strings.data[i]);
 		deallocate_String_vector(&strings);
 	}
+	else
+	{
+		/// The call was unsuccessful, so the watch was not set. Destroy the context.
+		destroyContext(context);
+	}
 
 	return code;
 }
 Strings ZooKeeper::getChildren(
-	const std::string & path, Stat * stat, EventPtr watch)
+	const std::string & path, Stat * stat, const EventPtr & watch)
 {
 	Strings res;
 	check(tryGetChildren(path, res, stat, watch), path);
@@ -205,9 +221,9 @@ Strings ZooKeeper::getChildren(
 }
 
 int32_t ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
-								Stat * stat_, EventPtr watch)
+								Stat * stat_, const EventPtr & watch)
 {
-	int32_t code = retry(std::bind(&ZooKeeper::getChildrenImpl, this, std::ref(path), std::ref(res), stat_, watch));
+	int32_t code = retry(std::bind(&ZooKeeper::getChildrenImpl, this, std::ref(path), std::ref(res), stat_, callbackForEvent(watch)));
 
 	if (!(	code == ZOK ||
 			code == ZNONODE))
@@ -219,7 +235,7 @@ int32_t ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
 int32_t ZooKeeper::createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
 {
 	int code;
-	/// имя ноды может быть больше переданного пути, если создается sequential нода.
+	/// The name of the created node can be longer than path if the sequential node is created.
 	size_t name_buffer_size = path.size() + SEQUENTIAL_SUFFIX_SIZE;
 	char * name_buffer = new char[name_buffer_size];
 
@@ -348,19 +364,21 @@ int32_t ZooKeeper::tryRemoveEphemeralNodeWithRetries(const std::string & path, i
 	}
 	catch (const KeeperException &)
 	{
-		// Установим флажок, который говорит о том, что сессию лучше воспринимать так же как истёкшую,
-		///  чтобы кто-нибудь её пересоздал, и, в случае эфемерной ноды, нода всё-таки была удалена.
+		/// Set the flag indicating that the session is better treated as expired so that someone
+		/// recreates it and the ephemeral nodes are indeed deleted.
 		is_dirty = true;
 
 		throw;
 	}
 }
 
-int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, EventPtr watch)
+int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, WatchCallback watch_callback)
 {
 	int32_t code;
 	Stat stat;
-	code = zoo_wexists(impl, path.c_str(), callbackForEvent(watch), watchForEvent(watch), &stat);
+	watcher_fn watcher = watch_callback ? processCallback : nullptr;
+	WatchContext * context = createContext(std::move(watch_callback));
+	code = zoo_wexists(impl, path.c_str(), watcher, context, &stat);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
@@ -369,13 +387,18 @@ int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, EventPtr w
 		if (stat_)
 			*stat_ = stat;
 	}
+	if (code != ZOK && code != ZNONODE)
+	{
+		/// The call was unsuccessful, so the watch was not set. Destroy the context.
+		destroyContext(context);
+	}
 
 	return code;
 }
 
-bool ZooKeeper::exists(const std::string & path, Stat * stat_, EventPtr watch)
+bool ZooKeeper::exists(const std::string & path, Stat * stat_, const EventPtr & watch)
 {
-	int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, watch));
+	int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, callbackForEvent(watch)));
 
 	if (!(	code == ZOK ||
 			code == ZNONODE))
@@ -385,13 +408,28 @@ bool ZooKeeper::exists(const std::string & path, Stat * stat_, EventPtr watch)
 	return true;
 }
 
-int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * stat_, EventPtr watch)
+bool ZooKeeper::existsWatch(const std::string & path, Stat * stat_, const WatchCallback & watch_callback)
+{
+	int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, watch_callback));
+
+	if (!(	code == ZOK ||
+			code == ZNONODE))
+		throw KeeperException(code, path);
+	if (code == ZNONODE)
+		return false;
+	return true;
+}
+
+int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * stat_, WatchCallback watch_callback)
 {
 	char buffer[MAX_NODE_SIZE];
 	int buffer_len = MAX_NODE_SIZE;
 	int32_t code;
 	Stat stat;
-	code = zoo_wget(impl, path.c_str(), callbackForEvent(watch), watchForEvent(watch), buffer, &buffer_len, &stat);
+	watcher_fn watcher = watch_callback ? processCallback : nullptr;
+	WatchContext * context = createContext(std::move(watch_callback));
+
+	code = zoo_wget(impl, path.c_str(), watcher, context, buffer, &buffer_len, &stat);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
@@ -400,15 +438,20 @@ int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * s
 		if (stat_)
 			*stat_ = stat;
 
-		if (buffer_len < 0)		/// Такое бывает, если в ноде в ZK лежит NULL. Не будем отличать его от пустой строки.
+		if (buffer_len < 0)		/// This can happen if the node contains NULL. Do not distinguish it from the empty string.
 			res.clear();
 		else
 			res.assign(buffer, buffer_len);
 	}
+	else
+	{
+		/// The call was unsuccessful, so the watch was not set. Destroy the context.
+		destroyContext(context);
+	}
 	return code;
 }
 
-std::string ZooKeeper::get(const std::string & path, Stat * stat, EventPtr watch)
+std::string ZooKeeper::get(const std::string & path, Stat * stat, const EventPtr & watch)
 {
 	int code;
 	std::string res;
@@ -418,9 +461,23 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, EventPtr watch
 		throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
 }
 
-bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_, EventPtr watch, int * return_code)
+bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_, const EventPtr & watch, int * return_code)
 {
-	int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, watch));
+	int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, callbackForEvent(watch)));
+
+	if (!(code == ZOK ||
+			code == ZNONODE))
+		throw KeeperException(code, path);
+
+	if (return_code)
+		*return_code = code;
+
+	return code == ZOK;
+}
+
+bool ZooKeeper::tryGetWatch(const std::string & path, std::string & res, Stat * stat_, const WatchCallback & watch_callback, int * return_code)
+{
+	int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, watch_callback));
 
 	if (!(code == ZOK ||
 			code == ZNONODE))
@@ -481,17 +538,19 @@ int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
 	if (ops_.empty())
 		return ZOK;
 
-	/// Workaround ошибки в сишном клиенте ZooKeeper. Если сессия истекла, zoo_multi иногда падает с segfault.
-	/// Наверно, здесь есть race condition, и возможен segfault, если сессия истечет между этой проверкой и zoo_multi.
-	/// TODO: Посмотреть, не исправлено ли это в последней версии клиента, и исправить.
+	/// Workaround of the libzookeeper bug. If the session is expired, zoo_multi sometimes
+	/// segfaults.
+	/// Possibly, there is a race condition and a segfault is still possible if the session
+	/// expires between this check and zoo_multi call.
+	/// TODO: check if the bug is fixed in the latest version of libzookeeper.
 	if (expired())
 		return ZINVALIDSTATE;
 
 	size_t count = ops_.size();
 	OpResultsPtr out_results(new OpResults(count));
 
-	/// копируем структуру, содержащую указатели, дефолтным конструктором копирования
-	/// это безопасно, т.к. у нее нет деструктора
+	/// Copy the struct containing pointers with default copy-constructor.
+	/// It is safe because it hasn't got a destructor.
 	std::vector<zoo_op_t> ops;
 	for (const auto & op : ops_)
 		ops.push_back(*(op->data));
@@ -575,9 +634,9 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path)
 			ops.emplace_back(std::make_unique<Op::Remove>(batch.back(), -1));
 		}
 
-		/** Сначала пытаемся удалить детей более быстрым способом - сразу пачкой. Если не получилось,
-		  *  значит кто-то кроме нас удаляет этих детей, и придется удалять их по одному.
-		  */
+		/// Try to remove the children with a faster method - in bulk. If this fails,
+		/// this means someone is concurrently removing these children and we will have
+		/// to remove them one by one.
 		if (tryMulti(ops) != ZOK)
 		{
 			for (const std::string & child : batch)
@@ -608,7 +667,7 @@ void ZooKeeper::waitForDisappear(const std::string & path)
 		zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
 		std::string unused;
-		/// get вместо exists, чтобы не утек watch, если ноды уже нет.
+		/// Use get instead of exists to prevent watch leak if the node has already disappeared.
 		if (!tryGet(path, unused, nullptr, event))
 			break;
 
@@ -626,11 +685,11 @@ ZooKeeper::~ZooKeeper()
 		LOG_ERROR(&Logger::get("~ZooKeeper"), "Failed to close ZooKeeper session: " << zerror(code));
 	}
 
-	LOG_INFO(&Logger::get("~ZooKeeper"), "Removing " << watch_store.size() << " watches");
+	LOG_INFO(&Logger::get("~ZooKeeper"), "Removing " << watch_context_store.size() << " watches");
 
-	/// удаляем WatchWithEvent которые уже никогда не будут обработаны
-	for (WatchWithEvent * watch : watch_store)
-		delete watch;
+	/// Destroy WatchContexts that will never be used.
+	for (WatchContext * context : watch_context_store)
+		delete context;
 
 	LOG_INFO(&Logger::get("~ZooKeeper"), "Removed watches");
 }
@@ -683,7 +742,7 @@ ZooKeeper::GetFuture ZooKeeper::asyncGet(const std::string & path)
 				throw KeeperException(rc, path);
 
 			std::string value_str;
-			if (value_len > 0)	/// Может быть не так, если в ZK лежит NULL. Мы не отличаем его от пустой строки.
+			if (value_len > 0)	/// May be otherwise of the node contains NULL. We don't distinguish it from the empty string.
 				value_str = { value, size_t(value_len) };
 
 			return ValueAndStat{ value_str, stat ? *stat : Stat() };
@@ -716,7 +775,7 @@ ZooKeeper::TryGetFuture ZooKeeper::asyncTryGet(const std::string & path)
 				throw KeeperException(rc, path);
 
 			std::string value_str;
-			if (value_len > 0)	/// Может быть не так, если в ZK лежит NULL. Мы не отличаем его от пустой строки.
+			if (value_len > 0)	/// May be otherwise of the node contains NULL. We don't distinguish it from the empty string.
 				value_str = { value, size_t(value_len) };
 
 			return ValueAndStatAndExists{ value_str, stat ? *stat : Stat(), rc != ZNONODE };
