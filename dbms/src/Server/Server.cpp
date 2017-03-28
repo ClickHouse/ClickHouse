@@ -558,26 +558,36 @@ int Server::main(const std::vector<std::string> & args)
 
 			is_cancelled = true;
 
-			for (auto & server : servers)
-				server->stop();
-
-			const int sleep_max_ms = 1000 * config().getInt("shutdown_wait_unfinished", 5);
-			const int sleep_one_ms = 100;
-			int sleep_current_ms = 0;
 			int current_connections = 0;
-			while (sleep_current_ms < sleep_max_ms)
+			for (auto & server : servers)
 			{
-				current_connections = 0;
-				for (auto & server : servers)
-					current_connections += server->currentConnections();
-				if (!current_connections)
-					break;
-				sleep_current_ms += sleep_one_ms;
-				std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
+				server->stop();
+				current_connections += server->currentConnections();
+			}
+
+			LOG_DEBUG(log,
+				"Closed all listening sockets."
+					<< (current_connections ? " Waiting for " + std::to_string(current_connections) + " outstanding connections." : ""));
+
+			if (current_connections)
+			{
+				const int sleep_max_ms = 1000 * config().getInt("shutdown_wait_unfinished", 5);
+				const int sleep_one_ms = 100;
+				int sleep_current_ms = 0;
+				while (sleep_current_ms < sleep_max_ms)
+				{
+					current_connections = 0;
+					for (auto & server : servers)
+						current_connections += server->currentConnections();
+					if (!current_connections)
+						break;
+					sleep_current_ms += sleep_one_ms;
+					std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
+				}
 			}
 
 			LOG_DEBUG(
-				log, "Closed all connections." << (current_connections ? " But " + std::to_string(current_connections) + " remains." : ""));
+				log, "Closed connections." << (current_connections ? " But " + std::to_string(current_connections) + " remains." : ""));
 
 			main_config_reloader.reset();
 			users_config_reloader.reset();
