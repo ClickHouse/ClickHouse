@@ -105,9 +105,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 
 	size_t part_size = (block.rows() + data.index_granularity - 1) / data.index_granularity;
 
-	String tmp_part_name = "tmp_" + ActiveDataPartSet::getPartName(
+	
+	String part_name = ActiveDataPartSet::getPartName(
 		DayNum_t(min_date), DayNum_t(max_date),
 		temp_index, temp_index, 0);
+	String tmp_part_name = "tmp_" + part_name;
 
 	String part_tmp_path = data.getFullPath() + tmp_part_name + "/";
 
@@ -163,8 +165,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
 	ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->size_in_bytes);
 
-	std::shared_ptr<PartLog> part_log = context.getPartLog();
-	if (part_log)
+	if (std::shared_ptr<PartLog> part_log = context.getPartLog())
 	{
 		PartLogElement elem;
 		elem.event_time = time(0);
@@ -175,7 +176,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 
 		elem.database_name = new_data_part->storage.getDatabaseName();
 		elem.table_name = new_data_part->storage.getTableName();
-		elem.part_name = new_data_part->name.substr(4);
+		elem.part_name = part_name;
 
 		part_log->add(elem);
 	}

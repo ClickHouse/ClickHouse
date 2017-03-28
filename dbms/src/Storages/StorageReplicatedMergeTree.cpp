@@ -1198,8 +1198,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 				merger.renameMergedTemporaryPart(parts, part, entry.new_part_name, &transaction);
 				getZooKeeper()->multi(ops);		/// After long merge, get fresh ZK handle, because previous session may be expired.
 
-				std::shared_ptr<PartLog> part_log = context.getPartLog();
-				if (part_log)
+				if (std::shared_ptr<PartLog> part_log = context.getPartLog())
 				{
 					PartLogElement elem;
 					elem.event_time = time(0);
@@ -1229,7 +1228,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 						part_log->add(elem);
 					}
 				}
-				part_log.reset();
 
 				/** Removing old chunks from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
 				  */
@@ -2098,8 +2096,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 		MergeTreeData::Transaction transaction;
 		auto removed_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
 
-		std::shared_ptr<PartLog> part_log = context.getPartLog();
-		if (part_log)
+		if (std::shared_ptr<PartLog> part_log = context.getPartLog())
 		{
 			PartLogElement elem;
 			elem.event_time = time(0);
@@ -2129,7 +2126,6 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 				part_log->add(elem);
 			}
 		}
-		part_log.reset();
 
 
 		getZooKeeper()->multi(ops);
@@ -2396,8 +2392,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
 
 			unreplicated_merger->renameMergedTemporaryPart(parts, new_part, merged_name, nullptr);
 
-			std::shared_ptr<PartLog> part_log = context.getPartLog();
-			if (part_log)
+			if (std::shared_ptr<PartLog> part_log = context.getPartLog())
 			{
 				PartLogElement elem;
 				elem.event_time = time(0);
