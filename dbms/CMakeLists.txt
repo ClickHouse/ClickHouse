@@ -143,7 +143,7 @@ else()
     set(PLATFORM_LIBS "")
 endif()
 
-target_link_libraries(dbms
+target_link_libraries (dbms
 	common
 	zkutil
 	mysqlxx
@@ -159,10 +159,22 @@ target_link_libraries(dbms
 	${OPENSSL_CRYPTO_LIBRARY}
 	${Boost_SYSTEM_LIBRARY}
 	${Poco_Data_LIBRARY}
-	${Poco_DataODBC_LIBRARY}
-	${Poco_MongoDB_LIBRARY}
+)
+
+if (Poco_DataODBC_FOUND)
+	target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
+endif()
+
+if (Poco_MongoDB_FOUND)
+	target_link_libraries (dbms ${Poco_MongoDB_LIBRARY})
+endif()
+
+if (Poco_NetSSL_FOUND)
+	target_link_libraries (dbms ${Poco_NetSSL_LIBRARY})
+endif()
+
+target_link_libraries (dbms
 	${Poco_Foundation_LIBRARY}
-	${Poco_NetSSL_LIBRARY}
 	${ICU_LIBS}
 	${PLATFORM_LIBS}
 	${CMAKE_DL_LIBS}

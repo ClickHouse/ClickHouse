@@ -1,3 +1,6 @@
+#include <DB/Common/config.h>
+#if Poco_MongoDB_FOUND
+
 #include <vector>
 #include <string>
 #include <sstream>
@@ -183,3 +186,5 @@ Block MongoDBBlockInputStream::readImpl()
 }
 
 }
+
+#endif

@@ -4,10 +4,13 @@ if (NOT USE_INTERNAL_POCO_LIBRARY)
 	find_package (Poco COMPONENTS Net NetSSL XML Data Crypto DataODBC MongoDB)
 endif ()
 
-if (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY AND Poco_MongoDB_LIBRARY AND Poco_DataODBC_LIBRARY AND Poco_NetSSL_LIBRARY)
+if (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY)
 	include_directories (${Poco_INCLUDE_DIRS})
 else ()
 	set (USE_INTERNAL_POCO_LIBRARY 1)
+	set (Poco_MongoDB_FOUND 1)
+	set (Poco_DataODBC_FOUND 1)
+	set (Poco_NetSSL_FOUND 1)
 	set (Poco_INCLUDE_DIRS
 		"${ClickHouse_SOURCE_DIR}/contrib/libpoco/Foundation/include/"
 		"${ClickHouse_SOURCE_DIR}/contrib/libpoco/Util/include/"
@@ -36,4 +39,4 @@ else ()
 	include_directories (BEFORE ${Poco_INCLUDE_DIRS})
 endif ()
 
-message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${Poco_Util_LIBRARY},${Poco_Net_LIBRARY},${Poco_NetSSL_LIBRARY},${Poco_XML_LIBRARY},${Poco_Data_LIBRARY},${Poco_DataODBC_LIBRARY},${Poco_MongoDB_LIBRARY}")
+message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${Poco_Util_LIBRARY},${Poco_Net_LIBRARY},${Poco_NetSSL_LIBRARY},${Poco_XML_LIBRARY},${Poco_Data_LIBRARY},${Poco_DataODBC_LIBRARY},${Poco_MongoDB_LIBRARY}; MongoDB=${Poco_MongoDB_FOUND}, DataODBC=${Poco_DataODBC_FOUND}, NetSSL=${Poco_NetSSL_FOUND}")

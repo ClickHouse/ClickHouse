@@ -1,3 +1,5 @@
+#include <DB/Common/config.h>
+#if Poco_MongoDB_FOUND
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
 #include <Poco/MongoDB/Connection.h>
@@ -5,8 +7,13 @@
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Array.h>
 #include <Poco/Version.h>
-#include <DB/Dictionaries/MongoDBBlockInputStream.h>
+
+// only after poco
+// naming conflict:
+// Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string& value);
+// dbms/include/DB/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <DB/Dictionaries/MongoDBDictionarySource.h>
+#include <DB/Dictionaries/MongoDBBlockInputStream.h>
 #include <DB/Core/FieldVisitors.h>
 #include <ext/enumerate.hpp>
 
@@ -264,3 +271,5 @@ std::string MongoDBDictionarySource::toString() const
 }
 
 }
+
+#endif

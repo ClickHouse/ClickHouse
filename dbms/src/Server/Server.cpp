@@ -3,11 +3,9 @@
 #include <memory>
 #include <sys/resource.h>
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Net/Context.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/NetException.h>
-#include <Poco/Net/SecureServerSocket.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
@@ -34,6 +32,11 @@
 #include "StatusFile.h"
 #include "TCPHandler.h"
 
+#include <DB/Common/config.h>
+#if Poco_NetSSL_FOUND
+#include <Poco/Net/Context.h>
+#include <Poco/Net/SecureServerSocket.h>
+#endif
 
 namespace DB
 {
@@ -489,6 +492,7 @@ int Server::main(const std::vector<std::string> & args)
 			/// HTTPS
 			if (config().has("https_port"))
 			{
+#if Poco_NetSSL_FOUND
 				std::call_once(ssl_init_once, SSLInit);
 				Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("https_port"));
 				Poco::Net::SecureServerSocket http_socket(http_socket_address);
@@ -499,8 +503,11 @@ int Server::main(const std::vector<std::string> & args)
 					new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"), server_pool, http_socket, http_params));
 
 				LOG_INFO(log, "Listening https://" + http_socket_address.toString());
+#else
+				throw Exception{"https protocol disabled because poco library built without NetSSL support.",
+					ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
 			}
-
 
 			/// TCP
 			if (config().has("tcp_port"))
@@ -587,7 +594,8 @@ int Server::main(const std::vector<std::string> & args)
 			}
 
 			LOG_DEBUG(
-				log, "Closed connections." << (current_connections ? " But " + std::to_string(current_connections) + " remains." : ""));
+				log, "Closed connections." << (current_connections ? " But " + std::to_string(current_connections) + " remains." 
+					+ " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished> ." : ""));
 
 			main_config_reloader.reset();
 			users_config_reloader.reset();
