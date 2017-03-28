@@ -122,18 +122,24 @@ DictionarySourcePtr DictionarySourceFactory::create(
 		return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse",
 			sample_block, context);
 	}
-#if Poco_MongoDB_FOUND
 	else if ("mongodb" == source_type)
 	{
+#if Poco_MongoDB_FOUND
 		return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
-	}
+#else
+		throw Exception{"Dictionary source of type `mongodb` disabled because poco library built without mongodb support.",
+			ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
-#if Poco_DataODBC_FOUND
+	}
 	else if ("odbc" == source_type)
 	{
+#if Poco_DataODBC_FOUND
 		return std::make_unique<ODBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block);
-	}
+#else
+		throw Exception{"Dictionary source of type `odbc` disabled because poco library built without ODBC support.",
+			ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
+	}
 	else if ("executable" == source_type)
 	{
 		if (dict_struct.has_expressions)
