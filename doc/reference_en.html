@@ -2168,12 +2168,6 @@ Example:
 
 The columns to the left and right of the %%IN%% operator should have the same type.
 
-Exception: If there is an array to the left of IN, it checks that at least one array item belongs to the data set.
-For example, %%[1, 2, 3] IN (3, 4, 5)%% returns 1. This is somewhat illogical, but it is convenient for implementing certain Yandex.Metrica functionality.
-
-If there is an array to the left of NOT IN, it checks that at least one array item does not belong to the data set.
-For example, %%[1, 2, 3] NOT IN (3, 4, 5)%% returns 1. This is completely illogical, so don&#39;t rely on this behavior. We recommend using higher-order functions instead. Example: <span class="inline-example">arrayAll(x -> x IN (3, 4, 5), [1, 2, 3])</span> returns 0 - it checks whether all the array items belong to the data set.
-
 The IN operator and subquery may occur in any part of the query, including in aggregate functions and lambda functions.
 Example:
 
