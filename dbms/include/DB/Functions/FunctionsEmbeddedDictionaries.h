@@ -33,17 +33,15 @@ namespace ErrorCodes
   *
   * Подняться по дереву до определенного уровня.
   *  regionToCity, regionToArea, regionToCountry, ...
-  *  OSToRoot,
-  *  SEToRoot,
   *
   * Преобразовать значения в столбце
   *  regionToName
   *
   * Является ли первый идентификатор потомком второго.
-  *  regionIn, SEIn, OSIn.
+  *  regionIn
   *
   * Получить массив идентификаторов регионов, состоящий из исходного и цепочки родителей. Порядок implementation defined.
-  *  regionHierarchy, OSHierarchy, SEHierarchy.
+  *  regionHierarchy
   */
 
 

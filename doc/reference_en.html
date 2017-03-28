@@ -5749,30 +5749,6 @@ Accepts a UInt32 number - the region ID from the Yandex geobase. A string with t
 
 &#39;ua&#39; and &#39;uk&#39; mean the same thing - Ukrainian.
 
-===OSToRoot===
-
-Accepts a UInt8 number - the ID of the operating system from the Yandex.Metrica dictionary. If any OS matches the passed number, it returns a UInt8 number - the ID of the corresponding root OS (for example, it converts Windows Vista to Windows). Otherwise, returns 0.
-
-===OSIn(lhs, rhs)===
-
-Checks whether the &#39;lhs&#39; operating system belongs to the &#39;rhs&#39; operating system.
-
-===OSHierarchy===
-
-Accepts a UInt8 number - the ID of the operating system from the Yandex.Metrica dictionary. Returns an array with a hierarchy of operating systems. Similar to the &#39;regionHierarchy&#39; function.
-
-===SEToRoot===
-
-Accepts a UInt8 number - the ID of the search engine from the Yandex.Metrica dictionary. If any search engine matches the passed number, it returns a UInt8 number - the ID of the corresponding root search engine (for example, it converts Yandex.Images to Yandex). Otherwise, returns 0.
-
-===SEIn(lhs, rhs)===
-
-Checks whether the &#39;lhs&#39; search engine belongs to the &#39;rhs&#39; search engine.
-
-===SEHierarchy===
-
-Accepts a UInt8 number - the ID of the search engine from the Yandex.Metrica dictionary. Returns an array with a hierarchy of search engines. Similar to the &#39;regionHierarchy&#39; function.
-
 
 ==Functions for working with external dictionaries==
 
