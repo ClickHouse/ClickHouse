@@ -2110,7 +2110,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 			elem.merged_from.reserve(removed_parts.size());
 			for (const auto & part : removed_parts)
 			{
-				elem.merged_from.push_back(part->name)
+				elem.merged_from.push_back(part->name);
 			}
 
 			elem.database_name = part->storage.getDatabaseName();
@@ -2423,7 +2423,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
 
 				for (const auto & part : parts)
 				{
-					elem.name = part->name;
+					elem.part_name = part->name;
 					elem.size_in_bytes = part->size_in_bytes;
 					part_log->add(elem);
 				}
