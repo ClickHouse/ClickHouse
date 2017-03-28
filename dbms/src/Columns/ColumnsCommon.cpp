@@ -47,6 +47,39 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
 }
 
 
+bool memoryIsZero(const void * memory, size_t size)
+{
+	const char * pos = reinterpret_cast<const char *>(memory);
+	const char * end = pos + size;
+
+	/// Sadly, gcc-6 and clang++-3.8 do not automatically vectorize this loop (-O3, -march=native).
+
+#if __SSE__
+	const __m128 zero16 = _mm_setzero_ps();
+	const char * end64 = pos + size / 64 * 64;
+
+	/// Simple solution: no alignment.
+	/// Clang does better ordering of instructions and gives two times better performance than gcc in this case.
+	for (; pos < end64; pos += 64)
+		if (!_mm_movemask_ps(
+				_mm_and_ps(
+					_mm_and_ps(
+						_mm_cmpeq_ps(_mm_loadu_ps(reinterpret_cast<const float *>(pos)), zero16),
+						_mm_cmpeq_ps(_mm_loadu_ps(reinterpret_cast<const float *>(pos) + 1), zero16)),
+					_mm_and_ps(
+						_mm_cmpeq_ps(_mm_loadu_ps(reinterpret_cast<const float *>(pos) + 2), zero16),
+						_mm_cmpeq_ps(_mm_loadu_ps(reinterpret_cast<const float *>(pos) + 3), zero16)))))
+			return false;
+#endif
+
+	for (; pos < end; ++pos)
+		if (*pos)
+			return false;
+
+	return true;
+}
+
+
 namespace ErrorCodes
 {
 	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;

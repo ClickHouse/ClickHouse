@@ -12,6 +12,10 @@ namespace DB
 size_t countBytesInFilter(const IColumn::Filter & filt);
 
 
+/// Check if the memory region contains only zero bytes.
+bool memoryIsZero(const void * memory, size_t size);
+
+
 /// The general implementation of `filter` function for ColumnArray and ColumnString.
 template <typename T>
 void filterArraysImpl(
