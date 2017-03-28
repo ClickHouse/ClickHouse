@@ -1161,39 +1161,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 			auto part = merger.mergePartsToTemporaryPart(
 				parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get());
 
-			std::shared_ptr<PartLog> part_log = context.getPartLog();
-			if (part_log)
-			{
-				PartLogElement elem;
-				elem.event_time = time(0);
-
-				elem.merged_from.reserve(parts.size());
-				for (const auto & part : parts)
-					elem.merged_from.push_back(part->name);
-				elem.event_type = PartLogElement::MERGE_PARTS;
-				elem.size_in_bytes = part->size_in_bytes;
-
-				elem.database_name = part->storage.getDatabaseName();
-				elem.table_name = part->storage.getTableName();
-				elem.part_name = part->name;
-
-				elem.duration_ms = stopwatch.elapsed() / 1000000;
-
-				part_log->add(elem);
-
-				elem.duration_ms = 0;
-				elem.event_type = PartLogElement::REMOVE_PART;
-				elem.merged_from = Strings();
-
-				for (const auto & part : parts)
-				{
-					elem.part_name = part->name;
-					elem.size_in_bytes = part->size_in_bytes;
-					part_log->add(elem);
-				}
-			}
-			part_log.reset();
-
 			zkutil::Ops ops;
 
 			try
@@ -1230,6 +1197,39 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 			{
 				merger.renameMergedTemporaryPart(parts, part, entry.new_part_name, &transaction);
 				getZooKeeper()->multi(ops);		/// After long merge, get fresh ZK handle, because previous session may be expired.
+
+				std::shared_ptr<PartLog> part_log = context.getPartLog();
+				if (part_log)
+				{
+					PartLogElement elem;
+					elem.event_time = time(0);
+
+					elem.merged_from.reserve(parts.size());
+					for (const auto & part : parts)
+						elem.merged_from.push_back(part->name);
+					elem.event_type = PartLogElement::MERGE_PARTS;
+					elem.size_in_bytes = part->size_in_bytes;
+
+					elem.database_name = part->storage.getDatabaseName();
+					elem.table_name = part->storage.getTableName();
+					elem.part_name = part->name;
+
+					elem.duration_ms = stopwatch.elapsed() / 1000000;
+
+					part_log->add(elem);
+
+					elem.duration_ms = 0;
+					elem.event_type = PartLogElement::REMOVE_PART;
+					elem.merged_from = Strings();
+
+					for (const auto & part : parts)
+					{
+						elem.part_name = part->name;
+						elem.size_in_bytes = part->size_in_bytes;
+						part_log->add(elem);
+					}
+				}
+				part_log.reset();
 
 				/** Removing old chunks from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
 				  */
