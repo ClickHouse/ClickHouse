@@ -779,6 +779,27 @@ public:
 	}
 
 
+	bool ALWAYS_INLINE has(Key x) const
+	{
+		if (Cell::isZero(x, *this))
+			return this->hasZero();
+
+		size_t hash_value = hash(x);
+		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
+		return !buf[place_value].isZero(*this);
+	}
+
+
+	bool ALWAYS_INLINE has(Key x, size_t hash_value) const
+	{
+		if (Cell::isZero(x, *this))
+			return this->hasZero();
+
+		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
+		return !buf[place_value].isZero(*this);
+	}
+
+
 	void write(DB::WriteBuffer & wb) const
 	{
 		Cell::State::write(wb);

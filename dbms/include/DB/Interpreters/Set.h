@@ -56,10 +56,27 @@ public:
 	size_t getTotalRowCount() const { return data.getTotalRowCount(); }
 	size_t getTotalByteCount() const { return data.getTotalByteCount(); }
 
+	using ConstNullMapPtr = const PaddedPODArray<UInt8> *;
+
 private:
 	Sizes key_sizes;
 
 	SetVariants data;
+
+	/** How IN works with Nullable types.
+	  *
+	  * For simplicity reasons, all NULL values and any tuples with at least one NULL element are ignored in the Set.
+	  * And for left hand side values, that are NULLs or contain any NULLs, we return 0 (means that element is not in Set).
+	  *
+	  * If we want more standard compliant behaviour, we must return NULL
+	  *  if lhs is NULL and set is not empty or if lhs is not in set, but set contains at least one NULL.
+	  * It is more complicated with tuples.
+	  * For example,
+	  *      (1, NULL, 2) IN ((1, NULL, 3)) must return 0,
+	  *  but (1, NULL, 2) IN ((1, 1111, 2)) must return NULL.
+	  *
+	  * We have not implemented such sophisticated behaviour.
+	  */
 
 	/** Типы данных, из которых было создано множество.
 	  * При проверке на принадлежность множеству, типы проверяемых столбцов должны с ними совпадать.
@@ -77,7 +94,11 @@ private:
 	void executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const;
 
 	/// Если в левой части набор столбцов тех же типов, что элементы множества.
-	void executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8::Container_t & vec_res, bool negative) const;
+	void executeOrdinary(
+		const ConstColumnPlainPtrs & key_columns,
+		ColumnUInt8::Container_t & vec_res,
+		bool negative,
+		const PaddedPODArray<UInt8> * null_map) const;
 
 	/// Проверить не превышены ли допустимые размеры множества ключей
 	bool checkSetSizeLimits() const;
@@ -101,7 +122,16 @@ private:
 		Method & method,
 		const ConstColumnPlainPtrs & key_columns,
 		size_t rows,
-		SetVariants & variants);
+		SetVariants & variants,
+		ConstNullMapPtr null_map);
+
+	template <typename Method, bool has_null_map>
+	void insertFromBlockImplCase(
+		Method & method,
+		const ConstColumnPlainPtrs & key_columns,
+		size_t rows,
+		SetVariants & variants,
+		ConstNullMapPtr null_map);
 
 	template <typename Method>
 	void executeImpl(
@@ -109,7 +139,17 @@ private:
 		const ConstColumnPlainPtrs & key_columns,
 		ColumnUInt8::Container_t & vec_res,
 		bool negative,
-		size_t rows) const;
+		size_t rows,
+		ConstNullMapPtr null_map) const;
+
+	template <typename Method, bool has_null_map>
+	void executeImplCase(
+		Method & method,
+		const ConstColumnPlainPtrs & key_columns,
+		ColumnUInt8::Container_t & vec_res,
+		bool negative,
+		size_t rows,
+		ConstNullMapPtr null_map) const;
 
 	template <typename Method>
 	void executeArrayImpl(

@@ -1006,7 +1006,6 @@ public:
 
 	size_t getNumberOfArguments() const override { return 2; }
 
-	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
 	{
 		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
@@ -1020,7 +1019,7 @@ public:
 			const IDataType * observed_type1 = DataTypeTraits::removeNullable(arguments[1]).get();
 
 			if (!(observed_type0->behavesAsNumber() && observed_type1->behavesAsNumber())
-				&& observed_type0->getName() != observed_type1->getName())
+				&& !observed_type0->equals(*observed_type1))
 				throw Exception("Types of array and 2nd argument of function "
 					+ getName() + " must be identical up to nullability. Passed: "
 					+ arguments[0]->getName() + " and " + arguments[1]->getName() + ".",

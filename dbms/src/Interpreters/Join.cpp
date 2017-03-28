@@ -828,7 +828,7 @@ void Join::checkTypesOfKeys(const Block & block_left, const Block & block_right)
 	size_t keys_size = key_names_left.size();
 
 	for (size_t i = 0; i < keys_size; ++i)
-		if (block_left.getByName(key_names_left[i]).type->getName() != block_right.getByName(key_names_right[i]).type->getName())
+		if (!block_left.getByName(key_names_left[i]).type->equals(*block_right.getByName(key_names_right[i]).type))
 			throw Exception("Type mismatch of columns to JOIN by: "
 				+ key_names_left[i] + " " + block_left.getByName(key_names_left[i]).type->getName() + " at left, "
 				+ key_names_right[i] + " " + block_right.getByName(key_names_right[i]).type->getName() + " at right",
