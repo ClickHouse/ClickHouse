@@ -258,7 +258,7 @@ struct Settings
 	  *  will skip until next line and continue. \
 	  */ \
 	M(SettingUInt64, input_format_allow_errors_num, 0) \
-	M(SettingFloat, input_format_allow_errors_ratio, 0) \
+	M(SettingFloat, input_format_allow_errors_ratio, 0)
 
 	/// Possible limits for query execution.
 	Limits limits;

@@ -66,12 +66,13 @@ WriteBufferFromFile::WriteBufferFromFile(
 /// Use pre-opened file descriptor.
 WriteBufferFromFile::WriteBufferFromFile(
 	int fd,
+	const std::string & original_file_name,
 	size_t buf_size,
-	int flags,
-	mode_t mode,
 	char * existing_memory,
 	size_t alignment)
-	: WriteBufferFromFileDescriptor(fd, buf_size, existing_memory, alignment), file_name("(fd = " + toString(fd) + ")")
+	:
+	WriteBufferFromFileDescriptor(fd, buf_size, existing_memory, alignment),
+	file_name(original_file_name.empty() ? "(fd = " + toString(fd) + ")" : original_file_name)
 {
 }
 
