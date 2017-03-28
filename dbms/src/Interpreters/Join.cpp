@@ -56,7 +56,7 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & 
 	}
 
 	/// Если есть один числовой ключ, который помещается в 64 бита
-	if (keys_size == 1)
+	if (keys_size == 1 && key_columns[0]->isNumericNotNullable())
 	{
 		size_t size_of_field = key_columns[0]->sizeOfField();
 		if (size_of_field == 1)
@@ -115,7 +115,7 @@ static size_t getTotalRowCountImpl(const Maps & maps, Join::Type type)
 		case Join::Type::CROSS:			return 0;
 
 	#define M(NAME) \
-		case Join::Type::NAME: return maps.NAME->size();
+		case Join::Type::NAME: return maps.NAME ? maps.NAME->size() : 0;
 		APPLY_FOR_JOIN_VARIANTS(M)
 	#undef M
 
@@ -133,7 +133,7 @@ static size_t getTotalByteCountImpl(const Maps & maps, Join::Type type)
 		case Join::Type::CROSS:			return 0;
 
 	#define M(NAME) \
- 		case Join::Type::NAME: return maps.NAME->getBufferSizeInBytes();
+		case Join::Type::NAME: return maps.NAME ? maps.NAME->getBufferSizeInBytes() : 0;
 		APPLY_FOR_JOIN_VARIANTS(M)
 	#undef M
 
