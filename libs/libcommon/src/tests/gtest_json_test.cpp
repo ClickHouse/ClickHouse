@@ -1,5 +1,3 @@
-#define BOOST_TEST_MODULE JSON_MODULE
-
 #include <vector>
 #include <string>
 #include <exception>
@@ -9,7 +7,7 @@
 
 using namespace std::literals::string_literals;
 
-#include <boost/test/included/unit_test.hpp>
+#include <gtest/gtest.h>
 
 enum class ResultType
 {
@@ -24,7 +22,7 @@ struct GetStringTestRecord
 	std::string result;
 };
 
-void test()
+TEST(JSON_Suite, SimpleTest)
 {
 	std::vector<GetStringTestRecord> test_data =
 	{
@@ -645,25 +643,14 @@ void test()
 			{
 				JSON j(r.input.c_str(), r.input.c_str() + r.input.size());
 				
-				BOOST_CHECK_EQUAL(j.getString(), r.result);
-				BOOST_CHECK(r.result_type == ResultType::Return);
+				ASSERT_EQ(j.getString(), r.result);
+				ASSERT_TRUE(r.result_type == ResultType::Return);
 			}
 			catch (JSONException & e)
 			{
-				BOOST_CHECK(r.result_type == ResultType::Throw);
-				BOOST_CHECK_EQUAL(e.message(), r.result);
+				ASSERT_TRUE(r.result_type == ResultType::Throw);
+				ASSERT_EQ(e.message(), r.result);
 			}
 		}
 	}
 }
-
-BOOST_AUTO_TEST_SUITE(JSON_Suite)
-
-BOOST_AUTO_TEST_CASE(SimpleTest)
-{
-	test();
-}
-
-BOOST_AUTO_TEST_SUITE_END()
-
-

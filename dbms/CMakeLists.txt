@@ -88,7 +88,7 @@ if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
 		src/IO/WriteBufferAIO.cpp)
 endif()
 
-if (USE_STATIC_LIBRARIES)
+if (MAKE_STATIC_LIBRARIES)
 	add_library(dbms ${dbms_headers} ${dbms_sources})
 else ()
 	add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
@@ -143,7 +143,7 @@ else()
     set(PLATFORM_LIBS "")
 endif()
 
-target_link_libraries(dbms
+target_link_libraries (dbms
 	common
 	zkutil
 	mysqlxx
@@ -159,13 +159,37 @@ target_link_libraries(dbms
 	${OPENSSL_CRYPTO_LIBRARY}
 	${Boost_SYSTEM_LIBRARY}
 	${Poco_Data_LIBRARY}
-	${Poco_DataODBC_LIBRARY}
-	${Poco_MongoDB_LIBRARY}
+)
+
+if (Poco_DataODBC_FOUND)
+	target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
+endif()
+
+if (Poco_MongoDB_FOUND)
+	target_link_libraries (dbms ${Poco_MongoDB_LIBRARY})
+endif()
+
+if (Poco_NetSSL_FOUND)
+	target_link_libraries (dbms ${Poco_NetSSL_LIBRARY})
+endif()
+
+target_link_libraries (dbms
 	${Poco_Foundation_LIBRARY}
-	${Poco_NetSSL_LIBRARY}
 	${ICU_LIBS}
 	${PLATFORM_LIBS}
 	${CMAKE_DL_LIBS}
 	${LTDL_LIB}
 	${CMAKE_THREAD_LIBS_INIT}
-	)
+)
+
+target_include_directories (dbms
+	INTERFACE include
+)
+
+if (ENABLE_TESTS)
+	# attach all dbms gtest sources
+	grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
+	add_executable(unit_tests_dbms ${dbms_gtest_sources})
+	target_link_libraries(unit_tests_dbms gtest_main dbms)
+	add_check(unit_tests_dbms)
+endif()

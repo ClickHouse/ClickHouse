@@ -7,8 +7,6 @@
 #include <DB/Dictionaries/ClickHouseDictionarySource.h>
 #include <DB/Dictionaries/ExecutableDictionarySource.h>
 #include <DB/Dictionaries/HTTPDictionarySource.h>
-#include <DB/Dictionaries/MongoDBDictionarySource.h>
-#include <DB/Dictionaries/ODBCDictionarySource.h>
 #include <DB/DataTypes/DataTypesNumber.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/Core/FieldVisitors.h>
@@ -16,7 +14,16 @@
 #include <DB/IO/HTTPCommon.h>
 #include <memory>
 #include <mutex>
-#include <Poco/Data/ODBC/Connector.h>
+
+#include <DB/Common/config.h>
+#if Poco_MongoDB_FOUND
+	#include <DB/Dictionaries/MongoDBDictionarySource.h>
+#endif
+#if Poco_DataODBC_FOUND
+	#include <Poco/Data/ODBC/Connector.h>
+	#include <DB/Dictionaries/ODBCDictionarySource.h>
+#endif
+
 
 
 namespace DB
@@ -73,7 +80,9 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 
 DictionarySourceFactory::DictionarySourceFactory()
 {
+#if Poco_DataODBC_FOUND
 	Poco::Data::ODBC::Connector::registerConnector();
+#endif
 }
 
 
@@ -115,11 +124,21 @@ DictionarySourcePtr DictionarySourceFactory::create(
 	}
 	else if ("mongodb" == source_type)
 	{
+#if Poco_MongoDB_FOUND
 		return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
+#else
+		throw Exception{"Dictionary source of type `mongodb` disabled because poco library built without mongodb support.",
+			ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
 	}
 	else if ("odbc" == source_type)
 	{
+#if Poco_DataODBC_FOUND
 		return std::make_unique<ODBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block);
+#else
+		throw Exception{"Dictionary source of type `odbc` disabled because poco library built without ODBC support.",
+			ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
 	}
 	else if ("executable" == source_type)
 	{
@@ -138,8 +157,10 @@ DictionarySourcePtr DictionarySourceFactory::create(
 				"Dictionary source of type `http` does not support attribute expressions",
 				ErrorCodes::LOGICAL_ERROR};
 
+#if Poco_NetSSL_FOUND
 		// Used for https queries
 		std::call_once(ssl_init_once, SSLInit);
+#endif
 
 		return std::make_unique<HTTPDictionarySource>(dict_struct, config, config_prefix + ".http", sample_block, context);
 	}

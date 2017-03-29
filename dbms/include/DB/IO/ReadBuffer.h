@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <algorithm>
+#include <memory>
 
 #include <DB/Common/Exception.h>
 #include <DB/IO/BufferBase.h>
@@ -160,6 +161,9 @@ private:
 	  */
 	virtual bool nextImpl() { return false; };
 };
+
+
+using ReadBufferPtr = std::shared_ptr<ReadBuffer>;
 
 
 }
