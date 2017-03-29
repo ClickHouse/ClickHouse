@@ -16,7 +16,7 @@ namespace
 /// Then the method below endows the result, which is nullable, with a null
 /// byte map that is determined by OR-ing the null byte maps of the nullable
 /// arguments.
-void createNullValuesByteMap(Block & block, const ColumnNumbers & args, size_t result)
+void createNullMap(Block & block, const ColumnNumbers & args, size_t result)
 {
 	ColumnNullable & res_col = static_cast<ColumnNullable &>(*block.getByPosition(result).column);
 
@@ -26,7 +26,7 @@ void createNullValuesByteMap(Block & block, const ColumnNumbers & args, size_t r
 		if (elem.column->isNullable())
 		{
 			const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
-			res_col.applyNullValuesByteMap(nullable_col);
+			res_col.applyNullMap(nullable_col);	/// TODO excessive copy in case of single nullable argument.
 		}
 	}
 }
@@ -371,7 +371,7 @@ void IFunction::postProcessResult(Strategy strategy, Block & block, const Block 
 
 		/// Deduce the null map of the result from the null maps of the
 		/// nullable columns.
-		createNullValuesByteMap(block, args, result);
+		createNullMap(block, args, result);
 	}
 	else
 		throw Exception{"IFunction: logical error, unknown execution strategy.", ErrorCodes::LOGICAL_ERROR};
