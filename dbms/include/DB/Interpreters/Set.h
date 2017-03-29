@@ -6,6 +6,7 @@
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/Interpreters/Limits.h>
 #include <DB/Interpreters/SetVariants.h>
+#include <DB/Interpreters/NullableUtils.h>
 #include <DB/Parsers/IAST.h>
 #include <DB/Storages/MergeTree/BoolMask.h>
 
@@ -55,8 +56,6 @@ public:
 
 	size_t getTotalRowCount() const { return data.getTotalRowCount(); }
 	size_t getTotalByteCount() const { return data.getTotalByteCount(); }
-
-	using ConstNullMapPtr = const PaddedPODArray<UInt8> *;
 
 private:
 	Sizes key_sizes;

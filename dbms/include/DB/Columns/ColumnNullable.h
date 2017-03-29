@@ -6,7 +6,8 @@
 namespace DB
 {
 
-using NullValuesByteMap = PaddedPODArray<UInt8>;
+using NullMap = ColumnUInt8::Container_t;
+using ConstNullMapPtr = const NullMap *;
 
 /// Class that specifies nullable columns. A nullable column represents
 /// a column, which may have any type, provided with the possibility of
@@ -76,24 +77,24 @@ public:
 	ColumnUInt8 & getNullMapConcreteColumn() { return static_cast<ColumnUInt8 &>(*null_map); }
 	const ColumnUInt8 & getNullMapConcreteColumn() const { return static_cast<const ColumnUInt8 &>(*null_map); }
 
-	ColumnUInt8::Container_t & getNullMap() { return getNullMapConcreteColumn().getData(); }
-	const ColumnUInt8::Container_t & getNullMap() const { return getNullMapConcreteColumn().getData(); }
+	NullMap & getNullMap() { return getNullMapConcreteColumn().getData(); }
+	const NullMap & getNullMap() const { return getNullMapConcreteColumn().getData(); }
 
 	/// Apply the null byte map of a specified nullable column onto the
 	/// null byte map of the current column by performing an element-wise OR
 	/// between both byte maps. This method is used to determine the null byte
 	/// map of the result column of a function taking one or more nullable
 	/// columns.
-	void applyNullValuesByteMap(const ColumnNullable & other);
-	void applyNullValuesByteMap(const ColumnUInt8 & map);
-	void applyNegatedNullValuesByteMap(const ColumnUInt8 & map);
+	void applyNullMap(const ColumnNullable & other);
+	void applyNullMap(const ColumnUInt8 & map);
+	void applyNegatedNullMap(const ColumnUInt8 & map);
 
 private:
 	ColumnPtr nested_column;
 	ColumnPtr null_map;
 
 	template <bool negative>
-	void applyNullValuesByteMapImpl(const ColumnUInt8 & map);
+	void applyNullMapImpl(const ColumnUInt8 & map);
 };
 
 }

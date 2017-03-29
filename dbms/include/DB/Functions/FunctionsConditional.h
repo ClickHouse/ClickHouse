@@ -1341,7 +1341,7 @@ private:
 
 			if (ColumnNullable * result_nullable = typeid_cast<ColumnNullable *>(result_column.get()))
 			{
-				result_nullable->applyNullValuesByteMap(static_cast<const ColumnNullable &>(*arg_cond.column));
+				result_nullable->applyNullMap(static_cast<const ColumnNullable &>(*arg_cond.column));
 			}
 			else if (result_column->isNull())
 			{
@@ -1428,7 +1428,7 @@ private:
 				if (arg_else.column->isNullable())
 				{
 					auto result_column = arg_else.column->clone();
-					static_cast<ColumnNullable &>(*result_column).applyNullValuesByteMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+					static_cast<ColumnNullable &>(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
 					block.safeGetByPosition(result).column = result_column;
 				}
 				else
@@ -1468,7 +1468,7 @@ private:
 				if (arg_then.column->isNullable())
 				{
 					auto result_column = arg_then.column->clone();
-					static_cast<ColumnNullable &>(*result_column).applyNegatedNullValuesByteMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+					static_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
 					block.safeGetByPosition(result).column = result_column;
 				}
 				else
