@@ -310,7 +310,7 @@ namespace
 /// of getExtremes() than the implementation from ColumnVector.
 /// It takes into account the possible presence of nullable values.
 template <typename T>
-void getExtremesFromNullableContent(const ColumnVector<T> & col, const NullValuesByteMap & null_map, Field & min, Field & max)
+void getExtremesFromNullableContent(const ColumnVector<T> & col, const NullMap & null_map, Field & min, Field & max)
 {
 	const auto & data = col.getData();
 	size_t size = data.size();
@@ -410,10 +410,10 @@ ColumnPtr ColumnNullable::replicate(const Offsets_t & offsets) const
 
 
 template <bool negative>
-void ColumnNullable::applyNullValuesByteMapImpl(const ColumnUInt8 & map)
+void ColumnNullable::applyNullMapImpl(const ColumnUInt8 & map)
 {
-	NullValuesByteMap & arr1 = getNullMap();
-	const NullValuesByteMap & arr2 = map.getData();
+	NullMap & arr1 = getNullMap();
+	const NullMap & arr2 = map.getData();
 
 	if (arr1.size() != arr2.size())
 		throw Exception{"Inconsistent sizes of ColumnNullable objects", ErrorCodes::LOGICAL_ERROR};
@@ -423,20 +423,20 @@ void ColumnNullable::applyNullValuesByteMapImpl(const ColumnUInt8 & map)
 }
 
 
-void ColumnNullable::applyNullValuesByteMap(const ColumnUInt8 & map)
+void ColumnNullable::applyNullMap(const ColumnUInt8 & map)
 {
-	applyNullValuesByteMapImpl<false>(map);
+	applyNullMapImpl<false>(map);
 }
 
-void ColumnNullable::applyNegatedNullValuesByteMap(const ColumnUInt8 & map)
+void ColumnNullable::applyNegatedNullMap(const ColumnUInt8 & map)
 {
-	applyNullValuesByteMapImpl<true>(map);
+	applyNullMapImpl<true>(map);
 }
 
 
-void ColumnNullable::applyNullValuesByteMap(const ColumnNullable & other)
+void ColumnNullable::applyNullMap(const ColumnNullable & other)
 {
-	applyNullValuesByteMap(other.getNullMapConcreteColumn());
+	applyNullMap(other.getNullMapConcreteColumn());
 }
 
 }

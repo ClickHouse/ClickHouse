@@ -3,11 +3,9 @@
 #include <memory>
 #include <sys/resource.h>
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Net/Context.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/NetException.h>
-#include <Poco/Net/SecureServerSocket.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
@@ -34,6 +32,11 @@
 #include "StatusFile.h"
 #include "TCPHandler.h"
 
+#include <DB/Common/config.h>
+#if Poco_NetSSL_FOUND
+#include <Poco/Net/Context.h>
+#include <Poco/Net/SecureServerSocket.h>
+#endif
 
 namespace DB
 {
@@ -457,11 +460,10 @@ int Server::main(const std::vector<std::string> & args)
 					)
 				{
 					LOG_ERROR(log,
-						"Cannot resolve listen_host (" << host << "), error: " << e.message()
-													   << ". "
-														  "If it is an IPv6 address and your host has disabled IPv6, then consider to "
-														  "specify IPv4 address to listen in <listen_host> element of configuration "
-														  "file. Example: <listen_host>0.0.0.0</listen_host>");
+						"Cannot resolve listen_host (" << host << "), error: " << e.message() << ". "
+													   << "If it is an IPv6 address and your host has disabled IPv6, then consider to "
+													   << "specify IPv4 address to listen in <listen_host> element of configuration "
+													   << "file. Example: <listen_host>0.0.0.0</listen_host>");
 				}
 
 				throw;
@@ -490,6 +492,7 @@ int Server::main(const std::vector<std::string> & args)
 			/// HTTPS
 			if (config().has("https_port"))
 			{
+#if Poco_NetSSL_FOUND
 				std::call_once(ssl_init_once, SSLInit);
 				Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("https_port"));
 				Poco::Net::SecureServerSocket http_socket(http_socket_address);
@@ -500,8 +503,11 @@ int Server::main(const std::vector<std::string> & args)
 					new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"), server_pool, http_socket, http_params));
 
 				LOG_INFO(log, "Listening https://" + http_socket_address.toString());
+#else
+				throw Exception{"https protocol disabled because poco library built without NetSSL support.",
+					ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
 			}
-
 
 			/// TCP
 			if (config().has("tcp_port"))
@@ -559,10 +565,37 @@ int Server::main(const std::vector<std::string> & args)
 
 			is_cancelled = true;
 
+			int current_connections = 0;
 			for (auto & server : servers)
+			{
 				server->stop();
+				current_connections += server->currentConnections();
+			}
 
-			LOG_DEBUG(log, "Closed all connections.");
+			LOG_DEBUG(log,
+				"Closed all listening sockets."
+					<< (current_connections ? " Waiting for " + std::to_string(current_connections) + " outstanding connections." : ""));
+
+			if (current_connections)
+			{
+				const int sleep_max_ms = 1000 * config().getInt("shutdown_wait_unfinished", 5);
+				const int sleep_one_ms = 100;
+				int sleep_current_ms = 0;
+				while (sleep_current_ms < sleep_max_ms)
+				{
+					current_connections = 0;
+					for (auto & server : servers)
+						current_connections += server->currentConnections();
+					if (!current_connections)
+						break;
+					sleep_current_ms += sleep_one_ms;
+					std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
+				}
+			}
+
+			LOG_DEBUG(
+				log, "Closed connections." << (current_connections ? " But " + std::to_string(current_connections) + " remains." 
+					+ " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished> ." : ""));
 
 			main_config_reloader.reset();
 			users_config_reloader.reset();
@@ -593,7 +626,6 @@ int Server::main(const std::vector<std::string> & args)
 		{
 			metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(async_metrics, graphite_key));
 		}
-
 
 		waitForTerminationRequest();
 	}

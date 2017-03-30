@@ -3,15 +3,19 @@ option (USE_INTERNAL_BOOST_LIBRARY "Set to FALSE to use system boost library ins
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
 	set (Boost_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
 	set (BOOST_ROOT "/usr/local")
-	find_package (Boost 1.55 COMPONENTS program_options system filesystem regex thread)
+	find_package (Boost 1.60 COMPONENTS program_options system filesystem regex thread)
 	# incomplete, no include search, who use it?
-	#if (NOT Boost_FOUND)
-	#	# Try to find manually.
-	#	set (BOOST_PATHS "")
-	#	find_library (Boost_PROGRAM_OPTIONS_LIBRARY boost_program_options PATHS ${BOOST_PATHS})
-	#	find_library (Boost_SYSTEM_LIBRARY boost_system PATHS ${BOOST_PATHS})
+	if (NOT Boost_FOUND)
+		#	# Try to find manually.
+		#	set (BOOST_PATHS "")
+		#	find_library (Boost_PROGRAM_OPTIONS_LIBRARY boost_program_options PATHS ${BOOST_PATHS})
+		#	find_library (Boost_SYSTEM_LIBRARY boost_system PATHS ${BOOST_PATHS})
 	#	find_library (Boost_FILESYSTEM_LIBRARY boost_filesystem PATHS ${BOOST_PATHS})
-	#endif ()
+		# maybe found but incorrect version.
+		set (Boost_INCLUDE_DIRS "")
+		set (Boost_SYSTEM_LIBRARY "")
+	endif ()
+
 	if (Boost_INCLUDE_DIRS)
 		include_directories (${Boost_INCLUDE_DIRS})
 	endif ()

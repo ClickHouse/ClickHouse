@@ -5,10 +5,14 @@
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <Poco/Net/HTTPSClientSession.h>
 #include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/Common/SimpleCache.h>
 #include <common/logger_useful.h>
+
+#include <DB/Common/config.h>
+#if Poco_NetSSL_FOUND
+#include <Poco/Net/HTTPSClientSession.h>
+#endif
 
 namespace DB
 {
@@ -44,7 +48,11 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 	method{!method.empty() ? method : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET},
 	timeouts{timeouts},
 	is_ssl{uri.getScheme() == "https"},
-	session{ std::unique_ptr<Poco::Net::HTTPClientSession>(is_ssl ? new Poco::Net::HTTPSClientSession : new Poco::Net::HTTPClientSession) }
+	session{ std::unique_ptr<Poco::Net::HTTPClientSession>(
+#if Poco_NetSSL_FOUND
+		is_ssl ? new Poco::Net::HTTPSClientSession :
+#endif
+		new Poco::Net::HTTPClientSession)}
 {
 	session->setHost(resolveHost(uri.getHost()).toString());	/// Cache DNS forever (until server restart)
 	session->setPort(uri.getPort());

@@ -56,7 +56,7 @@ void RegionsNames::reload(const std::string & directory)
 		DB::ReadBufferFromFile in(path);
 
 		const size_t initial_size = 10000;
-		const size_t max_size = 1000000;
+		const size_t max_size = 15000000;
 
 		Chars new_chars;
 		StringRefs new_names_refs(initial_size, StringRef("", 0));

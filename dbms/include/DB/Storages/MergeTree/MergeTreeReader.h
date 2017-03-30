@@ -122,9 +122,9 @@ private:
 		size_t level = 0);
 
 	void readData(
-			const String & name, const IDataType & type, IColumn & column,
-			size_t from_mark, size_t max_rows_to_read,
-			size_t level = 0, bool read_offsets = true);
+		const String & name, const IDataType & type, IColumn & column,
+		size_t from_mark, size_t max_rows_to_read,
+		size_t level = 0, bool read_offsets = true);
 
 	void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder);
 };

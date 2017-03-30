@@ -1,9 +1,11 @@
 #include <iomanip>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/File.h>
 
 #include <DB/Common/ExternalTable.h>
 #include <DB/Common/StringUtils.h>
+#include <DB/Common/escapeForFileName.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/IO/ZlibInflatingReadBuffer.h>
@@ -13,7 +15,13 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteBufferFromHTTPServerResponse.h>
+#include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/IO/copyData.h>
+#include <DB/IO/ConcatReadBuffer.h>
+#include <DB/IO/CascadeWriteBuffer.h>
+#include <DB/IO/MemoryReadWriteBuffer.h>
+#include <DB/IO/WriteBufferFromTemporaryFile.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
@@ -36,6 +44,7 @@ namespace ErrorCodes
 	extern const int CANNOT_PARSE_DATE;
 	extern const int CANNOT_PARSE_DATETIME;
 	extern const int CANNOT_PARSE_NUMBER;
+	extern const int CANNOT_OPEN_FILE;
 
 	extern const int UNKNOWN_ELEMENT_IN_AST;
 	extern const int UNKNOWN_TYPE_OF_AST_NODE;
@@ -103,11 +112,46 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
 		return HTTPResponse::HTTP_REQUESTENTITYTOOLARGE;
 	else if (exception_code == ErrorCodes::NOT_IMPLEMENTED)
 		return HTTPResponse::HTTP_NOT_IMPLEMENTED;
-	else if (exception_code == ErrorCodes::SOCKET_TIMEOUT)
+	else if (exception_code == ErrorCodes::SOCKET_TIMEOUT ||
+			 exception_code == ErrorCodes::CANNOT_OPEN_FILE)
 		return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
 
 	return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
 }
+
+void HTTPHandler::pushDelayedResults(Output & used_output)
+{
+	std::vector<WriteBufferPtr> write_buffers;
+	std::vector<ReadBufferPtr> read_buffers;
+	std::vector<ReadBuffer *> read_buffers_raw_ptr;
+
+	auto cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed.get());
+	if (!cascade_buffer)
+		throw Exception("Expected CascadeWriteBuffer", ErrorCodes::LOGICAL_ERROR);
+
+	cascade_buffer->getResultBuffers(write_buffers);
+
+	if (write_buffers.empty())
+		throw Exception("At least one buffer is expected to overwrite result into HTTP response", ErrorCodes::LOGICAL_ERROR);
+
+	for (auto & write_buf : write_buffers)
+	{
+		IReadableWriteBuffer * write_buf_concrete;
+		ReadBufferPtr reread_buf;
+
+		if (write_buf
+			&& (write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
+			&& (reread_buf = write_buf_concrete->tryGetReadBuffer()))
+		{
+			read_buffers.emplace_back(reread_buf);
+			read_buffers_raw_ptr.emplace_back(reread_buf.get());
+		}
+	}
+
+	ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
+	copyData(concat_read_buffer, *used_output.out_maybe_compressed);
+}
+
 
 HTTPHandler::HTTPHandler(Server & server_)
 	: server(server_)
@@ -133,37 +177,6 @@ void HTTPHandler::processQuery(
 		query_param += '\n';
 
 
-	/// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
-	String http_response_compression_methods = request.get("Accept-Encoding", "");
-	bool client_supports_http_compression = false;
-	ZlibCompressionMethod http_response_compression_method {};
-
-	if (!http_response_compression_methods.empty())
-	{
-		/// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
-		/// NOTE parsing of the list of methods is slightly incorrect.
-		if (std::string::npos != http_response_compression_methods.find("gzip"))
-		{
-			client_supports_http_compression = true;
-			http_response_compression_method = ZlibCompressionMethod::Gzip;
-		}
-		else if (std::string::npos != http_response_compression_methods.find("deflate"))
-		{
-			client_supports_http_compression = true;
-			http_response_compression_method = ZlibCompressionMethod::Zlib;
-		}
-	}
-
-	used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-		response, client_supports_http_compression, http_response_compression_method);
-
-	/// Client can pass a 'compress' flag in the query string. In this case the query result is
-	/// compressed using internal algorithm. This is not reflected in HTTP headers.
-	if (parse<bool>(params.get("compress", "0")))
-		used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
-	else
-		used_output.out_maybe_compressed = used_output.out;
-
 	/// User name and password can be passed using query parameters or using HTTP Basic auth (both methods are insecure).
 	/// The user and password can be passed by headers (similar to X-Auth-*), which is used by load balancers to pass authentication information
 	std::string user = request.get("X-ClickHouse-User", params.get("user", "default"));
@@ -185,6 +198,94 @@ void HTTPHandler::processQuery(
 
 	context.setUser(user, password, request.clientAddress(), quota_key);
 	context.setCurrentQueryId(query_id);
+
+
+	/// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
+	String http_response_compression_methods = request.get("Accept-Encoding", "");
+	bool client_supports_http_compression = false;
+	ZlibCompressionMethod http_response_compression_method {};
+
+	if (!http_response_compression_methods.empty())
+	{
+		/// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
+		/// NOTE parsing of the list of methods is slightly incorrect.
+		if (std::string::npos != http_response_compression_methods.find("gzip"))
+		{
+			client_supports_http_compression = true;
+			http_response_compression_method = ZlibCompressionMethod::Gzip;
+		}
+		else if (std::string::npos != http_response_compression_methods.find("deflate"))
+		{
+			client_supports_http_compression = true;
+			http_response_compression_method = ZlibCompressionMethod::Zlib;
+		}
+	}
+
+	/// Client can pass a 'compress' flag in the query string. In this case the query result is
+	/// compressed using internal algorithm. This is not reflected in HTTP headers.
+	bool internal_compression = params.getParsed<bool>("compress", false);
+
+	/// At least, we should postpone sending of first buffer_size result bytes
+	size_t buffer_size_total = std::max(
+		params.getParsed<size_t>("buffer_size", DBMS_DEFAULT_BUFFER_SIZE), static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
+
+	/// If it is specified, the whole result will be buffered.
+	///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
+	bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", false);
+
+	size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
+	size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
+
+	used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
+		response, client_supports_http_compression, http_response_compression_method, buffer_size_http);
+	if (internal_compression)
+		used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
+	else
+		used_output.out_maybe_compressed = used_output.out;
+
+	if (buffer_size_memory > 0 || buffer_until_eof)
+	{
+		CascadeWriteBuffer::WriteBufferPtrs cascade_buffer1;
+		CascadeWriteBuffer::WriteBufferConstructors cascade_buffer2;
+
+		if (buffer_size_memory > 0)
+			cascade_buffer1.emplace_back(std::make_shared<MemoryWriteBuffer>(buffer_size_memory));
+
+		if (buffer_until_eof)
+		{
+			std::string tmp_path_template = context.getTemporaryPath() + "http_buffers/";
+
+			auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
+			{
+				return WriteBufferFromTemporaryFile::create(tmp_path_template);
+			};
+
+			cascade_buffer2.emplace_back(std::move(create_tmp_disk_buffer));
+		}
+		else
+		{
+			auto push_memory_buffer_and_continue = [next_buffer = used_output.out_maybe_compressed] (const WriteBufferPtr & prev_buf)
+			{
+				auto prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
+				if (!prev_memory_buffer)
+					throw Exception("Expected MemoryWriteBuffer", ErrorCodes::LOGICAL_ERROR);
+
+				auto rdbuf = prev_memory_buffer->tryGetReadBuffer();
+				copyData(*rdbuf , *next_buffer);
+
+				return next_buffer;
+			};
+
+			cascade_buffer2.emplace_back(push_memory_buffer_and_continue);
+		}
+
+		used_output.out_maybe_delayed_and_compressed = std::make_shared<CascadeWriteBuffer>(
+			std::move(cascade_buffer1), std::move(cascade_buffer2));
+	}
+	else
+	{
+		used_output.out_maybe_delayed_and_compressed = used_output.out_maybe_compressed;
+	}
 
 	std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query_param);
 
@@ -216,7 +317,7 @@ void HTTPHandler::processQuery(
 	/// 'decompress' query parameter.
 	std::unique_ptr<ReadBuffer> in_post_maybe_compressed;
 	bool in_post_compressed = false;
-	if (parse<bool>(params.get("decompress", "0")))
+	if (params.getParsed<bool>("decompress", false))
 	{
 		in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post);
 		in_post_compressed = true;
@@ -268,7 +369,11 @@ void HTTPHandler::processQuery(
 
 	auto readonly_before_query = limits.readonly;
 
-	for (Poco::Net::NameValueCollection::ConstIterator it = params.begin(); it != params.end(); ++it)
+	NameSet reserved_param_names{"query", "compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
+		"buffer_size", "wait_end_of_query"
+	};
+
+	for (auto it = params.begin(); it != params.end(); ++it)
 	{
 		if (it->first == "database")
 		{
@@ -278,14 +383,7 @@ void HTTPHandler::processQuery(
 		{
 			context.setDefaultFormat(it->second);
 		}
-		else if (it->first == "query"
-			|| it->first == "compress"
-			|| it->first == "decompress"
-			|| it->first == "user"
-			|| it->first == "password"
-			|| it->first == "quota_key"
-			|| it->first == "query_id"
-			|| it->first == "stacktrace")
+		else if (reserved_param_names.find(it->first) != reserved_param_names.end())
 		{
 		}
 		else
@@ -343,8 +441,14 @@ void HTTPHandler::processQuery(
 	if (settings.send_progress_in_http_headers)
 		context.setProgressCallback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
 
-	executeQuery(*in, *used_output.out_maybe_compressed, /* allow_into_outfile = */ false, context,
+	executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
 		[&response] (const String & content_type) { response.setContentType(content_type); });
+
+	if (used_output.hasDelayed())
+	{
+		/// TODO: set Content-Length if possible
+		pushDelayedResults(used_output);
+	}
 
 	/// Send HTTP headers with code 200 if no exception happened and the data is still not sent to
 	/// the client.
@@ -386,12 +490,18 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 		}
 		else if (used_output.out_maybe_compressed)
 		{
+			/// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
+			if (used_output.hasDelayed())
+				used_output.out_maybe_delayed_and_compressed.reset();
+
 			/// Send the error message into already used (and possibly compressed) stream.
 			/// Note that the error message will possibly be sent after some data.
 			/// Also HTTP code 200 could have already been sent.
 
-			/** If buffer has data, and that data wasn't sent yet, then no need to send that data */
-			if (used_output.out->count() - used_output.out->offset() == 0)
+			/// If buffer has data, and that data wasn't sent yet, then no need to send that data
+			bool data_sent = used_output.out->count() != used_output.out->offset();
+
+			if (!data_sent)
 			{
 				used_output.out_maybe_compressed->position() = used_output.out_maybe_compressed->buffer().begin();
 				used_output.out->position() = used_output.out->buffer().begin();
@@ -399,13 +509,15 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 
 			writeString(s, *used_output.out_maybe_compressed);
 			writeChar('\n', *used_output.out_maybe_compressed);
+
 			used_output.out_maybe_compressed->next();
+			used_output.out->next();
 			used_output.out->finalize();
 		}
 	}
 	catch (...)
 	{
-		LOG_ERROR(log, "Cannot send exception to client");
+		tryLogCurrentException(log, "Cannot send exception to client");
 	}
 }
 
@@ -426,7 +538,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 			response.setChunkedTransferEncoding(true);
 
 		HTMLForm params(request);
-		with_stacktrace = parse<bool>(params.get("stacktrace", "0"));
+		with_stacktrace = params.getParsed<bool>("stacktrace", false);
 
 		processQuery(request, params, response, used_output);
 		LOG_INFO(log, "Done processing query");
@@ -435,16 +547,11 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 	{
 		tryLogCurrentException(log);
 
-		std::string exception_message = getCurrentExceptionMessage(with_stacktrace);
-		int exception_code = getCurrentExceptionCode();
-
 		/** If exception is received from remote server, then stack trace is embedded in message.
 		  * If exception is thrown on local server, then stack trace is in separate field.
 		  */
-
-		auto embedded_stack_trace_pos = exception_message.find("Stack trace");
-		if (std::string::npos != embedded_stack_trace_pos && !with_stacktrace)
-			exception_message.resize(embedded_stack_trace_pos);
+		std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
+		int exception_code = getCurrentExceptionCode();
 
 		trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
 	}
