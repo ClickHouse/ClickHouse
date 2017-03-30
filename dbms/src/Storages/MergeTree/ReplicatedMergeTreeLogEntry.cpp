@@ -46,6 +46,13 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 			out << source_part_name << "\ninto\n" << new_part_name;
 			break;
 
+		case DROP_COLUMN:
+			out << "drop_column\n"
+			    << column_name
+				<< "\nfrom\n"
+				<< new_part_name;
+			break;
+
 		default:
 			throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
 	}
@@ -105,6 +112,10 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 		type = DROP_RANGE;
 		detach = type_str == "detach";
 		in >> new_part_name;
+	}
+	else if (type_str == "drop_column")
+	{
+		in >> "\n" >> column_name >> "\nfrom\n" >> new_part_name;
 	}
 	else if (type_str == "attach")
 	{

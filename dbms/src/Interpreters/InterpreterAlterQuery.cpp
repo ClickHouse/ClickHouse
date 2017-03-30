@@ -74,7 +74,7 @@ BlockIO InterpreterAlterQuery::execute()
 				break;
 
 			case PartitionCommand::DROP_COLUMN:
-				table->dropColumnFromPartition(query_ptr, command.partition, command.column_name);
+				table->dropColumnFromPartition(query_ptr, command.partition, command.column_name, context.getSettingsRef());
 				break;
 		}
 	}

@@ -216,7 +216,7 @@ public:
 	}
 
 	/** Execute DROP COLUMN ... FROM PARTITION query witch drops column from given partition. */
-	virtual void dropColumnFromPartition(ASTPtr query, const Field & partition, const Field & column_name)
+	virtual void dropColumnFromPartition(ASTPtr query, const Field & partition, const Field & column_name, const Settings & settings)
 	{
 		throw Exception("Method dropColumnFromPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

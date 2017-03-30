@@ -36,6 +36,7 @@ struct ReplicatedMergeTreeLogEntryData
 		MERGE_PARTS, /// Слить куски.
 		DROP_RANGE,  /// Удалить куски в указанном месяце в указанном диапазоне номеров.
 		ATTACH_PART, /// Перенести кусок из директории detached или unreplicated.
+		DROP_COLUMN, /// Drop specific column.
 	};
 
 	String typeToString() const
@@ -46,6 +47,7 @@ struct ReplicatedMergeTreeLogEntryData
 			case ReplicatedMergeTreeLogEntryData::MERGE_PARTS: 	return "MERGE_PARTS";
 			case ReplicatedMergeTreeLogEntryData::DROP_RANGE: 	return "DROP_RANGE";
 			case ReplicatedMergeTreeLogEntryData::ATTACH_PART: 	return "ATTACH_PART";
+			case ReplicatedMergeTreeLogEntryData::DROP_COLUMN: 	return "DROP_COLUMN";
 			default:
 				throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
 		}
@@ -66,6 +68,7 @@ struct ReplicatedMergeTreeLogEntryData
 	String block_id;	/// Для кусков нулевого уровня - идентификатор блока для дедупликации (имя ноды в /blocks/).
 
 	Strings parts_to_merge;
+	String	column_name;
 
 	/// Для DROP_RANGE, true значит, что куски нужно не удалить, а перенести в директорию detached.
 	bool detach = false;

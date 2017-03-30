@@ -395,7 +395,7 @@ bool StorageMergeTree::mergeTask()
 	}
 }
 
-void StorageMergeTree::dropColumnFromPartition(ASTPtr query, const Field & partition, const Field & column_name)
+void StorageMergeTree::dropColumnFromPartition(ASTPtr query, const Field & partition, const Field & column_name, const Settings &)
 {
 	/// Asks to complete merges and does not allow them to start.
 	/// This protects against "revival" of data for a removed partition after completion of merge.
