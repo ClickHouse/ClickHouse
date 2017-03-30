@@ -18,6 +18,7 @@
 #include <DB/Interpreters/Set.h>
 #include <DB/Interpreters/convertFieldToType.h>
 #include <DB/Interpreters/evaluateConstantExpression.h>
+#include <DB/Interpreters/NullableUtils.h>
 
 #include <DB/Storages/MergeTree/PKCondition.h>
 
