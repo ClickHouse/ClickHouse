@@ -8,10 +8,6 @@
 namespace DB
 {
 
-#if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
 
 /// Для агрегации по SipHash или конкатенации нескольких полей.
 struct UInt128
@@ -19,11 +15,21 @@ struct UInt128
 	UInt64 first;
 	UInt64 second;
 
+/// Fix gcc7 warnings: 'prev_key.DB::UInt128::first' may be used uninitialized in this function
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 	bool operator== (const UInt128 rhs) const { return first == rhs.first && second == rhs.second; }
 	bool operator!= (const UInt128 rhs) const { return first != rhs.first || second != rhs.second; }
 
 	bool operator== (const UInt64 rhs) const { return first == rhs && second == 0; }
 	bool operator!= (const UInt64 rhs) const { return first != rhs || second != 0; }
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+
 
 	UInt128 & operator= (const UInt64 rhs) { first = rhs; second = 0; return *this; }
 };
@@ -135,9 +141,6 @@ struct UInt256HashCRC32
 
 #endif
 
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
 
 
 inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
