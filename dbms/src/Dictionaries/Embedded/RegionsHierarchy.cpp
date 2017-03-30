@@ -38,7 +38,7 @@ void RegionsHierarchy::reload()
 	LOG_DEBUG(log, "Reloading regions hierarchy");
 
 	const size_t initial_size = 10000;
-	const size_t max_size = 1000000;
+	const size_t max_size = 15000000;
 
 	RegionParents new_parents(initial_size);
 	RegionParents new_city(initial_size);
