@@ -38,6 +38,7 @@
 #include <DB/Common/StringUtils.h>
 
 #include <Poco/DirectoryIterator.h>
+#include <Poco/Util/Application.h>
 
 #include <DB/Common/ThreadPool.h>
 
@@ -1251,6 +1252,24 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 	{
 		String covering_part;
 		String replica = findReplicaHavingCoveringPart(entry.new_part_name, true, covering_part);
+
+		static std::atomic_int total_fetches {};
+		if (total_fetches >= Poco::Util::Application::instance().config().getInt("replicated_max_parallel_fetches", 4))
+		{
+			return false;
+		}
+
+		++total_fetches;
+		SCOPE_EXIT({--total_fetches;});
+
+		if (current_table_fetches >= Poco::Util::Application::instance().config().getInt("replicated_max_parallel_fetches_for_table", 2))
+		{
+			return false;
+		}
+
+		++current_table_fetches;
+		SCOPE_EXIT({--current_table_fetches;});
+
 
 		if (replica.empty() && entry.type == LogEntry::ATTACH_PART)
 		{

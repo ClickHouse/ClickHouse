@@ -282,6 +282,9 @@ private:
 	std::atomic<bool> shutdown_called {false};
 	Poco::Event shutdown_event;
 
+	/// Limiting parallel fetches per one table
+	std::atomic<int> current_table_fetches {0};
+
 	/// Потоки:
 
 	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
