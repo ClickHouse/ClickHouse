@@ -145,6 +145,7 @@ private:
 	/// The server periodically sends information about how much data was read since last time.
 	Progress progress;
 	bool show_progress_bar = false;
+	bool show_percentage_char = false;
 
 	size_t written_progress_chars = 0;
 	bool written_first_block = false;
@@ -1086,8 +1087,10 @@ private:
 			if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
 				std::cerr << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
 		}
-		if (progress.total_rows != 0 && progress.rows * 2 < progress.total_rows && elapsed_ns > 500000000)
+		if (show_percentage_char || (progress.total_rows != 0 && progress.rows * 2 < progress.total_rows && elapsed_ns > 500000000)) {
+			show_percentage_char = true;
 			std::cerr << ' ' << (99 * progress.rows / total_rows_corrected) << '%';	/// Underestimate percentage a bit to avoid displaying 100%.
+		}
 		std::cerr << ENABLE_LINE_WRAPPING;
 		++increment;
 	}
