@@ -3,10 +3,10 @@
 #include <Poco/RWLock.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Columns/ColumnNullable.h>
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/Interpreters/Limits.h>
 #include <DB/Interpreters/SetVariants.h>
-#include <DB/Interpreters/NullableUtils.h>
 #include <DB/Parsers/IAST.h>
 #include <DB/Storages/MergeTree/BoolMask.h>
 

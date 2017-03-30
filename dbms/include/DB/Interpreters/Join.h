@@ -12,6 +12,7 @@
 
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
+#include <DB/Columns/ColumnNullable.h>
 
 #include <DB/DataStreams/IBlockInputStream.h>
 
@@ -203,6 +204,12 @@ struct Limits;
   * In case of ALL ... JOIN - form new columns with all found rows,
   *  and also fill 'offsets' array, describing how many times we need to replicate values of "left" table.
   * Then replicate columns of "left" table.
+  *
+  * How Nullable keys are processed:
+  *
+  * NULLs never join to anything, even to each other.
+  * During building of map, we just skip keys with NULL value of any component.
+  * During joining, we simply treat rows with any NULLs in key as non joined.
   */
 class Join
 {
@@ -366,7 +373,6 @@ private:
 
 	static Type chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes);
 
-	bool keys_fit_128_bits;
 	Sizes key_sizes;
 
 	Block sample_block_with_columns_to_add;
@@ -390,28 +396,15 @@ private:
 
 	void init(Type type_);
 
-	template <ASTTableJoin::Strictness STRICTNESS, typename Maps>
-	void insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block);
-
-	template <ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
-	void insertFromBlockImplType(Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block);
-
-	template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
-	void joinBlockImpl(Block & block, const Maps & maps) const;
-
-	template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
-	void joinBlockImplType(
-		Block & block, const Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size,
-		size_t num_columns_to_add, size_t num_columns_to_skip, ColumnPlainPtrs & added_columns,
-		std::unique_ptr<IColumn::Filter> & filter,
-		IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate) const;
-
-	void joinBlockImplCross(Block & block) const;
-
 	bool checkSizeLimits() const;
 
 	/// Throw an exception if blocks have different types of key columns.
 	void checkTypesOfKeys(const Block & block_left, const Block & block_right) const;
+
+	template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
+	void joinBlockImpl(Block & block, const Maps & maps) const;
+
+	void joinBlockImplCross(Block & block) const;
 };
 
 using JoinPtr = std::shared_ptr<Join>;
