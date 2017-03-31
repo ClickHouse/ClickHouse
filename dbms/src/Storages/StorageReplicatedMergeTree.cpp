@@ -38,7 +38,6 @@
 #include <DB/Common/StringUtils.h>
 
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Util/Application.h>
 
 #include <DB/Common/ThreadPool.h>
 
