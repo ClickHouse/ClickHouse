@@ -16,10 +16,8 @@ namespace DB
 template <typename T>
 struct AggregateFunctionAvgData
 {
-	T sum;
-	UInt64 count;
-
-	AggregateFunctionAvgData() : sum(0), count(0) {}
+	T sum = 0;
+	UInt64 count = 0;
 };
 
 
