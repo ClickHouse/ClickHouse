@@ -8,9 +8,16 @@
 namespace DB
 {
 
+
 /// Для агрегации по SipHash или конкатенации нескольких полей.
 struct UInt128
 {
+/// Suppress gcc7 warnings: 'prev_key.DB::UInt128::first' may be used uninitialized in this function
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 	UInt64 first;
 	UInt64 second;
 
@@ -19,6 +26,10 @@ struct UInt128
 
 	bool operator== (const UInt64 rhs) const { return first == rhs && second == 0; }
 	bool operator!= (const UInt64 rhs) const { return first != rhs || second != 0; }
+
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
 
 	UInt128 & operator= (const UInt64 rhs) { first = rhs; second = 0; return *this; }
 };
@@ -64,6 +75,13 @@ inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x
   */
 struct UInt256
 {
+
+/// Suppress gcc7 warnings: 'prev_key.DB::UInt256::a' may be used uninitialized in this function
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 	UInt64 a;
 	UInt64 b;
 	UInt64 c;
@@ -87,6 +105,10 @@ struct UInt256
 
 	bool operator== (const UInt64 rhs) const { return a == rhs && b == 0 && c == 0 && d == 0; }
 	bool operator!= (const UInt64 rhs) const { return !operator==(rhs); }
+
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
 
 	UInt256 & operator= (const UInt64 rhs) { a = rhs; b = 0; c = 0; d = 0; return *this; }
 };
@@ -129,6 +151,8 @@ struct UInt256HashCRC32
 };
 
 #endif
+
+
 
 inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
