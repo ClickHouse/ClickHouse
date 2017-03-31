@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.hpp>
-
+#include <atomic>
 #include <DB/Storages/IStorage.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
@@ -283,7 +283,7 @@ private:
 	Poco::Event shutdown_event;
 
 	/// Limiting parallel fetches per one table
-	std::atomic<int> current_table_fetches {0};
+	std::atomic_uint current_table_fetches {0};
 
 	/// Потоки:
 

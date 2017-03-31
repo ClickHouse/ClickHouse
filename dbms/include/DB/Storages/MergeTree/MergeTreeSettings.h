@@ -75,6 +75,10 @@ struct MergeTreeSettings
 	size_t replicated_max_missing_obsolete_parts = 5;
 	size_t replicated_max_missing_active_parts = 20;
 
+	/// Limit parallel fetches
+	size_t replicated_max_parallel_fetches = 4;
+	size_t replicated_max_parallel_fetches_for_table = 2;
+
 	/// If ration of wrong parts to total number of parts is less than this - allow to start anyway.
 	double replicated_max_ratio_of_wrong_parts = 0.05;
 
@@ -132,6 +136,8 @@ struct MergeTreeSettings
 		SET_SIZE_T(replicated_max_unexpectedly_merged_parts);
 		SET_SIZE_T(replicated_max_missing_obsolete_parts);
 		SET_SIZE_T(replicated_max_missing_active_parts);
+		SET_SIZE_T(replicated_max_parallel_fetches);
+		SET_SIZE_T(replicated_max_parallel_fetches_for_table);
 		SET_DOUBLE(replicated_max_ratio_of_wrong_parts);
 		SET_SIZE_T(zookeeper_session_expiration_check_period);
 		SET_SIZE_T(check_delay_period);

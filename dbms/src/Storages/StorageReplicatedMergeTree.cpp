@@ -1253,8 +1253,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 		String covering_part;
 		String replica = findReplicaHavingCoveringPart(entry.new_part_name, true, covering_part);
 
-		static std::atomic_int total_fetches {};
-		if (total_fetches >= Poco::Util::Application::instance().config().getInt("replicated_max_parallel_fetches", 4))
+		static std::atomic_uint total_fetches {0};
+		if (total_fetches >= data.settings.replicated_max_parallel_fetches)
 		{
 			return false;
 		}
@@ -1262,7 +1262,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 		++total_fetches;
 		SCOPE_EXIT({--total_fetches;});
 
-		if (current_table_fetches >= Poco::Util::Application::instance().config().getInt("replicated_max_parallel_fetches_for_table", 2))
+		if (current_table_fetches >= data.settings.replicated_max_parallel_fetches_for_table)
 		{
 			return false;
 		}
