@@ -13,12 +13,12 @@ int main(int argc, char ** argv)
 		int repeats = 1;
 		if (argc >= 2)
 			repeats = atoi(argv[1]);
-		
+
 		std::string text((std::istreambuf_iterator<char>(std::cin)),
 						  std::istreambuf_iterator<char>());
-		
+
 		std::cout << "Text length: " << text.size() << std::endl;
-		
+
 		Stopwatch timer;
 		std::string str1;
 		{
@@ -31,9 +31,9 @@ int main(int argc, char ** argv)
 		double t = timer.elapsedSeconds();
 		std::cout << "Wrote to string in " << t << "s at " << text.size() / 1e6 * repeats / t << "MB/s." << std::endl;
 		std::cout << "String length: " << str1.size() << "(" << (str1.size() == text.size() * repeats ? "as " : "un") << "expected)" << std::endl;
-		
+
 		timer.restart();
-		
+
 		std::string str2;
 		{
 			DB::WriteBufferFromString simple_buf(str2);

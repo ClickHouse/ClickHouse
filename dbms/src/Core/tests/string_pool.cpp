@@ -19,7 +19,7 @@ int main(int argc, char ** argv)
 {
 	std::cerr << std::fixed << std::setprecision(3);
 	std::ofstream devnull("/dev/null");
-	
+
 	DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
 	size_t n = atoi(argv[1]);
 	size_t elems_show = 1;
@@ -116,7 +116,7 @@ int main(int argc, char ** argv)
 		DB::Arena pool;
 		RefsSet set;
 		Stopwatch watch;
-		
+
 		for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
 			set[StringRef(pool.insert(it->data(), it->size()), it->size())] = 0;
 

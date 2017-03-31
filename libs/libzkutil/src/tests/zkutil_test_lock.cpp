@@ -8,7 +8,7 @@ int main()
 	{
 		auto zookeeper_holder = std::make_shared<zkutil::ZooKeeperHolder>();
 		zookeeper_holder->init("localhost:2181");
-		
+
 		zkutil::Lock l(zookeeper_holder, "/test", "test_lock");
 		std::cout << "check " << l.tryCheck() << std::endl;
 		std::cout << "lock tryLock() " << l.tryLock() << std::endl;

@@ -1157,7 +1157,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
 			/// Logging
 			Stopwatch stopwatch;
-			
+
 			auto part = merger.mergePartsToTemporaryPart(
 				parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get());
 
@@ -2077,11 +2077,11 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
 
 	Stopwatch stopwatch;
-	
+
 	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(
 		part_name, replica_path, address.host, address.replication_port, to_detached);
 
-	
+
 	if (!to_detached)
 	{
 		zkutil::Ops ops;
@@ -2386,7 +2386,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
 
 			/// Logging
 			Stopwatch stopwatch;
-			
+
 			auto new_part = unreplicated_merger->mergePartsToTemporaryPart(
 				parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io, time(0));
 

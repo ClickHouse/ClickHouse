@@ -1,7 +1,7 @@
 #pragma once
 
 /** Пример:
-  * 
+  *
   *	class Derived : public Singleton<Derived>
   *	{
   *	    friend class Singleton<Derived>;

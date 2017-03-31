@@ -105,7 +105,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 
 	size_t part_size = (block.rows() + data.index_granularity - 1) / data.index_granularity;
 
-	
+
 	String part_name = ActiveDataPartSet::getPartName(
 		DayNum_t(min_date), DayNum_t(max_date),
 		temp_index, temp_index, 0);

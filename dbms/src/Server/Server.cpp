@@ -595,7 +595,7 @@ int Server::main(const std::vector<std::string> & args)
 			}
 
 			LOG_DEBUG(
-				log, "Closed connections." << (current_connections ? " But " + std::to_string(current_connections) + " remains." 
+				log, "Closed connections." << (current_connections ? " But " + std::to_string(current_connections) + " remains."
 					+ " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished> ." : ""));
 
 			main_config_reloader.reset();

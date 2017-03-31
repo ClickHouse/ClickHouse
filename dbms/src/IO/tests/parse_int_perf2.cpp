@@ -23,7 +23,7 @@ namespace test
 			++buf.position();
 			negative = true;
 		}
-		
+
 		if (*buf.position() == '0')
 		{
 			++buf.position();

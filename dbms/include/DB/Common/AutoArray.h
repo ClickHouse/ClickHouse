@@ -47,12 +47,12 @@ public:
 	{
 		setEmpty();
 	}
-	
+
 	AutoArray(size_t size_)
 	{
 		init(size_, false);
 	}
-	
+
 	/** Не будут вызваны конструкторы по-умолчанию для элементов.
 	  * В этом случае, вы должны вставить все элементы с помощью функции place и placement new,
 	  *  так как для них потом будут вызваны деструкторы.
@@ -61,13 +61,13 @@ public:
 	{
 		init(size_, true);
 	}
-	
+
 	/** Инициализирует все элементы копирующим конструктором с параметром value.
 	  */
 	AutoArray(size_t size_, const T & value)
 	{
 		init(size_, true);
-		
+
 		for (size_t i = 0; i < size_; ++i)
 		{
 			new (place(i)) T(value);
@@ -134,7 +134,7 @@ public:
 	{
 		return elem(i);
 	}
-	
+
 	const T & operator[](size_t i) const
 	{
 		return elem(i);
@@ -234,7 +234,7 @@ private:
 			setEmpty();
 			return;
 		}
-		
+
 		data = new char[size_ * sizeof(T) + sizeof(size_t)];
 		data += sizeof(size_t);
 		m_size() = size_;

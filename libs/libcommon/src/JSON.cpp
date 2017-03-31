@@ -183,7 +183,7 @@ JSON::ElementType JSON::getType() const
 			return TYPE_OBJECT;
 		case '[':
 			return TYPE_ARRAY;
-		case 't': 
+		case 't':
 		case 'f':
 			return TYPE_BOOL;
 		case 'n':
@@ -225,7 +225,7 @@ void JSON::checkPos(Pos pos) const
 JSON::Pos JSON::skipString() const
 {
 	//std::cerr << "skipString()\t" << data() << std::endl;
-	
+
 	Pos pos = ptr_begin;
 	checkPos(pos);
 	if (*pos != '"')
@@ -257,7 +257,7 @@ JSON::Pos JSON::skipString() const
 	if (*pos != '"')
 		throw JSONException(std::string("JSON: expected \", got ") + *pos);
 	++pos;
-	
+
 	return pos;
 }
 
@@ -265,7 +265,7 @@ JSON::Pos JSON::skipString() const
 JSON::Pos JSON::skipNumber() const
 {
 	//std::cerr << "skipNumber()\t" << data() << std::endl;
-	
+
 	Pos pos = ptr_begin;
 
 	checkPos(pos);
@@ -292,10 +292,10 @@ JSON::Pos JSON::skipNumber() const
 JSON::Pos JSON::skipBool() const
 {
 	//std::cerr << "skipBool()\t" << data() << std::endl;
-	
+
 	Pos pos = ptr_begin;
 	checkPos(pos);
-	
+
 	if (*ptr_begin == 't')
 		pos += 4;
 	else if (*ptr_begin == 'f')
@@ -310,7 +310,7 @@ JSON::Pos JSON::skipBool() const
 JSON::Pos JSON::skipNull() const
 {
 	//std::cerr << "skipNull()\t" << data() << std::endl;
-	
+
 	return ptr_begin + 4;
 }
 
@@ -318,7 +318,7 @@ JSON::Pos JSON::skipNull() const
 JSON::Pos JSON::skipNameValuePair() const
 {
 	//std::cerr << "skipNameValuePair()\t" << data() << std::endl;
-	
+
 	Pos pos = skipString();
 	checkPos(pos);
 
@@ -327,14 +327,14 @@ JSON::Pos JSON::skipNameValuePair() const
 	++pos;
 
 	return JSON(pos, ptr_end, level + 1).skipElement();
-	
+
 }
 
 
 JSON::Pos JSON::skipArray() const
 {
 	//std::cerr << "skipArray()\t" << data() << std::endl;
-	
+
 	if (!isArray())
 		throw JSONException("JSON: expected [");
 	Pos pos = ptr_begin;
@@ -366,7 +366,7 @@ JSON::Pos JSON::skipArray() const
 JSON::Pos JSON::skipObject() const
 {
 	//std::cerr << "skipObject()\t" << data() << std::endl;
-	
+
 	if (!isObject())
 		throw JSONException("JSON: expected {");
 	Pos pos = ptr_begin;
@@ -374,7 +374,7 @@ JSON::Pos JSON::skipObject() const
 	checkPos(pos);
 	if (*pos == '}')
 		return ++pos;
-	
+
 	while (1)
 	{
 		pos = JSON(pos, ptr_end, level + 1).skipNameValuePair();
@@ -398,7 +398,7 @@ JSON::Pos JSON::skipObject() const
 JSON::Pos JSON::skipElement() const
 {
 	//std::cerr << "skipElement()\t" << data() << std::endl;
-	
+
 	ElementType type = getType();
 
 	switch(type)
@@ -618,7 +618,7 @@ std::string JSON::getString() const
 					case 'u':
 					{
 						Poco::UTF8Encoding utf8;
-						
+
 						++s;
 						checkPos(s + 4);
 						std::string hex(s, 4);

@@ -36,7 +36,7 @@ static time_t orderedIdentifierToDate(unsigned value)
 void loop(time_t begin, time_t end, int step)
 {
 	const auto & date_lut = DateLUT::instance();
-	
+
 	for (time_t t = begin; t < end; t += step)
 	{
 		time_t t2 = date_lut.makeDateTime(date_lut.toYear(t), date_lut.toMonth(t), date_lut.toDayOfMonth(t),
@@ -44,9 +44,9 @@ void loop(time_t begin, time_t end, int step)
 
 		std::string s1 = toString(t);
 		std::string s2 = toString(t2);
-			
+
 		std::cerr << s1 << ", " << s2 << std::endl;
-		
+
 		if (s1 != s2)
 			throw Poco::Exception("Test failed.");
 	}

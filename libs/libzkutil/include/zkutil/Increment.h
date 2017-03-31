@@ -4,7 +4,7 @@
 
 namespace zkutil
 {
-	
+
 class Increment
 {
 public:
@@ -13,15 +13,15 @@ public:
 	{
 		zookeeper_holder->getZooKeeper()->createAncestors(path);
 	}
-	
+
 	size_t get()
 	{
 		LOG_TRACE(log, "Get increment");
-		
+
 		size_t result = 0;
 		std::string result_str;
 		zkutil::Stat stat;
-		
+
 		bool success = false;
 		auto zookeeper = zookeeper_holder->getZooKeeper();
 		do
@@ -37,7 +37,7 @@ public:
 			}
 		}
 		while (!success);
-		
+
 		return result;
 	}
 private:

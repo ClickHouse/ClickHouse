@@ -16,33 +16,33 @@
 #
 # Usage:
 #	set(ENV{Poco_DIR} path/to/poco/sdk)
-#	find_package(Poco REQUIRED OSP Data Crypto) 
+#	find_package(Poco REQUIRED OSP Data Crypto)
 #
 # On completion, the script defines the following variables:
-#	
+#
 #	- Compound variables:
-#   Poco_FOUND 
+#   Poco_FOUND
 #		- true if all requested components were found.
-#	Poco_LIBRARIES 
+#	Poco_LIBRARIES
 #		- contains release (and debug if available) libraries for all requested components.
 #		  It has the form "optimized LIB1 debug LIBd1 optimized LIB2 ...", ready for use with the target_link_libraries command.
 #	Poco_INCLUDE_DIRS
 #		- Contains include directories for all requested components.
 #
 #	- Component variables:
-#   Poco_Xxx_FOUND 
-#		- Where Xxx is the properly cased component name (eg. 'Util', 'OSP'). 
+#   Poco_Xxx_FOUND
+#		- Where Xxx is the properly cased component name (eg. 'Util', 'OSP').
 #		  True if a component's library or debug library was found successfully.
-#	Poco_Xxx_LIBRARY 
+#	Poco_Xxx_LIBRARY
 #		- Library for component Xxx.
-#	Poco_Xxx_LIBRARY_DEBUG 
+#	Poco_Xxx_LIBRARY_DEBUG
 #		- debug library for component Xxx
 #   Poco_Xxx_INCLUDE_DIR
 #		- include directory for component Xxx
 #
 #  	- OSP BundleCreator variables: (i.e. bundle.exe on windows, bundle on unix-likes)
 #		(is only discovered if OSP is a requested component)
-#	Poco_OSP_Bundle_EXECUTABLE_FOUND 
+#	Poco_OSP_Bundle_EXECUTABLE_FOUND
 #		- true if the bundle-creator executable was found.
 #	Poco_OSP_Bundle_EXECUTABLE
 #		- the path to the bundle-creator executable.
@@ -52,24 +52,24 @@
 set(Poco_HINTS
 	/usr/local
 	C:/AppliedInformatics
-	${Poco_DIR} 
+	${Poco_DIR}
 	$ENV{Poco_DIR}
 )
 
 if(NOT Poco_ROOT_DIR)
 	# look for the root directory, first for the source-tree variant
-	find_path(Poco_ROOT_DIR 
+	find_path(Poco_ROOT_DIR
 		NAMES Foundation/include/Poco/Poco.h
 		HINTS ${Poco_HINTS}
 	)
 	if(NOT Poco_ROOT_DIR)
 		# this means poco may have a different directory structure, maybe it was installed, let's check for that
 		message(STATUS "Looking for Poco install directory structure.")
-		find_path(Poco_ROOT_DIR 
+		find_path(Poco_ROOT_DIR
 			NAMES include/Poco/Poco.h
 			HINTS ${Poco_HINTS}
 		)
-		if(NOT Poco_ROOT_DIR) 
+		if(NOT Poco_ROOT_DIR)
 			# poco was still not found -> Fail
 			if(Poco_FIND_REQUIRED)
 				message(FATAL_ERROR "Poco: Could not find Poco install directory")
@@ -91,7 +91,7 @@ if(WIN32)
 	find_path(Poco_RUNTIME_LIBRARY_DIRS
 		NAMES PocoFoundation.dll
 		HINTS ${Poco_ROOT_DIR}
-		PATH_SUFFIXES 
+		PATH_SUFFIXES
 			bin
 			lib
 	)
@@ -103,17 +103,17 @@ if(Poco_INSTALLED)
 endif()
 
 # append the default minimum components to the list to find
-list(APPEND components 
-	${Poco_FIND_COMPONENTS} 
+list(APPEND components
+	${Poco_FIND_COMPONENTS}
 	# default components:
-	"Util" 
+	"Util"
 	"Foundation"
 )
 list(REMOVE_DUPLICATES components) # remove duplicate defaults
 
 foreach( component ${components} )
 	#if(NOT Poco_${component}_FOUND)
-		
+
 	# include directory for the component
 	if(NOT Poco_${component}_INCLUDE_DIR)
 		if (${component} STREQUAL "DataODBC")
@@ -127,7 +127,7 @@ foreach( component ${components} )
 			set (component_alt ${component})
 		endif ()
 		find_path(Poco_${component}_INCLUDE_DIR
-			NAMES 
+			NAMES
 				Poco/${component}.h 	# e.g. Foundation.h
 				Poco/${component}/${component}.h # e.g. OSP/OSP.h Util/Util.h
 				Poco/${component_alt}/${component}.h # e.g. Net/NetSSL.h
@@ -148,8 +148,8 @@ foreach( component ${components} )
 	# release library
 	if(NOT Poco_${component}_LIBRARY)
 		find_library(
-			Poco_${component}_LIBRARY 
-			NAMES Poco${component} 
+			Poco_${component}_LIBRARY
+			NAMES Poco${component}
 			HINTS ${Poco_ROOT_DIR}
 			PATH_SUFFIXES
 				lib
@@ -198,9 +198,9 @@ endif()
 if(${Poco_OSP_FOUND})
 	# find the osp bundle program
 	find_program(
-		Poco_OSP_Bundle_EXECUTABLE 
+		Poco_OSP_Bundle_EXECUTABLE
 		NAMES bundle
-		HINTS 
+		HINTS
 			${Poco_RUNTIME_LIBRARY_DIRS}
 			${Poco_ROOT_DIR}
 		PATH_SUFFIXES

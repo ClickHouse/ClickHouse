@@ -56,7 +56,7 @@ public:
 		if (sigemptyset(&sig_set)
 			|| sigaddset(&sig_set, SIGINT))
 			throwFromErrno("Cannot manipulate with signal set.", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
-		
+
 		block();
 	}
 
@@ -69,9 +69,9 @@ public:
 	{
 		if (!active)
 			return false;
-		
+
 		timespec timeout = { 0, 0 };
-		
+
 		if (-1 == sigtimedwait(&sig_set, nullptr, &timeout))
 		{
 			if (errno == EAGAIN)

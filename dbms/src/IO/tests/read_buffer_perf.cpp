@@ -24,13 +24,13 @@ int main(int argc, char ** argv)
 		{
 			DB::readIntText(a, in);
 			in.ignore();
-			
+
 			DB::readFloatText(b, in);
 			in.ignore();
-			
+
 			DB::readEscapedString(c, in);
 			in.ignore();
-			
+
 			DB::readQuotedString(d, in);
 			in.ignore();
 

@@ -143,7 +143,7 @@ int main(int argc, char ** argv)
 		std::unordered_map<Key, Value, DefaultHash<Key> > map;
 		for (size_t i = 0; i < n; ++i)
 			++map[data[i]];
-		
+
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
 			<< "std::unordered_map. Size: " << map.size()
@@ -160,7 +160,7 @@ int main(int argc, char ** argv)
 		map.set_empty_key(-1ULL);
 		for (size_t i = 0; i < n; ++i)
   			++map[data[i]];
-		
+
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
 			<< "google::dense_hash_map. Size: " << map.size()

@@ -107,7 +107,7 @@ template < typename keytype, typename hashtype >
 bool AvalancheTest ( pfHash hash, const int reps )
 {
   Rand r(48273);
-  
+
   const int keybytes = sizeof(keytype);
   const int hashbytes = sizeof(hashtype);
 
@@ -121,7 +121,7 @@ bool AvalancheTest ( pfHash hash, const int reps )
   std::vector<int> bins(keybits*hashbits,0);
 
   calcBias<keytype,hashtype>(hash,bins,reps,r);
-  
+
   //----------
 
   bool result = true;

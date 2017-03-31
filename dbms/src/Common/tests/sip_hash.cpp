@@ -120,7 +120,7 @@ int test_vectors()
 
 	hash.update(in, part);
 	hash.update(in + part, i - part);
-	
+
 	hash.get128(out);
 
 	uint64_t test_vector;

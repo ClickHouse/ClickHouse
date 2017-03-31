@@ -642,7 +642,7 @@ TEST(JSON_Suite, SimpleTest)
 			try
 			{
 				JSON j(r.input.c_str(), r.input.c_str() + r.input.size());
-				
+
 				ASSERT_EQ(j.getString(), r.result);
 				ASSERT_TRUE(r.result_type == ResultType::Return);
 			}

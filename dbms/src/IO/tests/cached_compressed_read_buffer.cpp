@@ -12,7 +12,7 @@
 int main(int argc, char ** argv)
 {
 	using namespace DB;
-	
+
 	try
 	{
 		UncompressedCache cache(1024);

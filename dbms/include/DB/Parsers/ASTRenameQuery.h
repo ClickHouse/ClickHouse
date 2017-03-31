@@ -29,7 +29,7 @@ public:
 
 	ASTRenameQuery() = default;
 	ASTRenameQuery(const StringRange range_) : IAST(range_) {}
-	
+
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "Rename"; };
 

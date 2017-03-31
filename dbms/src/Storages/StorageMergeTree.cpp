@@ -339,7 +339,7 @@ bool StorageMergeTree::merge(
 
 	/// Logging
 	Stopwatch stopwatch;
-	
+
 	auto new_part = merger.mergePartsToTemporaryPart(
 		merging_tagger->parts, merged_name, *merge_entry_ptr, aio_threshold, time(0), merging_tagger->reserved_space.get());
 

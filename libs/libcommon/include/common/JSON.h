@@ -12,7 +12,7 @@
   * Не парсит JSON до конца (парсит только часть, необходимую для выполнения вызванного метода).
   * Парсинг необходимой части запускается каждый раз при вызове методов.
   * Может работать с обрезанным JSON-ом.
-  * При этом, (в отличие от SAX-подобных парсеров), предоставляет удобные методы для работы. 
+  * При этом, (в отличие от SAX-подобных парсеров), предоставляет удобные методы для работы.
   *
   * Эта структура данных более оптимальна, если нужно доставать несколько элементов из большого количества маленьких JSON-ов.
   * То есть, подходит для обработки "параметров визитов" и "параметров интернет магазинов" в Яндекс.Метрике.
@@ -81,7 +81,7 @@ public:
 	};
 
 	ElementType getType() const;
-	
+
 	bool isObject() const			{ return getType() == TYPE_OBJECT; };
 	bool isArray() const			{ return getType() == TYPE_ARRAY; };
 	bool isNumber() const			{ return getType() == TYPE_NUMBER; };
@@ -138,7 +138,7 @@ public:
 	/// Класс JSON одновременно является итератором по самому себе.
 	using iterator = JSON;
 	using const_iterator = JSON;
-	
+
 	iterator operator* () const { return *this; }
 	const JSON * operator-> () const { return this; }
 	bool operator== (const JSON & rhs) const { return ptr_begin == rhs.ptr_begin; }

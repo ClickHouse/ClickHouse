@@ -61,7 +61,7 @@ int main(int argc, char ** argv)
 			<< " (" << rows / watch.elapsedSeconds() << " rows/sec., " << bytes / 1000000.0 / watch.elapsedSeconds() << " MB/sec.)"
 			<< std::endl;
 	}
-	
+
 /*	{
 		Stopwatch watch;
 

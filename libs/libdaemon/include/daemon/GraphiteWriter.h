@@ -20,18 +20,18 @@ public:
 	template <typename T> using KeyValuePair = std::pair<std::string, T>;
 	template <typename T> using KeyValueVector = std::vector<KeyValuePair<T>>;
 
-	template <typename T> void write(const std::string & key, const T & value, 
+	template <typename T> void write(const std::string & key, const T & value,
 									 time_t timestamp = 0, const std::string & custom_root_path = "")
 	{
 		writeImpl(KeyValuePair<T>{ key, value }, timestamp, custom_root_path);
 	}
 
-	template <typename T> void write(const KeyValueVector<T> & key_val_vec, 
+	template <typename T> void write(const KeyValueVector<T> & key_val_vec,
 									 time_t timestamp = 0, const std::string & custom_root_path = "")
 	{
 		writeImpl(key_val_vec, timestamp, custom_root_path);
 	}
-	
+
 	/// возвращает путь root_path.server_name
 	static std::string getPerServerPath(const std::string & server_name, const std::string & root_path = "one_min");
 private:
@@ -60,7 +60,7 @@ private:
 	template <typename T>
 	void out(std::ostream & os, const KeyValuePair<T> & key_val, time_t timestamp, const std::string & custom_root_path)
 	{
-		os << (custom_root_path.empty() ? root_path : custom_root_path) << 
+		os << (custom_root_path.empty() ? root_path : custom_root_path) <<
 			'.' << key_val.first << ' ' << key_val.second << ' ' << timestamp << '\n';
 	}
 

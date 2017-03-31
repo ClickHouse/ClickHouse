@@ -19,7 +19,7 @@ int main(int argc, char ** argv)
 		std::string s;
 
 		std::cerr << static_cast<Int64>(x1) << std::endl;
-		
+
 		{
 			DB::WriteBufferFromString wb(s);
 			DB::writeIntText(x1, wb);

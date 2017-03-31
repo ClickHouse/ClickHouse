@@ -12,15 +12,15 @@ StoreQueryResult::StoreQueryResult(MYSQL_RES * res_, Connection * conn_, const Q
 	UInt32 fields = getNumFields();
 	reserve(rows);
 	lengths.resize(rows * fields);
-	
+
 	for (UInt64 i = 0; MYSQL_ROW row = mysql_fetch_row(res); ++i)
 	{
 		MYSQL_LENGTHS lengths_for_row = mysql_fetch_lengths(res);
 		memcpy(&lengths[i * fields], lengths_for_row, sizeof(lengths[0]) * fields);
-		
+
 		push_back(Row(row, this, &lengths[i * fields]));
 	}
 	checkError(conn->getDriver());
 }
-	
+
 }

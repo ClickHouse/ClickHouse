@@ -53,7 +53,7 @@ int main(int argc, char ** argv)
 	printType(DB::NumberTraits::ResultOfFloatingPointDivision<DB::UInt32, DB::Int16>::Type()); std::cout << std::endl;
 	printType(DB::NumberTraits::ResultOfIntegerDivision<DB::UInt8, DB::Int16>::Type()); std::cout << std::endl;
 	printType(DB::NumberTraits::ResultOfModulo<DB::UInt32, DB::Int8>::Type()); std::cout << std::endl;
-	
+
 	ifLeftType<DB::UInt8>();
 	ifLeftType<DB::UInt16>();
 	ifLeftType<DB::UInt32>();
@@ -64,6 +64,6 @@ int main(int argc, char ** argv)
 	ifLeftType<DB::Int64>();
 	ifLeftType<DB::Float32>();
 	ifLeftType<DB::Float64>();
-	
+
 	return 0;
 }

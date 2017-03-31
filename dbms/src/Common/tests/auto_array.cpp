@@ -39,7 +39,7 @@ int main(int argc, char ** argv)
 	}
 
 	std::cerr << std::endl;
-	
+
 	{
 		size_t n = 10;
 		using T = std::string;
@@ -58,7 +58,7 @@ int main(int argc, char ** argv)
 		Arr arr2 = std::move(arr);
 
 		std::cerr << arr.size() << ", " << arr2.size() << std::endl;
-		
+
 		for (size_t i = 0; i < arr2.size(); ++i)
 			std::cerr << arr2[i] << std::endl;
 	}
@@ -78,7 +78,7 @@ int main(int argc, char ** argv)
 			Arr key(n);
 			for (size_t j = 0; j < n; ++j)
 				key[j] = DB::toString(rand());
-			
+
 			map[std::move(key)] = "Hello, world! " + DB::toString(i);
 		}
 
@@ -88,7 +88,7 @@ int main(int argc, char ** argv)
 			for (size_t j = 0; j < n; ++j)
 				std::cerr << (j == 0 ? "" : ", ") << it->first[j];
 			std::cerr << "]";
-			
+
 			std::cerr << ":\t" << it->second << std::endl;
 		}
 

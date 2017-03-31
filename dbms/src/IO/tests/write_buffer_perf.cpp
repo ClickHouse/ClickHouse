@@ -24,10 +24,10 @@ int main(int argc, char ** argv)
 		{
 			DB::writeIntText(a, out);
 			DB::writeChar(' ', out);
-			
+
 			DB::writeFloatText(b, out);
 			DB::writeChar(' ', out);
-			
+
 			DB::writeEscapedString(c, out);
 			DB::writeChar('\t', out);
 

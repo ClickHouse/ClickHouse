@@ -16,7 +16,7 @@ class Foundation_API LevelFilterChannel: public Channel
 public:
 	void log(const Message& msg);
 		/// Sends the given Message to all
-		/// attaches channels. 
+		/// attaches channels.
 
 	void setProperty(const std::string& name, const std::string& value);
 		/// Sets or changes a configuration property.
@@ -24,7 +24,7 @@ public:
 		/// Only the "level" property is supported, which allows setting desired level
 
 	void setChannel(Channel* pChannel);
-		/// Sets the destination channel to which the formatted 
+		/// Sets the destination channel to which the formatted
 		/// messages are passed on.
 
 	Channel* getChannel() const;
@@ -33,10 +33,10 @@ public:
 
 	void open();
 		/// Opens the attached channel.
-		
+
 	void close();
 		/// Closes the attached channel.
-		
+
 	void setLevel(Message::Priority);
 		/// Sets the Logger's log level.
 	void setLevel(const std::string& value);
