@@ -16,6 +16,6 @@ target_include_directories (gtest INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/goo
 
 
 macro(grep_gtest_sources BASE_DIR DST_VAR)
-	# not CMake-way
-	execute_process(COMMAND find "${BASE_DIR}" -path "*/tests/gtest*.cpp" -printf "%p;" OUTPUT_VARIABLE ${DST_VAR})
+	# Cold match files that are not in tests/ directories
+	file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
 endmacro()
