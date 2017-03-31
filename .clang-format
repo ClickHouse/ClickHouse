@@ -2,7 +2,20 @@
 BasedOnStyle:  WebKit
 Language:        Cpp
 AlignAfterOpenBracket: false
-BreakBeforeBraces: Allman
+BreakBeforeBraces: Custom
+BraceWrapping: {
+    AfterClass: 'true'
+    AfterControlStatement: 'true'
+    AfterEnum : 'true'
+    AfterFunction : 'true'
+    AfterNamespace : 'true'
+    AfterStruct : 'true'
+    AfterUnion : 'true'
+    BeforeCatch : 'true'
+    BeforeElse : 'true'
+    IndentBraces : 'false'
+}
+
 BreakConstructorInitializersBeforeComma: false
 Cpp11BracedListStyle: true
 ColumnLimit:     140
