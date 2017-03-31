@@ -1252,6 +1252,24 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 		String covering_part;
 		String replica = findReplicaHavingCoveringPart(entry.new_part_name, true, covering_part);
 
+		static std::atomic_uint total_fetches {0};
+		if (total_fetches >= data.settings.replicated_max_parallel_fetches)
+		{
+			return false;
+		}
+
+		++total_fetches;
+		SCOPE_EXIT({--total_fetches;});
+
+		if (current_table_fetches >= data.settings.replicated_max_parallel_fetches_for_table)
+		{
+			return false;
+		}
+
+		++current_table_fetches;
+		SCOPE_EXIT({--current_table_fetches;});
+
+
 		if (replica.empty() && entry.type == LogEntry::ATTACH_PART)
 		{
 			/** If ATTACH - a piece may not be here, because the replica, on which the part is, still did not have time to attach it.
