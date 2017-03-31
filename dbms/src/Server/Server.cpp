@@ -43,6 +43,7 @@ namespace DB
 namespace ErrorCodes
 {
 	extern const int NO_ELEMENTS_IN_CONFIG;
+	extern const int SUPPORT_IS_DISABLED;
 }
 
 
