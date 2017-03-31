@@ -137,6 +137,7 @@ public:
 
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
+	void dropColumnFromPartition(ASTPtr query, const Field & partition, const Field & column_name, const Settings & settings) override;
 	void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
 	void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
 	void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;

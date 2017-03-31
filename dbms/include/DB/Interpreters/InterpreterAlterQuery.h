@@ -31,12 +31,14 @@ private:
 			ATTACH_PARTITION,
 			FETCH_PARTITION,
 			FREEZE_PARTITION,
-			RESHARD_PARTITION
+			RESHARD_PARTITION,
+			DROP_COLUMN,
 		};
 
 		Type type;
 
 		Field partition;
+		Field column_name;
 		bool detach = false; /// true для DETACH PARTITION.
 
 		bool unreplicated = false;
@@ -61,6 +63,15 @@ private:
 			res.partition = partition;
 			res.detach = detach;
 			res.unreplicated = unreplicated;
+			return res;
+		}
+
+		static PartitionCommand dropColumnFromPartition(const Field & partition, const Field & column_name)
+		{
+			PartitionCommand res;
+			res.type = DROP_COLUMN;
+			res.partition = partition;
+			res.column_name = column_name;
 			return res;
 		}
 
@@ -96,8 +107,15 @@ private:
 			const WeightedZooKeeperPaths & weighted_zookeeper_paths_, const ASTPtr & sharding_key_expr_,
 			bool do_copy_, const Field & coordinator_)
 		{
-			return {RESHARD_PARTITION, first_partition_, false, false, false, {},
-				last_partition_, weighted_zookeeper_paths_, sharding_key_expr_, do_copy_, coordinator_};
+			PartitionCommand res;
+			res.type = RESHARD_PARTITION;
+			res.partition = first_partition_;
+			res.last_partition = last_partition_;
+			res.weighted_zookeeper_paths = weighted_zookeeper_paths_;
+			res.sharding_key_expr = sharding_key_expr_;
+			res.do_copy = do_copy_;
+			res.coordinator = coordinator_;
+			return res;
 		}
 	};
 

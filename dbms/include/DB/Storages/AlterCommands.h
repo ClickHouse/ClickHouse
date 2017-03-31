@@ -21,6 +21,9 @@ struct AlterCommand
 
 	String column_name;
 
+	/// For DROP COLUMN ... FROM PARTITION
+	String partition_name;
+
 	/// Для ADD и MODIFY - новый тип столбца.
 	DataTypePtr data_type;
 

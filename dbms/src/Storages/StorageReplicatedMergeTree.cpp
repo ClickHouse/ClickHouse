@@ -2710,6 +2710,73 @@ void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partiti
 	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " unreplicated parts inside " << applyVisitor(FieldVisitorToString(), partition) << ".");
 }
 
+void StorageReplicatedMergeTree::dropColumnFromPartition(
+	ASTPtr query,
+	const Field & partition,
+	const Field & column_name,
+	const Settings & settings)
+{
+	assertNotReadonly();
+
+	String month_name = MergeTreeData::getMonthName(partition);
+	if (!is_leader_node)
+	{
+		/// Proxy request to the leader.
+
+		auto live_replicas = getZooKeeper()->getChildren(zookeeper_path + "/leader_election");
+		if (live_replicas.empty())
+			throw Exception("No active replicas", ErrorCodes::NO_ACTIVE_REPLICAS);
+
+		std::sort(live_replicas.begin(), live_replicas.end());
+		const auto leader = getZooKeeper()->get(zookeeper_path + "/leader_election/" + live_replicas.front());
+
+		if (leader == replica_name)
+			throw Exception("Leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
+
+		ReplicatedMergeTreeAddress leader_address(getZooKeeper()->get(zookeeper_path + "/replicas/" + leader + "/host"));
+
+		auto new_query = query->clone();
+		auto & alter = typeid_cast<ASTAlterQuery &>(*new_query);
+
+		alter.database = leader_address.database;
+		alter.table = leader_address.table;
+
+		/// NOTE Works only if there is access from the default user without a password. You can fix it by adding a parameter to the server config.
+
+		Connection connection(
+			leader_address.host,
+			leader_address.queries_port,
+			leader_address.database,
+			"", "", "ClickHouse replica");
+
+		RemoteBlockInputStream stream(connection, formattedAST(new_query), &settings);
+		NullBlockOutputStream output;
+
+		copyData(stream, output);
+		return;
+	}
+
+	/// TODO
+
+	/// Finally, having achieved the necessary invariants, you can put an entry in the log.
+	LogEntry entry;
+	entry.type = LogEntry::DROP_COLUMN;
+	entry.new_part_name = partition.safeGet<String>();
+	entry.column_name = column_name.safeGet<String>();
+
+	String log_znode_path = getZooKeeper()->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+	entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+	entry.create_time = time(0);
+
+	/// If necessary, wait until the operation is performed on itself or on all replicas.
+	if (settings.replication_alter_partitions_sync != 0)
+	{
+		if (settings.replication_alter_partitions_sync == 1)
+			waitForReplicaToProcessLogEntry(replica_name, entry);
+		else
+			waitForAllReplicasToProcessLogEntry(entry);
+	}
+}
 
 void StorageReplicatedMergeTree::dropPartition(
 	ASTPtr query, const Field & field, bool detach, bool unreplicated, const Settings & settings)
@@ -2804,6 +2871,7 @@ void StorageReplicatedMergeTree::dropPartition(
 	entry.source_replica = replica_name;
 	entry.new_part_name = fake_part_name;
 	entry.detach = detach;
+
 	String log_znode_path = getZooKeeper()->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
 	entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 	entry.create_time = time(0);

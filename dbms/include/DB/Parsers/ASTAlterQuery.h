@@ -9,7 +9,7 @@ namespace DB
 /** ALTER запрос
  *  ALTER TABLE [db.]name_type
  *  	ADD COLUMN col_name type [AFTER col_after],
- * 		DROP COLUMN col_drop,
+ * 		DROP COLUMN col_drop [FROM PARTITION partition],
  * 		MODIFY COLUMN col_name type,
  * 		DROP PARTITION partition
  *		RESHARD [COPY] PARTITION partition
