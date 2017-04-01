@@ -1,6 +1,6 @@
-#include <DataStreams/AddingDefaultBlockOutputStream.h>
+#include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
 
-#include <Core/Block.h>
+#include <DB/Core/Block.h>
 
 namespace DB
 {

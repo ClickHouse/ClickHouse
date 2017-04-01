@@ -1,14 +1,14 @@
 #include <memory>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/IParserBase.h>
-#include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserSetQuery.h>
-#include <Parsers/ParserSampleRatio.h>
-#include <Parsers/ParserSelectQuery.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
+#include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/IParserBase.h>
+#include <DB/Parsers/CommonParsers.h>
+#include <DB/Parsers/ExpressionElementParsers.h>
+#include <DB/Parsers/ExpressionListParsers.h>
+#include <DB/Parsers/ParserSetQuery.h>
+#include <DB/Parsers/ParserSampleRatio.h>
+#include <DB/Parsers/ParserSelectQuery.h>
+#include <DB/Parsers/ParserTablesInSelectQuery.h>
 
 #include <iostream>
 

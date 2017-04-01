@@ -1,6 +1,6 @@
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
-#include <Common/Stopwatch.h>
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/WriteBufferFromFile.h>
+#include <DB/Common/Stopwatch.h>
 #include <Poco/File.h>
 #include <iostream>
 #include <iomanip>

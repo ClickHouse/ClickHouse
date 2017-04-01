@@ -1,4 +1,4 @@
-#include <Parsers/ASTSampleRatio.h>
+#include <DB/Parsers/ASTSampleRatio.h>
 
 namespace DB
 {

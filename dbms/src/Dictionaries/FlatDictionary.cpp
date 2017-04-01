@@ -1,4 +1,4 @@
-#include <Dictionaries/FlatDictionary.h>
+#include <DB/Dictionaries/FlatDictionary.h>
 
 
 namespace DB

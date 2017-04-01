@@ -1,10 +1,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#include <Common/ProfileEvents.h>
+#include <DB/Common/ProfileEvents.h>
 
-#include <IO/WriteBufferFromFile.h>
-#include <IO/WriteHelpers.h>
+#include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace ProfileEvents

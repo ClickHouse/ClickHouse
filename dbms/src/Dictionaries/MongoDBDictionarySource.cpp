@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include <DB/Common/config.h>
 #if Poco_MongoDB_FOUND
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
@@ -12,9 +12,9 @@
 // naming conflict:
 // Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string& value);
 // dbms/include/DB/IO/WriteHelpers.h:146 #define writeCString(s, buf)
-#include <Dictionaries/MongoDBDictionarySource.h>
-#include <Dictionaries/MongoDBBlockInputStream.h>
-#include <Core/FieldVisitors.h>
+#include <DB/Dictionaries/MongoDBDictionarySource.h>
+#include <DB/Dictionaries/MongoDBBlockInputStream.h>
+#include <DB/Core/FieldVisitors.h>
 #include <ext/enumerate.hpp>
 
 

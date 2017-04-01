@@ -1,17 +1,17 @@
 #include <iostream>
 #include <iomanip>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/DataTypes/DataTypeString.h>
 
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
+#include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnString.h>
 
-#include <DataStreams/OneBlockInputStream.h>
+#include <DB/DataStreams/OneBlockInputStream.h>
 
-#include <Interpreters/Aggregator.h>
+#include <DB/Interpreters/Aggregator.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
 
 int main(int argc, char ** argv)

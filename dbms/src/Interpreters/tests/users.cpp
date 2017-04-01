@@ -1,5 +1,5 @@
-#include <Common/ConfigProcessor.h>
-#include <Interpreters/Users.h>
+#include <DB/Common/ConfigProcessor.h>
+#include <DB/Interpreters/Users.h>
 
 #include <boost/filesystem.hpp>
 

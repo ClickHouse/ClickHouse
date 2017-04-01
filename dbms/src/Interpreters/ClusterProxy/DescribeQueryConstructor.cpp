@@ -1,8 +1,8 @@
-#include <Interpreters/ClusterProxy/DescribeQueryConstructor.h>
-#include <Interpreters/InterpreterDescribeQuery.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/BlockExtraInfoInputStream.h>
-#include <DataStreams/RemoteBlockInputStream.h>
+#include <DB/Interpreters/ClusterProxy/DescribeQueryConstructor.h>
+#include <DB/Interpreters/InterpreterDescribeQuery.h>
+#include <DB/DataStreams/MaterializingBlockInputStream.h>
+#include <DB/DataStreams/BlockExtraInfoInputStream.h>
+#include <DB/DataStreams/RemoteBlockInputStream.h>
 
 namespace DB
 {

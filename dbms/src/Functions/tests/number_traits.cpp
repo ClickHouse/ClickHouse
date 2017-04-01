@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include <Functions/NumberTraits.h>
+#include <DB/Functions/NumberTraits.h>
 
 
 void printType(DB::UInt8 x)        { std::cout << "UInt8"; }

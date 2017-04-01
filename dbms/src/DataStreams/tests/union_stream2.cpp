@@ -1,20 +1,20 @@
 #include <iostream>
 #include <iomanip>
 
-#include <IO/WriteBufferFromFileDescriptor.h>
+#include <DB/IO/WriteBufferFromFileDescriptor.h>
 
-#include <Storages/System/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemNumbers.h>
 
-#include <DataStreams/LimitBlockInputStream.h>
-#include <DataStreams/UnionBlockInputStream.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/copyData.h>
+#include <DB/DataStreams/LimitBlockInputStream.h>
+#include <DB/DataStreams/UnionBlockInputStream.h>
+#include <DB/DataStreams/AsynchronousBlockInputStream.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
+#include <DB/DataStreams/copyData.h>
 
-#include <DataTypes/DataTypesNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/loadMetadata.h>
+#include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/loadMetadata.h>
 
 
 using namespace DB;

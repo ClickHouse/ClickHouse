@@ -3,24 +3,24 @@
 #include <iostream>
 #include <fstream>
 
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <DB/IO/ReadBufferFromFileDescriptor.h>
+#include <DB/IO/WriteBufferFromFileDescriptor.h>
+#include <DB/IO/CompressedReadBuffer.h>
+#include <DB/IO/CompressedWriteBuffer.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeDateTime.h>
 
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/copyData.h>
+#include <DB/DataStreams/NativeBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockOutputStream.h>
+#include <DB/DataStreams/copyData.h>
 
-#include <Storages/StorageLog.h>
+#include <DB/Storages/StorageLog.h>
 
-#include <Interpreters/Context.h>
-#include <Common/ClickHouseRevision.h>
+#include <DB/Interpreters/Context.h>
+#include <DB/Common/ClickHouseRevision.h>
 
 
 int main(int argc, char ** argv)

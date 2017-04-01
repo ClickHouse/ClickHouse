@@ -5,18 +5,18 @@
 
 //#define DBMS_HASH_MAP_DEBUG_RESIZES
 
-#include <Interpreters/AggregationCommon.h>
+#include <DB/Interpreters/AggregationCommon.h>
 
-#include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/TwoLevelHashMap.h>
-//#include <Common/HashTable/HashTableWithSmallLocks.h>
-//#include <Common/HashTable/HashTableMerge.h>
+#include <DB/Common/HashTable/HashMap.h>
+#include <DB/Common/HashTable/TwoLevelHashMap.h>
+//#include <DB/Common/HashTable/HashTableWithSmallLocks.h>
+//#include <DB/Common/HashTable/HashTableMerge.h>
 
-#include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/CompressedReadBuffer.h>
 
-#include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
+#include <DB/Common/Stopwatch.h>
+#include <DB/Common/ThreadPool.h>
 
 
 using Key = UInt64;

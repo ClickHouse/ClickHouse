@@ -1,15 +1,15 @@
 #include <ext/shared_ptr_helper.hpp>
 
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ParserSelectQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
-#include <Interpreters/InJoinSubqueriesPreprocessor.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/Settings.h>
-#include <Storages/IStorage.h>
-#include <Databases/IDatabase.h>
-#include <Databases/DatabaseOrdinary.h>
+#include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ParserSelectQuery.h>
+#include <DB/Parsers/parseQuery.h>
+#include <DB/Parsers/queryToString.h>
+#include <DB/Interpreters/InJoinSubqueriesPreprocessor.h>
+#include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/Settings.h>
+#include <DB/Storages/IStorage.h>
+#include <DB/Databases/IDatabase.h>
+#include <DB/Databases/DatabaseOrdinary.h>
 
 #include <iostream>
 #include <vector>

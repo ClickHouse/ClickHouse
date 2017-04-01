@@ -1,6 +1,6 @@
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferValidUTF8.h>
-#include <DataStreams/JSONRowOutputStream.h>
+#include <DB/IO/WriteHelpers.h>
+#include <DB/IO/WriteBufferValidUTF8.h>
+#include <DB/DataStreams/JSONRowOutputStream.h>
 
 
 namespace DB

@@ -1,5 +1,5 @@
-#include <Core/Block.h>
-#include <DataStreams/ProhibitColumnsBlockOutputStream.h>
+#include <DB/Core/Block.h>
+#include <DB/DataStreams/ProhibitColumnsBlockOutputStream.h>
 
 
 namespace DB

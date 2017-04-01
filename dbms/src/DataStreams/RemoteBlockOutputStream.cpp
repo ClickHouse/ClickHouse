@@ -1,9 +1,9 @@
-#include <DataStreams/RemoteBlockOutputStream.h>
+#include <DB/DataStreams/RemoteBlockOutputStream.h>
 
-#include <Client/Connection.h>
+#include <DB/Client/Connection.h>
 #include <common/logger_useful.h>
 
-#include <Common/NetException.h>
+#include <DB/Common/NetException.h>
 
 
 namespace DB

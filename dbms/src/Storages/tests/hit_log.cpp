@@ -2,23 +2,23 @@
 #include <list>
 #include <iostream>
 
-#include <IO/ReadBufferFromIStream.h>
-#include <IO/WriteBufferFromOStream.h>
+#include <DB/IO/ReadBufferFromIStream.h>
+#include <DB/IO/WriteBufferFromOStream.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeDateTime.h>
 
-#include <DataStreams/TabSeparatedRowInputStream.h>
-#include <DataStreams/TabSeparatedRowOutputStream.h>
-#include <DataStreams/BlockInputStreamFromRowInputStream.h>
-#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
-#include <DataStreams/copyData.h>
+#include <DB/DataStreams/TabSeparatedRowInputStream.h>
+#include <DB/DataStreams/TabSeparatedRowOutputStream.h>
+#include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
+#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <DB/DataStreams/copyData.h>
 
-#include <Storages/StorageLog.h>
+#include <DB/Storages/StorageLog.h>
 
-#include <Interpreters/Context.h>
+#include <DB/Interpreters/Context.h>
 
 
 using namespace DB;

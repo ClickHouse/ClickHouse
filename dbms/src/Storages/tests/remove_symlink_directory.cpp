@@ -3,7 +3,7 @@
 
 #include <Poco/File.h>
 #include <Poco/Path.h>
-#include <Common/Exception.h>
+#include <DB/Common/Exception.h>
 
 
 int main(int argc, char ** argv)

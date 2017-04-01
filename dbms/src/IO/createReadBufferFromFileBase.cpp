@@ -1,9 +1,9 @@
-#include <IO/createReadBufferFromFileBase.h>
-#include <IO/ReadBufferFromFile.h>
+#include <DB/IO/createReadBufferFromFileBase.h>
+#include <DB/IO/ReadBufferFromFile.h>
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <IO/ReadBufferAIO.h>
+#include <DB/IO/ReadBufferAIO.h>
 #endif
-#include <Common/ProfileEvents.h>
+#include <DB/Common/ProfileEvents.h>
 
 
 namespace ProfileEvents

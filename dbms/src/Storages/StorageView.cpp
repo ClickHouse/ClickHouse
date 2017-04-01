@@ -1,9 +1,9 @@
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <DB/Interpreters/InterpreterSelectQuery.h>
+#include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/ASTSelectQuery.h>
 
-#include <Storages/StorageView.h>
+#include <DB/Storages/StorageView.h>
 
 
 namespace DB

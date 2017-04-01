@@ -1,5 +1,5 @@
-#include <IO/ReadHelpers.h>
-#include <DataStreams/JSONEachRowRowInputStream.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/DataStreams/JSONEachRowRowInputStream.h>
 
 
 namespace DB

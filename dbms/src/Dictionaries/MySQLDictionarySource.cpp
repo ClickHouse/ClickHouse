@@ -1,7 +1,7 @@
 #include <common/logger_useful.h>
 
-#include <Dictionaries/MySQLDictionarySource.h>
-#include <Dictionaries/MySQLBlockInputStream.h>
+#include <DB/Dictionaries/MySQLDictionarySource.h>
+#include <DB/Dictionaries/MySQLBlockInputStream.h>
 
 
 namespace DB

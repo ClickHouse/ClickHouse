@@ -4,10 +4,10 @@
 #include <fcntl.h>
 #include <dlfcn.h>
 
-#include <Common/Exception.h>
-#include <Common/ShellCommand.h>
-#include <IO/WriteBufferFromVector.h>
-#include <IO/WriteHelpers.h>
+#include <DB/Common/Exception.h>
+#include <DB/Common/ShellCommand.h>
+#include <DB/IO/WriteBufferFromVector.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB

@@ -1,8 +1,8 @@
-#include <Storages/MergeTree/DataPartsExchange.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/NetException.h>
-#include <IO/ReadBufferFromHTTP.h>
+#include <DB/Storages/MergeTree/DataPartsExchange.h>
+#include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Common/CurrentMetrics.h>
+#include <DB/Common/NetException.h>
+#include <DB/IO/ReadBufferFromHTTP.h>
 #include <Poco/File.h>
 
 

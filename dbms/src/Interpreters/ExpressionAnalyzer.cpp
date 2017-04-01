@@ -1,59 +1,59 @@
 #include <Poco/Util/Application.h>
 #include <Poco/String.h>
 
-#include <DataTypes/FieldToDataType.h>
+#include <DB/DataTypes/FieldToDataType.h>
 
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTAsterisk.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTSet.h>
-#include <Parsers/ASTOrderByElement.h>
+#include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTAsterisk.h>
+#include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTSubquery.h>
+#include <DB/Parsers/ASTSet.h>
+#include <DB/Parsers/ASTOrderByElement.h>
 
-#include <DataTypes/DataTypeSet.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeExpression.h>
-#include <DataTypes/DataTypeNested.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <DB/DataTypes/DataTypeSet.h>
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeTuple.h>
+#include <DB/DataTypes/DataTypeExpression.h>
+#include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
-#include <Columns/ColumnSet.h>
-#include <Columns/ColumnExpression.h>
+#include <DB/Columns/ColumnSet.h>
+#include <DB/Columns/ColumnExpression.h>
 
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/InJoinSubqueriesPreprocessor.h>
-#include <Interpreters/LogicalExpressionsOptimizer.h>
-#include <Interpreters/ExternalDictionaries.h>
-#include <Interpreters/Set.h>
-#include <Interpreters/Join.h>
+#include <DB/Interpreters/InterpreterSelectQuery.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Interpreters/ExpressionActions.h>
+#include <DB/Interpreters/InJoinSubqueriesPreprocessor.h>
+#include <DB/Interpreters/LogicalExpressionsOptimizer.h>
+#include <DB/Interpreters/ExternalDictionaries.h>
+#include <DB/Interpreters/Set.h>
+#include <DB/Interpreters/Join.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
-#include <Storages/StorageDistributed.h>
-#include <Storages/StorageMemory.h>
-#include <Storages/StorageSet.h>
-#include <Storages/StorageJoin.h>
+#include <DB/Storages/StorageDistributed.h>
+#include <DB/Storages/StorageMemory.h>
+#include <DB/Storages/StorageSet.h>
+#include <DB/Storages/StorageJoin.h>
 
-#include <DataStreams/LazyBlockInputStream.h>
-#include <DataStreams/copyData.h>
+#include <DB/DataStreams/LazyBlockInputStream.h>
+#include <DB/DataStreams/copyData.h>
 
-#include <Dictionaries/IDictionary.h>
+#include <DB/Dictionaries/IDictionary.h>
 
-#include <Common/typeid_cast.h>
-#include <Common/StringUtils.h>
+#include <DB/Common/typeid_cast.h>
+#include <DB/Common/StringUtils.h>
 
-#include <Parsers/formatAST.h>
+#include <DB/Parsers/formatAST.h>
 
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
+#include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 
 #include <ext/range.hpp>
-#include <DataTypes/DataTypeFactory.h>
+#include <DB/DataTypes/DataTypeFactory.h>
 
 
 namespace DB

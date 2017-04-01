@@ -1,5 +1,5 @@
-#include <Dictionaries/DictionaryStructure.h>
-#include <Common/StringUtils.h>
+#include <DB/Dictionaries/DictionaryStructure.h>
+#include <DB/Common/StringUtils.h>
 
 #include <unordered_set>
 

@@ -1,5 +1,5 @@
-#include <Storages/MergeTree/MergeList.h>
-#include <Common/CurrentMetrics.h>
+#include <DB/Storages/MergeTree/MergeList.h>
+#include <DB/Common/CurrentMetrics.h>
 #include <Poco/Ext/ThreadNumber.h>
 
 namespace CurrentMetrics

@@ -4,7 +4,7 @@
 #endif
 #include "Server.h"
 #include "LocalServer.h"
-#include <Common/StringUtils.h>
+#include <DB/Common/StringUtils.h>
 
 /// Universal executable for various clickhouse applications
 int mainEntryClickHouseServer(int argc, char ** argv);

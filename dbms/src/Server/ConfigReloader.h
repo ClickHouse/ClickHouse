@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/ConfigProcessor.h>
+#include <DB/Common/ConfigProcessor.h>
 #include <zkutil/Common.h>
 #include <zkutil/ZooKeeperNodeCache.h>
 

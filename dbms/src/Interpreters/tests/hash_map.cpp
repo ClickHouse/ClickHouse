@@ -7,17 +7,17 @@
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/sparse_hash_map>
 
-#include <Common/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 /*
 #define DBMS_HASH_MAP_COUNT_COLLISIONS
 */
-#include <Core/Types.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
-#include <Common/HashTable/HashMap.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <DB/Core/Types.h>
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/CompressedReadBuffer.h>
+#include <DB/Common/HashTable/HashMap.h>
+#include <DB/AggregateFunctions/IAggregateFunction.h>
+#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 
 /** Тест проверяет скорость работы хэш-таблиц, имитируя их использование для агрегации.

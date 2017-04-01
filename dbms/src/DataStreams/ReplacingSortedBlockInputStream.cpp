@@ -1,5 +1,5 @@
-#include <DataStreams/ReplacingSortedBlockInputStream.h>
-#include <Columns/ColumnsNumber.h>
+#include <DB/DataStreams/ReplacingSortedBlockInputStream.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 
 namespace DB

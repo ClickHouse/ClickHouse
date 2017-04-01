@@ -1,6 +1,6 @@
-#include <Interpreters/sortBlock.h>
+#include <DB/Interpreters/sortBlock.h>
 
-#include <Columns/ColumnString.h>
+#include <DB/Columns/ColumnString.h>
 
 
 namespace DB

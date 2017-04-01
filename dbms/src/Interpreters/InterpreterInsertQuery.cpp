@@ -1,21 +1,21 @@
-#include <IO/ConcatReadBuffer.h>
+#include <DB/IO/ConcatReadBuffer.h>
 
-#include <DataStreams/ProhibitColumnsBlockOutputStream.h>
-#include <DataStreams/MaterializingBlockOutputStream.h>
-#include <DataStreams/AddingDefaultBlockOutputStream.h>
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
-#include <DataStreams/NullAndDoCopyBlockInputStream.h>
-#include <DataStreams/SquashingBlockOutputStream.h>
-#include <DataStreams/CountingBlockOutputStream.h>
-#include <DataStreams/NullableAdapterBlockInputStream.h>
-#include <DataStreams/copyData.h>
+#include <DB/DataStreams/ProhibitColumnsBlockOutputStream.h>
+#include <DB/DataStreams/MaterializingBlockOutputStream.h>
+#include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
+#include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
+#include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
+#include <DB/DataStreams/SquashingBlockOutputStream.h>
+#include <DB/DataStreams/CountingBlockOutputStream.h>
+#include <DB/DataStreams/NullableAdapterBlockInputStream.h>
+#include <DB/DataStreams/copyData.h>
 
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTInsertQuery.h>
+#include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTIdentifier.h>
 
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterInsertQuery.h>
+#include <DB/Interpreters/InterpreterSelectQuery.h>
+#include <DB/Interpreters/InterpreterInsertQuery.h>
 
 
 namespace ProfileEvents

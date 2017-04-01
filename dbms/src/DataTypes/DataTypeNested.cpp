@@ -1,9 +1,9 @@
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
+#include <DB/IO/WriteBufferFromString.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNested.h>
 
 
 namespace DB

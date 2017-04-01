@@ -1,9 +1,9 @@
-#include <Core/Progress.h>
+#include <DB/Core/Progress.h>
 
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <DB/IO/ReadBuffer.h>
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB

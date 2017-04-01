@@ -1,9 +1,9 @@
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
 
-#include <Core/Block.h>
+#include <DB/Core/Block.h>
 
-#include <DataStreams/BlockStreamProfileInfo.h>
+#include <DB/DataStreams/BlockStreamProfileInfo.h>
 
 
 namespace DB

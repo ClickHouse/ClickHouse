@@ -1,4 +1,4 @@
-#include <DataStreams/DistinctBlockInputStream.h>
+#include <DB/DataStreams/DistinctBlockInputStream.h>
 
 namespace DB
 {

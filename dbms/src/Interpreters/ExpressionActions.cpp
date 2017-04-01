@@ -1,11 +1,11 @@
-#include <Common/ProfileEvents.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Join.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnArray.h>
-#include <DataTypes/DataTypeArray.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
+#include <DB/Common/ProfileEvents.h>
+#include <DB/Interpreters/ExpressionActions.h>
+#include <DB/Interpreters/Join.h>
+#include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnArray.h>
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/IFunction.h>
 #include <set>
 
 

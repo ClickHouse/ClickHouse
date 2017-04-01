@@ -7,7 +7,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
 
-#include <Common/Exception.h>
+#include <DB/Common/Exception.h>
 
 
 namespace DB

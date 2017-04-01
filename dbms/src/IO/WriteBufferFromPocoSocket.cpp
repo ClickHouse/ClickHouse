@@ -1,9 +1,9 @@
 #include <Poco/Net/NetException.h>
 
-#include <Common/Exception.h>
+#include <DB/Common/Exception.h>
 
-#include <IO/WriteBufferFromPocoSocket.h>
-#include <Common/NetException.h>
+#include <DB/IO/WriteBufferFromPocoSocket.h>
+#include <DB/Common/NetException.h>
 
 
 namespace DB

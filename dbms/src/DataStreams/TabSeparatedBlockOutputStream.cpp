@@ -1,6 +1,6 @@
-#include <IO/WriteBuffer.h>
-#include <Core/Block.h>
-#include <DataStreams/TabSeparatedBlockOutputStream.h>
+#include <DB/IO/WriteBuffer.h>
+#include <DB/Core/Block.h>
+#include <DB/DataStreams/TabSeparatedBlockOutputStream.h>
 
 
 namespace DB

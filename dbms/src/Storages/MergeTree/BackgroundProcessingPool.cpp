@@ -1,10 +1,10 @@
-#include <Common/Exception.h>
-#include <Common/setThreadName.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/MemoryTracker.h>
-#include <IO/WriteHelpers.h>
+#include <DB/Common/Exception.h>
+#include <DB/Common/setThreadName.h>
+#include <DB/Common/CurrentMetrics.h>
+#include <DB/Common/MemoryTracker.h>
+#include <DB/IO/WriteHelpers.h>
 #include <common/logger_useful.h>
-#include <Storages/MergeTree/BackgroundProcessingPool.h>
+#include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 
 #include <random>
 

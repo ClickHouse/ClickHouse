@@ -1,13 +1,13 @@
-#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <DB/IO/WriteBufferFromHTTPServerResponse.h>
 
 #include <Poco/Version.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Common/Exception.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/HTTPCommon.h>
-#include <Common/NetException.h>
-#include <Common/Stopwatch.h>
-#include <Core/Progress.h>
+#include <DB/Common/Exception.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/HTTPCommon.h>
+#include <DB/Common/NetException.h>
+#include <DB/Common/Stopwatch.h>
+#include <DB/Core/Progress.h>
 
 namespace DB
 {

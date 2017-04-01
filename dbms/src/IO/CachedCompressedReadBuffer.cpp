@@ -1,5 +1,5 @@
-#include <IO/CachedCompressedReadBuffer.h>
-#include <IO/WriteHelpers.h>
+#include <DB/IO/CachedCompressedReadBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB

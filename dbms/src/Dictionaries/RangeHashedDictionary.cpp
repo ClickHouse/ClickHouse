@@ -1,4 +1,4 @@
-#include <Dictionaries/RangeHashedDictionary.h>
+#include <DB/Dictionaries/RangeHashedDictionary.h>
 
 
 namespace DB

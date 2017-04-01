@@ -2,32 +2,32 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <Common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 
-#include <Common/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
-#include <Core/Progress.h>
+#include <DB/Core/Progress.h>
 
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromPocoSocket.h>
+#include <DB/IO/CompressedReadBuffer.h>
+#include <DB/IO/CompressedWriteBuffer.h>
+#include <DB/IO/ReadBufferFromPocoSocket.h>
+#include <DB/IO/WriteBufferFromPocoSocket.h>
 
-#include <IO/copyData.h>
+#include <DB/IO/copyData.h>
 
-#include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/Quota.h>
+#include <DB/DataStreams/AsynchronousBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockOutputStream.h>
+#include <DB/Interpreters/executeQuery.h>
+#include <DB/Interpreters/Quota.h>
 
-#include <Storages/StorageMemory.h>
+#include <DB/Storages/StorageMemory.h>
 
-#include <Common/ExternalTable.h>
+#include <DB/Common/ExternalTable.h>
 
 #include "TCPHandler.h"
 
-#include <Common/NetException.h>
+#include <DB/Common/NetException.h>
 
 namespace DB
 {

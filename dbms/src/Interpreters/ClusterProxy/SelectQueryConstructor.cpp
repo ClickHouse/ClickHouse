@@ -1,7 +1,7 @@
-#include <Interpreters/ClusterProxy/SelectQueryConstructor.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <DataStreams/RemoteBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
+#include <DB/Interpreters/ClusterProxy/SelectQueryConstructor.h>
+#include <DB/Interpreters/InterpreterSelectQuery.h>
+#include <DB/DataStreams/RemoteBlockInputStream.h>
+#include <DB/DataStreams/MaterializingBlockInputStream.h>
 
 namespace DB
 {

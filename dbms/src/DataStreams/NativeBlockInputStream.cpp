@@ -1,18 +1,18 @@
-#include <Core/Defines.h>
+#include <DB/Core/Defines.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/VarInt.h>
-#include <IO/CompressedReadBufferFromFile.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/VarInt.h>
+#include <DB/IO/CompressedReadBufferFromFile.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeFactory.h>
+#include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnNullable.h>
+#include <DB/Columns/ColumnsNumber.h>
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNullable.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/DataTypes/DataTypeFactory.h>
 
-#include <DataStreams/NativeBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockInputStream.h>
 
 
 namespace DB

@@ -7,8 +7,8 @@
 #include <sys/prctl.h>
 #endif
 
-#include <Common/Exception.h>
-#include <Common/setThreadName.h>
+#include <DB/Common/Exception.h>
+#include <DB/Common/setThreadName.h>
 
 
 void setThreadName(const char * name)

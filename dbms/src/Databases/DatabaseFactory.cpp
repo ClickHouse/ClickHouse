@@ -1,6 +1,6 @@
-#include <Databases/DatabaseFactory.h>
-#include <Databases/DatabaseOrdinary.h>
-#include <Databases/DatabaseMemory.h>
+#include <DB/Databases/DatabaseFactory.h>
+#include <DB/Databases/DatabaseOrdinary.h>
+#include <DB/Databases/DatabaseMemory.h>
 
 
 namespace DB

@@ -1,9 +1,9 @@
 #include <common/exp10.h>
 
-#include <Parsers/CommonParsers.h>
-#include <Parsers/ParserSampleRatio.h>
-#include <Parsers/ASTSampleRatio.h>
-#include <IO/ReadHelpers.h>
+#include <DB/Parsers/CommonParsers.h>
+#include <DB/Parsers/ParserSampleRatio.h>
+#include <DB/Parsers/ASTSampleRatio.h>
+#include <DB/IO/ReadHelpers.h>
 
 
 namespace DB

@@ -1,8 +1,8 @@
-#include <Interpreters/ExternalDictionaries.h>
-#include <Dictionaries/DictionaryFactory.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Common/StringUtils.h>
+#include <DB/Interpreters/ExternalDictionaries.h>
+#include <DB/Dictionaries/DictionaryFactory.h>
+#include <DB/Dictionaries/DictionaryStructure.h>
+#include <DB/Dictionaries/IDictionarySource.h>
+#include <DB/Common/StringUtils.h>
 #include <ext/scope_guard.hpp>
 #include <Poco/Util/Application.h>
 #include <Poco/Glob.h>

@@ -1,5 +1,5 @@
-#include <Core/Block.h>
-#include <DataStreams/IRowOutputStream.h>
+#include <DB/Core/Block.h>
+#include <DB/DataStreams/IRowOutputStream.h>
 
 
 namespace DB

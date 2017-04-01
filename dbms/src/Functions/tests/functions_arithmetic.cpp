@@ -1,12 +1,12 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Common/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnsNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/Columns/ColumnsNumber.h>
 
-#include <Functions/FunctionsArithmetic.h>
+#include <DB/Functions/FunctionsArithmetic.h>
 
 
 int main(int argc, char ** argv)

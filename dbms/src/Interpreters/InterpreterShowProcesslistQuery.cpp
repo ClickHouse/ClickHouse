@@ -1,10 +1,10 @@
-#include <IO/ReadBufferFromString.h>
+#include <DB/IO/ReadBufferFromString.h>
 
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterShowProcesslistQuery.h>
+#include <DB/Interpreters/executeQuery.h>
+#include <DB/Interpreters/InterpreterShowProcesslistQuery.h>
 
-#include <Parsers/ASTQueryWithOutput.h>
-#include <Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTQueryWithOutput.h>
+#include <DB/Parsers/ASTIdentifier.h>
 
 
 namespace DB

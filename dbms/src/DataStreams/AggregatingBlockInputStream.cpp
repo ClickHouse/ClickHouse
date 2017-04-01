@@ -1,9 +1,9 @@
-#include <Common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 
-#include <DataStreams/BlocksListBlockInputStream.h>
-#include <DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
-#include <DataStreams/AggregatingBlockInputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
+#include <DB/DataStreams/BlocksListBlockInputStream.h>
+#include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
+#include <DB/DataStreams/AggregatingBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockInputStream.h>
 
 
 namespace ProfileEvents

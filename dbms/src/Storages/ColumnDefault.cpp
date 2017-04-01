@@ -1,5 +1,5 @@
-#include <Parsers/queryToString.h>
-#include <Storages/ColumnDefault.h>
+#include <DB/Parsers/queryToString.h>
+#include <DB/Storages/ColumnDefault.h>
 
 
 namespace DB

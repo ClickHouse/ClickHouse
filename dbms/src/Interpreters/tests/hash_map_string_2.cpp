@@ -2,18 +2,18 @@
 #include <iomanip>
 #include <vector>
 
-#include <Common/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 #define DBMS_HASH_MAP_DEBUG_RESIZES
 
-#include <Core/Types.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
-#include <IO/CompressedReadBuffer.h>
-#include <Core/StringRef.h>
-#include <Common/HashTable/HashMap.h>
-#include <Interpreters/AggregationCommon.h>
+#include <DB/Core/Types.h>
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/CompressedReadBuffer.h>
+#include <DB/Core/StringRef.h>
+#include <DB/Common/HashTable/HashMap.h>
+#include <DB/Interpreters/AggregationCommon.h>
 
 #if __SSE4_1__
     #include <smmintrin.h>

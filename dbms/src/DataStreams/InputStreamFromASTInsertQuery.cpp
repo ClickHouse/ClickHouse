@@ -1,5 +1,5 @@
-#include <IO/ReadBufferFromMemory.h>
-#include <DataStreams/InputStreamFromASTInsertQuery.h>
+#include <DB/IO/ReadBufferFromMemory.h>
+#include <DB/DataStreams/InputStreamFromASTInsertQuery.h>
 
 
 namespace DB

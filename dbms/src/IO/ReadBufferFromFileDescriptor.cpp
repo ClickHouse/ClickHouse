@@ -3,14 +3,14 @@
 
 #include <experimental/optional>
 
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
+#include <DB/Common/ProfileEvents.h>
+#include <DB/Common/Stopwatch.h>
 
-#include <Common/Exception.h>
-#include <Common/CurrentMetrics.h>
+#include <DB/Common/Exception.h>
+#include <DB/Common/CurrentMetrics.h>
 
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteHelpers.h>
+#include <DB/IO/ReadBufferFromFileDescriptor.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace ProfileEvents

@@ -1,26 +1,26 @@
-#include <Core/Field.h>
-#include <Core/FieldVisitors.h>
-#include <Core/Row.h>
+#include <DB/Core/Field.h>
+#include <DB/Core/FieldVisitors.h>
+#include <DB/Core/Row.h>
 
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnTuple.h>
+#include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnTuple.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/OneBlockInputStream.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <Functions/DataTypeTraits.h>
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/Functions/DataTypeTraits.h>
 
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTLiteral.h>
 
-#include <Interpreters/Set.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/NullableUtils.h>
+#include <DB/Interpreters/Set.h>
+#include <DB/Interpreters/convertFieldToType.h>
+#include <DB/Interpreters/evaluateConstantExpression.h>
+#include <DB/Interpreters/NullableUtils.h>
 
-#include <Storages/MergeTree/PKCondition.h>
+#include <DB/Storages/MergeTree/PKCondition.h>
 
 
 namespace DB

@@ -1,15 +1,15 @@
 #include <cstring>
 #include <cmath>
 
-#include <Common/Exception.h>
-#include <Common/Arena.h>
-#include <Common/SipHash.h>
-#include <Common/NaNUtils.h>
+#include <DB/Common/Exception.h>
+#include <DB/Common/Arena.h>
+#include <DB/Common/SipHash.h>
+#include <DB/Common/NaNUtils.h>
 
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 
-#include <Columns/ColumnVector.h>
+#include <DB/Columns/ColumnVector.h>
 
 #include <ext/bit_cast.hpp>
 

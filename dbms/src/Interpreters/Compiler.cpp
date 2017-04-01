@@ -1,18 +1,18 @@
 #include <Poco/DirectoryIterator.h>
-#include <Common/ClickHouseRevision.h>
+#include <DB/Common/ClickHouseRevision.h>
 #include <ext/unlock_guard.hpp>
 
-#include <Common/SipHash.h>
-#include <Common/ShellCommand.h>
-#include <Common/StringUtils.h>
+#include <DB/Common/SipHash.h>
+#include <DB/Common/ShellCommand.h>
+#include <DB/Common/StringUtils.h>
 
-#include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFile.h>
+#include <DB/IO/Operators.h>
+#include <DB/IO/ReadBufferFromString.h>
+#include <DB/IO/ReadBufferFromFileDescriptor.h>
+#include <DB/IO/WriteBufferFromFile.h>
 
-#include <Interpreters/Compiler.h>
-#include <Interpreters/config_compile.h>
+#include <DB/Interpreters/Compiler.h>
+#include <DB/Interpreters/config_compile.h>
 
 
 namespace ProfileEvents

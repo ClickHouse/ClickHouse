@@ -1,9 +1,9 @@
-#include <IO/WriteBufferFromOStream.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-#include <Common/SipHash.h>
-#include <Parsers/IAST.h>
+#include <DB/IO/WriteBufferFromOStream.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/WriteHelpers.h>
+#include <DB/IO/Operators.h>
+#include <DB/Common/SipHash.h>
+#include <DB/Parsers/IAST.h>
 
 
 namespace DB

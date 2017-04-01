@@ -1,6 +1,6 @@
 #include <algorithm>
 
-#include <DataStreams/LimitBlockInputStream.h>
+#include <DB/DataStreams/LimitBlockInputStream.h>
 
 
 namespace DB

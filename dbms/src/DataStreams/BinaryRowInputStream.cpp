@@ -1,6 +1,6 @@
-#include <Core/Block.h>
-#include <IO/ReadBuffer.h>
-#include <DataStreams/BinaryRowInputStream.h>
+#include <DB/Core/Block.h>
+#include <DB/IO/ReadBuffer.h>
+#include <DB/DataStreams/BinaryRowInputStream.h>
 
 
 namespace DB

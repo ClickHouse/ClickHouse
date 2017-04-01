@@ -4,7 +4,7 @@
 #include <functional>
 #include <memory>
 #include <common/logger_useful.h>
-#include <Common/CurrentMetrics.h>
+#include <DB/Common/CurrentMetrics.h>
 
 
 namespace ProfileEvents

@@ -1,6 +1,6 @@
-#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 
-#include <IO/WriteHelpers.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB

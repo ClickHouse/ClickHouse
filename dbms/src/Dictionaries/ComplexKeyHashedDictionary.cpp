@@ -1,6 +1,6 @@
 #include <ext/map.hpp>
 #include <ext/range.hpp>
-#include <Dictionaries/ComplexKeyHashedDictionary.h>
+#include <DB/Dictionaries/ComplexKeyHashedDictionary.h>
 
 
 namespace DB

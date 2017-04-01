@@ -1,5 +1,5 @@
-#include <DataStreams/AggregatingSortedBlockInputStream.h>
-#include <Common/StringUtils.h>
+#include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
+#include <DB/Common/StringUtils.h>
 
 
 namespace DB

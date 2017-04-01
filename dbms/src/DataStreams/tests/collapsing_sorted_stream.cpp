@@ -3,16 +3,16 @@
 
 #include <Poco/ConsoleChannel.h>
 
-#include <IO/WriteBufferFromFileDescriptor.h>
+#include <DB/IO/WriteBufferFromFileDescriptor.h>
 
-#include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/CollapsingSortedBlockInputStream.h>
-#include <DataStreams/CollapsingFinalBlockInputStream.h>
-#include <DataStreams/copyData.h>
-#include <Interpreters/Context.h>
+#include <DB/DataStreams/OneBlockInputStream.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
+#include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
+#include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
+#include <DB/DataStreams/copyData.h>
+#include <DB/Interpreters/Context.h>
 
-#include <DataTypes/DataTypesNumber.h>
+#include <DB/DataTypes/DataTypesNumber.h>
 
 
 int main(int argc, char ** argv)

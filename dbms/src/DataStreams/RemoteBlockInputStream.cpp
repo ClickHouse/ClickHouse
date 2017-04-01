@@ -1,9 +1,9 @@
-#include <DataStreams/RemoteBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
-#include <Common/VirtualColumnUtils.h>
-#include <Common/NetException.h>
-#include <Interpreters/Context.h>
-#include <Storages/IStorage.h>
+#include <DB/DataStreams/RemoteBlockInputStream.h>
+#include <DB/DataStreams/OneBlockInputStream.h>
+#include <DB/Common/VirtualColumnUtils.h>
+#include <DB/Common/NetException.h>
+#include <DB/Interpreters/Context.h>
+#include <DB/Storages/IStorage.h>
 
 
 namespace DB

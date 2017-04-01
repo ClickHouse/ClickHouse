@@ -1,13 +1,13 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
+#include <DB/Parsers/ParserCreateQuery.h>
+#include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/parseQuery.h>
 
-#include <Databases/DatabaseOrdinary.h>
+#include <DB/Databases/DatabaseOrdinary.h>
 
-#include <Interpreters/InterpreterCreateQuery.h>
+#include <DB/Interpreters/InterpreterCreateQuery.h>
 
 
 int main(int argc, char ** argv)

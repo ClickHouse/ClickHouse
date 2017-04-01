@@ -1,5 +1,5 @@
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsHigherOrder.h>
+#include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/FunctionsHigherOrder.h>
 
 namespace DB
 {

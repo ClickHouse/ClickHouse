@@ -1,4 +1,4 @@
-#include <Common/Collator.h>
+#include <DB/Common/Collator.h>
 
 #pragma GCC diagnostic push
 #ifdef __APPLE__
@@ -7,8 +7,8 @@
 #include <unicode/ucol.h>
 #pragma GCC diagnostic pop
 
-#include <Common/Exception.h>
-#include <IO/WriteHelpers.h>
+#include <DB/Common/Exception.h>
+#include <DB/IO/WriteHelpers.h>
 #include <common/Common.h>
 #include <Poco/String.h>
 

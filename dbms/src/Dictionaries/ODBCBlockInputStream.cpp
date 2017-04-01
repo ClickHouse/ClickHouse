@@ -1,7 +1,7 @@
-#include <Dictionaries/ODBCBlockInputStream.h>
+#include <DB/Dictionaries/ODBCBlockInputStream.h>
 
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
+#include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnString.h>
 
 #include <ext/range.hpp>
 #include <vector>

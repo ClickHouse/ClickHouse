@@ -1,6 +1,6 @@
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <DataStreams/PrettyCompactMonoBlockOutputStream.h>
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
+#include <DB/DataStreams/PrettyCompactMonoBlockOutputStream.h>
 
 
 namespace DB

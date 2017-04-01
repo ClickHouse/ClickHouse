@@ -1,6 +1,6 @@
-#include <Functions/Conditional/NullMapBuilder.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNullable.h>
+#include <DB/Functions/Conditional/NullMapBuilder.h>
+#include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnNullable.h>
 
 namespace DB
 {

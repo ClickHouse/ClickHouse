@@ -1,6 +1,6 @@
-#include <AggregateFunctions/AggregateFunctionState.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Common/SipHash.h>
+#include <DB/AggregateFunctions/AggregateFunctionState.h>
+#include <DB/Columns/ColumnAggregateFunction.h>
+#include <DB/Common/SipHash.h>
 
 namespace DB
 {

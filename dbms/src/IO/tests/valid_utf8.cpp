@@ -1,7 +1,7 @@
-#include <IO/WriteBufferValidUTF8.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <DB/IO/WriteBufferValidUTF8.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
 #include <string>
 #include <streambuf>
 #include <iostream>

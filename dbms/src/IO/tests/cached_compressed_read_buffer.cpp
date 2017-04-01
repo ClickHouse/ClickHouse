@@ -2,11 +2,11 @@
 #include <iomanip>
 #include <limits>
 
-#include <IO/CachedCompressedReadBuffer.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/copyData.h>
+#include <DB/IO/CachedCompressedReadBuffer.h>
+#include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/copyData.h>
 
-#include <Common/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 
 int main(int argc, char ** argv)

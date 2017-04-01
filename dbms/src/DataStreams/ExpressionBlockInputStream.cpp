@@ -1,5 +1,5 @@
-#include <Interpreters/ExpressionActions.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
+#include <DB/Interpreters/ExpressionActions.h>
+#include <DB/DataStreams/ExpressionBlockInputStream.h>
 
 
 namespace DB

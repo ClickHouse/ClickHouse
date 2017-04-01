@@ -1,6 +1,6 @@
-#include <DataStreams/JSONCompactRowOutputStream.h>
+#include <DB/DataStreams/JSONCompactRowOutputStream.h>
 
-#include <IO/WriteHelpers.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB

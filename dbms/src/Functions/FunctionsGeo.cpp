@@ -1,5 +1,5 @@
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsGeo.h>
+#include <DB/Functions/FunctionFactory.h>
+#include <DB/Functions/FunctionsGeo.h>
 
 
 namespace DB

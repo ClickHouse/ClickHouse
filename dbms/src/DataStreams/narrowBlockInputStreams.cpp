@@ -1,4 +1,4 @@
-#include <DataStreams/ConcatBlockInputStream.h>
+#include <DB/DataStreams/ConcatBlockInputStream.h>
 
 
 namespace DB

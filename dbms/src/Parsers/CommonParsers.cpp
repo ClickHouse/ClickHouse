@@ -1,5 +1,5 @@
-#include <Common/StringUtils.h>
-#include <Parsers/CommonParsers.h>
+#include <DB/Common/StringUtils.h>
+#include <DB/Parsers/CommonParsers.h>
 
 #include <string.h>        /// strncmp, strncasecmp
 

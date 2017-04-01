@@ -1,11 +1,11 @@
-#include <Storages/System/StorageSystemAsynchronousMetrics.h>
+#include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
 
-#include <Interpreters/AsynchronousMetrics.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <DB/Interpreters/AsynchronousMetrics.h>
+#include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnString.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypesNumber.h>
+#include <DB/DataStreams/OneBlockInputStream.h>
 
 
 namespace DB

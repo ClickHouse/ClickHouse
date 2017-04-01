@@ -1,7 +1,7 @@
-#include <Interpreters/ClusterProxy/AlterQueryConstructor.h>
-#include <Interpreters/InterpreterAlterQuery.h>
-#include <DataStreams/RemoteBlockInputStream.h>
-#include <DataStreams/LazyBlockInputStream.h>
+#include <DB/Interpreters/ClusterProxy/AlterQueryConstructor.h>
+#include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <DB/DataStreams/RemoteBlockInputStream.h>
+#include <DB/DataStreams/LazyBlockInputStream.h>
 
 namespace DB
 {

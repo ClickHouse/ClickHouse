@@ -1,4 +1,4 @@
-#include <Common/ConfigProcessor.h>
+#include <DB/Common/ConfigProcessor.h>
 #include <sys/utsname.h>
 #include <cerrno>
 #include <cstring>

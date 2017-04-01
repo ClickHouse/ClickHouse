@@ -1,8 +1,8 @@
-#include <Core/Defines.h>
+#include <DB/Core/Defines.h>
 
-#include <Common/Collator.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsCommon.h>
+#include <DB/Common/Collator.h>
+#include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnsCommon.h>
 
 
 namespace DB

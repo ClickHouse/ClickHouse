@@ -1,5 +1,5 @@
 
-#include <DataStreams/NullBlockInputStream.h>
+#include <DB/DataStreams/NullBlockInputStream.h>
 
 #include <sstream>
 

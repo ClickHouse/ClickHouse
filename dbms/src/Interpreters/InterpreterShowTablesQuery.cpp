@@ -1,10 +1,10 @@
-#include <IO/ReadBufferFromString.h>
+#include <DB/IO/ReadBufferFromString.h>
 
-#include <Parsers/ASTShowTablesQuery.h>
-#include <Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTShowTablesQuery.h>
+#include <DB/Parsers/ASTIdentifier.h>
 
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterShowTablesQuery.h>
+#include <DB/Interpreters/executeQuery.h>
+#include <DB/Interpreters/InterpreterShowTablesQuery.h>
 
 #include <mysqlxx/Manip.h>
 
