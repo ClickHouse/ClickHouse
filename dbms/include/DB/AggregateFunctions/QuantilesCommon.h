@@ -11,7 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /** Parameters of different functions quantiles*.
@@ -22,34 +22,34 @@ namespace ErrorCodes
   * levels: 0.5, 0.99, 0.95
   * levels_permutation: 0, 2, 1
   */
-template <typename T>	/// float or double
+template <typename T>    /// float or double
 struct QuantileLevels
 {
-	using Levels = std::vector<T>;
-	using Permutation = std::vector<size_t>;
+    using Levels = std::vector<T>;
+    using Permutation = std::vector<size_t>;
 
-	Levels levels;
-	Permutation permutation;	/// Index of the i-th level in `levels`.
+    Levels levels;
+    Permutation permutation;    /// Index of the i-th level in `levels`.
 
-	size_t size() const { return levels.size(); }
+    size_t size() const { return levels.size(); }
 
-	void set(const Array & params)
-	{
-		if (params.empty())
-			throw Exception("Aggregate function quantiles requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    void set(const Array & params)
+    {
+        if (params.empty())
+            throw Exception("Aggregate function quantiles requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		size_t size = params.size();
-		levels.resize(size);
-		permutation.resize(size);
+        size_t size = params.size();
+        levels.resize(size);
+        permutation.resize(size);
 
-		for (size_t i = 0; i < size; ++i)
-		{
-			levels[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
-			permutation[i] = i;
-		}
+        for (size_t i = 0; i < size; ++i)
+        {
+            levels[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
+            permutation[i] = i;
+        }
 
-		std::sort(permutation.begin(), permutation.end(), [this] (size_t a, size_t b) { return levels[a] < levels[b]; });
-	}
+        std::sort(permutation.begin(), permutation.end(), [this] (size_t a, size_t b) { return levels[a] < levels[b]; });
+    }
 };
 
 

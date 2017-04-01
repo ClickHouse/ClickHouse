@@ -22,40 +22,40 @@ using namespace DB;
 int main(int argc, char ** argv)
 try
 {
-	Context context;
-	Settings settings = context.getSettings();
+    Context context;
+    Settings settings = context.getSettings();
 
-	context.setPath("./");
+    context.setPath("./");
 
-	loadMetadata(context);
+    loadMetadata(context);
 
-	Names column_names;
-	column_names.push_back("WatchID");
+    Names column_names;
+    column_names.push_back("WatchID");
 
-	StoragePtr table = context.getTable("default", "hits6");
+    StoragePtr table = context.getTable("default", "hits6");
 
-	QueryProcessingStage::Enum stage;
-	BlockInputStreams streams = table->read(column_names, nullptr, context, settings, stage, settings.max_block_size, settings.max_threads);
+    QueryProcessingStage::Enum stage;
+    BlockInputStreams streams = table->read(column_names, nullptr, context, settings, stage, settings.max_block_size, settings.max_threads);
 
-	for (size_t i = 0, size = streams.size(); i < size; ++i)
-		streams[i] = std::make_shared<AsynchronousBlockInputStream>(streams[i]);
+    for (size_t i = 0, size = streams.size(); i < size; ++i)
+        streams[i] = std::make_shared<AsynchronousBlockInputStream>(streams[i]);
 
-	BlockInputStreamPtr stream = std::make_shared<UnionBlockInputStream<>>(streams, nullptr, settings.max_threads);
-	stream = std::make_shared<LimitBlockInputStream>(stream, 10, 0);
+    BlockInputStreamPtr stream = std::make_shared<UnionBlockInputStream<>>(streams, nullptr, settings.max_threads);
+    stream = std::make_shared<LimitBlockInputStream>(stream, 10, 0);
 
-	WriteBufferFromFileDescriptor wb(STDERR_FILENO);
-	Block sample = table->getSampleBlock();
-	BlockOutputStreamPtr out = context.getOutputFormat("TabSeparated", wb, sample);
+    WriteBufferFromFileDescriptor wb(STDERR_FILENO);
+    Block sample = table->getSampleBlock();
+    BlockOutputStreamPtr out = context.getOutputFormat("TabSeparated", wb, sample);
 
-	copyData(*stream, *out);
+    copyData(*stream, *out);
 
-	return 0;
+    return 0;
 }
 catch (const Exception & e)
 {
-	std::cerr << e.what() << ", " << e.displayText() << std::endl
-		<< std::endl
-		<< "Stack trace:" << std::endl
-		<< e.getStackTrace().toString();
-	return 1;
+    std::cerr << e.what() << ", " << e.displayText() << std::endl
+        << std::endl
+        << "Stack trace:" << std::endl
+        << e.getStackTrace().toString();
+    return 1;
 }

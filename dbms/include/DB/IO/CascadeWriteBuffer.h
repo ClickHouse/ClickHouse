@@ -8,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int CURRENT_WRITE_BUFFER_IS_EXHAUSTED;
+    extern const int CURRENT_WRITE_BUFFER_IS_EXHAUSTED;
 }
 
 /* The buffer is similar to ConcatReadBuffer, but writes data
@@ -28,35 +28,35 @@ class CascadeWriteBuffer : public WriteBuffer
 {
 public:
 
-	using WriteBufferPtrs = std::vector<WriteBufferPtr>;
-	using WriteBufferConstructor = std::function<WriteBufferPtr (const WriteBufferPtr & prev_buf)>;
-	using WriteBufferConstructors = std::vector<WriteBufferConstructor>;
+    using WriteBufferPtrs = std::vector<WriteBufferPtr>;
+    using WriteBufferConstructor = std::function<WriteBufferPtr (const WriteBufferPtr & prev_buf)>;
+    using WriteBufferConstructors = std::vector<WriteBufferConstructor>;
 
-	CascadeWriteBuffer(WriteBufferPtrs && prepared_sources_, WriteBufferConstructors && lazy_sources_ = {});
+    CascadeWriteBuffer(WriteBufferPtrs && prepared_sources_, WriteBufferConstructors && lazy_sources_ = {});
 
-	void nextImpl() override;
+    void nextImpl() override;
 
-	/// Should be called once
-	void getResultBuffers(WriteBufferPtrs & res);
+    /// Should be called once
+    void getResultBuffers(WriteBufferPtrs & res);
 
-	const WriteBuffer * getCurrentBuffer() const
-	{
-		return curr_buffer;
-	}
+    const WriteBuffer * getCurrentBuffer() const
+    {
+        return curr_buffer;
+    }
 
-	~CascadeWriteBuffer();
+    ~CascadeWriteBuffer();
 
 private:
 
-	WriteBuffer * setNextBuffer();
+    WriteBuffer * setNextBuffer();
 
-	WriteBufferPtrs prepared_sources;
-	WriteBufferConstructors lazy_sources;
-	size_t first_lazy_source_num;
-	size_t num_sources;
+    WriteBufferPtrs prepared_sources;
+    WriteBufferConstructors lazy_sources;
+    size_t first_lazy_source_num;
+    size_t num_sources;
 
-	WriteBuffer * curr_buffer;
-	size_t curr_buffer_num;
+    WriteBuffer * curr_buffer;
+    size_t curr_buffer_num;
 };
 
 }

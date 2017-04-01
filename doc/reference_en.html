@@ -8,7 +8,7 @@
         <link rel="stylesheet" href="reference.css"/>
 
         <meta name="description" content="ClickHouse — open-source distributed column-oriented DBMS"/>
-		<meta name="keywords" content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics"/>
+        <meta name="keywords" content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics"/>
     </head>
     <body>
 
@@ -39,45 +39,45 @@ try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
 <div class="island">
 
 <div style="float: left; margin-right: -100%; margin-top: 3px; margin-left: 3px;">
-	<a href="/">
-		<svg xmlns="http://www.w3.org/2000/svg" width="90" height="80" viewBox="0 0 9 8">
-			<style>
-				.o{fill:#fc0}
-				.r{fill:#f00}
-			</style>
-			<path class="r" d="M0,7 h1 v1 h-1 z"/>
-			<path class="o" d="M0,0 h1 v7 h-1 z"/>
-			<path class="o" d="M2,0 h1 v8 h-1 z"/>
-			<path class="o" d="M4,0 h1 v8 h-1 z"/>
-			<path class="o" d="M6,0 h1 v8 h-1 z"/>
-			<path class="o" d="M8,3.25 h1 v1.5 h-1 z"/>
-		</svg>
-	</a>
+    <a href="/">
+        <svg xmlns="http://www.w3.org/2000/svg" width="90" height="80" viewBox="0 0 9 8">
+            <style>
+                .o{fill:#fc0}
+                .r{fill:#f00}
+            </style>
+            <path class="r" d="M0,7 h1 v1 h-1 z"/>
+            <path class="o" d="M0,0 h1 v7 h-1 z"/>
+            <path class="o" d="M2,0 h1 v8 h-1 z"/>
+            <path class="o" d="M4,0 h1 v8 h-1 z"/>
+            <path class="o" d="M6,0 h1 v8 h-1 z"/>
+            <path class="o" d="M8,3.25 h1 v1.5 h-1 z"/>
+        </svg>
+    </a>
 </div>
 
 <div style="float: right; margin-left: -100%; margin-top: 3px; margin-right: 3px;">
-	<div style="display: inline-block; width: 50px; text-align: center; margin-right: 2px;">
-	<a href="reference_ru.html" title="In russian">
-		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 6" width="50" height="30" style="border: 1px solid #AAA;">
-			<rect fill="#fff" width="10" height="3"/>
-			<rect fill="#d52b1e" y="3" width="10" height="3"/>
-			<rect fill="#0039a6" y="2" width="10" height="2"/>
-		</svg>
-	Russian
-	</a>
-	</div>
+    <div style="display: inline-block; width: 50px; text-align: center; margin-right: 2px;">
+    <a href="reference_ru.html" title="In russian">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 6" width="50" height="30" style="border: 1px solid #AAA;">
+            <rect fill="#fff" width="10" height="3"/>
+            <rect fill="#d52b1e" y="3" width="10" height="3"/>
+            <rect fill="#0039a6" y="2" width="10" height="2"/>
+        </svg>
+    Russian
+    </a>
+    </div>
 
-	<div style="display: inline-block; width: 50px; text-align: center; margin-left: 2px;">
-	<a href="reference_en.html" title="In english">
-		<svg xmlns="http://www.w3.org/2000/svg" width="50" height="30" viewBox="0,0 25,15" style="border: 1px solid #AAA;">
-			<rect width="25" height="15" fill="#00247d"/>
-			<path d="M 0,0 L 25,15 M 25,0 L 0,15" stroke="#fff" stroke-width="3"/>
-			<path d="M 12.5,0 V 15 M 0,7.5 H 25" stroke="#fff" stroke-width="5"/>
-			<path d="M 12.5,0 V 15 M 0,7.5 H 25" stroke="#cf142b" stroke-width="3"/>
-		</svg>
-	English
-	</a>
-	</div>
+    <div style="display: inline-block; width: 50px; text-align: center; margin-left: 2px;">
+    <a href="reference_en.html" title="In english">
+        <svg xmlns="http://www.w3.org/2000/svg" width="50" height="30" viewBox="0,0 25,15" style="border: 1px solid #AAA;">
+            <rect width="25" height="15" fill="#00247d"/>
+            <path d="M 0,0 L 25,15 M 25,0 L 0,15" stroke="#fff" stroke-width="3"/>
+            <path d="M 12.5,0 V 15 M 0,7.5 H 25" stroke="#fff" stroke-width="5"/>
+            <path d="M 12.5,0 V 15 M 0,7.5 H 25" stroke="#cf142b" stroke-width="3"/>
+        </svg>
+    English
+    </a>
+    </div>
 </div>
 
 <h1 class="title not-for-contents"><a class="title_link" href="/">ClickHouse</a></h1>
@@ -2482,34 +2482,34 @@ Clusters are set like this:
 
 %%
 &lt;remote_servers>
-	&lt;logs>
-		&lt;shard>
-			&lt;!-- Optional. Shard weight when writing data. By default, 1. -->
-			&lt;weight>1&lt;/weight>
-			&lt;!-- Optional. Whether to write data to just one of the replicas. By default, false - write data to all of the replicas. -->
-			&lt;internal_replication>false&lt;/internal_replication>
-			&lt;replica>
-				&lt;host>example01-01-1&lt;/host>
-				&lt;port>9000&lt;/port>
-			&lt;/replica>
-			&lt;replica>
-				&lt;host>example01-01-2&lt;/host>
-				&lt;port>9000&lt;/port>
-			&lt;/replica>
-		&lt;/shard>
-		&lt;shard>
-			&lt;weight>2&lt;/weight>
-			&lt;internal_replication>false&lt;/internal_replication>
-			&lt;replica>
-				&lt;host>example01-02-1&lt;/host>
-				&lt;port>9000&lt;/port>
-			&lt;/replica>
-			&lt;replica>
-				&lt;host>example01-02-2&lt;/host>
-				&lt;port>9000&lt;/port>
-			&lt;/replica>
-		&lt;/shard>
-	&lt;/logs>
+    &lt;logs>
+        &lt;shard>
+            &lt;!-- Optional. Shard weight when writing data. By default, 1. -->
+            &lt;weight>1&lt;/weight>
+            &lt;!-- Optional. Whether to write data to just one of the replicas. By default, false - write data to all of the replicas. -->
+            &lt;internal_replication>false&lt;/internal_replication>
+            &lt;replica>
+                &lt;host>example01-01-1&lt;/host>
+                &lt;port>9000&lt;/port>
+            &lt;/replica>
+            &lt;replica>
+                &lt;host>example01-01-2&lt;/host>
+                &lt;port>9000&lt;/port>
+            &lt;/replica>
+        &lt;/shard>
+        &lt;shard>
+            &lt;weight>2&lt;/weight>
+            &lt;internal_replication>false&lt;/internal_replication>
+            &lt;replica>
+                &lt;host>example01-02-1&lt;/host>
+                &lt;port>9000&lt;/port>
+            &lt;/replica>
+            &lt;replica>
+                &lt;host>example01-02-2&lt;/host>
+                &lt;port>9000&lt;/port>
+            &lt;/replica>
+        &lt;/shard>
+    &lt;/logs>
 &lt;/remote_servers>
 %%
 
@@ -2916,18 +2916,18 @@ Replication is an optional feature. To use replication, set the addresses of the
 
 %%
 &lt;zookeeper>
-	&lt;node index=&quot;1&quot;>
-		&lt;host>example1&lt;/host>
-		&lt;port>2181&lt;/port>
-	&lt;/node>
-	&lt;node index=&quot;2&quot;>
-		&lt;host>example2&lt;/host>
-		&lt;port>2181&lt;/port>
-	&lt;/node>
-	&lt;node index=&quot;3&quot;>
-		&lt;host>example3&lt;/host>
-		&lt;port>2181&lt;/port>
-	&lt;/node>
+    &lt;node index=&quot;1&quot;>
+        &lt;host>example1&lt;/host>
+        &lt;port>2181&lt;/port>
+    &lt;/node>
+    &lt;node index=&quot;2&quot;>
+        &lt;host>example2&lt;/host>
+        &lt;port>2181&lt;/port>
+    &lt;/node>
+    &lt;node index=&quot;3&quot;>
+        &lt;host>example3&lt;/host>
+        &lt;port>2181&lt;/port>
+    &lt;/node>
 &lt;/zookeeper>
 %%
 
@@ -2971,9 +2971,9 @@ As the example shows, these parameters can contain substitutions in curly bracke
 
 %%
 &lt;macros>
-	&lt;layer>05&lt;/layer>
-	&lt;shard>02&lt;/shard>
-	&lt;replica>example05-02-1.yandex.ru&lt;/replica>
+    &lt;layer>05&lt;/layer>
+    &lt;shard>02&lt;/shard>
+    &lt;replica>example05-02-1.yandex.ru&lt;/replica>
 &lt;/macros>
 %%
 
@@ -3079,7 +3079,7 @@ For using resharding, you must specify path in ZooKeeper for task queue in confi
 
 %%
 &lt;resharding&gt;
-	&lt;task_queue_path&gt;/clickhouse/task_queue&lt;/task_queue_path&gt;
+    &lt;task_queue_path&gt;/clickhouse/task_queue&lt;/task_queue_path&gt;
 &lt;/resharding&gt;
 %%
 
@@ -3094,10 +3094,10 @@ Example:
 ALTER TABLE merge.hits
 RESHARD PARTITION 201501
 TO
-	'/clickhouse/tables/01-01/hits' WEIGHT 1,
-	'/clickhouse/tables/01-02/hits' WEIGHT 2,
-	'/clickhouse/tables/01-03/hits' WEIGHT 1,
-	'/clickhouse/tables/01-04/hits' WEIGHT 1
+    '/clickhouse/tables/01-01/hits' WEIGHT 1,
+    '/clickhouse/tables/01-02/hits' WEIGHT 2,
+    '/clickhouse/tables/01-03/hits' WEIGHT 1,
+    '/clickhouse/tables/01-04/hits' WEIGHT 1
 USING UserID
 %%
 
@@ -6522,122 +6522,122 @@ The dictionary config file has the following format:
 
 %%
 &lt;dictionaries>
-	&lt;comment>Optional element with any content; completely ignored.&lt;/comment>
+    &lt;comment>Optional element with any content; completely ignored.&lt;/comment>
 
-	&lt;!--You can set any number of different dictionaries. -->
-	&lt;dictionary>
-		&lt;!-- Dictionary name. The dictionary will be accessed for use by this name. -->
-		&lt;name>os&lt;/name>
+    &lt;!--You can set any number of different dictionaries. -->
+    &lt;dictionary>
+        &lt;!-- Dictionary name. The dictionary will be accessed for use by this name. -->
+        &lt;name>os&lt;/name>
 
-		&lt;!-- Data source. -->
-		&lt;source>
-			&lt;!-- Source is a file in the local file system. -->
-			&lt;file>
-				&lt;!-- Path on the local file system. -->
-				&lt;path>/opt/dictionaries/os.tsv&lt;/path>
-				&lt;!-- Which format to use for reading the file. -->
-				&lt;format>TabSeparated&lt;/format>
-			&lt;/file>
+        &lt;!-- Data source. -->
+        &lt;source>
+            &lt;!-- Source is a file in the local file system. -->
+            &lt;file>
+                &lt;!-- Path on the local file system. -->
+                &lt;path>/opt/dictionaries/os.tsv&lt;/path>
+                &lt;!-- Which format to use for reading the file. -->
+                &lt;format>TabSeparated&lt;/format>
+            &lt;/file>
 
-			&lt;!-- or the source is a table on a MySQL server.
-			&lt;mysql>
-				&lt;!- - These parameters can be specified outside (common for all replicas) or inside a specific replica - ->
-				&lt;port>3306&lt;/port>
-				&lt;user>clickhouse&lt;/user>
-				&lt;password>qwerty&lt;/password>
-				&lt;!- - Specify from one to any number of replicas for fault tolerance. - ->
-				&lt;replica>
-					&lt;host>example01-1&lt;/host>
-					&lt;priority>1&lt;/priority> &lt;!- - The lower the value, the higher the priority. - ->
-				&lt;/replica>
-				&lt;replica>
-					&lt;host>example01-2&lt;/host>
-					&lt;priority>1&lt;/priority>
-				&lt;/replica>
-				&lt;db>conv_main&lt;/db>
-				&lt;table>counters&lt;/table>
-			&lt;/mysql>
-			-->
+            &lt;!-- or the source is a table on a MySQL server.
+            &lt;mysql>
+                &lt;!- - These parameters can be specified outside (common for all replicas) or inside a specific replica - ->
+                &lt;port>3306&lt;/port>
+                &lt;user>clickhouse&lt;/user>
+                &lt;password>qwerty&lt;/password>
+                &lt;!- - Specify from one to any number of replicas for fault tolerance. - ->
+                &lt;replica>
+                    &lt;host>example01-1&lt;/host>
+                    &lt;priority>1&lt;/priority> &lt;!- - The lower the value, the higher the priority. - ->
+                &lt;/replica>
+                &lt;replica>
+                    &lt;host>example01-2&lt;/host>
+                    &lt;priority>1&lt;/priority>
+                &lt;/replica>
+                &lt;db>conv_main&lt;/db>
+                &lt;table>counters&lt;/table>
+            &lt;/mysql>
+            -->
 
-			&lt;!-- or the source is a table on the ClickHouse server.
-			&lt;clickhouse>
-				&lt;host>example01-01-1&lt;/host>
-				&lt;port>9000&lt;/port>
-				&lt;user>default&lt;/user>
-				&lt;password>&lt;/password>
-				&lt;db>default&lt;/db>
-				&lt;table>counters&lt;/table>
-			&lt;/clickhouse>
-			&lt;!- - If the address is similar to localhost, the request is made without network interaction. For fault tolerance, you can create a Distributed table on localhost and enter it. - ->
-			-->
+            &lt;!-- or the source is a table on the ClickHouse server.
+            &lt;clickhouse>
+                &lt;host>example01-01-1&lt;/host>
+                &lt;port>9000&lt;/port>
+                &lt;user>default&lt;/user>
+                &lt;password>&lt;/password>
+                &lt;db>default&lt;/db>
+                &lt;table>counters&lt;/table>
+            &lt;/clickhouse>
+            &lt;!- - If the address is similar to localhost, the request is made without network interaction. For fault tolerance, you can create a Distributed table on localhost and enter it. - ->
+            -->
 
-			&lt;!-- or the source is a executable. If layout.complex_key_cache - list of needed keys will be written in STDIN of program -->
-			&lt;executable>
-				&lt;!-- Path on the local file system or name located in one of env PATH dirs. -->
-				&lt;command>cat /opt/dictionaries/os.tsv&lt;/command>
-				&lt;!-- Which format to use for reading/writing stream. -->
-				&lt;format>TabSeparated&lt;/format>
-			&lt;/executable>
+            &lt;!-- or the source is a executable. If layout.complex_key_cache - list of needed keys will be written in STDIN of program -->
+            &lt;executable>
+                &lt;!-- Path on the local file system or name located in one of env PATH dirs. -->
+                &lt;command>cat /opt/dictionaries/os.tsv&lt;/command>
+                &lt;!-- Which format to use for reading/writing stream. -->
+                &lt;format>TabSeparated&lt;/format>
+            &lt;/executable>
 
-			&lt;!-- or the source is a http server. If layout.complex_key_cache - list of needed keys will be sent as POST  -->
-			&lt;http>
-				&lt;!-- Host. -->
-				&lt;url>http://[::1]/os.tsv&lt;/url>
-				&lt;!-- Which format to use for reading answer and making POST. -->
-				&lt;format>TabSeparated&lt;/format>
-			&lt;/http>
+            &lt;!-- or the source is a http server. If layout.complex_key_cache - list of needed keys will be sent as POST  -->
+            &lt;http>
+                &lt;!-- Host. -->
+                &lt;url>http://[::1]/os.tsv&lt;/url>
+                &lt;!-- Which format to use for reading answer and making POST. -->
+                &lt;format>TabSeparated&lt;/format>
+            &lt;/http>
 
-		&lt;/source>
+        &lt;/source>
 
-		&lt;!-- Update interval for fully loaded dictionaries. 0 - never update. -->
-		&lt;lifetime>
-			&lt;min>300&lt;/min>
-			&lt;max>360&lt;/max>
-			&lt;!-- The update interval is selected uniformly randomly between min and max, in order to spread out the load when updating dictionaries on a large number of servers. -->
-		&lt;/lifetime>
+        &lt;!-- Update interval for fully loaded dictionaries. 0 - never update. -->
+        &lt;lifetime>
+            &lt;min>300&lt;/min>
+            &lt;max>360&lt;/max>
+            &lt;!-- The update interval is selected uniformly randomly between min and max, in order to spread out the load when updating dictionaries on a large number of servers. -->
+        &lt;/lifetime>
 
-		&lt;!-- or &lt;!- - The update interval for fully loaded dictionaries or invalidation time for cached dictionaries. 0 - never update. - ->
-		&lt;lifetime>300&lt;/lifetime>
-		-->
+        &lt;!-- or &lt;!- - The update interval for fully loaded dictionaries or invalidation time for cached dictionaries. 0 - never update. - ->
+        &lt;lifetime>300&lt;/lifetime>
+        -->
 
-		&lt;layout> &lt;!-- Method for storing in memory. -->
-			&lt;flat />
-			&lt;!-- or &lt;hashed />
-			or
-			&lt;cache>
-				&lt;!- - Cache size in number of cells; rounded up to a degree of two. - ->
-				&lt;size_in_cells>1000000000&lt;/size_in_cells>
-			&lt;/cache> -->
-		&lt;/layout>
+        &lt;layout> &lt;!-- Method for storing in memory. -->
+            &lt;flat />
+            &lt;!-- or &lt;hashed />
+            or
+            &lt;cache>
+                &lt;!- - Cache size in number of cells; rounded up to a degree of two. - ->
+                &lt;size_in_cells>1000000000&lt;/size_in_cells>
+            &lt;/cache> -->
+        &lt;/layout>
 
-		&lt;!-- Structure. -->
-		&lt;structure>
-			&lt;!-- Description of the column that serves as the dictionary identifier (key). -->
-			&lt;id>
-				&lt;!-- Column name with ID. -->
-				&lt;name>Id&lt;/name>
-			&lt;/id>
+        &lt;!-- Structure. -->
+        &lt;structure>
+            &lt;!-- Description of the column that serves as the dictionary identifier (key). -->
+            &lt;id>
+                &lt;!-- Column name with ID. -->
+                &lt;name>Id&lt;/name>
+            &lt;/id>
 
-			&lt;attribute>
-				&lt;!-- Column name. -->
-				&lt;name>Name&lt;/name>
-				&lt;!-- Column type. (How the column is understood when loading. For MySQL, a table can have TEXT, VARCHAR, and BLOB, but these are all loaded as String) -->
-				&lt;type>String&lt;/type>
-				&lt;!-- Value to use for a non-existing element. In the example, an empty string. -->
-				&lt;null_value>&lt;/null_value>
-			&lt;/attribute>
-			&lt;!-- Any number of attributes can be specified. -->
-			&lt;attribute>
-				&lt;name>ParentID&lt;/name>
-				&lt;type>UInt64&lt;/type>
-				&lt;null_value>0&lt;/null_value>
-				&lt;!-- Whether it defines a hierarchy - mapping to the parent ID (by default, false). -->
-				&lt;hierarchical>true&lt;/hierarchical>
-				&lt;!-- The mapping id -> attribute can be considered injective, in order to optimize GROUP BY. (by default, false) -->
-				&lt;injective>true&lt;/injective>
-			&lt;/attribute>
-		&lt;/structure>
-	&lt;/dictionary>
+            &lt;attribute>
+                &lt;!-- Column name. -->
+                &lt;name>Name&lt;/name>
+                &lt;!-- Column type. (How the column is understood when loading. For MySQL, a table can have TEXT, VARCHAR, and BLOB, but these are all loaded as String) -->
+                &lt;type>String&lt;/type>
+                &lt;!-- Value to use for a non-existing element. In the example, an empty string. -->
+                &lt;null_value>&lt;/null_value>
+            &lt;/attribute>
+            &lt;!-- Any number of attributes can be specified. -->
+            &lt;attribute>
+                &lt;name>ParentID&lt;/name>
+                &lt;type>UInt64&lt;/type>
+                &lt;null_value>0&lt;/null_value>
+                &lt;!-- Whether it defines a hierarchy - mapping to the parent ID (by default, false). -->
+                &lt;hierarchical>true&lt;/hierarchical>
+                &lt;!-- The mapping id -> attribute can be considered injective, in order to optimize GROUP BY. (by default, false) -->
+                &lt;injective>true&lt;/injective>
+            &lt;/attribute>
+        &lt;/structure>
+    &lt;/dictionary>
 &lt;/dictionaries>
 %%
 
@@ -7107,34 +7107,34 @@ Example:
 %%
 &lt;!-- Settings profiles. -->
 &lt;profiles>
-	&lt;!-- Default settings -->
-	&lt;default>
-		&lt;!-- Maximum number of threads for executing a single query. -->
-		&lt;max_threads>8&lt;/max_threads>
-	&lt;/default>
-	&lt;!-- Settings for queries from the user interface -->
-	&lt;web>
-		&lt;max_rows_to_read>1000000000&lt;/max_rows_to_read>
-		&lt;max_bytes_to_read>100000000000&lt;/max_bytes_to_read>
-		&lt;max_rows_to_group_by>1000000&lt;/max_rows_to_group_by>
-		&lt;group_by_overflow_mode>any&lt;/group_by_overflow_mode>
-		&lt;max_rows_to_sort>1000000&lt;/max_rows_to_sort>
-		&lt;max_bytes_to_sort>1000000000&lt;/max_bytes_to_sort>
-		&lt;max_result_rows>100000&lt;/max_result_rows>
-		&lt;max_result_bytes>100000000&lt;/max_result_bytes>
-		&lt;result_overflow_mode>break&lt;/result_overflow_mode>
-		&lt;max_execution_time>600&lt;/max_execution_time>
-		&lt;min_execution_speed>1000000&lt;/min_execution_speed>
-		&lt;timeout_before_checking_execution_speed>15&lt;/timeout_before_checking_execution_speed>
-		&lt;max_columns_to_read>25&lt;/max_columns_to_read>
-		&lt;max_temporary_columns>100&lt;/max_temporary_columns>
-		&lt;max_temporary_non_const_columns>50&lt;/max_temporary_non_const_columns>
-		&lt;max_subquery_depth>2&lt;/max_subquery_depth>
-		&lt;max_pipeline_depth>25&lt;/max_pipeline_depth>
-		&lt;max_ast_depth>50&lt;/max_ast_depth>
-		&lt;max_ast_elements>100&lt;/max_ast_elements>
-		&lt;readonly>1&lt;/readonly>
-	&lt;/web>
+    &lt;!-- Default settings -->
+    &lt;default>
+        &lt;!-- Maximum number of threads for executing a single query. -->
+        &lt;max_threads>8&lt;/max_threads>
+    &lt;/default>
+    &lt;!-- Settings for queries from the user interface -->
+    &lt;web>
+        &lt;max_rows_to_read>1000000000&lt;/max_rows_to_read>
+        &lt;max_bytes_to_read>100000000000&lt;/max_bytes_to_read>
+        &lt;max_rows_to_group_by>1000000&lt;/max_rows_to_group_by>
+        &lt;group_by_overflow_mode>any&lt;/group_by_overflow_mode>
+        &lt;max_rows_to_sort>1000000&lt;/max_rows_to_sort>
+        &lt;max_bytes_to_sort>1000000000&lt;/max_bytes_to_sort>
+        &lt;max_result_rows>100000&lt;/max_result_rows>
+        &lt;max_result_bytes>100000000&lt;/max_result_bytes>
+        &lt;result_overflow_mode>break&lt;/result_overflow_mode>
+        &lt;max_execution_time>600&lt;/max_execution_time>
+        &lt;min_execution_speed>1000000&lt;/min_execution_speed>
+        &lt;timeout_before_checking_execution_speed>15&lt;/timeout_before_checking_execution_speed>
+        &lt;max_columns_to_read>25&lt;/max_columns_to_read>
+        &lt;max_temporary_columns>100&lt;/max_temporary_columns>
+        &lt;max_temporary_non_const_columns>50&lt;/max_temporary_non_const_columns>
+        &lt;max_subquery_depth>2&lt;/max_subquery_depth>
+        &lt;max_pipeline_depth>25&lt;/max_pipeline_depth>
+        &lt;max_ast_depth>50&lt;/max_ast_depth>
+        &lt;max_ast_elements>100&lt;/max_ast_elements>
+        &lt;readonly>1&lt;/readonly>
+    &lt;/web>
 &lt;/profiles>
 %%
 
@@ -7179,36 +7179,36 @@ Users are recorded in the &#39;users&#39; section. Let&#39;s look at part of the
 %%
 &lt;!-- Users and ACL. -->
 &lt;users>
-	&lt;!-- If the username is not specified, the default user is used. -->
-	&lt;default>
-		&lt;!-- Password (in plaintext). May be empty. -->
-		&lt;password>&lt;/password>
+    &lt;!-- If the username is not specified, the default user is used. -->
+    &lt;default>
+        &lt;!-- Password (in plaintext). May be empty. -->
+        &lt;password>&lt;/password>
 
-		&lt;!-- List of networks that access is allowed from. Each list item has one of the following forms:
-			&lt;ip> IP address or subnet mask. For example, 222.111.222.3 or 10.0.0.1/8 or 2a02:6b8::3 or 2a02:6b8::3/64.
-			&lt;host> Host name. Example: example01. A DNS query is made for verification, and all received address are compared to the client address.
-			&lt;host_regexp> Regex for host names. For example, ^example\d\d-\d\d-\d\.yandex\.ru$
-				A DNS PTR query is made to verify the client address and the regex is applied to the result.
-				Then another DNS query is made for the result of the PTR query, and all received address are compared to the client address.
-				We strongly recommend that the regex ends with \.yandex\.ru$. If you are installing ClickHouse independently, here you should specify:
-			&lt;networks>
-				&lt;ip>::/0&lt;/ip>
-			&lt;/networks> -->
+        &lt;!-- List of networks that access is allowed from. Each list item has one of the following forms:
+            &lt;ip> IP address or subnet mask. For example, 222.111.222.3 or 10.0.0.1/8 or 2a02:6b8::3 or 2a02:6b8::3/64.
+            &lt;host> Host name. Example: example01. A DNS query is made for verification, and all received address are compared to the client address.
+            &lt;host_regexp> Regex for host names. For example, ^example\d\d-\d\d-\d\.yandex\.ru$
+                A DNS PTR query is made to verify the client address and the regex is applied to the result.
+                Then another DNS query is made for the result of the PTR query, and all received address are compared to the client address.
+                We strongly recommend that the regex ends with \.yandex\.ru$. If you are installing ClickHouse independently, here you should specify:
+            &lt;networks>
+                &lt;ip>::/0&lt;/ip>
+            &lt;/networks> -->
 
-		&lt;networks incl=&quot;networks&quot; />
-		&lt;!-- Settings profile for the user. -->
-		&lt;profile>default&lt;/profile>
-		&lt;!-- Quota for the user. -->
-		&lt;quota>default&lt;/quota>
-	&lt;/default>
+        &lt;networks incl=&quot;networks&quot; />
+        &lt;!-- Settings profile for the user. -->
+        &lt;profile>default&lt;/profile>
+        &lt;!-- Quota for the user. -->
+        &lt;quota>default&lt;/quota>
+    &lt;/default>
 
-	&lt;!-- For queries from the user interface. -->
-	&lt;web>
-		&lt;password>&lt;/password>
-		&lt;networks incl=&quot;networks&quot; />
-		&lt;profile>web&lt;/profile>
-		&lt;quota>default&lt;/quota>
-	&lt;/web>
+    &lt;!-- For queries from the user interface. -->
+    &lt;web>
+        &lt;password>&lt;/password>
+        &lt;networks incl=&quot;networks&quot; />
+        &lt;profile>web&lt;/profile>
+        &lt;quota>default&lt;/quota>
+    &lt;/web>
 %%
 
 Here we can see that two users are declared: &#39;default&#39; and &#39;web&#39;. We added the &#39;web&#39; user ourselves.
@@ -7220,13 +7220,13 @@ A list of networks is specified that access is allowed from. In this example, th
 
 %%
 &lt;yandex>
-	...
-	&lt;networks>
-		&lt;ip>::/64&lt;/ip>
-		&lt;ip>93.158.111.111/26&lt;/ip>
-		&lt;ip>2a02:6b8:0:1::/64&lt;/ip>
-	...
-	&lt;/networks>
+    ...
+    &lt;networks>
+        &lt;ip>::/64&lt;/ip>
+        &lt;ip>93.158.111.111/26&lt;/ip>
+        &lt;ip>2a02:6b8:0:1::/64&lt;/ip>
+    ...
+    &lt;/networks>
 &lt;/yandex>
 %%
 
@@ -7259,45 +7259,45 @@ Let&#39;s look at the section of the &#39;users.xml&#39; file that defines quota
 %%
 &lt;!-- Quotas. -->
 &lt;quotas>
-	&lt;!-- Quota name. -->
-	&lt;default>
-		&lt;!-- Restrictions for a time period. You can set multiple time intervals with various restrictions. -->
-		&lt;interval>
-			&lt;!-- Length of time. -->
-			&lt;duration>3600&lt;/duration>
+    &lt;!-- Quota name. -->
+    &lt;default>
+        &lt;!-- Restrictions for a time period. You can set multiple time intervals with various restrictions. -->
+        &lt;interval>
+            &lt;!-- Length of time. -->
+            &lt;duration>3600&lt;/duration>
 
-			&lt;!-- No restrictions. Just collect data for the specified time interval. -->
-			&lt;queries>0&lt;/queries>
-			&lt;errors>0&lt;/errors>
-			&lt;result_rows>0&lt;/result_rows>
-			&lt;read_rows>0&lt;/read_rows>
-			&lt;execution_time>0&lt;/execution_time>
-		&lt;/interval>
-	&lt;/default>
+            &lt;!-- No restrictions. Just collect data for the specified time interval. -->
+            &lt;queries>0&lt;/queries>
+            &lt;errors>0&lt;/errors>
+            &lt;result_rows>0&lt;/result_rows>
+            &lt;read_rows>0&lt;/read_rows>
+            &lt;execution_time>0&lt;/execution_time>
+        &lt;/interval>
+    &lt;/default>
 %%
 
 By default, the quota just tracks resource consumption for each hour, without limiting usage.
 
 %%
 &lt;statbox>
-	&lt;!-- Restrictions for a time period. You can set multiple time intervals with various restrictions. -->
-	&lt;interval>
-		&lt;!-- Length of time.-->
-		&lt;duration>3600&lt;/duration>
-		&lt;queries>1000&lt;/queries>
-		&lt;errors>100&lt;/errors>
-		&lt;result_rows>1000000000&lt;/result_rows>
-		&lt;read_rows>100000000000&lt;/read_rows>
-		&lt;execution_time>900&lt;/execution_time>
-	&lt;/interval>
-	&lt;interval>
-		&lt;duration>86400&lt;/duration>
-		&lt;queries>10000&lt;/queries>
-		&lt;errors>1000&lt;/errors>
-		&lt;result_rows>5000000000&lt;/result_rows>
-		&lt;read_rows>500000000000&lt;/read_rows>
-		&lt;execution_time>7200&lt;/execution_time>
-	&lt;/interval>
+    &lt;!-- Restrictions for a time period. You can set multiple time intervals with various restrictions. -->
+    &lt;interval>
+        &lt;!-- Length of time.-->
+        &lt;duration>3600&lt;/duration>
+        &lt;queries>1000&lt;/queries>
+        &lt;errors>100&lt;/errors>
+        &lt;result_rows>1000000000&lt;/result_rows>
+        &lt;read_rows>100000000000&lt;/read_rows>
+        &lt;execution_time>900&lt;/execution_time>
+    &lt;/interval>
+    &lt;interval>
+        &lt;duration>86400&lt;/duration>
+        &lt;queries>10000&lt;/queries>
+        &lt;errors>1000&lt;/errors>
+        &lt;result_rows>5000000000&lt;/result_rows>
+        &lt;read_rows>500000000000&lt;/read_rows>
+        &lt;execution_time>7200&lt;/execution_time>
+    &lt;/interval>
 &lt;/statbox>
 %%
 
@@ -7320,12 +7320,12 @@ Quotas can use the &quot;quota key&quot; feature in order to report on resources
 %%
 &lt;!-- For the global report builder. -->
 &lt;web_global>
-	&lt;!-- keyed - the quota_key &quot;key&quot; is passed in the query parameter, and the quota is tracked separately for each key value.
-	For example, you can pass a Metrica username as the key, so the quota will be counted separately for each username.
-	Using keys makes sense only if quota_key is transmitted by the program, not by a user.
-	You can also write &lt;keyed_by_ip /> so the IP address is used as the quota key.
-	(But keep in mind that users can change the IPv6 address fairly easily.) -->
-	&lt;keyed />
+    &lt;!-- keyed - the quota_key &quot;key&quot; is passed in the query parameter, and the quota is tracked separately for each key value.
+    For example, you can pass a Metrica username as the key, so the quota will be counted separately for each username.
+    Using keys makes sense only if quota_key is transmitted by the program, not by a user.
+    You can also write &lt;keyed_by_ip /> so the IP address is used as the quota key.
+    (But keep in mind that users can change the IPv6 address fairly easily.) -->
+    &lt;keyed />
 %%
 
 The quota is assigned to users in the &#39;users&#39; section of the config. See the section &quot;Access rights&quot;.
@@ -7350,29 +7350,29 @@ style="width:80px; height:31px; border:0;" alt="Yandex.Metrica" title="Yandex.Me
 // Генерация HTML по разметке, отдалённо напоминающей Wiki. Криво.
 function wikiToHTML(text) {
 
-	text = text.replace(/\n{0,2}===(.+?)===\n{0,2}/g, '\n\n<h3>$1<\/h3>\n\n');
-	text = text.replace(/\n{0,2}==(.+?)==\n{0,2}/g, '\n\n<h2>$1<\/h2>\n\n');
+    text = text.replace(/\n{0,2}===(.+?)===\n{0,2}/g, '\n\n<h3>$1<\/h3>\n\n');
+    text = text.replace(/\n{0,2}==(.+?)==\n{0,2}/g, '\n\n<h2>$1<\/h2>\n\n');
 
-	text = text.replace(/%%(.+?)%%/g, '<span class="inline-example">$1<\/span>');
-	text = text.replace(/%%([\s\S]+?)%%/g, '<pre class="text-example">$1<\/pre>');
+    text = text.replace(/%%(.+?)%%/g, '<span class="inline-example">$1<\/span>');
+    text = text.replace(/%%([\s\S]+?)%%/g, '<pre class="text-example">$1<\/pre>');
 
-	text = text.replace(/(<pre[^>]*>)([\s\S]+?)(<\/pre>)/g, function(match, p1, p2, p3) {
-		return p1 + p2.replace(/\n/g, '<newline>') + p3;
-	});
+    text = text.replace(/(<pre[^>]*>)([\s\S]+?)(<\/pre>)/g, function(match, p1, p2, p3) {
+        return p1 + p2.replace(/\n/g, '<newline>') + p3;
+    });
 
-	text = '<p>' + text + '<\/p>';
-	text = text.replace(/\n(\s*\n)+/g, '<\/p><p>');
+    text = '<p>' + text + '<\/p>';
+    text = text.replace(/\n(\s*\n)+/g, '<\/p><p>');
 
-	text = text.replace(/(<pre[^>]*>)([\s\S]+?)(<\/pre>)/g, function(match, p1, p2, p3) {
-		return p1 + p2.replace(/<newline>/g, '\n') + p3;
-	});
+    text = text.replace(/(<pre[^>]*>)([\s\S]+?)(<\/pre>)/g, function(match, p1, p2, p3) {
+        return p1 + p2.replace(/<newline>/g, '\n') + p3;
+    });
 
-	return text;
+    return text;
 }
 
 $('.content').each(function() {
-	var elem = $(this);
-	elem.html(wikiToHTML(elem.html()));
+    var elem = $(this);
+    elem.html(wikiToHTML(elem.html()));
 });
 
 
@@ -7397,18 +7397,18 @@ var trigram_to_anchor = {};
 var anchor_to_element = {};
 
 function getTrigrams(s) {
-	s = s.toLowerCase();
+    s = s.toLowerCase();
 
-	var res = [];
-	if (s.length < 3) {
-		return;
-	}
+    var res = [];
+    if (s.length < 3) {
+        return;
+    }
 
-	for (var i = 0; i < s.length - 2; ++i) {
-		res.push(s.substring(i, i + 3));
-	}
+    for (var i = 0; i < s.length - 2; ++i) {
+        res.push(s.substring(i, i + 3));
+    }
 
-	return res;
+    return res;
 }
 
 $('h1, h2, h3, h4, h5, h6').each(function() {
@@ -7433,13 +7433,13 @@ $('h1, h2, h3, h4, h5, h6').each(function() {
         anchor += set_of_anchors[anchor];
     }
 
-	var trigrams = getTrigrams(anchor);
-	for (var i in trigrams) {
-		if (trigram_to_anchor[trigrams[i]] === undefined) {
-			trigram_to_anchor[trigrams[i]] = [];
-		}
-		trigram_to_anchor[trigrams[i]].push(anchor);
-	}
+    var trigrams = getTrigrams(anchor);
+    for (var i in trigrams) {
+        if (trigram_to_anchor[trigrams[i]] === undefined) {
+            trigram_to_anchor[trigrams[i]] = [];
+        }
+        trigram_to_anchor[trigrams[i]].push(anchor);
+    }
 
     elem.before($('<a href="#' + anchor + '" class="head-anchor" name="' + anchor + '">⚓<\/a>'));
 
@@ -7451,29 +7451,29 @@ $('#contents').html(contents.join(''));
 
 // Найти по триграмному индексу лучший anchor для текста.
 function findBestAnchor(s) {
-	s = s.toLowerCase();
-	var trigrams = getTrigrams(s);
-	var anchors_score = {};
+    s = s.toLowerCase();
+    var trigrams = getTrigrams(s);
+    var anchors_score = {};
 
-	for (var i in trigrams) {
-		if (trigram_to_anchor.hasOwnProperty(trigrams[i])) {
-			for (var j in trigram_to_anchor[trigrams[i]]) {
-				if (anchors_score[trigram_to_anchor[trigrams[i]][j]] === undefined) {
-					anchors_score[trigram_to_anchor[trigrams[i]][j]] = 0;
-				}
-				anchors_score[trigram_to_anchor[trigrams[i]][j]] += 1.0 / Math.sqrt(trigram_to_anchor[trigrams[i]][j].length);
-			}
-		}
-	}
+    for (var i in trigrams) {
+        if (trigram_to_anchor.hasOwnProperty(trigrams[i])) {
+            for (var j in trigram_to_anchor[trigrams[i]]) {
+                if (anchors_score[trigram_to_anchor[trigrams[i]][j]] === undefined) {
+                    anchors_score[trigram_to_anchor[trigrams[i]][j]] = 0;
+                }
+                anchors_score[trigram_to_anchor[trigrams[i]][j]] += 1.0 / Math.sqrt(trigram_to_anchor[trigrams[i]][j].length);
+            }
+        }
+    }
 
-	var anchors_matched = [];
-	for (var name in anchors_score) {
-		anchors_matched.push({ name : name, score : anchors_score[name] });
-	}
+    var anchors_matched = [];
+    for (var name in anchors_score) {
+        anchors_matched.push({ name : name, score : anchors_score[name] });
+    }
 
-	anchors_matched.sort(function(a, b) { return b.score - a.score; });
-//	console.log(anchors_matched);
-	return anchors_matched[0].name;
+    anchors_matched.sort(function(a, b) { return b.score - a.score; });
+//    console.log(anchors_matched);
+    return anchors_matched[0].name;
 }
 
 
@@ -7483,16 +7483,16 @@ $('p').each(function() {
 
     var match = text.match(/(?:разделе?|sections?|see(?: the)?) "([^"]+?)"/i);
     if (match) {
-		elem.html(elem.html().replace(/((?:разделе?|sections?|see(?: the)?) ")([^"]+?)\d?(")/i, '$1<a href="#' + findBestAnchor(match[1]) + '">$2</a>$3'));
+        elem.html(elem.html().replace(/((?:разделе?|sections?|see(?: the)?) ")([^"]+?)\d?(")/i, '$1<a href="#' + findBestAnchor(match[1]) + '">$2</a>$3'));
     }
 });
 
 // Если человек пришёл по ссылке с именем раздела в хэше, а этого раздела не существует, то найдём лучший раздел по триграмному индексу.
 if (location.hash.length > 1) {
-	var queried = decodeURIComponent(location.hash.substring(1));
-	if (!set_of_anchors.hasOwnProperty(queried)) {
-		location.hash = "#" + findBestAnchor(queried);
-	}
+    var queried = decodeURIComponent(location.hash.substring(1));
+    if (!set_of_anchors.hasOwnProperty(queried)) {
+        location.hash = "#" + findBestAnchor(queried);
+    }
 }
 
 

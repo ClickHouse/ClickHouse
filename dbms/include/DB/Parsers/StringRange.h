@@ -14,7 +14,7 @@ using StringPtr = std::shared_ptr<String>;
 
 inline String toString(const StringRange & range)
 {
-	return String(range.first, range.second);
+    return String(range.first, range.second);
 }
 
 }

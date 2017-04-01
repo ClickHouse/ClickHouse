@@ -9,22 +9,22 @@
 int main(int argc, char ** argv)
 try
 {
-	Poco::File dir("./test_dir/");
-	dir.createDirectories();
+    Poco::File dir("./test_dir/");
+    dir.createDirectories();
 
-	Poco::File("./test_dir/file").createFile();
+    Poco::File("./test_dir/file").createFile();
 
-	if (0 != symlink("./test_dir", "./test_link"))
-		DB::throwFromErrno("Cannot create symlink");
+    if (0 != symlink("./test_dir", "./test_link"))
+        DB::throwFromErrno("Cannot create symlink");
 
-	Poco::File link("./test_link");
-	link.renameTo("./test_link2");
+    Poco::File link("./test_link");
+    link.renameTo("./test_link2");
 
-	Poco::File("./test_link2").remove(true);
-	return 0;
+    Poco::File("./test_link2").remove(true);
+    return 0;
 }
 catch (...)
 {
-	std::cerr << DB::getCurrentExceptionMessage(false) << "\n";
-	return 1;
+    std::cerr << DB::getCurrentExceptionMessage(false) << "\n";
+    return 1;
 }

@@ -21,18 +21,18 @@ namespace ClusterProxy
 class IQueryConstructor
 {
 public:
-	virtual ~IQueryConstructor() {}
+    virtual ~IQueryConstructor() {}
 
-	/// Create an input stream for local query execution.
-	virtual BlockInputStreamPtr createLocal(ASTPtr query_ast, const Context & context, const Cluster::Address & address) = 0;
-	/// Create an input stream for remote query execution on one shard.
-	virtual BlockInputStreamPtr createRemote(ConnectionPoolPtr & pool, const std::string & query,
-		const Settings & settings, ThrottlerPtr throttler, const Context & context) = 0;
-	/// Create an input stream for remote query execution on one or more shards.
-	virtual BlockInputStreamPtr createRemote(ConnectionPoolsPtr & pools, const std::string & query,
-		const Settings & new_settings, ThrottlerPtr throttler, const Context & context) = 0;
-	/// Specify how we allocate connections on a shard.
-	virtual PoolMode getPoolMode() const = 0;
+    /// Create an input stream for local query execution.
+    virtual BlockInputStreamPtr createLocal(ASTPtr query_ast, const Context & context, const Cluster::Address & address) = 0;
+    /// Create an input stream for remote query execution on one shard.
+    virtual BlockInputStreamPtr createRemote(ConnectionPoolPtr & pool, const std::string & query,
+        const Settings & settings, ThrottlerPtr throttler, const Context & context) = 0;
+    /// Create an input stream for remote query execution on one or more shards.
+    virtual BlockInputStreamPtr createRemote(ConnectionPoolsPtr & pools, const std::string & query,
+        const Settings & new_settings, ThrottlerPtr throttler, const Context & context) = 0;
+    /// Specify how we allocate connections on a shard.
+    virtual PoolMode getPoolMode() const = 0;
 };
 
 }

@@ -10,8 +10,8 @@ namespace DB
 class ParserArray : public IParserBase
 {
 protected:
-	const char * getName() const { return "array"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "array"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -22,8 +22,8 @@ protected:
 class ParserParenthesisExpression : public IParserBase
 {
 protected:
-	const char * getName() const { return "parenthesized expression"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "parenthesized expression"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -32,8 +32,8 @@ protected:
 class ParserSubquery : public IParserBase
 {
 protected:
-	const char * getName() const { return "SELECT subquery"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "SELECT subquery"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -42,8 +42,8 @@ protected:
 class ParserIdentifier : public IParserBase
 {
 protected:
-	const char * getName() const { return "identifier"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "identifier"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -52,8 +52,8 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 protected:
-	const char * getName() const { return "compound identifier"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "compound identifier"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -61,8 +61,8 @@ protected:
 class ParserAsterisk : public IParserBase
 {
 protected:
-	const char * getName() const { return "asterisk"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "asterisk"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -71,8 +71,8 @@ protected:
 class ParserQualifiedAsterisk : public IParserBase
 {
 protected:
-	const char * getName() const { return "qualified asterisk"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "qualified asterisk"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -85,18 +85,18 @@ protected:
 class ParserFunction : public IParserBase
 {
 protected:
-	const char * getName() const { return "function"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "function"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 class ParserCastExpression : public IParserBase
 {
-	/// this name is used for identifying CAST expression among other function calls
-	static constexpr auto name = "CAST";
+    /// this name is used for identifying CAST expression among other function calls
+    static constexpr auto name = "CAST";
 
 protected:
-	const char * getName() const override { return name; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
+    const char * getName() const override { return name; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
 };
 
 
@@ -105,8 +105,8 @@ protected:
 class ParserNull : public IParserBase
 {
 protected:
-	const char * getName() const { return "NULL"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "NULL"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -115,8 +115,8 @@ protected:
 class ParserNumber : public IParserBase
 {
 protected:
-	const char * getName() const { return "number"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "number"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 /** Unsigned integer, used in right hand side of tuple access operator (x.1).
@@ -124,8 +124,8 @@ protected:
 class ParserUnsignedInteger : public IParserBase
 {
 protected:
-	const char * getName() const { return "unsigned integer"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "unsigned integer"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -134,8 +134,8 @@ protected:
 class ParserStringLiteral : public IParserBase
 {
 protected:
-	const char * getName() const { return "string literal"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "string literal"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -148,8 +148,8 @@ protected:
 class ParserArrayOfLiterals : public IParserBase
 {
 protected:
-	const char * getName() const { return "array"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "array"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -158,8 +158,8 @@ protected:
 class ParserLiteral : public IParserBase
 {
 protected:
-	const char * getName() const { return "literal"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "literal"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -167,20 +167,20 @@ protected:
   */
 struct ParserAliasBase
 {
-	static const char * restricted_keywords[];
+    static const char * restricted_keywords[];
 };
 
 template <typename ParserIdentifier>
 class ParserAliasImpl : public IParserBase, ParserAliasBase
 {
 public:
-	ParserAliasImpl(bool allow_alias_without_as_keyword_)
-		: allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
+    ParserAliasImpl(bool allow_alias_without_as_keyword_)
+        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 protected:
-	bool allow_alias_without_as_keyword;
+    bool allow_alias_without_as_keyword;
 
-	const char * getName() const { return "alias"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "alias"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -198,8 +198,8 @@ using ParserCastExpressionAlias = ParserAliasImpl<ParserTypeInCastExpression>;
 class ParserExpressionElement : public IParserBase
 {
 protected:
-	const char * getName() const { return "element of expression"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "element of expression"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
@@ -209,14 +209,14 @@ template <typename ParserAlias>
 class ParserWithOptionalAliasImpl : public IParserBase
 {
 public:
-	ParserWithOptionalAliasImpl(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
-		: elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
+    ParserWithOptionalAliasImpl(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
+        : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 protected:
-	ParserPtr elem_parser;
-	bool allow_alias_without_as_keyword;
+    ParserPtr elem_parser;
+    bool allow_alias_without_as_keyword;
 
-	const char * getName() const { return "element of expression with optional alias"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "element of expression with optional alias"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 extern template class ParserWithOptionalAliasImpl<ParserAlias>;
@@ -233,8 +233,8 @@ using ParserCastExpressionWithOptionalAlias = ParserWithOptionalAliasImpl<Parser
 class ParserOrderByElement : public IParserBase
 {
 protected:
-	const char * getName() const { return "element of ORDER BY expression"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "element of ORDER BY expression"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 /** Путь шарда в ZooKeeper вместе с весом.
@@ -242,8 +242,8 @@ protected:
 class ParserWeightedZooKeeperPath : public IParserBase
 {
 protected:
-	const char * getName() const { return "weighted ZooKeeper path"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "weighted ZooKeeper path"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 }

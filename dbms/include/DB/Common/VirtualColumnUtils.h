@@ -36,12 +36,12 @@ bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context);
 template<typename T1>
 std::multiset<T1> extractSingleValueFromBlock(const Block & block, const String & name)
 {
-	std::multiset<T1> res;
-	const ColumnWithTypeAndName & data = block.getByName(name);
-	size_t rows = block.rows();
-	for (size_t i = 0; i < rows; ++i)
-		res.insert((*data.column)[i].get<T1>());
-	return res;
+    std::multiset<T1> res;
+    const ColumnWithTypeAndName & data = block.getByName(name);
+    size_t rows = block.rows();
+    for (size_t i = 0; i < rows; ++i)
+        res.insert((*data.column)[i].get<T1>());
+    return res;
 }
 
 }

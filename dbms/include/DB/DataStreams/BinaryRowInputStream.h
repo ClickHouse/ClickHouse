@@ -15,12 +15,12 @@ class ReadBuffer;
 class BinaryRowInputStream : public IRowInputStream
 {
 public:
-	BinaryRowInputStream(ReadBuffer & istr_);
+    BinaryRowInputStream(ReadBuffer & istr_);
 
-	bool read(Block & block) override;
+    bool read(Block & block) override;
 
 private:
-	ReadBuffer & istr;
+    ReadBuffer & istr;
 };
 
 }

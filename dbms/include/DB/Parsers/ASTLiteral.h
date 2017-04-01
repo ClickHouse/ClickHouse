@@ -13,23 +13,23 @@ namespace DB
 class ASTLiteral : public ASTWithAlias
 {
 public:
-	Field value;
+    Field value;
 
-	ASTLiteral() = default;
-	ASTLiteral(const StringRange range_, const Field & value_) : ASTWithAlias(range_), value(value_) {}
+    ASTLiteral() = default;
+    ASTLiteral(const StringRange range_, const Field & value_) : ASTWithAlias(range_), value(value_) {}
 
-	String getColumnName() const override;
+    String getColumnName() const override;
 
-	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const override { return "Literal_" + applyVisitor(FieldVisitorDump(), value); }
+    /** Получить текст, который идентифицирует этот элемент. */
+    String getID() const override { return "Literal_" + applyVisitor(FieldVisitorDump(), value); }
 
-	ASTPtr clone() const override { return std::make_shared<ASTLiteral>(*this); }
+    ASTPtr clone() const override { return std::make_shared<ASTLiteral>(*this); }
 
 protected:
-	void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
-	{
-		settings.ostr << applyVisitor(FieldVisitorToString(), value);
-	}
+    void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    {
+        settings.ostr << applyVisitor(FieldVisitorToString(), value);
+    }
 };
 
 }

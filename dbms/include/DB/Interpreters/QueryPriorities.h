@@ -10,7 +10,7 @@
 
 namespace CurrentMetrics
 {
-	extern const Metric QueryPreempted;
+    extern const Metric QueryPreempted;
 }
 
 
@@ -32,99 +32,99 @@ namespace DB
 class QueryPriorities
 {
 public:
-	using Priority = int;
+    using Priority = int;
 
 private:
-	friend struct Handle;
+    friend struct Handle;
 
-	using Count = int;
+    using Count = int;
 
-	/// Number of currently running queries for each priority.
-	using Container = std::map<Priority, Count>;
+    /// Number of currently running queries for each priority.
+    using Container = std::map<Priority, Count>;
 
-	std::mutex mutex;
-	std::condition_variable condvar;
-	Container container;
+    std::mutex mutex;
+    std::condition_variable condvar;
+    Container container;
 
 
-	/** If there are higher priority queries - sleep until they are finish or timeout happens.
-	  * Returns true, if higher priority queries has finished at return of function, false, if timout exceeded.
-	  */
-	template <typename Duration>
-	bool waitIfNeed(Priority priority, Duration timeout)
-	{
-		if (0 == priority)
-			return true;
+    /** If there are higher priority queries - sleep until they are finish or timeout happens.
+      * Returns true, if higher priority queries has finished at return of function, false, if timout exceeded.
+      */
+    template <typename Duration>
+    bool waitIfNeed(Priority priority, Duration timeout)
+    {
+        if (0 == priority)
+            return true;
 
-		std::unique_lock<std::mutex> lock(mutex);
+        std::unique_lock<std::mutex> lock(mutex);
 
-		while (true)
-		{
-			/// Если ли хотя бы один более приоритетный запрос?
-			bool found = false;
-			for (const auto & value : container)
-			{
-				if (value.first >= priority)
-					break;
+        while (true)
+        {
+            /// Если ли хотя бы один более приоритетный запрос?
+            bool found = false;
+            for (const auto & value : container)
+            {
+                if (value.first >= priority)
+                    break;
 
-				if (value.second > 0)
-				{
-					found = true;
-					break;
-				}
-			}
+                if (value.second > 0)
+                {
+                    found = true;
+                    break;
+                }
+            }
 
-			if (!found)
-				return true;
+            if (!found)
+                return true;
 
-			CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryPreempted};
-			if (std::cv_status::timeout == condvar.wait_for(lock, timeout))
-				return false;
-		}
-	}
+            CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryPreempted};
+            if (std::cv_status::timeout == condvar.wait_for(lock, timeout))
+                return false;
+        }
+    }
 
 public:
-	struct HandleImpl
-	{
-	private:
-		QueryPriorities & parent;
-		QueryPriorities::Container::value_type & value;
+    struct HandleImpl
+    {
+    private:
+        QueryPriorities & parent;
+        QueryPriorities::Container::value_type & value;
 
-	public:
-		HandleImpl(QueryPriorities & parent_, QueryPriorities::Container::value_type & value_)
-			: parent(parent_), value(value_) {}
+    public:
+        HandleImpl(QueryPriorities & parent_, QueryPriorities::Container::value_type & value_)
+            : parent(parent_), value(value_) {}
 
-		~HandleImpl()
-		{
-			{
-				std::lock_guard<std::mutex> lock(parent.mutex);
-				--value.second;
-			}
-			parent.condvar.notify_all();
-		}
+        ~HandleImpl()
+        {
+            {
+                std::lock_guard<std::mutex> lock(parent.mutex);
+                --value.second;
+            }
+            parent.condvar.notify_all();
+        }
 
-		template <typename Duration>
-		bool waitIfNeed(Duration timeout)
-		{
-			return parent.waitIfNeed(value.first, timeout);
-		}
-	};
+        template <typename Duration>
+        bool waitIfNeed(Duration timeout)
+        {
+            return parent.waitIfNeed(value.first, timeout);
+        }
+    };
 
-	using Handle = std::shared_ptr<HandleImpl>;
+    using Handle = std::shared_ptr<HandleImpl>;
 
-	/** Register query with specified priority.
-	  * Returns an object that remove record in destructor.
-	  */
-	Handle insert(Priority priority)
-	{
-		if (0 == priority)
-			return {};
+    /** Register query with specified priority.
+      * Returns an object that remove record in destructor.
+      */
+    Handle insert(Priority priority)
+    {
+        if (0 == priority)
+            return {};
 
-		std::lock_guard<std::mutex> lock(mutex);
-		auto it = container.emplace(priority, 0).first;
-		++it->second;
-		return std::make_shared<HandleImpl>(*this, *it);
-	}
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = container.emplace(priority, 0).first;
+        ++it->second;
+        return std::make_shared<HandleImpl>(*this, *it);
+    }
 };
 
 }

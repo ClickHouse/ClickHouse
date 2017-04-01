@@ -25,20 +25,20 @@ class IQueryConstructor;
 class Query
 {
 public:
-	Query(IQueryConstructor & query_constructor_, const ClusterPtr & cluster_,
-		ASTPtr query_ast_, const Context & context_, const Settings & settings_, bool enable_shard_multiplexing_);
+    Query(IQueryConstructor & query_constructor_, const ClusterPtr & cluster_,
+        ASTPtr query_ast_, const Context & context_, const Settings & settings_, bool enable_shard_multiplexing_);
 
-	/// For each location at which we perform the query, create an input stream
-	/// from which we can fetch the result.
-	BlockInputStreams execute();
+    /// For each location at which we perform the query, create an input stream
+    /// from which we can fetch the result.
+    BlockInputStreams execute();
 
 private:
-	IQueryConstructor & query_constructor;
-	ClusterPtr cluster;
-	ASTPtr query_ast;
-	const Context & context;
-	const Settings & settings;
-	bool enable_shard_multiplexing;
+    IQueryConstructor & query_constructor;
+    ClusterPtr cluster;
+    ASTPtr query_ast;
+    const Context & context;
+    const Settings & settings;
+    bool enable_shard_multiplexing;
 };
 
 }

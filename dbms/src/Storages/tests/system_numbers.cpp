@@ -13,32 +13,32 @@
 int main(int argc, char ** argv)
 try
 {
-	using namespace DB;
+    using namespace DB;
 
-	StoragePtr table = StorageSystemNumbers::create("Numbers");
+    StoragePtr table = StorageSystemNumbers::create("Numbers");
 
-	Names column_names;
-	column_names.push_back("number");
+    Names column_names;
+    column_names.push_back("number");
 
-	Block sample;
-	ColumnWithTypeAndName col;
-	col.type = std::make_shared<DataTypeUInt64>();
-	sample.insert(std::move(col));
+    Block sample;
+    ColumnWithTypeAndName col;
+    col.type = std::make_shared<DataTypeUInt64>();
+    sample.insert(std::move(col));
 
-	WriteBufferFromOStream out_buf(std::cout);
+    WriteBufferFromOStream out_buf(std::cout);
 
-	QueryProcessingStage::Enum stage;
+    QueryProcessingStage::Enum stage;
 
-	LimitBlockInputStream input(table->read(column_names, 0, Context{}, Settings(), stage, 10)[0], 10, 96);
-	RowOutputStreamPtr output_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
-	BlockOutputStreamFromRowOutputStream output(output_);
+    LimitBlockInputStream input(table->read(column_names, 0, Context{}, Settings(), stage, 10)[0], 10, 96);
+    RowOutputStreamPtr output_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
+    BlockOutputStreamFromRowOutputStream output(output_);
 
-	copyData(input, output);
+    copyData(input, output);
 
-	return 0;
+    return 0;
 }
 catch (const DB::Exception & e)
 {
-	std::cerr << e.what() << ", " << e.displayText() << std::endl;
-	return 1;
+    std::cerr << e.what() << ", " << e.displayText() << std::endl;
+    return 1;
 }

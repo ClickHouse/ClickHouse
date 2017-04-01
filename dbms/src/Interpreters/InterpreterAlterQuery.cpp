@@ -26,191 +26,191 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int LOGICAL_ERROR;
-	extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
 InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, const Context & context_)
-	: query_ptr(query_ptr_), context(context_)
+    : query_ptr(query_ptr_), context(context_)
 {
 }
 
 BlockIO InterpreterAlterQuery::execute()
 {
-	auto & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
-	const String & table_name = alter.table;
-	String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
-	StoragePtr table = context.getTable(database_name, table_name);
+    auto & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
+    const String & table_name = alter.table;
+    String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
+    StoragePtr table = context.getTable(database_name, table_name);
 
-	AlterCommands alter_commands;
-	PartitionCommands partition_commands;
-	parseAlter(alter.parameters, alter_commands, partition_commands);
+    AlterCommands alter_commands;
+    PartitionCommands partition_commands;
+    parseAlter(alter.parameters, alter_commands, partition_commands);
 
-	for (const PartitionCommand & command : partition_commands)
-	{
-		switch (command.type)
-		{
-			case PartitionCommand::DROP_PARTITION:
-				table->dropPartition(query_ptr, command.partition, command.detach, command.unreplicated, context.getSettingsRef());
-				break;
+    for (const PartitionCommand & command : partition_commands)
+    {
+        switch (command.type)
+        {
+            case PartitionCommand::DROP_PARTITION:
+                table->dropPartition(query_ptr, command.partition, command.detach, command.unreplicated, context.getSettingsRef());
+                break;
 
-			case PartitionCommand::ATTACH_PARTITION:
-				table->attachPartition(query_ptr, command.partition, command.unreplicated, command.part, context.getSettingsRef());
-				break;
+            case PartitionCommand::ATTACH_PARTITION:
+                table->attachPartition(query_ptr, command.partition, command.unreplicated, command.part, context.getSettingsRef());
+                break;
 
-			case PartitionCommand::FETCH_PARTITION:
-				table->fetchPartition(command.partition, command.from, context.getSettingsRef());
-				break;
+            case PartitionCommand::FETCH_PARTITION:
+                table->fetchPartition(command.partition, command.from, context.getSettingsRef());
+                break;
 
-			case PartitionCommand::FREEZE_PARTITION:
-				table->freezePartition(command.partition, command.with_name, context.getSettingsRef());
-				break;
+            case PartitionCommand::FREEZE_PARTITION:
+                table->freezePartition(command.partition, command.with_name, context.getSettingsRef());
+                break;
 
-			case PartitionCommand::RESHARD_PARTITION:
-				table->reshardPartitions(query_ptr, database_name, command.partition, command.last_partition,
-					command.weighted_zookeeper_paths, command.sharding_key_expr, command.do_copy,
-					command.coordinator, context.getSettingsRef());
-				break;
+            case PartitionCommand::RESHARD_PARTITION:
+                table->reshardPartitions(query_ptr, database_name, command.partition, command.last_partition,
+                    command.weighted_zookeeper_paths, command.sharding_key_expr, command.do_copy,
+                    command.coordinator, context.getSettingsRef());
+                break;
 
-			default:
-				throw Exception("Bad PartitionCommand::Type: " + toString<int>(command.type), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-		}
-	}
+            default:
+                throw Exception("Bad PartitionCommand::Type: " + toString<int>(command.type), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        }
+    }
 
-	if (alter_commands.empty())
-		return {};
+    if (alter_commands.empty())
+        return {};
 
-	alter_commands.validate(table.get(), context);
+    alter_commands.validate(table.get(), context);
 
-	table->alter(alter_commands, database_name, table_name, context);
+    table->alter(alter_commands, database_name, table_name, context);
 
-	return {};
+    return {};
 }
 
 void InterpreterAlterQuery::parseAlter(
-	const ASTAlterQuery::ParameterContainer & params_container,
-	AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands)
+    const ASTAlterQuery::ParameterContainer & params_container,
+    AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands)
 {
-	const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+    const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
-	for (const auto & params : params_container)
-	{
-		if (params.type == ASTAlterQuery::ADD_COLUMN)
-		{
-			AlterCommand command;
-			command.type = AlterCommand::ADD_COLUMN;
+    for (const auto & params : params_container)
+    {
+        if (params.type == ASTAlterQuery::ADD_COLUMN)
+        {
+            AlterCommand command;
+            command.type = AlterCommand::ADD_COLUMN;
 
-			const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*params.col_decl);
+            const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*params.col_decl);
 
-			command.column_name = ast_col_decl.name;
-			if (ast_col_decl.type)
-			{
-				StringRange type_range = ast_col_decl.type->range;
-				String type_string(type_range.first, type_range.second - type_range.first);
-				command.data_type = data_type_factory.get(type_string);
-			}
-			if (ast_col_decl.default_expression)
-			{
-				command.default_type = columnDefaultTypeFromString(ast_col_decl.default_specifier);
-				command.default_expression = ast_col_decl.default_expression;
-			}
+            command.column_name = ast_col_decl.name;
+            if (ast_col_decl.type)
+            {
+                StringRange type_range = ast_col_decl.type->range;
+                String type_string(type_range.first, type_range.second - type_range.first);
+                command.data_type = data_type_factory.get(type_string);
+            }
+            if (ast_col_decl.default_expression)
+            {
+                command.default_type = columnDefaultTypeFromString(ast_col_decl.default_specifier);
+                command.default_expression = ast_col_decl.default_expression;
+            }
 
-			if (params.column)
-				command.after_column = typeid_cast<const ASTIdentifier &>(*params.column).name;
+            if (params.column)
+                command.after_column = typeid_cast<const ASTIdentifier &>(*params.column).name;
 
-			out_alter_commands.emplace_back(std::move(command));
-		}
-		else if (params.type == ASTAlterQuery::DROP_COLUMN)
-		{
-			AlterCommand command;
-			command.type = AlterCommand::DROP_COLUMN;
-			command.column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
+            out_alter_commands.emplace_back(std::move(command));
+        }
+        else if (params.type == ASTAlterQuery::DROP_COLUMN)
+        {
+            AlterCommand command;
+            command.type = AlterCommand::DROP_COLUMN;
+            command.column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
 
-			out_alter_commands.emplace_back(std::move(command));
-		}
-		else if (params.type == ASTAlterQuery::MODIFY_COLUMN)
-		{
-			AlterCommand command;
-			command.type = AlterCommand::MODIFY_COLUMN;
+            out_alter_commands.emplace_back(std::move(command));
+        }
+        else if (params.type == ASTAlterQuery::MODIFY_COLUMN)
+        {
+            AlterCommand command;
+            command.type = AlterCommand::MODIFY_COLUMN;
 
-			const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*params.col_decl);
+            const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*params.col_decl);
 
-			command.column_name = ast_col_decl.name;
-			if (ast_col_decl.type)
-			{
-				StringRange type_range = ast_col_decl.type->range;
-				String type_string(type_range.first, type_range.second - type_range.first);
-				command.data_type = data_type_factory.get(type_string);
-			}
+            command.column_name = ast_col_decl.name;
+            if (ast_col_decl.type)
+            {
+                StringRange type_range = ast_col_decl.type->range;
+                String type_string(type_range.first, type_range.second - type_range.first);
+                command.data_type = data_type_factory.get(type_string);
+            }
 
-			if (ast_col_decl.default_expression)
-			{
-				command.default_type = columnDefaultTypeFromString(ast_col_decl.default_specifier);
-				command.default_expression = ast_col_decl.default_expression;
-			}
+            if (ast_col_decl.default_expression)
+            {
+                command.default_type = columnDefaultTypeFromString(ast_col_decl.default_specifier);
+                command.default_expression = ast_col_decl.default_expression;
+            }
 
-			out_alter_commands.emplace_back(std::move(command));
-		}
-		else if (params.type == ASTAlterQuery::MODIFY_PRIMARY_KEY)
-		{
-			AlterCommand command;
-			command.type = AlterCommand::MODIFY_PRIMARY_KEY;
-			command.primary_key = params.primary_key;
-			out_alter_commands.emplace_back(std::move(command));
-		}
-		else if (params.type == ASTAlterQuery::DROP_PARTITION)
-		{
-			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-			out_partition_commands.emplace_back(PartitionCommand::dropPartition(partition, params.detach, params.unreplicated));
-		}
-		else if (params.type == ASTAlterQuery::ATTACH_PARTITION)
-		{
-			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-			out_partition_commands.emplace_back(PartitionCommand::attachPartition(partition, params.unreplicated, params.part));
-		}
-		else if (params.type == ASTAlterQuery::FETCH_PARTITION)
-		{
-			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-			out_partition_commands.emplace_back(PartitionCommand::fetchPartition(partition, params.from));
-		}
-		else if (params.type == ASTAlterQuery::FREEZE_PARTITION)
-		{
-			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-			out_partition_commands.emplace_back(PartitionCommand::freezePartition(partition, params.with_name));
-		}
-		else if (params.type == ASTAlterQuery::RESHARD_PARTITION)
-		{
-			Field first_partition;
-			if (params.partition)
-				first_partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
+            out_alter_commands.emplace_back(std::move(command));
+        }
+        else if (params.type == ASTAlterQuery::MODIFY_PRIMARY_KEY)
+        {
+            AlterCommand command;
+            command.type = AlterCommand::MODIFY_PRIMARY_KEY;
+            command.primary_key = params.primary_key;
+            out_alter_commands.emplace_back(std::move(command));
+        }
+        else if (params.type == ASTAlterQuery::DROP_PARTITION)
+        {
+            const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
+            out_partition_commands.emplace_back(PartitionCommand::dropPartition(partition, params.detach, params.unreplicated));
+        }
+        else if (params.type == ASTAlterQuery::ATTACH_PARTITION)
+        {
+            const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
+            out_partition_commands.emplace_back(PartitionCommand::attachPartition(partition, params.unreplicated, params.part));
+        }
+        else if (params.type == ASTAlterQuery::FETCH_PARTITION)
+        {
+            const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
+            out_partition_commands.emplace_back(PartitionCommand::fetchPartition(partition, params.from));
+        }
+        else if (params.type == ASTAlterQuery::FREEZE_PARTITION)
+        {
+            const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
+            out_partition_commands.emplace_back(PartitionCommand::freezePartition(partition, params.with_name));
+        }
+        else if (params.type == ASTAlterQuery::RESHARD_PARTITION)
+        {
+            Field first_partition;
+            if (params.partition)
+                first_partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
 
-			Field last_partition;
-			if (params.last_partition)
-				last_partition = dynamic_cast<const ASTLiteral &>(*params.last_partition).value;
-			else
-				last_partition = first_partition;
+            Field last_partition;
+            if (params.last_partition)
+                last_partition = dynamic_cast<const ASTLiteral &>(*params.last_partition).value;
+            else
+                last_partition = first_partition;
 
-			WeightedZooKeeperPaths weighted_zookeeper_paths;
+            WeightedZooKeeperPaths weighted_zookeeper_paths;
 
-			const ASTs & ast_weighted_zookeeper_paths = typeid_cast<const ASTExpressionList &>(*params.weighted_zookeeper_paths).children;
-			for (size_t i = 0; i < ast_weighted_zookeeper_paths.size(); ++i)
-			{
-				const auto & weighted_zookeeper_path = typeid_cast<const ASTWeightedZooKeeperPath &>(*ast_weighted_zookeeper_paths[i]);
-				weighted_zookeeper_paths.emplace_back(weighted_zookeeper_path.path, weighted_zookeeper_path.weight);
-			}
+            const ASTs & ast_weighted_zookeeper_paths = typeid_cast<const ASTExpressionList &>(*params.weighted_zookeeper_paths).children;
+            for (size_t i = 0; i < ast_weighted_zookeeper_paths.size(); ++i)
+            {
+                const auto & weighted_zookeeper_path = typeid_cast<const ASTWeightedZooKeeperPath &>(*ast_weighted_zookeeper_paths[i]);
+                weighted_zookeeper_paths.emplace_back(weighted_zookeeper_path.path, weighted_zookeeper_path.weight);
+            }
 
-			Field coordinator;
-			if (params.coordinator)
-				coordinator = dynamic_cast<const ASTLiteral &>(*params.coordinator).value;
+            Field coordinator;
+            if (params.coordinator)
+                coordinator = dynamic_cast<const ASTLiteral &>(*params.coordinator).value;
 
-			out_partition_commands.emplace_back(PartitionCommand::reshardPartitions(
-				first_partition, last_partition, weighted_zookeeper_paths, params.sharding_key_expr,
-				params.do_copy, coordinator));
-		}
-		else
-			throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
-	}
+            out_partition_commands.emplace_back(PartitionCommand::reshardPartitions(
+                first_partition, last_partition, weighted_zookeeper_paths, params.sharding_key_expr,
+                params.do_copy, coordinator));
+        }
+        else
+            throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
+    }
 }
 
 }

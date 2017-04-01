@@ -15,36 +15,36 @@ namespace DB
 class WriteBufferFromString : public WriteBuffer
 {
 private:
-	std::string & s;
+    std::string & s;
 
-	void nextImpl() override
-	{
-		size_t old_size = s.size();
-		s.resize(old_size * 2);
-		internal_buffer = Buffer(reinterpret_cast<Position>(&s[old_size]), reinterpret_cast<Position>(&*s.end()));
-		working_buffer = internal_buffer;
-	}
+    void nextImpl() override
+    {
+        size_t old_size = s.size();
+        s.resize(old_size * 2);
+        internal_buffer = Buffer(reinterpret_cast<Position>(&s[old_size]), reinterpret_cast<Position>(&*s.end()));
+        working_buffer = internal_buffer;
+    }
 
-	void finish()
-	{
-		s.resize(count());
-	}
+    void finish()
+    {
+        s.resize(count());
+    }
 
 public:
-	WriteBufferFromString(std::string & s_)
-		: WriteBuffer(reinterpret_cast<Position>(&s_[0]), s_.size()), s(s_)
-	{
-		if (s.empty())
-		{
-			s.resize(WRITE_BUFFER_FROM_STRING_INITIAL_SIZE_IF_EMPTY);
-			set(reinterpret_cast<Position>(&s[0]), s.size());
-		}
-	}
+    WriteBufferFromString(std::string & s_)
+        : WriteBuffer(reinterpret_cast<Position>(&s_[0]), s_.size()), s(s_)
+    {
+        if (s.empty())
+        {
+            s.resize(WRITE_BUFFER_FROM_STRING_INITIAL_SIZE_IF_EMPTY);
+            set(reinterpret_cast<Position>(&s[0]), s.size());
+        }
+    }
 
-	~WriteBufferFromString() override
-	{
-		finish();
-	}
+    ~WriteBufferFromString() override
+    {
+        finish();
+    }
 };
 
 }

@@ -4,11 +4,11 @@
 
 namespace DB
 {
-	String queryToString(const ASTPtr & query)
-	{
-		std::ostringstream out;
-		formatAST(*query, out, 0, false, true);
+    String queryToString(const ASTPtr & query)
+    {
+        std::ostringstream out;
+        formatAST(*query, out, 0, false, true);
 
-		return out.str();
-	}
+        return out.str();
+    }
 }

@@ -20,8 +20,8 @@ namespace DB
   */
 template <typename T>
 IColumn::Selector createBlockSelector(
-	const IColumn & column,
-	size_t num_shards,
-	const std::vector<size_t> & slots);
+    const IColumn & column,
+    size_t num_shards,
+    const std::vector<size_t> & slots);
 
 }

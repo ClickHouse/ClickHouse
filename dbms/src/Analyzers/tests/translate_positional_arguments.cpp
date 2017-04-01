@@ -13,25 +13,25 @@
 int main(int argc, char ** argv)
 try
 {
-	using namespace DB;
+    using namespace DB;
 
-	ReadBufferFromFileDescriptor in(STDIN_FILENO);
+    ReadBufferFromFileDescriptor in(STDIN_FILENO);
 
-	String query;
-	readStringUntilEOF(query, in);
+    String query;
+    readStringUntilEOF(query, in);
 
-	ParserSelectQuery parser;
-	ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "query");
+    ParserSelectQuery parser;
+    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "query");
 
-	TranslatePositionalArguments translator;
-	translator.process(ast);
+    TranslatePositionalArguments translator;
+    translator.process(ast);
 
-	formatAST(*ast, std::cout, 0, false);
-	std::cout << "\n";
-	return 0;
+    formatAST(*ast, std::cout, 0, false);
+    std::cout << "\n";
+    return 0;
 }
 catch (...)
 {
-	std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
-	return 1;
+    std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+    return 1;
 }

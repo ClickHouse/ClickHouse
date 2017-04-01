@@ -10,30 +10,30 @@
 
 GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::string & sub_path)
 {
-	Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
-	port = config.getInt(config_name + ".port", 42000);
-	host = config.getString(config_name + ".host", "localhost");
-	timeout = config.getDouble(config_name + ".timeout", 0.1);
+    Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
+    port = config.getInt(config_name + ".port", 42000);
+    host = config.getString(config_name + ".host", "localhost");
+    timeout = config.getDouble(config_name + ".timeout", 0.1);
 
-	root_path = config.getString(config_name + ".root_path", "one_min");
-	if (!root_path.empty())
-		root_path += ".";
+    root_path = config.getString(config_name + ".root_path", "one_min");
+    if (!root_path.empty())
+        root_path += ".";
 
-	std::string hostname_in_path = getFQDNOrHostName();
+    std::string hostname_in_path = getFQDNOrHostName();
 
-	/// Заменяем точки на подчёркивания, чтобы Graphite не интерпретировал их, как разделители пути.
-	std::replace(std::begin(hostname_in_path), std::end(hostname_in_path), '.', '_');
+    /// Заменяем точки на подчёркивания, чтобы Graphite не интерпретировал их, как разделители пути.
+    std::replace(std::begin(hostname_in_path), std::end(hostname_in_path), '.', '_');
 
-	root_path += hostname_in_path;
+    root_path += hostname_in_path;
 
-	if (sub_path.size())
-		root_path += "." + sub_path;
+    if (sub_path.size())
+        root_path += "." + sub_path;
 }
 
 
 std::string GraphiteWriter::getPerServerPath(const std::string & server_name, const std::string & root_path)
 {
-	std::string path = root_path + "." + server_name;
-	std::replace(path.begin() + root_path.size() + 1, path.end(), '.', '_');
-	return path;
+    std::string path = root_path + "." + server_name;
+    std::replace(path.begin() + root_path.size() + 1, path.end(), '.', '_');
+    return path;
 }

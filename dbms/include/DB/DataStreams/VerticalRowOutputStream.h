@@ -18,24 +18,24 @@ class Context;
 class VerticalRowOutputStream : public IRowOutputStream
 {
 public:
-	VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const Context & context);
+    VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const Context & context);
 
-	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
-	void writeRowStartDelimiter() override;
-	void writeRowBetweenDelimiter() override;
+    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeRowStartDelimiter() override;
+    void writeRowBetweenDelimiter() override;
 
-	void flush() override;
+    void flush() override;
 
 protected:
-	virtual void writeValue(const IColumn & column, const IDataType & type, size_t row_num) const;
+    virtual void writeValue(const IColumn & column, const IDataType & type, size_t row_num) const;
 
-	WriteBuffer & ostr;
-	const Block sample;
-	size_t field_number = 0;
-	size_t row_number = 0;
+    WriteBuffer & ostr;
+    const Block sample;
+    size_t field_number = 0;
+    size_t row_number = 0;
 
-	using NamesAndPaddings = std::vector<String>;
-	NamesAndPaddings names_and_paddings;
+    using NamesAndPaddings = std::vector<String>;
+    NamesAndPaddings names_and_paddings;
 };
 
 
@@ -44,11 +44,11 @@ protected:
 class VerticalRawRowOutputStream final : public VerticalRowOutputStream
 {
 public:
-	VerticalRawRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const Context & context)
-		: VerticalRowOutputStream(ostr_, sample_, context) {}
+    VerticalRawRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const Context & context)
+        : VerticalRowOutputStream(ostr_, sample_, context) {}
 
 protected:
-	void writeValue(const IColumn & column, const IDataType & type, size_t row_num) const override;
+    void writeValue(const IColumn & column, const IDataType & type, size_t row_num) const override;
 };
 
 }

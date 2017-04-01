@@ -19,13 +19,13 @@ class Context;
   */
 struct AnalyzeResultOfQuery
 {
-	void process(ASTPtr & ast, Context & context);
+    void process(ASTPtr & ast, Context & context);
 
-	/// Block will have non-nullptr columns for constant expressions.
-	Block result;
+    /// Block will have non-nullptr columns for constant expressions.
+    Block result;
 
-	/// Debug output
-	void dump(WriteBuffer & out) const;
+    /// Debug output
+    void dump(WriteBuffer & out) const;
 };
 
 }

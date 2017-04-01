@@ -19,28 +19,28 @@ class StorageSystemNumbers : private ext::shared_ptr_helper<StorageSystemNumbers
 friend class ext::shared_ptr_helper<StorageSystemNumbers>;
 
 public:
-	static StoragePtr create(const std::string & name_, bool multithreaded_ = false);
+    static StoragePtr create(const std::string & name_, bool multithreaded_ = false);
 
-	std::string getName() const override { return "SystemNumbers"; }
-	std::string getTableName() const override { return name; }
+    std::string getName() const override { return "SystemNumbers"; }
+    std::string getTableName() const override { return name; }
 
-	const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
-	BlockInputStreams read(
-		const Names & column_names,
-		ASTPtr query,
-		const Context & context,
-		const Settings & settings,
-		QueryProcessingStage::Enum & processed_stage,
-		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1) override;
+    BlockInputStreams read(
+        const Names & column_names,
+        ASTPtr query,
+        const Context & context,
+        const Settings & settings,
+        QueryProcessingStage::Enum & processed_stage,
+        size_t max_block_size = DEFAULT_BLOCK_SIZE,
+        unsigned threads = 1) override;
 
 private:
-	const std::string name;
-	NamesAndTypesList columns;
-	bool multithreaded;
+    const std::string name;
+    NamesAndTypesList columns;
+    bool multithreaded;
 
-	StorageSystemNumbers(const std::string & name_, bool multithreaded_);
+    StorageSystemNumbers(const std::string & name_, bool multithreaded_);
 };
 
 }

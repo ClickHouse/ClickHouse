@@ -17,18 +17,18 @@ using ConstSetPtr = std::shared_ptr<const Set>;
 class ColumnSet final : public IColumnDummy
 {
 public:
-	ColumnSet(size_t s_, ConstSetPtr data_) : IColumnDummy(s_), data(data_) {}
+    ColumnSet(size_t s_, ConstSetPtr data_) : IColumnDummy(s_), data(data_) {}
 
-	/// The column is not a constant. Otherwise, the column will be used in calculations in ExpressionActions::prepare, when a set from subquery is not ready yet.
-	bool isConst() const override { return false; }
+    /// The column is not a constant. Otherwise, the column will be used in calculations in ExpressionActions::prepare, when a set from subquery is not ready yet.
+    bool isConst() const override { return false; }
 
-	std::string getName() const override { return "ColumnSet"; }
-	ColumnPtr cloneDummy(size_t s_) const override { return std::make_shared<ColumnSet>(s_, data); }
+    std::string getName() const override { return "ColumnSet"; }
+    ColumnPtr cloneDummy(size_t s_) const override { return std::make_shared<ColumnSet>(s_, data); }
 
-	ConstSetPtr getData() const { return data; }
+    ConstSetPtr getData() const { return data; }
 
 private:
-	ConstSetPtr data;
+    ConstSetPtr data;
 };
 
 }

@@ -15,10 +15,10 @@ using ASTPtr = std::shared_ptr<IAST>;
 class InterpreterFactory
 {
 public:
-	static std::unique_ptr<IInterpreter> get(
-		ASTPtr & query,
-		Context & context,
-		QueryProcessingStage::Enum stage = QueryProcessingStage::Complete);
+    static std::unique_ptr<IInterpreter> get(
+        ASTPtr & query,
+        Context & context,
+        QueryProcessingStage::Enum stage = QueryProcessingStage::Complete);
 };
 
 }

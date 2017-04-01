@@ -15,22 +15,22 @@ namespace DB
 class InterpreterInsertQuery : public IInterpreter
 {
 public:
-	InterpreterInsertQuery(ASTPtr query_ptr_, Context & context_);
+    InterpreterInsertQuery(ASTPtr query_ptr_, Context & context_);
 
-	/** Подготовить запрос к выполнению. Вернуть потоки блоков
-	  * - поток, в который можно писать данные для выполнения запроса, если INSERT;
-	  * - поток, из которого можно читать результат выполнения запроса, если SELECT и подобные;
-	  * Или ничего, если запрос INSERT SELECT (самодостаточный запрос - не принимает входные данные, не отдаёт результат).
-	  */
-	BlockIO execute() override;
+    /** Подготовить запрос к выполнению. Вернуть потоки блоков
+      * - поток, в который можно писать данные для выполнения запроса, если INSERT;
+      * - поток, из которого можно читать результат выполнения запроса, если SELECT и подобные;
+      * Или ничего, если запрос INSERT SELECT (самодостаточный запрос - не принимает входные данные, не отдаёт результат).
+      */
+    BlockIO execute() override;
 
 private:
-	StoragePtr getTable();
+    StoragePtr getTable();
 
-	Block getSampleBlock();
+    Block getSampleBlock();
 
-	ASTPtr query_ptr;
-	Context context;
+    ASTPtr query_ptr;
+    Context context;
 };
 
 

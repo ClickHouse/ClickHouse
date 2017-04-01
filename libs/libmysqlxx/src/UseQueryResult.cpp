@@ -12,11 +12,11 @@ UseQueryResult::UseQueryResult(MYSQL_RES * res_, Connection * conn_, const Query
 
 Row UseQueryResult::fetch()
 {
-	MYSQL_ROW row = mysql_fetch_row(res);
-	if (!row)
-		checkError(conn->getDriver());
+    MYSQL_ROW row = mysql_fetch_row(res);
+    if (!row)
+        checkError(conn->getDriver());
 
-	return Row(row, this, mysql_fetch_lengths(res));
+    return Row(row, this, mysql_fetch_lengths(res));
 }
 
 }

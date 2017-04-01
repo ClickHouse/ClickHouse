@@ -11,10 +11,10 @@ namespace DB
 class VirtualColumnFactory
 {
 public:
-	static bool hasColumn(const String & name);
-	static DataTypePtr getType(const String & name);
+    static bool hasColumn(const String & name);
+    static DataTypePtr getType(const String & name);
 
-	static DataTypePtr tryGetType(const String & name);
+    static DataTypePtr tryGetType(const String & name);
 };
 
 }

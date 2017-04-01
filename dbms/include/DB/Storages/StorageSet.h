@@ -16,41 +16,41 @@ using SetPtr = std::shared_ptr<Set>;
   */
 class StorageSetOrJoinBase : private ext::shared_ptr_helper<StorageSetOrJoinBase>, public IStorage
 {
-	friend class ext::shared_ptr_helper<StorageSetOrJoinBase>;
-	friend class SetOrJoinBlockOutputStream;
+    friend class ext::shared_ptr_helper<StorageSetOrJoinBase>;
+    friend class SetOrJoinBlockOutputStream;
 
 public:
-	String getTableName() const override { return name; }
-	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    String getTableName() const override { return name; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 
-	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
-	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
+    BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 
 protected:
-	StorageSetOrJoinBase(
-		const String & path_,
-		const String & name_,
-		NamesAndTypesListPtr columns_,
-		const NamesAndTypesList & materialized_columns_,
-		const NamesAndTypesList & alias_columns_,
-		const ColumnDefaults & column_defaults_);
+    StorageSetOrJoinBase(
+        const String & path_,
+        const String & name_,
+        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_);
 
-	String path;
-	String name;
-	NamesAndTypesListPtr columns;
+    String path;
+    String name;
+    NamesAndTypesListPtr columns;
 
-	UInt64 increment = 0;	/// Для имён файлов бэкапа.
+    UInt64 increment = 0;    /// Для имён файлов бэкапа.
 
-	/// Восстановление из бэкапа.
-	void restore();
+    /// Восстановление из бэкапа.
+    void restore();
 
 private:
-	void restoreFromFile(const String & file_path);
+    void restoreFromFile(const String & file_path);
 
-	/// Вставить блок в состояние.
-	virtual void insertBlock(const Block & block) = 0;
-	virtual size_t getSize() const = 0;
+    /// Вставить блок в состояние.
+    virtual void insertBlock(const Block & block) = 0;
+    virtual size_t getSize() const = 0;
 };
 
 
@@ -64,35 +64,35 @@ class StorageSet : private ext::shared_ptr_helper<StorageSet>, public StorageSet
 friend class ext::shared_ptr_helper<StorageSet>;
 
 public:
-	static StoragePtr create(
-		const String & path_,
-		const String & name_,
-		NamesAndTypesListPtr columns_,
-		const NamesAndTypesList & materialized_columns_,
-		const NamesAndTypesList & alias_columns_,
-		const ColumnDefaults & column_defaults_)
-	{
-		return ext::shared_ptr_helper<StorageSet>::make_shared(path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_);
-	}
+    static StoragePtr create(
+        const String & path_,
+        const String & name_,
+        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_)
+    {
+        return ext::shared_ptr_helper<StorageSet>::make_shared(path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_);
+    }
 
-	String getName() const override { return "Set"; }
+    String getName() const override { return "Set"; }
 
-	/// Получить доступ к внутренностям.
-	SetPtr & getSet() { return set; }
+    /// Получить доступ к внутренностям.
+    SetPtr & getSet() { return set; }
 
 private:
-	SetPtr set;
+    SetPtr set;
 
-	StorageSet(
-		const String & path_,
-		const String & name_,
-		NamesAndTypesListPtr columns_,
-		const NamesAndTypesList & materialized_columns_,
-		const NamesAndTypesList & alias_columns_,
-		const ColumnDefaults & column_defaults_);
+    StorageSet(
+        const String & path_,
+        const String & name_,
+        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_);
 
-	void insertBlock(const Block & block) override;
-	size_t getSize() const override;
+    void insertBlock(const Block & block) override;
+    size_t getSize() const override;
 };
 
 }

@@ -8,44 +8,44 @@ namespace DB
 
 
 JSONEachRowRowOutputStream::JSONEachRowRowOutputStream(WriteBuffer & ostr_, const Block & sample, bool force_quoting_64bit_integers_)
-	: ostr(ostr_), force_quoting_64bit_integers(force_quoting_64bit_integers_)
+    : ostr(ostr_), force_quoting_64bit_integers(force_quoting_64bit_integers_)
 {
-	size_t columns = sample.columns();
-	fields.resize(columns);
+    size_t columns = sample.columns();
+    fields.resize(columns);
 
-	for (size_t i = 0; i < columns; ++i)
-	{
-		WriteBufferFromString out(fields[i]);
-		writeJSONString(sample.getByPosition(i).name, out);
-	}
+    for (size_t i = 0; i < columns; ++i)
+    {
+        WriteBufferFromString out(fields[i]);
+        writeJSONString(sample.getByPosition(i).name, out);
+    }
 }
 
 
 void JSONEachRowRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-	writeString(fields[field_number], ostr);
-	writeChar(':', ostr);
-	type.serializeTextJSON(column, row_num, ostr, force_quoting_64bit_integers);
-	++field_number;
+    writeString(fields[field_number], ostr);
+    writeChar(':', ostr);
+    type.serializeTextJSON(column, row_num, ostr, force_quoting_64bit_integers);
+    ++field_number;
 }
 
 
 void JSONEachRowRowOutputStream::writeFieldDelimiter()
 {
-	writeChar(',', ostr);
+    writeChar(',', ostr);
 }
 
 
 void JSONEachRowRowOutputStream::writeRowStartDelimiter()
 {
-	writeChar('{', ostr);
+    writeChar('{', ostr);
 }
 
 
 void JSONEachRowRowOutputStream::writeRowEndDelimiter()
 {
-	writeCString("}\n", ostr);
-	field_number = 0;
+    writeCString("}\n", ostr);
+    field_number = 0;
 }
 
 }

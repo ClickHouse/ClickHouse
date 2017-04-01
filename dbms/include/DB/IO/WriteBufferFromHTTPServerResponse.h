@@ -15,10 +15,10 @@
 
 namespace Poco
 {
-	namespace Net
-	{
-		class HTTPServerResponse;
-	}
+    namespace Net
+    {
+        class HTTPServerResponse;
+    }
 }
 
 
@@ -41,88 +41,88 @@ namespace DB
 class WriteBufferFromHTTPServerResponse : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
-	Poco::Net::HTTPServerResponse & response;
+    Poco::Net::HTTPServerResponse & response;
 
-	bool add_cors_header = false;
-	bool compress = false;
-	ZlibCompressionMethod compression_method;
-	int compression_level = Z_DEFAULT_COMPRESSION;
+    bool add_cors_header = false;
+    bool compress = false;
+    ZlibCompressionMethod compression_method;
+    int compression_level = Z_DEFAULT_COMPRESSION;
 
-	std::ostream * response_body_ostr = nullptr;
+    std::ostream * response_body_ostr = nullptr;
 
 #if POCO_CLICKHOUSE_PATCH
-	std::ostream * response_header_ostr = nullptr;
+    std::ostream * response_header_ostr = nullptr;
 #endif
 
-	std::experimental::optional<WriteBufferFromOStream> out_raw;
-	std::experimental::optional<ZlibDeflatingWriteBuffer> deflating_buf;
+    std::experimental::optional<WriteBufferFromOStream> out_raw;
+    std::experimental::optional<ZlibDeflatingWriteBuffer> deflating_buf;
 
-	WriteBuffer * out = nullptr; 	/// Uncompressed HTTP body is written to this buffer. Points to out_raw or possibly to deflating_buf.
+    WriteBuffer * out = nullptr;     /// Uncompressed HTTP body is written to this buffer. Points to out_raw or possibly to deflating_buf.
 
-	bool headers_started_sending = false;
-	bool headers_finished_sending = false;	/// If true, you could not add any headers.
+    bool headers_started_sending = false;
+    bool headers_finished_sending = false;    /// If true, you could not add any headers.
 
-	Progress accumulated_progress;
-	size_t send_progress_interval_ms = 100;
-	Stopwatch progress_watch;
+    Progress accumulated_progress;
+    size_t send_progress_interval_ms = 100;
+    Stopwatch progress_watch;
 
-	std::mutex mutex;	/// progress callback could be called from different threads.
+    std::mutex mutex;    /// progress callback could be called from different threads.
 
 
-	/// Must be called under locked mutex.
-	/// This method send headers, if this was not done already,
-	///  but not finish them with \r\n, allowing to send more headers subsequently.
-	void startSendHeaders();
+    /// Must be called under locked mutex.
+    /// This method send headers, if this was not done already,
+    ///  but not finish them with \r\n, allowing to send more headers subsequently.
+    void startSendHeaders();
 
-	/// This method finish headers with \r\n, allowing to start to send body.
-	void finishSendHeaders();
+    /// This method finish headers with \r\n, allowing to start to send body.
+    void finishSendHeaders();
 
-	void nextImpl() override;
+    void nextImpl() override;
 
 public:
-	WriteBufferFromHTTPServerResponse(
-		Poco::Net::HTTPServerResponse & response_,
-		bool compress_ = false,		/// If true - set Content-Encoding header and compress the result.
-		ZlibCompressionMethod compression_method_ = ZlibCompressionMethod::Gzip,
-		size_t size = DBMS_DEFAULT_BUFFER_SIZE);
+    WriteBufferFromHTTPServerResponse(
+        Poco::Net::HTTPServerResponse & response_,
+        bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
+        ZlibCompressionMethod compression_method_ = ZlibCompressionMethod::Gzip,
+        size_t size = DBMS_DEFAULT_BUFFER_SIZE);
 
-	/// Writes progess in repeating HTTP headers.
-	void onProgress(const Progress & progress);
+    /// Writes progess in repeating HTTP headers.
+    void onProgress(const Progress & progress);
 
-	/// Send at least HTTP headers if no data has been sent yet.
-	/// Use after the data has possibly been sent and no error happened (and thus you do not plan
-	/// to change response HTTP code.
-	/// This method is idempotent.
-	void finalize();
+    /// Send at least HTTP headers if no data has been sent yet.
+    /// Use after the data has possibly been sent and no error happened (and thus you do not plan
+    /// to change response HTTP code.
+    /// This method is idempotent.
+    void finalize();
 
-	/// Turn compression on or off.
-	/// The setting has any effect only if HTTP headers haven't been sent yet.
-	void setCompression(bool enable_compression)
-	{
-		compress = enable_compression;
-	}
+    /// Turn compression on or off.
+    /// The setting has any effect only if HTTP headers haven't been sent yet.
+    void setCompression(bool enable_compression)
+    {
+        compress = enable_compression;
+    }
 
-	/// Set compression level if the compression is turned on.
-	/// The setting has any effect only if HTTP headers haven't been sent yet.
-	void setCompressionLevel(int level)
-	{
-		compression_level = level;
-	}
+    /// Set compression level if the compression is turned on.
+    /// The setting has any effect only if HTTP headers haven't been sent yet.
+    void setCompressionLevel(int level)
+    {
+        compression_level = level;
+    }
 
-	/// Turn CORS on or off.
-	/// The setting has any effect only if HTTP headers haven't been sent yet.
-	void addHeaderCORS(bool enable_cors)
-	{
-		add_cors_header = enable_cors;
-	}
+    /// Turn CORS on or off.
+    /// The setting has any effect only if HTTP headers haven't been sent yet.
+    void addHeaderCORS(bool enable_cors)
+    {
+        add_cors_header = enable_cors;
+    }
 
-	/// Don't send HTTP headers with progress more frequently.
-	void setSendProgressInterval(size_t send_progress_interval_ms_)
-	{
-		send_progress_interval_ms = send_progress_interval_ms_;
-	}
+    /// Don't send HTTP headers with progress more frequently.
+    void setSendProgressInterval(size_t send_progress_interval_ms_)
+    {
+        send_progress_interval_ms = send_progress_interval_ms_;
+    }
 
-	~WriteBufferFromHTTPServerResponse();
+    ~WriteBufferFromHTTPServerResponse();
 };
 
 }

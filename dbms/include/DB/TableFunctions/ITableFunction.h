@@ -28,13 +28,13 @@ using StoragePtr = std::shared_ptr<IStorage>;
 class ITableFunction
 {
 public:
-	/// Получить основное имя функции.
-	virtual std::string getName() const = 0;
+    /// Получить основное имя функции.
+    virtual std::string getName() const = 0;
 
-	/// Создать storage в соответствии с запросом
-	virtual StoragePtr execute(ASTPtr ast_function, Context & context) const = 0;
+    /// Создать storage в соответствии с запросом
+    virtual StoragePtr execute(ASTPtr ast_function, Context & context) const = 0;
 
-	virtual ~ITableFunction() {};
+    virtual ~ITableFunction() {};
 };
 
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;

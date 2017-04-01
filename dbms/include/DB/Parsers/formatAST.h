@@ -14,8 +14,8 @@ namespace DB
   */
 inline void formatAST(const IAST & ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false)
 {
-	IAST::FormatSettings settings(s, hilite, one_line);
-	ast.format(settings);
+    IAST::FormatSettings settings(s, hilite, one_line);
+    ast.format(settings);
 }
 
 

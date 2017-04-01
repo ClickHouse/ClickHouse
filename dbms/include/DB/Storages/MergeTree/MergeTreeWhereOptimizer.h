@@ -33,55 +33,55 @@ using IdentifierNameSet = std::set<std::string>;
 class MergeTreeWhereOptimizer
 {
 public:
-	MergeTreeWhereOptimizer(const MergeTreeWhereOptimizer&) = delete;
-	MergeTreeWhereOptimizer& operator=(const MergeTreeWhereOptimizer&) = delete;
+    MergeTreeWhereOptimizer(const MergeTreeWhereOptimizer&) = delete;
+    MergeTreeWhereOptimizer& operator=(const MergeTreeWhereOptimizer&) = delete;
 
-	MergeTreeWhereOptimizer(
-		ASTPtr & query, const Context & context, const MergeTreeData & data, const Names & column_names,
-		Poco::Logger * log);
+    MergeTreeWhereOptimizer(
+        ASTPtr & query, const Context & context, const MergeTreeData & data, const Names & column_names,
+        Poco::Logger * log);
 
 private:
-	void optimize(ASTSelectQuery & select) const;
+    void optimize(ASTSelectQuery & select) const;
 
-	void calculateColumnSizes(const MergeTreeData & data, const Names & column_names);
+    void calculateColumnSizes(const MergeTreeData & data, const Names & column_names);
 
-	void optimizeConjunction(ASTSelectQuery & select, ASTFunction * const fun) const;
+    void optimizeConjunction(ASTSelectQuery & select, ASTFunction * const fun) const;
 
-	void optimizeArbitrary(ASTSelectQuery & select) const;
+    void optimizeArbitrary(ASTSelectQuery & select) const;
 
-	std::size_t getIdentifiersColumnSize(const IdentifierNameSet & identifiers) const;
+    std::size_t getIdentifiersColumnSize(const IdentifierNameSet & identifiers) const;
 
-	bool isConditionGood(const IAST * condition) const;
+    bool isConditionGood(const IAST * condition) const;
 
-	static void collectIdentifiersNoSubqueries(const IAST * const ast, IdentifierNameSet & set);
+    static void collectIdentifiersNoSubqueries(const IAST * const ast, IdentifierNameSet & set);
 
-	bool hasPrimaryKeyAtoms(const IAST * ast) const;
+    bool hasPrimaryKeyAtoms(const IAST * ast) const;
 
-	bool isPrimaryKeyAtom(const IAST * const ast) const;
+    bool isPrimaryKeyAtom(const IAST * const ast) const;
 
-	bool isConstant(const ASTPtr & expr) const;
+    bool isConstant(const ASTPtr & expr) const;
 
-	bool isSubsetOfTableColumns(const IdentifierNameSet & identifiers) const;
+    bool isSubsetOfTableColumns(const IdentifierNameSet & identifiers) const;
 
-	/** ARRAY JOIN'ed columns as well as arrayJoin() result cannot be used in PREWHERE, therefore expressions
-	  *	containing said columns should not be moved to PREWHERE at all.
-	  *	We assume all AS aliases have been expanded prior to using this class
-	  *
-	  * Also, disallow moving expressions with GLOBAL [NOT] IN.
-	  */
-	bool cannotBeMoved(const IAST * ptr) const;
+    /** ARRAY JOIN'ed columns as well as arrayJoin() result cannot be used in PREWHERE, therefore expressions
+      *    containing said columns should not be moved to PREWHERE at all.
+      *    We assume all AS aliases have been expanded prior to using this class
+      *
+      * Also, disallow moving expressions with GLOBAL [NOT] IN.
+      */
+    bool cannotBeMoved(const IAST * ptr) const;
 
-	void determineArrayJoinedNames(ASTSelectQuery & select);
+    void determineArrayJoinedNames(ASTSelectQuery & select);
 
-	using string_set_t = std::unordered_set<std::string>;
+    using string_set_t = std::unordered_set<std::string>;
 
-	const string_set_t primary_key_columns;
-	const string_set_t table_columns;
-	const Block block_with_constants;
-	Poco::Logger * log;
-	std::unordered_map<std::string, std::size_t> column_sizes{};
-	std::size_t total_column_size{};
-	NameSet array_joined_names;
+    const string_set_t primary_key_columns;
+    const string_set_t table_columns;
+    const Block block_with_constants;
+    Poco::Logger * log;
+    std::unordered_map<std::string, std::size_t> column_sizes{};
+    std::size_t total_column_size{};
+    NameSet array_joined_names;
 };
 
 

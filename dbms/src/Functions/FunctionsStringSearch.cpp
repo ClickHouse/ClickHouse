@@ -14,9 +14,9 @@
 #include <re2/stringpiece.h>
 
 #if USE_RE2_ST
-	#include <re2_st/re2.h>
+    #include <re2_st/re2.h>
 #else
-	#define re2_st re2
+    #define re2_st re2
 #endif
 
 
@@ -27,308 +27,308 @@ namespace DB
   */
 struct PositionCaseSensitiveASCII
 {
-	/// For searching single substring inside big-enough contiguous chunk of data. Coluld have slightly expensive initialization.
-	using SearcherInBigHaystack = VolnitskyImpl<true, true>;
+    /// For searching single substring inside big-enough contiguous chunk of data. Coluld have slightly expensive initialization.
+    using SearcherInBigHaystack = VolnitskyImpl<true, true>;
 
-	/// For searching single substring, that is different each time. This object is created for each row of data. It must have cheap initialization.
-	using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
+    /// For searching single substring, that is different each time. This object is created for each row of data. It must have cheap initialization.
+    using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
 
-	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
-	{
-		return SearcherInBigHaystack(needle_data, needle_size, haystack_size_hint);
-	}
+    static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
+    {
+        return SearcherInBigHaystack(needle_data, needle_size, haystack_size_hint);
+    }
 
-	static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
-	{
-		return SearcherInSmallHaystack(needle_data, needle_size);
-	}
+    static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
+    {
+        return SearcherInSmallHaystack(needle_data, needle_size);
+    }
 
-	/// Number of code points between 'begin' and 'end' (this has different behaviour for ASCII and UTF-8).
-	static size_t countChars(const char * begin, const char * end)
-	{
-		return end - begin;
-	}
+    /// Number of code points between 'begin' and 'end' (this has different behaviour for ASCII and UTF-8).
+    static size_t countChars(const char * begin, const char * end)
+    {
+        return end - begin;
+    }
 
-	/// Convert string to lowercase. Only for case-insensitive search.
-	/// Implementation is permitted to be inefficient because it is called for single string.
-	static void toLowerIfNeed(std::string & s)
-	{
-	}
+    /// Convert string to lowercase. Only for case-insensitive search.
+    /// Implementation is permitted to be inefficient because it is called for single string.
+    static void toLowerIfNeed(std::string & s)
+    {
+    }
 };
 
 struct PositionCaseInsensitiveASCII
 {
-	/// `Volnitsky` is not used here, because one person has measured that this is better. It will be good if you question it.
-	using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
-	using SearcherInSmallHaystack = LibCASCIICaseInsensitiveStringSearcher;
+    /// `Volnitsky` is not used here, because one person has measured that this is better. It will be good if you question it.
+    using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
+    using SearcherInSmallHaystack = LibCASCIICaseInsensitiveStringSearcher;
 
-	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
-	{
-		return SearcherInBigHaystack(needle_data, needle_size);
-	}
+    static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
+    {
+        return SearcherInBigHaystack(needle_data, needle_size);
+    }
 
-	static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
-	{
-		return SearcherInSmallHaystack(needle_data, needle_size);
-	}
+    static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
+    {
+        return SearcherInSmallHaystack(needle_data, needle_size);
+    }
 
-	static size_t countChars(const char * begin, const char * end)
-	{
-		return end - begin;
-	}
+    static size_t countChars(const char * begin, const char * end)
+    {
+        return end - begin;
+    }
 
-	static void toLowerIfNeed(std::string & s)
-	{
-		std::transform(std::begin(s), std::end(s), std::begin(s), tolower);
-	}
+    static void toLowerIfNeed(std::string & s)
+    {
+        std::transform(std::begin(s), std::end(s), std::begin(s), tolower);
+    }
 };
 
 struct PositionCaseSensitiveUTF8
 {
-	using SearcherInBigHaystack = VolnitskyImpl<true, false>;
-	using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
+    using SearcherInBigHaystack = VolnitskyImpl<true, false>;
+    using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
 
-	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
-	{
-		return SearcherInBigHaystack(needle_data, needle_size, haystack_size_hint);
-	}
+    static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
+    {
+        return SearcherInBigHaystack(needle_data, needle_size, haystack_size_hint);
+    }
 
-	static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
-	{
-		return SearcherInSmallHaystack(needle_data, needle_size);
-	}
+    static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
+    {
+        return SearcherInSmallHaystack(needle_data, needle_size);
+    }
 
-	static size_t countChars(const char * begin, const char * end)
-	{
-		size_t res = 0;
-		for (auto it = begin; it != end; ++it)
-			if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it)))
-				++res;
-		return res;
-	}
+    static size_t countChars(const char * begin, const char * end)
+    {
+        size_t res = 0;
+        for (auto it = begin; it != end; ++it)
+            if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it)))
+                ++res;
+        return res;
+    }
 
-	static void toLowerIfNeed(std::string & s)
-	{
-	}
+    static void toLowerIfNeed(std::string & s)
+    {
+    }
 };
 
 struct PositionCaseInsensitiveUTF8
 {
-	using SearcherInBigHaystack = VolnitskyImpl<false, false>;
-	using SearcherInSmallHaystack = UTF8CaseInsensitiveStringSearcher; /// TODO Very suboptimal.
+    using SearcherInBigHaystack = VolnitskyImpl<false, false>;
+    using SearcherInSmallHaystack = UTF8CaseInsensitiveStringSearcher; /// TODO Very suboptimal.
 
-	static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
-	{
-		return SearcherInBigHaystack(needle_data, needle_size, haystack_size_hint);
-	}
+    static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
+    {
+        return SearcherInBigHaystack(needle_data, needle_size, haystack_size_hint);
+    }
 
-	static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
-	{
-		return SearcherInSmallHaystack(needle_data, needle_size);
-	}
+    static SearcherInSmallHaystack createSearcherInSmallHaystack(const char * needle_data, size_t needle_size)
+    {
+        return SearcherInSmallHaystack(needle_data, needle_size);
+    }
 
-	static size_t countChars(const char * begin, const char * end)
-	{
-		size_t res = 0;
-		for (auto it = begin; it != end; ++it)
-			if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it)))
-				++res;
-		return res;
-	}
+    static size_t countChars(const char * begin, const char * end)
+    {
+        size_t res = 0;
+        for (auto it = begin; it != end; ++it)
+            if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it)))
+                ++res;
+        return res;
+    }
 
-	static void toLowerIfNeed(std::string & s)
-	{
-		Poco::UTF8::toLowerInPlace(s);
-	}
+    static void toLowerIfNeed(std::string & s)
+    {
+        Poco::UTF8::toLowerInPlace(s);
+    }
 };
 
 template <typename Impl>
 struct PositionImpl
 {
-	using ResultType = UInt64;
+    using ResultType = UInt64;
 
-	/// Find one substring in many strings.
-	static void vector_constant(const ColumnString::Chars_t & data,
-		const ColumnString::Offsets_t & offsets,
-		const std::string & needle,
-		PaddedPODArray<UInt64> & res)
-	{
-		const UInt8 * begin = &data[0];
-		const UInt8 * pos = begin;
-		const UInt8 * end = pos + data.size();
+    /// Find one substring in many strings.
+    static void vector_constant(const ColumnString::Chars_t & data,
+        const ColumnString::Offsets_t & offsets,
+        const std::string & needle,
+        PaddedPODArray<UInt64> & res)
+    {
+        const UInt8 * begin = &data[0];
+        const UInt8 * pos = begin;
+        const UInt8 * end = pos + data.size();
 
-		/// Current index in the array of strings.
-		size_t i = 0;
+        /// Current index in the array of strings.
+        size_t i = 0;
 
-		typename Impl::SearcherInBigHaystack searcher = Impl::createSearcherInBigHaystack(needle.data(), needle.size(), end - pos);
+        typename Impl::SearcherInBigHaystack searcher = Impl::createSearcherInBigHaystack(needle.data(), needle.size(), end - pos);
 
-		/// We will search for the next occurrence in all strings at once.
-		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
-		{
-			/// Determine which index it refers to.
-			while (begin + offsets[i] <= pos)
-			{
-				res[i] = 0;
-				++i;
-			}
+        /// We will search for the next occurrence in all strings at once.
+        while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+        {
+            /// Determine which index it refers to.
+            while (begin + offsets[i] <= pos)
+            {
+                res[i] = 0;
+                ++i;
+            }
 
-			/// We check that the entry does not pass through the boundaries of strings.
-			if (pos + needle.size() < begin + offsets[i])
-			{
-				size_t prev_offset = i != 0 ? offsets[i - 1] : 0;
-				res[i] = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + prev_offset), reinterpret_cast<const char *>(pos));
-			}
-			else
-				res[i] = 0;
+            /// We check that the entry does not pass through the boundaries of strings.
+            if (pos + needle.size() < begin + offsets[i])
+            {
+                size_t prev_offset = i != 0 ? offsets[i - 1] : 0;
+                res[i] = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + prev_offset), reinterpret_cast<const char *>(pos));
+            }
+            else
+                res[i] = 0;
 
-			pos = begin + offsets[i];
-			++i;
-		}
+            pos = begin + offsets[i];
+            ++i;
+        }
 
-		memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
-	}
+        memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
+    }
 
-	/// Search for substring in string.
-	static void constant_constant(std::string data, std::string needle, UInt64 & res)
-	{
-		Impl::toLowerIfNeed(data);
-		Impl::toLowerIfNeed(needle);
+    /// Search for substring in string.
+    static void constant_constant(std::string data, std::string needle, UInt64 & res)
+    {
+        Impl::toLowerIfNeed(data);
+        Impl::toLowerIfNeed(needle);
 
-		res = data.find(needle);
-		if (res == std::string::npos)
-			res = 0;
-		else
-			res = 1 + Impl::countChars(data.data(), data.data() + res);
-	}
+        res = data.find(needle);
+        if (res == std::string::npos)
+            res = 0;
+        else
+            res = 1 + Impl::countChars(data.data(), data.data() + res);
+    }
 
-	/// Search each time for a different single substring inside each time different string.
-	static void vector_vector(const ColumnString::Chars_t & haystack_data,
-		const ColumnString::Offsets_t & haystack_offsets,
-		const ColumnString::Chars_t & needle_data,
-		const ColumnString::Offsets_t & needle_offsets,
-		PaddedPODArray<UInt64> & res)
-	{
-		ColumnString::Offset_t prev_haystack_offset = 0;
-		ColumnString::Offset_t prev_needle_offset = 0;
+    /// Search each time for a different single substring inside each time different string.
+    static void vector_vector(const ColumnString::Chars_t & haystack_data,
+        const ColumnString::Offsets_t & haystack_offsets,
+        const ColumnString::Chars_t & needle_data,
+        const ColumnString::Offsets_t & needle_offsets,
+        PaddedPODArray<UInt64> & res)
+    {
+        ColumnString::Offset_t prev_haystack_offset = 0;
+        ColumnString::Offset_t prev_needle_offset = 0;
 
-		size_t size = haystack_offsets.size();
+        size_t size = haystack_offsets.size();
 
-		for (size_t i = 0; i < size; ++i)
-		{
-			size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
-			size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
+        for (size_t i = 0; i < size; ++i)
+        {
+            size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
+            size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
 
-			if (0 == needle_size)
-			{
-				/// An empty string is always at the very beginning of `haystack`.
-				res[i] = 1;
-			}
-			else
-			{
-				/// It is assumed that the StringSearcher is not very difficult to initialize.
-				typename Impl::SearcherInSmallHaystack searcher
-					= Impl::createSearcherInSmallHaystack(reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
-						needle_offsets[i] - prev_needle_offset - 1); /// zero byte at the end
+            if (0 == needle_size)
+            {
+                /// An empty string is always at the very beginning of `haystack`.
+                res[i] = 1;
+            }
+            else
+            {
+                /// It is assumed that the StringSearcher is not very difficult to initialize.
+                typename Impl::SearcherInSmallHaystack searcher
+                    = Impl::createSearcherInSmallHaystack(reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
+                        needle_offsets[i] - prev_needle_offset - 1); /// zero byte at the end
 
-				/// searcher returns a pointer to the found substring or to the end of `haystack`.
-				size_t pos = searcher.search(&haystack_data[prev_haystack_offset], &haystack_data[haystack_offsets[i] - 1])
-					- &haystack_data[prev_haystack_offset];
+                /// searcher returns a pointer to the found substring or to the end of `haystack`.
+                size_t pos = searcher.search(&haystack_data[prev_haystack_offset], &haystack_data[haystack_offsets[i] - 1])
+                    - &haystack_data[prev_haystack_offset];
 
-				if (pos != haystack_size)
-				{
-					res[i] = 1 + Impl::countChars(reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]),
-									 reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset + pos]));
-				}
-				else
-					res[i] = 0;
-			}
+                if (pos != haystack_size)
+                {
+                    res[i] = 1 + Impl::countChars(reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]),
+                                     reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset + pos]));
+                }
+                else
+                    res[i] = 0;
+            }
 
-			prev_haystack_offset = haystack_offsets[i];
-			prev_needle_offset = needle_offsets[i];
-		}
-	}
+            prev_haystack_offset = haystack_offsets[i];
+            prev_needle_offset = needle_offsets[i];
+        }
+    }
 
-	/// Find many substrings in one line.
-	static void constant_vector(const String & haystack,
-		const ColumnString::Chars_t & needle_data,
-		const ColumnString::Offsets_t & needle_offsets,
-		PaddedPODArray<UInt64> & res)
-	{
-		// NOTE You could use haystack indexing. But this is a rare case.
+    /// Find many substrings in one line.
+    static void constant_vector(const String & haystack,
+        const ColumnString::Chars_t & needle_data,
+        const ColumnString::Offsets_t & needle_offsets,
+        PaddedPODArray<UInt64> & res)
+    {
+        // NOTE You could use haystack indexing. But this is a rare case.
 
-		ColumnString::Offset_t prev_needle_offset = 0;
+        ColumnString::Offset_t prev_needle_offset = 0;
 
-		size_t size = needle_offsets.size();
+        size_t size = needle_offsets.size();
 
-		for (size_t i = 0; i < size; ++i)
-		{
-			size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
+        for (size_t i = 0; i < size; ++i)
+        {
+            size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
 
-			if (0 == needle_size)
-			{
-				res[i] = 1;
-			}
-			else
-			{
-				typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(
-					reinterpret_cast<const char *>(&needle_data[prev_needle_offset]), needle_offsets[i] - prev_needle_offset - 1);
+            if (0 == needle_size)
+            {
+                res[i] = 1;
+            }
+            else
+            {
+                typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(
+                    reinterpret_cast<const char *>(&needle_data[prev_needle_offset]), needle_offsets[i] - prev_needle_offset - 1);
 
-				size_t pos = searcher.search(reinterpret_cast<const UInt8 *>(haystack.data()),
-								 reinterpret_cast<const UInt8 *>(haystack.data()) + haystack.size())
-					- reinterpret_cast<const UInt8 *>(haystack.data());
+                size_t pos = searcher.search(reinterpret_cast<const UInt8 *>(haystack.data()),
+                                 reinterpret_cast<const UInt8 *>(haystack.data()) + haystack.size())
+                    - reinterpret_cast<const UInt8 *>(haystack.data());
 
-				if (pos != haystack.size())
-				{
-					res[i] = 1 + Impl::countChars(haystack.data(), haystack.data() + pos);
-				}
-				else
-					res[i] = 0;
-			}
+                if (pos != haystack.size())
+                {
+                    res[i] = 1 + Impl::countChars(haystack.data(), haystack.data() + pos);
+                }
+                else
+                    res[i] = 0;
+            }
 
-			prev_needle_offset = needle_offsets[i];
-		}
-	}
+            prev_needle_offset = needle_offsets[i];
+        }
+    }
 };
 
 
 /// Is the LIKE expression reduced to finding a substring in a string?
 inline bool likePatternIsStrstr(const String & pattern, String & res)
 {
-	res = "";
+    res = "";
 
-	if (pattern.size() < 2 || pattern.front() != '%' || pattern.back() != '%')
-		return false;
+    if (pattern.size() < 2 || pattern.front() != '%' || pattern.back() != '%')
+        return false;
 
-	res.reserve(pattern.size() * 2);
+    res.reserve(pattern.size() * 2);
 
-	const char * pos = pattern.data();
-	const char * end = pos + pattern.size();
+    const char * pos = pattern.data();
+    const char * end = pos + pattern.size();
 
-	++pos;
-	--end;
+    ++pos;
+    --end;
 
-	while (pos < end)
-	{
-		switch (*pos)
-		{
-			case '%':
-			case '_':
-				return false;
-			case '\\':
-				++pos;
-				if (pos == end)
-					return false;
-				else
-					res += *pos;
-				break;
-			default:
-				res += *pos;
-				break;
-		}
-		++pos;
-	}
+    while (pos < end)
+    {
+        switch (*pos)
+        {
+            case '%':
+            case '_':
+                return false;
+            case '\\':
+                ++pos;
+                if (pos == end)
+                    return false;
+                else
+                    res += *pos;
+                break;
+            default:
+                res += *pos;
+                break;
+        }
+        ++pos;
+    }
 
-	return true;
+    return true;
 }
 
 /** 'like' - if true, treat pattern as SQL LIKE; if false - treat pattern as re2 regexp.
@@ -338,222 +338,222 @@ inline bool likePatternIsStrstr(const String & pattern, String & res)
 template <bool like, bool revert = false>
 struct MatchImpl
 {
-	using ResultType = UInt8;
+    using ResultType = UInt8;
 
-	static void vector_constant(const ColumnString::Chars_t & data,
-		const ColumnString::Offsets_t & offsets,
-		const std::string & pattern,
-		PaddedPODArray<UInt8> & res)
-	{
-		String strstr_pattern;
-		/// A simple case where the LIKE expression reduces to finding a substring in a string
-		if (like && likePatternIsStrstr(pattern, strstr_pattern))
-		{
-			const UInt8 * begin = &data[0];
-			const UInt8 * pos = begin;
-			const UInt8 * end = pos + data.size();
+    static void vector_constant(const ColumnString::Chars_t & data,
+        const ColumnString::Offsets_t & offsets,
+        const std::string & pattern,
+        PaddedPODArray<UInt8> & res)
+    {
+        String strstr_pattern;
+        /// A simple case where the LIKE expression reduces to finding a substring in a string
+        if (like && likePatternIsStrstr(pattern, strstr_pattern))
+        {
+            const UInt8 * begin = &data[0];
+            const UInt8 * pos = begin;
+            const UInt8 * end = pos + data.size();
 
-			/// The current index in the array of strings.
-			size_t i = 0;
+            /// The current index in the array of strings.
+            size_t i = 0;
 
-			/// TODO You need to make that `searcher` is common to all the calls of the function.
-			Volnitsky searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
+            /// TODO You need to make that `searcher` is common to all the calls of the function.
+            Volnitsky searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
 
-			/// We will search for the next occurrence in all rows at once.
-			while (pos < end && end != (pos = searcher.search(pos, end - pos)))
-			{
-				/// Let's determine which index it refers to.
-				while (begin + offsets[i] <= pos)
-				{
-					res[i] = revert;
-					++i;
-				}
+            /// We will search for the next occurrence in all rows at once.
+            while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+            {
+                /// Let's determine which index it refers to.
+                while (begin + offsets[i] <= pos)
+                {
+                    res[i] = revert;
+                    ++i;
+                }
 
-				/// We check that the entry does not pass through the boundaries of strings.
-				if (pos + strstr_pattern.size() < begin + offsets[i])
-					res[i] = !revert;
-				else
-					res[i] = revert;
+                /// We check that the entry does not pass through the boundaries of strings.
+                if (pos + strstr_pattern.size() < begin + offsets[i])
+                    res[i] = !revert;
+                else
+                    res[i] = revert;
 
-				pos = begin + offsets[i];
-				++i;
-			}
+                pos = begin + offsets[i];
+                ++i;
+            }
 
-			/// Tail, in which there can be no substring.
-			memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
-		}
-		else
-		{
-			size_t size = offsets.size();
+            /// Tail, in which there can be no substring.
+            memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
+        }
+        else
+        {
+            size_t size = offsets.size();
 
-			const auto & regexp = Regexps::get<like, true>(pattern);
+            const auto & regexp = Regexps::get<like, true>(pattern);
 
-			std::string required_substring;
-			bool is_trivial;
-			bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
+            std::string required_substring;
+            bool is_trivial;
+            bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
 
-			regexp->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+            regexp->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
 
-			if (required_substring.empty())
-			{
-				if (!regexp->getRE2()) /// An empty regexp. Always matches.
-				{
-					memset(&res[0], 1, size * sizeof(res[0]));
-				}
-				else
-				{
-					size_t prev_offset = 0;
-					for (size_t i = 0; i < size; ++i)
-					{
-						res[i] = revert
-							^ regexp->getRE2()->Match(
-								  re2_st::StringPiece(reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset - 1),
-								  0,
-								  offsets[i] - prev_offset - 1,
-								  re2_st::RE2::UNANCHORED,
-								  nullptr,
-								  0);
+            if (required_substring.empty())
+            {
+                if (!regexp->getRE2()) /// An empty regexp. Always matches.
+                {
+                    memset(&res[0], 1, size * sizeof(res[0]));
+                }
+                else
+                {
+                    size_t prev_offset = 0;
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        res[i] = revert
+                            ^ regexp->getRE2()->Match(
+                                  re2_st::StringPiece(reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset - 1),
+                                  0,
+                                  offsets[i] - prev_offset - 1,
+                                  re2_st::RE2::UNANCHORED,
+                                  nullptr,
+                                  0);
 
-						prev_offset = offsets[i];
-					}
-				}
-			}
-			else
-			{
-				/// NOTE This almost matches with the case of LikePatternIsStrstr.
+                        prev_offset = offsets[i];
+                    }
+                }
+            }
+            else
+            {
+                /// NOTE This almost matches with the case of LikePatternIsStrstr.
 
-				const UInt8 * begin = &data[0];
-				const UInt8 * pos = begin;
-				const UInt8 * end = pos + data.size();
+                const UInt8 * begin = &data[0];
+                const UInt8 * pos = begin;
+                const UInt8 * end = pos + data.size();
 
-				/// The current index in the array of strings.
-				size_t i = 0;
+                /// The current index in the array of strings.
+                size_t i = 0;
 
-				Volnitsky searcher(required_substring.data(), required_substring.size(), end - pos);
+                Volnitsky searcher(required_substring.data(), required_substring.size(), end - pos);
 
-				/// We will search for the next occurrence in all rows at once.
-				while (pos < end && end != (pos = searcher.search(pos, end - pos)))
-				{
-					/// Determine which index it refers to.
-					while (begin + offsets[i] <= pos)
-					{
-						res[i] = revert;
-						++i;
-					}
+                /// We will search for the next occurrence in all rows at once.
+                while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+                {
+                    /// Determine which index it refers to.
+                    while (begin + offsets[i] <= pos)
+                    {
+                        res[i] = revert;
+                        ++i;
+                    }
 
-					/// We check that the entry does not pass through the boundaries of strings.
-					if (pos + strstr_pattern.size() < begin + offsets[i])
-					{
-						/// And if it does not, if necessary, we check the regexp.
+                    /// We check that the entry does not pass through the boundaries of strings.
+                    if (pos + strstr_pattern.size() < begin + offsets[i])
+                    {
+                        /// And if it does not, if necessary, we check the regexp.
 
-						if (is_trivial)
-							res[i] = !revert;
-						else
-						{
-							const char * str_data = reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]);
-							size_t str_size = (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1;
+                        if (is_trivial)
+                            res[i] = !revert;
+                        else
+                        {
+                            const char * str_data = reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]);
+                            size_t str_size = (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1;
 
-							/** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
-							  *  so that it can match when `required_substring` occurs into the line several times,
-							  *  and at the first occurrence, the regexp is not a match.
-							  */
+                            /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
+                              *  so that it can match when `required_substring` occurs into the line several times,
+                              *  and at the first occurrence, the regexp is not a match.
+                              */
 
-							if (required_substring_is_prefix)
-								res[i] = revert
-									^ regexp->getRE2()->Match(re2_st::StringPiece(str_data, str_size),
-										  reinterpret_cast<const char *>(pos) - str_data,
-										  str_size,
-										  re2_st::RE2::UNANCHORED,
-										  nullptr,
-										  0);
-							else
-								res[i] = revert
-									^ regexp->getRE2()->Match(
-										  re2_st::StringPiece(str_data, str_size), 0, str_size, re2_st::RE2::UNANCHORED, nullptr, 0);
-						}
-					}
-					else
-						res[i] = revert;
+                            if (required_substring_is_prefix)
+                                res[i] = revert
+                                    ^ regexp->getRE2()->Match(re2_st::StringPiece(str_data, str_size),
+                                          reinterpret_cast<const char *>(pos) - str_data,
+                                          str_size,
+                                          re2_st::RE2::UNANCHORED,
+                                          nullptr,
+                                          0);
+                            else
+                                res[i] = revert
+                                    ^ regexp->getRE2()->Match(
+                                          re2_st::StringPiece(str_data, str_size), 0, str_size, re2_st::RE2::UNANCHORED, nullptr, 0);
+                        }
+                    }
+                    else
+                        res[i] = revert;
 
-					pos = begin + offsets[i];
-					++i;
-				}
+                    pos = begin + offsets[i];
+                    ++i;
+                }
 
-				memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
-			}
-		}
-	}
+                memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
+            }
+        }
+    }
 
-	static void constant_constant(const std::string & data, const std::string & pattern, UInt8 & res)
-	{
-		const auto & regexp = Regexps::get<like, true>(pattern);
-		res = revert ^ regexp->match(data);
-	}
+    static void constant_constant(const std::string & data, const std::string & pattern, UInt8 & res)
+    {
+        const auto & regexp = Regexps::get<like, true>(pattern);
+        res = revert ^ regexp->match(data);
+    }
 
-	static void vector_vector(const ColumnString::Chars_t & haystack_data,
-		const ColumnString::Offsets_t & haystack_offsets,
-		const ColumnString::Chars_t & needle_data,
-		const ColumnString::Offsets_t & needle_offsets,
-		PaddedPODArray<UInt8> & res)
-	{
-		throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
-	}
+    static void vector_vector(const ColumnString::Chars_t & haystack_data,
+        const ColumnString::Offsets_t & haystack_offsets,
+        const ColumnString::Chars_t & needle_data,
+        const ColumnString::Offsets_t & needle_offsets,
+        PaddedPODArray<UInt8> & res)
+    {
+        throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+    }
 
-	/// Search different needles in single haystack.
-	static void constant_vector(const String & haystack,
-		const ColumnString::Chars_t & needle_data,
-		const ColumnString::Offsets_t & needle_offsets,
-		PaddedPODArray<UInt8> & res)
-	{
-		throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
-	}
+    /// Search different needles in single haystack.
+    static void constant_vector(const String & haystack,
+        const ColumnString::Chars_t & needle_data,
+        const ColumnString::Offsets_t & needle_offsets,
+        PaddedPODArray<UInt8> & res)
+    {
+        throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+    }
 };
 
 
 struct ExtractImpl
 {
-	static void vector(const ColumnString::Chars_t & data,
-		const ColumnString::Offsets_t & offsets,
-		const std::string & pattern,
-		ColumnString::Chars_t & res_data,
-		ColumnString::Offsets_t & res_offsets)
-	{
-		res_data.reserve(data.size() / 5);
-		res_offsets.resize(offsets.size());
+    static void vector(const ColumnString::Chars_t & data,
+        const ColumnString::Offsets_t & offsets,
+        const std::string & pattern,
+        ColumnString::Chars_t & res_data,
+        ColumnString::Offsets_t & res_offsets)
+    {
+        res_data.reserve(data.size() / 5);
+        res_offsets.resize(offsets.size());
 
-		const auto & regexp = Regexps::get<false, false>(pattern);
+        const auto & regexp = Regexps::get<false, false>(pattern);
 
-		unsigned capture = regexp->getNumberOfSubpatterns() > 0 ? 1 : 0;
-		OptimizedRegularExpression::MatchVec matches;
-		matches.reserve(capture + 1);
-		size_t prev_offset = 0;
-		size_t res_offset = 0;
+        unsigned capture = regexp->getNumberOfSubpatterns() > 0 ? 1 : 0;
+        OptimizedRegularExpression::MatchVec matches;
+        matches.reserve(capture + 1);
+        size_t prev_offset = 0;
+        size_t res_offset = 0;
 
-		for (size_t i = 0; i < offsets.size(); ++i)
-		{
-			size_t cur_offset = offsets[i];
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            size_t cur_offset = offsets[i];
 
-			unsigned count
-				= regexp->match(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1, matches, capture + 1);
-			if (count > capture && matches[capture].offset != std::string::npos)
-			{
-				const auto & match = matches[capture];
-				res_data.resize(res_offset + match.length + 1);
-				memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[prev_offset + match.offset], match.length);
-				res_offset += match.length;
-			}
-			else
-			{
-				res_data.resize(res_offset + 1);
-			}
+            unsigned count
+                = regexp->match(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1, matches, capture + 1);
+            if (count > capture && matches[capture].offset != std::string::npos)
+            {
+                const auto & match = matches[capture];
+                res_data.resize(res_offset + match.length + 1);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[prev_offset + match.offset], match.length);
+                res_offset += match.length;
+            }
+            else
+            {
+                res_data.resize(res_offset + 1);
+            }
 
-			res_data[res_offset] = 0;
-			++res_offset;
-			res_offsets[i] = res_offset;
+            res_data[res_offset] = 0;
+            ++res_offset;
+            res_offsets[i] = res_offset;
 
-			prev_offset = cur_offset;
-		}
-	}
+            prev_offset = cur_offset;
+        }
+    }
 };
 
 
@@ -563,188 +563,188 @@ struct ExtractImpl
 template <bool replace_one = false>
 struct ReplaceRegexpImpl
 {
-	/// Sequence of instructions, describing how to get resulting string.
-	/// Each element is either:
-	/// - substitution (in that case first element of pair is their number and second element is empty)
-	/// - string that need to be inserted (in that case, first element of pair is that string and second element is -1)
-	using Instructions = std::vector<std::pair<int, std::string>>;
+    /// Sequence of instructions, describing how to get resulting string.
+    /// Each element is either:
+    /// - substitution (in that case first element of pair is their number and second element is empty)
+    /// - string that need to be inserted (in that case, first element of pair is that string and second element is -1)
+    using Instructions = std::vector<std::pair<int, std::string>>;
 
-	static const size_t max_captures = 10;
-
-
-	static Instructions createInstructions(const std::string & s, int num_captures)
-	{
-		Instructions instructions;
-
-		String now = "";
-		for (size_t i = 0; i < s.size(); ++i)
-		{
-			if (s[i] == '\\' && i + 1 < s.size())
-			{
-				if (isdigit(s[i + 1])) /// Substitution
-				{
-					if (!now.empty())
-					{
-						instructions.emplace_back(-1, now);
-						now = "";
-					}
-					instructions.emplace_back(s[i + 1] - '0', String());
-				}
-				else
-					now += s[i + 1]; /// Escaping
-				++i;
-			}
-			else
-				now += s[i]; /// Plain character
-		}
-
-		if (!now.empty())
-		{
-			instructions.emplace_back(-1, now);
-			now = "";
-		}
-
-		for (const auto & it : instructions)
-			if (it.first >= num_captures)
-				throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) + ", but regexp has only "
-						+ toString(num_captures - 1)
-						+ " subpatterns",
-					ErrorCodes::BAD_ARGUMENTS);
-
-		return instructions;
-	}
+    static const size_t max_captures = 10;
 
 
-	static void processString(const re2_st::StringPiece & input,
-		ColumnString::Chars_t & res_data,
-		ColumnString::Offset_t & res_offset,
-		re2_st::RE2 & searcher,
-		int num_captures,
-		const Instructions & instructions)
-	{
-		re2_st::StringPiece matches[max_captures];
+    static Instructions createInstructions(const std::string & s, int num_captures)
+    {
+        Instructions instructions;
 
-		int start_pos = 0;
-		while (start_pos < input.length())
-		{
-			/// If no more replacements possible for current string
-			bool can_finish_current_string = false;
+        String now = "";
+        for (size_t i = 0; i < s.size(); ++i)
+        {
+            if (s[i] == '\\' && i + 1 < s.size())
+            {
+                if (isdigit(s[i + 1])) /// Substitution
+                {
+                    if (!now.empty())
+                    {
+                        instructions.emplace_back(-1, now);
+                        now = "";
+                    }
+                    instructions.emplace_back(s[i + 1] - '0', String());
+                }
+                else
+                    now += s[i + 1]; /// Escaping
+                ++i;
+            }
+            else
+                now += s[i]; /// Plain character
+        }
 
-			if (searcher.Match(input, start_pos, input.length(), re2_st::RE2::Anchor::UNANCHORED, matches, num_captures))
-			{
-				const auto & match = matches[0];
-				size_t bytes_to_copy = (match.data() - input.data()) - start_pos;
+        if (!now.empty())
+        {
+            instructions.emplace_back(-1, now);
+            now = "";
+        }
 
-				/// Copy prefix before matched regexp without modification
-				res_data.resize(res_data.size() + bytes_to_copy);
-				memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, bytes_to_copy);
-				res_offset += bytes_to_copy;
-				start_pos += bytes_to_copy + match.length();
+        for (const auto & it : instructions)
+            if (it.first >= num_captures)
+                throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) + ", but regexp has only "
+                        + toString(num_captures - 1)
+                        + " subpatterns",
+                    ErrorCodes::BAD_ARGUMENTS);
 
-				/// Do substitution instructions
-				for (const auto & it : instructions)
-				{
-					if (it.first >= 0)
-					{
-						res_data.resize(res_data.size() + matches[it.first].length());
-						memcpy(&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
-						res_offset += matches[it.first].length();
-					}
-					else
-					{
-						res_data.resize(res_data.size() + it.second.size());
-						memcpy(&res_data[res_offset], it.second.data(), it.second.size());
-						res_offset += it.second.size();
-					}
-				}
-
-				if (replace_one || match.length() == 0) /// Stop after match of zero length, to avoid infinite loop.
-					can_finish_current_string = true;
-			}
-			else
-				can_finish_current_string = true;
-
-			/// If ready, append suffix after match to end of string.
-			if (can_finish_current_string)
-			{
-				res_data.resize(res_data.size() + input.length() - start_pos);
-				memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, input.length() - start_pos);
-				res_offset += input.length() - start_pos;
-				start_pos = input.length();
-			}
-		}
-
-		res_data.resize(res_data.size() + 1);
-		res_data[res_offset] = 0;
-		++res_offset;
-	}
+        return instructions;
+    }
 
 
-	static void vector(const ColumnString::Chars_t & data,
-		const ColumnString::Offsets_t & offsets,
-		const std::string & needle,
-		const std::string & replacement,
-		ColumnString::Chars_t & res_data,
-		ColumnString::Offsets_t & res_offsets)
-	{
-		ColumnString::Offset_t res_offset = 0;
-		res_data.reserve(data.size());
-		size_t size = offsets.size();
-		res_offsets.resize(size);
+    static void processString(const re2_st::StringPiece & input,
+        ColumnString::Chars_t & res_data,
+        ColumnString::Offset_t & res_offset,
+        re2_st::RE2 & searcher,
+        int num_captures,
+        const Instructions & instructions)
+    {
+        re2_st::StringPiece matches[max_captures];
 
-		re2_st::RE2 searcher(needle);
-		int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
+        int start_pos = 0;
+        while (start_pos < input.length())
+        {
+            /// If no more replacements possible for current string
+            bool can_finish_current_string = false;
 
-		Instructions instructions = createInstructions(replacement, num_captures);
+            if (searcher.Match(input, start_pos, input.length(), re2_st::RE2::Anchor::UNANCHORED, matches, num_captures))
+            {
+                const auto & match = matches[0];
+                size_t bytes_to_copy = (match.data() - input.data()) - start_pos;
 
-		/// Cannot perform search for whole block. Will process each string separately.
-		for (size_t i = 0; i < size; ++i)
-		{
-			int from = i > 0 ? offsets[i - 1] : 0;
-			re2_st::StringPiece input(reinterpret_cast<const char *>(&data[0] + from), offsets[i] - from - 1);
+                /// Copy prefix before matched regexp without modification
+                res_data.resize(res_data.size() + bytes_to_copy);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, bytes_to_copy);
+                res_offset += bytes_to_copy;
+                start_pos += bytes_to_copy + match.length();
 
-			processString(input, res_data, res_offset, searcher, num_captures, instructions);
-			res_offsets[i] = res_offset;
-		}
-	}
+                /// Do substitution instructions
+                for (const auto & it : instructions)
+                {
+                    if (it.first >= 0)
+                    {
+                        res_data.resize(res_data.size() + matches[it.first].length());
+                        memcpy(&res_data[res_offset], matches[it.first].data(), matches[it.first].length());
+                        res_offset += matches[it.first].length();
+                    }
+                    else
+                    {
+                        res_data.resize(res_data.size() + it.second.size());
+                        memcpy(&res_data[res_offset], it.second.data(), it.second.size());
+                        res_offset += it.second.size();
+                    }
+                }
 
-	static void vector_fixed(const ColumnString::Chars_t & data,
-		size_t n,
-		const std::string & needle,
-		const std::string & replacement,
-		ColumnString::Chars_t & res_data,
-		ColumnString::Offsets_t & res_offsets)
-	{
-		ColumnString::Offset_t res_offset = 0;
-		size_t size = data.size() / n;
-		res_data.reserve(data.size());
-		res_offsets.resize(size);
+                if (replace_one || match.length() == 0) /// Stop after match of zero length, to avoid infinite loop.
+                    can_finish_current_string = true;
+            }
+            else
+                can_finish_current_string = true;
 
-		re2_st::RE2 searcher(needle);
-		int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
+            /// If ready, append suffix after match to end of string.
+            if (can_finish_current_string)
+            {
+                res_data.resize(res_data.size() + input.length() - start_pos);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, input.length() - start_pos);
+                res_offset += input.length() - start_pos;
+                start_pos = input.length();
+            }
+        }
 
-		Instructions instructions = createInstructions(replacement, num_captures);
+        res_data.resize(res_data.size() + 1);
+        res_data[res_offset] = 0;
+        ++res_offset;
+    }
 
-		for (size_t i = 0; i < size; ++i)
-		{
-			int from = i * n;
-			re2_st::StringPiece input(reinterpret_cast<const char *>(&data[0] + from), n);
 
-			processString(input, res_data, res_offset, searcher, num_captures, instructions);
-			res_offsets[i] = res_offset;
-		}
-	}
+    static void vector(const ColumnString::Chars_t & data,
+        const ColumnString::Offsets_t & offsets,
+        const std::string & needle,
+        const std::string & replacement,
+        ColumnString::Chars_t & res_data,
+        ColumnString::Offsets_t & res_offsets)
+    {
+        ColumnString::Offset_t res_offset = 0;
+        res_data.reserve(data.size());
+        size_t size = offsets.size();
+        res_offsets.resize(size);
 
-	static void constant(const std::string & data, const std::string & needle, const std::string & replacement, std::string & res_data)
-	{
-		ColumnString src;
-		ColumnString dst;
-		src.insert(data);
+        re2_st::RE2 searcher(needle);
+        int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
 
-		vector(src.getChars(), src.getOffsets(), needle, replacement, dst.getChars(), dst.getOffsets());
+        Instructions instructions = createInstructions(replacement, num_captures);
 
-		res_data = dst[0].safeGet<String>();
-	}
+        /// Cannot perform search for whole block. Will process each string separately.
+        for (size_t i = 0; i < size; ++i)
+        {
+            int from = i > 0 ? offsets[i - 1] : 0;
+            re2_st::StringPiece input(reinterpret_cast<const char *>(&data[0] + from), offsets[i] - from - 1);
+
+            processString(input, res_data, res_offset, searcher, num_captures, instructions);
+            res_offsets[i] = res_offset;
+        }
+    }
+
+    static void vector_fixed(const ColumnString::Chars_t & data,
+        size_t n,
+        const std::string & needle,
+        const std::string & replacement,
+        ColumnString::Chars_t & res_data,
+        ColumnString::Offsets_t & res_offsets)
+    {
+        ColumnString::Offset_t res_offset = 0;
+        size_t size = data.size() / n;
+        res_data.reserve(data.size());
+        res_offsets.resize(size);
+
+        re2_st::RE2 searcher(needle);
+        int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
+
+        Instructions instructions = createInstructions(replacement, num_captures);
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            int from = i * n;
+            re2_st::StringPiece input(reinterpret_cast<const char *>(&data[0] + from), n);
+
+            processString(input, res_data, res_offset, searcher, num_captures, instructions);
+            res_offsets[i] = res_offset;
+        }
+    }
+
+    static void constant(const std::string & data, const std::string & needle, const std::string & replacement, std::string & res_data)
+    {
+        ColumnString src;
+        ColumnString dst;
+        src.insert(data);
+
+        vector(src.getChars(), src.getOffsets(), needle, replacement, dst.getChars(), dst.getOffsets());
+
+        res_data = dst[0].safeGet<String>();
+    }
 };
 
 
@@ -753,178 +753,178 @@ struct ReplaceRegexpImpl
 template <bool replace_one = false>
 struct ReplaceStringImpl
 {
-	static void vector(const ColumnString::Chars_t & data,
-		const ColumnString::Offsets_t & offsets,
-		const std::string & needle,
-		const std::string & replacement,
-		ColumnString::Chars_t & res_data,
-		ColumnString::Offsets_t & res_offsets)
-	{
-		const UInt8 * begin = &data[0];
-		const UInt8 * pos = begin;
-		const UInt8 * end = pos + data.size();
+    static void vector(const ColumnString::Chars_t & data,
+        const ColumnString::Offsets_t & offsets,
+        const std::string & needle,
+        const std::string & replacement,
+        ColumnString::Chars_t & res_data,
+        ColumnString::Offsets_t & res_offsets)
+    {
+        const UInt8 * begin = &data[0];
+        const UInt8 * pos = begin;
+        const UInt8 * end = pos + data.size();
 
-		ColumnString::Offset_t res_offset = 0;
-		res_data.reserve(data.size());
-		size_t size = offsets.size();
-		res_offsets.resize(size);
+        ColumnString::Offset_t res_offset = 0;
+        res_data.reserve(data.size());
+        size_t size = offsets.size();
+        res_offsets.resize(size);
 
-		/// The current index in the array of strings.
-		size_t i = 0;
+        /// The current index in the array of strings.
+        size_t i = 0;
 
-		Volnitsky searcher(needle.data(), needle.size(), end - pos);
+        Volnitsky searcher(needle.data(), needle.size(), end - pos);
 
-		/// We will search for the next occurrence in all rows at once.
-		while (pos < end)
-		{
-			const UInt8 * match = searcher.search(pos, end - pos);
+        /// We will search for the next occurrence in all rows at once.
+        while (pos < end)
+        {
+            const UInt8 * match = searcher.search(pos, end - pos);
 
-			/// Copy the data without changing
-			res_data.resize(res_data.size() + (match - pos));
-			memcpy(&res_data[res_offset], pos, match - pos);
+            /// Copy the data without changing
+            res_data.resize(res_data.size() + (match - pos));
+            memcpy(&res_data[res_offset], pos, match - pos);
 
-			/// Determine which index it belongs to.
-			while (i < offsets.size() && begin + offsets[i] <= match)
-			{
-				res_offsets[i] = res_offset + ((begin + offsets[i]) - pos);
-				++i;
-			}
-			res_offset += (match - pos);
+            /// Determine which index it belongs to.
+            while (i < offsets.size() && begin + offsets[i] <= match)
+            {
+                res_offsets[i] = res_offset + ((begin + offsets[i]) - pos);
+                ++i;
+            }
+            res_offset += (match - pos);
 
-			/// If you have reached the end, it's time to stop
-			if (i == offsets.size())
-				break;
+            /// If you have reached the end, it's time to stop
+            if (i == offsets.size())
+                break;
 
-			/// Is it true that this line no longer needs to perform transformations.
-			bool can_finish_current_string = false;
+            /// Is it true that this line no longer needs to perform transformations.
+            bool can_finish_current_string = false;
 
-			/// We check that the entry does not go through the boundaries of strings.
-			if (match + needle.size() < begin + offsets[i])
-			{
-				res_data.resize(res_data.size() + replacement.size());
-				memcpy(&res_data[res_offset], replacement.data(), replacement.size());
-				res_offset += replacement.size();
-				pos = match + needle.size();
-				if (replace_one)
-					can_finish_current_string = true;
-			}
-			else
-			{
-				pos = match;
-				can_finish_current_string = true;
-			}
+            /// We check that the entry does not go through the boundaries of strings.
+            if (match + needle.size() < begin + offsets[i])
+            {
+                res_data.resize(res_data.size() + replacement.size());
+                memcpy(&res_data[res_offset], replacement.data(), replacement.size());
+                res_offset += replacement.size();
+                pos = match + needle.size();
+                if (replace_one)
+                    can_finish_current_string = true;
+            }
+            else
+            {
+                pos = match;
+                can_finish_current_string = true;
+            }
 
-			if (can_finish_current_string)
-			{
-				res_data.resize(res_data.size() + (begin + offsets[i] - pos));
-				memcpy(&res_data[res_offset], pos, (begin + offsets[i] - pos));
-				res_offset += (begin + offsets[i] - pos);
-				res_offsets[i] = res_offset;
-				pos = begin + offsets[i];
-				++i;
-			}
-		}
-	}
+            if (can_finish_current_string)
+            {
+                res_data.resize(res_data.size() + (begin + offsets[i] - pos));
+                memcpy(&res_data[res_offset], pos, (begin + offsets[i] - pos));
+                res_offset += (begin + offsets[i] - pos);
+                res_offsets[i] = res_offset;
+                pos = begin + offsets[i];
+                ++i;
+            }
+        }
+    }
 
-	static void vector_fixed(const ColumnString::Chars_t & data,
-		size_t n,
-		const std::string & needle,
-		const std::string & replacement,
-		ColumnString::Chars_t & res_data,
-		ColumnString::Offsets_t & res_offsets)
-	{
-		const UInt8 * begin = &data[0];
-		const UInt8 * pos = begin;
-		const UInt8 * end = pos + data.size();
+    static void vector_fixed(const ColumnString::Chars_t & data,
+        size_t n,
+        const std::string & needle,
+        const std::string & replacement,
+        ColumnString::Chars_t & res_data,
+        ColumnString::Offsets_t & res_offsets)
+    {
+        const UInt8 * begin = &data[0];
+        const UInt8 * pos = begin;
+        const UInt8 * end = pos + data.size();
 
-		ColumnString::Offset_t res_offset = 0;
-		size_t size = data.size() / n;
-		res_data.reserve(data.size());
-		res_offsets.resize(size);
+        ColumnString::Offset_t res_offset = 0;
+        size_t size = data.size() / n;
+        res_data.reserve(data.size());
+        res_offsets.resize(size);
 
-		/// The current index in the string array.
-		size_t i = 0;
+        /// The current index in the string array.
+        size_t i = 0;
 
-		Volnitsky searcher(needle.data(), needle.size(), end - pos);
+        Volnitsky searcher(needle.data(), needle.size(), end - pos);
 
-		/// We will search for the next occurrence in all rows at once.
-		while (pos < end)
-		{
-			const UInt8 * match = searcher.search(pos, end - pos);
+        /// We will search for the next occurrence in all rows at once.
+        while (pos < end)
+        {
+            const UInt8 * match = searcher.search(pos, end - pos);
 
-			/// Copy the data without changing
-			res_data.resize(res_data.size() + (match - pos));
-			memcpy(&res_data[res_offset], pos, match - pos);
+            /// Copy the data without changing
+            res_data.resize(res_data.size() + (match - pos));
+            memcpy(&res_data[res_offset], pos, match - pos);
 
-			/// Let's determine which index it belongs to.
-			while (i < size && begin + n * (i + 1) <= match)
-			{
-				res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos) + 1;
-				++i;
-			}
-			res_offset += (match - pos);
+            /// Let's determine which index it belongs to.
+            while (i < size && begin + n * (i + 1) <= match)
+            {
+                res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos) + 1;
+                ++i;
+            }
+            res_offset += (match - pos);
 
-			/// If you have reached the end, it's time to stop
-			if (i == size)
-				break;
+            /// If you have reached the end, it's time to stop
+            if (i == size)
+                break;
 
-			/// Is it true that this line no longer needs to perform conversions.
-			bool can_finish_current_string = false;
+            /// Is it true that this line no longer needs to perform conversions.
+            bool can_finish_current_string = false;
 
-			/// We check that the entry does not pass through the boundaries of strings.
-			if (match + needle.size() - 1 < begin + n * (i + 1))
-			{
-				res_data.resize(res_data.size() + replacement.size());
-				memcpy(&res_data[res_offset], replacement.data(), replacement.size());
-				res_offset += replacement.size();
-				pos = match + needle.size();
-				if (replace_one)
-					can_finish_current_string = true;
-			}
-			else
-			{
-				pos = match;
-				can_finish_current_string = true;
-			}
+            /// We check that the entry does not pass through the boundaries of strings.
+            if (match + needle.size() - 1 < begin + n * (i + 1))
+            {
+                res_data.resize(res_data.size() + replacement.size());
+                memcpy(&res_data[res_offset], replacement.data(), replacement.size());
+                res_offset += replacement.size();
+                pos = match + needle.size();
+                if (replace_one)
+                    can_finish_current_string = true;
+            }
+            else
+            {
+                pos = match;
+                can_finish_current_string = true;
+            }
 
-			if (can_finish_current_string)
-			{
-				res_data.resize(res_data.size() + (begin + n * (i + 1) - pos));
-				memcpy(&res_data[res_offset], pos, (begin + n * (i + 1) - pos));
-				res_offset += (begin + n * (i + 1) - pos);
-				res_offsets[i] = res_offset;
-				pos = begin + n * (i + 1);
-			}
-		}
+            if (can_finish_current_string)
+            {
+                res_data.resize(res_data.size() + (begin + n * (i + 1) - pos));
+                memcpy(&res_data[res_offset], pos, (begin + n * (i + 1) - pos));
+                res_offset += (begin + n * (i + 1) - pos);
+                res_offsets[i] = res_offset;
+                pos = begin + n * (i + 1);
+            }
+        }
 
-		if (i < size)
-		{
-			res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos) + 1;
-		}
-	}
+        if (i < size)
+        {
+            res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos) + 1;
+        }
+    }
 
-	static void constant(const std::string & data, const std::string & needle, const std::string & replacement, std::string & res_data)
-	{
-		res_data = "";
-		int replace_cnt = 0;
-		for (size_t i = 0; i < data.size(); ++i)
-		{
-			bool match = true;
-			if (i + needle.size() > data.size() || (replace_one && replace_cnt > 0))
-				match = false;
-			for (size_t j = 0; match && j < needle.size(); ++j)
-				if (data[i + j] != needle[j])
-					match = false;
-			if (match)
-			{
-				++replace_cnt;
-				res_data += replacement;
-				i = i + needle.size() - 1;
-			}
-			else
-				res_data += data[i];
-		}
-	}
+    static void constant(const std::string & data, const std::string & needle, const std::string & replacement, std::string & res_data)
+    {
+        res_data = "";
+        int replace_cnt = 0;
+        for (size_t i = 0; i < data.size(); ++i)
+        {
+            bool match = true;
+            if (i + needle.size() > data.size() || (replace_one && replace_cnt > 0))
+                match = false;
+            for (size_t j = 0; match && j < needle.size(); ++j)
+                if (data[i + j] != needle[j])
+                    match = false;
+            if (match)
+            {
+                ++replace_cnt;
+                res_data += replacement;
+                i = i + needle.size() - 1;
+            }
+            else
+                res_data += data[i];
+        }
+    }
 };
 
 
@@ -932,139 +932,139 @@ template <typename Impl, typename Name>
 class FunctionStringReplace : public IFunction
 {
 public:
-	static constexpr auto name = Name::name;
-	static FunctionPtr create(const Context & context)
-	{
-		return std::make_shared<FunctionStringReplace>();
-	}
+    static constexpr auto name = Name::name;
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionStringReplace>();
+    }
 
-	String getName() const override
-	{
-		return name;
-	}
+    String getName() const override
+    {
+        return name;
+    }
 
-	size_t getNumberOfArguments() const override
-	{
-		return 3;
-	}
+    size_t getNumberOfArguments() const override
+    {
+        return 3;
+    }
 
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-	{
-		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
-			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (!typeid_cast<const DataTypeString *>(&*arguments[1]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[1]))
-			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!typeid_cast<const DataTypeString *>(&*arguments[1]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[1]))
+            throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (!typeid_cast<const DataTypeString *>(&*arguments[2]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[2]))
-			throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!typeid_cast<const DataTypeString *>(&*arguments[2]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[2]))
+            throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return std::make_shared<DataTypeString>();
-	}
+        return std::make_shared<DataTypeString>();
+    }
 
-	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
-	{
-		const ColumnPtr column_src = block.safeGetByPosition(arguments[0]).column;
-		const ColumnPtr column_needle = block.safeGetByPosition(arguments[1]).column;
-		const ColumnPtr column_replacement = block.safeGetByPosition(arguments[2]).column;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        const ColumnPtr column_src = block.safeGetByPosition(arguments[0]).column;
+        const ColumnPtr column_needle = block.safeGetByPosition(arguments[1]).column;
+        const ColumnPtr column_replacement = block.safeGetByPosition(arguments[2]).column;
 
-		if (!column_needle->isConst() || !column_replacement->isConst())
-			throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
+        if (!column_needle->isConst() || !column_replacement->isConst())
+            throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
 
-		const IColumn * c1 = block.safeGetByPosition(arguments[1]).column.get();
-		const IColumn * c2 = block.safeGetByPosition(arguments[2]).column.get();
-		const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
-		const ColumnConstString * c2_const = typeid_cast<const ColumnConstString *>(c2);
-		String needle = c1_const->getData();
-		String replacement = c2_const->getData();
+        const IColumn * c1 = block.safeGetByPosition(arguments[1]).column.get();
+        const IColumn * c2 = block.safeGetByPosition(arguments[2]).column.get();
+        const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
+        const ColumnConstString * c2_const = typeid_cast<const ColumnConstString *>(c2);
+        String needle = c1_const->getData();
+        String replacement = c2_const->getData();
 
-		if (needle.size() == 0)
-			throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        if (needle.size() == 0)
+            throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_src))
-		{
-			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-			block.safeGetByPosition(result).column = col_res;
-			Impl::vector(col->getChars(), col->getOffsets(), needle, replacement, col_res->getChars(), col_res->getOffsets());
-		}
-		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_src))
-		{
-			std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-			block.safeGetByPosition(result).column = col_res;
-			Impl::vector_fixed(col->getChars(), col->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
-		}
-		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column_src))
-		{
-			String res;
-			Impl::constant(col->getData(), needle, replacement, res);
-			auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
-			block.safeGetByPosition(result).column = col_res;
-		}
-		else
-			throw Exception(
-				"Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN);
-	}
+        if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_src))
+        {
+            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            block.safeGetByPosition(result).column = col_res;
+            Impl::vector(col->getChars(), col->getOffsets(), needle, replacement, col_res->getChars(), col_res->getOffsets());
+        }
+        else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_src))
+        {
+            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            block.safeGetByPosition(result).column = col_res;
+            Impl::vector_fixed(col->getChars(), col->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
+        }
+        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column_src))
+        {
+            String res;
+            Impl::constant(col->getData(), needle, replacement, res);
+            auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
+            block.safeGetByPosition(result).column = col_res;
+        }
+        else
+            throw Exception(
+                "Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
+    }
 };
 
 
 struct NamePosition
 {
-	static constexpr auto name = "position";
+    static constexpr auto name = "position";
 };
 struct NamePositionUTF8
 {
-	static constexpr auto name = "positionUTF8";
+    static constexpr auto name = "positionUTF8";
 };
 struct NamePositionCaseInsensitive
 {
-	static constexpr auto name = "positionCaseInsensitive";
+    static constexpr auto name = "positionCaseInsensitive";
 };
 struct NamePositionCaseInsensitiveUTF8
 {
-	static constexpr auto name = "positionCaseInsensitiveUTF8";
+    static constexpr auto name = "positionCaseInsensitiveUTF8";
 };
 struct NameMatch
 {
-	static constexpr auto name = "match";
+    static constexpr auto name = "match";
 };
 struct NameLike
 {
-	static constexpr auto name = "like";
+    static constexpr auto name = "like";
 };
 struct NameNotLike
 {
-	static constexpr auto name = "notLike";
+    static constexpr auto name = "notLike";
 };
 struct NameExtract
 {
-	static constexpr auto name = "extract";
+    static constexpr auto name = "extract";
 };
 struct NameReplaceOne
 {
-	static constexpr auto name = "replaceOne";
+    static constexpr auto name = "replaceOne";
 };
 struct NameReplaceAll
 {
-	static constexpr auto name = "replaceAll";
+    static constexpr auto name = "replaceAll";
 };
 struct NameReplaceRegexpOne
 {
-	static constexpr auto name = "replaceRegexpOne";
+    static constexpr auto name = "replaceRegexpOne";
 };
 struct NameReplaceRegexpAll
 {
-	static constexpr auto name = "replaceRegexpAll";
+    static constexpr auto name = "replaceRegexpAll";
 };
 
 using FunctionPosition = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveASCII>, NamePosition>;
 using FunctionPositionUTF8 = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveUTF8>, NamePositionUTF8>;
 using FunctionPositionCaseInsensitive = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveASCII>, NamePositionCaseInsensitive>;
 using FunctionPositionCaseInsensitiveUTF8
-	= FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveUTF8>, NamePositionCaseInsensitiveUTF8>;
+    = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveUTF8>, NamePositionCaseInsensitiveUTF8>;
 
 using FunctionMatch = FunctionsStringSearch<MatchImpl<false>, NameMatch>;
 using FunctionLike = FunctionsStringSearch<MatchImpl<true>, NameLike>;
@@ -1078,17 +1078,17 @@ using FunctionReplaceRegexpAll = FunctionStringReplace<ReplaceRegexpImpl<false>,
 
 void registerFunctionsStringSearch(FunctionFactory & factory)
 {
-	factory.registerFunction<FunctionReplaceOne>();
-	factory.registerFunction<FunctionReplaceAll>();
-	factory.registerFunction<FunctionReplaceRegexpOne>();
-	factory.registerFunction<FunctionReplaceRegexpAll>();
-	factory.registerFunction<FunctionPosition>();
-	factory.registerFunction<FunctionPositionUTF8>();
-	factory.registerFunction<FunctionPositionCaseInsensitive>();
-	factory.registerFunction<FunctionPositionCaseInsensitiveUTF8>();
-	factory.registerFunction<FunctionMatch>();
-	factory.registerFunction<FunctionLike>();
-	factory.registerFunction<FunctionNotLike>();
-	factory.registerFunction<FunctionExtract>();
+    factory.registerFunction<FunctionReplaceOne>();
+    factory.registerFunction<FunctionReplaceAll>();
+    factory.registerFunction<FunctionReplaceRegexpOne>();
+    factory.registerFunction<FunctionReplaceRegexpAll>();
+    factory.registerFunction<FunctionPosition>();
+    factory.registerFunction<FunctionPositionUTF8>();
+    factory.registerFunction<FunctionPositionCaseInsensitive>();
+    factory.registerFunction<FunctionPositionCaseInsensitiveUTF8>();
+    factory.registerFunction<FunctionMatch>();
+    factory.registerFunction<FunctionLike>();
+    factory.registerFunction<FunctionNotLike>();
+    factory.registerFunction<FunctionExtract>();
 }
 }

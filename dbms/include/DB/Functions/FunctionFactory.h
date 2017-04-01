@@ -20,24 +20,24 @@ using FunctionPtr = std::shared_ptr<IFunction>;
   */
 class FunctionFactory : public Singleton<FunctionFactory>
 {
-	friend class StorageSystemFunctions;
+    friend class StorageSystemFunctions;
 
 private:
-	typedef FunctionPtr (*Creator)(const Context & context);	/// Not std::function, for lower object size and less indirection.
-	std::unordered_map<std::string, Creator> functions;
+    typedef FunctionPtr (*Creator)(const Context & context);    /// Not std::function, for lower object size and less indirection.
+    std::unordered_map<std::string, Creator> functions;
 
 public:
-	FunctionFactory();
+    FunctionFactory();
 
-	FunctionPtr get(const std::string & name, const Context & context) const;	/// Throws an exception if not found.
-	FunctionPtr tryGet(const std::string & name, const Context & context) const;	/// Returns nullptr if not found.
+    FunctionPtr get(const std::string & name, const Context & context) const;    /// Throws an exception if not found.
+    FunctionPtr tryGet(const std::string & name, const Context & context) const;    /// Returns nullptr if not found.
 
-	/// No locking, you must register all functions before usage of get, tryGet.
-	template <typename F> void registerFunction()
-	{
-		static_assert(std::is_same<decltype(&F::create), Creator>::value, "F::create has incorrect type");
-		functions[F::name] = &F::create;
-	}
+    /// No locking, you must register all functions before usage of get, tryGet.
+    template <typename F> void registerFunction()
+    {
+        static_assert(std::is_same<decltype(&F::create), Creator>::value, "F::create has incorrect type");
+        functions[F::name] = &F::create;
+    }
 };
 
 }

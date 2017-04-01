@@ -6,10 +6,10 @@ namespace DB
 
 void registerFunctionsLogical(FunctionFactory & factory)
 {
-	factory.registerFunction<FunctionAnd>();
-	factory.registerFunction<FunctionOr>();
-	factory.registerFunction<FunctionXor>();
-	factory.registerFunction<FunctionNot>();
+    factory.registerFunction<FunctionAnd>();
+    factory.registerFunction<FunctionOr>();
+    factory.registerFunction<FunctionXor>();
+    factory.registerFunction<FunctionNot>();
 }
 
 }

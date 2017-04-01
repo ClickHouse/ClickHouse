@@ -13,29 +13,29 @@ namespace DB
 class DataTypeNested final : public IDataTypeDummy
 {
 private:
-	/// Имена и типы вложенных массивов.
-	NamesAndTypesListPtr nested;
+    /// Имена и типы вложенных массивов.
+    NamesAndTypesListPtr nested;
 
 public:
-	DataTypeNested(NamesAndTypesListPtr nested_);
+    DataTypeNested(NamesAndTypesListPtr nested_);
 
-	std::string getName() const override;
+    std::string getName() const override;
 
-	DataTypePtr clone() const override
-	{
-		return std::make_shared<DataTypeNested>(nested);
-	}
+    DataTypePtr clone() const override
+    {
+        return std::make_shared<DataTypeNested>(nested);
+    }
 
-	const NamesAndTypesListPtr & getNestedTypesList() const { return nested; }
+    const NamesAndTypesListPtr & getNestedTypesList() const { return nested; }
 
-	static std::string concatenateNestedName(const std::string & nested_table_name, const std::string & nested_field_name);
-	/// Возвращает префикс имени до первой точки '.'. Или имя без изменений, если точки нет.
-	static std::string extractNestedTableName(const std::string & nested_name);
-	/// Возвращает суффикс имени после первой точки справа '.'. Или имя без изменений, если точки нет.
-	static std::string extractNestedColumnName(const std::string & nested_name);
+    static std::string concatenateNestedName(const std::string & nested_table_name, const std::string & nested_field_name);
+    /// Возвращает префикс имени до первой точки '.'. Или имя без изменений, если точки нет.
+    static std::string extractNestedTableName(const std::string & nested_name);
+    /// Возвращает суффикс имени после первой точки справа '.'. Или имя без изменений, если точки нет.
+    static std::string extractNestedColumnName(const std::string & nested_name);
 
-	/// Создает новый список в котором колонки типа Nested заменены на несколько вида имя_колонки.имя_вложенной_ячейки
-	static NamesAndTypesListPtr expandNestedColumns(const NamesAndTypesList & names_and_types);
+    /// Создает новый список в котором колонки типа Nested заменены на несколько вида имя_колонки.имя_вложенной_ячейки
+    static NamesAndTypesListPtr expandNestedColumns(const NamesAndTypesList & names_and_types);
 };
 
 }

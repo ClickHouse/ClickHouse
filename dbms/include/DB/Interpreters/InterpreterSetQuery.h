@@ -14,23 +14,23 @@ class ASTSetQuery;
 class InterpreterSetQuery : public IInterpreter
 {
 public:
-	InterpreterSetQuery(ASTPtr query_ptr_, Context & context_)
-		: query_ptr(query_ptr_), context(context_) {}
+    InterpreterSetQuery(ASTPtr query_ptr_, Context & context_)
+        : query_ptr(query_ptr_), context(context_) {}
 
-	/** Обычный запрос SET. Задать настройку на сессию или глобальную (если указано GLOBAL).
-	  */
-	BlockIO execute() override;
+    /** Обычный запрос SET. Задать настройку на сессию или глобальную (если указано GLOBAL).
+      */
+    BlockIO execute() override;
 
-	/** Задать настроку для текущего контекста (контекста запроса).
-	  * Используется для интерпретации секции SETTINGS в запросе SELECT.
-	  */
-	void executeForCurrentContext();
+    /** Задать настроку для текущего контекста (контекста запроса).
+      * Используется для интерпретации секции SETTINGS в запросе SELECT.
+      */
+    void executeForCurrentContext();
 
 private:
-	ASTPtr query_ptr;
-	Context & context;
+    ASTPtr query_ptr;
+    Context & context;
 
-	void executeImpl(ASTSetQuery & ast, Context & target);
+    void executeImpl(ASTSetQuery & ast, Context & target);
 };
 
 

@@ -5,7 +5,7 @@
 
 inline double interpolateLinear(double min, double max, double ratio)
 {
-	return min + (max - min) * ratio;
+    return min + (max - min) * ratio;
 }
 
 
@@ -16,5 +16,5 @@ inline double interpolateLinear(double min, double max, double ratio)
   */
 inline double interpolateExponential(double min, double max, double ratio)
 {
-	return min * std::pow(max / min, ratio);
+    return min * std::pow(max / min, ratio);
 }

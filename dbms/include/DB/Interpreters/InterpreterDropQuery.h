@@ -14,14 +14,14 @@ namespace DB
 class InterpreterDropQuery : public IInterpreter
 {
 public:
-	InterpreterDropQuery(ASTPtr query_ptr_, Context & context_);
+    InterpreterDropQuery(ASTPtr query_ptr_, Context & context_);
 
-	/// Удаляет таблицу.
-	BlockIO execute() override;
+    /// Удаляет таблицу.
+    BlockIO execute() override;
 
 private:
-	ASTPtr query_ptr;
-	Context context;
+    ASTPtr query_ptr;
+    Context context;
 };
 
 

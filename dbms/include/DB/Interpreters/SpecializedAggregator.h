@@ -36,139 +36,139 @@ namespace DB
 template <typename... TTail>
 struct TypeList
 {
-	static constexpr size_t size = 0;
+    static constexpr size_t size = 0;
 
-	template <size_t I>
-	using At = std::nullptr_t;
+    template <size_t I>
+    using At = std::nullptr_t;
 
-	template <typename Func, size_t index = 0>
-	static void forEach(Func && func)
-	{
-	}
+    template <typename Func, size_t index = 0>
+    static void forEach(Func && func)
+    {
+    }
 };
 
 
 template <typename THead, typename... TTail>
 struct TypeList<THead, TTail...>
 {
-	using Head = THead;
-	using Tail = TypeList<TTail...>;
+    using Head = THead;
+    using Tail = TypeList<TTail...>;
 
-	static constexpr size_t size = 1 + sizeof...(TTail);
+    static constexpr size_t size = 1 + sizeof...(TTail);
 
-	template <size_t I>
-	using At = typename std::template conditional<I == 0, Head, typename Tail::template At<I - 1>>::type;
+    template <size_t I>
+    using At = typename std::template conditional<I == 0, Head, typename Tail::template At<I - 1>>::type;
 
-	template <typename Func, size_t index = 0>
-	static void ALWAYS_INLINE forEach(Func && func)
-	{
-		func.template operator()<Head, index>();
-		Tail::template forEach<Func, index + 1>(std::forward<Func>(func));
-	}
+    template <typename Func, size_t index = 0>
+    static void ALWAYS_INLINE forEach(Func && func)
+    {
+        func.template operator()<Head, index>();
+        Tail::template forEach<Func, index + 1>(std::forward<Func>(func));
+    }
 };
 
 
 struct AggregateFunctionsUpdater
 {
-	AggregateFunctionsUpdater(
-		const Aggregator::AggregateFunctionsPlainPtrs & aggregate_functions_,
-		const Sizes & offsets_of_aggregate_states_,
-		Aggregator::AggregateColumns & aggregate_columns_,
-		AggregateDataPtr & value_,
-		size_t row_num_,
-		Arena * arena_)
-		: aggregate_functions(aggregate_functions_),
-		offsets_of_aggregate_states(offsets_of_aggregate_states_),
-		aggregate_columns(aggregate_columns_),
-		value(value_), row_num(row_num_), arena(arena_)
-	{
-	}
+    AggregateFunctionsUpdater(
+        const Aggregator::AggregateFunctionsPlainPtrs & aggregate_functions_,
+        const Sizes & offsets_of_aggregate_states_,
+        Aggregator::AggregateColumns & aggregate_columns_,
+        AggregateDataPtr & value_,
+        size_t row_num_,
+        Arena * arena_)
+        : aggregate_functions(aggregate_functions_),
+        offsets_of_aggregate_states(offsets_of_aggregate_states_),
+        aggregate_columns(aggregate_columns_),
+        value(value_), row_num(row_num_), arena(arena_)
+    {
+    }
 
-	template <typename AggregateFunction, size_t column_num>
-	void operator()() ALWAYS_INLINE;
+    template <typename AggregateFunction, size_t column_num>
+    void operator()() ALWAYS_INLINE;
 
-	const Aggregator::AggregateFunctionsPlainPtrs & aggregate_functions;
-	const Sizes & offsets_of_aggregate_states;
-	Aggregator::AggregateColumns & aggregate_columns;
-	AggregateDataPtr & value;
-	size_t row_num;
-	Arena * arena;
+    const Aggregator::AggregateFunctionsPlainPtrs & aggregate_functions;
+    const Sizes & offsets_of_aggregate_states;
+    Aggregator::AggregateColumns & aggregate_columns;
+    AggregateDataPtr & value;
+    size_t row_num;
+    Arena * arena;
 };
 
 template <typename AggregateFunction, size_t column_num>
 void AggregateFunctionsUpdater::operator()()
 {
-	static_cast<AggregateFunction *>(aggregate_functions[column_num])->add(
-		value + offsets_of_aggregate_states[column_num],
-		&aggregate_columns[column_num][0],
-		row_num, arena);
+    static_cast<AggregateFunction *>(aggregate_functions[column_num])->add(
+        value + offsets_of_aggregate_states[column_num],
+        &aggregate_columns[column_num][0],
+        row_num, arena);
 }
 
 struct AggregateFunctionsCreator
 {
-	AggregateFunctionsCreator(
-		const Aggregator::AggregateFunctionsPlainPtrs & aggregate_functions_,
-		const Sizes & offsets_of_aggregate_states_,
-		Aggregator::AggregateColumns & aggregate_columns_,
-		AggregateDataPtr & aggregate_data_)
-		: aggregate_functions(aggregate_functions_),
-		offsets_of_aggregate_states(offsets_of_aggregate_states_),
-		aggregate_data(aggregate_data_)
-	{
-	}
+    AggregateFunctionsCreator(
+        const Aggregator::AggregateFunctionsPlainPtrs & aggregate_functions_,
+        const Sizes & offsets_of_aggregate_states_,
+        Aggregator::AggregateColumns & aggregate_columns_,
+        AggregateDataPtr & aggregate_data_)
+        : aggregate_functions(aggregate_functions_),
+        offsets_of_aggregate_states(offsets_of_aggregate_states_),
+        aggregate_data(aggregate_data_)
+    {
+    }
 
-	template <typename AggregateFunction, size_t column_num>
-	void operator()() ALWAYS_INLINE;
+    template <typename AggregateFunction, size_t column_num>
+    void operator()() ALWAYS_INLINE;
 
-	const Aggregator::AggregateFunctionsPlainPtrs & aggregate_functions;
-	const Sizes & offsets_of_aggregate_states;
-	AggregateDataPtr & aggregate_data;
+    const Aggregator::AggregateFunctionsPlainPtrs & aggregate_functions;
+    const Sizes & offsets_of_aggregate_states;
+    AggregateDataPtr & aggregate_data;
 };
 
 template <typename AggregateFunction, size_t column_num>
 void AggregateFunctionsCreator::operator()()
 {
-	AggregateFunction * func = static_cast<AggregateFunction *>(aggregate_functions[column_num]);
+    AggregateFunction * func = static_cast<AggregateFunction *>(aggregate_functions[column_num]);
 
-	try
-	{
-		/** Может возникнуть исключение при нехватке памяти.
-			* Для того, чтобы потом всё правильно уничтожилось, "откатываем" часть созданных состояний.
-			* Код не очень удобный.
-			*/
-		func->create(aggregate_data + offsets_of_aggregate_states[column_num]);
-	}
-	catch (...)
-	{
-		for (size_t rollback_j = 0; rollback_j < column_num; ++rollback_j)
-			func->destroy(aggregate_data + offsets_of_aggregate_states[rollback_j]);
+    try
+    {
+        /** Может возникнуть исключение при нехватке памяти.
+            * Для того, чтобы потом всё правильно уничтожилось, "откатываем" часть созданных состояний.
+            * Код не очень удобный.
+            */
+        func->create(aggregate_data + offsets_of_aggregate_states[column_num]);
+    }
+    catch (...)
+    {
+        for (size_t rollback_j = 0; rollback_j < column_num; ++rollback_j)
+            func->destroy(aggregate_data + offsets_of_aggregate_states[rollback_j]);
 
-		throw;
-	}
+        throw;
+    }
 }
 
 
 template <typename Method, typename AggregateFunctionsList>
 void NO_INLINE Aggregator::executeSpecialized(
-	Method & method,
-	Arena * aggregates_pool,
-	size_t rows,
-	ConstColumnPlainPtrs & key_columns,
-	AggregateColumns & aggregate_columns,
-	const Sizes & key_sizes,
-	StringRefs & keys,
-	bool no_more_keys,
-	AggregateDataPtr overflow_row) const
+    Method & method,
+    Arena * aggregates_pool,
+    size_t rows,
+    ConstColumnPlainPtrs & key_columns,
+    AggregateColumns & aggregate_columns,
+    const Sizes & key_sizes,
+    StringRefs & keys,
+    bool no_more_keys,
+    AggregateDataPtr overflow_row) const
 {
-	typename Method::State state;
-	state.init(key_columns);
+    typename Method::State state;
+    state.init(key_columns);
 
-	if (!no_more_keys)
-		executeSpecializedCase<false, Method, AggregateFunctionsList>(
-			method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
-	else
-		executeSpecializedCase<true, Method, AggregateFunctionsList>(
-			method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+    if (!no_more_keys)
+        executeSpecializedCase<false, Method, AggregateFunctionsList>(
+            method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+    else
+        executeSpecializedCase<true, Method, AggregateFunctionsList>(
+            method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
 }
 
 #pragma GCC diagnostic push
@@ -176,115 +176,115 @@ void NO_INLINE Aggregator::executeSpecialized(
 
 template <bool no_more_keys, typename Method, typename AggregateFunctionsList>
 void NO_INLINE Aggregator::executeSpecializedCase(
-	Method & method,
-	typename Method::State & state,
-	Arena * aggregates_pool,
-	size_t rows,
-	ConstColumnPlainPtrs & key_columns,
-	AggregateColumns & aggregate_columns,
-	const Sizes & key_sizes,
-	StringRefs & keys,
-	AggregateDataPtr overflow_row) const
+    Method & method,
+    typename Method::State & state,
+    Arena * aggregates_pool,
+    size_t rows,
+    ConstColumnPlainPtrs & key_columns,
+    AggregateColumns & aggregate_columns,
+    const Sizes & key_sizes,
+    StringRefs & keys,
+    AggregateDataPtr overflow_row) const
 {
-	/// Для всех строчек.
-	typename Method::iterator it;
-	typename Method::Key prev_key;
-	for (size_t i = 0; i < rows; ++i)
-	{
-		bool inserted;			/// Вставили новый ключ, или такой ключ уже был?
-		bool overflow = false;	/// Новый ключ не поместился в хэш-таблицу из-за no_more_keys.
+    /// Для всех строчек.
+    typename Method::iterator it;
+    typename Method::Key prev_key;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        bool inserted;            /// Вставили новый ключ, или такой ключ уже был?
+        bool overflow = false;    /// Новый ключ не поместился в хэш-таблицу из-за no_more_keys.
 
-		/// Получаем ключ для вставки в хэш-таблицу.
-		typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
+        /// Получаем ключ для вставки в хэш-таблицу.
+        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
 
-		if (!no_more_keys)	/// Вставляем.
-		{
-			/// Оптимизация для часто повторяющихся ключей.
-			if (!Method::no_consecutive_keys_optimization)
-			{
-				if (i != 0 && key == prev_key)
-				{
-					AggregateDataPtr value = Method::getAggregateData(it->second);
+        if (!no_more_keys)    /// Вставляем.
+        {
+            /// Оптимизация для часто повторяющихся ключей.
+            if (!Method::no_consecutive_keys_optimization)
+            {
+                if (i != 0 && key == prev_key)
+                {
+                    AggregateDataPtr value = Method::getAggregateData(it->second);
 
-					/// Добавляем значения в агрегатные функции.
-					AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
-						aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i, aggregates_pool));
+                    /// Добавляем значения в агрегатные функции.
+                    AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
+                        aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i, aggregates_pool));
 
-					method.onExistingKey(key, keys, *aggregates_pool);
-					continue;
-				}
-				else
-					prev_key = key;
-			}
+                    method.onExistingKey(key, keys, *aggregates_pool);
+                    continue;
+                }
+                else
+                    prev_key = key;
+            }
 
-			method.data.emplace(key, it, inserted);
-		}
-		else
-		{
-			/// Будем добавлять только если ключ уже есть.
-			inserted = false;
-			it = method.data.find(key);
-			if (method.data.end() == it)
-				overflow = true;
-		}
+            method.data.emplace(key, it, inserted);
+        }
+        else
+        {
+            /// Будем добавлять только если ключ уже есть.
+            inserted = false;
+            it = method.data.find(key);
+            if (method.data.end() == it)
+                overflow = true;
+        }
 
-		/// Если ключ не поместился, и данные не надо агрегировать в отдельную строку, то делать нечего.
-		if (no_more_keys && overflow && !overflow_row)
-		{
-			method.onExistingKey(key, keys, *aggregates_pool);
-			continue;
-		}
+        /// Если ключ не поместился, и данные не надо агрегировать в отдельную строку, то делать нечего.
+        if (no_more_keys && overflow && !overflow_row)
+        {
+            method.onExistingKey(key, keys, *aggregates_pool);
+            continue;
+        }
 
-		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
-		if (inserted)
-		{
-			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
-			aggregate_data = nullptr;
+        /// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
+        if (inserted)
+        {
+            AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
+            aggregate_data = nullptr;
 
-			method.onNewKey(*it, params.keys_size, i, keys, *aggregates_pool);
+            method.onNewKey(*it, params.keys_size, i, keys, *aggregates_pool);
 
-			AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
+            AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
 
-			AggregateFunctionsList::forEach(AggregateFunctionsCreator(
-				aggregate_functions, offsets_of_aggregate_states, aggregate_columns, place));
+            AggregateFunctionsList::forEach(AggregateFunctionsCreator(
+                aggregate_functions, offsets_of_aggregate_states, aggregate_columns, place));
 
-			aggregate_data = place;
-		}
-		else
-			method.onExistingKey(key, keys, *aggregates_pool);
+            aggregate_data = place;
+        }
+        else
+            method.onExistingKey(key, keys, *aggregates_pool);
 
-		AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
+        AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
 
-		/// Добавляем значения в агрегатные функции.
-		AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
-			aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i, aggregates_pool));
-	}
+        /// Добавляем значения в агрегатные функции.
+        AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
+            aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i, aggregates_pool));
+    }
 }
 
 #pragma GCC diagnostic pop
 
 template <typename AggregateFunctionsList>
 void NO_INLINE Aggregator::executeSpecializedWithoutKey(
-	AggregatedDataWithoutKey & res,
-	size_t rows,
-	AggregateColumns & aggregate_columns,
-	Arena * arena) const
+    AggregatedDataWithoutKey & res,
+    size_t rows,
+    AggregateColumns & aggregate_columns,
+    Arena * arena) const
 {
-	/// Оптимизация в случае единственной агрегатной функции count.
-	AggregateFunctionCount * agg_count = params.aggregates_size == 1
-		? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
-		: NULL;
+    /// Оптимизация в случае единственной агрегатной функции count.
+    AggregateFunctionCount * agg_count = params.aggregates_size == 1
+        ? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
+        : NULL;
 
-	if (agg_count)
-		agg_count->addDelta(res, rows);
-	else
-	{
-		for (size_t i = 0; i < rows; ++i)
-		{
-			AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
-				aggregate_functions, offsets_of_aggregate_states, aggregate_columns, res, i, arena));
-		}
-	}
+    if (agg_count)
+        agg_count->addDelta(res, rows);
+    else
+    {
+        for (size_t i = 0; i < rows; ++i)
+        {
+            AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
+                aggregate_functions, offsets_of_aggregate_states, aggregate_columns, res, i, arena));
+        }
+    }
 }
 
 }

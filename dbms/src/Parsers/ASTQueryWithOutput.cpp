@@ -5,35 +5,35 @@ namespace DB
 
 void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
 {
-	if (out_file)
-	{
-		cloned.out_file = out_file->clone();
-		cloned.children.push_back(cloned.out_file);
-	}
-	if (format)
-	{
-		cloned.format = format->clone();
-		cloned.children.push_back(cloned.format);
-	}
+    if (out_file)
+    {
+        cloned.out_file = out_file->clone();
+        cloned.children.push_back(cloned.out_file);
+    }
+    if (format)
+    {
+        cloned.format = format->clone();
+        cloned.children.push_back(cloned.format);
+    }
 }
 
 void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
-	formatQueryImpl(s, state, frame);
+    formatQueryImpl(s, state, frame);
 
-	std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
+    std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-	if (out_file)
-	{
-		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTO OUTFILE " << (s.hilite ? hilite_none : "");
-		out_file->formatImpl(s, state, frame);
-	}
+    if (out_file)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTO OUTFILE " << (s.hilite ? hilite_none : "");
+        out_file->formatImpl(s, state, frame);
+    }
 
-	if (format)
-	{
-		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FORMAT " << (s.hilite ? hilite_none : "");
-		format->formatImpl(s, state, frame);
-	}
+    if (format)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FORMAT " << (s.hilite ? hilite_none : "");
+        format->formatImpl(s, state, frame);
+    }
 }
 
 }

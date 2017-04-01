@@ -27,13 +27,13 @@ namespace DB
   */
 struct UniqCombinedBiasData
 {
-	using InterpolatedData = std::array<double, 200>;
+    using InterpolatedData = std::array<double, 200>;
 
-	static double getThreshold();
-	/// Estimates of the number of unique values using the HyperLogLog algorithm without applying any corrections.
-	static const InterpolatedData & getRawEstimates();
-	/// Corresponding error estimates.
-	static const InterpolatedData & getBiases();
+    static double getThreshold();
+    /// Estimates of the number of unique values using the HyperLogLog algorithm without applying any corrections.
+    static const InterpolatedData & getRawEstimates();
+    /// Corresponding error estimates.
+    static const InterpolatedData & getBiases();
 };
 
 }

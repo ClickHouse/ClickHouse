@@ -7,15 +7,15 @@ namespace DB
 {
 std::vector<std::string> getMultipleKeysFromConfig(Poco::Util::AbstractConfiguration & config, const std::string & root, const std::string & name)
 {
-	std::vector<std::string> values;
-	Poco::Util::AbstractConfiguration::Keys config_keys;
-	config.keys(root, config_keys);
-	for (const auto & key : config_keys)
-	{
-		if (key != name && !(startsWith(key.data(), name + "[") && endsWith(key.data(), "]")))
-			continue;
-		values.emplace_back(key);
-	}
-	return values;
+    std::vector<std::string> values;
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    config.keys(root, config_keys);
+    for (const auto & key : config_keys)
+    {
+        if (key != name && !(startsWith(key.data(), name + "[") && endsWith(key.data(), "]")))
+            continue;
+        values.emplace_back(key);
+    }
+    return values;
 }
 }

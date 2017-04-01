@@ -30,7 +30,7 @@ struct TypeAndConstantInference;
   */
 struct OptimizeGroupOrderLimitBy
 {
-	void process(ASTPtr & ast, TypeAndConstantInference & expression_info);
+    void process(ASTPtr & ast, TypeAndConstantInference & expression_info);
 };
 
 }

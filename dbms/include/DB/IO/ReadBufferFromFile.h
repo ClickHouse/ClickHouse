@@ -9,7 +9,7 @@
 
 namespace CurrentMetrics
 {
-	extern const Metric OpenFileForRead;
+    extern const Metric OpenFileForRead;
 }
 
 namespace DB
@@ -21,26 +21,26 @@ namespace DB
 class ReadBufferFromFile : public ReadBufferFromFileDescriptor
 {
 protected:
-	std::string file_name;
-	CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead};
+    std::string file_name;
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead};
 
 public:
-	ReadBufferFromFile(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
-		char * existing_memory = nullptr, size_t alignment = 0);
+    ReadBufferFromFile(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
+        char * existing_memory = nullptr, size_t alignment = 0);
 
-	/// Use pre-opened file descriptor.
-	ReadBufferFromFile(int fd, const std::string & original_file_name = {}, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
-		char * existing_memory = nullptr, size_t alignment = 0);
+    /// Use pre-opened file descriptor.
+    ReadBufferFromFile(int fd, const std::string & original_file_name = {}, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
+        char * existing_memory = nullptr, size_t alignment = 0);
 
-	~ReadBufferFromFile() override;
+    ~ReadBufferFromFile() override;
 
-	/// Close file before destruction of object.
-	void close();
+    /// Close file before destruction of object.
+    void close();
 
-	std::string getFileName() const override
-	{
-		return file_name;
-	}
+    std::string getFileName() const override
+    {
+        return file_name;
+    }
 };
 
 }

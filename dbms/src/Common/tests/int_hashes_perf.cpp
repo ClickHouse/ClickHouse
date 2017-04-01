@@ -19,16 +19,16 @@
 void setAffinity()
 {
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
-	cpu_set_t mask;
-	CPU_ZERO(&mask);
-	CPU_SET(0, &mask);
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    CPU_SET(0, &mask);
 
-	if (-1 == sched_setaffinity(0, sizeof(mask), &mask))
-		throw Poco::Exception("Cannot set CPU affinity");
+    if (-1 == sched_setaffinity(0, sizeof(mask), &mask))
+        throw Poco::Exception("Cannot set CPU affinity");
 #else
-	/** MacOS X by default have THREAD_AFFINITY_NULL
-	 *  See: https://developer.apple.com/library/content/releasenotes/Performance/RN-AffinityAPI/
-	 */
+    /** MacOS X by default have THREAD_AFFINITY_NULL
+     *  See: https://developer.apple.com/library/content/releasenotes/Performance/RN-AffinityAPI/
+     */
 #endif
 }
 
@@ -36,95 +36,95 @@ void setAffinity()
 static inline __attribute__((__always_inline__)) UInt64 rdtsc()
 {
 #if __x86_64__
-	UInt32 a, d;
-	__asm__ volatile ("rdtsc" : "=a" (a), "=d" (d));
-	return static_cast<UInt64>(a) | (static_cast<UInt64>(d) << 32);
+    UInt32 a, d;
+    __asm__ volatile ("rdtsc" : "=a" (a), "=d" (d));
+    return static_cast<UInt64>(a) | (static_cast<UInt64>(d) << 32);
 #else
-	// TODO: make for arm64
-	return 0;
+    // TODO: make for arm64
+    return 0;
 #endif
 }
 
 
 static inline size_t identity(UInt64 x)
 {
-	return x;
+    return x;
 }
 
 static inline size_t intHash32(UInt64 x)
 {
-	x = (~x) + (x << 18);
-	x = x ^ ((x >> 31) | (x << 33));
-	x = x * 21;
-	x = x ^ ((x >> 11) | (x << 53));
-	x = x + (x << 6);
-	x = x ^ ((x >> 22) | (x << 42));
+    x = (~x) + (x << 18);
+    x = x ^ ((x >> 31) | (x << 33));
+    x = x * 21;
+    x = x ^ ((x >> 11) | (x << 53));
+    x = x + (x << 6);
+    x = x ^ ((x >> 22) | (x << 42));
 
-	return x;
+    return x;
 }
 
 static inline size_t hash3(UInt64 x)
 {
-	x ^= x >> 23;
-	x *= 0x2127599bf4325c37ULL;
-	x ^= x >> 47;
-	x *= 0xb492b66fbe98f273ULL;
-	x ^= x >> 33;
+    x ^= x >> 23;
+    x *= 0x2127599bf4325c37ULL;
+    x ^= x >> 47;
+    x *= 0xb492b66fbe98f273ULL;
+    x ^= x >> 33;
 
-	return x;
+    return x;
 }
 
 static inline size_t hash4(UInt64 x)
 {
-	UInt64 a = x;
-	UInt64 b = x;
+    UInt64 a = x;
+    UInt64 b = x;
 
-	a ^= a >> 23;
-	b ^= b >> 15;
+    a ^= a >> 23;
+    b ^= b >> 15;
 
-	a *= 0x2127599bf4325c37ULL;
-	b *= 0xb492b66fbe98f273ULL;
+    a *= 0x2127599bf4325c37ULL;
+    b *= 0xb492b66fbe98f273ULL;
 
-	a ^= a >> 47;
-	b ^= b >> 33;
+    a ^= a >> 47;
+    b ^= b >> 33;
 
-	return a ^ b;
+    return a ^ b;
 }
 
 static inline size_t hash5(UInt64 x)
 {
-	x *= 0xb492b66fbe98f273ULL;
-	x ^= x >> 23;
-	x *= 0x2127599bf4325c37ULL;
-	x ^= x >> 47;
+    x *= 0xb492b66fbe98f273ULL;
+    x ^= x >> 23;
+    x *= 0x2127599bf4325c37ULL;
+    x ^= x >> 47;
 
-	return x;
+    return x;
 }
 
 static inline size_t murmurMix(UInt64 x)
 {
-	x ^= x >> 33;
-	x *= 0xff51afd7ed558ccdULL;
-	x ^= x >> 33;
-	x *= 0xc4ceb9fe1a85ec53ULL;
-	x ^= x >> 33;
+    x ^= x >> 33;
+    x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33;
+    x *= 0xc4ceb9fe1a85ec53ULL;
+    x ^= x >> 33;
 
-	return x;
+    return x;
 }
 
 static inline size_t crc32Hash(UInt64 x)
 {
-	UInt64 crc = -1ULL;
+    UInt64 crc = -1ULL;
 #if __x86_64__
-	asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x));
+    asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x));
 #endif
-	return crc;
+    return crc;
 }
 
 
 static inline size_t mulShift(UInt64 x)
 {
-	static UInt64 random[2][256] =
+    static UInt64 random[2][256] =
 {
 {
 0xb9979dc11a7ab921, 0x069177f0cca1cb81, 0xa77b7458984cdca6, 0x20cdddcd60ebf956, 0x54a7e16ccc85c618, 0x5a7b32512add86d0, 0xd4024d92207929e0, 0x927506e044a87bcb, 0x0ee2fafa66d27f8d, 0x34e5d597062edc13, 0x9d9e5971e4ef679f, 0x1373fa521c455462, 0xae20d7a035922d67, 0x2acceeaa1c38dea1, 0xa8d7318d831b2291, 0x237a092ca188a58d, 0xf3aab9c253e94340, 0x59c067c9247ad798, 0x9a2a3b0fc175faea, 0xb4ff42232b62408a, 0xc33f6f6e14b2ad59, 0xd8354b02517bb45e, 0x6cd3324afa8e1fa8, 0x491f3efd10beb8ce, 0xec5511355b29b707, 0x11a0e525b3f8a1d9, 0xaecb034c53727bb3, 0xaad2f1a0f7b1bb15, 0xdc318ef665bf079b, 0xecaed1b2e1808d2d, 0x38ccecd71d8548f5, 0x4a29ee777e1e8984, 0x58d683d104a9a9ac, 0x1c86c3ae03b0d968, 0x6ae480de1f434851, 0xdbb254502c123636, 0x7c8514ca7feb2780, 0x209ce2dacac250c4, 0xec256290581d4242, 0xba54af4e004cd657, 0xef09683b8da8cfd4, 0xef4b60e1cc22c00f, 0x8bb9849ecb4f0f4e, 0x64186f57b4e7e197, 0xf86d9122f253282c, 0xe545dcc26d8232fc, 0x7a8eeab5b064887e, 0xd77895d6c7baf87b, 0x07bf805fc0fcef52, 0x362d110a780e166b, 0x1b0a76b85b924a27, 0x49904133b1fb35c4, 0x76328bab42b9f5b8, 0xcfd15d94b28db6d0, 0x8908beb1031eb7b3, 0xbe05c1d38c789639, 0x9a38f06e2a4a5e2e, 0x9c49fa7b05cbd5e7, 0xf31aa060547fc13b, 0xafcfd8714b2a4082, 0x71a117f24d3d8cbe, 0x201a2c30737c1243, 0x9915450b0b26957e, 0xbe5865d67bd08830, 0x1efd55f709543d56, 0x69305e7e4c08948e, 0xd19d4fe1a47b1598, 0x36e4246123e542b7, 0x4cf0640cc2b66fdf, 0xf4301d669c78d4f9, 0xe1e7025ea57b3a3e, 0x6d59685c09510c07, 0xd90b29fbe9680c7a, 0x5575a24ba532391e, 0xdebab7c32a11d297, 0x09010bd6a6b295c8, 0x5b745d475a2cc5f8, 0x1a17df8fa5d2fb0e, 0x9eb9c9a1c56caa5d, 0x8759a2d4b80f3104, 0x1a6732736d219e48, 0xb9a934bedbbb1b64, 0xe88fc304f4f41aa2, 0xb650530683f9aecf, 0xc6de4393e1754ec5, 0x455dd664a10d1975, 0x295dffd0c8accda1, 0x4b0e49b50e1c3cd1, 0xf9b16d40c7bcb99d, 0x73f924a20a6b9bba, 0x59d4473fddb90104, 0x16a1b347c260d1b0, 0x0b6c06c9546458b7, 0x808f3c2d9e112207, 0xd142ca3cdf2a92c8, 0x36b4ea106906393d, 0x3ad7d15985207a3f, 0x5b3236e568021603, 0x95ff5ce56c0c9e4f, 0x35b8973c8634cac8, 0xd09591efe1cea59e, 0x9a852d896596d1c5, 0x5b8d231f680d8003, 0xaf56403d17f64962, 0x27f9e41e098024b4, 0x276adf3aacd76289, 0x0f828c068e8e4552, 0x45b28f9c40591b8c, 0xf543929acc2fd3a1, 0x7f5c232270f8675c, 0x96bf54ca56992a6b, 0x831ceab94de9a77f, 0x884d660886d85f97, 0xa441f1401555b4cd, 0x2f7a37e0df322ca7, 0xcfd621bcaf7e8968, 0x2f4c4f54612f78bf, 0x81ad69be79a99942, 0x452169980a69690a, 0xfe7ecd6fdfffc7db, 0x6750d09c96c0723e, 0xa96e8b7c1f87d0b7, 0x9355142350227cfb, 0xd04b2c03a5fd752c, 0xaa884bf5cbaef0c9, 0x47439b6a210da3c7, 0x08366f260246b77d, 0xada9a09bde98ac47,
@@ -136,19 +136,19 @@ static inline size_t mulShift(UInt64 x)
 }
 };
 
-	x ^= x >> 33;
-	x *= random[0][x & 0xFF];
-	x ^= x >> 33;
-	x *= random[1][x & 0xFF];
-	x ^= x >> 33;
+    x ^= x >> 33;
+    x *= random[0][x & 0xFF];
+    x ^= x >> 33;
+    x *= random[1][x & 0xFF];
+    x ^= x >> 33;
 
-	return x;
+    return x;
 }
 
 static inline size_t tabulation(UInt64 x)
 {
-	static UInt64 random[8][256] =
-	{
+    static UInt64 random[8][256] =
+    {
 {
 0x4f3cecaf24409b1b, 0x6ad9f166d91c6613, 0x54bf75358aea8524, 0x3fbc1de24a079a6e, 0x57ea94a0259aec73, 0xf9174938aeb467ca, 0x6f5deec36e40d25e, 0x534addc1aa10643b, 0x94734451bc5c5ec5, 0x4d72432932c6c7b7, 0x56ddb2f1203575ef, 0x8f7f217ead5654b0, 0xd7c0eac16d4aa24e, 0x84e4265047714b2d, 0x449769b97c43e1e1, 0xfed98b3f4c5b7698, 0x48bb913b09ea35c1, 0xe69cfcd6052df551, 0x483636e39bab623d, 0xc108de147d29545a, 0xeafb7485ba1f8e40, 0xd4a3891e24ab7233, 0x941f1975d079ba30, 0x8776cd48b75bbf4c, 0x42c5f14b72ec0eef, 0x19a18efdff3a84b5, 0xec4078cb31112625, 0x3063155b2e1cace2, 0x4d0fd702d00c53d5, 0xc80ad41b4e104360, 0x67e9d8d12617d417, 0x1a6de5d7f6a3958b, 0x9520893617a19775, 0x8842a4072f85e7b1, 0xa066c6eec0f4c288, 0x91c753eb152561fb, 0x1eacdc853dbdc4d3, 0x38e8e61d8cc61e0e, 0x22117333fc2eb16e, 0xed909eb368ecc36b, 0x2b67fc646f0b73d2, 0x7c28b15e21c0a93a, 0x13f8de9d1bad4d5f, 0xd96a893cf9da4125, 0xd3bbc92ad05fb53e, 0xd13aaad8d8075799, 0x18f003d700064040, 0xbb47fd3c38570068, 0xcd3db144d1a1f6d4, 0xebb33f814155f734, 0x740c6c7f4d91ac30, 0x9e3ae55cefe1f46e, 0x678c8b1c10da8b96, 0x37510cf678751024, 0x4e9e97713eb900d6, 0xb11271b9b1617fe7, 0xf2b35c453dfcfc22, 0xf5c2a8307ec8d153, 0x14089b8b1462447b, 0x5a350397786bb472, 0xfff7cd246e11a821, 0xe5649ebd197aa820, 0x5b7b9b407888c0f8, 0x617e4610c8e466fa, 0x928f11ee454fbeb6, 0x72e6a8006953074e, 0xb695a3dadef3ae60, 0xa26906a7e0140bbd, 0xf856fd404e987a6f, 0x95cddade446d74c7, 0xf7cd44918454ca8d, 0x34b17066e9a0f88d, 0x3481e736e1fd2fbb, 0xdf09f9dab79514ba, 0xf9352d79440c48ae, 0xae71591dcae8b4b2, 0x2f1bfdb07031c1ee, 0x50f106bd520bb92d, 0xbc39d67db555d325, 0x0768dcf245299385, 0x2d0f0564d3ee2403, 0x0b4075b353804510, 0x3722374ac591e9d2, 0x561d767a57b72214, 0xd6e1775b179939ea, 0xedaf88090284c61e, 0xc897695662d2c7d2, 0xe2bdcab72b125c05, 0x37c0d44b70a6e565, 0x3c5be744f87454d9, 0xd8d969301f77195a, 0x3445efae8fea16b9, 0x338b465dd8e11413, 0x4bcde36d984527ac, 0x0b803b6976171f05, 0x51a7386146462803, 0xc2897c1a69b6f1c1, 0x5ab092594684a5b4, 0xd3f4afafab7fc3ee, 0x744c31a06c5c0460, 0x49f01a31eefe4021, 0xaa62ba4831a87a0c, 0x61052036b02cb121, 0xc4bb5582ed8d7e4a, 0x25b6b517dcf0d7fa, 0x703b1897ff50a997, 0x83e5b7ef256dead8, 0x8da8e0ea74709e3e, 0xd5e2be449fd500a8, 0x0c386f813d21c684, 0x4bfee7a5bc728b8e, 0x5f0aca2baba81c31, 0x7ddfcfe8a6e897de, 0x90b69d33b9af5fbd, 0xfddedc985978876b, 0xc8f93bbdde12f7f2, 0x45d7a1087f4739f0, 0x75ea324184f1e5b8, 0x97b78ad1ec2ef95f, 0x192e5bf5ab92521b, 0x5175eefdc3fadec7, 0xa23a36c97bac48b2, 0x6e1c21a7c232880e, 0xf8010ca06ce802ea, 0x6e9822f71a8123cb, 0xdcb21616d2941bc5, 0x6f2929e3943e0777, 0x5a6ae6bc66eb2f1d, 0xf20a3c93c0fa6172, 0xcc1f91002d11567d, 0xa558d8dd4fec490b, 0xbe0ca1be73f5d533, 0x66dd4427dc66bbe1, 0x6a27341a10cd985f, 0x8d12380bcbd9bec3, 0xfefaaf20d5b9139f, 0x8641d578cdc4e199, 0x5f21e78ab4d25c23, 0xef52fdd1026d6f8a, 0x842f108fa0fcb69d, 0x9bc3723415c2724b, 0xc9615a1d92ab9500, 0x7c0850b85e7535cd, 0x8e93357abaf1ed24, 0xdf6fb36799938890, 0xe2082b8202e65187, 0x11170a177d855ab0, 0x751564db24effa8d, 0xa74b7769d222649f, 0x12a999982fd65d64, 0xc380a14a49b93b32, 0x5b9e932a4f264ee3, 0x1ca4323b708a0aec, 0x28fd5d5a327c91d9, 0x31289307419c9f1b, 0x20bda201fd63649d, 0xd1d1c8c8163836d6, 0x9cdae51d6993d0a3, 0x3a6fbe9579c1da3a, 0x27072cbc6d3a4825, 0x94b7107387607e61, 0xb1b0b605f39f115c, 0xb2557d474dc4e952, 0x8794c509cf6e26b1, 0xc1a8398cb2e98c9c, 0x92d0f486b7ac4afd, 0x9082064213d7c39b, 0x7e200cefde5ed88d, 0x904b5a00dd597b29, 0xe84c40f0bf571c92, 0x196b4a47fe185361, 0x2fb3e66b0fa8c185, 0x581a7f90e8646a69, 0x4b74f5f56f087180, 0x2e94fe98e0b1cc0a, 0x198f7bfbc692eda7, 0xa4d0b7908707016e, 0x0c90ee281eff932d, 0x879a1cf4c24d189a, 0x2d66cea5314bd480, 0x23346e49480e7e83, 0x82d63e12f56ea02c, 0x4ce802d35f8f46e2, 0xd143fe931608d5f5, 0x66c466071c6718a2, 0x59a5ab0a39dd53b2, 0x4805529d2a394dff, 0x631151511fde3379, 0xab98f8154c24669d, 0xb3a05b6b742dcdf2, 0x9d9827d3e071e26f, 0x9c157833c16216fa, 0xa9c8584ed28c8023, 0x94ca7cddf52bbc28, 0xc34d111216c15159, 0x68abebbb05b62206, 0x4786f8c9094da769, 0xb9c218515d329fe9, 0xd997a2ad91f01905, 0x81aaa629f3b2bce0, 0xefef8a896238229a, 0x6af252f60dd72940, 0x4492c36d5f165eac, 0x9dd50a2ef4d5f9a1,
 0xdfbf94a3550e6ecd, 0x9288b91b1caf05e7, 0x9c0ad10f9c67d06e, 0xdd4acdcb36db48c5, 0x7570a07af93f329d, 0xa31f26e2fffef103, 0x2886476327948381, 0xbddd48e33441c988, 0xc887b91661bf6e9b, 0xfc21127e01445e2f, 0xf0a8e3af7c953713, 0x47da9d0482ee366b, 0xc3d6ca5719939732, 0xedeadea909a6fa76, 0x26fcdad40d586205, 0xa1dd97b354af5ed4, 0xcc8aa75425740654, 0x4a0c5113156178f9, 0x981abd8fcf766b13, 0x99f31176a6cb712a, 0x49ac51e92982f34e, 0xdfeaa1da9373b16f, 0xa31666230da09aa3, 0xdc1eaceaf1afa2e2, 0x4326313df2d59166, 0x8836b6746f79236a, 0xe166e915f72d2540, 0x09cf7b4b78b2637e, 0x55369c7b01071949, 0x86ff67741a6c3cb6, 0x76503dcd4383b8cd, 0x36731b7b7cf8df2e, 0x51a2d6aad260273b, 0xf6d7cbb0db4253cb, 0x1230054a3bd28926, 0x4eb266aae155fc98, 0x9a2a7f60a9dac0e9, 0x79290b7b9035b3d4, 0x3a424cdbbe2aaa45, 0xcc46944623341c59, 0x7c185b60bade4199, 0x6ae892b88237cebc, 0xdd8ec8066e75ae58, 0x69a8aa059ff444a0, 0x987e27eae07462d5, 0x539f69c3d236e3c3, 0xc6bcae3c97941ed6, 0x29e853acc29b3eb5, 0x1faeb880153ba613, 0xd35bb34905b04517, 0xabcc7468231c83ca, 0x286d214a37fb65b3,
@@ -182,15 +182,15 @@ static inline size_t tabulation(UInt64 x)
 0xe830751a18b1fb5e, 0x9e30fb31b333ccec, 0x4fba9d374256093e, 0x598628d4b2871fde, 0xd6854917cc217ab4, 0x4da3839966d614cd, 0x6c2ee98d9f0a6bf9, 0xa643c8991753f6e4, 0x4a7982d0be1d0930, 0x441b590a0694d4f4, 0xac70c5107d531b97, 0xbb9e36477a76bbd2, 0x921ccfb831039d8e, 0x61f6991dc827545c, 0x6c5afe13298cf2ad, 0xecf28b9022ab3a75, 0x11e0265d86c2d913, 0x51b4aeded81317ec, 0x5bdccaa59f2cbeb8, 0xb9c76e9f66388e78, 0xa6babe827af99e38, 0x7c92e55ca21c6159, 0xe49bad2924782213, 0x3c2f72423ad5f50d, 0xb3755cfa70e505b4, 0x9f55bc675f2dd8d0, 0xf2891d2b3c912007, 0xbfe5cf184e166eff, 0x0e43e71fdd72d966, 0xf56228bcd5c95ca0, 0x80fa47660411d1a6, 0x92166503e32b5c2f, 0x542096f618073022, 0x5dd3a8ea782205c5, 0xb520095d8dff2a5e, 0x045b81afc2f56ade, 0xb85681ed6f1de692, 0xb9a75fdde941cf34, 0x58e17def17bb5d6b, 0xd4b11a833adbd178, 0x787ab0355e2fda17, 0x38e5bda322c1a58a, 0x0c1bf5f6457d6d33, 0x93172c3a82e1c498, 0xf3d6f541b2b86965, 0x4e7f9e55316d0a31, 0xc2e824b016aab50b, 0x1d6c62558ea1c109, 0x5370f2b9133e09ee, 0x43137d4fa9a8437f, 0xe5239ad79830662b, 0x4e109cd3220f67dd,
 },
 };
-	size_t res = 0;
+    size_t res = 0;
 
-	for (size_t i = 0; i < 8; ++i)
-	{
-		res ^= random[i][UInt8(x)];
-		x >>= 8;
-	}
+    for (size_t i = 0; i < 8; ++i)
+    {
+        res ^= random[i][UInt8(x)];
+        x >>= 8;
+    }
 
-	return res;
+    return res;
 }
 
 
@@ -201,73 +201,73 @@ using Source = std::vector<UInt64>;
 
 void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t res)
 {
-	std::cerr << name << std::endl
-		<< "Done in " << elapsed
-		<< " (" << n / elapsed << " elem/sec."
-		<< ", " << n * sizeof(UInt64) / elapsed / (1 << 30) << " GiB/sec."
-		<< ", " << (tsc_diff * 1.0 / n) << " tick/elem)"
-		<< "; res = " << res
-		<< std::endl << std::endl;
+    std::cerr << name << std::endl
+        << "Done in " << elapsed
+        << " (" << n / elapsed << " elem/sec."
+        << ", " << n * sizeof(UInt64) / elapsed / (1 << 30) << " GiB/sec."
+        << ", " << (tsc_diff * 1.0 / n) << " tick/elem)"
+        << "; res = " << res
+        << std::endl << std::endl;
 }
 
 
 template <size_t Func(UInt64)>
 static inline void test(size_t n, const UInt64 * data, const char * name)
 {
-	/// throughput. Calculations of hash functions from different values may overlap.
-	{
-		Stopwatch watch;
+    /// throughput. Calculations of hash functions from different values may overlap.
+    {
+        Stopwatch watch;
 
-		size_t res = 0;
-		UInt64 tsc = rdtsc();
+        size_t res = 0;
+        UInt64 tsc = rdtsc();
 
-		for (size_t i = 0; i < n; ++i)
-			res += Func(data[i & (BUF_SIZE - 1)]);
+        for (size_t i = 0; i < n; ++i)
+            res += Func(data[i & (BUF_SIZE - 1)]);
 
-		UInt64 tsc_diff = rdtsc() - tsc;
+        UInt64 tsc_diff = rdtsc() - tsc;
 
-		watch.stop();
+        watch.stop();
 
-		std::cerr << "Throughput of ";
-		report(name, n, watch.elapsedSeconds(), tsc_diff, res);
-	}
+        std::cerr << "Throughput of ";
+        report(name, n, watch.elapsedSeconds(), tsc_diff, res);
+    }
 
-	/// latency. To calculate the next value, you must first calculate the previous one. The latency of the L1 cache is added.
-	{
-		Stopwatch watch;
+    /// latency. To calculate the next value, you must first calculate the previous one. The latency of the L1 cache is added.
+    {
+        Stopwatch watch;
 
-		size_t res = 0;
-		UInt64 tsc = rdtsc();
+        size_t res = 0;
+        UInt64 tsc = rdtsc();
 
-		size_t pos = 0;
-		for (size_t i = 0; i < n; ++i)
-		{
-			res += Func(data[pos]);
-			pos = res & (BUF_SIZE - 1);
-		}
+        size_t pos = 0;
+        for (size_t i = 0; i < n; ++i)
+        {
+            res += Func(data[pos]);
+            pos = res & (BUF_SIZE - 1);
+        }
 
-		UInt64 tsc_diff = rdtsc() - tsc;
+        UInt64 tsc_diff = rdtsc() - tsc;
 
-		watch.stop();
+        watch.stop();
 
-		std::cerr << "Latency of ";
-		report(name, n, watch.elapsedSeconds(), tsc_diff, res);
-	}
+        std::cerr << "Latency of ";
+        report(name, n, watch.elapsedSeconds(), tsc_diff, res);
+    }
 
-	/// quality. Methods are taken from SMHasher.
-	{
-		auto wrapper = [](const void * blob, const int len, const uint32_t seed, void * out)
-		{
-			*reinterpret_cast<UInt32*>(out) = Func(*reinterpret_cast<const UInt64 *>(blob));
-		};
+    /// quality. Methods are taken from SMHasher.
+    {
+        auto wrapper = [](const void * blob, const int len, const uint32_t seed, void * out)
+        {
+            *reinterpret_cast<UInt32*>(out) = Func(*reinterpret_cast<const UInt64 *>(blob));
+        };
 
-		std::cerr << "Avalanche: " << std::endl;
-		AvalancheTest<UInt64, UInt32>(wrapper, 300000);
-	//	std::cerr << "Bit Independence Criteria: " << std::endl;
-	//	BicTest3<UInt64, UInt32>(wrapper, 2000000);
+        std::cerr << "Avalanche: " << std::endl;
+        AvalancheTest<UInt64, UInt32>(wrapper, 300000);
+    //    std::cerr << "Bit Independence Criteria: " << std::endl;
+    //    BicTest3<UInt64, UInt32>(wrapper, 2000000);
 
-		std::cerr << std::endl;
-	}
+        std::cerr << std::endl;
+    }
 }
 
 
@@ -275,47 +275,47 @@ int main(int argc, char ** argv)
 {
 
 #if !__x86_64__
-	std::cerr << "Only for x86_64 arch" << std::endl;
+    std::cerr << "Only for x86_64 arch" << std::endl;
 #endif
 
-	const size_t BUF_SIZE = 1024;
+    const size_t BUF_SIZE = 1024;
 
-	size_t n = (atoi(argv[1]) + (BUF_SIZE - 1)) / BUF_SIZE * BUF_SIZE;
-	size_t method = argc <= 2 ? 0 : atoi(argv[2]);
+    size_t n = (atoi(argv[1]) + (BUF_SIZE - 1)) / BUF_SIZE * BUF_SIZE;
+    size_t method = argc <= 2 ? 0 : atoi(argv[2]);
 
-	std::cerr << std::fixed << std::setprecision(2);
+    std::cerr << std::fixed << std::setprecision(2);
 
-	using Source = std::vector<UInt64>;
-	Source data(BUF_SIZE);
+    using Source = std::vector<UInt64>;
+    Source data(BUF_SIZE);
 
-	{
-		Stopwatch watch;
+    {
+        Stopwatch watch;
 
-		srand48(rdtsc());
-		for (size_t i = 0; i < BUF_SIZE; ++i)
-			data[i] = lrand48();
+        srand48(rdtsc());
+        for (size_t i = 0; i < BUF_SIZE; ++i)
+            data[i] = lrand48();
 
-		watch.stop();
-		double elapsed = watch.elapsedSeconds();
-		std::cerr << std::fixed << std::setprecision(2)
-			<< "Fill. Size: " << BUF_SIZE
-			<< ", elapsed: " << elapsed
-			<< " (" << BUF_SIZE / elapsed << " elem/sec.)"
-			<< std::endl << std::endl;
-	}
+        watch.stop();
+        double elapsed = watch.elapsedSeconds();
+        std::cerr << std::fixed << std::setprecision(2)
+            << "Fill. Size: " << BUF_SIZE
+            << ", elapsed: " << elapsed
+            << " (" << BUF_SIZE / elapsed << " elem/sec.)"
+            << std::endl << std::endl;
+    }
 
-	setAffinity();
+    setAffinity();
 
-	if (!method || method == 0) test<identity>		(n, &data[0], "0: identity");
-	if (!method || method == 1) test<intHash32>		(n, &data[0], "1: intHash32");
-	if (!method || method == 2) test<intHash64>		(n, &data[0], "2: intHash64");
-	if (!method || method == 3) test<hash3>			(n, &data[0], "3: two rounds");
-	if (!method || method == 4) test<hash4>			(n, &data[0], "4: two rounds and two variables");
-	if (!method || method == 5) test<hash5>			(n, &data[0], "5: two rounds with less ops");
-	if (!method || method == 6) test<murmurMix>		(n, &data[0], "6: murmur64 mixer");
-	if (!method || method == 7) test<mulShift>		(n, &data[0], "7: mulShift");
-	if (!method || method == 8) test<tabulation>	(n, &data[0], "8: tabulation");
-	if (!method || method == 9) test<crc32Hash>		(n, &data[0], "9: crc32");
+    if (!method || method == 0) test<identity>        (n, &data[0], "0: identity");
+    if (!method || method == 1) test<intHash32>        (n, &data[0], "1: intHash32");
+    if (!method || method == 2) test<intHash64>        (n, &data[0], "2: intHash64");
+    if (!method || method == 3) test<hash3>            (n, &data[0], "3: two rounds");
+    if (!method || method == 4) test<hash4>            (n, &data[0], "4: two rounds and two variables");
+    if (!method || method == 5) test<hash5>            (n, &data[0], "5: two rounds with less ops");
+    if (!method || method == 6) test<murmurMix>        (n, &data[0], "6: murmur64 mixer");
+    if (!method || method == 7) test<mulShift>        (n, &data[0], "7: mulShift");
+    if (!method || method == 8) test<tabulation>    (n, &data[0], "8: tabulation");
+    if (!method || method == 9) test<crc32Hash>        (n, &data[0], "9: crc32");
 
-	return 0;
+    return 0;
 }

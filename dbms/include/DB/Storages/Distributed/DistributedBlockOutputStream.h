@@ -21,25 +21,25 @@ class StorageDistributed;
 class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
-	DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_);
+    DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_);
 
-	void write(const Block & block) override;
-
-private:
-	IColumn::Selector createSelector(Block block);
-
-	void writeSplit(const Block & block);
-
-	void writeImpl(const Block & block, const size_t shard_id = 0);
-
-	void writeToLocal(const Block & block, const size_t repeats);
-
-	void writeToShard(const Block & block, const std::vector<std::string> & dir_names);
+    void write(const Block & block) override;
 
 private:
-	StorageDistributed & storage;
-	ASTPtr query_ast;
-	ClusterPtr cluster;
+    IColumn::Selector createSelector(Block block);
+
+    void writeSplit(const Block & block);
+
+    void writeImpl(const Block & block, const size_t shard_id = 0);
+
+    void writeToLocal(const Block & block, const size_t repeats);
+
+    void writeToShard(const Block & block, const std::vector<std::string> & dir_names);
+
+private:
+    StorageDistributed & storage;
+    ASTPtr query_ast;
+    ClusterPtr cluster;
 };
 
 }

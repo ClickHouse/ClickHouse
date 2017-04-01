@@ -12,33 +12,33 @@ namespace DB
 class HashingReadBuffer : public IHashingBuffer<ReadBuffer>
 {
 public:
-	HashingReadBuffer(ReadBuffer & in_, size_t block_size = DBMS_DEFAULT_HASHING_BLOCK_SIZE) :
-		in(in_)
-	{
-		working_buffer = in.buffer();
-		pos = in.position();
+    HashingReadBuffer(ReadBuffer & in_, size_t block_size = DBMS_DEFAULT_HASHING_BLOCK_SIZE) :
+        in(in_)
+    {
+        working_buffer = in.buffer();
+        pos = in.position();
 
-		/// считаем хэш от уже прочитанных данных
-		if (working_buffer.size())
-		{
-			calculateHash(pos, working_buffer.end() - pos);
-		}
-	}
-
-private:
-	bool nextImpl() override
-	{
-		in.position() = pos;
-		bool res = in.next();
-		working_buffer = in.buffer();
-		pos = in.position();
-
-		calculateHash(working_buffer.begin(), working_buffer.size());
-
-		return res;
-	}
+        /// считаем хэш от уже прочитанных данных
+        if (working_buffer.size())
+        {
+            calculateHash(pos, working_buffer.end() - pos);
+        }
+    }
 
 private:
-	ReadBuffer & in;
+    bool nextImpl() override
+    {
+        in.position() = pos;
+        bool res = in.next();
+        working_buffer = in.buffer();
+        pos = in.position();
+
+        calculateHash(working_buffer.begin(), working_buffer.size());
+
+        return res;
+    }
+
+private:
+    ReadBuffer & in;
 };
 }

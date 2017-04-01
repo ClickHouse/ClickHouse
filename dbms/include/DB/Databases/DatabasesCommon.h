@@ -23,44 +23,44 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query);
   * Возвращает имя таблицы и саму таблицу.
   */
 std::pair<String, StoragePtr> createTableFromDefinition(
-	const String & definition,
-	const String & database_name,
-	const String & database_data_path,
-	Context & context,
-	bool has_force_restore_data_flag,
-	const String & description_for_error_message);
+    const String & definition,
+    const String & database_name,
+    const String & database_data_path,
+    Context & context,
+    bool has_force_restore_data_flag,
+    const String & description_for_error_message);
 
 
 /// Copies list of tables and iterates through such snapshot.
 class DatabaseSnaphotIterator : public IDatabaseIterator
 {
 private:
-	Tables tables;
-	Tables::iterator it;
+    Tables tables;
+    Tables::iterator it;
 
 public:
-	DatabaseSnaphotIterator(Tables & tables_)
-		: tables(tables_), it(tables.begin()) {}
+    DatabaseSnaphotIterator(Tables & tables_)
+        : tables(tables_), it(tables.begin()) {}
 
-	void next() override
-	{
-		++it;
-	}
+    void next() override
+    {
+        ++it;
+    }
 
-	bool isValid() const override
-	{
-		return it != tables.end();
-	}
+    bool isValid() const override
+    {
+        return it != tables.end();
+    }
 
-	const String & name() const override
-	{
-		return it->first;
-	}
+    const String & name() const override
+    {
+        return it->first;
+    }
 
-	StoragePtr & table() const override
-	{
-		return it->second;
-	}
+    StoragePtr & table() const override
+    {
+        return it->second;
+    }
 };
 
 }

@@ -10,7 +10,7 @@ namespace DB
 template <typename T>
 class DataTypeNumber final : public DataTypeNumberBase<T>
 {
-	DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<T>>(); }
+    DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<T>>(); }
 };
 
 using DataTypeUInt8 = DataTypeNumber<UInt8>;
@@ -31,10 +31,10 @@ template <>
 class DataTypeNumber<void> final : public IDataTypeDummy
 {
 public:
-	using FieldType = void;
+    using FieldType = void;
 
-	std::string getName() const override { return "Void"; }
-	DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<void>>(); }
+    std::string getName() const override { return "Void"; }
+    DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<void>>(); }
 };
 
 using DataTypeVoid = DataTypeNumber<void>;
@@ -43,10 +43,10 @@ template <>
 class DataTypeNumber<Null> final : public IDataTypeDummy
 {
 public:
-	using FieldType = Null;
+    using FieldType = Null;
 
-	std::string getName() const override { return "Null"; }
-	DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<Null>>(); }
+    std::string getName() const override { return "Null"; }
+    DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<Null>>(); }
 };
 
 }

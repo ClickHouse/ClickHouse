@@ -4,7 +4,7 @@
 #include <type_traits>
 
 #if __SSE2__
-	#define LIBDIVIDE_USE_SSE2 1
+    #define LIBDIVIDE_USE_SSE2 1
 #endif
 
 #include <libdivide.h>
@@ -15,41 +15,41 @@ namespace DB
 
 template <typename T>
 IColumn::Selector createBlockSelector(
-	const IColumn & column,
-	size_t num_shards,
-	const std::vector<size_t> & slots)
+    const IColumn & column,
+    size_t num_shards,
+    const std::vector<size_t> & slots)
 {
-	const auto total_weight = slots.size();
-	size_t num_rows = column.size();
-	IColumn::Selector selector(num_rows);
+    const auto total_weight = slots.size();
+    size_t num_rows = column.size();
+    IColumn::Selector selector(num_rows);
 
-	/** Modulo of division of negative numbers to positive number in C++11 is negative (so called truncated division).
-	  * This is not suitable for our task. So we will process signed numbers as unsigned.
-	  * It is not near like remainder of division, but is suitable for our task.
-	  */
-	using UnsignedT = typename std::make_unsigned<T>::type;
+    /** Modulo of division of negative numbers to positive number in C++11 is negative (so called truncated division).
+      * This is not suitable for our task. So we will process signed numbers as unsigned.
+      * It is not near like remainder of division, but is suitable for our task.
+      */
+    using UnsignedT = typename std::make_unsigned<T>::type;
 
-	/// const columns contain only one value, therefore we do not need to read it at every iteration
-	if (column.isConst())
-	{
-		const auto data = typeid_cast<const ColumnConst<T> &>(column).getData();
-		const auto shard_num = slots[static_cast<UnsignedT>(data) % total_weight];
-		selector.assign(num_rows, shard_num);
-	}
-	else
-	{
-		/// libdivide support only UInt32 and UInt64.
-		using TUInt32Or64 = typename std::conditional<sizeof(UnsignedT) <= 4, UInt32, UInt64>::type;
+    /// const columns contain only one value, therefore we do not need to read it at every iteration
+    if (column.isConst())
+    {
+        const auto data = typeid_cast<const ColumnConst<T> &>(column).getData();
+        const auto shard_num = slots[static_cast<UnsignedT>(data) % total_weight];
+        selector.assign(num_rows, shard_num);
+    }
+    else
+    {
+        /// libdivide support only UInt32 and UInt64.
+        using TUInt32Or64 = typename std::conditional<sizeof(UnsignedT) <= 4, UInt32, UInt64>::type;
 
-		libdivide::divider<TUInt32Or64> divider(total_weight);
+        libdivide::divider<TUInt32Or64> divider(total_weight);
 
-		const auto & data = typeid_cast<const ColumnVector<T> &>(column).getData();
+        const auto & data = typeid_cast<const ColumnVector<T> &>(column).getData();
 
-		for (size_t i = 0; i < num_rows; ++i)
-			selector[i] = slots[static_cast<TUInt32Or64>(data[i]) - (static_cast<TUInt32Or64>(data[i]) / divider) * total_weight];
-	}
+        for (size_t i = 0; i < num_rows; ++i)
+            selector[i] = slots[static_cast<TUInt32Or64>(data[i]) - (static_cast<TUInt32Or64>(data[i]) / divider) * total_weight];
+    }
 
-	return selector;
+    return selector;
 }
 
 

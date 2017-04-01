@@ -17,39 +17,39 @@ namespace DB
 class DistinctBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	/// Empty columns_ means all collumns.
-	DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_hint_, Names columns_);
+    /// Empty columns_ means all collumns.
+    DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_hint_, Names columns_);
 
-	String getName() const override { return "Distinct"; }
+    String getName() const override { return "Distinct"; }
 
-	String getID() const override;
+    String getID() const override;
 
 protected:
-	Block readImpl() override;
+    Block readImpl() override;
 
 private:
-	bool checkLimits() const;
+    bool checkLimits() const;
 
-	ConstColumnPlainPtrs getKeyColumns(const Block & block) const;
+    ConstColumnPlainPtrs getKeyColumns(const Block & block) const;
 
-	template <typename Method>
-	void buildFilter(
-		Method & method,
-		const ConstColumnPlainPtrs & key_columns,
-		IColumn::Filter & filter,
-		size_t rows,
-		SetVariants & variants) const;
+    template <typename Method>
+    void buildFilter(
+        Method & method,
+        const ConstColumnPlainPtrs & key_columns,
+        IColumn::Filter & filter,
+        size_t rows,
+        SetVariants & variants) const;
 
 
-	Names columns_names;
-	SetVariants data;
-	Sizes key_sizes;
-	size_t limit_hint;
+    Names columns_names;
+    SetVariants data;
+    Sizes key_sizes;
+    size_t limit_hint;
 
-	/// Restrictions on the maximum size of the output data.
-	size_t max_rows;
-	size_t max_bytes;
-	OverflowMode overflow_mode;
+    /// Restrictions on the maximum size of the output data.
+    size_t max_rows;
+    size_t max_bytes;
+    OverflowMode overflow_mode;
 };
 
 }

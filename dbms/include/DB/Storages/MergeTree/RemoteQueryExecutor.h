@@ -16,14 +16,14 @@ namespace RemoteQueryExecutor
 class Service final : public InterserverIOEndpoint
 {
 public:
-	Service(Context & context_);
-	Service(const Service &) = delete;
-	Service & operator=(const Service &) = delete;
-	std::string getId(const std::string & node_id) const override;
-	void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out) override;
+    Service(Context & context_);
+    Service(const Service &) = delete;
+    Service & operator=(const Service &) = delete;
+    std::string getId(const std::string & node_id) const override;
+    void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out) override;
 
 private:
-	Context & context;
+    Context & context;
 };
 
 /** Клиент для удалённого выполнения SQL запросов.
@@ -31,14 +31,14 @@ private:
 class Client final
 {
 public:
-	Client() = default;
-	Client(const Client &) = delete;
-	Client & operator=(const Client &) = delete;
-	bool executeQuery(const InterserverIOEndpointLocation & location, const std::string & query);
-	void cancel() { is_cancelled = true; }
+    Client() = default;
+    Client(const Client &) = delete;
+    Client & operator=(const Client &) = delete;
+    bool executeQuery(const InterserverIOEndpointLocation & location, const std::string & query);
+    void cancel() { is_cancelled = true; }
 
 private:
-	std::atomic<bool> is_cancelled{false};
+    std::atomic<bool> is_cancelled{false};
 };
 
 }

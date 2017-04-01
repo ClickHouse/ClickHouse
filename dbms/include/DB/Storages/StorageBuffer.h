@@ -43,104 +43,104 @@ friend class BufferBlockInputStream;
 friend class BufferBlockOutputStream;
 
 public:
-	/// Пороги.
-	struct Thresholds
-	{
-		time_t time;	/// Количество секунд от момента вставки первой строчки в блок.
-		size_t rows;	/// Количество строк в блоке.
-		size_t bytes;	/// Количество (несжатых) байт в блоке.
-	};
+    /// Пороги.
+    struct Thresholds
+    {
+        time_t time;    /// Количество секунд от момента вставки первой строчки в блок.
+        size_t rows;    /// Количество строк в блоке.
+        size_t bytes;    /// Количество (несжатых) байт в блоке.
+    };
 
-	/** num_shards - уровень внутреннего параллелизма (количество независимых буферов)
-	  * Буфер сбрасывается, если превышены все минимальные пороги или хотя бы один из максимальных.
-	  */
-	static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_,
-		const NamesAndTypesList & materialized_columns_,
-		const NamesAndTypesList & alias_columns_,
-		const ColumnDefaults & column_defaults_,
-		Context & context_,
-		size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-		const String & destination_database_, const String & destination_table_);
+    /** num_shards - уровень внутреннего параллелизма (количество независимых буферов)
+      * Буфер сбрасывается, если превышены все минимальные пороги или хотя бы один из максимальных.
+      */
+    static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_,
+        Context & context_,
+        size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
+        const String & destination_database_, const String & destination_table_);
 
-	std::string getName() const override { return "Buffer"; }
-	std::string getTableName() const override { return name; }
+    std::string getName() const override { return "Buffer"; }
+    std::string getTableName() const override { return name; }
 
-	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 
-	BlockInputStreams read(
-		const Names & column_names,
-		ASTPtr query,
-		const Context & context,
-		const Settings & settings,
-		QueryProcessingStage::Enum & processed_stage,
-		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1) override;
+    BlockInputStreams read(
+        const Names & column_names,
+        ASTPtr query,
+        const Context & context,
+        const Settings & settings,
+        QueryProcessingStage::Enum & processed_stage,
+        size_t max_block_size = DEFAULT_BLOCK_SIZE,
+        unsigned threads = 1) override;
 
-	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
+    BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 
-	/// Сбрасывает все буферы в подчинённую таблицу.
-	void shutdown() override;
-	bool optimize(const String & partition, bool final, const Settings & settings) override;
+    /// Сбрасывает все буферы в подчинённую таблицу.
+    void shutdown() override;
+    bool optimize(const String & partition, bool final, const Settings & settings) override;
 
-	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
 
-	bool supportsSampling() const override { return true; }
-	bool supportsPrewhere() const override { return true; }
-	bool supportsFinal() const override { return true; }
-	bool supportsIndexForIn() const override { return true; }
-	bool supportsParallelReplicas() const override { return true; }
+    bool supportsSampling() const override { return true; }
+    bool supportsPrewhere() const override { return true; }
+    bool supportsFinal() const override { return true; }
+    bool supportsIndexForIn() const override { return true; }
+    bool supportsParallelReplicas() const override { return true; }
 
-	/// Структура подчинённой таблицы не проверяется и не изменяется.
-	void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
+    /// Структура подчинённой таблицы не проверяется и не изменяется.
+    void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
 private:
-	String name;
-	NamesAndTypesListPtr columns;
+    String name;
+    NamesAndTypesListPtr columns;
 
-	Context & context;
+    Context & context;
 
-	struct Buffer
-	{
-		time_t first_write_time = 0;
-		Block data;
-		std::mutex mutex;
-	};
+    struct Buffer
+    {
+        time_t first_write_time = 0;
+        Block data;
+        std::mutex mutex;
+    };
 
-	/// Имеется num_shards независимых буферов.
-	const size_t num_shards;
-	std::vector<Buffer> buffers;
+    /// Имеется num_shards независимых буферов.
+    const size_t num_shards;
+    std::vector<Buffer> buffers;
 
-	const Thresholds min_thresholds;
-	const Thresholds max_thresholds;
+    const Thresholds min_thresholds;
+    const Thresholds max_thresholds;
 
-	const String destination_database;
-	const String destination_table;
-	bool no_destination;	/// Если задано - не записывать данные из буфера, а просто опустошать буфер.
+    const String destination_database;
+    const String destination_table;
+    bool no_destination;    /// Если задано - не записывать данные из буфера, а просто опустошать буфер.
 
-	Poco::Logger * log;
+    Poco::Logger * log;
 
-	Poco::Event shutdown_event;
-	/// Выполняет сброс данных по таймауту.
-	std::thread flush_thread;
+    Poco::Event shutdown_event;
+    /// Выполняет сброс данных по таймауту.
+    std::thread flush_thread;
 
-	StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
-		const NamesAndTypesList & materialized_columns_,
-		const NamesAndTypesList & alias_columns_,
-		const ColumnDefaults & column_defaults_,
-		Context & context_,
-		size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-		const String & destination_database_, const String & destination_table_);
+    StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_,
+        Context & context_,
+        size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
+        const String & destination_database_, const String & destination_table_);
 
-	void flushAllBuffers(bool check_thresholds = true);
-	/// Сбросить буфер. Если выставлено check_thresholds - сбрасывает только если превышены пороги.
-	void flushBuffer(Buffer & buffer, bool check_thresholds);
-	bool checkThresholds(const Buffer & buffer, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
-	bool checkThresholdsImpl(size_t rows, size_t bytes, time_t time_passed) const;
+    void flushAllBuffers(bool check_thresholds = true);
+    /// Сбросить буфер. Если выставлено check_thresholds - сбрасывает только если превышены пороги.
+    void flushBuffer(Buffer & buffer, bool check_thresholds);
+    bool checkThresholds(const Buffer & buffer, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
+    bool checkThresholdsImpl(size_t rows, size_t bytes, time_t time_passed) const;
 
-	/// Аргумент table передаётся, так как иногда вычисляется заранее. Он должен соответствовать destination-у.
-	void writeBlockToDestination(const Block & block, StoragePtr table);
+    /// Аргумент table передаётся, так как иногда вычисляется заранее. Он должен соответствовать destination-у.
+    void writeBlockToDestination(const Block & block, StoragePtr table);
 
-	void flushThread();
+    void flushThread();
 };
 
 }

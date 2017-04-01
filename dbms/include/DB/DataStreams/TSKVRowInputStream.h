@@ -22,24 +22,24 @@ class ReadBuffer;
 class TSKVRowInputStream : public IRowInputStream
 {
 public:
-	TSKVRowInputStream(ReadBuffer & istr_, const Block & sample_, bool skip_unknown_);
+    TSKVRowInputStream(ReadBuffer & istr_, const Block & sample_, bool skip_unknown_);
 
-	bool read(Block & block) override;
-	bool allowSyncAfterError() const override { return true; };
-	void syncAfterError() override;
+    bool read(Block & block) override;
+    bool allowSyncAfterError() const override { return true; };
+    void syncAfterError() override;
 
 private:
-	ReadBuffer & istr;
-	const Block sample;
-	/// Пропускать неизвестные поля.
-	bool skip_unknown;
+    ReadBuffer & istr;
+    const Block sample;
+    /// Пропускать неизвестные поля.
+    bool skip_unknown;
 
-	/// Буфер для прочитанного из потока имени поля. Используется, если его потребовалось скопировать.
-	String name_buf;
+    /// Буфер для прочитанного из потока имени поля. Используется, если его потребовалось скопировать.
+    String name_buf;
 
-	/// Хэш-таблица соответствия имя поля -> позиция в блоке. NOTE Можно использовать perfect hash map.
-	using NameMap = HashMap<StringRef, size_t, StringRefHash>;
-	NameMap name_map;
+    /// Хэш-таблица соответствия имя поля -> позиция в блоке. NOTE Можно использовать perfect hash map.
+    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
+    NameMap name_map;
 };
 
 }

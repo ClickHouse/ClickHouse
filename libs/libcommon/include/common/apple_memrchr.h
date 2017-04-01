@@ -34,19 +34,19 @@
 extern "C" {
 #endif
 inline void *memrchr(const void *s, int c, size_t n) {
-	if (n > 0) {
-		const char*  p = static_cast<const char *>(s);
-		const char*  q = p + n;
-		while (1) {
-			q--; if (q < p || q[0] == c) break;
-			q--; if (q < p || q[0] == c) break;
-			q--; if (q < p || q[0] == c) break;
-			q--; if (q < p || q[0] == c) break;
-		}
-		if (q >= p)
-			return reinterpret_cast<void *>(const_cast<char *>(q));
-	}
-	return NULL;
+    if (n > 0) {
+        const char*  p = static_cast<const char *>(s);
+        const char*  q = p + n;
+        while (1) {
+            q--; if (q < p || q[0] == c) break;
+            q--; if (q < p || q[0] == c) break;
+            q--; if (q < p || q[0] == c) break;
+            q--; if (q < p || q[0] == c) break;
+        }
+        if (q >= p)
+            return reinterpret_cast<void *>(const_cast<char *>(q));
+    }
+    return NULL;
 }
 #if defined (__cplusplus)
 }

@@ -26,12 +26,12 @@ class Connection;
 class UseQueryResult : public ResultBase
 {
 public:
-	UseQueryResult(MYSQL_RES * res_, Connection * conn_, const Query * query_);
+    UseQueryResult(MYSQL_RES * res_, Connection * conn_, const Query * query_);
 
-	Row fetch();
+    Row fetch();
 
-	/// Для совместимости
-	Row fetch_row() { return fetch(); }
+    /// Для совместимости
+    Row fetch_row() { return fetch(); }
 };
 
 }

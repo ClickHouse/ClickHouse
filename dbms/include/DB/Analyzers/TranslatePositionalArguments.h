@@ -15,7 +15,7 @@ class WriteBuffer;
   */
 struct TranslatePositionalArguments
 {
-	void process(ASTPtr & ast);
+    void process(ASTPtr & ast);
 };
 
 }

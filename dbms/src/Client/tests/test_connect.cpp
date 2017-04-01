@@ -15,45 +15,45 @@
 int main(int argc, char ** argv)
 try
 {
-	for (size_t i = 0; i < DB::parse<size_t>(argv[1]); ++i)
-	{
-		std::cerr << ".";
+    for (size_t i = 0; i < DB::parse<size_t>(argv[1]); ++i)
+    {
+        std::cerr << ".";
 
-		Poco::Net::SocketAddress address("localhost", 9000);
+        Poco::Net::SocketAddress address("localhost", 9000);
 
-		int fd = socket(PF_INET, SOCK_STREAM, IPPROTO_IP);
+        int fd = socket(PF_INET, SOCK_STREAM, IPPROTO_IP);
 
-		if (fd < 0)
-			DB::throwFromErrno("Cannot create socket");
+        if (fd < 0)
+            DB::throwFromErrno("Cannot create socket");
 
-		linger linger_value;
-		linger_value.l_onoff = 1;
-		linger_value.l_linger = 0;
+        linger linger_value;
+        linger_value.l_onoff = 1;
+        linger_value.l_linger = 0;
 
-		if (0 != setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger_value, sizeof(linger_value)))
-			DB::throwFromErrno("Cannot set linger");
+        if (0 != setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger_value, sizeof(linger_value)))
+            DB::throwFromErrno("Cannot set linger");
 
-		try
-		{
-			int res = connect(fd, address.addr(), address.length());
+        try
+        {
+            int res = connect(fd, address.addr(), address.length());
 
-			if (res != 0 && errno != EINPROGRESS && errno != EWOULDBLOCK)
-			{
-				close(fd);
-				DB::throwFromErrno("Cannot connect");
-			}
+            if (res != 0 && errno != EINPROGRESS && errno != EWOULDBLOCK)
+            {
+                close(fd);
+                DB::throwFromErrno("Cannot connect");
+            }
 
-			close(fd);
-		}
-		catch (const Poco::Exception & e)
-		{
-			std::cerr << e.displayText() << "\n";
-		}
-	}
+            close(fd);
+        }
+        catch (const Poco::Exception & e)
+        {
+            std::cerr << e.displayText() << "\n";
+        }
+    }
 
-	std::cerr << "\n";
+    std::cerr << "\n";
 }
 catch (const Poco::Exception & e)
 {
-	std::cerr << e.displayText() << "\n";
+    std::cerr << e.displayText() << "\n";
 }

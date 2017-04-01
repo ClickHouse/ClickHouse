@@ -9,7 +9,7 @@
   */
 inline unsigned int bitScanReverse(unsigned int x)
 {
-	return sizeof(unsigned int) * 8 - 1 - __builtin_clz(x);
+    return sizeof(unsigned int) * 8 - 1 - __builtin_clz(x);
 }
 
 
@@ -19,14 +19,14 @@ inline unsigned int bitScanReverse(unsigned int x)
   */
 inline size_t roundUpToPowerOfTwoOrZero(size_t n)
 {
-	--n;
-	n |= n >> 1;
-	n |= n >> 2;
-	n |= n >> 4;
-	n |= n >> 8;
-	n |= n >> 16;
-	n |= n >> 32;
-	++n;
+    --n;
+    n |= n >> 1;
+    n |= n >> 2;
+    n |= n >> 4;
+    n |= n >> 8;
+    n |= n >> 16;
+    n |= n >> 32;
+    ++n;
 
-	return n;
+    return n;
 }

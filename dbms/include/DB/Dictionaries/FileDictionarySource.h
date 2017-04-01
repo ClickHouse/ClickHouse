@@ -14,39 +14,39 @@ class Context;
 class FileDictionarySource final : public IDictionarySource
 {
 public:
-	FileDictionarySource(const std::string & filename, const std::string & format, Block & sample_block,
-		const Context & context);
+    FileDictionarySource(const std::string & filename, const std::string & format, Block & sample_block,
+        const Context & context);
 
-	FileDictionarySource(const FileDictionarySource & other);
+    FileDictionarySource(const FileDictionarySource & other);
 
-	BlockInputStreamPtr loadAll() override;
+    BlockInputStreamPtr loadAll() override;
 
-	BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override
-	{
-		throw Exception{"Method loadIds is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
-	}
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override
+    {
+        throw Exception{"Method loadIds is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+    }
 
-	BlockInputStreamPtr loadKeys(
-		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override
-	{
-		throw Exception{"Method loadKeys is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
-	}
+    BlockInputStreamPtr loadKeys(
+        const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override
+    {
+        throw Exception{"Method loadKeys is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+    }
 
-	bool isModified() const override { return getLastModification() > last_modification; }
-	bool supportsSelectiveLoad() const override { return false; }
+    bool isModified() const override { return getLastModification() > last_modification; }
+    bool supportsSelectiveLoad() const override { return false; }
 
-	DictionarySourcePtr clone() const override { return std::make_unique<FileDictionarySource>(*this); }
+    DictionarySourcePtr clone() const override { return std::make_unique<FileDictionarySource>(*this); }
 
-	std::string toString() const override;
+    std::string toString() const override;
 
 private:
-	Poco::Timestamp getLastModification() const;
+    Poco::Timestamp getLastModification() const;
 
-	const std::string filename;
-	const std::string format;
-	Block sample_block;
-	const Context & context;
-	Poco::Timestamp last_modification;
+    const std::string filename;
+    const std::string format;
+    Block sample_block;
+    const Context & context;
+    Poco::Timestamp last_modification;
 };
 
 }

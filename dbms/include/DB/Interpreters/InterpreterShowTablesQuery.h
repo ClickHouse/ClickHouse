@@ -14,15 +14,15 @@ namespace DB
 class InterpreterShowTablesQuery : public IInterpreter
 {
 public:
-	InterpreterShowTablesQuery(ASTPtr query_ptr_, Context & context_);
+    InterpreterShowTablesQuery(ASTPtr query_ptr_, Context & context_);
 
-	BlockIO execute() override;
+    BlockIO execute() override;
 
 private:
-	ASTPtr query_ptr;
-	Context context;
+    ASTPtr query_ptr;
+    Context context;
 
-	String getRewrittenQuery();
+    String getRewrittenQuery();
 };
 
 

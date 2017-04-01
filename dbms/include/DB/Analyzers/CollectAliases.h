@@ -27,28 +27,28 @@ class WriteBuffer;
   */
 struct CollectAliases
 {
-	void process(const ASTPtr & ast);
+    void process(const ASTPtr & ast);
 
-	enum class Kind
-	{
-		Expression,		/// Example: SELECT a AS b, f(x) AS y
-		Table,			/// Example: SELECT t.* FROM (SELECT 1) AS t
-		ArrayJoin		/// Example: SELECT t.x.a FROM t ARRAY JOIN arr AS x
-	};
+    enum class Kind
+    {
+        Expression,        /// Example: SELECT a AS b, f(x) AS y
+        Table,            /// Example: SELECT t.* FROM (SELECT 1) AS t
+        ArrayJoin        /// Example: SELECT t.x.a FROM t ARRAY JOIN arr AS x
+    };
 
-	struct AliasInfo
-	{
-		ASTPtr node;
-		Kind kind;
+    struct AliasInfo
+    {
+        ASTPtr node;
+        Kind kind;
 
-		AliasInfo(ASTPtr node, Kind kind) : node(node), kind(kind) {}
-	};
+        AliasInfo(ASTPtr node, Kind kind) : node(node), kind(kind) {}
+    };
 
-	using Aliases = std::unordered_map<String, AliasInfo>;
-	Aliases aliases;
+    using Aliases = std::unordered_map<String, AliasInfo>;
+    Aliases aliases;
 
-	/// Debug output
-	void dump(WriteBuffer & out) const;
+    /// Debug output
+    void dump(WriteBuffer & out) const;
 };
 
 }

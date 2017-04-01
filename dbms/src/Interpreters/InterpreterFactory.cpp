@@ -36,93 +36,93 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int READONLY;
-	extern const int UNKNOWN_TYPE_OF_QUERY;
+    extern const int READONLY;
+    extern const int UNKNOWN_TYPE_OF_QUERY;
 }
 
 
 static void throwIfReadOnly(Context & context)
 {
-	if (context.getSettingsRef().limits.readonly)
-		throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
+    if (context.getSettingsRef().limits.readonly)
+        throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
 }
 
 
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & context, QueryProcessingStage::Enum stage)
 {
-	if (typeid_cast<ASTSelectQuery *>(query.get()))
-	{
-		return std::make_unique<InterpreterSelectQuery>(query, context, stage);
-	}
-	else if (typeid_cast<ASTInsertQuery *>(query.get()))
-	{
-		throwIfReadOnly(context);
-		return std::make_unique<InterpreterInsertQuery>(query, context);
-	}
-	else if (typeid_cast<ASTCreateQuery *>(query.get()))
-	{
-		throwIfReadOnly(context);
-		return std::make_unique<InterpreterCreateQuery>(query, context);
-	}
-	else if (typeid_cast<ASTDropQuery *>(query.get()))
-	{
-		throwIfReadOnly(context);
-		return std::make_unique<InterpreterDropQuery>(query, context);
-	}
-	else if (typeid_cast<ASTRenameQuery *>(query.get()))
-	{
-		throwIfReadOnly(context);
-		return std::make_unique<InterpreterRenameQuery>(query, context);
-	}
-	else if (typeid_cast<ASTShowTablesQuery *>(query.get()))
-	{
-		return std::make_unique<InterpreterShowTablesQuery>(query, context);
-	}
-	else if (typeid_cast<ASTUseQuery *>(query.get()))
-	{
-		return std::make_unique<InterpreterUseQuery>(query, context);
-	}
-	else if (typeid_cast<ASTSetQuery *>(query.get()))
-	{
-		/// readonly проверяется внутри InterpreterSetQuery
-		return std::make_unique<InterpreterSetQuery>(query, context);
-	}
-	else if (typeid_cast<ASTOptimizeQuery *>(query.get()))
-	{
-		throwIfReadOnly(context);
-		return std::make_unique<InterpreterOptimizeQuery>(query, context);
-	}
-	else if (typeid_cast<ASTExistsQuery *>(query.get()))
-	{
-		return std::make_unique<InterpreterExistsQuery>(query, context);
-	}
-	else if (typeid_cast<ASTShowCreateQuery *>(query.get()))
-	{
-		return std::make_unique<InterpreterShowCreateQuery>(query, context);
-	}
-	else if (typeid_cast<ASTDescribeQuery *>(query.get()))
-	{
-		return std::make_unique<InterpreterDescribeQuery>(query, context);
-	}
-	else if (typeid_cast<ASTShowProcesslistQuery *>(query.get()))
-	{
-		return std::make_unique<InterpreterShowProcesslistQuery>(query, context);
-	}
-	else if (typeid_cast<ASTAlterQuery *>(query.get()))
-	{
-		throwIfReadOnly(context);
-		return std::make_unique<InterpreterAlterQuery>(query, context);
-	}
-	else if (typeid_cast<ASTCheckQuery *>(query.get()))
-	{
-		return std::make_unique<InterpreterCheckQuery>(query, context);
-	}
-	else if (typeid_cast<ASTKillQueryQuery *>(query.get()))
-	{
-		return std::make_unique<InterpreterKillQueryQuery>(query, context);
-	}
-	else
-		throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
+    if (typeid_cast<ASTSelectQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterSelectQuery>(query, context, stage);
+    }
+    else if (typeid_cast<ASTInsertQuery *>(query.get()))
+    {
+        throwIfReadOnly(context);
+        return std::make_unique<InterpreterInsertQuery>(query, context);
+    }
+    else if (typeid_cast<ASTCreateQuery *>(query.get()))
+    {
+        throwIfReadOnly(context);
+        return std::make_unique<InterpreterCreateQuery>(query, context);
+    }
+    else if (typeid_cast<ASTDropQuery *>(query.get()))
+    {
+        throwIfReadOnly(context);
+        return std::make_unique<InterpreterDropQuery>(query, context);
+    }
+    else if (typeid_cast<ASTRenameQuery *>(query.get()))
+    {
+        throwIfReadOnly(context);
+        return std::make_unique<InterpreterRenameQuery>(query, context);
+    }
+    else if (typeid_cast<ASTShowTablesQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterShowTablesQuery>(query, context);
+    }
+    else if (typeid_cast<ASTUseQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterUseQuery>(query, context);
+    }
+    else if (typeid_cast<ASTSetQuery *>(query.get()))
+    {
+        /// readonly проверяется внутри InterpreterSetQuery
+        return std::make_unique<InterpreterSetQuery>(query, context);
+    }
+    else if (typeid_cast<ASTOptimizeQuery *>(query.get()))
+    {
+        throwIfReadOnly(context);
+        return std::make_unique<InterpreterOptimizeQuery>(query, context);
+    }
+    else if (typeid_cast<ASTExistsQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterExistsQuery>(query, context);
+    }
+    else if (typeid_cast<ASTShowCreateQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
+    else if (typeid_cast<ASTDescribeQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterDescribeQuery>(query, context);
+    }
+    else if (typeid_cast<ASTShowProcesslistQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterShowProcesslistQuery>(query, context);
+    }
+    else if (typeid_cast<ASTAlterQuery *>(query.get()))
+    {
+        throwIfReadOnly(context);
+        return std::make_unique<InterpreterAlterQuery>(query, context);
+    }
+    else if (typeid_cast<ASTCheckQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterCheckQuery>(query, context);
+    }
+    else if (typeid_cast<ASTKillQueryQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterKillQueryQuery>(query, context);
+    }
+    else
+        throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 }
 
 }

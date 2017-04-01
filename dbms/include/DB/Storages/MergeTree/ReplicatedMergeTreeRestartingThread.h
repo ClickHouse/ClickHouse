@@ -21,56 +21,56 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeRestartingThread
 {
 public:
-	ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
+    ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
 
-	~ReplicatedMergeTreeRestartingThread()
-	{
-		if (thread.joinable())
-			thread.join();
-	}
+    ~ReplicatedMergeTreeRestartingThread()
+    {
+        if (thread.joinable())
+            thread.join();
+    }
 
-	void wakeup()
-	{
-		wakeup_event.set();
-	}
+    void wakeup()
+    {
+        wakeup_event.set();
+    }
 
-	Poco::Event & getWakeupEvent()
-	{
-		return wakeup_event;
-	}
+    Poco::Event & getWakeupEvent()
+    {
+        return wakeup_event;
+    }
 
-	void stop()
-	{
-		need_stop = true;
-		wakeup();
-	}
+    void stop()
+    {
+        need_stop = true;
+        wakeup();
+    }
 
 private:
-	StorageReplicatedMergeTree & storage;
-	Logger * log;
-	Poco::Event wakeup_event;
-	std::atomic<bool> need_stop {false};
+    StorageReplicatedMergeTree & storage;
+    Logger * log;
+    Poco::Event wakeup_event;
+    std::atomic<bool> need_stop {false};
 
-	/// Случайные данные, которые мы записали в /replicas/me/is_active.
-	String active_node_identifier;
+    /// Случайные данные, которые мы записали в /replicas/me/is_active.
+    String active_node_identifier;
 
-	std::thread thread;
+    std::thread thread;
 
-	void run();
+    void run();
 
-	/// Запустить или остановить фоновые потоки. Используется для частичной переинициализации при пересоздании сессии в ZooKeeper.
-	bool tryStartup(); /// Возвращает false, если недоступен ZooKeeper.
+    /// Запустить или остановить фоновые потоки. Используется для частичной переинициализации при пересоздании сессии в ZooKeeper.
+    bool tryStartup(); /// Возвращает false, если недоступен ZooKeeper.
 
-	/// Отметить в ZooKeeper, что эта реплика сейчас активна.
-	void activateReplica();
+    /// Отметить в ZooKeeper, что эта реплика сейчас активна.
+    void activateReplica();
 
-	/// Удалить куски, для которых кворум пофейлился (за то время, когда реплика была неактивной).
-	void removeFailedQuorumParts();
+    /// Удалить куски, для которых кворум пофейлился (за то время, когда реплика была неактивной).
+    void removeFailedQuorumParts();
 
-	/// Если есть недостигнутый кворум, и у нас есть кусок, то добавить эту реплику в кворум.
-	void updateQuorumIfWeHavePart();
+    /// Если есть недостигнутый кворум, и у нас есть кусок, то добавить эту реплику в кворум.
+    void updateQuorumIfWeHavePart();
 
-	void partialShutdown();
+    void partialShutdown();
 };
 
 

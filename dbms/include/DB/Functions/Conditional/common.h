@@ -18,10 +18,10 @@ namespace Conditional
 /// processing.
 struct Branch
 {
-	size_t index;
-	DataTypePtr type;
-	bool is_const;
-	UInt8 category;
+    size_t index;
+    DataTypePtr type;
+    bool is_const;
+    UInt8 category;
 };
 
 using Branches = std::vector<Branch>;
@@ -32,22 +32,22 @@ using Branches = std::vector<Branch>;
 template <typename T>
 inline bool hasValidArgCount(const T & args)
 {
-	return (args.size() >= 3) && ((args.size() % 2) == 1);
+    return (args.size() >= 3) && ((args.size() % 2) == 1);
 }
 
 inline constexpr size_t firstCond()
 {
-	return 0;
+    return 0;
 }
 
 inline constexpr size_t firstThen()
 {
-	return 1;
+    return 1;
 }
 
 inline constexpr size_t secondThen()
 {
-	return 3;
+    return 3;
 }
 
 /// NOTE: we always use this function after the number of arguments of multiIf
@@ -55,39 +55,39 @@ inline constexpr size_t secondThen()
 template <typename T>
 inline size_t elseArg(const T & args)
 {
-	return args.size() - 1;
+    return args.size() - 1;
 }
 
 inline size_t thenFromCond(size_t i)
 {
-	return i + 1;
+    return i + 1;
 }
 
 inline size_t nextCond(size_t i)
 {
-	return i + 2;
+    return i + 2;
 }
 
 inline size_t nextThen(size_t i)
 {
-	return i + 2;
+    return i + 2;
 }
 
 inline bool isCond(size_t i)
 {
-	return (i % 2) == 0;
+    return (i % 2) == 0;
 }
 
 template <typename T>
 inline size_t getCondCount(const T & args)
 {
-	return args.size() / 2;
+    return args.size() / 2;
 }
 
 template <typename T>
 inline size_t getBranchCount(const T & args)
 {
-	return (args.size() / 2) + 1;
+    return (args.size() / 2) + 1;
 }
 
 }

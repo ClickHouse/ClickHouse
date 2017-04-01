@@ -1,191 +1,191 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-	<meta charset="utf-8"/>
-	<title>ClickHouse — quick start guide</title>
+    <meta charset="utf-8"/>
+    <title>ClickHouse — quick start guide</title>
 
-	<link rel="shortcut icon" href="favicon.ico"/>
+    <link rel="shortcut icon" href="favicon.ico"/>
 
-	<meta name="description" content="Quick start guide to ClickHouse — open-source distributed column-oriented DBMS"/>
-	<meta name="keywords" content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics"/>
+    <meta name="description" content="Quick start guide to ClickHouse — open-source distributed column-oriented DBMS"/>
+    <meta name="keywords" content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics"/>
 
-	<style type="text/css">
-		@font-face {
-			font-family: 'Yandex Sans Text Web';
-			src: url(https://yastatic.net/adv-www/_/yy5JveR58JFkc97waf-xp0i6_jM.eot);
-			src: url(https://yastatic.net/adv-www/_/yy5JveR58JFkc97waf-xp0i6_jM.eot?#iefix) format('embedded-opentype'),
-				 url(https://yastatic.net/adv-www/_/CYblzLEXzCqQIvrYs7QKQe2omRk.woff2) format('woff2'),
-				 url(https://yastatic.net/adv-www/_/pUcnOdRwl83MvPPzrNomhyletnA.woff) format('woff'),
-				 url(https://yastatic.net/adv-www/_/vNFEmXOcGYKJ4AAidUprHWoXrLU.ttf) format('truetype'),
-				 url(https://yastatic.net/adv-www/_/0w7OcWZM_QLP8x-LQUXFOgXO6dE.svg#YandexSansTextWeb-Bold) format('svg');
-			font-weight: 700;
-			font-style: normal;
-			font-stretch: normal
-		}
+    <style type="text/css">
+        @font-face {
+            font-family: 'Yandex Sans Text Web';
+            src: url(https://yastatic.net/adv-www/_/yy5JveR58JFkc97waf-xp0i6_jM.eot);
+            src: url(https://yastatic.net/adv-www/_/yy5JveR58JFkc97waf-xp0i6_jM.eot?#iefix) format('embedded-opentype'),
+                 url(https://yastatic.net/adv-www/_/CYblzLEXzCqQIvrYs7QKQe2omRk.woff2) format('woff2'),
+                 url(https://yastatic.net/adv-www/_/pUcnOdRwl83MvPPzrNomhyletnA.woff) format('woff'),
+                 url(https://yastatic.net/adv-www/_/vNFEmXOcGYKJ4AAidUprHWoXrLU.ttf) format('truetype'),
+                 url(https://yastatic.net/adv-www/_/0w7OcWZM_QLP8x-LQUXFOgXO6dE.svg#YandexSansTextWeb-Bold) format('svg');
+            font-weight: 700;
+            font-style: normal;
+            font-stretch: normal
+        }
 
-		@font-face {
-			font-family: 'Yandex Sans Text Web';
-			src: url(https://yastatic.net/adv-www/_/LI6l3L2RqcgxBe2pXmuUha37czQ.eot);
-			src: url(https://yastatic.net/adv-www/_/LI6l3L2RqcgxBe2pXmuUha37czQ.eot?#iefix) format('embedded-opentype'),
-				url(https://yastatic.net/adv-www/_/z3MYElcut0R2MF_Iw1RDNrstgYs.woff2) format('woff2'),
-				url(https://yastatic.net/adv-www/_/1jvKJ_-hCXl3s7gmFl-y_-UHTaI.woff) format('woff'),
-				url(https://yastatic.net/adv-www/_/9nzjfpCR2QHvK1EzHpDEIoVFGuY.ttf) format('truetype'),
-				url(https://yastatic.net/adv-www/_/gwyBTpxSwkFCF1looxqs6JokKls.svg#YandexSansTextWeb-Regular) format('svg');
-			font-weight: 400;
-			font-style: normal;
-			font-stretch: normal
-		}
+        @font-face {
+            font-family: 'Yandex Sans Text Web';
+            src: url(https://yastatic.net/adv-www/_/LI6l3L2RqcgxBe2pXmuUha37czQ.eot);
+            src: url(https://yastatic.net/adv-www/_/LI6l3L2RqcgxBe2pXmuUha37czQ.eot?#iefix) format('embedded-opentype'),
+                url(https://yastatic.net/adv-www/_/z3MYElcut0R2MF_Iw1RDNrstgYs.woff2) format('woff2'),
+                url(https://yastatic.net/adv-www/_/1jvKJ_-hCXl3s7gmFl-y_-UHTaI.woff) format('woff'),
+                url(https://yastatic.net/adv-www/_/9nzjfpCR2QHvK1EzHpDEIoVFGuY.ttf) format('truetype'),
+                url(https://yastatic.net/adv-www/_/gwyBTpxSwkFCF1looxqs6JokKls.svg#YandexSansTextWeb-Regular) format('svg');
+            font-weight: 400;
+            font-style: normal;
+            font-stretch: normal
+        }
 
-		@font-face {
-			font-family: 'Yandex Sans Text Web';
-			src: url(https://yastatic.net/adv-www/_/ayAFYoY8swgBLhq_I56tKj2JftU.eot);
-			src: url(https://yastatic.net/adv-www/_/ayAFYoY8swgBLhq_I56tKj2JftU.eot?#iefix) format('embedded-opentype'),
-				url(https://yastatic.net/adv-www/_/lGQcYklLVV0hyvz1HFmFsUTj8_0.woff2) format('woff2'),
-				url(https://yastatic.net/adv-www/_/f0AAJ9GJ4iiwEmhG-7PWMHk6vUY.woff) format('woff'),
-				url(https://yastatic.net/adv-www/_/4UDe4nlVvgEJ-VmLWNVq3SxCsA.ttf) format('truetype'),
-				url(https://yastatic.net/adv-www/_/EKLr1STNokPqxLAQa_RyN82pL98.svg#YandexSansTextWeb-Light) format('svg');
-			font-weight: 300;
-			font-style: normal;
-			font-stretch: normal
-		}
+        @font-face {
+            font-family: 'Yandex Sans Text Web';
+            src: url(https://yastatic.net/adv-www/_/ayAFYoY8swgBLhq_I56tKj2JftU.eot);
+            src: url(https://yastatic.net/adv-www/_/ayAFYoY8swgBLhq_I56tKj2JftU.eot?#iefix) format('embedded-opentype'),
+                url(https://yastatic.net/adv-www/_/lGQcYklLVV0hyvz1HFmFsUTj8_0.woff2) format('woff2'),
+                url(https://yastatic.net/adv-www/_/f0AAJ9GJ4iiwEmhG-7PWMHk6vUY.woff) format('woff'),
+                url(https://yastatic.net/adv-www/_/4UDe4nlVvgEJ-VmLWNVq3SxCsA.ttf) format('truetype'),
+                url(https://yastatic.net/adv-www/_/EKLr1STNokPqxLAQa_RyN82pL98.svg#YandexSansTextWeb-Light) format('svg');
+            font-weight: 300;
+            font-style: normal;
+            font-stretch: normal
+        }
 
-		@font-face {
-			font-family: 'Yandex Sans Display Web';
-			src: url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
-			src: url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
-				url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
-				url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
-				url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
-				url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
-			font-weight: 400;
-			font-style: normal;
-			font-stretch: normal
-		}
+        @font-face {
+            font-family: 'Yandex Sans Display Web';
+            src: url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
+            src: url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
+                url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
+                url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
+                url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
+                url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
+            font-weight: 400;
+            font-style: normal;
+            font-stretch: normal
+        }
 
-		@font-face {
-			font-family: 'Yandex Sans Display Web';
-			src: url(https://yastatic.net/adv-www/_/g8_MyyKVquSZ3xEL6tarK__V9Vw.eot);
-			src: url(https://yastatic.net/adv-www/_/g8_MyyKVquSZ3xEL6tarK__V9Vw.eot?#iefix) format('embedded-opentype'),
-				url(https://yastatic.net/adv-www/_/LGiRvlfqQHlWR9YKLhsw5e7KGNA.woff2) format('woff2'),
-				url(https://yastatic.net/adv-www/_/40vXwNl4eYYMgteIVgLP49dwmfc.woff) format('woff'),
-				url(https://yastatic.net/adv-www/_/X6zG5x_wO8-AtwJ-vDLJcKC5228.ttf) format('truetype'),
-				url(https://yastatic.net/adv-www/_/ZKhaR0m08c8CRRL77GtFKoHcLYA.svg#YandexSansDisplayWeb-Light) format('svg');
-			font-weight: 300;
-			font-style: normal;
-			font-stretch: normal
-		}
+        @font-face {
+            font-family: 'Yandex Sans Display Web';
+            src: url(https://yastatic.net/adv-www/_/g8_MyyKVquSZ3xEL6tarK__V9Vw.eot);
+            src: url(https://yastatic.net/adv-www/_/g8_MyyKVquSZ3xEL6tarK__V9Vw.eot?#iefix) format('embedded-opentype'),
+                url(https://yastatic.net/adv-www/_/LGiRvlfqQHlWR9YKLhsw5e7KGNA.woff2) format('woff2'),
+                url(https://yastatic.net/adv-www/_/40vXwNl4eYYMgteIVgLP49dwmfc.woff) format('woff'),
+                url(https://yastatic.net/adv-www/_/X6zG5x_wO8-AtwJ-vDLJcKC5228.ttf) format('truetype'),
+                url(https://yastatic.net/adv-www/_/ZKhaR0m08c8CRRL77GtFKoHcLYA.svg#YandexSansDisplayWeb-Light) format('svg');
+            font-weight: 300;
+            font-style: normal;
+            font-stretch: normal
+        }
 
-		body {
-			background: #fff;
-			font: 300 12pt/150% 'Yandex Sans Text Web', Arial, sans-serif;
-		}
+        body {
+            background: #fff;
+            font: 300 12pt/150% 'Yandex Sans Text Web', Arial, sans-serif;
+        }
 
-		.page {
-			width: 900px;
-			margin: auto;
-		}
+        .page {
+            width: 900px;
+            margin: auto;
+        }
 
-		h1
-		{
-			font-family: 'Yandex Sans Display Web', Arial, sans-serif;
-			font-size: 100px;
-			font-weight: normal;
-			margin-top: 100px;
-			margin-bottom: 0;
-			text-align: center;
-			padding-top: 27px;
-		}
+        h1
+        {
+            font-family: 'Yandex Sans Display Web', Arial, sans-serif;
+            font-size: 100px;
+            font-weight: normal;
+            margin-top: 100px;
+            margin-bottom: 0;
+            text-align: center;
+            padding-top: 27px;
+        }
 
-		.title_link, .title_link:active, .title_link:visited, .title_link:link, .title_link:hover
-		{
-			text-decoration: none;
-			color: #000;
-		}
+        .title_link, .title_link:active, .title_link:visited, .title_link:link, .title_link:hover
+        {
+            text-decoration: none;
+            color: #000;
+        }
 
-		h2
-		{
-			font: normal 50px 'Yandex Sans Display Web', Arial, sans-serif;
-		    text-align: center;
-			margin-top: 35px;
-			margin-bottom: 50px;
-		}
+        h2
+        {
+            font: normal 50px 'Yandex Sans Display Web', Arial, sans-serif;
+            text-align: center;
+            margin-top: 35px;
+            margin-bottom: 50px;
+        }
 
-		h3
-		{
-			font: normal 24px 'Yandex Sans Display Web', Arial, sans-serif;
-			margin-top: 36px;
-		}
+        h3
+        {
+            font: normal 24px 'Yandex Sans Display Web', Arial, sans-serif;
+            margin-top: 36px;
+        }
 
-		a:link, a:visited {
-			color: #08f;
-			text-decoration: none;
-		}
+        a:link, a:visited {
+            color: #08f;
+            text-decoration: none;
+        }
 
-		a:hover, a:active {
-			color: #f00;
-			text-decoration: underline;
-		}
+        a:hover, a:active {
+            color: #f00;
+            text-decoration: underline;
+        }
 
-		.footer {
-			text-align: right;
-			margin-top: 40px;
-			border-top: 1px solid #EEE;
-			padding: 10px 0 0;
-			color: #888;
-			font-size: 10pt;
-		}
+        .footer {
+            text-align: right;
+            margin-top: 40px;
+            border-top: 1px solid #EEE;
+            padding: 10px 0 0;
+            color: #888;
+            font-size: 10pt;
+        }
 
-		pre {
-			font: 13px/18px monospace, "Courier New";
-			display: block;
-			border-left: 5px solid #ffdb4d;
-			padding: 5px 10px;
-			background-color: #FFF8E8;
-		}
+        pre {
+            font: 13px/18px monospace, "Courier New";
+            display: block;
+            border-left: 5px solid #ffdb4d;
+            padding: 5px 10px;
+            background-color: #FFF8E8;
+        }
 
-		.spoiler
-		{
-			margin-bottom: 10px;
-		}
+        .spoiler
+        {
+            margin-bottom: 10px;
+        }
 
-		.spoiler_body
-		{
-			display: none;
-		}
+        .spoiler_body
+        {
+            display: none;
+        }
 
-		.spoiler_title
-		{
-			color: #08f;
-			border-bottom: 1px dotted #08f;
-		}
+        .spoiler_title
+        {
+            color: #08f;
+            border-bottom: 1px dotted #08f;
+        }
 
-		.spoiler_title:hover
-		{
-			cursor: pointer;
-			color: #f00;
-			border-bottom: 1px dashed #f00;
-			text-decoration: none;
-		}
+        .spoiler_title:hover
+        {
+            cursor: pointer;
+            color: #f00;
+            border-bottom: 1px dashed #f00;
+            text-decoration: none;
+        }
 
-		.tip
-		{
-			background-color: #EEE;
-			border: 1px solid #EEE;
-			padding: 5px 10px 5px 10px;
-		}
+        .tip
+        {
+            background-color: #EEE;
+            border: 1px solid #EEE;
+            padding: 5px 10px 5px 10px;
+        }
 
-		.tip b
-		{
-			font-size: 150%;
-			color: #888;
-		}
+        .tip b
+        {
+            font-size: 150%;
+            color: #888;
+        }
 
-		.warranty {
-			font-size: 10pt;
-			color: #888;
-			line-height: 150%;
-		}
-	</style>
+        .warranty {
+            font-size: 10pt;
+            color: #888;
+            line-height: 150%;
+        }
+    </style>
 </head>
 <body>
 
@@ -216,25 +216,25 @@ try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
 <div class="page">
 
 <div>
-	<div style="float: left; margin-right: -100%; margin-top: 0; margin-left: 3px;">
-		<a href="/">
-			<svg xmlns="http://www.w3.org/2000/svg" width="90" height="80" viewBox="0 0 9 8">
-				<style>
-					.o{fill:#fc0}
-					.r{fill:#f00}
-				</style>
-				<path class="r" d="M0,7 h1 v1 h-1 z"/>
-				<path class="o" d="M0,0 h1 v7 h-1 z"/>
-				<path class="o" d="M2,0 h1 v8 h-1 z"/>
-				<path class="o" d="M4,0 h1 v8 h-1 z"/>
-				<path class="o" d="M6,0 h1 v8 h-1 z"/>
-				<path class="o" d="M8,3.25 h1 v1.5 h-1 z"/>
-			</svg>
-		</a>
-	</div>
+    <div style="float: left; margin-right: -100%; margin-top: 0; margin-left: 3px;">
+        <a href="/">
+            <svg xmlns="http://www.w3.org/2000/svg" width="90" height="80" viewBox="0 0 9 8">
+                <style>
+                    .o{fill:#fc0}
+                    .r{fill:#f00}
+                </style>
+                <path class="r" d="M0,7 h1 v1 h-1 z"/>
+                <path class="o" d="M0,0 h1 v7 h-1 z"/>
+                <path class="o" d="M2,0 h1 v8 h-1 z"/>
+                <path class="o" d="M4,0 h1 v8 h-1 z"/>
+                <path class="o" d="M6,0 h1 v8 h-1 z"/>
+                <path class="o" d="M8,3.25 h1 v1.5 h-1 z"/>
+            </svg>
+        </a>
+    </div>
 
-	<h1><a class="title_link" href="/">ClickHouse</a></h1>
-	<h2>Quick start guide</h2>
+    <h1><a class="title_link" href="/">ClickHouse</a></h1>
+    <h2>Quick start guide</h2>
 </div>
 
 <p>Let's get started with sample dataset from open sources. We will use USA civil flights data since 1987 till 2015. It's hard to call this sample a Big Data (contains 166 millions rows, 63 Gb of uncompressed data) but this allows us to quickly get to work. Dataset is available for download <a href="https://yadi.sk/d/pOZxpa42sDdgm">here</a>. Also you may download it from the original datasource <a href="https://github.com/yandex/ClickHouse/raw/master/doc/example_datasets/1_ontime.txt">as described here</a>.</p>
@@ -701,8 +701,8 @@ ENGINE = ReplicatedMergeTree(
 <script type="text/javascript">
 
 $('.spoiler_title').click(function() {
-	console.log($(this).parent());
-	$(this).next('.spoiler_body').toggle(100);
+    console.log($(this).parent());
+    $(this).next('.spoiler_body').toggle(100);
 });
 
 </script>

@@ -15,42 +15,42 @@ class LocalServer : public Poco::Util::Application
 {
 public:
 
-	LocalServer();
+    LocalServer();
 
-	void initialize(Poco::Util::Application & self) override;
+    void initialize(Poco::Util::Application & self) override;
 
-	void defineOptions(Poco::Util::OptionSet& _options) override;
+    void defineOptions(Poco::Util::OptionSet& _options) override;
 
-	int main(const std::vector<std::string> & args) override;
+    int main(const std::vector<std::string> & args) override;
 
-	~LocalServer();
+    ~LocalServer();
 
 private:
 
-	/** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
-	  * This query will be executed first, before queries passed through --query argument
-	  * Returns empty string if it cannot compose that query.
-	  */
-	std::string getInitialCreateTableQuery();
+    /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
+      * This query will be executed first, before queries passed through --query argument
+      * Returns empty string if it cannot compose that query.
+      */
+    std::string getInitialCreateTableQuery();
 
-	void tryInitPath();
+    void tryInitPath();
 
-	void applyOptions();
+    void applyOptions();
 
-	void attachSystemTables();
+    void attachSystemTables();
 
-	void processQueries();
+    void processQueries();
 
-	void setupUsers();
+    void setupUsers();
 
-	void displayHelp();
+    void displayHelp();
 
-	void handleHelp(const std::string & name, const std::string & value);
+    void handleHelp(const std::string & name, const std::string & value);
 
 protected:
 
-	std::unique_ptr<Context> context;
-	std::string path;
+    std::unique_ptr<Context> context;
+    std::string path;
 };
 
 }

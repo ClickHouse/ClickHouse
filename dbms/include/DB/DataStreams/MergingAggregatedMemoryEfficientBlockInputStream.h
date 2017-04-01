@@ -57,100 +57,100 @@ namespace DB
 class MergingAggregatedMemoryEfficientBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	MergingAggregatedMemoryEfficientBlockInputStream(
-		BlockInputStreams inputs_, const Aggregator::Params & params, bool final_,
-		size_t reading_threads_, size_t merging_threads_);
+    MergingAggregatedMemoryEfficientBlockInputStream(
+        BlockInputStreams inputs_, const Aggregator::Params & params, bool final_,
+        size_t reading_threads_, size_t merging_threads_);
 
-	~MergingAggregatedMemoryEfficientBlockInputStream() override;
+    ~MergingAggregatedMemoryEfficientBlockInputStream() override;
 
-	String getName() const override { return "MergingAggregatedMemoryEfficient"; }
+    String getName() const override { return "MergingAggregatedMemoryEfficient"; }
 
-	String getID() const override;
+    String getID() const override;
 
-	/// Отправляет запрос (инициирует вычисления) раньше, чем read.
-	void readPrefix() override;
+    /// Отправляет запрос (инициирует вычисления) раньше, чем read.
+    void readPrefix() override;
 
-	/// Вызывается либо после того, как всё прочитано, либо после cancel-а.
-	void readSuffix() override;
+    /// Вызывается либо после того, как всё прочитано, либо после cancel-а.
+    void readSuffix() override;
 
-	/** Отличается от реализации по-умолчанию тем, что пытается остановить все источники,
-	  *  пропуская отвалившиеся по эксепшену.
-	  */
-	void cancel() override;
+    /** Отличается от реализации по-умолчанию тем, что пытается остановить все источники,
+      *  пропуская отвалившиеся по эксепшену.
+      */
+    void cancel() override;
 
 protected:
-	Block readImpl() override;
+    Block readImpl() override;
 
 private:
-	static constexpr size_t NUM_BUCKETS = 256;
+    static constexpr size_t NUM_BUCKETS = 256;
 
-	Aggregator aggregator;
-	bool final;
-	size_t reading_threads;
-	size_t merging_threads;
+    Aggregator aggregator;
+    bool final;
+    size_t reading_threads;
+    size_t merging_threads;
 
-	bool started = false;
-	bool all_read = false;
-	std::atomic<bool> has_two_level {false};
-	std::atomic<bool> has_overflows {false};
-	int current_bucket_num = -1;
+    bool started = false;
+    bool all_read = false;
+    std::atomic<bool> has_two_level {false};
+    std::atomic<bool> has_overflows {false};
+    int current_bucket_num = -1;
 
-	Logger * log = &Logger::get("MergingAggregatedMemoryEfficientBlockInputStream");
+    Logger * log = &Logger::get("MergingAggregatedMemoryEfficientBlockInputStream");
 
 
-	struct Input
-	{
-		BlockInputStreamPtr stream;
-		Block block;
-		Block overflow_block;
-		std::vector<Block> splitted_blocks;
-		bool is_exhausted = false;
+    struct Input
+    {
+        BlockInputStreamPtr stream;
+        Block block;
+        Block overflow_block;
+        std::vector<Block> splitted_blocks;
+        bool is_exhausted = false;
 
-		Input(BlockInputStreamPtr & stream_) : stream(stream_) {}
-	};
+        Input(BlockInputStreamPtr & stream_) : stream(stream_) {}
+    };
 
-	std::vector<Input> inputs;
+    std::vector<Input> inputs;
 
-	using BlocksToMerge = std::unique_ptr<BlocksList>;
+    using BlocksToMerge = std::unique_ptr<BlocksList>;
 
-	void start();
+    void start();
 
-	/// Получить блоки, которые можно мерджить. Это позволяет мерджить их параллельно в отдельных потоках.
-	BlocksToMerge getNextBlocksToMerge();
+    /// Получить блоки, которые можно мерджить. Это позволяет мерджить их параллельно в отдельных потоках.
+    BlocksToMerge getNextBlocksToMerge();
 
-	std::unique_ptr<ThreadPool> reading_pool;
+    std::unique_ptr<ThreadPool> reading_pool;
 
-	/// Для параллельного мерджа.
+    /// Для параллельного мерджа.
 
-	struct ParallelMergeData
-	{
-		ThreadPool pool;
+    struct ParallelMergeData
+    {
+        ThreadPool pool;
 
-		/// Сейчас один из мерджащих потоков получает следующие блоки для мерджа. Эта операция должна делаться последовательно.
-		std::mutex get_next_blocks_mutex;
+        /// Сейчас один из мерджащих потоков получает следующие блоки для мерджа. Эта операция должна делаться последовательно.
+        std::mutex get_next_blocks_mutex;
 
-		std::atomic<bool> exhausted {false};	/// No more source data.
-		std::atomic<bool> finish {false};		/// Need to terminate early.
+        std::atomic<bool> exhausted {false};    /// No more source data.
+        std::atomic<bool> finish {false};        /// Need to terminate early.
 
-		std::exception_ptr exception;
-		/// Следует отдавать блоки стого в порядке ключа (bucket_num).
-		/// Если значение - пустой блок - то нужно дождаться его мерджа.
-		/// (Такое значение означает обещание, что здесь будут данные. Это важно, потому что данные нужно отдавать в порядке ключа - bucket_num)
-		std::map<int, Block> merged_blocks;
-		std::mutex merged_blocks_mutex;
-		/// Событие, с помощью которого мерджащие потоки говорят главному потоку, что новый блок готов.
-		std::condition_variable merged_blocks_changed;
-		/// Событие, с помощью которого главный поток говорят мерджащим потокам, что можно обработать следующую группу блоков.
-		std::condition_variable have_space;
+        std::exception_ptr exception;
+        /// Следует отдавать блоки стого в порядке ключа (bucket_num).
+        /// Если значение - пустой блок - то нужно дождаться его мерджа.
+        /// (Такое значение означает обещание, что здесь будут данные. Это важно, потому что данные нужно отдавать в порядке ключа - bucket_num)
+        std::map<int, Block> merged_blocks;
+        std::mutex merged_blocks_mutex;
+        /// Событие, с помощью которого мерджащие потоки говорят главному потоку, что новый блок готов.
+        std::condition_variable merged_blocks_changed;
+        /// Событие, с помощью которого главный поток говорят мерджащим потокам, что можно обработать следующую группу блоков.
+        std::condition_variable have_space;
 
-		ParallelMergeData(size_t max_threads) : pool(max_threads) {}
-	};
+        ParallelMergeData(size_t max_threads) : pool(max_threads) {}
+    };
 
-	std::unique_ptr<ParallelMergeData> parallel_merge_data;
+    std::unique_ptr<ParallelMergeData> parallel_merge_data;
 
-	void mergeThread(MemoryTracker * memory_tracker);
+    void mergeThread(MemoryTracker * memory_tracker);
 
-	void finalize();
+    void finalize();
 };
 
 }

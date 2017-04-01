@@ -1051,79 +1051,79 @@ static const UInt8 length_table[10000] =
 template <typename T>
 void writeUIntTextTable(T x, DB::WriteBuffer & buf)
 {
-	union
-	{
-		char chars[20];
-		struct
-		{
-			UInt32 x0;
-			UInt32 x1;
-			UInt32 x2;
-			UInt32 x3;
-			UInt32 x4;
-		};
-	} data;
+    union
+    {
+        char chars[20];
+        struct
+        {
+            UInt32 x0;
+            UInt32 x1;
+            UInt32 x2;
+            UInt32 x3;
+            UInt32 x4;
+        };
+    } data;
 
-	UInt8 len = 4;
+    UInt8 len = 4;
 
-	if (x >= 10000000000000000UL)
-	{
-		data.x4 = decimal_table[x % 10000];
-		x /= 10000;
-		len += 4;
-	}
-	if (x >= 1000000000000UL)
-	{
-		data.x3 = decimal_table[x % 10000];
-		x /= 10000;
-		len += 4;
-	}
-	if (x >= 100000000UL)
-	{
-		data.x2 = decimal_table[x % 10000];
-		x /= 10000;
-		len += 4;
-	}
-	if (x >= 10000UL)
-	{
-		data.x1 = decimal_table[x % 10000];
-		x /= 10000;
-		len += 4;
-	}
-	data.x0 = decimal_table[x];
+    if (x >= 10000000000000000UL)
+    {
+        data.x4 = decimal_table[x % 10000];
+        x /= 10000;
+        len += 4;
+    }
+    if (x >= 1000000000000UL)
+    {
+        data.x3 = decimal_table[x % 10000];
+        x /= 10000;
+        len += 4;
+    }
+    if (x >= 100000000UL)
+    {
+        data.x2 = decimal_table[x % 10000];
+        x /= 10000;
+        len += 4;
+    }
+    if (x >= 10000UL)
+    {
+        data.x1 = decimal_table[x % 10000];
+        x /= 10000;
+        len += 4;
+    }
+    data.x0 = decimal_table[x];
 
-	buf.write(data.chars + length_table[x], len - length_table[x]);
+    buf.write(data.chars + length_table[x], len - length_table[x]);
 }
 
 template <typename T>
 void writeIntTextTable(T x, DB::WriteBuffer & buf)
 {
-	if (x == 0)
-	{
-		writeChar('0', buf);
-	}
-	else if (x < 0)
-	{
-		/// A special case for the smallest negative number
-		if (unlikely(x == std::numeric_limits<T>::min()))
-		{
-			if (sizeof(x) == 1)
-				buf.write("-128", 4);
-			else if (sizeof(x) == 2)
-				buf.write("-32768", 6);
-			else if (sizeof(x) == 4)
-				buf.write("-2147483648", 11);
-			else
-				buf.write("-9223372036854775808", 20);
-		}
-		else
-		{
-			writeChar('-', buf);
-			writeUIntTextTable(static_cast<typename boost::make_unsigned<T>::type>(-x), buf);
-		}
-	}
-	else
-		writeUIntTextTable(static_cast<typename boost::make_unsigned<T>::type>(x), buf);
+    if (x == 0)
+    {
+        writeChar('0', buf);
+    }
+    else if (x < 0)
+    {
+        /// A special case for the smallest negative number
+        if (unlikely(x == std::numeric_limits<T>::min()))
+        {
+            if (sizeof(x) == 1)
+                buf.write("-128", 4);
+            else if (sizeof(x) == 2)
+                buf.write("-32768", 6);
+            else if (sizeof(x) == 4)
+                buf.write("-2147483648", 11);
+            else
+                buf.write("-9223372036854775808", 20);
+        }
+        else
+        {
+            writeChar('-', buf);
+            writeUIntTextTable(static_cast<typename boost::make_unsigned<T>::type>(-x), buf);
+        }
+    }
+    else
+        writeUIntTextTable(static_cast<typename boost::make_unsigned<T>::type>(x), buf);
 }
 
 #endif
@@ -1132,102 +1132,102 @@ void writeIntTextTable(T x, DB::WriteBuffer & buf)
 UInt64 rdtsc()
 {
 #if __x86_64__
-	UInt64 val;
-	__asm__ __volatile__("rdtsc" : "=A" (val) : );
-	return val;
+    UInt64 val;
+    __asm__ __volatile__("rdtsc" : "=A" (val) : );
+    return val;
 #else
-	// TODO: make for arm
-	return 0;
+    // TODO: make for arm
+    return 0;
 #endif
 }
 
 
 int main(int argc, char ** argv)
 {
-/*	std::string s(' ', 20);
-	DB::WriteBufferFromString wb(s);
-	DB::Faster::writeIntText(DB::parse<UInt64>(argv[1]), wb);
-	std::cerr << s << std::endl;*/
+/*    std::string s(' ', 20);
+    DB::WriteBufferFromString wb(s);
+    DB::Faster::writeIntText(DB::parse<UInt64>(argv[1]), wb);
+    std::cerr << s << std::endl;*/
 
-	try
-	{
-		using T = UInt8;
+    try
+    {
+        using T = UInt8;
 
-		size_t n = atoi(argv[1]);
-		std::vector<T> data(n);
-		std::vector<T> data2(n);
+        size_t n = atoi(argv[1]);
+        std::vector<T> data(n);
+        std::vector<T> data2(n);
 
-		{
-			Stopwatch watch;
+        {
+            Stopwatch watch;
 
-			for (size_t i = 0; i < n; ++i)
-				data[i] = lrand48();// / lrand48();// ^ (lrand48() << 24) ^ (lrand48() << 48);
+            for (size_t i = 0; i < n; ++i)
+                data[i] = lrand48();// / lrand48();// ^ (lrand48() << 24) ^ (lrand48() << 48);
 
-			watch.stop();
-			std::cerr << std::fixed << std::setprecision(2)
-				<< "Generated " << n << " numbers (" << data.size() * sizeof(data[0]) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-				<< data.size() * sizeof(data[0]) / watch.elapsedSeconds() / 1000000 << " MB/s."
-				<< std::endl;
-		}
+            watch.stop();
+            std::cerr << std::fixed << std::setprecision(2)
+                << "Generated " << n << " numbers (" << data.size() * sizeof(data[0]) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                << data.size() * sizeof(data[0]) / watch.elapsedSeconds() / 1000000 << " MB/s."
+                << std::endl;
+        }
 
-		std::vector<char> formatted;
-		formatted.reserve(n * 21);
+        std::vector<char> formatted;
+        formatted.reserve(n * 21);
 
-		{
-			DB::WriteBufferFromVector<> wb(formatted);
-		//	DB::CompressedWriteBuffer wb2(wb1);
-		//	DB::AsynchronousWriteBuffer wb(wb2);
-			Stopwatch watch;
+        {
+            DB::WriteBufferFromVector<> wb(formatted);
+        //    DB::CompressedWriteBuffer wb2(wb1);
+        //    DB::AsynchronousWriteBuffer wb(wb2);
+            Stopwatch watch;
 
-			UInt64 tsc = rdtsc();
+            UInt64 tsc = rdtsc();
 
-			for (size_t i = 0; i < n; ++i)
-			{
-				//writeIntTextTable(data[i], wb);
-				DB::writeIntText(data[i], wb);
-				//DB::writeIntText(data[i], wb);
-				DB::writeChar('\t', wb);
-			}
+            for (size_t i = 0; i < n; ++i)
+            {
+                //writeIntTextTable(data[i], wb);
+                DB::writeIntText(data[i], wb);
+                //DB::writeIntText(data[i], wb);
+                DB::writeChar('\t', wb);
+            }
 
-			tsc = rdtsc() - tsc;
+            tsc = rdtsc() - tsc;
 
-			watch.stop();
-			std::cerr << std::fixed << std::setprecision(2)
-				<< "Written " << n << " numbers (" << wb.count() / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-				<< n / watch.elapsedSeconds() << " num/s., "
-				<< wb.count() / watch.elapsedSeconds() / 1000000 << " MB/s., "
-				<< watch.elapsed() / n << " ns/num., "
-				<< tsc / n  << " ticks/num., "
-				<< watch.elapsed() / wb.count() << " ns/byte., "
-				<< tsc / wb.count()  << " ticks/byte."
-				<< std::endl;
-		}
+            watch.stop();
+            std::cerr << std::fixed << std::setprecision(2)
+                << "Written " << n << " numbers (" << wb.count() / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                << n / watch.elapsedSeconds() << " num/s., "
+                << wb.count() / watch.elapsedSeconds() / 1000000 << " MB/s., "
+                << watch.elapsed() / n << " ns/num., "
+                << tsc / n  << " ticks/num., "
+                << watch.elapsed() / wb.count() << " ns/byte., "
+                << tsc / wb.count()  << " ticks/byte."
+                << std::endl;
+        }
 
-		{
-			DB::ReadBuffer rb(&formatted[0], formatted.size(), 0);
-		//	DB::CompressedReadBuffer rb(rb_);
-			Stopwatch watch;
+        {
+            DB::ReadBuffer rb(&formatted[0], formatted.size(), 0);
+        //    DB::CompressedReadBuffer rb(rb_);
+            Stopwatch watch;
 
-			for (size_t i = 0; i < n; ++i)
-			{
-				DB::readIntText(data2[i], rb);
-				DB::assertChar('\t', rb);
-			}
+            for (size_t i = 0; i < n; ++i)
+            {
+                DB::readIntText(data2[i], rb);
+                DB::assertChar('\t', rb);
+            }
 
-			watch.stop();
-			std::cerr << std::fixed << std::setprecision(2)
-				<< "Read " << n << " numbers (" << rb.count() / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-				<< rb.count() / watch.elapsedSeconds() / 1000000 << " MB/s."
-				<< std::endl;
-		}
+            watch.stop();
+            std::cerr << std::fixed << std::setprecision(2)
+                << "Read " << n << " numbers (" << rb.count() / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                << rb.count() / watch.elapsedSeconds() / 1000000 << " MB/s."
+                << std::endl;
+        }
 
-		std::cerr << (0 == memcmp(&data[0], &data2[0], data.size()) ? "Ok." : "Fail.") << std::endl;
-	}
-	catch (const DB::Exception & e)
-	{
-		std::cerr << e.what() << ", " << e.displayText() << std::endl;
-		return 1;
-	}
+        std::cerr << (0 == memcmp(&data[0], &data2[0], data.size()) ? "Ok." : "Fail.") << std::endl;
+    }
+    catch (const DB::Exception & e)
+    {
+        std::cerr << e.what() << ", " << e.displayText() << std::endl;
+        return 1;
+    }
 
-	return 0;
+    return 0;
 }

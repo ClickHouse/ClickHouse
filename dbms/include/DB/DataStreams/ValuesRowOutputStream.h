@@ -14,17 +14,17 @@ class WriteBuffer;
 class ValuesRowOutputStream : public IRowOutputStream
 {
 public:
-	ValuesRowOutputStream(WriteBuffer & ostr_);
+    ValuesRowOutputStream(WriteBuffer & ostr_);
 
-	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
-	void writeFieldDelimiter() override;
-	void writeRowStartDelimiter() override;
-	void writeRowEndDelimiter() override;
-	void writeRowBetweenDelimiter() override;
-	void flush() override;
+    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeFieldDelimiter() override;
+    void writeRowStartDelimiter() override;
+    void writeRowEndDelimiter() override;
+    void writeRowBetweenDelimiter() override;
+    void flush() override;
 
 private:
-	WriteBuffer & ostr;
+    WriteBuffer & ostr;
 };
 
 }

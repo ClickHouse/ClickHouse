@@ -42,116 +42,116 @@ namespace DB
 /// Table expression, optionally with alias.
 struct ASTTableExpression : public IAST
 {
-	/// One of fields is non-nullptr.
-	ASTPtr database_and_table_name;
-	ASTPtr table_function;
-	ASTPtr subquery;
+    /// One of fields is non-nullptr.
+    ASTPtr database_and_table_name;
+    ASTPtr table_function;
+    ASTPtr subquery;
 
-	/// Modifiers
-	bool final = false;
-	ASTPtr sample_size;
-	ASTPtr sample_offset;
+    /// Modifiers
+    bool final = false;
+    ASTPtr sample_size;
+    ASTPtr sample_offset;
 
-	using IAST::IAST;
-	String getID() const override { return "TableExpression"; }
-	ASTPtr clone() const override;
-	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    using IAST::IAST;
+    String getID() const override { return "TableExpression"; }
+    ASTPtr clone() const override;
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
 /// How to JOIN another table.
 struct ASTTableJoin : public IAST
 {
-	/// Algorithm for distributed query processing.
-	enum class Locality
-	{
-		Unspecified,
-		Local,	/// Perform JOIN, using only data available on same servers (co-located data).
-		Global	/// Collect and merge data from remote servers, and broadcast it to each server.
-	};
+    /// Algorithm for distributed query processing.
+    enum class Locality
+    {
+        Unspecified,
+        Local,    /// Perform JOIN, using only data available on same servers (co-located data).
+        Global    /// Collect and merge data from remote servers, and broadcast it to each server.
+    };
 
-	/// Allows more optimal JOIN for typical cases.
-	enum class Strictness
-	{
-		Unspecified,
-		Any,	/// If there are many suitable rows to join, use any from them (also known as unique JOIN).
-		All		/// If there are many suitable rows to join, use all of them and replicate rows of "left" table (usual semantic of JOIN).
-	};
+    /// Allows more optimal JOIN for typical cases.
+    enum class Strictness
+    {
+        Unspecified,
+        Any,    /// If there are many suitable rows to join, use any from them (also known as unique JOIN).
+        All        /// If there are many suitable rows to join, use all of them and replicate rows of "left" table (usual semantic of JOIN).
+    };
 
-	/// Join method.
-	enum class Kind
-	{
-		Inner,	/// Leave ony rows that was JOINed.
-		Left,	/// If in "right" table there is no corresponding rows, use default values instead.
-		Right,
-		Full,
-		Cross,	/// Direct product. Strictness and condition doesn't matter.
-		Comma	/// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
-	};
+    /// Join method.
+    enum class Kind
+    {
+        Inner,    /// Leave ony rows that was JOINed.
+        Left,    /// If in "right" table there is no corresponding rows, use default values instead.
+        Right,
+        Full,
+        Cross,    /// Direct product. Strictness and condition doesn't matter.
+        Comma    /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
+    };
 
-	Locality locality = Locality::Unspecified;
-	Strictness strictness = Strictness::Unspecified;
-	Kind kind = Kind::Inner;
+    Locality locality = Locality::Unspecified;
+    Strictness strictness = Strictness::Unspecified;
+    Kind kind = Kind::Inner;
 
-	/// Condition. One of fields is non-nullptr.
-	ASTPtr using_expression_list;
-	ASTPtr on_expression;
+    /// Condition. One of fields is non-nullptr.
+    ASTPtr using_expression_list;
+    ASTPtr on_expression;
 
-	using IAST::IAST;
-	String getID() const override { return "TableJoin"; }
-	ASTPtr clone() const override;
+    using IAST::IAST;
+    String getID() const override { return "TableJoin"; }
+    ASTPtr clone() const override;
 
-	void formatImplBeforeTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
-	void formatImplAfterTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
-	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImplBeforeTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    void formatImplAfterTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
 /// Specification of ARRAY JOIN.
 struct ASTArrayJoin : public IAST
 {
-	enum class Kind
-	{
-		Inner,	/// If array is empty, row will not present (default).
-		Left,	/// If array is empty, leave row with default values instead of array elements.
-	};
+    enum class Kind
+    {
+        Inner,    /// If array is empty, row will not present (default).
+        Left,    /// If array is empty, leave row with default values instead of array elements.
+    };
 
-	Kind kind = Kind::Inner;
+    Kind kind = Kind::Inner;
 
-	/// List of array or nested names to JOIN, possible with aliases.
-	ASTPtr expression_list;
+    /// List of array or nested names to JOIN, possible with aliases.
+    ASTPtr expression_list;
 
-	using IAST::IAST;
-	String getID() const override { return "ArrayJoin"; }
-	ASTPtr clone() const override;
-	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    using IAST::IAST;
+    String getID() const override { return "ArrayJoin"; }
+    ASTPtr clone() const override;
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
 /// Element of list.
 struct ASTTablesInSelectQueryElement : public IAST
 {
-	/** For first element of list, either table_expression or array_join element could be non-nullptr.
-	  * For former elements, either table_join and table_expression are both non-nullptr, or array_join is non-nullptr.
-	  */
-	ASTPtr table_join;			/// How to JOIN a table, if table_expression is non-nullptr.
-	ASTPtr table_expression;	/// Table.
-	ASTPtr array_join;			/// Arrays to JOIN.
+    /** For first element of list, either table_expression or array_join element could be non-nullptr.
+      * For former elements, either table_join and table_expression are both non-nullptr, or array_join is non-nullptr.
+      */
+    ASTPtr table_join;            /// How to JOIN a table, if table_expression is non-nullptr.
+    ASTPtr table_expression;    /// Table.
+    ASTPtr array_join;            /// Arrays to JOIN.
 
-	using IAST::IAST;
-	String getID() const override { return "TablesInSelectQueryElement"; }
-	ASTPtr clone() const override;
-	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    using IAST::IAST;
+    String getID() const override { return "TablesInSelectQueryElement"; }
+    ASTPtr clone() const override;
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
 /// The list. Elements are in 'children' field.
 struct ASTTablesInSelectQuery : public IAST
 {
-	using IAST::IAST;
-	String getID() const override { return "TablesInSelectQuery"; }
-	ASTPtr clone() const override;
-	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    using IAST::IAST;
+    String getID() const override { return "TablesInSelectQuery"; }
+    ASTPtr clone() const override;
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 

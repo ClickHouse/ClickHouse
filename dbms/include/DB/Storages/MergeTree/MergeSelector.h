@@ -25,36 +25,36 @@ namespace DB
 class IMergeSelector
 {
 public:
-	/// Information about data part relevant to merge selecting strategy.
-	struct Part
-	{
-		/// Size of data part in bytes.
-		size_t size;
+    /// Information about data part relevant to merge selecting strategy.
+    struct Part
+    {
+        /// Size of data part in bytes.
+        size_t size;
 
-		/// How old this data part in seconds.
-		time_t age;
+        /// How old this data part in seconds.
+        time_t age;
 
-		/// Depth of tree of merges by which this part was created. New parts has zero level.
-		unsigned level;
+        /// Depth of tree of merges by which this part was created. New parts has zero level.
+        unsigned level;
 
-		/// Opaque pointer to avoid dependencies (it is not possible to do forward declaration of typedef).
-		const void * data;
-	};
+        /// Opaque pointer to avoid dependencies (it is not possible to do forward declaration of typedef).
+        const void * data;
+    };
 
-	/// Parts are belong to partitions. Only parts within same partition could be merged.
-	using PartsInPartition = std::vector<Part>;
+    /// Parts are belong to partitions. Only parts within same partition could be merged.
+    using PartsInPartition = std::vector<Part>;
 
-	/// Parts are in some specific order. Parts could be merged only in contiguous ranges.
-	using Partitions = std::vector<PartsInPartition>;
+    /// Parts are in some specific order. Parts could be merged only in contiguous ranges.
+    using Partitions = std::vector<PartsInPartition>;
 
-	/** Function could be called at any frequency and it must decide, should you do any merge at all.
-	  * If better not to do any merge, it returns empty result.
-	  */
-	virtual PartsInPartition select(
-		const Partitions & partitions,
-		const size_t max_total_size_to_merge) = 0;
+    /** Function could be called at any frequency and it must decide, should you do any merge at all.
+      * If better not to do any merge, it returns empty result.
+      */
+    virtual PartsInPartition select(
+        const Partitions & partitions,
+        const size_t max_total_size_to_merge) = 0;
 
-	virtual ~IMergeSelector() {}
+    virtual ~IMergeSelector() {}
 };
 
 }

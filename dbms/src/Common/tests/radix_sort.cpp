@@ -11,108 +11,108 @@ using Key = double;
 
 void NO_INLINE sort1(Key * data, size_t size)
 {
-	std::sort(data, data + size);
+    std::sort(data, data + size);
 }
 
 void NO_INLINE sort2(Key * data, size_t size)
 {
-	radixSort(data, size);
+    radixSort(data, size);
 }
 
 void NO_INLINE sort3(Key * data, size_t size)
 {
-	std::sort(data, data + size, [](Key a, Key b)
-	{
-		return RadixSortFloatTransform<uint32_t>::forward(ext::bit_cast<uint32_t>(a))
-			< RadixSortFloatTransform<uint32_t>::forward(ext::bit_cast<uint32_t>(b));
-	});
+    std::sort(data, data + size, [](Key a, Key b)
+    {
+        return RadixSortFloatTransform<uint32_t>::forward(ext::bit_cast<uint32_t>(a))
+            < RadixSortFloatTransform<uint32_t>::forward(ext::bit_cast<uint32_t>(b));
+    });
 }
 
 
 int main(int argc, char ** argv)
 {
-	size_t n = DB::parse<size_t>(argv[1]);
-	size_t method = DB::parse<size_t>(argv[2]);
+    size_t n = DB::parse<size_t>(argv[1]);
+    size_t method = DB::parse<size_t>(argv[2]);
 
-	std::vector<Key> data(n);
+    std::vector<Key> data(n);
 
-//	srand(time(0));
+//    srand(time(0));
 
-	{
-		Stopwatch watch;
+    {
+        Stopwatch watch;
 
-		for (auto & elem : data)
-			elem = rand();
+        for (auto & elem : data)
+            elem = rand();
 
-		watch.stop();
-		double elapsed = watch.elapsedSeconds();
-		std::cerr
-			<< "Filled in " << elapsed
-			<< " (" << n / elapsed << " elem/sec., "
-			<< n * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
-			<< std::endl;
-	}
+        watch.stop();
+        double elapsed = watch.elapsedSeconds();
+        std::cerr
+            << "Filled in " << elapsed
+            << " (" << n / elapsed << " elem/sec., "
+            << n * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
+            << std::endl;
+    }
 
-	if (n <= 100)
-	{
-		std::cerr << std::endl;
-		for (const auto & elem : data)
-			std::cerr << elem << ' ';
-		std::cerr << std::endl;
-	}
+    if (n <= 100)
+    {
+        std::cerr << std::endl;
+        for (const auto & elem : data)
+            std::cerr << elem << ' ';
+        std::cerr << std::endl;
+    }
 
 
-	{
-		Stopwatch watch;
+    {
+        Stopwatch watch;
 
-		if (method == 1)	sort1(&data[0], n);
-		if (method == 2)	sort2(&data[0], n);
-		if (method == 3)	sort3(&data[0], n);
+        if (method == 1)    sort1(&data[0], n);
+        if (method == 2)    sort2(&data[0], n);
+        if (method == 3)    sort3(&data[0], n);
 
-		watch.stop();
-		double elapsed = watch.elapsedSeconds();
-		std::cerr
-			<< "Sorted in " << elapsed
-			<< " (" << n / elapsed << " elem/sec., "
-			<< n * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
-			<< std::endl;
-	}
+        watch.stop();
+        double elapsed = watch.elapsedSeconds();
+        std::cerr
+            << "Sorted in " << elapsed
+            << " (" << n / elapsed << " elem/sec., "
+            << n * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
+            << std::endl;
+    }
 
-	{
-		Stopwatch watch;
+    {
+        Stopwatch watch;
 
-		size_t i = 1;
-		while (i < n)
-		{
-			if (!(data[i - 1] <= data[i]))
-				break;
-			++i;
-		}
+        size_t i = 1;
+        while (i < n)
+        {
+            if (!(data[i - 1] <= data[i]))
+                break;
+            ++i;
+        }
 
-		watch.stop();
-		double elapsed = watch.elapsedSeconds();
-		std::cerr
-			<< "Checked in " << elapsed
-			<< " (" << n / elapsed << " elem/sec., "
-			<< n * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
-			<< std::endl
-			<< "Result: " << (i == n ? "Ok." : "Fail!") << std::endl;
-	}
+        watch.stop();
+        double elapsed = watch.elapsedSeconds();
+        std::cerr
+            << "Checked in " << elapsed
+            << " (" << n / elapsed << " elem/sec., "
+            << n * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
+            << std::endl
+            << "Result: " << (i == n ? "Ok." : "Fail!") << std::endl;
+    }
 
-	if (n <= 1000)
-	{
-		std::cerr << std::endl;
+    if (n <= 1000)
+    {
+        std::cerr << std::endl;
 
-		std::cerr << data[0] << ' ';
-		for (size_t i = 1; i < n; ++i)
-		{
-			if (!(data[i - 1] <= data[i]))
-				std::cerr << "*** ";
-			std::cerr << data[i] << ' ';
-		}
+        std::cerr << data[0] << ' ';
+        for (size_t i = 1; i < n; ++i)
+        {
+            if (!(data[i - 1] <= data[i]))
+                std::cerr << "*** ";
+            std::cerr << data[i] << ' ';
+        }
 
-		std::cerr << std::endl;
-	}
+        std::cerr << std::endl;
+    }
 
-	return 0;
+    return 0;
 }

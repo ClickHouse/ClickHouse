@@ -12,23 +12,23 @@ namespace DB
 class WriteBufferFromTemporaryFile : public WriteBufferFromFile, public IReadableWriteBuffer
 {
 public:
-	using Ptr = std::shared_ptr<WriteBufferFromTemporaryFile>;
+    using Ptr = std::shared_ptr<WriteBufferFromTemporaryFile>;
 
-	static Ptr create(const std::string & tmp_dir);
+    static Ptr create(const std::string & tmp_dir);
 
-	~WriteBufferFromTemporaryFile() override;
-
-protected:
-
-	WriteBufferFromTemporaryFile(std::unique_ptr<Poco::TemporaryFile> && tmp_file);
-
-	std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
+    ~WriteBufferFromTemporaryFile() override;
 
 protected:
 
-	std::unique_ptr<Poco::TemporaryFile> tmp_file;
+    WriteBufferFromTemporaryFile(std::unique_ptr<Poco::TemporaryFile> && tmp_file);
 
-	friend class ReadBufferFromTemporaryWriteBuffer;
+    std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
+
+protected:
+
+    std::unique_ptr<Poco::TemporaryFile> tmp_file;
+
+    friend class ReadBufferFromTemporaryWriteBuffer;
 };
 
 }

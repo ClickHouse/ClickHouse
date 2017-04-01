@@ -15,56 +15,56 @@
 
 struct ClearableHashSetState
 {
-	UInt32 version = 1;
+    UInt32 version = 1;
 
-	/// Сериализация, в бинарном и текстовом виде.
-	void write(DB::WriteBuffer & wb) const 		{ DB::writeBinary(version, wb); }
-	void writeText(DB::WriteBuffer & wb) const 	{ DB::writeText(version, wb); }
+    /// Сериализация, в бинарном и текстовом виде.
+    void write(DB::WriteBuffer & wb) const         { DB::writeBinary(version, wb); }
+    void writeText(DB::WriteBuffer & wb) const     { DB::writeText(version, wb); }
 
-	/// Десериализация, в бинарном и текстовом виде.
-	void read(DB::ReadBuffer & rb) 				{ DB::readBinary(version, rb); }
-	void readText(DB::ReadBuffer & rb) 			{ DB::readText(version, rb); }
+    /// Десериализация, в бинарном и текстовом виде.
+    void read(DB::ReadBuffer & rb)                 { DB::readBinary(version, rb); }
+    void readText(DB::ReadBuffer & rb)             { DB::readText(version, rb); }
 };
 
 
 template <typename Key, typename BaseCell>
 struct ClearableHashTableCell : public BaseCell
 {
-	using State = ClearableHashSetState;
-	using value_type = typename BaseCell::value_type;
+    using State = ClearableHashSetState;
+    using value_type = typename BaseCell::value_type;
 
-	UInt32 version;
+    UInt32 version;
 
-	bool isZero(const State & state) const { return version != state.version; }
-	static bool isZero(const Key & key, const State & state) { return false; }
+    bool isZero(const State & state) const { return version != state.version; }
+    static bool isZero(const Key & key, const State & state) { return false; }
 
-	/// Установить значение ключа в ноль.
-	void setZero() { version = 0; }
+    /// Установить значение ключа в ноль.
+    void setZero() { version = 0; }
 
-	/// Нужно ли хранить нулевой ключ отдельно (то есть, могут ли в хэш-таблицу вставить нулевой ключ).
-	static constexpr bool need_zero_value_storage = false;
+    /// Нужно ли хранить нулевой ключ отдельно (то есть, могут ли в хэш-таблицу вставить нулевой ключ).
+    static constexpr bool need_zero_value_storage = false;
 
-	ClearableHashTableCell() {}
-	ClearableHashTableCell(const Key & key_, const State & state) : BaseCell(key_, state), version(state.version) {}
+    ClearableHashTableCell() {}
+    ClearableHashTableCell(const Key & key_, const State & state) : BaseCell(key_, state), version(state.version) {}
 };
 
 
 template
 <
-	typename Key,
-	typename Hash = DefaultHash<Key>,
-	typename Grower = HashTableGrower<>,
-	typename Allocator = HashTableAllocator
+    typename Key,
+    typename Hash = DefaultHash<Key>,
+    typename Grower = HashTableGrower<>,
+    typename Allocator = HashTableAllocator
 >
 class ClearableHashSet : public HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
 {
 public:
-	using key_type = Key;
-	using value_type = typename ClearableHashSet::cell_type::value_type;
+    using key_type = Key;
+    using value_type = typename ClearableHashSet::cell_type::value_type;
 
-	void clear()
-	{
-		++this->version;
-		this->m_size = 0;
-	}
+    void clear()
+    {
+        ++this->version;
+        this->m_size = 0;
+    }
 };

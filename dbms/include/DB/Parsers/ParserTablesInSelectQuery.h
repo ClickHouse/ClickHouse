@@ -11,38 +11,38 @@ namespace DB
 class ParserTablesInSelectQuery : public IParserBase
 {
 protected:
-	const char * getName() const { return "table, table function, subquery or list of joined tables"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "table, table function, subquery or list of joined tables"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
 class ParserTablesInSelectQueryElement : public IParserBase
 {
 public:
-	ParserTablesInSelectQueryElement(bool is_first) : is_first(is_first) {}
+    ParserTablesInSelectQueryElement(bool is_first) : is_first(is_first) {}
 
 protected:
-	const char * getName() const { return "table, table function, subquery or list of joined tables"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "table, table function, subquery or list of joined tables"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 
 private:
-	bool is_first;
+    bool is_first;
 };
 
 
 class ParserTableExpression : public IParserBase
 {
 protected:
-	const char * getName() const { return "table or subquery or table function"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "table or subquery or table function"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 
 class ParserArrayJoin : public IParserBase
 {
 protected:
-	const char * getName() const { return "array join"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "array join"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 

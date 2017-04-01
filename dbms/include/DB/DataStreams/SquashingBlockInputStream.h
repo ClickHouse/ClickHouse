@@ -12,23 +12,23 @@ namespace DB
 class SquashingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	SquashingBlockInputStream(BlockInputStreamPtr & src, size_t min_block_size_rows, size_t min_block_size_bytes);
+    SquashingBlockInputStream(BlockInputStreamPtr & src, size_t min_block_size_rows, size_t min_block_size_bytes);
 
-	String getName() const override { return "Squashing"; }
+    String getName() const override { return "Squashing"; }
 
-	String getID() const override
-	{
-		std::stringstream res;
-		res << "Squashing(" << children.at(0)->getID() << ")";
-		return res.str();
-	}
+    String getID() const override
+    {
+        std::stringstream res;
+        res << "Squashing(" << children.at(0)->getID() << ")";
+        return res.str();
+    }
 
 protected:
-	Block readImpl() override;
+    Block readImpl() override;
 
 private:
-	SquashingTransform transform;
-	bool all_read = false;
+    SquashingTransform transform;
+    bool all_read = false;
 };
 
 }

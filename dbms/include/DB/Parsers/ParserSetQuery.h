@@ -13,14 +13,14 @@ namespace DB
 class ParserSetQuery : public IParserBase
 {
 public:
-	ParserSetQuery(bool parse_only_internals_ = false) : parse_only_internals(parse_only_internals_) {}
+    ParserSetQuery(bool parse_only_internals_ = false) : parse_only_internals(parse_only_internals_) {}
 
 protected:
-	const char * getName() const { return "SET query"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "SET query"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 
-	/// Парсить список name = value пар, без SET [GLOBAL].
-	bool parse_only_internals;
+    /// Парсить список name = value пар, без SET [GLOBAL].
+    bool parse_only_internals;
 };
 
 }

@@ -18,18 +18,18 @@ class WriteBuffer;
   */
 struct AnalyzeLambdas
 {
-	void process(ASTPtr & ast);
+    void process(ASTPtr & ast);
 
-	/// Parameters of lambda expressions.
-	using LambdaParameters = std::vector<String>;
-	static LambdaParameters extractLambdaParameters(ASTPtr & ast);
+    /// Parameters of lambda expressions.
+    using LambdaParameters = std::vector<String>;
+    static LambdaParameters extractLambdaParameters(ASTPtr & ast);
 
 
-	using HigherOrderFunctions = std::vector<ASTPtr>;
-	HigherOrderFunctions higher_order_functions;
+    using HigherOrderFunctions = std::vector<ASTPtr>;
+    HigherOrderFunctions higher_order_functions;
 
-	/// Debug output
-	void dump(WriteBuffer & out) const;
+    /// Debug output
+    void dump(WriteBuffer & out) const;
 };
 
 }
