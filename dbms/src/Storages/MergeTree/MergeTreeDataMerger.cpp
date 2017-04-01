@@ -681,14 +681,22 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
             ColumnGathererStream column_gathered_stream(column_part_streams, column_name, merged_rows_sources, DEFAULT_BLOCK_SIZE);
             MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, false, compression_method, offset_written);
+            size_t column_elems_written = 0;
 
             column_to.writePrefix();
             while ((block = column_gathered_stream.read()))
             {
+                column_elems_written += block.rows();
                 column_to.write(block);
             }
             column_gathered_stream.readSuffix();
             checksums_gathered_columns.add(column_to.writeSuffixAndGetChecksums());
+
+            if (rows_written != column_elems_written)
+            {
+                throw Exception("Written " + toString(column_elems_written) + " elements of column " + column_name +
+                                ", but " + toString(rows_written) + " rows of PK columns", ErrorCodes::LOGICAL_ERROR);
+            }
 
             if (typeid_cast<const DataTypeArray *>(column_type.get()))
                 offset_columns_written.emplace(offset_column_name);
