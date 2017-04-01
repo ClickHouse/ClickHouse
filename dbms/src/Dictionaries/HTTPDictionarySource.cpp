@@ -1,16 +1,16 @@
-#include <DB/Dictionaries/HTTPDictionarySource.h>
+#include <Dictionaries/HTTPDictionarySource.h>
 
 #include <Poco/Net/HTTPRequest.h>
 
-#include <DB/Interpreters/Context.h>
-#include <DB/Dictionaries/OwningBlockInputStream.h>
-#include <DB/IO/ReadWriteBufferFromHTTP.h>
+#include <Interpreters/Context.h>
+#include <Dictionaries/OwningBlockInputStream.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 
-#include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/IO/WriteBufferFromOStream.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteBufferFromOStream.h>
 
-#include <DB/Dictionaries/ExecutableDictionarySource.h> // idsToBuffer, columnsToBuffer
+#include <Dictionaries/ExecutableDictionarySource.h> // idsToBuffer, columnsToBuffer
 
 #include <common/logger_useful.h>
 

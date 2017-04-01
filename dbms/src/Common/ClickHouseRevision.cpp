@@ -1,5 +1,5 @@
-#include <DB/Common/ClickHouseRevision.h>
-#include <DB/Common/config_version.h>
+#include <Common/ClickHouseRevision.h>
+#include <Common/config_version.h>
 
 namespace ClickHouseRevision
 {

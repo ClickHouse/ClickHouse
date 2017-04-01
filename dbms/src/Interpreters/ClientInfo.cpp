@@ -1,13 +1,13 @@
 #include <unistd.h>
 
-#include <DB/Interpreters/ClientInfo.h>
-#include <DB/IO/ReadBuffer.h>
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/Core/Defines.h>
-#include <DB/Common/getFQDNOrHostName.h>
-#include <DB/Common/ClickHouseRevision.h>
+#include <Interpreters/ClientInfo.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Core/Defines.h>
+#include <Common/getFQDNOrHostName.h>
+#include <Common/ClickHouseRevision.h>
 
 
 namespace DB

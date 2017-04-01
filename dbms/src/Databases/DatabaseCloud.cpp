@@ -1,18 +1,18 @@
 #include <zkutil/ZooKeeper.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Common/escapeForFileName.h>
-#include <DB/Common/SipHash.h>
-#include <DB/Common/UInt128.h>
-#include <DB/Databases/DatabaseCloud.h>
-#include <DB/Databases/DatabasesCommon.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/ReadBufferFromString.h>
-#include <DB/IO/HexWriteBuffer.h>
-#include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/ParserCreateQuery.h>
+#include <Interpreters/Context.h>
+#include <Common/escapeForFileName.h>
+#include <Common/SipHash.h>
+#include <Common/UInt128.h>
+#include <Databases/DatabaseCloud.h>
+#include <Databases/DatabasesCommon.h>
+#include <IO/CompressedWriteBuffer.h>
+#include <IO/CompressedReadBuffer.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/HexWriteBuffer.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
 
 
 namespace DB

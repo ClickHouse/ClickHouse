@@ -1,14 +1,14 @@
-#include <DB/Core/Block.h>
-#include <DB/Columns/ColumnConst.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Parsers/IAST.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Interpreters/ExpressionActions.h>
-#include <DB/Interpreters/evaluateConstantExpression.h>
+#include <Core/Block.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
+#include <Parsers/IAST.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 
 namespace DB

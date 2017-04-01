@@ -1,12 +1,12 @@
-#include <DB/Core/FieldVisitors.h>
+#include <Core/FieldVisitors.h>
 
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
-#include <DB/Columns/ColumnAggregateFunction.h>
-#include <DB/Columns/ColumnConstAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConstAggregateFunction.h>
 
-#include <DB/DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 
 namespace DB

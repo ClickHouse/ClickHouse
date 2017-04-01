@@ -5,9 +5,9 @@
 
 #include <common/logger_useful.h>
 
-#include <DB/Interpreters/Context.h>
-#include <DB/Common/setThreadName.h>
-#include <DB/Common/ConfigProcessor.h>
+#include <Interpreters/Context.h>
+#include <Common/setThreadName.h>
+#include <Common/ConfigProcessor.h>
 
 
 namespace DB

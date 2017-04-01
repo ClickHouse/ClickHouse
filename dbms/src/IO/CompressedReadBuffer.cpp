@@ -1,4 +1,4 @@
-#include <DB/IO/CompressedReadBuffer.h>
+#include <IO/CompressedReadBuffer.h>
 
 
 namespace DB

@@ -1,5 +1,5 @@
-#include <DB/Columns/ColumnString.h>
-#include <DB/Interpreters/SetVariants.h>
+#include <Columns/ColumnString.h>
+#include <Interpreters/SetVariants.h>
 
 namespace DB
 {

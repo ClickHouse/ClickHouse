@@ -1,11 +1,11 @@
-#include <DB/Storages/System/StorageSystemClusters.h>
-#include <DB/Interpreters/Cluster.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Interpreters/Context.h>
+#include <Storages/System/StorageSystemClusters.h>
+#include <Interpreters/Cluster.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

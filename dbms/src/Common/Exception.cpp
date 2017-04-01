@@ -6,9 +6,9 @@
 
 #include <common/logger_useful.h>
 
-#include <DB/IO/WriteHelpers.h>
+#include <IO/WriteHelpers.h>
 
-#include <DB/Common/Exception.h>
+#include <Common/Exception.h>
 
 
 namespace DB

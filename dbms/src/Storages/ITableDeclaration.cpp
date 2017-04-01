@@ -1,10 +1,10 @@
 #include <unordered_set>
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
-#include <DB/Storages/ITableDeclaration.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTNameTypePair.h>
-#include <DB/Interpreters/Context.h>
+#include <Storages/ITableDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTNameTypePair.h>
+#include <Interpreters/Context.h>
 #include <ext/map.hpp>
 #include <ext/identity.hpp>
 #include <ext/collection_cast.hpp>

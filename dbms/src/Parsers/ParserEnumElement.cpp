@@ -1,7 +1,7 @@
-#include <DB/Parsers/ParserEnumElement.h>
+#include <Parsers/ParserEnumElement.h>
 
-#include <DB/Parsers/ASTEnumElement.h>
-#include <DB/Parsers/CommonParsers.h>
+#include <Parsers/ASTEnumElement.h>
+#include <Parsers/CommonParsers.h>
 
 
 namespace DB

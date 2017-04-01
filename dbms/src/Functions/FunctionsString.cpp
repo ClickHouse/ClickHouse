@@ -1,11 +1,11 @@
-﻿#include <DB/Functions/FunctionsString.h>
+﻿#include <Functions/FunctionsString.h>
 
 #include <ext/range.hpp>
-#include <DB/Columns/ColumnArray.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsArray.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsArray.h>
+#include <IO/WriteHelpers.h>
 
 
 #if __SSE2__

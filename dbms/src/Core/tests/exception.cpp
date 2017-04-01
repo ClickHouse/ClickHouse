@@ -2,7 +2,7 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <DB/Common/Exception.h>
+#include <Common/Exception.h>
 
 
 int main(int argc, char ** argv)

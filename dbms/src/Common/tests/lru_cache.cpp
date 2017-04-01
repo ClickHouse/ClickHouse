@@ -1,5 +1,5 @@
-#include <DB/Common/LRUCache.h>
-#include <DB/Common/Exception.h>
+#include <Common/LRUCache.h>
+#include <Common/Exception.h>
 
 #include <iostream>
 #include <string>

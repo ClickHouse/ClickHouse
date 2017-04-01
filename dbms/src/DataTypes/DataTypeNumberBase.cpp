@@ -1,9 +1,9 @@
-#include <DB/DataTypes/DataTypeNumberBase.h>
-#include <DB/Columns/ColumnVector.h>
-#include <DB/Columns/ColumnConst.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/Common/NaNUtils.h>
+#include <DataTypes/DataTypeNumberBase.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnConst.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Common/NaNUtils.h>
 
 
 namespace DB

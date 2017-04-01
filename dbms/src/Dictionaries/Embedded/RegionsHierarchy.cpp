@@ -1,4 +1,4 @@
-#include <DB/Dictionaries/Embedded/RegionsHierarchy.h>
+#include <Dictionaries/Embedded/RegionsHierarchy.h>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
@@ -7,9 +7,9 @@
 #include <common/logger_useful.h>
 #include <common/singleton.h>
 
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 static constexpr auto config_key = "path_to_regions_hierarchy_file";

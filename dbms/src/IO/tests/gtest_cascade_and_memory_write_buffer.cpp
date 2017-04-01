@@ -4,17 +4,17 @@
 
 #include <Poco/File.h>
 
-#include <DB/IO/CascadeWriteBuffer.h>
-#include <DB/IO/MemoryReadWriteBuffer.h>
-#include <DB/IO/WriteBufferFromTemporaryFile.h>
-#include <DB/IO/ReadBufferFromString.h>
-#include <DB/IO/WriteBufferFromString.h>
+#include <IO/CascadeWriteBuffer.h>
+#include <IO/MemoryReadWriteBuffer.h>
+#include <IO/WriteBufferFromTemporaryFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
-#include <DB/IO/ConcatReadBuffer.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/copyData.h>
+#include <IO/ConcatReadBuffer.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/copyData.h>
 
-#include <DB/Common/typeid_cast.h>
+#include <Common/typeid_cast.h>
 
 using namespace DB;
 

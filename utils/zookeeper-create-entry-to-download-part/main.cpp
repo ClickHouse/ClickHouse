@@ -1,4 +1,4 @@
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <zkutil/ZooKeeper.h>
 #include <boost/program_options.hpp>
 

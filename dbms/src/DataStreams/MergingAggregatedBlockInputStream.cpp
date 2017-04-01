@@ -1,6 +1,6 @@
-#include <DB/Columns/ColumnsNumber.h>
+#include <Columns/ColumnsNumber.h>
 
-#include <DB/DataStreams/MergingAggregatedBlockInputStream.h>
+#include <DataStreams/MergingAggregatedBlockInputStream.h>
 
 
 namespace DB

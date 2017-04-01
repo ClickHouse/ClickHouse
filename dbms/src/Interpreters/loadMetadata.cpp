@@ -2,22 +2,22 @@
 #include <thread>
 #include <future>
 
-#include <DB/Common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/FileStream.h>
 
-#include <DB/Parsers/ParserCreateQuery.h>
-#include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/parseQuery.h>
 
-#include <DB/Interpreters/InterpreterCreateQuery.h>
-#include <DB/Interpreters/loadMetadata.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/loadMetadata.h>
 
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/Common/escapeForFileName.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Common/escapeForFileName.h>
 
-#include <DB/Common/Stopwatch.h>
+#include <Common/Stopwatch.h>
 
 
 namespace DB

@@ -11,10 +11,10 @@
 #include <Poco/NumberFormatter.h>
 #include <Poco/Exception.h>
 
-#include <DB/Common/Exception.h>
+#include <Common/Exception.h>
 
-#include <DB/Common/ThreadPool.h>
-#include <DB/Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
+#include <Common/Stopwatch.h>
 
 #include <stdlib.h>
 #if !defined(__APPLE__) && !defined(__FreeBSD__)

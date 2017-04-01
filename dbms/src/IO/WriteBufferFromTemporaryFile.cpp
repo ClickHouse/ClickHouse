@@ -1,5 +1,5 @@
-#include <DB/IO/WriteBufferFromTemporaryFile.h>
-#include <DB/IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromTemporaryFile.h>
+#include <IO/ReadBufferFromFile.h>
 
 #include <Poco/Path.h>
 #include <fcntl.h>

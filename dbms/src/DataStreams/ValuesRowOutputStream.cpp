@@ -1,8 +1,8 @@
-#include <DB/DataStreams/ValuesRowOutputStream.h>
+#include <DataStreams/ValuesRowOutputStream.h>
 
-#include <DB/IO/WriteHelpers.h>
-#include <DB/Columns/IColumn.h>
-#include <DB/DataTypes/IDataType.h>
+#include <IO/WriteHelpers.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
 
 
 namespace DB

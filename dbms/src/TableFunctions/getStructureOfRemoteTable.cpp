@@ -1,11 +1,11 @@
-#include <DB/Interpreters/Cluster.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/DataStreams/RemoteBlockInputStream.h>
-#include <DB/DataTypes/DataTypeFactory.h>
-#include <DB/Storages/IStorage.h>
-#include <DB/Parsers/IAST.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
+#include <DataStreams/RemoteBlockInputStream.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Storages/IStorage.h>
+#include <Parsers/IAST.h>
 
-#include <DB/TableFunctions/getStructureOfRemoteTable.h>
+#include <TableFunctions/getStructureOfRemoteTable.h>
 
 
 namespace DB

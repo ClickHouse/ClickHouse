@@ -1,8 +1,8 @@
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeQueue.h>
-#include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
-#include <DB/Common/StringUtils.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Storages/MergeTree/MergeTreeDataMerger.h>
+#include <Common/StringUtils.h>
 
 
 namespace DB

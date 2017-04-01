@@ -1,10 +1,10 @@
-#include <DB/Common/Arena.h>
-#include <DB/Common/SipHash.h>
-#include <DB/Common/memcpySmall.h>
+#include <Common/Arena.h>
+#include <Common/SipHash.h>
+#include <Common/memcpySmall.h>
 
-#include <DB/IO/WriteHelpers.h>
+#include <IO/WriteHelpers.h>
 
-#include <DB/Columns/ColumnFixedString.h>
+#include <Columns/ColumnFixedString.h>
 
 #if __SSE2__
     #include <emmintrin.h>

@@ -1,4 +1,4 @@
-#include <DB/Dictionaries/Embedded/TechDataHierarchy.h>
+#include <Dictionaries/Embedded/TechDataHierarchy.h>
 
 #include <common/logger_useful.h>
 #include <mysqlxx/PoolWithFailover.h>

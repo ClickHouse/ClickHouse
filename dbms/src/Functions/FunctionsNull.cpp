@@ -1,13 +1,13 @@
-#include <DB/Functions/FunctionsNull.h>
-#include <DB/Functions/FunctionsLogical.h>
-#include <DB/Functions/FunctionsComparison.h>
-#include <DB/Functions/FunctionsConditional.h>
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeNull.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/Columns/ColumnConst.h>
-#include <DB/Columns/ColumnNullable.h>
+#include <Functions/FunctionsNull.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsComparison.h>
+#include <Functions/FunctionsConditional.h>
+#include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNull.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 
 namespace DB
 {

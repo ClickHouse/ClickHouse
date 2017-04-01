@@ -2,28 +2,28 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <DB/Common/ClickHouseRevision.h>
+#include <Common/ClickHouseRevision.h>
 
-#include <DB/Core/Defines.h>
-#include <DB/Common/Exception.h>
+#include <Core/Defines.h>
+#include <Common/Exception.h>
 
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/ReadBufferFromPocoSocket.h>
-#include <DB/IO/WriteBufferFromPocoSocket.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/copyData.h>
+#include <IO/CompressedReadBuffer.h>
+#include <IO/CompressedWriteBuffer.h>
+#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
 
-#include <DB/DataStreams/NativeBlockInputStream.h>
-#include <DB/DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/NativeBlockOutputStream.h>
 
-#include <DB/Client/Connection.h>
+#include <Client/Connection.h>
 
-#include <DB/Common/NetException.h>
-#include <DB/Common/CurrentMetrics.h>
+#include <Common/NetException.h>
+#include <Common/CurrentMetrics.h>
 
-#include <DB/Interpreters/ClientInfo.h>
+#include <Interpreters/ClientInfo.h>
 
 
 namespace CurrentMetrics

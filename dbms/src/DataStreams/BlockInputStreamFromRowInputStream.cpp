@@ -1,5 +1,5 @@
-#include <DB/Common/Exception.h>
-#include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
+#include <Common/Exception.h>
+#include <DataStreams/BlockInputStreamFromRowInputStream.h>
 
 
 namespace DB

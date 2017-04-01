@@ -1,14 +1,14 @@
-#include <DB/Storages/IStorage.h>
-#include <DB/Parsers/TablePropertiesQueriesASTs.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/DataStreams/BlockIO.h>
-#include <DB/DataStreams/copyData.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Parsers/formatAST.h>
-#include <DB/Parsers/queryToString.h>
-#include <DB/Interpreters/InterpreterDescribeQuery.h>
+#include <Storages/IStorage.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/BlockIO.h>
+#include <DataStreams/copyData.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/queryToString.h>
+#include <Interpreters/InterpreterDescribeQuery.h>
 
 
 

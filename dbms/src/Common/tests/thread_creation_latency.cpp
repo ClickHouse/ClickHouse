@@ -1,13 +1,13 @@
 #include <iostream>
 #include <iomanip>
 
-#include <DB/IO/ReadHelpers.h>
+#include <IO/ReadHelpers.h>
 
-//#include <DB/Common/ThreadPool.h>
+//#include <Common/ThreadPool.h>
 
-#include <DB/Common/Stopwatch.h>
-#include <DB/Common/Exception.h>
-#include <DB/Common/ThreadPool.h>
+#include <Common/Stopwatch.h>
+#include <Common/Exception.h>
+#include <Common/ThreadPool.h>
 
 
 int x = 0;

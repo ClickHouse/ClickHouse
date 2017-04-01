@@ -1,9 +1,9 @@
-#include <DB/Columns/ColumnString.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Databases/IDatabase.h>
-#include <DB/Storages/System/StorageSystemDatabases.h>
-#include <DB/Interpreters/Context.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <Databases/IDatabase.h>
+#include <Storages/System/StorageSystemDatabases.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB

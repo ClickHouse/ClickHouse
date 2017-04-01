@@ -5,14 +5,14 @@
 #include <fstream>
 #include <iomanip>
 
-#include <DB/Core/Types.h>
-#include <DB/Common/Stopwatch.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadHelpers.h>
+#include <Core/Types.h>
+#include <Common/Stopwatch.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/CompressedWriteBuffer.h>
+#include <IO/CompressedReadBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 
 int main(int argc, char ** argv)

@@ -3,10 +3,10 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <daemon/BaseDaemon.h>
-#include <DB/Common/CurrentMetrics.h>
-#include <DB/Common/Exception.h>
-#include <DB/Common/setThreadName.h>
-#include <DB/Interpreters/AsynchronousMetrics.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/setThreadName.h>
+#include <Interpreters/AsynchronousMetrics.h>
 
 namespace DB
 {

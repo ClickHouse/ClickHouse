@@ -1,6 +1,6 @@
-#include <DB/Storages/StorageJoin.h>
-#include <DB/Interpreters/Join.h>
-#include <DB/Interpreters/Limits.h>
+#include <Storages/StorageJoin.h>
+#include <Interpreters/Join.h>
+#include <Interpreters/Limits.h>
 
 
 namespace DB

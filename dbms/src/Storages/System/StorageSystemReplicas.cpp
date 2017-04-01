@@ -1,12 +1,12 @@
-#include <DB/Columns/ColumnString.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Storages/System/StorageSystemReplicas.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Common/VirtualColumnUtils.h>
-#include <DB/Databases/IDatabase.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <Storages/System/StorageSystemReplicas.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/VirtualColumnUtils.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB

@@ -1,4 +1,4 @@
-#include <DB/Parsers/ASTKillQueryQuery.h>
+#include <Parsers/ASTKillQueryQuery.h>
 
 namespace DB
 {

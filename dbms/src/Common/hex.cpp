@@ -1,4 +1,4 @@
-#include <DB/Common/hex.h>
+#include <Common/hex.h>
 
 const char * const char_to_digit_table = (
     "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"

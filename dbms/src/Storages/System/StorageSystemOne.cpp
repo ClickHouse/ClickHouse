@@ -1,9 +1,9 @@
-#include <DB/Common/Exception.h>
+#include <Common/Exception.h>
 
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Storages/System/StorageSystemOne.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <Storages/System/StorageSystemOne.h>
 
 
 namespace DB

@@ -1,9 +1,9 @@
-#include <DB/Analyzers/TranslatePositionalArguments.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTOrderByElement.h>
-#include <DB/Common/typeid_cast.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Analyzers/TranslatePositionalArguments.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Common/typeid_cast.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

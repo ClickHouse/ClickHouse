@@ -1,7 +1,7 @@
-#include <DB/Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
-#include <DB/Storages/MergeTree/MergeTreePartChecker.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Common/setThreadName.h>
+#include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
+#include <Storages/MergeTree/MergeTreePartChecker.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/setThreadName.h>
 
 
 namespace ProfileEvents

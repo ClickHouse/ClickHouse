@@ -1,8 +1,8 @@
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataTypes/DataTypeDate.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeDate.h>
 
 
 namespace DB

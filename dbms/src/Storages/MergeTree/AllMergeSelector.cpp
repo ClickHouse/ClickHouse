@@ -1,4 +1,4 @@
-#include <DB/Storages/MergeTree/AllMergeSelector.h>
+#include <Storages/MergeTree/AllMergeSelector.h>
 
 #include <cmath>
 

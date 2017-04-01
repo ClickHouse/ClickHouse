@@ -1,11 +1,11 @@
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTOptimizeQuery.h>
 
-#include <DB/Parsers/CommonParsers.h>
-#include <DB/Parsers/ParserOptimizeQuery.h>
-#include <DB/Parsers/ASTLiteral.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ASTLiteral.h>
 
-#include <DB/Common/typeid_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

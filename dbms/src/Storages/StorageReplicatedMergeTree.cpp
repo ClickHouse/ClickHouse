@@ -1,45 +1,45 @@
 #include <zkutil/Types.h>
 #include <zkutil/KeeperException.h>
 
-#include <DB/Core/FieldVisitors.h>
+#include <Core/FieldVisitors.h>
 
-#include <DB/Storages/ColumnsDescription.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
-#include <DB/Storages/MergeTree/MergeList.h>
-#include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
-#include <DB/Storages/MergeTree/ReshardingWorker.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
+#include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Storages/MergeTree/ReshardingWorker.h>
 
-#include <DB/Databases/IDatabase.h>
+#include <Databases/IDatabase.h>
 
-#include <DB/Parsers/formatAST.h>
-#include <DB/Parsers/ASTInsertQuery.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/queryToString.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/queryToString.h>
 
-#include <DB/IO/ReadBufferFromString.h>
-#include <DB/IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/Operators.h>
 
-#include <DB/Interpreters/InterpreterAlterQuery.h>
-#include <DB/Interpreters/PartLog.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/PartLog.h>
 
-#include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
-#include <DB/DataStreams/RemoteBlockInputStream.h>
-#include <DB/DataStreams/NullBlockOutputStream.h>
-#include <DB/DataStreams/copyData.h>
+#include <DataStreams/AddingConstColumnBlockInputStream.h>
+#include <DataStreams/RemoteBlockInputStream.h>
+#include <DataStreams/NullBlockOutputStream.h>
+#include <DataStreams/copyData.h>
 
-#include <DB/Common/Macros.h>
-#include <DB/Common/VirtualColumnUtils.h>
-#include <DB/Common/formatReadable.h>
-#include <DB/Common/setThreadName.h>
-#include <DB/Common/escapeForFileName.h>
-#include <DB/Common/StringUtils.h>
+#include <Common/Macros.h>
+#include <Common/VirtualColumnUtils.h>
+#include <Common/formatReadable.h>
+#include <Common/setThreadName.h>
+#include <Common/escapeForFileName.h>
+#include <Common/StringUtils.h>
 
 #include <Poco/DirectoryIterator.h>
 
-#include <DB/Common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 #include <ext/range.hpp>
 #include <ext/scope_guard.hpp>

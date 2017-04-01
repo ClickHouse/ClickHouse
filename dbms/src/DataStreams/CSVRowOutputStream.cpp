@@ -1,6 +1,6 @@
-#include <DB/DataStreams/CSVRowOutputStream.h>
+#include <DataStreams/CSVRowOutputStream.h>
 
-#include <DB/IO/WriteHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

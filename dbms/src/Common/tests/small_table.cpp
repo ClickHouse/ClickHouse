@@ -1,9 +1,9 @@
 #include <iostream>
 #include <iomanip>
 
-#include <DB/Interpreters/AggregationCommon.h>
+#include <Interpreters/AggregationCommon.h>
 
-#include <DB/Common/HashTable/SmallTable.h>
+#include <Common/HashTable/SmallTable.h>
 
 
 

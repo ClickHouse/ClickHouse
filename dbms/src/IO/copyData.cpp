@@ -1,7 +1,7 @@
-#include <DB/Common/Exception.h>
-#include <DB/IO/ReadBuffer.h>
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/copyData.h>
+#include <Common/Exception.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+#include <IO/copyData.h>
 
 
 namespace DB

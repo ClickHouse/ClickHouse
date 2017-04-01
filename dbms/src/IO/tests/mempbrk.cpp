@@ -2,13 +2,13 @@
 #include <iostream>
 #include <iomanip>
 
-#include <DB/Common/Stopwatch.h>
+#include <Common/Stopwatch.h>
 
-#include <DB/Core/Types.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
+#include <Core/Types.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 
 #include <common/find_first_symbols.h>
 

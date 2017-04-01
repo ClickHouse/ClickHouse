@@ -1,8 +1,8 @@
-#include <DB/Interpreters/Set.h>
-#include <DB/Interpreters/Join.h>
-#include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/DataStreams/CreatingSetsBlockInputStream.h>
-#include <DB/Storages/IStorage.h>
+#include <Interpreters/Set.h>
+#include <Interpreters/Join.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/CreatingSetsBlockInputStream.h>
+#include <Storages/IStorage.h>
 #include <iomanip>
 
 

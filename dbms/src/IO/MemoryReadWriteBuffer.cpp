@@ -1,4 +1,4 @@
-#include <DB/IO/MemoryReadWriteBuffer.h>
+#include <IO/MemoryReadWriteBuffer.h>
 #include <common/likely.h>
 
 namespace DB

@@ -1,14 +1,14 @@
-#include <DB/Parsers/ParserQuery.h>
-#include <DB/Parsers/ParserQueryWithOutput.h>
-#include <DB/Parsers/ParserCreateQuery.h>
-#include <DB/Parsers/ParserInsertQuery.h>
-#include <DB/Parsers/ParserDropQuery.h>
-#include <DB/Parsers/ParserRenameQuery.h>
-#include <DB/Parsers/ParserOptimizeQuery.h>
-#include <DB/Parsers/ParserUseQuery.h>
-#include <DB/Parsers/ParserSetQuery.h>
-#include <DB/Parsers/ParserAlterQuery.h>
-//#include <DB/Parsers/ParserMultiQuery.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserInsertQuery.h>
+#include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserRenameQuery.h>
+#include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ParserUseQuery.h>
+#include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserAlterQuery.h>
+//#include <Parsers/ParserMultiQuery.h>
 
 
 namespace DB

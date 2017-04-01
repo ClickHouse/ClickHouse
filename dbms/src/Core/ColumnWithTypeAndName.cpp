@@ -1,6 +1,6 @@
-#include <DB/Core/ColumnsWithTypeAndName.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

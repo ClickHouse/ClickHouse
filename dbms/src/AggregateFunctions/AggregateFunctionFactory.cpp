@@ -1,10 +1,10 @@
-#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/DataTypes/DataTypeAggregateFunction.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/Common/StringUtils.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Common/StringUtils.h>
 #include <Poco/String.h>
 
 

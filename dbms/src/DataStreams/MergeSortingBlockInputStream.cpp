@@ -1,9 +1,9 @@
-#include <DB/DataStreams/MergeSortingBlockInputStream.h>
-#include <DB/DataStreams/MergingSortedBlockInputStream.h>
-#include <DB/DataStreams/NativeBlockOutputStream.h>
-#include <DB/DataStreams/copyData.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/CompressedWriteBuffer.h>
+#include <DataStreams/MergeSortingBlockInputStream.h>
+#include <DataStreams/MergingSortedBlockInputStream.h>
+#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/copyData.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/CompressedWriteBuffer.h>
 
 
 namespace ProfileEvents

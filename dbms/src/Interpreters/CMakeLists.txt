@@ -35,8 +35,8 @@ string (REPLACE ${ClickHouse_SOURCE_DIR} ${INTERNAL_COMPILER_HEADERS} INTERNAL_P
 
 message (STATUS "Using internal compiler: headers=${INTERNAL_COMPILER_HEADERS} : ${INTERNAL_COMPILER_EXECUTABLE} ${INTERNAL_COMPILER_FLAGS}")
 
-set (CONFIG_COMPILE ${ClickHouse_BINARY_DIR}/dbms/include/DB/Interpreters/config_compile.h)
-configure_file (${ClickHouse_SOURCE_DIR}/dbms/include/DB/Interpreters/config_compile.h.in ${CONFIG_COMPILE})
+set (CONFIG_COMPILE ${ClickHouse_BINARY_DIR}/dbms/src/Interpreters/config_compile.h)
+configure_file (${ClickHouse_SOURCE_DIR}/dbms/src/Interpreters/config_compile.h.in ${CONFIG_COMPILE})
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)

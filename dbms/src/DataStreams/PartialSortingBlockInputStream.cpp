@@ -1,6 +1,6 @@
-#include <DB/Interpreters/sortBlock.h>
+#include <Interpreters/sortBlock.h>
 
-#include <DB/DataStreams/PartialSortingBlockInputStream.h>
+#include <DataStreams/PartialSortingBlockInputStream.h>
 
 
 namespace DB

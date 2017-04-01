@@ -1,5 +1,5 @@
-#include <DB/IO/ReadHelpers.h>
-#include <DB/Storages/MergeTree/ActiveDataPartSet.h>
+#include <IO/ReadHelpers.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <common/LocalDateTime.h>
 
 

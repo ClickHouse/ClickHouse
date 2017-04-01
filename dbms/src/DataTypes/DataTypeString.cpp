@@ -1,14 +1,14 @@
-#include <DB/Core/Defines.h>
+#include <Core/Defines.h>
 
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnConst.h>
 
-#include <DB/DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeString.h>
 
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/VarInt.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/VarInt.h>
 
 #if __SSE2__
     #include <emmintrin.h>

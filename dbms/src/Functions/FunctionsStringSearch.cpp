@@ -1,15 +1,15 @@
-#include <DB/Functions/FunctionsStringSearch.h>
+#include <Functions/FunctionsStringSearch.h>
 
 #include <memory>
 #include <mutex>
 #include <Poco/UTF8String.h>
-#include <DB/Columns/ColumnFixedString.h>
-#include <DB/Common/Volnitsky.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/Regexps.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/Common/config.h>
+#include <Columns/ColumnFixedString.h>
+#include <Common/Volnitsky.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/Regexps.h>
+#include <IO/WriteHelpers.h>
+#include <Common/config.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 

@@ -1,8 +1,8 @@
 #include <fcntl.h>
 
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/Common/ProfileEvents.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <Common/ProfileEvents.h>
 
 
 namespace ProfileEvents

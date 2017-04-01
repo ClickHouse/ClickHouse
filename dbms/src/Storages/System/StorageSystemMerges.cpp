@@ -1,11 +1,11 @@
-#include <DB/Storages/System/StorageSystemMerges.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Storages/MergeTree/MergeList.h>
+#include <Storages/System/StorageSystemMerges.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Columns/ColumnString.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeList.h>
 
 
 namespace DB

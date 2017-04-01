@@ -1,6 +1,6 @@
-#include <DB/Core/FieldVisitors.h>
-#include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
-#include <DB/Columns/ColumnsNumber.h>
+#include <Core/FieldVisitors.h>
+#include <DataStreams/CollapsingSortedBlockInputStream.h>
+#include <Columns/ColumnsNumber.h>
 
 /// Maximum number of messages about incorrect data in the log.
 #define MAX_ERROR_MESSAGES 10

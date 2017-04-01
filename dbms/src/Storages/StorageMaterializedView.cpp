@@ -1,11 +1,11 @@
-#include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/ASTDropQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDropQuery.h>
 
-#include <DB/Interpreters/InterpreterCreateQuery.h>
-#include <DB/Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterDropQuery.h>
 
-#include <DB/Storages/StorageMaterializedView.h>
-#include <DB/Storages/VirtualColumnFactory.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/VirtualColumnFactory.h>
 
 
 namespace DB

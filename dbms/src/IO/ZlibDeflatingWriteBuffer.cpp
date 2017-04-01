@@ -1,4 +1,4 @@
-#include <DB/IO/ZlibDeflatingWriteBuffer.h>
+#include <IO/ZlibDeflatingWriteBuffer.h>
 
 
 namespace DB

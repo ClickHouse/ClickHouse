@@ -1,6 +1,6 @@
-#include <DB/IO/Operators.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromString.h>
 
 
 int main(int argc, char ** argv)

@@ -1,7 +1,7 @@
-#include <DB/IO/ReadBufferAIO.h>
-#include <DB/Common/ProfileEvents.h>
-#include <DB/Common/Stopwatch.h>
-#include <DB/Core/Defines.h>
+#include <IO/ReadBufferAIO.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Core/Defines.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>

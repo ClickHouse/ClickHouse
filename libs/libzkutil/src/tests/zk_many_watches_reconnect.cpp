@@ -1,4 +1,4 @@
-#include <DB/Common/ConfigProcessor.h>
+#include <Common/ConfigProcessor.h>
 #include <zkutil/ZooKeeper.h>
 #include <Poco/Event.h>
 #include <iostream>

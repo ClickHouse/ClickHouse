@@ -2,11 +2,11 @@
 
 #include <iostream>
 
-#include <DB/Core/Types.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/ReadBufferFromFile.h>
+#include <Core/Types.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/ReadBufferFromFile.h>
 
 int main(int argc, char ** argv)
 {

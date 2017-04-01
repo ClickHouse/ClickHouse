@@ -1,4 +1,4 @@
-#include <DB/AggregateFunctions/AggregateFunctionArray.h>
+#include <AggregateFunctions/AggregateFunctionArray.h>
 
 namespace DB
 {

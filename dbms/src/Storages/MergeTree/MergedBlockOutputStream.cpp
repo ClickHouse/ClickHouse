@@ -1,12 +1,12 @@
-#include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
-#include <DB/IO/createWriteBufferFromFileBase.h>
-#include <DB/Common/escapeForFileName.h>
-#include <DB/DataTypes/DataTypeNested.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNullable.h>
-#include <DB/Common/StringUtils.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <IO/createWriteBufferFromFileBase.h>
+#include <Common/escapeForFileName.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
+#include <Common/StringUtils.h>
 #include <Poco/File.h>
 
 

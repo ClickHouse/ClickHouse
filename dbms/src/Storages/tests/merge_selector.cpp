@@ -1,8 +1,8 @@
 #include <iostream>
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/Storages/MergeTree/SimpleMergeSelector.h>
-#include <DB/Storages/MergeTree/LevelMergeSelector.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadHelpers.h>
+#include <Storages/MergeTree/SimpleMergeSelector.h>
+#include <Storages/MergeTree/LevelMergeSelector.h>
 
 
 /** This program tests merge-selecting algorithm.

@@ -1,12 +1,12 @@
-#include <DB/Parsers/CommonParsers.h>
-#include <DB/Parsers/ExpressionElementParsers.h>
-#include <DB/Parsers/ExpressionListParsers.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTTablesInSelectQuery.h>
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/Parsers/ParserSampleRatio.h>
-#include <DB/Parsers/ParserTablesInSelectQuery.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSampleRatio.h>
+#include <Parsers/ParserTablesInSelectQuery.h>
 
 
 namespace DB

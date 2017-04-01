@@ -2,13 +2,13 @@
 
 #include <boost/program_options.hpp>
 
-#include <DB/Common/Exception.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/copyData.h>
+#include <Common/Exception.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/CompressedWriteBuffer.h>
+#include <IO/CompressedReadBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
 
 
 namespace DB

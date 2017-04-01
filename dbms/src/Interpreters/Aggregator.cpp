@@ -4,23 +4,23 @@
 
 #include <cxxabi.h>
 
-#include <DB/Common/Stopwatch.h>
-#include <DB/Common/setThreadName.h>
+#include <Common/Stopwatch.h>
+#include <Common/setThreadName.h>
 
-#include <DB/DataTypes/DataTypeAggregateFunction.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnTuple.h>
-#include <DB/AggregateFunctions/AggregateFunctionCount.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/DataStreams/NativeBlockOutputStream.h>
-#include <DB/DataStreams/NullBlockInputStream.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/CompressedWriteBuffer.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <AggregateFunctions/AggregateFunctionCount.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NullBlockInputStream.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/CompressedWriteBuffer.h>
 
-#include <DB/Interpreters/Aggregator.h>
-#include <DB/Common/ClickHouseRevision.h>
-#include <DB/Interpreters/config_compile.h>
+#include <Interpreters/Aggregator.h>
+#include <Common/ClickHouseRevision.h>
+#include <Interpreters/config_compile.h>
 
 
 namespace ProfileEvents

@@ -1,9 +1,9 @@
-#include <DB/Core/Types.h>
+#include <Core/Types.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Net/NetworkInterface.h>
 #include <Poco/Net/SocketAddress.h>
 
-#include <DB/Common/isLocalAddress.h>
+#include <Common/isLocalAddress.h>
 
 
 namespace DB

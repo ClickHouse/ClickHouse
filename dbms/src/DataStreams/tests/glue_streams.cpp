@@ -1,14 +1,14 @@
 #include <iostream>
 #include <iomanip>
 
-#include <DB/Common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 
-#include <DB/Interpreters/loadMetadata.h>
-#include <DB/Interpreters/executeQuery.h>
+#include <Interpreters/loadMetadata.h>
+#include <Interpreters/executeQuery.h>
 
-#include <DB/DataStreams/glueBlockInputStreams.h>
+#include <DataStreams/glueBlockInputStreams.h>
 
 
 using namespace DB;

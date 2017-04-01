@@ -1,4 +1,4 @@
-#include <DB/Dictionaries/Embedded/RegionsNames.h>
+#include <Dictionaries/Embedded/RegionsNames.h>
 
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
@@ -6,9 +6,9 @@
 
 #include <common/logger_useful.h>
 
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFile.h>
 
 
 static constexpr auto config_key = "path_to_regions_names_files";

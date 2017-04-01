@@ -1,10 +1,10 @@
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTRenameQuery.h>
 
-#include <DB/Parsers/CommonParsers.h>
-#include <DB/Parsers/ParserRenameQuery.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ParserRenameQuery.h>
 
-#include <DB/Common/typeid_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

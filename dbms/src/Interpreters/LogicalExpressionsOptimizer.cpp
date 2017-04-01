@@ -1,11 +1,11 @@
-#include <DB/Interpreters/LogicalExpressionsOptimizer.h>
-#include <DB/Interpreters/Settings.h>
+#include <Interpreters/LogicalExpressionsOptimizer.h>
+#include <Interpreters/Settings.h>
 
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTLiteral.h>
 
-#include <DB/Common/typeid_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <deque>
 

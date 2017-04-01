@@ -1,9 +1,9 @@
-#include <DB/Storages/MergeTree/RemoteDiskSpaceMonitor.h>
-#include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/IO/ReadBufferFromHTTP.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadHelpers.h>
+#include <Storages/MergeTree/RemoteDiskSpaceMonitor.h>
+#include <Storages/MergeTree/DiskSpaceMonitor.h>
+#include <Interpreters/Context.h>
+#include <IO/ReadBufferFromHTTP.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {

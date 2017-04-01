@@ -1,10 +1,10 @@
-#include <DB/IO/Operators.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
-#include <DB/Common/setThreadName.h>
-#include <DB/Common/randomSeed.h>
+#include <IO/Operators.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Common/setThreadName.h>
+#include <Common/randomSeed.h>
 
 
 namespace ProfileEvents

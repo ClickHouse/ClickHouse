@@ -8,14 +8,14 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/String.h>
 
-#include <DB/Common/Exception.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/HexWriteBuffer.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/Common/SimpleCache.h>
-#include <DB/Common/StringUtils.h>
-#include <DB/Interpreters/Users.h>
+#include <Common/Exception.h>
+#include <IO/ReadHelpers.h>
+#include <IO/HexWriteBuffer.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Common/SimpleCache.h>
+#include <Common/StringUtils.h>
+#include <Interpreters/Users.h>
 
 #include <openssl/sha.h>
 

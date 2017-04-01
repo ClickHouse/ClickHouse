@@ -12,30 +12,30 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 
-#include <DB/Common/Stopwatch.h>
-#include <DB/Common/ThreadPool.h>
-#include <DB/AggregateFunctions/ReservoirSampler.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
+#include <AggregateFunctions/ReservoirSampler.h>
 
 #include <boost/program_options.hpp>
 
-#include <DB/Common/ConcurrentBoundedQueue.h>
+#include <Common/ConcurrentBoundedQueue.h>
 
-#include <DB/Common/Exception.h>
-#include <DB/Common/randomSeed.h>
-#include <DB/Core/Types.h>
+#include <Common/Exception.h>
+#include <Common/randomSeed.h>
+#include <Core/Types.h>
 
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/Operators.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
-#include <DB/DataStreams/RemoteBlockInputStream.h>
+#include <DataStreams/RemoteBlockInputStream.h>
 
-#include <DB/Interpreters/Context.h>
+#include <Interpreters/Context.h>
 
-#include <DB/Client/Connection.h>
+#include <Client/Connection.h>
 
 #include "InterruptListener.h"
 

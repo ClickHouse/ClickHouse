@@ -2,26 +2,26 @@
 #include <iomanip>
 #include <thread>
 
-#include <DB/IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromOStream.h>
 
-#include <DB/Storages/System/StorageSystemNumbers.h>
+#include <Storages/System/StorageSystemNumbers.h>
 
-#include <DB/DataStreams/LimitBlockInputStream.h>
-#include <DB/DataStreams/ExpressionBlockInputStream.h>
-#include <DB/DataStreams/FilterBlockInputStream.h>
-#include <DB/DataStreams/TabSeparatedRowOutputStream.h>
-#include <DB/DataStreams/ForkBlockInputStreams.h>
-#include <DB/DataStreams/copyData.h>
+#include <DataStreams/LimitBlockInputStream.h>
+#include <DataStreams/ExpressionBlockInputStream.h>
+#include <DataStreams/FilterBlockInputStream.h>
+#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <DataStreams/ForkBlockInputStreams.h>
+#include <DataStreams/copyData.h>
 
-#include <DB/DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesNumber.h>
 
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/formatAST.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/formatAST.h>
 
-#include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Interpreters/ExpressionActions.h>
-#include <DB/Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Context.h>
 
 
 void thread1(DB::BlockInputStreamPtr in, DB::BlockOutputStreamPtr out, DB::WriteBuffer & out_buf)

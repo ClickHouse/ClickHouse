@@ -3,16 +3,16 @@
 
 #include <common/Common.h>
 
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/WriteIntText.h>
-#include <DB/IO/WriteBufferFromVector.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/AsynchronousWriteBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteIntText.h>
+#include <IO/WriteBufferFromVector.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/CompressedWriteBuffer.h>
+#include <IO/CompressedReadBuffer.h>
+#include <IO/AsynchronousWriteBuffer.h>
 
-#include <DB/Common/Stopwatch.h>
+#include <Common/Stopwatch.h>
 
 
 #if 0

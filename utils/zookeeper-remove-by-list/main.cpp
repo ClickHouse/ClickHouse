@@ -1,6 +1,6 @@
 #include <zkutil/ZooKeeper.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 #include <boost/program_options.hpp>
 
 

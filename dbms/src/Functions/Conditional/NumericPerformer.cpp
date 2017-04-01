@@ -1,16 +1,16 @@
-#include <DB/Functions/Conditional/NumericPerformer.h>
-#include <DB/Functions/Conditional/NullMapBuilder.h>
-#include <DB/Functions/Conditional/CondException.h>
-#include <DB/Functions/Conditional/ArgsInfo.h>
-#include <DB/Functions/Conditional/NumericEvaluator.h>
-#include <DB/Functions/Conditional/ArrayEvaluator.h>
-#include <DB/Functions/NumberTraits.h>
-#include <DB/Functions/DataTypeTraits.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/Columns/ColumnVector.h>
-#include <DB/Columns/ColumnConst.h>
-#include <DB/Columns/ColumnArray.h>
+#include <Functions/Conditional/NumericPerformer.h>
+#include <Functions/Conditional/NullMapBuilder.h>
+#include <Functions/Conditional/CondException.h>
+#include <Functions/Conditional/ArgsInfo.h>
+#include <Functions/Conditional/NumericEvaluator.h>
+#include <Functions/Conditional/ArrayEvaluator.h>
+#include <Functions/NumberTraits.h>
+#include <Functions/DataTypeTraits.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
 
 namespace DB
 {

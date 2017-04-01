@@ -1,11 +1,11 @@
 #include <iostream>
 #include <fstream>
 
-#include <DB/Common/Stopwatch.h>
+#include <Common/Stopwatch.h>
 
-#include <DB/IO/WriteBufferFromOStream.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataTypes/DataTypesNumber.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
 
 
 int main(int argc, char ** argv)

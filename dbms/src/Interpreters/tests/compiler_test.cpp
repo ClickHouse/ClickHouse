@@ -1,7 +1,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/AutoPtr.h>
 
-#include <DB/Interpreters/Compiler.h>
+#include <Interpreters/Compiler.h>
 
 
 int main(int argc, char ** argv)

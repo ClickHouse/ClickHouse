@@ -1,10 +1,10 @@
-#include <DB/Core/Block.h>
-#include <DB/Storages/ColumnDefault.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Interpreters/ExpressionActions.h>
-#include <DB/Interpreters/evaluateMissingDefaults.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTWithAlias.h>
+#include <Core/Block.h>
+#include <Storages/ColumnDefault.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/evaluateMissingDefaults.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTWithAlias.h>
 #include <utility>
 
 

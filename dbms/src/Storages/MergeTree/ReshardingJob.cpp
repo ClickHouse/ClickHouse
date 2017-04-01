@@ -1,11 +1,11 @@
-#include <DB/Storages/MergeTree/ReshardingJob.h>
-#include <DB/IO/ReadBufferFromString.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/Parsers/ParserQuery.h>
-#include <DB/Parsers/ExpressionListParsers.h>
-#include <DB/Parsers/queryToString.h>
+#include <Storages/MergeTree/ReshardingJob.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB

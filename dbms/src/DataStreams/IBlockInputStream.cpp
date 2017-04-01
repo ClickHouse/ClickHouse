@@ -1,7 +1,7 @@
 #include <math.h>
 
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/DataStreams/IBlockInputStream.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB

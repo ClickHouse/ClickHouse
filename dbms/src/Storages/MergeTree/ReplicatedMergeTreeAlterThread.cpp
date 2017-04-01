@@ -1,10 +1,10 @@
 #include <memory>
-#include <DB/Common/setThreadName.h>
-#include <DB/Interpreters/InterpreterAlterQuery.h>
-#include <DB/Storages/ColumnsDescription.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
-#include <DB/Databases/IDatabase.h>
+#include <Common/setThreadName.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB

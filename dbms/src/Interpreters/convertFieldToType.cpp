@@ -1,19 +1,19 @@
-#include <DB/IO/ReadBufferFromString.h>
-#include <DB/IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataTypes/DataTypeEnum.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/Functions/DataTypeTraits.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Functions/DataTypeTraits.h>
 
-#include <DB/Core/FieldVisitors.h>
+#include <Core/FieldVisitors.h>
 
-#include <DB/Interpreters/convertFieldToType.h>
+#include <Interpreters/convertFieldToType.h>
 
 
 namespace DB

@@ -1,7 +1,7 @@
-#include <DB/Interpreters/Context.h>
-#include <DB/Dictionaries/OwningBlockInputStream.h>
-#include <DB/Dictionaries/FileDictionarySource.h>
-#include <DB/IO/ReadBufferFromFile.h>
+#include <Interpreters/Context.h>
+#include <Dictionaries/OwningBlockInputStream.h>
+#include <Dictionaries/FileDictionarySource.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Poco/File.h>
 
 

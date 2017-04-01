@@ -1,5 +1,5 @@
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/DataTypes/DataTypeEnum.h>
+#include <IO/WriteBufferFromString.h>
+#include <DataTypes/DataTypeEnum.h>
 
 #include <limits>
 

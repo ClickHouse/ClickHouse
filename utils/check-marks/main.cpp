@@ -2,14 +2,14 @@
 
 #include <boost/program_options.hpp>
 
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/Operators.h>
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/CompressedReadBufferFromFile.h>
+#include <IO/CompressedWriteBuffer.h>
+#include <IO/CompressedReadBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/CompressedReadBufferFromFile.h>
 
 
 /** This program checks correctness of .mrk (marks) file for corresponding compressed .bin file.

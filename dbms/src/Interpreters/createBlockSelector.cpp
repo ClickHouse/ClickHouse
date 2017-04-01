@@ -1,5 +1,5 @@
-#include <DB/Columns/ColumnConst.h>
-#include <DB/Columns/ColumnVector.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnVector.h>
 
 #include <type_traits>
 

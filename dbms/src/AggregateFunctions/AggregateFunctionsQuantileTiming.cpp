@@ -1,6 +1,6 @@
-#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-#include <DB/AggregateFunctions/Helpers.h>
-#include <DB/AggregateFunctions/AggregateFunctionQuantileTiming.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/Helpers.h>
+#include <AggregateFunctions/AggregateFunctionQuantileTiming.h>
 
 namespace DB
 {

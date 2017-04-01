@@ -1,14 +1,14 @@
-#include <DB/DataTypes/IDataType.h>
-#include <DB/DataTypes/DataTypeNested.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/Common/escapeForFileName.h>
-#include <DB/IO/CachedCompressedReadBuffer.h>
-#include <DB/IO/CompressedReadBufferFromFile.h>
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Interpreters/evaluateMissingDefaults.h>
-#include <DB/Storages/MergeTree/MergeTreeReader.h>
-#include <DB/Columns/ColumnNullable.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Common/escapeForFileName.h>
+#include <IO/CachedCompressedReadBuffer.h>
+#include <IO/CompressedReadBufferFromFile.h>
+#include <Columns/ColumnArray.h>
+#include <Interpreters/evaluateMissingDefaults.h>
+#include <Storages/MergeTree/MergeTreeReader.h>
+#include <Columns/ColumnNullable.h>
 #include <Poco/File.h>
 
 

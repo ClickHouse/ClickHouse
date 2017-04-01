@@ -1,9 +1,9 @@
 #include <ext/range.hpp>
-#include <DB/Dictionaries/ExternalResultDescription.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
+#include <Dictionaries/ExternalResultDescription.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 
 
 namespace DB

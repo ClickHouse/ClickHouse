@@ -1,5 +1,5 @@
 #include <cstdlib>
-#include <DB/DataStreams/ColumnGathererStream.h>
+#include <DataStreams/ColumnGathererStream.h>
 using DB::RowSourcePart;
 
 static void check(const RowSourcePart & s, size_t num, bool flag)

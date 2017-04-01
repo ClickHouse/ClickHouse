@@ -1,15 +1,15 @@
-#include <DB/Common/OptimizedRegularExpression.h>
+#include <Common/OptimizedRegularExpression.h>
 
-#include <DB/Storages/StorageMerge.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/TableFunctions/ITableFunction.h>
-#include <DB/Interpreters/evaluateConstantExpression.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Databases/IDatabase.h>
-#include <DB/TableFunctions/TableFunctionMerge.h>
+#include <Storages/StorageMerge.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <TableFunctions/ITableFunction.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
+#include <Databases/IDatabase.h>
+#include <TableFunctions/TableFunctionMerge.h>
 
 
 namespace DB

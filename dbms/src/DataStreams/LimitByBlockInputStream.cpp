@@ -1,4 +1,4 @@
-#include <DB/DataStreams/LimitByBlockInputStream.h>
+#include <DataStreams/LimitByBlockInputStream.h>
 
 namespace DB
 {

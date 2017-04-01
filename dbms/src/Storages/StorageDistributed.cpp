@@ -1,38 +1,38 @@
-#include <DB/DataStreams/RemoteBlockInputStream.h>
-#include <DB/DataStreams/BlockExtraInfoInputStream.h>
-#include <DB/DataStreams/UnionBlockInputStream.h>
+#include <DataStreams/RemoteBlockInputStream.h>
+#include <DataStreams/BlockExtraInfoInputStream.h>
+#include <DataStreams/UnionBlockInputStream.h>
 
-#include <DB/Databases/IDatabase.h>
+#include <Databases/IDatabase.h>
 
-#include <DB/Storages/StorageDistributed.h>
-#include <DB/Storages/VirtualColumnFactory.h>
-#include <DB/Storages/Distributed/DistributedBlockOutputStream.h>
-#include <DB/Storages/Distributed/DirectoryMonitor.h>
-#include <DB/Storages/MergeTree/ReshardingWorker.h>
+#include <Storages/StorageDistributed.h>
+#include <Storages/VirtualColumnFactory.h>
+#include <Storages/Distributed/DistributedBlockOutputStream.h>
+#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/MergeTree/ReshardingWorker.h>
 
-#include <DB/Common/escapeForFileName.h>
+#include <Common/escapeForFileName.h>
 
-#include <DB/Parsers/ASTInsertQuery.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/TablePropertiesQueriesASTs.h>
-#include <DB/Parsers/ParserAlterQuery.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/ASTWeightedZooKeeperPath.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/queryToString.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ASTWeightedZooKeeperPath.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/queryToString.h>
 
-#include <DB/Interpreters/InterpreterSelectQuery.h>
-#include <DB/Interpreters/InterpreterAlterQuery.h>
-#include <DB/Interpreters/InterpreterDescribeQuery.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Interpreters/ClusterProxy/Query.h>
-#include <DB/Interpreters/ClusterProxy/SelectQueryConstructor.h>
-#include <DB/Interpreters/ClusterProxy/DescribeQueryConstructor.h>
-#include <DB/Interpreters/ClusterProxy/AlterQueryConstructor.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/InterpreterDescribeQuery.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ClusterProxy/Query.h>
+#include <Interpreters/ClusterProxy/SelectQueryConstructor.h>
+#include <Interpreters/ClusterProxy/DescribeQueryConstructor.h>
+#include <Interpreters/ClusterProxy/AlterQueryConstructor.h>
 
-#include <DB/Core/Field.h>
+#include <Core/Field.h>
 
 #include <Poco/DirectoryIterator.h>
 

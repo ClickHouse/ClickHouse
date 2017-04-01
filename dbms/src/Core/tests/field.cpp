@@ -2,14 +2,14 @@
 #include <iomanip>
 #include <sstream>
 
-#include <DB/Core/Field.h>
-#include <DB/Core/FieldVisitors.h>
+#include <Core/Field.h>
+#include <Core/FieldVisitors.h>
 
-#include <DB/Common/Stopwatch.h>
-#include <DB/DataStreams/TabSeparatedRowOutputStream.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/DataTypes/DataTypeString.h>
+#include <Common/Stopwatch.h>
+#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/ReadHelpers.h>
+#include <DataTypes/DataTypeString.h>
 
 
 int main(int argc, char ** argv)

@@ -1,6 +1,6 @@
-#include <DB/IO/ReadBufferFromIStream.h>
-#include <DB/IO/HashingReadBuffer.h>
-#include <DB/IO/WriteBufferFromOStream.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <IO/HashingReadBuffer.h>
+#include <IO/WriteBufferFromOStream.h>
 #include "hashing_buffer.h"
 #include <iostream>
 
