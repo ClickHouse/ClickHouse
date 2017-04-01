@@ -1,6 +1,6 @@
-#include <DB/Storages/MergeTree/ActiveDataPartSet.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadHelpers.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB

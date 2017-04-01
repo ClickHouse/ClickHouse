@@ -1,9 +1,9 @@
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
 
-#include <DB/DataStreams/TabSeparatedRowInputStream.h>
-#include <DB/DataStreams/verbosePrintString.h>
-#include <DB/DataTypes/DataTypesNumber.h>
+#include <DataStreams/TabSeparatedRowInputStream.h>
+#include <DataStreams/verbosePrintString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB

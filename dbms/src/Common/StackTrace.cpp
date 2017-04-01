@@ -7,7 +7,7 @@
 
 #include <sstream>
 
-#include <DB/Common/StackTrace.h>
+#include <Common/StackTrace.h>
 
 
 StackTrace::StackTrace()

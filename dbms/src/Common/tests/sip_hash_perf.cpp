@@ -2,10 +2,10 @@
 #include <string>
 #include <iomanip>
 
-#include <DB/Common/SipHash.h>
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/Common/Stopwatch.h>
+#include <Common/SipHash.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadHelpers.h>
+#include <Common/Stopwatch.h>
 
 
 /** Test this way:

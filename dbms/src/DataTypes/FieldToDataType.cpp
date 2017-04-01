@@ -1,13 +1,13 @@
-#include <DB/Core/FieldVisitors.h>
-#include <DB/DataTypes/FieldToDataType.h>
-#include <DB/DataTypes/DataTypeTuple.h>
-#include <DB/DataTypes/DataTypeNull.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNull.h>
-#include <DB/Common/Exception.h>
+#include <Core/FieldVisitors.h>
+#include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNull.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNull.h>
+#include <Common/Exception.h>
 #include <ext/size.hpp>
 
 

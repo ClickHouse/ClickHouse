@@ -1,15 +1,15 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/IFunction.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataStreams/PrettyBlockOutputStream.h>
-#include <DB/Columns/ColumnConst.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataStreams/PrettyBlockOutputStream.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

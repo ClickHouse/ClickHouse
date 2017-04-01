@@ -1,28 +1,28 @@
-#include <DB/Storages/MergeTree/ReshardingWorker.h>
-#include <DB/Storages/MergeTree/ReshardingJob.h>
-#include <DB/Storages/MergeTree/MergeTreeData.h>
-#include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
-#include <DB/Storages/MergeTree/MergeTreeSharder.h>
-#include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/ReshardingWorker.h>
+#include <Storages/MergeTree/ReshardingJob.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataMerger.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Storages/MergeTree/MergeTreeSharder.h>
+#include <Storages/MergeTree/MergeTreeBlockInputStream.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/ReadBufferFromString.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
-#include <DB/Common/getFQDNOrHostName.h>
-#include <DB/Common/SipHash.h>
-#include <DB/Common/StringUtils.h>
-#include <DB/Common/randomSeed.h>
+#include <Common/getFQDNOrHostName.h>
+#include <Common/SipHash.h>
+#include <Common/StringUtils.h>
+#include <Common/randomSeed.h>
 
-#include <DB/Interpreters/executeQuery.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/Cluster.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Cluster.h>
 
-#include <DB/Common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 #include <zkutil/ZooKeeper.h>
 

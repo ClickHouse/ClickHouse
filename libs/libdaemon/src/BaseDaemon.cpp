@@ -1,6 +1,6 @@
 #include <daemon/BaseDaemon.h>
 
-#include <DB/Common/ConfigProcessor.h>
+#include <Common/ConfigProcessor.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -44,13 +44,13 @@
 #include <Poco/NumberFormatter.h>
 #include <Poco/Condition.h>
 #include <Poco/SyslogChannel.h>
-#include <DB/Common/Exception.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/Common/getMultipleKeysFromConfig.h>
-#include <DB/Common/ClickHouseRevision.h>
+#include <Common/Exception.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Common/getMultipleKeysFromConfig.h>
+#include <Common/ClickHouseRevision.h>
 #include <daemon/OwnPatternFormatter.h>
 
 using Poco::Logger;

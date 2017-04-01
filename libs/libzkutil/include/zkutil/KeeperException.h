@@ -1,7 +1,7 @@
 #pragma once
-#include <DB/Common/Exception.h>
+#include <Common/Exception.h>
 #include <zkutil/Types.h>
-#include <DB/Common/ProfileEvents.h>
+#include <Common/ProfileEvents.h>
 
 
 namespace DB

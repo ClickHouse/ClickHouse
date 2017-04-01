@@ -19,9 +19,9 @@
 
 #include <common/logger_useful.h>
 #include <daemon/BaseDaemon.h>
-#include <DB/Common/HTMLForm.h>
+#include <Common/HTMLForm.h>
 
-#include <DB/Interpreters/Context.h>
+#include <Interpreters/Context.h>
 
 /** Server provides three interfaces:
   * 1. HTTP - simple interface for any applications.

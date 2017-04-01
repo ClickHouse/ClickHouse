@@ -1,9 +1,9 @@
 #include <iostream>
 
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/WriteBufferValidUTF8.h>
-#include <DB/IO/copyData.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferValidUTF8.h>
+#include <IO/copyData.h>
 
 int main(int argc, char **argv)
 {

@@ -1,28 +1,28 @@
 #include <errno.h>
 #include <cstdlib>
 
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromMemory.h>
 
-#include <DB/Parsers/IAST.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTAsterisk.h>
-#include <DB/Parsers/ASTQualifiedAsterisk.h>
-#include <DB/Parsers/ASTOrderByElement.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ASTSubquery.h>
-#include <DB/Parsers/ASTWeightedZooKeeperPath.h>
+#include <Parsers/IAST.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTWeightedZooKeeperPath.h>
 
-#include <DB/Parsers/CommonParsers.h>
-#include <DB/Parsers/ExpressionListParsers.h>
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/Parsers/ParserCase.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserCase.h>
 
-#include <DB/Parsers/ExpressionElementParsers.h>
-#include <DB/Parsers/ParserCreateQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ParserCreateQuery.h>
 
 
 namespace DB

@@ -1,4 +1,4 @@
-#include <DB/Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <mysqlxx/Manip.h>
 
 namespace DB

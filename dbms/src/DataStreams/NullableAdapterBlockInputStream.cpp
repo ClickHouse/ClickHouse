@@ -1,6 +1,6 @@
-#include <DB/DataStreams/NullableAdapterBlockInputStream.h>
-#include <DB/Columns/ColumnNullable.h>
-#include <DB/DataTypes/DataTypeNullable.h>
+#include <DataStreams/NullableAdapterBlockInputStream.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {

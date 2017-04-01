@@ -1,11 +1,11 @@
-#include <DB/IO/ReadBuffer.h>
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadBufferFromString.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/Core/FieldVisitors.h>
-#include <DB/Common/SipHash.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <Core/FieldVisitors.h>
+#include <Common/SipHash.h>
 
 
 namespace DB

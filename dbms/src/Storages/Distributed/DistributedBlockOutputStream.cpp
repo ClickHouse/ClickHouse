@@ -1,20 +1,20 @@
-#include <DB/Storages/Distributed/DistributedBlockOutputStream.h>
-#include <DB/Storages/StorageDistributed.h>
+#include <Storages/Distributed/DistributedBlockOutputStream.h>
+#include <Storages/StorageDistributed.h>
 
-#include <DB/Parsers/formatAST.h>
-#include <DB/Parsers/queryToString.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/queryToString.h>
 
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/DataStreams/NativeBlockOutputStream.h>
-#include <DB/Interpreters/InterpreterInsertQuery.h>
-#include <DB/Interpreters/Cluster.h>
-#include <DB/Interpreters/createBlockSelector.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/CompressedWriteBuffer.h>
+#include <DataStreams/NativeBlockOutputStream.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/createBlockSelector.h>
 
-#include <DB/Common/Increment.h>
-#include <DB/DataTypes/DataTypesNumber.h>
+#include <Common/Increment.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <memory>
-#include <DB/Common/ClickHouseRevision.h>
+#include <Common/ClickHouseRevision.h>
 
 #include <iostream>
 

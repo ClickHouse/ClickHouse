@@ -1,10 +1,10 @@
-#include <DB/Core/NamesAndTypes.h>
-#include <DB/DataTypes/DataTypeFactory.h>
-#include <DB/IO/ReadBuffer.h>
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadBufferFromString.h>
+#include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <sparsehash/dense_hash_map>
 
 

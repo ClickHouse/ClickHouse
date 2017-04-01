@@ -3,12 +3,12 @@
 #include <iostream>
 #include <fstream>
 
-#include <DB/Common/Stopwatch.h>
+#include <Common/Stopwatch.h>
 
-#include <DB/IO/ReadBufferFromIStream.h>
-#include <DB/IO/WriteBufferFromOStream.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/DataTypes/DataTypeString.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 
 
 int main(int argc, char ** argv)

@@ -1,10 +1,10 @@
 #include <iostream>
 #include <iomanip>
 
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 
-#include <DB/Common/Stopwatch.h>
+#include <Common/Stopwatch.h>
 
 
 namespace test

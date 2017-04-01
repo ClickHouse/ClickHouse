@@ -1,20 +1,20 @@
 #include <Poco/DirectoryIterator.h>
 #include <common/logger_useful.h>
 
-#include <DB/Databases/DatabaseOrdinary.h>
-#include <DB/Databases/DatabaseMemory.h>
-#include <DB/Databases/DatabasesCommon.h>
-#include <DB/Common/escapeForFileName.h>
-#include <DB/Common/StringUtils.h>
-#include <DB/Common/Stopwatch.h>
-#include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/ParserCreateQuery.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/Settings.h>
-#include <DB/Interpreters/InterpreterCreateQuery.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/ReadBufferFromFile.h>
+#include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabaseMemory.h>
+#include <Databases/DatabasesCommon.h>
+#include <Common/escapeForFileName.h>
+#include <Common/StringUtils.h>
+#include <Common/Stopwatch.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Settings.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/ReadBufferFromFile.h>
 
 
 namespace DB

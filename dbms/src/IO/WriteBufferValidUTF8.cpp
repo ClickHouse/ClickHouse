@@ -1,6 +1,6 @@
 #include <Poco/UTF8Encoding.h>
-#include <DB/IO/WriteBufferValidUTF8.h>
-#include <DB/Core/Types.h>
+#include <IO/WriteBufferValidUTF8.h>
+#include <Core/Types.h>
 
 #if __SSE2__
     #include <emmintrin.h>

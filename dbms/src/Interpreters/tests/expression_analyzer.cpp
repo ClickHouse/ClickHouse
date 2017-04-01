@@ -1,12 +1,12 @@
-#include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Interpreters/ExpressionActions.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/formatAST.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/ExpressionListParsers.h>
-#include <DB/DataTypes/DataTypeFactory.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <DataTypes/DataTypeFactory.h>
 
 
 int main(int argc, char ** argv)

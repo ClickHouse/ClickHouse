@@ -1,6 +1,6 @@
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Common/setThreadName.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/setThreadName.h>
 
 
 namespace DB

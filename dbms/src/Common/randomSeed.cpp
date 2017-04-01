@@ -2,9 +2,9 @@
 #include <unistd.h>
 #include <sys/types.h>
 
-#include <DB/Common/Exception.h>
-#include <DB/Common/randomSeed.h>
-#include <DB/Core/Types.h>
+#include <Common/Exception.h>
+#include <Common/randomSeed.h>
+#include <Core/Types.h>
 
 #ifdef __APPLE__
 #include <common/apple_rt.h>

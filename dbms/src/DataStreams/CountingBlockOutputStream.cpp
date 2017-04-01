@@ -1,5 +1,5 @@
-#include <DB/DataStreams/CountingBlockOutputStream.h>
-#include <DB/Common/ProfileEvents.h>
+#include <DataStreams/CountingBlockOutputStream.h>
+#include <Common/ProfileEvents.h>
 
 
 namespace ProfileEvents

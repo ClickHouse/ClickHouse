@@ -7,13 +7,13 @@
 
 #include <Poco/File.h>
 #include <common/logger_useful.h>
-#include <DB/Common/ClickHouseRevision.h>
+#include <Common/ClickHouseRevision.h>
 #include <common/LocalDateTime.h>
 
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/LimitReadBuffer.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/Operators.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/LimitReadBuffer.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/Operators.h>
 
 
 namespace DB

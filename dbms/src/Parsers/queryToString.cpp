@@ -1,5 +1,5 @@
-#include <DB/Parsers/queryToString.h>
-#include <DB/Parsers/formatAST.h>
+#include <Parsers/queryToString.h>
+#include <Parsers/formatAST.h>
 #include <sstream>
 
 namespace DB

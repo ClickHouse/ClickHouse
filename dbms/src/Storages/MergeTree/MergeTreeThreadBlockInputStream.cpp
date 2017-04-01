@@ -1,7 +1,7 @@
-#include <DB/Storages/MergeTree/MergeTreeReader.h>
-#include <DB/Storages/MergeTree/MergeTreeReadPool.h>
-#include <DB/Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
-#include <DB/Columns/ColumnNullable.h>
+#include <Storages/MergeTree/MergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
+#include <Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
+#include <Columns/ColumnNullable.h>
 #include <ext/range.hpp>
 
 

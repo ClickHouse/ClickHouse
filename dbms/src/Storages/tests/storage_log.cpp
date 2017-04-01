@@ -1,14 +1,14 @@
 #include <iostream>
 
-#include <DB/IO/WriteBufferFromOStream.h>
-#include <DB/Storages/StorageLog.h>
-#include <DB/DataStreams/TabSeparatedRowOutputStream.h>
-#include <DB/DataStreams/LimitBlockInputStream.h>
-#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
-#include <DB/DataStreams/copyData.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Interpreters/Context.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <Storages/StorageLog.h>
+#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <DataStreams/LimitBlockInputStream.h>
+#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <DataStreams/copyData.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnsNumber.h>
+#include <Interpreters/Context.h>
 
 
 int main(int argc, char ** argv)

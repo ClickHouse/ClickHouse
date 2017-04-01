@@ -1,8 +1,8 @@
 #include <sstream>
-#include <DB/Core/SortDescription.h>
-#include <DB/Common/Collator.h>
-#include <DB/IO/Operators.h>
-#include <DB/IO/WriteBufferFromString.h>
+#include <Core/SortDescription.h>
+#include <Common/Collator.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB

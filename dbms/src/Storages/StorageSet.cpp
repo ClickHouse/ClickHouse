@@ -1,13 +1,13 @@
-#include <DB/Storages/StorageSet.h>
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/DataStreams/NativeBlockOutputStream.h>
-#include <DB/DataStreams/NativeBlockInputStream.h>
-#include <DB/Common/escapeForFileName.h>
-#include <DB/Common/StringUtils.h>
-#include <DB/Interpreters/Set.h>
+#include <Storages/StorageSet.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/CompressedReadBuffer.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/CompressedWriteBuffer.h>
+#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NativeBlockInputStream.h>
+#include <Common/escapeForFileName.h>
+#include <Common/StringUtils.h>
+#include <Interpreters/Set.h>
 #include <Poco/DirectoryIterator.h>
 
 

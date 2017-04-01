@@ -1,5 +1,5 @@
-#include <DB/Parsers/ASTSetQuery.h>
-#include <DB/Interpreters/InterpreterSetQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
 
 
 namespace DB

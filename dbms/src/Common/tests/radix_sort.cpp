@@ -2,10 +2,10 @@
 #include <malloc.h>
 #endif
 #include <ext/bit_cast.hpp>
-#include <DB/Common/RadixSort.h>
-#include <DB/Common/Stopwatch.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/Core/Defines.h>
+#include <Common/RadixSort.h>
+#include <Common/Stopwatch.h>
+#include <IO/ReadHelpers.h>
+#include <Core/Defines.h>
 
 using Key = double;
 

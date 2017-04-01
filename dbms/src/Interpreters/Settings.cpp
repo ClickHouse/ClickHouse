@@ -1,4 +1,4 @@
-#include <DB/Interpreters/Settings.h>
+#include <Interpreters/Settings.h>
 
 
 namespace DB

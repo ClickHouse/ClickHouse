@@ -1,6 +1,6 @@
-#include <DB/Storages/IStorage.h>
-#include <DB/Parsers/ASTOptimizeQuery.h>
-#include <DB/Interpreters/InterpreterOptimizeQuery.h>
+#include <Storages/IStorage.h>
+#include <Parsers/ASTOptimizeQuery.h>
+#include <Interpreters/InterpreterOptimizeQuery.h>
 
 
 namespace DB

@@ -4,10 +4,10 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 
-#include <DB/IO/ReadBufferFromIStream.h>
-#include <DB/IO/ReadBufferFromHTTP.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <IO/ReadBufferFromHTTP.h>
 
-#include <DB/Common/SimpleCache.h>
+#include <Common/SimpleCache.h>
 
 #include <common/logger_useful.h>
 

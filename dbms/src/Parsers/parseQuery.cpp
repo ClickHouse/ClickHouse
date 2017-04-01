@@ -1,10 +1,10 @@
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/ParserQuery.h>
-#include <DB/Parsers/ASTInsertQuery.h>
-#include <DB/Common/StringUtils.h>
-#include <DB/Common/typeid_cast.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/Operators.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 
 namespace DB

@@ -3,9 +3,9 @@
 #include <iostream>
 #include <sstream>
 
-#include <DB/Core/Types.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/WriteBufferFromOStream.h>
+#include <Core/Types.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromOStream.h>
 
 
 int main(int argc, char ** argv)

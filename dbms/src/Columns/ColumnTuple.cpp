@@ -1,4 +1,4 @@
-#include <DB/Columns/ColumnTuple.h>
+#include <Columns/ColumnTuple.h>
 #include <ext/map.hpp>
 #include <ext/range.hpp>
 

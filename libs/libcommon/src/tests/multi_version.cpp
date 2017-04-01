@@ -1,6 +1,6 @@
 #include <string.h>
 #include <iostream>
-#include <DB/Common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <functional>
 #include <common/MultiVersion.h>
 #include <Poco/Exception.h>

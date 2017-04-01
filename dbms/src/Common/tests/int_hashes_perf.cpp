@@ -6,8 +6,8 @@
 #include <iomanip>
 
 #include <Poco/Exception.h>
-#include <DB/Common/HashTable/Hash.h>
-#include <DB/Common/Stopwatch.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/Stopwatch.h>
 
 #include "AvalancheTest.h"  /// Taken from SMHasher.
 

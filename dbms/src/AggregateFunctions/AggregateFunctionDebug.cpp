@@ -1,9 +1,9 @@
-#include <DB/AggregateFunctions/INullaryAggregateFunction.h>
-#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
+#include <AggregateFunctions/INullaryAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnsNumber.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

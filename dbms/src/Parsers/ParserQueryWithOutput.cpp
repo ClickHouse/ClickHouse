@@ -1,13 +1,13 @@
-#include <DB/Parsers/ParserQueryWithOutput.h>
-#include <DB/Parsers/ParserShowTablesQuery.h>
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/Parsers/ParserTablePropertiesQuery.h>
-#include <DB/Parsers/ParserShowProcesslistQuery.h>
-#include <DB/Parsers/ParserCheckQuery.h>
-#include <DB/Parsers/ParserKillQueryQuery.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ExpressionElementParsers.h>
-#include <DB/Common/typeid_cast.h>
+#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/ParserShowTablesQuery.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserTablePropertiesQuery.h>
+#include <Parsers/ParserShowProcesslistQuery.h>
+#include <Parsers/ParserCheckQuery.h>
+#include <Parsers/ParserKillQueryQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

@@ -1,16 +1,16 @@
-#include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
-#include <DB/DataStreams/narrowBlockInputStreams.h>
-#include <DB/DataStreams/LazyBlockInputStream.h>
-#include <DB/DataStreams/NullBlockInputStream.h>
-#include <DB/Storages/StorageMerge.h>
-#include <DB/Common/VirtualColumnUtils.h>
-#include <DB/Interpreters/InterpreterAlterQuery.h>
-#include <DB/Interpreters/ExpressionActions.h>
-#include <DB/Storages/VirtualColumnFactory.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Databases/IDatabase.h>
+#include <DataStreams/AddingConstColumnBlockInputStream.h>
+#include <DataStreams/narrowBlockInputStreams.h>
+#include <DataStreams/LazyBlockInputStream.h>
+#include <DataStreams/NullBlockInputStream.h>
+#include <Storages/StorageMerge.h>
+#include <Common/VirtualColumnUtils.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Storages/VirtualColumnFactory.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB

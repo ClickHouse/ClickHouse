@@ -3,8 +3,8 @@
 
 #include <Poco/PatternFormatter.h>
 #include <Poco/Ext/ThreadNumber.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <daemon/BaseDaemon.h>
 
 #include <experimental/optional>

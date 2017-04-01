@@ -1,6 +1,6 @@
-#include <DB/Common/typeid_cast.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTTablesInSelectQuery.h>
+#include <Common/typeid_cast.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 
 namespace DB

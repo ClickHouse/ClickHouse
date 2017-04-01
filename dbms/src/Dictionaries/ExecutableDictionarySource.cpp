@@ -1,11 +1,11 @@
-#include <DB/Dictionaries/ExecutableDictionarySource.h>
+#include <Dictionaries/ExecutableDictionarySource.h>
 
-#include <DB/Common/ShellCommand.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Dictionaries/OwningBlockInputStream.h>
+#include <Common/ShellCommand.h>
+#include <Interpreters/Context.h>
+#include <Dictionaries/OwningBlockInputStream.h>
 
-#include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/DataTypes/DataTypesNumber.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <common/logger_useful.h>
 

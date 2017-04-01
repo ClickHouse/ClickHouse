@@ -1,14 +1,14 @@
 #include <set>
 #include <unordered_set>
 
-#include <DB/Analyzers/OptimizeGroupOrderLimitBy.h>
-#include <DB/Analyzers/TypeAndConstantInference.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTOrderByElement.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Functions/IFunction.h>
+#include <Analyzers/OptimizeGroupOrderLimitBy.h>
+#include <Analyzers/TypeAndConstantInference.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTLiteral.h>
+#include <Functions/IFunction.h>
 
 
 namespace DB

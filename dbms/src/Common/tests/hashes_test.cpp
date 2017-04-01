@@ -4,11 +4,11 @@
 #include <city.h>
 #include <openssl/md5.h>
 
-#include <DB/Common/Stopwatch.h>
+#include <Common/Stopwatch.h>
 
-#include <DB/Common/SipHash.h>
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/ReadHelpers.h>
+#include <Common/SipHash.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadHelpers.h>
 
 
 int main(int argc, char ** argv)

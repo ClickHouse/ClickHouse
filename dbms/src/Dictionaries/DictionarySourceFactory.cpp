@@ -1,27 +1,27 @@
-#include <DB/Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceFactory.h>
 
-#include <DB/Core/Block.h>
-#include <DB/Dictionaries/DictionaryStructure.h>
-#include <DB/Dictionaries/FileDictionarySource.h>
-#include <DB/Dictionaries/MySQLDictionarySource.h>
-#include <DB/Dictionaries/ClickHouseDictionarySource.h>
-#include <DB/Dictionaries/ExecutableDictionarySource.h>
-#include <DB/Dictionaries/HTTPDictionarySource.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/Core/FieldVisitors.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/IO/HTTPCommon.h>
+#include <Core/Block.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/FileDictionarySource.h>
+#include <Dictionaries/MySQLDictionarySource.h>
+#include <Dictionaries/ClickHouseDictionarySource.h>
+#include <Dictionaries/ExecutableDictionarySource.h>
+#include <Dictionaries/HTTPDictionarySource.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate.h>
+#include <Core/FieldVisitors.h>
+#include <Columns/ColumnsNumber.h>
+#include <IO/HTTPCommon.h>
 #include <memory>
 #include <mutex>
 
-#include <DB/Common/config.h>
+#include <Common/config.h>
 #if Poco_MongoDB_FOUND
-    #include <DB/Dictionaries/MongoDBDictionarySource.h>
+    #include <Dictionaries/MongoDBDictionarySource.h>
 #endif
 #if Poco_DataODBC_FOUND
     #include <Poco/Data/ODBC/Connector.h>
-    #include <DB/Dictionaries/ODBCDictionarySource.h>
+    #include <Dictionaries/ODBCDictionarySource.h>
 #endif
 
 

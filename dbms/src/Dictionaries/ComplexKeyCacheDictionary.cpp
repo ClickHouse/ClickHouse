@@ -1,8 +1,8 @@
-#include <DB/Dictionaries/ComplexKeyCacheDictionary.h>
-#include <DB/Common/BitHelpers.h>
-#include <DB/Common/randomSeed.h>
-#include <DB/Common/Stopwatch.h>
-#include <DB/Common/ProfilingScopedRWLock.h>
+#include <Dictionaries/ComplexKeyCacheDictionary.h>
+#include <Common/BitHelpers.h>
+#include <Common/randomSeed.h>
+#include <Common/Stopwatch.h>
+#include <Common/ProfilingScopedRWLock.h>
 #include <ext/range.hpp>
 
 namespace DB

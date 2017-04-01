@@ -1,4 +1,4 @@
-#include <DB/IO/CompressedReadBufferBase.h>
+#include <IO/CompressedReadBufferBase.h>
 
 #include <vector>
 
@@ -11,14 +11,14 @@
 #include <lz4.h>
 #include <zstd.h>
 
-#include <DB/Common/PODArray.h>
-#include <DB/Common/ProfileEvents.h>
-#include <DB/Common/Exception.h>
-#include <DB/Common/unaligned.h>
-#include <DB/IO/ReadBuffer.h>
-#include <DB/IO/BufferWithOwnMemory.h>
-#include <DB/IO/CompressedStream.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Common/PODArray.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Exception.h>
+#include <Common/unaligned.h>
+#include <IO/ReadBuffer.h>
+#include <IO/BufferWithOwnMemory.h>
+#include <IO/CompressedStream.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace ProfileEvents

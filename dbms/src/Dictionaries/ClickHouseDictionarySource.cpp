@@ -1,10 +1,10 @@
-#include <DB/Dictionaries/ClickHouseDictionarySource.h>
-#include <DB/Dictionaries/ExternalQueryBuilder.h>
-#include <DB/Dictionaries/writeParenthesisedString.h>
-#include <DB/Client/ConnectionPool.h>
-#include <DB/DataStreams/RemoteBlockInputStream.h>
-#include <DB/Interpreters/executeQuery.h>
-#include <DB/Common/isLocalAddress.h>
+#include <Dictionaries/ClickHouseDictionarySource.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
+#include <Dictionaries/writeParenthesisedString.h>
+#include <Client/ConnectionPool.h>
+#include <DataStreams/RemoteBlockInputStream.h>
+#include <Interpreters/executeQuery.h>
+#include <Common/isLocalAddress.h>
 #include <memory>
 #include <ext/range.hpp>
 

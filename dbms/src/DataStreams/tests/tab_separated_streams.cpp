@@ -3,15 +3,15 @@
 #include <iostream>
 #include <fstream>
 
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataStreams/TabSeparatedRowInputStream.h>
-#include <DB/DataStreams/TabSeparatedRowOutputStream.h>
-#include <DB/DataStreams/copyData.h>
-#include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
-#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataStreams/TabSeparatedRowInputStream.h>
+#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <DataStreams/copyData.h>
+#include <DataStreams/BlockInputStreamFromRowInputStream.h>
+#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
 
 
 using namespace DB;

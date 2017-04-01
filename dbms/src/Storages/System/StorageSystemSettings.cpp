@@ -1,10 +1,10 @@
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Interpreters/Settings.h>
-#include <DB/Storages/System/StorageSystemSettings.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <Interpreters/Settings.h>
+#include <Storages/System/StorageSystemSettings.h>
 
 
 namespace DB

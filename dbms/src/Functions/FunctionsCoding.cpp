@@ -1,5 +1,5 @@
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsCoding.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsCoding.h>
 
 namespace DB
 {

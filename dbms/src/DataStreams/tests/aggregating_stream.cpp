@@ -1,22 +1,22 @@
 #include <iostream>
 #include <iomanip>
 
-#include <DB/IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromOStream.h>
 
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
 
-#include <DB/DataStreams/IBlockInputStream.h>
-#include <DB/DataStreams/AggregatingBlockInputStream.h>
-#include <DB/DataStreams/TabSeparatedRowOutputStream.h>
-#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/DataStreams/copyData.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/AggregatingBlockInputStream.h>
+#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/copyData.h>
 
-#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 
 int main(int argc, char ** argv)

@@ -1,10 +1,10 @@
 #include <iomanip>
 #include <random>
 
-#include <DB/Columns/ColumnConst.h>
-#include <DB/Interpreters/Quota.h>
-#include <DB/Interpreters/ProcessList.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <Columns/ColumnConst.h>
+#include <Interpreters/Quota.h>
+#include <Interpreters/ProcessList.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
 
 namespace DB
 {

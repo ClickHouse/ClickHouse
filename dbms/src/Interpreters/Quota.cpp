@@ -2,10 +2,10 @@
 
 #include <common/logger_useful.h>
 
-#include <DB/Common/SipHash.h>
-#include <DB/Common/StringUtils.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/Interpreters/Quota.h>
+#include <Common/SipHash.h>
+#include <Common/StringUtils.h>
+#include <IO/ReadHelpers.h>
+#include <Interpreters/Quota.h>
 
 #include <set>
 

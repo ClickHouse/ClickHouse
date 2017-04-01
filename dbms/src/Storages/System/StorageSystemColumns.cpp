@@ -1,15 +1,15 @@
-#include <DB/Storages/System/StorageSystemColumns.h>
-#include <DB/Storages/MergeTree/MergeTreeData.h>
-#include <DB/Storages/StorageMergeTree.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Common/VirtualColumnUtils.h>
-#include <DB/Parsers/queryToString.h>
-#include <DB/Databases/IDatabase.h>
+#include <Storages/System/StorageSystemColumns.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageMergeTree.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <Common/VirtualColumnUtils.h>
+#include <Parsers/queryToString.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB

@@ -3,17 +3,17 @@
 
 #include <Poco/ConsoleChannel.h>
 
-#include <DB/IO/ReadBufferFromIStream.h>
-#include <DB/IO/WriteBufferFromOStream.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <IO/WriteBufferFromOStream.h>
 
-#include <DB/Storages/StorageLog.h>
-#include <DB/Storages/System/StorageSystemNumbers.h>
-#include <DB/Storages/System/StorageSystemOne.h>
+#include <Storages/StorageLog.h>
+#include <Storages/System/StorageSystemNumbers.h>
+#include <Storages/System/StorageSystemOne.h>
 
-#include <DB/Interpreters/loadMetadata.h>
-#include <DB/Interpreters/executeQuery.h>
-#include <DB/Databases/IDatabase.h>
-#include <DB/Databases/DatabaseOrdinary.h>
+#include <Interpreters/loadMetadata.h>
+#include <Interpreters/executeQuery.h>
+#include <Databases/IDatabase.h>
+#include <Databases/DatabaseOrdinary.h>
 
 
 using namespace DB;

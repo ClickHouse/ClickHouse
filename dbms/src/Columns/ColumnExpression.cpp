@@ -1,5 +1,5 @@
-#include <DB/Interpreters/ExpressionActions.h>
-#include <DB/Columns/ColumnExpression.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Columns/ColumnExpression.h>
 
 
 namespace DB

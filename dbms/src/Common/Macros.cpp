@@ -1,5 +1,5 @@
-#include <DB/Common/Macros.h>
-#include <DB/Common/Exception.h>
+#include <Common/Macros.h>
+#include <Common/Exception.h>
 
 namespace DB
 {

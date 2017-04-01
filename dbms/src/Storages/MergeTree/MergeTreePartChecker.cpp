@@ -1,19 +1,19 @@
-#include <DB/Storages/MergeTree/MergeTreePartChecker.h>
-#include <DB/DataStreams/MarkInCompressedFile.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/DataTypes/DataTypeAggregateFunction.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/DataTypes/DataTypeNested.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/HashingReadBuffer.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Common/CurrentMetrics.h>
-#include <DB/Common/escapeForFileName.h>
+#include <Storages/MergeTree/MergeTreePartChecker.h>
+#include <DataStreams/MarkInCompressedFile.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNested.h>
+#include <IO/CompressedReadBuffer.h>
+#include <IO/HashingReadBuffer.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/escapeForFileName.h>
 #include <Poco/File.h>
 
 

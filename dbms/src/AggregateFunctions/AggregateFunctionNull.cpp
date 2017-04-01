@@ -1,4 +1,4 @@
-#include <DB/AggregateFunctions/AggregateFunctionNull.h>
+#include <AggregateFunctions/AggregateFunctionNull.h>
 
 namespace DB
 {

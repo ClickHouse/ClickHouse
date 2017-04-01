@@ -1,5 +1,5 @@
-#include <DB/Columns/ColumnConstAggregateFunction.h>
-#include <DB/Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConstAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
 
 
 namespace DB

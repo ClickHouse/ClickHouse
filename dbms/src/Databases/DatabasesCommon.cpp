@@ -1,10 +1,10 @@
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/ParserCreateQuery.h>
-#include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/formatAST.h>
-#include <DB/Interpreters/InterpreterCreateQuery.h>
-#include <DB/Storages/StorageFactory.h>
-#include <DB/Databases/DatabasesCommon.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Storages/StorageFactory.h>
+#include <Databases/DatabasesCommon.h>
 
 
 namespace DB

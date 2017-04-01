@@ -1,6 +1,6 @@
 #include <common/logger_useful.h>
-#include <DB/Databases/DatabaseMemory.h>
-#include <DB/Databases/DatabasesCommon.h>
+#include <Databases/DatabaseMemory.h>
+#include <Databases/DatabasesCommon.h>
 
 
 namespace DB

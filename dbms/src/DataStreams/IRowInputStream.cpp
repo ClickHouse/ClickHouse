@@ -1,5 +1,5 @@
-#include <DB/DataStreams/IRowInputStream.h>
-#include <DB/Common/Exception.h>
+#include <DataStreams/IRowInputStream.h>
+#include <Common/Exception.h>
 
 
 namespace DB

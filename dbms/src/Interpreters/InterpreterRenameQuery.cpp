@@ -1,7 +1,7 @@
-#include <DB/Parsers/ASTRenameQuery.h>
-#include <DB/Databases/IDatabase.h>
-#include <DB/Interpreters/InterpreterRenameQuery.h>
-#include <DB/Storages/IStorage.h>
+#include <Parsers/ASTRenameQuery.h>
+#include <Databases/IDatabase.h>
+#include <Interpreters/InterpreterRenameQuery.h>
+#include <Storages/IStorage.h>
 
 
 

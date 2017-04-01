@@ -1,4 +1,4 @@
-#include <DB/IO/WriteHelpers.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {

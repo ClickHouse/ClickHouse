@@ -1,6 +1,6 @@
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/DataStreams/copyData.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/copyData.h>
 
 
 namespace DB

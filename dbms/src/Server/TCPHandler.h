@@ -1,13 +1,13 @@
 #pragma once
 
-#include <DB/Core/Protocol.h>
-#include <DB/Core/QueryProcessingStage.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/DataStreams/BlockIO.h>
-#include <DB/Common/Stopwatch.h>
-#include <DB/Common/CurrentMetrics.h>
-#include <DB/Core/Progress.h>
+#include <Core/Protocol.h>
+#include <Core/QueryProcessingStage.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <DataStreams/BlockIO.h>
+#include <Common/Stopwatch.h>
+#include <Common/CurrentMetrics.h>
+#include <Core/Progress.h>
 #include "Server.h"
 
 

@@ -1,6 +1,6 @@
-#include <DB/IO/HTTPCommon.h>
+#include <IO/HTTPCommon.h>
 
-#include <DB/Common/config.h>
+#include <Common/config.h>
 #if Poco_NetSSL_FOUND
 #include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/Context.h>

@@ -1,6 +1,6 @@
-#include <DB/Parsers/ASTWithAlias.h>
-#include <DB/IO/WriteBufferFromOStream.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Parsers/ASTWithAlias.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

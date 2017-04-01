@@ -1,8 +1,8 @@
-#include <DB/Storages/MergeTree/RemoteQueryExecutor.h>
-#include <DB/Interpreters/executeQuery.h>
-#include <DB/IO/ReadBufferFromHTTP.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Storages/MergeTree/RemoteQueryExecutor.h>
+#include <Interpreters/executeQuery.h>
+#include <IO/ReadBufferFromHTTP.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {

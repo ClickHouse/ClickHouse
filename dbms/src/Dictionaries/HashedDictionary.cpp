@@ -1,5 +1,5 @@
 #include <ext/size.hpp>
-#include <DB/Dictionaries/HashedDictionary.h>
+#include <Dictionaries/HashedDictionary.h>
 
 
 namespace DB

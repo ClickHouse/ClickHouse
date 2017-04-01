@@ -1,9 +1,9 @@
 #include <iostream>
 
-#include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/ParserCreateQuery.h>
-#include <DB/Parsers/formatAST.h>
-#include <DB/Parsers/parseQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
 
 
 int main(int argc, char ** argv)

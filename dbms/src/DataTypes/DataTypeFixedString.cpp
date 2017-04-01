@@ -1,15 +1,15 @@
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/WriteHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 
-#include <DB/Columns/ColumnFixedString.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnConst.h>
 
-#include <DB/DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeFixedString.h>
 
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/VarInt.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/VarInt.h>
 
 
 namespace DB

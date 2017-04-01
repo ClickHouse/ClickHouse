@@ -1,14 +1,14 @@
-#include <DB/Storages/StorageFile.h>
+#include <Storages/StorageFile.h>
 
-#include <DB/Interpreters/Context.h>
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/DataStreams/FormatFactory.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/DataStreams/IBlockOutputStream.h>
+#include <Interpreters/Context.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <DataStreams/FormatFactory.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
 
-#include <DB/Common/escapeForFileName.h>
+#include <Common/escapeForFileName.h>
 
 #include <fcntl.h>
 

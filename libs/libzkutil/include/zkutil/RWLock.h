@@ -2,7 +2,7 @@
 
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/Common.h>
-#include <DB/Common/Exception.h>
+#include <Common/Exception.h>
 #include <Poco/Event.h>
 #include <string>
 #include <type_traits>

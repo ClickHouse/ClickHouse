@@ -1,30 +1,30 @@
 #include <iostream>
 #include <iomanip>
 
-#include <DB/IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromOStream.h>
 
-#include <DB/Storages/StorageLog.h>
+#include <Storages/StorageLog.h>
 
-#include <DB/DataStreams/LimitBlockInputStream.h>
-#include <DB/DataStreams/ExpressionBlockInputStream.h>
-#include <DB/DataStreams/FilterBlockInputStream.h>
-#include <DB/DataStreams/TabSeparatedRowOutputStream.h>
-#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
-#include <DB/DataStreams/copyData.h>
+#include <DataStreams/LimitBlockInputStream.h>
+#include <DataStreams/ExpressionBlockInputStream.h>
+#include <DataStreams/FilterBlockInputStream.h>
+#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <DataStreams/copyData.h>
 
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/Parsers/formatAST.h>
-#include <DB/Parsers/parseQuery.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
 
-#include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Interpreters/ExpressionActions.h>
-#include <DB/Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Context.h>
 
 
 int main(int argc, char ** argv)

@@ -4,7 +4,7 @@
 #include <iostream>
 #include <iomanip>
 
-#include <DB/Common/SipHash.h>
+#include <Common/SipHash.h>
 
 /// Adapted version https://www.131002.net/siphash/siphash24.c
 

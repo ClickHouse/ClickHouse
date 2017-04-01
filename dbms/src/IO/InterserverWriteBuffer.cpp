@@ -1,5 +1,5 @@
-#include <DB/IO/InterserverWriteBuffer.h>
-#include <DB/IO/WriteBufferFromOStream.h>
+#include <IO/InterserverWriteBuffer.h>
+#include <IO/WriteBufferFromOStream.h>
 
 #include <Poco/Version.h>
 #include <Poco/URI.h>

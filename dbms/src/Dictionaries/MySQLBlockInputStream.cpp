@@ -1,6 +1,6 @@
-#include <DB/Dictionaries/MySQLBlockInputStream.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Columns/ColumnString.h>
+#include <Dictionaries/MySQLBlockInputStream.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
 #include <ext/range.hpp>
 #include <vector>
 

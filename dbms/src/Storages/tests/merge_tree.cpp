@@ -1,18 +1,18 @@
 #include <iostream>
 
-#include <DB/Storages/StorageMergeTree.h>
+#include <Storages/StorageMergeTree.h>
 
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 
-#include <DB/DataStreams/TabSeparatedRowOutputStream.h>
-#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
-#include <DB/DataStreams/copyData.h>
+#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <DataStreams/copyData.h>
 
-#include <DB/Parsers/ExpressionListParsers.h>
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/Parsers/parseQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/parseQuery.h>
 
 
 int main(int argc, char ** argv)

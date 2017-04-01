@@ -1,9 +1,9 @@
-#include <DB/Storages/MergeTree/ShardedPartitionUploader.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/InterserverWriteBuffer.h>
+#include <Storages/MergeTree/ShardedPartitionUploader.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/InterserverWriteBuffer.h>
 #include <Poco/File.h>
 
 

@@ -1,5 +1,5 @@
-#include <DB/Storages/StorageCloud.h>
-#include <DB/Databases/DatabaseCloud.h>
+#include <Storages/StorageCloud.h>
+#include <Databases/DatabaseCloud.h>
 
 
 namespace DB

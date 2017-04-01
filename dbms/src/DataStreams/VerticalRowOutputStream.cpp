@@ -1,10 +1,10 @@
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/IFunction.h>
-#include <DB/Columns/ColumnConst.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/DataStreams/VerticalRowOutputStream.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteHelpers.h>
+#include <DataStreams/VerticalRowOutputStream.h>
 
 
 namespace DB

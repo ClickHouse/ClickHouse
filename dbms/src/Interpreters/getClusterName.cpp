@@ -1,10 +1,10 @@
-#include <DB/Parsers/IAST.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Common/typeid_cast.h>
+#include <Parsers/IAST.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Common/typeid_cast.h>
 
-#include <DB/Interpreters/getClusterName.h>
+#include <Interpreters/getClusterName.h>
 
 
 namespace DB

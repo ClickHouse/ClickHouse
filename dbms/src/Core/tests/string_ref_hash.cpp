@@ -1,8 +1,8 @@
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/Operators.h>
-#include <DB/Core/StringRef.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+#include <Core/StringRef.h>
 
 
 /** Calculates StringRefHash from stdin. For debugging.

@@ -1,8 +1,8 @@
 #include "InterserverIOHTTPHandler.h"
-#include <DB/Interpreters/InterserverIOHandler.h>
-#include <DB/IO/WriteBufferFromHTTPServerResponse.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/ReadBufferFromIStream.h>
+#include <Interpreters/InterserverIOHandler.h>
+#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <IO/CompressedWriteBuffer.h>
+#include <IO/ReadBufferFromIStream.h>
 
 
 namespace DB

@@ -1,10 +1,10 @@
 #include <map>
 
-#include <DB/Common/Exception.h>
+#include <Common/Exception.h>
 
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
 
-#include <DB/Storages/StorageMemory.h>
+#include <Storages/StorageMemory.h>
 
 
 namespace DB

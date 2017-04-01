@@ -1,6 +1,6 @@
-#include <DB/Storages/MergeTree/MergeTreeReader.h>
-#include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
-#include <DB/Columns/ColumnNullable.h>
+#include <Storages/MergeTree/MergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeBlockInputStream.h>
+#include <Columns/ColumnNullable.h>
 
 
 namespace DB

@@ -1,7 +1,7 @@
-#include <DB/Columns/ColumnConst.h>
-#include <DB/DataStreams/MaterializingBlockOutputStream.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnConst.h>
+#include <DataStreams/MaterializingBlockOutputStream.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <ext/range.hpp>
 
 

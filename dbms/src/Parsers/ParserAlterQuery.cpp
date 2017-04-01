@@ -1,11 +1,11 @@
-#include <DB/Parsers/ParserAlterQuery.h>
-#include <DB/Parsers/CommonParsers.h>
-#include <DB/Parsers/ExpressionElementParsers.h>
-#include <DB/Parsers/ParserCreateQuery.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ExpressionElementParsers.h>
-#include <DB/Parsers/ASTAlterQuery.h>
-#include <DB/Parsers/ASTLiteral.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {

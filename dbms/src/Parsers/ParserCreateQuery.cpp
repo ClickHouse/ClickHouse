@@ -1,10 +1,10 @@
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/ExpressionListParsers.h>
-#include <DB/Parsers/ParserCreateQuery.h>
-#include <DB/Parsers/ParserSelectQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserSelectQuery.h>
 
 
 namespace DB

@@ -1,7 +1,7 @@
 #include <queue>
 #include <iomanip>
 
-#include <DB/DataStreams/MergingSortedBlockInputStream.h>
+#include <DataStreams/MergingSortedBlockInputStream.h>
 
 
 namespace DB

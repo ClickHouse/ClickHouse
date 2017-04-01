@@ -1,8 +1,8 @@
 #include <zkutil/Types.h>
 
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
-#include <DB/IO/Operators.h>
-#include <DB/IO/ReadBufferFromString.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 
 
 namespace DB

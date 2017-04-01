@@ -1,16 +1,16 @@
-#include <DB/Analyzers/CollectTables.h>
-#include <DB/Analyzers/CollectAliases.h>
-#include <DB/Analyzers/AnalyzeResultOfQuery.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/TableFunctions/TableFunctionFactory.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ASTTablesInSelectQuery.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/formatAST.h>
-#include <DB/Parsers/ASTSubquery.h>
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Analyzers/CollectTables.h>
+#include <Analyzers/CollectAliases.h>
+#include <Analyzers/AnalyzeResultOfQuery.h>
+#include <Interpreters/Context.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/ASTSubquery.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

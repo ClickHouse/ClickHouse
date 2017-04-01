@@ -1,11 +1,11 @@
-#include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
-#include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
-#include <DB/Common/escapeForFileName.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/IO/HashingWriteBuffer.h>
-#include <DB/Common/Stopwatch.h>
-#include <DB/Interpreters/PartLog.h>
-#include <DB/Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Common/escapeForFileName.h>
+#include <DataTypes/DataTypeArray.h>
+#include <IO/HashingWriteBuffer.h>
+#include <Common/Stopwatch.h>
+#include <Interpreters/PartLog.h>
+#include <Interpreters/Context.h>
 #include <Poco/File.h>
 
 

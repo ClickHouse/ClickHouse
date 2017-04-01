@@ -1,4 +1,4 @@
-#include <DB/AggregateFunctions/AggregateFunctionMerge.h>
+#include <AggregateFunctions/AggregateFunctionMerge.h>
 
 namespace DB
 {

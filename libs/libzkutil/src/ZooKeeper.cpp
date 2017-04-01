@@ -1,8 +1,8 @@
 #include <functional>
 #include <zkutil/ZooKeeper.h>
 #include <common/logger_useful.h>
-#include <DB/Common/ProfileEvents.h>
-#include <DB/Common/StringUtils.h>
+#include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
 
 
 namespace ProfileEvents

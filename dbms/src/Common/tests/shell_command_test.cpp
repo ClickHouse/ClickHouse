@@ -1,9 +1,9 @@
 #include <iostream>
-#include <DB/Core/Types.h>
-#include <DB/Common/ShellCommand.h>
-#include <DB/IO/copyData.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/ReadBufferFromString.h>
+#include <Core/Types.h>
+#include <Common/ShellCommand.h>
+#include <IO/copyData.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromString.h>
 
 
 using namespace DB;

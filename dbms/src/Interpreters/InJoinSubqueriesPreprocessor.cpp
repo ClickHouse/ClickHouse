@@ -1,10 +1,10 @@
-#include <DB/Interpreters/InJoinSubqueriesPreprocessor.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Storages/StorageDistributed.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ASTTablesInSelectQuery.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTIdentifier.h>
+#include <Interpreters/InJoinSubqueriesPreprocessor.h>
+#include <Interpreters/Context.h>
+#include <Storages/StorageDistributed.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB

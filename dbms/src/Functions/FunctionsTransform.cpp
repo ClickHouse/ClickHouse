@@ -1,6 +1,6 @@
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsTransform.h>
-#include <DB/Functions/DataTypeTraits.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsTransform.h>
+#include <Functions/DataTypeTraits.h>
 
 namespace DB
 {
