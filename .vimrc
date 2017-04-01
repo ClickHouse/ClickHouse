@@ -1,2 +1,2 @@
-au BufRead,BufNewFile ./* set ts=4 sw=4 noexpandtab tags=tags,../tags
+au BufRead,BufNewFile ./* set tabstop=4 softtabstop=0 expandtab shiftwidth=4 smarttab tags=tags,../tags
 
