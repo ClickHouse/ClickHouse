@@ -91,8 +91,8 @@ protected:
             /// Freeing memory before destroying the object.
             if (!res)
             {
-                block_in = std::experimental::nullopt;
-                data_in = std::experimental::nullopt;
+                block_in = std::nullopt;
+                data_in = std::nullopt;
                 index.reset();
             }
         }
@@ -113,8 +113,8 @@ private:
       * - to save RAM when using a large number of sources.
       */
     bool started = false;
-    std::experimental::optional<CompressedReadBufferFromFile> data_in;
-    std::experimental::optional<NativeBlockInputStream> block_in;
+    std::optional<CompressedReadBufferFromFile> data_in;
+    std::optional<NativeBlockInputStream> block_in;
 };
 
 

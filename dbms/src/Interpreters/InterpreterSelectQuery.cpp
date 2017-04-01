@@ -691,7 +691,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         return QueryProcessingStage::FetchColumns;
 
     /// Интерпретатор подзапроса, если подзапрос
-    std::experimental::optional<InterpreterSelectQuery> interpreter_subquery;
+    std::optional<InterpreterSelectQuery> interpreter_subquery;
 
     /// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
     Names required_columns = query_analyzer->getRequiredColumns();

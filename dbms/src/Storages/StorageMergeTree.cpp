@@ -302,7 +302,7 @@ bool StorageMergeTree::merge(
     size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
     /// You must call destructor under unlocked `currently_merging_mutex`.
-    std::experimental::optional<CurrentlyMergingPartsTagger> merging_tagger;
+    std::optional<CurrentlyMergingPartsTagger> merging_tagger;
     String merged_name;
 
     {

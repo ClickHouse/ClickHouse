@@ -53,7 +53,7 @@ private:
 private:
     NamesAndTypesListPtr required_columns;
     Actions actions;
-    std::vector<std::experimental::optional<String>> rename;
+    std::vector<std::optional<String>> rename;
     bool must_transform;
 };
 
