@@ -196,7 +196,7 @@ void Compiler::compile(
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*/"
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include/"
 #endif
-        " -I " INTERNAL_COMPILER_HEADERS "/dbms/include/"
+        " -I " INTERNAL_COMPILER_HEADERS "/dbms/src/"
         " -I " INTERNAL_COMPILER_HEADERS "/contrib/libcityhash/include/"
         " -I " INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
         " -I " INTERNAL_Poco_Foundation_INCLUDE_DIR
