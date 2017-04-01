@@ -354,7 +354,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
       *  по окончании которой вызывается колбэк on_ready.
       */
     SharedLibraryPtr lib = params.compiler->getOrCount(key, params.min_count_to_compile,
-        "-include " INTERNAL_COMPILER_HEADERS "/dbms/include/DB/Interpreters/SpecializedAggregator.h",
+        "-include " INTERNAL_COMPILER_HEADERS "/dbms/src/Interpreters/SpecializedAggregator.h",
         get_code, on_ready);
 
     /// Если результат уже готов.
