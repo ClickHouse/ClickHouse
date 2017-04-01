@@ -91,7 +91,7 @@ public:
     }
 
     /// return none if daemon doesn't exist, reference to the daemon otherwise
-    static std::optional<std::reference_wrapper<BaseDaemon>> tryGetInstance() { return tryGetInstance<BaseDaemon>(); }
+    static std::experimental::optional<std::reference_wrapper<BaseDaemon>> tryGetInstance() { return tryGetInstance<BaseDaemon>(); }
 
     /// Спит заданное количество секунд или до события wakeup
     void sleep(double seconds);
@@ -129,7 +129,7 @@ public:
         return nullptr;
     }
 
-    std::optional<size_t> getLayer() const
+    std::experimental::optional<size_t> getLayer() const
     {
         return layer;    /// layer выставляется в классе-наследнике BaseDaemonApplication.
     }
@@ -158,7 +158,7 @@ protected:
     virtual void onInterruptSignals(int signal_id);
 
     template <class Daemon>
-    static std::optional<std::reference_wrapper<Daemon>> tryGetInstance();
+    static std::experimental::optional<std::reference_wrapper<Daemon>> tryGetInstance();
 
     virtual std::string getDefaultCorePath() const;
 
@@ -207,7 +207,7 @@ protected:
 
     std::map<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
 
-    std::optional<size_t> layer;
+    std::experimental::optional<size_t> layer;
 
     std::mutex signal_handler_mutex;
     std::condition_variable signal_event;
@@ -220,7 +220,7 @@ protected:
 
 
 template <class Daemon>
-std::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
+std::experimental::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
 {
     Daemon * ptr = nullptr;
     try
@@ -233,7 +233,7 @@ std::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
     }
 
     if (ptr)
-        return std::optional<std::reference_wrapper<Daemon>>(*ptr);
+        return std::experimental::optional<std::reference_wrapper<Daemon>>(*ptr);
     else
         return {};
 }

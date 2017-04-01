@@ -57,8 +57,8 @@ private:
 
     StoragePtr storage;
     /// Порядок важен.
-    std::optional<Poco::ScopedReadRWLock> data_lock;
-    std::optional<Poco::ScopedReadRWLock> structure_lock;
+    std::experimental::optional<Poco::ScopedReadRWLock> data_lock;
+    std::experimental::optional<Poco::ScopedReadRWLock> structure_lock;
 
 public:
     TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data);

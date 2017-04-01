@@ -121,9 +121,9 @@ void NullableAdapterBlockInputStream::buildActions(
                 actions.push_back(NONE);
 
             if (in_elem.name != out_elem.name)
-                rename.push_back(std::make_optional(out_elem.name));
+                rename.push_back(std::experimental::make_optional(out_elem.name));
             else
-                rename.push_back(std::nullopt);
+                rename.push_back(std::experimental::nullopt);
 
             if (actions.back() != NONE || rename.back())
                 must_transform = true;

@@ -32,7 +32,7 @@ public:
     ZooKeeperNodeCache(const ZooKeeperNodeCache &) = delete;
     ZooKeeperNodeCache(ZooKeeperNodeCache &&) = default;
 
-    std::optional<std::string> get(const std::string & path);
+    std::experimental::optional<std::string> get(const std::string & path);
 
     Poco::Event & getChangedEvent() { return context->changed_event; }
 
