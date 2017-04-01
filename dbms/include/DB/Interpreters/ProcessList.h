@@ -6,6 +6,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <Poco/Condition.h>
+#include <Poco/Thread.h>
 #include <DB/Common/Stopwatch.h>
 #include <DB/Core/Defines.h>
 #include <DB/Core/Progress.h>
@@ -48,6 +49,7 @@ struct ProcessInfo
 	size_t written_rows;
 	size_t written_bytes;
 	Int64 memory_usage;
+	size_t initial_thread;
 	ClientInfo client_info;
 };
 
@@ -75,6 +77,8 @@ struct ProcessListElement
 
 	/// Temporary tables could be registered here. Modify under mutex.
 	Tables temporary_tables;
+
+	size_t initial_thread;
 
 protected:
 
@@ -106,6 +110,13 @@ public:
 
 		if (memory_tracker_fault_probability)
 			memory_tracker.setFaultProbability(memory_tracker_fault_probability);
+
+		auto pThread = Poco::Thread::current();
+		if (pThread)
+		{
+			initial_thread  = pThread->id();
+		}
+
 	}
 
 	~ProcessListElement()
@@ -143,6 +154,7 @@ public:
 		res.written_rows	= progress_out.rows;
 		res.written_bytes	= progress_out.bytes;
 		res.memory_usage 	= memory_tracker.get();
+		res.initial_thread	= initial_thread;
 
 		return res;
 	}
