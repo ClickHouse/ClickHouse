@@ -14,12 +14,12 @@ namespace DB
 class InterpreterRenameQuery : public IInterpreter
 {
 public:
-	InterpreterRenameQuery(ASTPtr query_ptr_, Context & context_);
-	BlockIO execute() override;
+    InterpreterRenameQuery(ASTPtr query_ptr_, Context & context_);
+    BlockIO execute() override;
 
 private:
-	ASTPtr query_ptr;
-	Context context;
+    ASTPtr query_ptr;
+    Context context;
 };
 
 

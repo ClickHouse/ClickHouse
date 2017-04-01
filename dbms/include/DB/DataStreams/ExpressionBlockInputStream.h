@@ -16,20 +16,20 @@ class ExpressionActions;
 class ExpressionBlockInputStream : public IProfilingBlockInputStream
 {
 private:
-	using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+    using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 public:
-	ExpressionBlockInputStream(BlockInputStreamPtr input_, ExpressionActionsPtr expression_);
+    ExpressionBlockInputStream(BlockInputStreamPtr input_, ExpressionActionsPtr expression_);
 
-	String getName() const override;
-	String getID() const override;
-	const Block & getTotals() override;
+    String getName() const override;
+    String getID() const override;
+    const Block & getTotals() override;
 
 protected:
-	Block readImpl() override;
+    Block readImpl() override;
 
 private:
-	ExpressionActionsPtr expression;
+    ExpressionActionsPtr expression;
 };
 
 }

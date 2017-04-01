@@ -8,13 +8,13 @@
 namespace DB
 {
 
-struct NameVisitParamHas			{ static constexpr auto name = "visitParamHas"; };
-struct NameVisitParamExtractUInt	{ static constexpr auto name = "visitParamExtractUInt"; };
-struct NameVisitParamExtractInt		{ static constexpr auto name = "visitParamExtractInt"; };
-struct NameVisitParamExtractFloat	{ static constexpr auto name = "visitParamExtractFloat"; };
-struct NameVisitParamExtractBool	{ static constexpr auto name = "visitParamExtractBool"; };
-struct NameVisitParamExtractRaw		{ static constexpr auto name = "visitParamExtractRaw"; };
-struct NameVisitParamExtractString	{ static constexpr auto name = "visitParamExtractString"; };
+struct NameVisitParamHas            { static constexpr auto name = "visitParamHas"; };
+struct NameVisitParamExtractUInt    { static constexpr auto name = "visitParamExtractUInt"; };
+struct NameVisitParamExtractInt        { static constexpr auto name = "visitParamExtractInt"; };
+struct NameVisitParamExtractFloat    { static constexpr auto name = "visitParamExtractFloat"; };
+struct NameVisitParamExtractBool    { static constexpr auto name = "visitParamExtractBool"; };
+struct NameVisitParamExtractRaw        { static constexpr auto name = "visitParamExtractRaw"; };
+struct NameVisitParamExtractString    { static constexpr auto name = "visitParamExtractString"; };
 
 
 using FunctionVisitParamHas = FunctionsStringSearch<ExtractParamImpl<HasParam>, NameVisitParamHas>;
@@ -29,13 +29,13 @@ using FunctionVisitParamExtractString = FunctionsStringSearchToString<ExtractPar
 
 void registerFunctionsVisitParam(FunctionFactory & factory)
 {
-	factory.registerFunction<FunctionVisitParamHas>();
-	factory.registerFunction<FunctionVisitParamExtractUInt>();
-	factory.registerFunction<FunctionVisitParamExtractInt>();
-	factory.registerFunction<FunctionVisitParamExtractFloat>();
-	factory.registerFunction<FunctionVisitParamExtractBool>();
-	factory.registerFunction<FunctionVisitParamExtractRaw>();
-	factory.registerFunction<FunctionVisitParamExtractString>();
+    factory.registerFunction<FunctionVisitParamHas>();
+    factory.registerFunction<FunctionVisitParamExtractUInt>();
+    factory.registerFunction<FunctionVisitParamExtractInt>();
+    factory.registerFunction<FunctionVisitParamExtractFloat>();
+    factory.registerFunction<FunctionVisitParamExtractBool>();
+    factory.registerFunction<FunctionVisitParamExtractRaw>();
+    factory.registerFunction<FunctionVisitParamExtractString>();
 }
 
 }

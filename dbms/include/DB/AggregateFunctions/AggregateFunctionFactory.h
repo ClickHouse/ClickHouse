@@ -16,40 +16,40 @@ using DataTypes = std::vector<DataTypePtr>;
   */
 class AggregateFunctionFactory final
 {
-	friend class StorageSystemFunctions;
+    friend class StorageSystemFunctions;
 
 private:
-	/// No std::function, for smaller object size and less indirection.
-	using Creator = AggregateFunctionPtr(*)(const String & name, const DataTypes & argument_types);
-	using AggregateFunctions = std::unordered_map<String, Creator>;
+    /// No std::function, for smaller object size and less indirection.
+    using Creator = AggregateFunctionPtr(*)(const String & name, const DataTypes & argument_types);
+    using AggregateFunctions = std::unordered_map<String, Creator>;
 
 public:
-	AggregateFunctionFactory();
-	AggregateFunctionPtr get(const String & name, const DataTypes & argument_types, int recursion_level = 0) const;
-	AggregateFunctionPtr tryGet(const String & name, const DataTypes & argument_types) const;
-	bool isAggregateFunctionName(const String & name, int recursion_level = 0) const;
+    AggregateFunctionFactory();
+    AggregateFunctionPtr get(const String & name, const DataTypes & argument_types, int recursion_level = 0) const;
+    AggregateFunctionPtr tryGet(const String & name, const DataTypes & argument_types) const;
+    bool isAggregateFunctionName(const String & name, int recursion_level = 0) const;
 
-	/// For compatibility with SQL, it's possible to specify that certain aggregate function name is case insensitive.
-	enum CaseSensitiveness
-	{
-		CaseSensitive,
-		CaseInsensitive
-	};
+    /// For compatibility with SQL, it's possible to specify that certain aggregate function name is case insensitive.
+    enum CaseSensitiveness
+    {
+        CaseSensitive,
+        CaseInsensitive
+    };
 
-	/// Register an aggregate function by its name.
-	void registerFunction(const String & name, Creator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
+    /// Register an aggregate function by its name.
+    void registerFunction(const String & name, Creator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
-	AggregateFunctionFactory(const AggregateFunctionFactory &) = delete;
-	AggregateFunctionFactory & operator=(const AggregateFunctionFactory &) = delete;
-
-private:
-	AggregateFunctionPtr getImpl(const String & name, const DataTypes & argument_types, int recursion_level) const;
+    AggregateFunctionFactory(const AggregateFunctionFactory &) = delete;
+    AggregateFunctionFactory & operator=(const AggregateFunctionFactory &) = delete;
 
 private:
-	AggregateFunctions aggregate_functions;
+    AggregateFunctionPtr getImpl(const String & name, const DataTypes & argument_types, int recursion_level) const;
 
-	/// Case insensitive aggregate functions will be additionally added here with lowercased name.
-	AggregateFunctions case_insensitive_aggregate_functions;
+private:
+    AggregateFunctions aggregate_functions;
+
+    /// Case insensitive aggregate functions will be additionally added here with lowercased name.
+    AggregateFunctions case_insensitive_aggregate_functions;
 };
 
 }

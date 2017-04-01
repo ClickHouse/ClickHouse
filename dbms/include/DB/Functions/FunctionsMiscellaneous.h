@@ -14,37 +14,37 @@ namespace DB
 class FunctionTuple : public IFunction
 {
 public:
-	static constexpr auto name = "tuple";
-	static FunctionPtr create(const Context & context);
+    static constexpr auto name = "tuple";
+    static FunctionPtr create(const Context & context);
 
-	String getName() const override
-	{
-		return name;
-	}
+    String getName() const override
+    {
+        return name;
+    }
 
-	bool isVariadic() const override
-	{
-		return true;
-	}
+    bool isVariadic() const override
+    {
+        return true;
+    }
 
-	size_t getNumberOfArguments() const override
-	{
-		return 0;
-	}
+    size_t getNumberOfArguments() const override
+    {
+        return 0;
+    }
 
-	bool isInjective(const Block &) override
-	{
-		return true;
-	}
+    bool isInjective(const Block &) override
+    {
+        return true;
+    }
 
-	bool hasSpecialSupportForNulls() const override
-	{
-		return true;
-	}
+    bool hasSpecialSupportForNulls() const override
+    {
+        return true;
+    }
 
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
 
@@ -54,21 +54,21 @@ public:
 class FunctionReplicate : public IFunction
 {
 public:
-	static constexpr auto name = "replicate";
-	static FunctionPtr create(const Context & context);
+    static constexpr auto name = "replicate";
+    static FunctionPtr create(const Context & context);
 
-	String getName() const override
-	{
-		return name;
-	}
+    String getName() const override
+    {
+        return name;
+    }
 
-	size_t getNumberOfArguments() const override
-	{
-		return 2;
-	}
+    size_t getNumberOfArguments() const override
+    {
+        return 2;
+    }
 
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 }

@@ -6,7 +6,7 @@ namespace Poco
 {
 namespace Util
 {
-	class AbstractConfiguration;
+    class AbstractConfiguration;
 }
 }
 namespace DB

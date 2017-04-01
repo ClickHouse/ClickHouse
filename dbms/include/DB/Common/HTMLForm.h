@@ -13,30 +13,30 @@
   */
 struct HTMLForm : public Poco::Net::HTMLForm
 {
-	HTMLForm(const Poco::Net::HTTPRequest & request)
-	{
-		Poco::URI uri(request.getURI());
-		std::istringstream istr(uri.getRawQuery());
-		readUrl(istr);
-	}
+    HTMLForm(const Poco::Net::HTTPRequest & request)
+    {
+        Poco::URI uri(request.getURI());
+        std::istringstream istr(uri.getRawQuery());
+        readUrl(istr);
+    }
 
-	HTMLForm(const Poco::URI & uri)
-	{
-		std::istringstream istr(uri.getRawQuery());
-		readUrl(istr);
-	}
+    HTMLForm(const Poco::URI & uri)
+    {
+        std::istringstream istr(uri.getRawQuery());
+        readUrl(istr);
+    }
 
 
-	template <typename T>
-	T getParsed(const std::string & key, T default_value)
-	{
-		auto it = find(key);
-		return (it != end()) ? DB::parse<T>(it->second) : default_value;
-	}
+    template <typename T>
+    T getParsed(const std::string & key, T default_value)
+    {
+        auto it = find(key);
+        return (it != end()) ? DB::parse<T>(it->second) : default_value;
+    }
 
-	template <typename T>
-	T getParsed(const std::string & key)
-	{
-		return DB::parse<T>(get(key));
-	}
+    template <typename T>
+    T getParsed(const std::string & key)
+    {
+        return DB::parse<T>(get(key));
+    }
 };

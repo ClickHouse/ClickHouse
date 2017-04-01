@@ -8,9 +8,9 @@ namespace DB
 
 BlockIO InterpreterUseQuery::execute()
 {
-	const String & new_database = typeid_cast<const ASTUseQuery &>(*query_ptr).database;
-	context.getSessionContext().setCurrentDatabase(new_database);
-	return {};
+    const String & new_database = typeid_cast<const ASTUseQuery &>(*query_ptr).database;
+    context.getSessionContext().setCurrentDatabase(new_database);
+    return {};
 }
 
 }

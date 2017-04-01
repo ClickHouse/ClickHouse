@@ -22,50 +22,50 @@
 
 int main(int argc, char ** argv)
 {
-	std::vector<std::string> data;
-	DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
+    std::vector<std::string> data;
+    DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
 
-	std::cerr << std::fixed << std::setprecision(3);
+    std::cerr << std::fixed << std::setprecision(3);
 
-	{
-		Stopwatch watch;
+    {
+        Stopwatch watch;
 
-		while (!in.eof())
-		{
-			data.emplace_back();
-			DB::readEscapedString(data.back(), in);
-			DB::assertChar('\n', in);
-		}
+        while (!in.eof())
+        {
+            data.emplace_back();
+            DB::readEscapedString(data.back(), in);
+            DB::assertChar('\n', in);
+        }
 
-		double seconds = watch.elapsedSeconds();
-		std::cerr << "Read "
-			<< data.size() << " rows, "
-			<< (in.count() / 1048576.0) << " MiB "
-			<< " in " << seconds << " sec., "
-			<< (data.size() / seconds) << " rows/sec., "
-			<< (in.count() / 1048576.0 / seconds) << " MiB/sec.\n";
-	}
+        double seconds = watch.elapsedSeconds();
+        std::cerr << "Read "
+            << data.size() << " rows, "
+            << (in.count() / 1048576.0) << " MiB "
+            << " in " << seconds << " sec., "
+            << (data.size() / seconds) << " rows/sec., "
+            << (in.count() / 1048576.0 / seconds) << " MiB/sec.\n";
+    }
 
-	{
-		size_t res = 0;
-		Stopwatch watch;
+    {
+        size_t res = 0;
+        Stopwatch watch;
 
-		for (const auto & s : data)
-		{
-			SipHash hash;
-			hash.update(s.data(), s.size());
-			res += hash.get64();
-		}
+        for (const auto & s : data)
+        {
+            SipHash hash;
+            hash.update(s.data(), s.size());
+            res += hash.get64();
+        }
 
-		double seconds = watch.elapsedSeconds();
-		std::cerr << "Processed "
-			<< data.size() << " rows, "
-			<< (in.count() / 1048576.0) << " MiB "
-			<< " in " << seconds << " sec., "
-			<< (data.size() / seconds) << " rows/sec., "
-			<< (in.count() / 1048576.0 / seconds) << " MiB/sec. "
-			<< "(res = " << res << ")\n";
-	}
+        double seconds = watch.elapsedSeconds();
+        std::cerr << "Processed "
+            << data.size() << " rows, "
+            << (in.count() / 1048576.0) << " MiB "
+            << " in " << seconds << " sec., "
+            << (data.size() / seconds) << " rows/sec., "
+            << (in.count() / 1048576.0 / seconds) << " MiB/sec. "
+            << "(res = " << res << ")\n";
+    }
 
-	return 0;
+    return 0;
 }

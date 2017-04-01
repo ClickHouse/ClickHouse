@@ -13,13 +13,13 @@ namespace DB
 
 BlockIO InterpreterShowProcesslistQuery::execute()
 {
-	return executeQuery(getRewrittenQuery(), context, true);
+    return executeQuery(getRewrittenQuery(), context, true);
 }
 
 
 String InterpreterShowProcesslistQuery::getRewrittenQuery()
 {
-	return "SELECT * FROM system.processes";
+    return "SELECT * FROM system.processes";
 }
 
 

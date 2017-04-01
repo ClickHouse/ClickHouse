@@ -16,32 +16,32 @@ namespace DB
 
 BlockIO InterpreterShowCreateQuery::execute()
 {
-	BlockIO res;
-	res.in = executeImpl();
-	res.in_sample = getSampleBlock();
+    BlockIO res;
+    res.in = executeImpl();
+    res.in_sample = getSampleBlock();
 
-	return res;
+    return res;
 }
 
 
 Block InterpreterShowCreateQuery::getSampleBlock()
 {
-	return {{ std::make_shared<ColumnConstString>(0, String()), std::make_shared<DataTypeString>(), "statement" }};
+    return {{ std::make_shared<ColumnConstString>(0, String()), std::make_shared<DataTypeString>(), "statement" }};
 }
 
 
 BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
 {
-	const ASTShowCreateQuery & ast = typeid_cast<const ASTShowCreateQuery &>(*query_ptr);
+    const ASTShowCreateQuery & ast = typeid_cast<const ASTShowCreateQuery &>(*query_ptr);
 
-	std::stringstream stream;
-	formatAST(*context.getCreateQuery(ast.database, ast.table), stream, 0, false, true);
-	String res = stream.str();
+    std::stringstream stream;
+    formatAST(*context.getCreateQuery(ast.database, ast.table), stream, 0, false, true);
+    String res = stream.str();
 
-	return std::make_shared<OneBlockInputStream>(Block{{
-		std::make_shared<ColumnConstString>(1, res),
-		std::make_shared<DataTypeString>(),
-		"statement"}});
+    return std::make_shared<OneBlockInputStream>(Block{{
+        std::make_shared<ColumnConstString>(1, res),
+        std::make_shared<DataTypeString>(),
+        "statement"}});
 }
 
 }

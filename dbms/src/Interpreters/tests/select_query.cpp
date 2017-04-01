@@ -21,38 +21,38 @@ using namespace DB;
 int main(int argc, char ** argv)
 try
 {
-	Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
-	Logger::root().setChannel(channel);
-	Logger::root().setLevel("trace");
+    Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
+    Logger::root().setChannel(channel);
+    Logger::root().setLevel("trace");
 
-	/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
-	DateLUT::instance();
+    /// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
+    DateLUT::instance();
 
-	Context context;
+    Context context;
 
-	context.setPath("./");
+    context.setPath("./");
 
-	loadMetadata(context);
+    loadMetadata(context);
 
-	DatabasePtr system = std::make_shared<DatabaseOrdinary>("system", "./metadata/system/");
-	context.addDatabase("system", system);
-	system->loadTables(context, nullptr, false);
-	system->attachTable("one", 	StorageSystemOne::create("one"));
-	system->attachTable("numbers", StorageSystemNumbers::create("numbers"));
-	context.setCurrentDatabase("default");
+    DatabasePtr system = std::make_shared<DatabaseOrdinary>("system", "./metadata/system/");
+    context.addDatabase("system", system);
+    system->loadTables(context, nullptr, false);
+    system->attachTable("one",     StorageSystemOne::create("one"));
+    system->attachTable("numbers", StorageSystemNumbers::create("numbers"));
+    context.setCurrentDatabase("default");
 
-	ReadBufferFromIStream in(std::cin);
-	WriteBufferFromOStream out(std::cout);
+    ReadBufferFromIStream in(std::cin);
+    WriteBufferFromOStream out(std::cout);
 
-	executeQuery(in, out, /* allow_into_outfile = */ false, context, {});
+    executeQuery(in, out, /* allow_into_outfile = */ false, context, {});
 
-	return 0;
+    return 0;
 }
 catch (const Exception & e)
 {
-	std::cerr << e.what() << ", " << e.displayText() << std::endl
-		<< std::endl
-		<< "Stack trace:" << std::endl
-		<< e.getStackTrace().toString();
-	return 1;
+    std::cerr << e.what() << ", " << e.displayText() << std::endl
+        << std::endl
+        << "Stack trace:" << std::endl
+        << e.getStackTrace().toString();
+    return 1;
 }

@@ -8,14 +8,14 @@
 
 int main(int argc, char ** argv)
 {
-	using namespace DB;
+    using namespace DB;
 
-	std::string input = "CREATE TABLE hits (URL String, UserAgentMinor2 FixedString(2), EventTime DateTime) ENGINE = Log";
-	ParserCreateQuery parser;
-	ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+    std::string input = "CREATE TABLE hits (URL String, UserAgentMinor2 FixedString(2), EventTime DateTime) ENGINE = Log";
+    ParserCreateQuery parser;
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
 
-	formatAST(*ast, std::cerr);
-	std::cerr << std::endl;
+    formatAST(*ast, std::cerr);
+    std::cerr << std::endl;
 
-	return 0;
+    return 0;
 }

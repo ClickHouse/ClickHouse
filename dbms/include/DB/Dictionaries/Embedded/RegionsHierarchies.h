@@ -12,41 +12,41 @@
 class RegionsHierarchies
 {
 private:
-	using Container = std::unordered_map<std::string, RegionsHierarchy>;
-	Container data;
+    using Container = std::unordered_map<std::string, RegionsHierarchy>;
+    Container data;
 
 public:
-	/** path_to_regions_hierarchy_file in configuration file
-	  * должен указывать на файл с иерархией регионов "по-умолчанию". Она будет доступна по пустому ключу.
-	  * Кроме того, рядом ищутся файлы, к имени которых (до расширения, если есть) добавлен произвольный _suffix.
-	  * Такие файлы загружаются, и иерархия регионов кладётся по ключу suffix.
-	  *
-	  * Например, если указано /opt/geo/regions_hierarchy.txt,
-	  *  то будет также загружен файл /opt/geo/regions_hierarchy_ua.txt, если такой есть - он будет доступен по ключу ua.
-	  */
-	RegionsHierarchies();
-	explicit RegionsHierarchies(const std::string & path_to_regions_hierarchy_file);
+    /** path_to_regions_hierarchy_file in configuration file
+      * должен указывать на файл с иерархией регионов "по-умолчанию". Она будет доступна по пустому ключу.
+      * Кроме того, рядом ищутся файлы, к имени которых (до расширения, если есть) добавлен произвольный _suffix.
+      * Такие файлы загружаются, и иерархия регионов кладётся по ключу suffix.
+      *
+      * Например, если указано /opt/geo/regions_hierarchy.txt,
+      *  то будет также загружен файл /opt/geo/regions_hierarchy_ua.txt, если такой есть - он будет доступен по ключу ua.
+      */
+    RegionsHierarchies();
+    explicit RegionsHierarchies(const std::string & path_to_regions_hierarchy_file);
 
-	/// Has corresponding section in configuration file.
-	static bool isConfigured();
-
-
-	/** Перезагружает, при необходимости, все иерархии регионов.
-	  */
-	void reload()
-	{
-		for (auto & elem : data)
-			elem.second.reload();
-	}
+    /// Has corresponding section in configuration file.
+    static bool isConfigured();
 
 
-	const RegionsHierarchy & get(const std::string & key) const
-	{
-		auto it = data.find(key);
+    /** Перезагружает, при необходимости, все иерархии регионов.
+      */
+    void reload()
+    {
+        for (auto & elem : data)
+            elem.second.reload();
+    }
 
-		if (data.end() == it)
-			throw Poco::Exception("There is no regions hierarchy for key " + key);
 
-		return it->second;
-	}
+    const RegionsHierarchy & get(const std::string & key) const
+    {
+        auto it = data.find(key);
+
+        if (data.end() == it)
+            throw Poco::Exception("There is no regions hierarchy for key " + key);
+
+        return it->second;
+    }
 };

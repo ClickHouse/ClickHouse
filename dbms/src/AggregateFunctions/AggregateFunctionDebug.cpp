@@ -27,66 +27,66 @@ namespace DB
 
 struct AggregateFunctionDebugData
 {
-	std::unique_ptr<size_t> ptr { new size_t(0xABCDEF01DEADBEEF) };
-	AggregateFunctionDebugData() {}
-	~AggregateFunctionDebugData()
-	{
-		if (*ptr != 0xABCDEF01DEADBEEF)
-		{
-			std::cerr << "Bug!";
-			abort();
-		}
+    std::unique_ptr<size_t> ptr { new size_t(0xABCDEF01DEADBEEF) };
+    AggregateFunctionDebugData() {}
+    ~AggregateFunctionDebugData()
+    {
+        if (*ptr != 0xABCDEF01DEADBEEF)
+        {
+            std::cerr << "Bug!";
+            abort();
+        }
 
-		ptr.reset();
-	}
+        ptr.reset();
+    }
 };
 
 
 class AggregateFunctionDebug final : public INullaryAggregateFunction<AggregateFunctionDebugData, AggregateFunctionDebug>
 {
 public:
-	String getName() const override { return "debug"; }
+    String getName() const override { return "debug"; }
 
-	DataTypePtr getReturnType() const override
-	{
-		return std::make_shared<DataTypeUInt8>();
-	}
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
 
-	void addImpl(AggregateDataPtr place) const
-	{
-	}
+    void addImpl(AggregateDataPtr place) const
+    {
+    }
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
-	{
-	}
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+    }
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-	{
-		writeBinary(UInt8(0), buf);
-	}
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    {
+        writeBinary(UInt8(0), buf);
+    }
 
-	void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
-	{
-		UInt8 tmp;
-		readBinary(tmp, buf);
-	}
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    {
+        UInt8 tmp;
+        readBinary(tmp, buf);
+    }
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
-	{
-		static_cast<ColumnUInt8 &>(to).getData().push_back(0);
-	}
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    {
+        static_cast<ColumnUInt8 &>(to).getData().push_back(0);
+    }
 };
 
 
 AggregateFunctionPtr createAggregateFunctionDebug(const std::string & name, const DataTypes & argument_types)
 {
-	return std::make_shared<AggregateFunctionDebug>();
+    return std::make_shared<AggregateFunctionDebug>();
 }
 
 
 void registerAggregateFunctionDebug(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction("debug", createAggregateFunctionDebug);
+    factory.registerFunction("debug", createAggregateFunctionDebug);
 }
 
 }

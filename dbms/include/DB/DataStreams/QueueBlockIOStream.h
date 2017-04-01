@@ -28,42 +28,42 @@ namespace DB
 class QueueBlockIOStream : public IProfilingBlockInputStream, public IBlockOutputStream
 {
 public:
-	QueueBlockIOStream(size_t queue_size_ = std::numeric_limits<int>::max())
-		: queue_size(queue_size_), queue(queue_size) {}
+    QueueBlockIOStream(size_t queue_size_ = std::numeric_limits<int>::max())
+        : queue_size(queue_size_), queue(queue_size) {}
 
-	String getName() const override { return "QueueBlockIOStream"; }
+    String getName() const override { return "QueueBlockIOStream"; }
 
-	String getID() const override
-	{
-		std::stringstream res;
-		res << this;
-		return res.str();
-	}
+    String getID() const override
+    {
+        std::stringstream res;
+        res << this;
+        return res.str();
+    }
 
-	void write(const Block & block) override
-	{
-		queue.push(block);
-	}
+    void write(const Block & block) override
+    {
+        queue.push(block);
+    }
 
-	void cancel() override
-	{
-		IProfilingBlockInputStream::cancel();
-		queue.clear();
-	}
+    void cancel() override
+    {
+        IProfilingBlockInputStream::cancel();
+        queue.clear();
+    }
 
 protected:
-	Block readImpl() override
-	{
-		Block res;
-		queue.pop(res);
-		return res;
-	}
+    Block readImpl() override
+    {
+        Block res;
+        queue.pop(res);
+        return res;
+    }
 
 private:
-	size_t queue_size;
+    size_t queue_size;
 
-	using Queue = ConcurrentBoundedQueue<Block>;
-	Queue queue;
+    using Queue = ConcurrentBoundedQueue<Block>;
+    Queue queue;
 };
 
 }

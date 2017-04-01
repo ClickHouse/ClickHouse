@@ -20,35 +20,35 @@ class Context;
 class AsynchronousMetrics
 {
 public:
-	AsynchronousMetrics(Context & context_)
-		: context(context_), thread([this] { run(); })
-	{
-	}
+    AsynchronousMetrics(Context & context_)
+        : context(context_), thread([this] { run(); })
+    {
+    }
 
-	~AsynchronousMetrics();
+    ~AsynchronousMetrics();
 
-	using Value = double;
-	using Container = std::unordered_map<std::string, Value>;
+    using Value = double;
+    using Container = std::unordered_map<std::string, Value>;
 
-	/// Returns copy of all values.
-	Container getValues() const;
+    /// Returns copy of all values.
+    Container getValues() const;
 
 private:
-	Context & context;
+    Context & context;
 
-	bool quit {false};
-	std::mutex wait_mutex;
-	std::condition_variable wait_cond;
+    bool quit {false};
+    std::mutex wait_mutex;
+    std::condition_variable wait_cond;
 
-	Container container;
-	mutable std::mutex container_mutex;
+    Container container;
+    mutable std::mutex container_mutex;
 
-	std::thread thread;
+    std::thread thread;
 
-	void run();
-	void update();
+    void run();
+    void update();
 
-	void set(const std::string & name, Value value);
+    void set(const std::string & name, Value value);
 };
 
 }

@@ -7,7 +7,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int UNKNOWN_FUNCTION;
+    extern const int UNKNOWN_FUNCTION;
 }
 
 
@@ -45,56 +45,56 @@ void registerFunctionsNull(FunctionFactory &);
 
 FunctionFactory::FunctionFactory()
 {
-	registerFunctionsArithmetic(*this);
-	registerFunctionsArray(*this);
-	registerFunctionsCoding(*this);
-	registerFunctionsComparison(*this);
-	registerFunctionsConditional(*this);
-	registerFunctionsConversion(*this);
-	registerFunctionsDateTime(*this);
-	registerFunctionsEmbeddedDictionaries(*this);
-	registerFunctionsExternalDictionaries(*this);
-	registerFunctionsFormatting(*this);
-	registerFunctionsHashing(*this);
-	registerFunctionsHigherOrder(*this);
-	registerFunctionsLogical(*this);
-	registerFunctionsMiscellaneous(*this);
-	registerFunctionsRandom(*this);
-	registerFunctionsReinterpret(*this);
-	registerFunctionsRound(*this);
-	registerFunctionsString(*this);
-	registerFunctionsStringArray(*this);
-	registerFunctionsStringSearch(*this);
-	registerFunctionsURL(*this);
-	registerFunctionsVisitParam(*this);
-	registerFunctionsMath(*this);
-	registerFunctionsTransform(*this);
-	registerFunctionsGeo(*this);
-	registerFunctionsCharset(*this);
-	registerFunctionsNull(*this);
+    registerFunctionsArithmetic(*this);
+    registerFunctionsArray(*this);
+    registerFunctionsCoding(*this);
+    registerFunctionsComparison(*this);
+    registerFunctionsConditional(*this);
+    registerFunctionsConversion(*this);
+    registerFunctionsDateTime(*this);
+    registerFunctionsEmbeddedDictionaries(*this);
+    registerFunctionsExternalDictionaries(*this);
+    registerFunctionsFormatting(*this);
+    registerFunctionsHashing(*this);
+    registerFunctionsHigherOrder(*this);
+    registerFunctionsLogical(*this);
+    registerFunctionsMiscellaneous(*this);
+    registerFunctionsRandom(*this);
+    registerFunctionsReinterpret(*this);
+    registerFunctionsRound(*this);
+    registerFunctionsString(*this);
+    registerFunctionsStringArray(*this);
+    registerFunctionsStringSearch(*this);
+    registerFunctionsURL(*this);
+    registerFunctionsVisitParam(*this);
+    registerFunctionsMath(*this);
+    registerFunctionsTransform(*this);
+    registerFunctionsGeo(*this);
+    registerFunctionsCharset(*this);
+    registerFunctionsNull(*this);
 }
 
 
 FunctionPtr FunctionFactory::get(
-	const std::string & name,
-	const Context & context) const
+    const std::string & name,
+    const Context & context) const
 {
-	auto res = tryGet(name, context);
-	if (!res)
-		throw Exception("Unknown function " + name, ErrorCodes::UNKNOWN_FUNCTION);
-	return res;
+    auto res = tryGet(name, context);
+    if (!res)
+        throw Exception("Unknown function " + name, ErrorCodes::UNKNOWN_FUNCTION);
+    return res;
 }
 
 
 FunctionPtr FunctionFactory::tryGet(
-	const std::string & name,
-	const Context & context) const
+    const std::string & name,
+    const Context & context) const
 {
-	auto it = functions.find(name);
-	if (functions.end() != it)
-		return it->second(context);
-	else
-		return {};
+    auto it = functions.find(name);
+    if (functions.end() != it)
+        return it->second(context);
+    else
+        return {};
 }
 
 }

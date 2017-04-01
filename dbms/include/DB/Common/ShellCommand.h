@@ -26,29 +26,29 @@ namespace DB
 class ShellCommand
 {
 private:
-	pid_t pid;
+    pid_t pid;
 
-	ShellCommand(pid_t pid, int in_fd, int out_fd, int err_fd)
-		: pid(pid), in(in_fd), out(out_fd), err(err_fd) {};
+    ShellCommand(pid_t pid, int in_fd, int out_fd, int err_fd)
+        : pid(pid), in(in_fd), out(out_fd), err(err_fd) {};
 
-	static std::unique_ptr<ShellCommand> executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only);
+    static std::unique_ptr<ShellCommand> executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only);
 
 public:
-	WriteBufferFromFile in;		/// Если команда читает из stdin, то не забудьте вызвать in.close() после записи туда всех данных.
-	ReadBufferFromFile out;
-	ReadBufferFromFile err;
+    WriteBufferFromFile in;        /// Если команда читает из stdin, то не забудьте вызвать in.close() после записи туда всех данных.
+    ReadBufferFromFile out;
+    ReadBufferFromFile err;
 
-	/// Выполнить команду с использованием /bin/sh -c
-	static std::unique_ptr<ShellCommand> execute(const std::string & command, bool pipe_stdin_only = false);
+    /// Выполнить команду с использованием /bin/sh -c
+    static std::unique_ptr<ShellCommand> execute(const std::string & command, bool pipe_stdin_only = false);
 
-	/// Выполнить исполняемый файл с указаннами аргументами. arguments - без argv[0].
-	static std::unique_ptr<ShellCommand> executeDirect(const std::string & path, const std::vector<std::string> & arguments);
+    /// Выполнить исполняемый файл с указаннами аргументами. arguments - без argv[0].
+    static std::unique_ptr<ShellCommand> executeDirect(const std::string & path, const std::vector<std::string> & arguments);
 
-	/// Подождать завершения процесса, кинуть исключение, если код не 0 или если процесс был завершён не самостоятельно.
-	void wait();
+    /// Подождать завершения процесса, кинуть исключение, если код не 0 или если процесс был завершён не самостоятельно.
+    void wait();
 
-	/// Подождать завершения процесса, узнать код возврата. Кинуть исключение, если процесс был завершён не самостоятельно.
-	int tryWait();
+    /// Подождать завершения процесса, узнать код возврата. Кинуть исключение, если процесс был завершён не самостоятельно.
+    int tryWait();
 };
 
 

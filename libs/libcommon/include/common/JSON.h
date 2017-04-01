@@ -44,162 +44,162 @@ POCO_DECLARE_EXCEPTION(Foundation_API, JSONException, Poco::Exception);
 class JSON
 {
 private:
-	using Pos = const char *;
-	Pos ptr_begin;
-	Pos ptr_end;
-	unsigned level;
+    using Pos = const char *;
+    Pos ptr_begin;
+    Pos ptr_end;
+    unsigned level;
 
 public:
-	JSON(Pos ptr_begin_, Pos ptr_end_, unsigned level_ = 0) : ptr_begin(ptr_begin_), ptr_end(ptr_end_), level(level_)
-	{
-		checkInit();
-	}
+    JSON(Pos ptr_begin_, Pos ptr_end_, unsigned level_ = 0) : ptr_begin(ptr_begin_), ptr_end(ptr_end_), level(level_)
+    {
+        checkInit();
+    }
 
-	JSON(const std::string & s) : ptr_begin(s.data()), ptr_end(s.data() + s.size()), level(0)
-	{
-		checkInit();
-	}
+    JSON(const std::string & s) : ptr_begin(s.data()), ptr_end(s.data() + s.size()), level(0)
+    {
+        checkInit();
+    }
 
-	JSON(const JSON & rhs) : ptr_begin(rhs.ptr_begin), ptr_end(rhs.ptr_end), level(rhs.level) {}
+    JSON(const JSON & rhs) : ptr_begin(rhs.ptr_begin), ptr_end(rhs.ptr_end), level(rhs.level) {}
 
-	/// Для вставки в контейнеры (создаёт некорректный объект)
-	JSON() : ptr_begin(nullptr), ptr_end(ptr_begin + 1) {}
+    /// Для вставки в контейнеры (создаёт некорректный объект)
+    JSON() : ptr_begin(nullptr), ptr_end(ptr_begin + 1) {}
 
-	const char * data() const { return ptr_begin; }
-	const char * dataEnd() const { return ptr_end; }
+    const char * data() const { return ptr_begin; }
+    const char * dataEnd() const { return ptr_end; }
 
-	enum ElementType
-	{
-		TYPE_OBJECT,
-		TYPE_ARRAY,
-		TYPE_NUMBER,
-		TYPE_STRING,
-		TYPE_BOOL,
-		TYPE_NULL,
-		TYPE_NAME_VALUE_PAIR,
-		TYPE_NOTYPE,
-	};
+    enum ElementType
+    {
+        TYPE_OBJECT,
+        TYPE_ARRAY,
+        TYPE_NUMBER,
+        TYPE_STRING,
+        TYPE_BOOL,
+        TYPE_NULL,
+        TYPE_NAME_VALUE_PAIR,
+        TYPE_NOTYPE,
+    };
 
-	ElementType getType() const;
+    ElementType getType() const;
 
-	bool isObject() const			{ return getType() == TYPE_OBJECT; };
-	bool isArray() const			{ return getType() == TYPE_ARRAY; };
-	bool isNumber() const			{ return getType() == TYPE_NUMBER; };
-	bool isString() const			{ return getType() == TYPE_STRING; };
-	bool isBool() const			{ return getType() == TYPE_BOOL; };
-	bool isNull() const			{ return getType() == TYPE_NULL; };
-	bool isNameValuePair() const	{ return getType() == TYPE_NAME_VALUE_PAIR; };
+    bool isObject() const            { return getType() == TYPE_OBJECT; };
+    bool isArray() const            { return getType() == TYPE_ARRAY; };
+    bool isNumber() const            { return getType() == TYPE_NUMBER; };
+    bool isString() const            { return getType() == TYPE_STRING; };
+    bool isBool() const            { return getType() == TYPE_BOOL; };
+    bool isNull() const            { return getType() == TYPE_NULL; };
+    bool isNameValuePair() const    { return getType() == TYPE_NAME_VALUE_PAIR; };
 
-	/// Количество элементов в массиве или объекте; если элемент - не массив или объект, то исключение.
-	size_t size() const;
+    /// Количество элементов в массиве или объекте; если элемент - не массив или объект, то исключение.
+    size_t size() const;
 
-	/// Является ли массив или объект пустыми; если элемент - не массив или объект, то исключение.
-	bool empty() const;
+    /// Является ли массив или объект пустыми; если элемент - не массив или объект, то исключение.
+    bool empty() const;
 
-	/// Получить элемент массива по индексу; если элемент - не массив, то исключение.
-	JSON operator[] (size_t n) const;
+    /// Получить элемент массива по индексу; если элемент - не массив, то исключение.
+    JSON operator[] (size_t n) const;
 
-	/// Получить элемент объекта по имени; если элемент - не объект, то исключение.
-	JSON operator[] (const std::string & name) const;
+    /// Получить элемент объекта по имени; если элемент - не объект, то исключение.
+    JSON operator[] (const std::string & name) const;
 
-	/// Есть ли в объекте элемент с заданным именем; если элемент - не объект, то исключение.
-	bool has(const std::string & name) const { return has(name.data(), name.size()); }
-	bool has(const char * data, size_t size) const;
+    /// Есть ли в объекте элемент с заданным именем; если элемент - не объект, то исключение.
+    bool has(const std::string & name) const { return has(name.data(), name.size()); }
+    bool has(const char * data, size_t size) const;
 
-	/// Получить значение элемента; исключение, если элемент имеет неправильный тип.
-	template <class T>
-	T get() const;
+    /// Получить значение элемента; исключение, если элемент имеет неправильный тип.
+    template <class T>
+    T get() const;
 
-	/// если значения нет, или тип неверный, то возвращает дефолтное значение
-	template <class T>
-	T getWithDefault(const std::string & key, const T & default_ = T()) const;
+    /// если значения нет, или тип неверный, то возвращает дефолтное значение
+    template <class T>
+    T getWithDefault(const std::string & key, const T & default_ = T()) const;
 
-	double 		getDouble() const;
-	Int64 		getInt() const;	/// Отбросить дробную часть.
-	UInt64 		getUInt() const;	/// Отбросить дробную часть. Если число отрицательное - исключение.
-	std::string getString() const;
-	bool 		getBool() const;
-	std::string getName() const;	/// Получить имя name-value пары.
-	JSON		getValue() const;	/// Получить значение name-value пары.
+    double         getDouble() const;
+    Int64         getInt() const;    /// Отбросить дробную часть.
+    UInt64         getUInt() const;    /// Отбросить дробную часть. Если число отрицательное - исключение.
+    std::string getString() const;
+    bool         getBool() const;
+    std::string getName() const;    /// Получить имя name-value пары.
+    JSON        getValue() const;    /// Получить значение name-value пары.
 
-	StringRef getRawString() const;
-	StringRef getRawName() const;
+    StringRef getRawString() const;
+    StringRef getRawName() const;
 
-	/// Получить значение элемента; если элемент - строка, то распарсить значение из строки; если не строка или число - то исключение.
-	double 		toDouble() const;
-	Int64 		toInt() const;
-	UInt64 		toUInt() const;
+    /// Получить значение элемента; если элемент - строка, то распарсить значение из строки; если не строка или число - то исключение.
+    double         toDouble() const;
+    Int64         toInt() const;
+    UInt64         toUInt() const;
 
-	/** Преобразовать любой элемент в строку.
-	  * Для строки возвращается её значение, для всех остальных элементов - сериализованное представление.
-	  */
-	std::string toString() const;
+    /** Преобразовать любой элемент в строку.
+      * Для строки возвращается её значение, для всех остальных элементов - сериализованное представление.
+      */
+    std::string toString() const;
 
-	/// Класс JSON одновременно является итератором по самому себе.
-	using iterator = JSON;
-	using const_iterator = JSON;
+    /// Класс JSON одновременно является итератором по самому себе.
+    using iterator = JSON;
+    using const_iterator = JSON;
 
-	iterator operator* () const { return *this; }
-	const JSON * operator-> () const { return this; }
-	bool operator== (const JSON & rhs) const { return ptr_begin == rhs.ptr_begin; }
-	bool operator!= (const JSON & rhs) const { return ptr_begin != rhs.ptr_begin; }
+    iterator operator* () const { return *this; }
+    const JSON * operator-> () const { return this; }
+    bool operator== (const JSON & rhs) const { return ptr_begin == rhs.ptr_begin; }
+    bool operator!= (const JSON & rhs) const { return ptr_begin != rhs.ptr_begin; }
 
-	/** Если элемент - массив или объект, то begin() возвращает iterator,
-	  * который указывает на первый элемент массива или первую name-value пару объекта.
-	  */
-	iterator begin() const;
+    /** Если элемент - массив или объект, то begin() возвращает iterator,
+      * который указывает на первый элемент массива или первую name-value пару объекта.
+      */
+    iterator begin() const;
 
-	/** end() - значение, которое нельзя использовать; сигнализирует о том, что элементы закончились.
-	  */
-	iterator end() const;
+    /** end() - значение, которое нельзя использовать; сигнализирует о том, что элементы закончились.
+      */
+    iterator end() const;
 
-	/// Перейти к следующему элементу массива или следующей name-value паре объекта.
-	iterator & operator++();
-	iterator operator++(int);
+    /// Перейти к следующему элементу массива или следующей name-value паре объекта.
+    iterator & operator++();
+    iterator operator++(int);
 
-	/// Есть ли в строке escape-последовательности
-	bool hasEscapes() const;
+    /// Есть ли в строке escape-последовательности
+    bool hasEscapes() const;
 
-	/// Есть ли в строке спец-символы из набора \, ', \0, \b, \f, \r, \n, \t, возможно, заэскейпленные.
-	bool hasSpecialChars() const;
+    /// Есть ли в строке спец-символы из набора \, ', \0, \b, \f, \r, \n, \t, возможно, заэскейпленные.
+    bool hasSpecialChars() const;
 
 private:
-	/// Проверить глубину рекурсии, а также корректность диапазона памяти.
-	void checkInit() const;
-	/// Проверить, что pos лежит внутри диапазона памяти.
-	void checkPos(Pos pos) const;
+    /// Проверить глубину рекурсии, а также корректность диапазона памяти.
+    void checkInit() const;
+    /// Проверить, что pos лежит внутри диапазона памяти.
+    void checkPos(Pos pos) const;
 
-	/// Вернуть позицию после заданного элемента.
-	Pos skipString() const;
-	Pos skipNumber() const;
-	Pos skipBool() const;
-	Pos skipNull() const;
-	Pos skipNameValuePair() const;
-	Pos skipObject() const;
-	Pos skipArray() const;
+    /// Вернуть позицию после заданного элемента.
+    Pos skipString() const;
+    Pos skipNumber() const;
+    Pos skipBool() const;
+    Pos skipNull() const;
+    Pos skipNameValuePair() const;
+    Pos skipObject() const;
+    Pos skipArray() const;
 
-	Pos skipElement() const;
+    Pos skipElement() const;
 
-	/// Найти name-value пару с заданным именем в объекте.
-	Pos searchField(const std::string & name) const { return searchField(name.data(), name.size()); }
-	Pos searchField(const char * data, size_t size) const;
+    /// Найти name-value пару с заданным именем в объекте.
+    Pos searchField(const std::string & name) const { return searchField(name.data(), name.size()); }
+    Pos searchField(const char * data, size_t size) const;
 
-	template <class T>
-	bool isType() const;
+    template <class T>
+    bool isType() const;
 };
 
 template <class T>
 T JSON::getWithDefault(const std::string & key, const T & default_) const
 {
-	if (has(key))
-	{
-		JSON key_json = (*this)[key];
+    if (has(key))
+    {
+        JSON key_json = (*this)[key];
 
-		if (key_json.isType<T>())
-			return key_json.get<T>();
-		else
-			return default_;
-	}
-	else
-		return default_;
+        if (key_json.isType<T>())
+            return key_json.get<T>();
+        else
+            return default_;
+    }
+    else
+        return default_;
 }

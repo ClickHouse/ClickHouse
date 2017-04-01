@@ -12,21 +12,21 @@ namespace DB
 class SquashingBlockOutputStream : public IBlockOutputStream
 {
 public:
-	SquashingBlockOutputStream(BlockOutputStreamPtr & dst, size_t min_block_size_rows, size_t min_block_size_bytes);
+    SquashingBlockOutputStream(BlockOutputStreamPtr & dst, size_t min_block_size_rows, size_t min_block_size_bytes);
 
-	void write(const Block & block) override;
+    void write(const Block & block) override;
 
-	void flush() override;
-	void writePrefix() override;
-	void writeSuffix() override;
+    void flush() override;
+    void writePrefix() override;
+    void writeSuffix() override;
 
 private:
-	BlockOutputStreamPtr output;
+    BlockOutputStreamPtr output;
 
-	SquashingTransform transform;
-	bool all_written = false;
+    SquashingTransform transform;
+    bool all_written = false;
 
-	void finalize();
+    void finalize();
 };
 
 }

@@ -15,23 +15,23 @@ namespace DB
   */
 struct MarkInCompressedFile
 {
-	size_t offset_in_compressed_file;
-	size_t offset_in_decompressed_block;
+    size_t offset_in_compressed_file;
+    size_t offset_in_decompressed_block;
 
-	bool operator==(const MarkInCompressedFile & rhs) const
-	{
-		return std::tie(offset_in_compressed_file, offset_in_decompressed_block)
-			== std::tie(rhs.offset_in_compressed_file, rhs.offset_in_decompressed_block);
-	}
-	bool operator!=(const MarkInCompressedFile & rhs) const
-	{
-		return !(*this == rhs);
-	}
+    bool operator==(const MarkInCompressedFile & rhs) const
+    {
+        return std::tie(offset_in_compressed_file, offset_in_decompressed_block)
+            == std::tie(rhs.offset_in_compressed_file, rhs.offset_in_decompressed_block);
+    }
+    bool operator!=(const MarkInCompressedFile & rhs) const
+    {
+        return !(*this == rhs);
+    }
 
-	String toString() const
-	{
-		return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ")";
-	}
+    String toString() const
+    {
+        return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ")";
+    }
 };
 
 using MarksInCompressedFile = PODArray<MarkInCompressedFile>;

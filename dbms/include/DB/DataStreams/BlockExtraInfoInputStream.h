@@ -11,34 +11,34 @@ namespace DB
 class BlockExtraInfoInputStream : public IProfilingBlockInputStream
 {
 public:
-	BlockExtraInfoInputStream(BlockInputStreamPtr input_, const BlockExtraInfo & block_extra_info_)
-		: block_extra_info(block_extra_info_)
-	{
-		children.push_back(input_);
-	}
+    BlockExtraInfoInputStream(BlockInputStreamPtr input_, const BlockExtraInfo & block_extra_info_)
+        : block_extra_info(block_extra_info_)
+    {
+        children.push_back(input_);
+    }
 
-	BlockExtraInfo getBlockExtraInfo() const override
-	{
-		return block_extra_info;
-	}
+    BlockExtraInfo getBlockExtraInfo() const override
+    {
+        return block_extra_info;
+    }
 
-	String getName() const override { return "BlockExtraInfoInput"; }
+    String getName() const override { return "BlockExtraInfoInput"; }
 
-	String getID() const override
-	{
-		std::stringstream res;
-		res << "BlockExtraInfoInput(" << children.back()->getID() << ")";
-		return res.str();
-	}
+    String getID() const override
+    {
+        std::stringstream res;
+        res << "BlockExtraInfoInput(" << children.back()->getID() << ")";
+        return res.str();
+    }
 
 protected:
-	Block readImpl() override
-	{
-		return children.back()->read();
-	}
+    Block readImpl() override
+    {
+        return children.back()->read();
+    }
 
 private:
-	BlockExtraInfo block_extra_info;
+    BlockExtraInfo block_extra_info;
 };
 
 }

@@ -7,7 +7,7 @@ namespace DB
 
 void registerFunctionsGeo(FunctionFactory & factory)
 {
-	factory.registerFunction<FunctionGreatCircleDistance>();
-	factory.registerFunction<FunctionPointInEllipses>();
+    factory.registerFunction<FunctionGreatCircleDistance>();
+    factory.registerFunction<FunctionPointInEllipses>();
 }
 }

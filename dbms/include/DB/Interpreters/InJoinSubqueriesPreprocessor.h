@@ -34,16 +34,16 @@ class Context;
 class InJoinSubqueriesPreprocessor
 {
 public:
-	InJoinSubqueriesPreprocessor(const Context & context) : context(context) {}
-	void process(ASTSelectQuery * query) const;
+    InJoinSubqueriesPreprocessor(const Context & context) : context(context) {}
+    void process(ASTSelectQuery * query) const;
 
-	/// These methods could be overriden for the need of the unit test.
-	virtual bool hasAtLeastTwoShards(const IStorage & table) const;
-	virtual std::pair<std::string, std::string> getRemoteDatabaseAndTableName(const IStorage & table) const;
-	virtual ~InJoinSubqueriesPreprocessor() {}
+    /// These methods could be overriden for the need of the unit test.
+    virtual bool hasAtLeastTwoShards(const IStorage & table) const;
+    virtual std::pair<std::string, std::string> getRemoteDatabaseAndTableName(const IStorage & table) const;
+    virtual ~InJoinSubqueriesPreprocessor() {}
 
 private:
-	const Context & context;
+    const Context & context;
 };
 
 

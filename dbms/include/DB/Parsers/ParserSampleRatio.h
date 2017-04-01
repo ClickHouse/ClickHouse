@@ -12,8 +12,8 @@ namespace DB
 class ParserSampleRatio : public IParserBase
 {
 protected:
-	const char * getName() const { return "Sample ratio or offset"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "Sample ratio or offset"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 }

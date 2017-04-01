@@ -12,8 +12,8 @@ namespace DB
 class DataTypeSet final : public IDataTypeDummy
 {
 public:
-	std::string getName() const override { return "Set"; }
-	DataTypePtr clone() const override { return std::make_shared<DataTypeSet>(); }
+    std::string getName() const override { return "Set"; }
+    DataTypePtr clone() const override { return std::make_shared<DataTypeSet>(); }
 };
 
 }

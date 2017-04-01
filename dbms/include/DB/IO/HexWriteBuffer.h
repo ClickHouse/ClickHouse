@@ -16,36 +16,36 @@ namespace DB
 class HexWriteBuffer : public WriteBuffer
 {
 protected:
-	char buf[DBMS_HEX_WRITE_BUFFER_SIZE];
+    char buf[DBMS_HEX_WRITE_BUFFER_SIZE];
 
-	WriteBuffer & out;
+    WriteBuffer & out;
 
-	void nextImpl() override
-	{
-		if (!offset())
-			return;
+    void nextImpl() override
+    {
+        if (!offset())
+            return;
 
-		for (Position p = working_buffer.begin(); p != pos; ++p)
-		{
-			out.write("0123456789ABCDEF"[static_cast<unsigned char>(*p) >> 4]);
-			out.write("0123456789ABCDEF"[static_cast<unsigned char>(*p) & 0xF]);
-		}
-	}
+        for (Position p = working_buffer.begin(); p != pos; ++p)
+        {
+            out.write("0123456789ABCDEF"[static_cast<unsigned char>(*p) >> 4]);
+            out.write("0123456789ABCDEF"[static_cast<unsigned char>(*p) & 0xF]);
+        }
+    }
 
 public:
-	HexWriteBuffer(WriteBuffer & out_) : WriteBuffer(buf, sizeof(buf)), out(out_) {}
+    HexWriteBuffer(WriteBuffer & out_) : WriteBuffer(buf, sizeof(buf)), out(out_) {}
 
-	~HexWriteBuffer() override
-	{
-		try
-		{
-			nextImpl();
-		}
-		catch (...)
-		{
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
-	}
+    ~HexWriteBuffer() override
+    {
+        try
+        {
+            nextImpl();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 };
 
 }

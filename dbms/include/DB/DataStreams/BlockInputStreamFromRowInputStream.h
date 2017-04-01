@@ -16,41 +16,41 @@ namespace DB
 class BlockInputStreamFromRowInputStream : public IProfilingBlockInputStream
 {
 public:
-	/** sample_ - block with zero rows, that structure describes how to interpret values */
-	BlockInputStreamFromRowInputStream(
-		RowInputStreamPtr row_input_,
-		const Block & sample_,
-		size_t max_block_size_,
-		UInt64 allow_errors_num_,
-		Float64 allow_errors_ratio_);
+    /** sample_ - block with zero rows, that structure describes how to interpret values */
+    BlockInputStreamFromRowInputStream(
+        RowInputStreamPtr row_input_,
+        const Block & sample_,
+        size_t max_block_size_,
+        UInt64 allow_errors_num_,
+        Float64 allow_errors_ratio_);
 
-	void readPrefix() override { row_input->readPrefix(); }
-	void readSuffix() override { row_input->readSuffix(); }
+    void readPrefix() override { row_input->readPrefix(); }
+    void readSuffix() override { row_input->readSuffix(); }
 
-	String getName() const override { return "BlockInputStreamFromRowInputStream"; }
+    String getName() const override { return "BlockInputStreamFromRowInputStream"; }
 
-	String getID() const override
-	{
-		std::stringstream res;
-		res << this;
-		return res.str();
-	}
+    String getID() const override
+    {
+        std::stringstream res;
+        res << this;
+        return res.str();
+    }
 
-	RowInputStreamPtr & getRowInput() { return row_input; }
+    RowInputStreamPtr & getRowInput() { return row_input; }
 
 protected:
-	Block readImpl() override;
+    Block readImpl() override;
 
 private:
-	RowInputStreamPtr row_input;
-	const Block sample;
-	size_t max_block_size;
+    RowInputStreamPtr row_input;
+    const Block sample;
+    size_t max_block_size;
 
-	UInt64 allow_errors_num;
-	Float64 allow_errors_ratio;
+    UInt64 allow_errors_num;
+    Float64 allow_errors_ratio;
 
-	size_t total_rows = 0;
-	size_t num_errors = 0;
+    size_t total_rows = 0;
+    size_t num_errors = 0;
 };
 
 }

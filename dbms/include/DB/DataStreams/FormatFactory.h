@@ -15,11 +15,11 @@ class Context;
 class FormatFactory
 {
 public:
-	BlockInputStreamPtr getInput(const String & name, ReadBuffer & buf,
-		const Block & sample, const Context & context, size_t max_block_size) const;
+    BlockInputStreamPtr getInput(const String & name, ReadBuffer & buf,
+        const Block & sample, const Context & context, size_t max_block_size) const;
 
-	BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
-		const Block & sample, const Context & context) const;
+    BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
+        const Block & sample, const Context & context) const;
 };
 
 }

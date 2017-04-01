@@ -13,8 +13,8 @@ namespace DB
 class ParserTablePropertiesQuery : public IParserBase
 {
 protected:
-	const char * getName() const { return "EXISTS, SHOW CREATE or DESCRIBE query"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "EXISTS, SHOW CREATE or DESCRIBE query"; }
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 }

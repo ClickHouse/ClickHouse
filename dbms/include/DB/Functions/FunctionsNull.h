@@ -15,14 +15,14 @@ class Context;
 class FunctionIsNull : public IFunction
 {
 public:
-	static constexpr auto name = "isNull";
-	static FunctionPtr create(const Context & context);
+    static constexpr auto name = "isNull";
+    static FunctionPtr create(const Context & context);
 
-	std::string getName() const override;
-	size_t getNumberOfArguments() const override { return 1; }
-	bool hasSpecialSupportForNulls() const override;
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
-	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    std::string getName() const override;
+    size_t getNumberOfArguments() const override { return 1; }
+    bool hasSpecialSupportForNulls() const override;
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
 /// Implements the function isNotNull which returns true if a value
@@ -30,14 +30,14 @@ public:
 class FunctionIsNotNull : public IFunction
 {
 public:
-	static constexpr auto name = "isNotNull";
-	static FunctionPtr create(const Context & context);
+    static constexpr auto name = "isNotNull";
+    static FunctionPtr create(const Context & context);
 
-	std::string getName() const override;
-	size_t getNumberOfArguments() const override { return 1; }
-	bool hasSpecialSupportForNulls() const override;
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
-	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    std::string getName() const override;
+    size_t getNumberOfArguments() const override { return 1; }
+    bool hasSpecialSupportForNulls() const override;
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
 /// Implements the function coalesce which takes a set of arguments and
@@ -46,15 +46,15 @@ public:
 class FunctionCoalesce : public IFunction
 {
 public:
-	static constexpr auto name = "coalesce";
-	static FunctionPtr create(const Context & context);
+    static constexpr auto name = "coalesce";
+    static FunctionPtr create(const Context & context);
 
-	std::string getName() const override;
-	bool hasSpecialSupportForNulls() const override;
-	bool isVariadic() const override { return true; }
-	size_t getNumberOfArguments() const override { return 0; }
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
-	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    std::string getName() const override;
+    bool hasSpecialSupportForNulls() const override;
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
 /// Implements the function ifNull which takes 2 arguments and returns
@@ -63,14 +63,14 @@ public:
 class FunctionIfNull : public IFunction
 {
 public:
-	static constexpr auto name = "ifNull";
-	static FunctionPtr create(const Context & context);
+    static constexpr auto name = "ifNull";
+    static FunctionPtr create(const Context & context);
 
-	std::string getName() const override;
-	size_t getNumberOfArguments() const override { return 2; }
-	bool hasSpecialSupportForNulls() const override;
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
-	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    std::string getName() const override;
+    size_t getNumberOfArguments() const override { return 2; }
+    bool hasSpecialSupportForNulls() const override;
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
 /// Implements the function nullIf which takes 2 arguments and returns
@@ -79,14 +79,14 @@ public:
 class FunctionNullIf : public IFunction
 {
 public:
-	static constexpr auto name = "nullIf";
-	static FunctionPtr create(const Context & context);
+    static constexpr auto name = "nullIf";
+    static FunctionPtr create(const Context & context);
 
-	std::string getName() const override;
-	size_t getNumberOfArguments() const override { return 2; }
-	bool hasSpecialSupportForNulls() const override;
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
-	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    std::string getName() const override;
+    size_t getNumberOfArguments() const override { return 2; }
+    bool hasSpecialSupportForNulls() const override;
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
 /// Implements the function assumeNotNull which takes 1 argument and works as follows:
@@ -96,28 +96,28 @@ public:
 class FunctionAssumeNotNull : public IFunction
 {
 public:
-	static constexpr auto name = "assumeNotNull";
-	static FunctionPtr create(const Context & context);
+    static constexpr auto name = "assumeNotNull";
+    static FunctionPtr create(const Context & context);
 
-	std::string getName() const override;
-	size_t getNumberOfArguments() const override { return 1; }
-	bool hasSpecialSupportForNulls() const override;
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
-	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    std::string getName() const override;
+    size_t getNumberOfArguments() const override { return 1; }
+    bool hasSpecialSupportForNulls() const override;
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
 /// If value is not Nullable or NULL, wraps it to Nullable.
 class FunctionToNullable : public IFunction
 {
 public:
-	static constexpr auto name = "toNullable";
-	static FunctionPtr create(const Context & context);
+    static constexpr auto name = "toNullable";
+    static FunctionPtr create(const Context & context);
 
-	std::string getName() const override;
-	size_t getNumberOfArguments() const override { return 1; }
-	bool hasSpecialSupportForNulls() const override;
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
-	void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    std::string getName() const override;
+    size_t getNumberOfArguments() const override { return 1; }
+    bool hasSpecialSupportForNulls() const override;
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
 }

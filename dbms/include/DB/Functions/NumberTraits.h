@@ -49,35 +49,35 @@ struct AddNullability;
 template <typename T>
 struct AddNullability<T, HasNull>
 {
-	using Type = Nullable<T>;
+    using Type = Nullable<T>;
 };
 
 template <typename T>
 struct AddNullability<T, HasNoNull>
 {
-	using Type = T;
+    using Type = T;
 };
 
 template <typename T> struct Next;
 
-template <> struct Next<Bits0>	{ using Type = Bits0; };
-template <> struct Next<Bits8>	{ using Type = Bits16; };
-template <> struct Next<Bits16>	{ using Type = Bits32; };
-template <> struct Next<Bits32>	{ using Type = Bits64; };
-template <> struct Next<Bits64>	{ using Type = Bits64; };
+template <> struct Next<Bits0>    { using Type = Bits0; };
+template <> struct Next<Bits8>    { using Type = Bits16; };
+template <> struct Next<Bits16>    { using Type = Bits32; };
+template <> struct Next<Bits32>    { using Type = Bits64; };
+template <> struct Next<Bits64>    { using Type = Bits64; };
 
 template <typename T> struct ExactNext { using Type = typename Next<T>::Type; };
-template <> struct ExactNext<Bits64>	{ using Type = BitsTooMany; };
+template <> struct ExactNext<Bits64>    { using Type = BitsTooMany; };
 
 template <typename T> struct Traits;
 
 template <typename T>
 struct Traits<Nullable<T>>
 {
-	using Sign = typename Traits<T>::Sign;
-	using Floatness = typename Traits<T>::Floatness;
-	using Bits = typename Traits<T>::Bits;
-	using Nullity = HasNull;
+    using Sign = typename Traits<T>::Sign;
+    using Floatness = typename Traits<T>::Floatness;
+    using Bits = typename Traits<T>::Bits;
+    using Nullity = HasNull;
 };
 
 template <> struct Traits<void>        { typedef Unsigned Sign;        typedef Integer Floatness;      typedef Bits0 Bits;     typedef HasNoNull Nullity; };
@@ -98,254 +98,254 @@ template <typename Sign, typename Floatness, typename Bits, typename Nullity> st
 template <typename Sign, typename Floatness, typename Bits>
 struct Construct<Sign, Floatness, Bits, HasNull>
 {
-	using Type = Nullable<typename Construct<Sign, Floatness, Bits, HasNoNull>::Type>;
+    using Type = Nullable<typename Construct<Sign, Floatness, Bits, HasNoNull>::Type>;
 };
 
-template <> struct Construct<Unsigned, Integer, Bits0, HasNull>	{ using Type = Null; };
-template <> struct Construct<Unsigned, Floating, Bits0, HasNull>	{ using Type = Null; };
-template <> struct Construct<Signed, Integer, Bits0, HasNull>	{ using Type = Null; };
-template <> struct Construct<Signed, Floating, Bits0, HasNull>	{ using Type = Null; };
+template <> struct Construct<Unsigned, Integer, Bits0, HasNull>    { using Type = Null; };
+template <> struct Construct<Unsigned, Floating, Bits0, HasNull>    { using Type = Null; };
+template <> struct Construct<Signed, Integer, Bits0, HasNull>    { using Type = Null; };
+template <> struct Construct<Signed, Floating, Bits0, HasNull>    { using Type = Null; };
 
 template <typename Sign, typename Floatness>
 struct Construct<Sign, Floatness, BitsTooMany, HasNull>
 {
-	using Type = Error;
+    using Type = Error;
 };
 
 template <typename Sign, typename Floatness>
 struct Construct<Sign, Floatness, BitsTooMany, HasNoNull>
 {
-	using Type = Error;
+    using Type = Error;
 };
 
-template <> struct Construct<Unsigned, Integer, Bits0, HasNoNull>	{ using Type = void; };
-template <> struct Construct<Unsigned, Floating, Bits0, HasNoNull>	{ using Type = void; };
-template <> struct Construct<Signed, Integer, Bits0, HasNoNull>		{ using Type = void; };
-template <> struct Construct<Signed, Floating, Bits0, HasNoNull>	{ using Type = void; };
-template <> struct Construct<Unsigned, Integer, Bits8, HasNoNull> 	{ using Type = UInt8 ; };
-template <> struct Construct<Unsigned, Integer, Bits16, HasNoNull> 	{ using Type = UInt16 ; };
-template <> struct Construct<Unsigned, Integer, Bits32, HasNoNull> 	{ using Type = UInt32 ; };
-template <> struct Construct<Unsigned, Integer, Bits64, HasNoNull> 	{ using Type = UInt64 ; };
-template <> struct Construct<Unsigned, Floating, Bits8, HasNoNull> 	{ using Type = Float32 ; };
-template <> struct Construct<Unsigned, Floating, Bits16, HasNoNull> 	{ using Type = Float32 ; };
-template <> struct Construct<Unsigned, Floating, Bits32, HasNoNull> 	{ using Type = Float32 ; };
-template <> struct Construct<Unsigned, Floating, Bits64, HasNoNull> 	{ using Type = Float64 ; };
-template <> struct Construct<Signed, Integer, Bits8, HasNoNull> 		{ using Type = Int8 	; };
-template <> struct Construct<Signed, Integer, Bits16, HasNoNull> 		{ using Type = Int16 ; };
-template <> struct Construct<Signed, Integer, Bits32, HasNoNull> 		{ using Type = Int32 ; };
-template <> struct Construct<Signed, Integer, Bits64, HasNoNull> 		{ using Type = Int64 ; };
-template <> struct Construct<Signed, Floating, Bits8, HasNoNull> 		{ using Type = Float32 ; };
-template <> struct Construct<Signed, Floating, Bits16, HasNoNull>		{ using Type = Float32 ; };
-template <> struct Construct<Signed, Floating, Bits32, HasNoNull>		{ using Type = Float32 ; };
-template <> struct Construct<Signed, Floating, Bits64, HasNoNull>		{ using Type = Float64 ; };
+template <> struct Construct<Unsigned, Integer, Bits0, HasNoNull>    { using Type = void; };
+template <> struct Construct<Unsigned, Floating, Bits0, HasNoNull>    { using Type = void; };
+template <> struct Construct<Signed, Integer, Bits0, HasNoNull>        { using Type = void; };
+template <> struct Construct<Signed, Floating, Bits0, HasNoNull>    { using Type = void; };
+template <> struct Construct<Unsigned, Integer, Bits8, HasNoNull>     { using Type = UInt8 ; };
+template <> struct Construct<Unsigned, Integer, Bits16, HasNoNull>     { using Type = UInt16 ; };
+template <> struct Construct<Unsigned, Integer, Bits32, HasNoNull>     { using Type = UInt32 ; };
+template <> struct Construct<Unsigned, Integer, Bits64, HasNoNull>     { using Type = UInt64 ; };
+template <> struct Construct<Unsigned, Floating, Bits8, HasNoNull>     { using Type = Float32 ; };
+template <> struct Construct<Unsigned, Floating, Bits16, HasNoNull>     { using Type = Float32 ; };
+template <> struct Construct<Unsigned, Floating, Bits32, HasNoNull>     { using Type = Float32 ; };
+template <> struct Construct<Unsigned, Floating, Bits64, HasNoNull>     { using Type = Float64 ; };
+template <> struct Construct<Signed, Integer, Bits8, HasNoNull>         { using Type = Int8     ; };
+template <> struct Construct<Signed, Integer, Bits16, HasNoNull>         { using Type = Int16 ; };
+template <> struct Construct<Signed, Integer, Bits32, HasNoNull>         { using Type = Int32 ; };
+template <> struct Construct<Signed, Integer, Bits64, HasNoNull>         { using Type = Int64 ; };
+template <> struct Construct<Signed, Floating, Bits8, HasNoNull>         { using Type = Float32 ; };
+template <> struct Construct<Signed, Floating, Bits16, HasNoNull>        { using Type = Float32 ; };
+template <> struct Construct<Signed, Floating, Bits32, HasNoNull>        { using Type = Float32 ; };
+template <> struct Construct<Signed, Floating, Bits64, HasNoNull>        { using Type = Float64 ; };
 
 template <typename T>
 inline bool isErrorType()
 {
-	return false;
+    return false;
 }
 template <>
 inline bool isErrorType<Error>()
 {
-	return true;
+    return true;
 }
 
 /// Returns the type A augmented with nullity = nullity(A) | nullity(B)
 template <typename A, typename B>
 struct UpdateNullity
 {
-	using Type = typename Construct<
-		typename Traits<A>::Sign,
-		typename Traits<A>::Floatness,
-		typename Traits<A>::Bits,
-		typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type
-	>::Type;
+    using Type = typename Construct<
+        typename Traits<A>::Sign,
+        typename Traits<A>::Floatness,
+        typename Traits<A>::Bits,
+        typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type
+    >::Type;
 };
 
 /** Результат сложения или умножения вычисляется по следующим правилам:
-	* - если один из аргументов с плавающей запятой, то результат - с плавающей запятой, иначе - целый;
-	* - если одно из аргументов со знаком, то результат - со знаком, иначе - без знака;
-	* - результат содержит больше бит (не только значащих), чем максимум в аргументах
-	*   (например, UInt8 + Int32 = Int64).
-	*/
+    * - если один из аргументов с плавающей запятой, то результат - с плавающей запятой, иначе - целый;
+    * - если одно из аргументов со знаком, то результат - со знаком, иначе - без знака;
+    * - результат содержит больше бит (не только значащих), чем максимум в аргументах
+    *   (например, UInt8 + Int32 = Int64).
+    */
 template <typename A, typename B> struct ResultOfAdditionMultiplication
 {
-	typedef typename Construct<
-		typename boost::mpl::or_<typename Traits<A>::Sign, typename Traits<B>::Sign>::type,
-		typename boost::mpl::or_<typename Traits<A>::Floatness, typename Traits<B>::Floatness>::type,
-		typename Next<typename boost::mpl::max<typename Traits<A>::Bits, typename Traits<B>::Bits>::type>::Type,
-		typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type Type;
+    typedef typename Construct<
+        typename boost::mpl::or_<typename Traits<A>::Sign, typename Traits<B>::Sign>::type,
+        typename boost::mpl::or_<typename Traits<A>::Floatness, typename Traits<B>::Floatness>::type,
+        typename Next<typename boost::mpl::max<typename Traits<A>::Bits, typename Traits<B>::Bits>::type>::Type,
+        typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type Type;
 };
 
 template <typename A, typename B> struct ResultOfSubtraction
 {
-	typedef typename Construct<
-		Signed,
-		typename boost::mpl::or_<typename Traits<A>::Floatness, typename Traits<B>::Floatness>::type,
-		typename Next<typename boost::mpl::max<typename Traits<A>::Bits, typename Traits<B>::Bits>::type>::Type,
-		typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type Type;
+    typedef typename Construct<
+        Signed,
+        typename boost::mpl::or_<typename Traits<A>::Floatness, typename Traits<B>::Floatness>::type,
+        typename Next<typename boost::mpl::max<typename Traits<A>::Bits, typename Traits<B>::Bits>::type>::Type,
+        typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type Type;
 };
 
 /** При делении всегда получается число с плавающей запятой.
-	*/
+    */
 template <typename A, typename B> struct ResultOfFloatingPointDivision
 {
-	using Type = Float64;
+    using Type = Float64;
 };
 
 /** При целочисленном делении получается число, битность которого равна делимому.
-	*/
+    */
 template <typename A, typename B> struct ResultOfIntegerDivision
 {
-	typedef typename Construct<
-		typename boost::mpl::or_<typename Traits<A>::Sign, typename Traits<B>::Sign>::type,
-		Integer,
-		typename Traits<A>::Bits,
-		typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type Type;
+    typedef typename Construct<
+        typename boost::mpl::or_<typename Traits<A>::Sign, typename Traits<B>::Sign>::type,
+        Integer,
+        typename Traits<A>::Bits,
+        typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type Type;
 };
 
 /** При взятии остатка получается число, битность которого равна делителю.
-	*/
+    */
 template <typename A, typename B> struct ResultOfModulo
 {
-	typedef typename Construct<
-		typename boost::mpl::or_<typename Traits<A>::Sign, typename Traits<B>::Sign>::type,
-		Integer,
-		typename Traits<B>::Bits,
-		typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type Type;
+    typedef typename Construct<
+        typename boost::mpl::or_<typename Traits<A>::Sign, typename Traits<B>::Sign>::type,
+        Integer,
+        typename Traits<B>::Bits,
+        typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type Type;
 };
 
 template <typename A> struct ResultOfNegate
 {
-	typedef typename Construct<
-		Signed,
-		typename Traits<A>::Floatness,
-		typename boost::mpl::if_<
-			typename Traits<A>::Sign,
-			typename Traits<A>::Bits,
-			typename Next<typename Traits<A>::Bits>::Type>::type,
-			typename Traits<A>::Nullity>::Type Type;
+    typedef typename Construct<
+        Signed,
+        typename Traits<A>::Floatness,
+        typename boost::mpl::if_<
+            typename Traits<A>::Sign,
+            typename Traits<A>::Bits,
+            typename Next<typename Traits<A>::Bits>::Type>::type,
+            typename Traits<A>::Nullity>::Type Type;
 };
 
 template <typename A> struct ResultOfAbs
 {
-	typedef typename Construct<
-		Unsigned,
-		typename Traits<A>::Floatness,
-		typename Traits <A>::Bits,
-		typename Traits<A>::Nullity>::Type Type;
+    typedef typename Construct<
+        Unsigned,
+        typename Traits<A>::Floatness,
+        typename Traits <A>::Bits,
+        typename Traits<A>::Nullity>::Type Type;
 };
 
 /** При побитовых операциях получается целое число, битность которого равна максимальной из битностей аргументов.
-	*/
+    */
 template <typename A, typename B> struct ResultOfBit
 {
-	typedef typename Construct<
-		typename boost::mpl::or_<typename Traits<A>::Sign, typename Traits<B>::Sign>::type,
-		Integer,
-		typename boost::mpl::max<
-			typename boost::mpl::if_<
-				typename Traits<A>::Floatness,
-				Bits64,
-				typename Traits<A>::Bits>::type,
-			typename boost::mpl::if_<
-				typename Traits<B>::Floatness,
-				Bits64,
-				typename Traits<B>::Bits>::type>::type,
-				typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type Type;
+    typedef typename Construct<
+        typename boost::mpl::or_<typename Traits<A>::Sign, typename Traits<B>::Sign>::type,
+        Integer,
+        typename boost::mpl::max<
+            typename boost::mpl::if_<
+                typename Traits<A>::Floatness,
+                Bits64,
+                typename Traits<A>::Bits>::type,
+            typename boost::mpl::if_<
+                typename Traits<B>::Floatness,
+                Bits64,
+                typename Traits<B>::Bits>::type>::type,
+                typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type Type;
 };
 
 template <typename A> struct ResultOfBitNot
 {
-	typedef typename Construct<
-		typename Traits<A>::Sign,
-		Integer,
-		typename Traits<A>::Bits,
-		typename Traits<A>::Nullity>::Type Type;
+    typedef typename Construct<
+        typename Traits<A>::Sign,
+        Integer,
+        typename Traits<A>::Bits,
+        typename Traits<A>::Nullity>::Type Type;
 };
 
 
 /** Приведение типов для функции if:
-	* 1)     void,      Type ->  Type
-	* 2)  UInt<x>,   UInt<y> ->  UInt<max(x,y)>
-	* 3)   Int<x>,    Int<y> ->   Int<max(x,y)>
-	* 4) Float<x>,  Float<y> -> Float<max(x, y)>
-	* 5)  UInt<x>,    Int<y> ->   Int<max(x*2, y)>
-	* 6) Float<x>, [U]Int<y> -> Float<max(x, y*2)>
-	* 7)  UInt64 ,    Int<x> -> Error
-	* 8) Float<x>, [U]Int64  -> Error
-	*/
+    * 1)     void,      Type ->  Type
+    * 2)  UInt<x>,   UInt<y> ->  UInt<max(x,y)>
+    * 3)   Int<x>,    Int<y> ->   Int<max(x,y)>
+    * 4) Float<x>,  Float<y> -> Float<max(x, y)>
+    * 5)  UInt<x>,    Int<y> ->   Int<max(x*2, y)>
+    * 6) Float<x>, [U]Int<y> -> Float<max(x, y*2)>
+    * 7)  UInt64 ,    Int<x> -> Error
+    * 8) Float<x>, [U]Int64  -> Error
+    */
 template <typename A, typename B>
 struct ResultOfIf
 {
-	typedef
-		/// 1)
-		typename boost::mpl::if_<
-			typename boost::mpl::equal_to<typename Traits<A>::Bits, Bits0>::type,
-			typename UpdateNullity<B, A>::Type,
-		typename boost::mpl::if_<
-			typename boost::mpl::equal_to<typename Traits<B>::Bits, Bits0>::type,
-			typename UpdateNullity<A, B>::Type,
-		/// 4) and 6)
-		typename boost::mpl::if_<
-			typename boost::mpl::or_<
-				typename Traits<A>::Floatness,
-				typename Traits<B>::Floatness>::type,
-			typename Construct<
-				Signed,
-				Floating,
-				typename boost::mpl::max< /// Этот максимум нужен только потому что if_ всегда вычисляет все аргументы.
-					typename boost::mpl::max<
-						typename boost::mpl::if_<
-							typename Traits<A>::Floatness,
-							typename Traits<A>::Bits,
-							typename ExactNext<typename Traits<A>::Bits>::Type>::type,
-						typename boost::mpl::if_<
-							typename Traits<B>::Floatness,
-							typename Traits<B>::Bits,
-							typename ExactNext<typename Traits<B>::Bits>::Type>::type>::type,
-					Bits32>::type,
-					typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type,
-		/// 2) and 3)
-		typename boost::mpl::if_<
-			typename boost::mpl::equal_to<
-				typename Traits<A>::Sign,
-				typename Traits<B>::Sign>::type,
-			typename boost::mpl::if_<
-				typename boost::mpl::less<
-					typename Traits<A>::Bits,
-					typename Traits<B>::Bits>::type,
-				typename UpdateNullity<B, A>::Type,
-				typename UpdateNullity<A, B>::Type>::type,
-		/// 5)
-		typename Construct<
-			Signed,
-			Integer,
-			typename boost::mpl::max<
-				typename boost::mpl::if_<
-					typename Traits<A>::Sign,
-					typename Traits<A>::Bits,
-					typename ExactNext<typename Traits<A>::Bits>::Type>::type,
-				typename boost::mpl::if_<
-					typename Traits<B>::Sign,
-					typename Traits<B>::Bits,
-					typename ExactNext<typename Traits<B>::Bits>::Type>::type>::type,
-			typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type
-		>::Type>::type>::type>::type>::type Type;
+    typedef
+        /// 1)
+        typename boost::mpl::if_<
+            typename boost::mpl::equal_to<typename Traits<A>::Bits, Bits0>::type,
+            typename UpdateNullity<B, A>::Type,
+        typename boost::mpl::if_<
+            typename boost::mpl::equal_to<typename Traits<B>::Bits, Bits0>::type,
+            typename UpdateNullity<A, B>::Type,
+        /// 4) and 6)
+        typename boost::mpl::if_<
+            typename boost::mpl::or_<
+                typename Traits<A>::Floatness,
+                typename Traits<B>::Floatness>::type,
+            typename Construct<
+                Signed,
+                Floating,
+                typename boost::mpl::max< /// Этот максимум нужен только потому что if_ всегда вычисляет все аргументы.
+                    typename boost::mpl::max<
+                        typename boost::mpl::if_<
+                            typename Traits<A>::Floatness,
+                            typename Traits<A>::Bits,
+                            typename ExactNext<typename Traits<A>::Bits>::Type>::type,
+                        typename boost::mpl::if_<
+                            typename Traits<B>::Floatness,
+                            typename Traits<B>::Bits,
+                            typename ExactNext<typename Traits<B>::Bits>::Type>::type>::type,
+                    Bits32>::type,
+                    typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type,
+        /// 2) and 3)
+        typename boost::mpl::if_<
+            typename boost::mpl::equal_to<
+                typename Traits<A>::Sign,
+                typename Traits<B>::Sign>::type,
+            typename boost::mpl::if_<
+                typename boost::mpl::less<
+                    typename Traits<A>::Bits,
+                    typename Traits<B>::Bits>::type,
+                typename UpdateNullity<B, A>::Type,
+                typename UpdateNullity<A, B>::Type>::type,
+        /// 5)
+        typename Construct<
+            Signed,
+            Integer,
+            typename boost::mpl::max<
+                typename boost::mpl::if_<
+                    typename Traits<A>::Sign,
+                    typename Traits<A>::Bits,
+                    typename ExactNext<typename Traits<A>::Bits>::Type>::type,
+                typename boost::mpl::if_<
+                    typename Traits<B>::Sign,
+                    typename Traits<B>::Bits,
+                    typename ExactNext<typename Traits<B>::Bits>::Type>::type>::type,
+            typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type
+        >::Type>::type>::type>::type>::type Type;
 };
 
 /** Перед применением оператора % и побитовых операций, операнды приводятся к целым числам. */
 template <typename A> struct ToInteger
 {
-	typedef typename Construct<
-		typename Traits<A>::Sign,
-		Integer,
-		typename boost::mpl::if_<
-			typename Traits<A>::Floatness,
-			Bits64,
-			typename Traits<A>::Bits>::type,
-		typename Traits<A>::Nullity
-	>::Type Type;
+    typedef typename Construct<
+        typename Traits<A>::Sign,
+        Integer,
+        typename boost::mpl::if_<
+            typename Traits<A>::Floatness,
+            Bits64,
+            typename Traits<A>::Bits>::type,
+        typename Traits<A>::Nullity
+    >::Type Type;
 };
 
 
@@ -353,18 +353,18 @@ template <typename A> struct ToInteger
 // NOTE: This case is applied for 64-bit integers only (for backward compability), but colud be used for any-bit integers
 template <typename A, typename B>
 using LeastGreatestSpecialCase = std::integral_constant<bool, std::is_integral<A>::value && std::is_integral<B>::value
-									&& (8 == sizeof(A) && sizeof(A) == sizeof(B))
-									&& (std::is_signed<A>::value ^ std::is_signed<B>::value)>;
+                                    && (8 == sizeof(A) && sizeof(A) == sizeof(B))
+                                    && (std::is_signed<A>::value ^ std::is_signed<B>::value)>;
 
 template <typename A, typename B>
 using ResultOfLeast = std::conditional_t<LeastGreatestSpecialCase<A, B>::value,
-											typename Construct<Signed, Integer, typename Traits<A>::Bits, HasNoNull>::Type,
-											typename ResultOfIf<A, B>::Type>;
+                                            typename Construct<Signed, Integer, typename Traits<A>::Bits, HasNoNull>::Type,
+                                            typename ResultOfIf<A, B>::Type>;
 
 template <typename A, typename B>
 using ResultOfGreatest = std::conditional_t<LeastGreatestSpecialCase<A, B>::value,
-											typename Construct<Unsigned, Integer, typename Traits<A>::Bits, HasNoNull>::Type,
-											typename ResultOfIf<A, B>::Type>;
+                                            typename Construct<Unsigned, Integer, typename Traits<A>::Bits, HasNoNull>::Type,
+                                            typename ResultOfIf<A, B>::Type>;
 
 /// Notes on type composition.
 ///
@@ -518,11 +518,11 @@ template <> struct EmbedType<Nullable<Float64> > { using Type = Enriched::Float6
 template <typename TType>
 struct ToOrdinaryType
 {
-	using Type = typename std::conditional<
-		std::is_same<typename std::tuple_element<2, TType>::type, HasNoNull>::value,
-		typename std::tuple_element<0, TType>::type,
-		Nullable<typename std::tuple_element<0, TType>::type>
-	>::type;
+    using Type = typename std::conditional<
+        std::is_same<typename std::tuple_element<2, TType>::type, HasNoNull>::value,
+        typename std::tuple_element<0, TType>::type,
+        Nullable<typename std::tuple_element<0, TType>::type>
+    >::type;
 };
 
 /// Get an ordinary type from an enriched type.
@@ -530,7 +530,7 @@ struct ToOrdinaryType
 template <>
 struct ToOrdinaryType<Error>
 {
-	using Type = Error;
+    using Type = Error;
 };
 
 namespace
@@ -542,23 +542,23 @@ namespace
 template <typename T1, typename T2>
 constexpr bool areSimilarTypes()
 {
-	return	std::is_same<
-			typename std::tuple_element<0, T1>::type,
-			typename std::tuple_element<0, T2>::type
-		>::value &&
-		std::is_same<
-			typename std::tuple_element<1, T1>::type,
-			typename std::tuple_element<1, T2>::type
-		>::value;
+    return    std::is_same<
+            typename std::tuple_element<0, T1>::type,
+            typename std::tuple_element<0, T2>::type
+        >::value &&
+        std::is_same<
+            typename std::tuple_element<1, T1>::type,
+            typename std::tuple_element<1, T2>::type
+        >::value;
 }
 
 /// Check if a pair of types {A,B} equals a pair of types {A1,B1} up to nullity.
 template <typename A, typename B, template <typename> class A1, template <typename> class B1>
 constexpr bool areSimilarPairs()
 {
-	/// NOTE: the use of HasNoNull here is a trick. It has no meaning.
-	return (areSimilarTypes<A, A1<HasNoNull>>() && areSimilarTypes<B, B1<HasNoNull>>()) ||
-		(areSimilarTypes<A, B1<HasNoNull>>() && areSimilarTypes<B, A1<HasNoNull>>());
+    /// NOTE: the use of HasNoNull here is a trick. It has no meaning.
+    return (areSimilarTypes<A, A1<HasNoNull>>() && areSimilarTypes<B, B1<HasNoNull>>()) ||
+        (areSimilarTypes<A, B1<HasNoNull>>() && areSimilarTypes<B, A1<HasNoNull>>());
 }
 
 /// Check if a pair of enriched types {A,B} that have straight mappings to ordinary
@@ -566,11 +566,11 @@ constexpr bool areSimilarPairs()
 template <typename A, typename B>
 constexpr bool isExceptionalPair()
 {
-	return	areSimilarPairs<A, B, Enriched::Int8, Enriched::UInt16>() ||
-		areSimilarPairs<A, B, Enriched::Int8, Enriched::UInt32>() ||
-		areSimilarPairs<A, B, Enriched::Int16, Enriched::UInt16>() ||
-		areSimilarPairs<A, B, Enriched::Int16, Enriched::UInt32>() ||
-		areSimilarPairs<A, B, Enriched::Int32, Enriched::UInt32>();
+    return    areSimilarPairs<A, B, Enriched::Int8, Enriched::UInt16>() ||
+        areSimilarPairs<A, B, Enriched::Int8, Enriched::UInt32>() ||
+        areSimilarPairs<A, B, Enriched::Int16, Enriched::UInt16>() ||
+        areSimilarPairs<A, B, Enriched::Int16, Enriched::UInt32>() ||
+        areSimilarPairs<A, B, Enriched::Int32, Enriched::UInt32>();
 }
 
 /// Check if a pair of enriched types {A,B} is ordinary. Here "ordinary" means
@@ -579,9 +579,9 @@ constexpr bool isExceptionalPair()
 template <typename A, typename B>
 constexpr bool isOrdinaryPair()
 {
-	return	std::is_same<typename std::tuple_element<1, A>::type, void>::value &&
-		std::is_same<typename std::tuple_element<1, B>::type, void>::value &&
-		!isExceptionalPair<A, B>();
+    return    std::is_same<typename std::tuple_element<1, A>::type, void>::value &&
+        std::is_same<typename std::tuple_element<1, B>::type, void>::value &&
+        !isExceptionalPair<A, B>();
 }
 
 /// Returns nullity(A) | nullity(B).
@@ -589,11 +589,11 @@ template <typename A, typename B>
 struct CombinedNullity
 {
 private:
-	using NullityA = typename Traits<typename ToOrdinaryType<A>::Type>::Nullity;
-	using NullityB = typename Traits<typename ToOrdinaryType<B>::Type>::Nullity;
+    using NullityA = typename Traits<typename ToOrdinaryType<A>::Type>::Nullity;
+    using NullityB = typename Traits<typename ToOrdinaryType<B>::Type>::Nullity;
 
 public:
-	using Type = typename boost::mpl::or_<NullityA, NullityB>::type;
+    using Type = typename boost::mpl::or_<NullityA, NullityB>::type;
 };
 
 }
@@ -603,7 +603,7 @@ public:
 template <typename T1, typename T2, typename Enable = void>
 struct TypeProduct
 {
-	using Type = Error;
+    using Type = Error;
 };
 
 /// Compute the product of two enriched numeric types.
@@ -612,29 +612,29 @@ template <typename A, typename B>
 struct TypeProduct<A, B, typename std::enable_if<isOrdinaryPair<A, B>()>::type>
 {
 private:
-	using Result = typename ResultOfIf<
-		typename ToOrdinaryType<A>::Type,
-		typename ToOrdinaryType<B>::Type
-	>::Type;
+    using Result = typename ResultOfIf<
+        typename ToOrdinaryType<A>::Type,
+        typename ToOrdinaryType<B>::Type
+    >::Type;
 
 public:
-	using Type = typename EmbedType<Result>::Type;
+    using Type = typename EmbedType<Result>::Type;
 };
 
 /// Compute the product of two enriched numeric types.
 /// Case when a source type or the resulting type does not map to any ordinary type.
 
-#define DEFINE_TYPE_PRODUCT_RULE(T1, T2, T3) 					\
-template <typename A, typename B>						\
-struct TypeProduct<								\
-	A, 									\
-	B,									\
-	typename std::enable_if<						\
-		!isOrdinaryPair<A, B>() &&					\
-		areSimilarPairs<A, B, T1, T2>()					\
-	>::type>								\
-{										\
-	using Type = typename T3<typename CombinedNullity<A, B>::Type>;		\
+#define DEFINE_TYPE_PRODUCT_RULE(T1, T2, T3)                     \
+template <typename A, typename B>                        \
+struct TypeProduct<                                \
+    A,                                     \
+    B,                                    \
+    typename std::enable_if<                        \
+        !isOrdinaryPair<A, B>() &&                    \
+        areSimilarPairs<A, B, T1, T2>()                    \
+    >::type>                                \
+{                                        \
+    using Type = typename T3<typename CombinedNullity<A, B>::Type>;        \
 }
 
 DEFINE_TYPE_PRODUCT_RULE(Enriched::Int8, Enriched::UInt16, Enriched::IntFloat32);

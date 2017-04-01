@@ -17,21 +17,21 @@ namespace DB
 {
 void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response)
 {
-	if (!response.getKeepAlive())
-		return;
+    if (!response.getKeepAlive())
+        return;
 
-	Poco::Timespan keep_alive_timeout(Poco::Util::Application::instance().config().getInt("keep_alive_timeout", 10), 0);
-	if (keep_alive_timeout.totalSeconds())
-		response.set("Keep-Alive", "timeout=" + std::to_string(keep_alive_timeout.totalSeconds()));
+    Poco::Timespan keep_alive_timeout(Poco::Util::Application::instance().config().getInt("keep_alive_timeout", 10), 0);
+    if (keep_alive_timeout.totalSeconds())
+        response.set("Keep-Alive", "timeout=" + std::to_string(keep_alive_timeout.totalSeconds()));
 }
 
 std::once_flag ssl_init_once;
 
 void SSLInit()
 {
-	// http://stackoverflow.com/questions/18315472/https-request-in-c-using-poco
+    // http://stackoverflow.com/questions/18315472/https-request-in-c-using-poco
 #if Poco_NetSSL_FOUND
-	Poco::Net::initializeSSL();
+    Poco::Net::initializeSSL();
 #endif
 }
 }

@@ -18,7 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int CORRUPTED_DATA;
+    extern const int CORRUPTED_DATA;
 }
 
 
@@ -30,26 +30,26 @@ namespace ErrorCodes
 /// Счётчик ссылок неатомарный, так как используется из одного потока.
 namespace detail
 {
-	struct SharedBlock : Block
-	{
-		int refcount = 0;
+    struct SharedBlock : Block
+    {
+        int refcount = 0;
 
-		SharedBlock(Block && value_)
-			: Block(std::move(value_)) {};
-	};
+        SharedBlock(Block && value_)
+            : Block(std::move(value_)) {};
+    };
 }
 
 using SharedBlockPtr = boost::intrusive_ptr<detail::SharedBlock>;
 
 inline void intrusive_ptr_add_ref(detail::SharedBlock * ptr)
 {
-	++ptr->refcount;
+    ++ptr->refcount;
 }
 
 inline void intrusive_ptr_release(detail::SharedBlock * ptr)
 {
-	if (0 == --ptr->refcount)
-		delete ptr;
+    if (0 == --ptr->refcount)
+        delete ptr;
 }
 
 
@@ -58,163 +58,163 @@ inline void intrusive_ptr_release(detail::SharedBlock * ptr)
 class MergingSortedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	/** limit - if isn't 0, then we can produce only first limit rows in sorted order.
-	  * out_row_sources - if isn't nullptr, then at the end of execution it should contain part numbers of each readed row (and needed flag)
-	  * quiet - don't log profiling info
-	  */
-	MergingSortedBlockInputStream(BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-								  size_t limit_ = 0, MergedRowSources * out_row_sources_ = nullptr, bool quiet_ = false);
+    /** limit - if isn't 0, then we can produce only first limit rows in sorted order.
+      * out_row_sources - if isn't nullptr, then at the end of execution it should contain part numbers of each readed row (and needed flag)
+      * quiet - don't log profiling info
+      */
+    MergingSortedBlockInputStream(BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
+                                  size_t limit_ = 0, MergedRowSources * out_row_sources_ = nullptr, bool quiet_ = false);
 
-	String getName() const override { return "MergingSorted"; }
+    String getName() const override { return "MergingSorted"; }
 
-	String getID() const override;
+    String getID() const override;
 
 protected:
-	struct RowRef
-	{
-		ConstColumnPlainPtrs columns;
-		size_t row_num;
-		SharedBlockPtr shared_block;
+    struct RowRef
+    {
+        ConstColumnPlainPtrs columns;
+        size_t row_num;
+        SharedBlockPtr shared_block;
 
-		void swap(RowRef & other)
-		{
-			std::swap(columns, other.columns);
-			std::swap(row_num, other.row_num);
-			std::swap(shared_block, other.shared_block);
-		}
+        void swap(RowRef & other)
+        {
+            std::swap(columns, other.columns);
+            std::swap(row_num, other.row_num);
+            std::swap(shared_block, other.shared_block);
+        }
 
-		/// Количество и типы столбцов обязаны соответствовать.
-		bool operator==(const RowRef & other) const
-		{
-			size_t size = columns.size();
-			for (size_t i = 0; i < size; ++i)
-				if (0 != columns[i]->compareAt(row_num, other.row_num, *other.columns[i], 1))
-					return false;
-			return true;
-		}
+        /// Количество и типы столбцов обязаны соответствовать.
+        bool operator==(const RowRef & other) const
+        {
+            size_t size = columns.size();
+            for (size_t i = 0; i < size; ++i)
+                if (0 != columns[i]->compareAt(row_num, other.row_num, *other.columns[i], 1))
+                    return false;
+            return true;
+        }
 
-		bool operator!=(const RowRef & other) const
-		{
-			return !(*this == other);
-		}
+        bool operator!=(const RowRef & other) const
+        {
+            return !(*this == other);
+        }
 
-		bool empty() const { return columns.empty(); }
-		size_t size() const { return columns.size(); }
-	};
-
-
-	Block readImpl() override;
-
-	void readSuffixImpl() override;
-
-	/// Инициализирует очередь и следующий блок результата.
-	void init(Block & merged_block, ColumnPlainPtrs & merged_columns);
-
-	/// Достаёт из источника, соответствующего current следующий блок.
-	template <typename TSortCursor>
-	void fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue);
+        bool empty() const { return columns.empty(); }
+        size_t size() const { return columns.size(); }
+    };
 
 
-	SortDescription description;
-	const size_t max_block_size;
-	size_t limit;
-	size_t total_merged_rows = 0;
+    Block readImpl() override;
 
-	bool first = true;
-	bool has_collation = false;
-	bool quiet = false;
+    void readSuffixImpl() override;
 
-	/// May be smaller or equal to max_block_size. To do 'reserve' for columns.
-	size_t expected_block_size = 0;
+    /// Инициализирует очередь и следующий блок результата.
+    void init(Block & merged_block, ColumnPlainPtrs & merged_columns);
 
-	/// Текущие сливаемые блоки.
-	size_t num_columns = 0;
-	std::vector<SharedBlockPtr> source_blocks;
-
-	using CursorImpls = std::vector<SortCursorImpl>;
-	CursorImpls cursors;
-
-	using Queue = std::priority_queue<SortCursor>;
-	Queue queue;
-
-	using QueueWithCollation = std::priority_queue<SortCursorWithCollation>;
-	QueueWithCollation queue_with_collation;
-
-	/// Used in Vertical merge algorithm to gather non-PK columns (on next step)
-	/// If it is not nullptr then it should be populated during execution
-	MergedRowSources * out_row_sources = nullptr;
+    /// Достаёт из источника, соответствующего current следующий блок.
+    template <typename TSortCursor>
+    void fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue);
 
 
-	/// Эти методы используются в Collapsing/Summing/Aggregating... SortedBlockInputStream-ах.
+    SortDescription description;
+    const size_t max_block_size;
+    size_t limit;
+    size_t total_merged_rows = 0;
 
-	/// Сохранить строчку, на которую указывает cursor, в row.
-	template <class TSortCursor>
-	void setRow(Row & row, TSortCursor & cursor)
-	{
-		for (size_t i = 0; i < num_columns; ++i)
-		{
-			try
-			{
-				cursor->all_columns[i]->get(cursor->pos, row[i]);
-			}
-			catch (...)
-			{
-				tryLogCurrentException(__PRETTY_FUNCTION__);
+    bool first = true;
+    bool has_collation = false;
+    bool quiet = false;
 
-				/// Узнаем имя столбца и бросим исключение поинформативней.
+    /// May be smaller or equal to max_block_size. To do 'reserve' for columns.
+    size_t expected_block_size = 0;
 
-				String column_name;
-				for (const auto & block : source_blocks)
-				{
-					if (i < block->columns())
-					{
-						column_name = block->safeGetByPosition(i).name;
-						break;
-					}
-				}
+    /// Текущие сливаемые блоки.
+    size_t num_columns = 0;
+    std::vector<SharedBlockPtr> source_blocks;
 
-				throw Exception("MergingSortedBlockInputStream failed to read row " + toString(cursor->pos)
-					+ " of column " + toString(i) + (column_name.empty() ? "" : " (" + column_name + ")"),
-					ErrorCodes::CORRUPTED_DATA);
-			}
-		}
-	}
+    using CursorImpls = std::vector<SortCursorImpl>;
+    CursorImpls cursors;
 
-	template <class TSortCursor>
-	void setRowRef(RowRef & row_ref, TSortCursor & cursor)
-	{
-		row_ref.row_num = cursor.impl->pos;
-		row_ref.shared_block = source_blocks[cursor.impl->order];
+    using Queue = std::priority_queue<SortCursor>;
+    Queue queue;
 
-		for (size_t i = 0; i < num_columns; ++i)
-			row_ref.columns[i] = cursor->all_columns[i];
-	}
+    using QueueWithCollation = std::priority_queue<SortCursorWithCollation>;
+    QueueWithCollation queue_with_collation;
 
-	template <class TSortCursor>
-	void setPrimaryKeyRef(RowRef & row_ref, TSortCursor & cursor)
-	{
-		row_ref.row_num = cursor.impl->pos;
-		row_ref.shared_block = source_blocks[cursor.impl->order];
+    /// Used in Vertical merge algorithm to gather non-PK columns (on next step)
+    /// If it is not nullptr then it should be populated during execution
+    MergedRowSources * out_row_sources = nullptr;
 
-		for (size_t i = 0; i < cursor->sort_columns_size; ++i)
-			row_ref.columns[i] = cursor->sort_columns[i];
-	}
+
+    /// Эти методы используются в Collapsing/Summing/Aggregating... SortedBlockInputStream-ах.
+
+    /// Сохранить строчку, на которую указывает cursor, в row.
+    template <class TSortCursor>
+    void setRow(Row & row, TSortCursor & cursor)
+    {
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            try
+            {
+                cursor->all_columns[i]->get(cursor->pos, row[i]);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                /// Узнаем имя столбца и бросим исключение поинформативней.
+
+                String column_name;
+                for (const auto & block : source_blocks)
+                {
+                    if (i < block->columns())
+                    {
+                        column_name = block->safeGetByPosition(i).name;
+                        break;
+                    }
+                }
+
+                throw Exception("MergingSortedBlockInputStream failed to read row " + toString(cursor->pos)
+                    + " of column " + toString(i) + (column_name.empty() ? "" : " (" + column_name + ")"),
+                    ErrorCodes::CORRUPTED_DATA);
+            }
+        }
+    }
+
+    template <class TSortCursor>
+    void setRowRef(RowRef & row_ref, TSortCursor & cursor)
+    {
+        row_ref.row_num = cursor.impl->pos;
+        row_ref.shared_block = source_blocks[cursor.impl->order];
+
+        for (size_t i = 0; i < num_columns; ++i)
+            row_ref.columns[i] = cursor->all_columns[i];
+    }
+
+    template <class TSortCursor>
+    void setPrimaryKeyRef(RowRef & row_ref, TSortCursor & cursor)
+    {
+        row_ref.row_num = cursor.impl->pos;
+        row_ref.shared_block = source_blocks[cursor.impl->order];
+
+        for (size_t i = 0; i < cursor->sort_columns_size; ++i)
+            row_ref.columns[i] = cursor->sort_columns[i];
+    }
 
 private:
 
-	/** Делаем поддержку двух разных курсоров - с Collation и без.
-	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
-	 */
-	template <typename TSortCursor>
-	void initQueue(std::priority_queue<TSortCursor> & queue);
+    /** Делаем поддержку двух разных курсоров - с Collation и без.
+     *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
+     */
+    template <typename TSortCursor>
+    void initQueue(std::priority_queue<TSortCursor> & queue);
 
-	template <typename TSortCursor>
-	void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+    template <typename TSortCursor>
+    void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
-	Logger * log = &Logger::get("MergingSortedBlockInputStream");
+    Logger * log = &Logger::get("MergingSortedBlockInputStream");
 
-	/// Прочитали до конца.
-	bool finished = false;
+    /// Прочитали до конца.
+    bool finished = false;
 };
 
 }

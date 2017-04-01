@@ -28,21 +28,21 @@ struct CollectTables;
   */
 struct AnalyzeColumns
 {
-	void process(ASTPtr & ast, const CollectAliases & aliases, const CollectTables & tables);
+    void process(ASTPtr & ast, const CollectAliases & aliases, const CollectTables & tables);
 
-	struct ColumnInfo
-	{
-		ASTPtr node;
-		CollectTables::TableInfo table;
-		String name_in_table;
-		DataTypePtr data_type;
-	};
+    struct ColumnInfo
+    {
+        ASTPtr node;
+        CollectTables::TableInfo table;
+        String name_in_table;
+        DataTypePtr data_type;
+    };
 
-	using Columns = std::unordered_map<String, ColumnInfo>;
-	Columns columns;
+    using Columns = std::unordered_map<String, ColumnInfo>;
+    Columns columns;
 
-	/// Debug output
-	void dump(WriteBuffer & out) const;
+    /// Debug output
+    void dump(WriteBuffer & out) const;
 };
 
 }

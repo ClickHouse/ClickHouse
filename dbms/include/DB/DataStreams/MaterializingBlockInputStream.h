@@ -10,12 +10,12 @@ namespace DB
 class MaterializingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	MaterializingBlockInputStream(BlockInputStreamPtr input_);
-	String getName() const override;
-	String getID() const override;
+    MaterializingBlockInputStream(BlockInputStreamPtr input_);
+    String getName() const override;
+    String getID() const override;
 
 protected:
-	Block readImpl() override;
+    Block readImpl() override;
 };
 
 }

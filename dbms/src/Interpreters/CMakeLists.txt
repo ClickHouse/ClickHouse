@@ -1,14 +1,14 @@
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
-	set (PATH_SHARE "/usr/local/share" CACHE STRING "")
+    set (PATH_SHARE "/usr/local/share" CACHE STRING "")
 else ()
-	set (PATH_SHARE "/usr/share" CACHE STRING "")
+    set (PATH_SHARE "/usr/share" CACHE STRING "")
 endif ()
 
 if (INTERNAL_COMPILER_SAME)
-	set (INTERNAL_COMPILER_EXECUTABLE "${CMAKE_CXX_COMPILER}" CACHE STRING "")
+    set (INTERNAL_COMPILER_EXECUTABLE "${CMAKE_CXX_COMPILER}" CACHE STRING "")
 else ()
-	set (INTERNAL_COMPILER_EXECUTABLE "${PATH_SHARE}/clickhouse/bin/clang" CACHE STRING "")
+    set (INTERNAL_COMPILER_EXECUTABLE "${PATH_SHARE}/clickhouse/bin/clang" CACHE STRING "")
 endif ()
 
 set (INTERNAL_COMPILER_NO_WARNING OFF CACHE BOOL "")
@@ -18,8 +18,8 @@ set (INTERNAL_COMPILER_NO_WARNING OFF CACHE BOOL "")
 set (INTERNAL_COMPILER_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE} -x c++ -march=native -shared -fPIC -fvisibility=hidden -fno-implement-inlines " CACHE STRING "")
 string(REPLACE "-no-pie" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
 if (INTERNAL_COMPILER_NO_WARNING)
-	string (REPLACE "-Wall" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
-	string (REPLACE "-Werror" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
+    string (REPLACE "-Wall" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
+    string (REPLACE "-Werror" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
 endif ()
 
 set (INTERNAL_COMPILER_HEADERS "${PATH_SHARE}/clickhouse/headers" CACHE STRING "")
@@ -39,5 +39,5 @@ set (CONFIG_COMPILE ${ClickHouse_BINARY_DIR}/dbms/include/DB/Interpreters/config
 configure_file (${ClickHouse_SOURCE_DIR}/dbms/include/DB/Interpreters/config_compile.h.in ${CONFIG_COMPILE})
 
 if (ENABLE_TESTS)
-	add_subdirectory (tests)
+    add_subdirectory (tests)
 endif (ENABLE_TESTS)

@@ -11,9 +11,9 @@ namespace DB
 class TableFunctionFactory
 {
 public:
-	TableFunctionPtr get(
-		const std::string & name,
-		const Context & context) const;
+    TableFunctionPtr get(
+        const std::string & name,
+        const Context & context) const;
 };
 
 }

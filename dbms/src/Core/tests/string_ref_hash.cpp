@@ -10,14 +10,14 @@
 
 int main(int argc, char ** argv)
 {
-	using namespace DB;
+    using namespace DB;
 
-	ReadBufferFromFileDescriptor in(STDIN_FILENO);
-	WriteBufferFromFileDescriptor out(STDOUT_FILENO);
+    ReadBufferFromFileDescriptor in(STDIN_FILENO);
+    WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
-	String s;
-	readStringUntilEOF(s, in);
-	out << StringRefHash()(s) << '\n';
+    String s;
+    readStringUntilEOF(s, in);
+    out << StringRefHash()(s) << '\n';
 
-	return 0;
+    return 0;
 }

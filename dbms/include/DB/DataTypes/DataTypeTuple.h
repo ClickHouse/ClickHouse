@@ -14,44 +14,44 @@ namespace DB
 class DataTypeTuple final : public IDataType
 {
 private:
-	DataTypes elems;
+    DataTypes elems;
 public:
-	DataTypeTuple(DataTypes elems_) : elems(elems_) {}
+    DataTypeTuple(DataTypes elems_) : elems(elems_) {}
 
-	std::string getName() const override;
-	DataTypePtr clone() const override { return std::make_shared<DataTypeTuple>(elems); }
+    std::string getName() const override;
+    DataTypePtr clone() const override { return std::make_shared<DataTypeTuple>(elems); }
 
-	void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-	void deserializeBinary(Field & field, ReadBuffer & istr) const override;
-	void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-	void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-	void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-	void deserializeText(IColumn & column, ReadBuffer & istr) const;
-	void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-	void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
-	void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-	void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
-	void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const override;
-	void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
-	void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
+    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void deserializeText(IColumn & column, ReadBuffer & istr) const;
+    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
+    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const override;
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
+    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
-	/// Кортежи в формате CSV будем сериализовать, как отдельные столбцы (то есть, теряя их вложенность в кортеж).
-	void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-	void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
+    /// Кортежи в формате CSV будем сериализовать, как отдельные столбцы (то есть, теряя их вложенность в кортеж).
+    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
-	void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
+    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
 
-	/** limit обязательно должен быть в точности равен количеству сериализованных значений.
-	  * Именно из-за этого (невозможности читать меньший кусок записанных данных), Tuple не могут быть использованы для хранения данных в таблицах.
-	  * (Хотя могут быть использованы для передачи данных по сети в Native формате.)
-	  */
-	void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+    /** limit обязательно должен быть в точности равен количеству сериализованных значений.
+      * Именно из-за этого (невозможности читать меньший кусок записанных данных), Tuple не могут быть использованы для хранения данных в таблицах.
+      * (Хотя могут быть использованы для передачи данных по сети в Native формате.)
+      */
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
-	ColumnPtr createColumn() const override;
-	ColumnPtr createConstColumn(size_t size, const Field & field) const override;
+    ColumnPtr createColumn() const override;
+    ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
-	Field getDefault() const override;
-	const DataTypes & getElements() const { return elems; }
+    Field getDefault() const override;
+    const DataTypes & getElements() const { return elems; }
 };
 
 }

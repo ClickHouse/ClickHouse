@@ -5,12 +5,12 @@ namespace DB
 
 AggregateFunctionPtr createAggregateFunctionNullUnary(AggregateFunctionPtr & nested)
 {
-	return std::make_shared<AggregateFunctionNullUnary>(nested);
+    return std::make_shared<AggregateFunctionNullUnary>(nested);
 }
 
 AggregateFunctionPtr createAggregateFunctionNullVariadic(AggregateFunctionPtr & nested)
 {
-	return std::make_shared<AggregateFunctionNullVariadic>(nested);
+    return std::make_shared<AggregateFunctionNullVariadic>(nested);
 }
 
 }

@@ -5,7 +5,7 @@ namespace DB
 
 AggregateFunctionPtr createAggregateFunctionArray(AggregateFunctionPtr & nested)
 {
-	return std::make_shared<AggregateFunctionArray>(nested);
+    return std::make_shared<AggregateFunctionArray>(nested);
 }
 
 }

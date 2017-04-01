@@ -12,13 +12,13 @@
   */
 inline DB::UInt64 intHash64(DB::UInt64 x)
 {
-	x ^= x >> 33;
-	x *= 0xff51afd7ed558ccdULL;
-	x ^= x >> 33;
-	x *= 0xc4ceb9fe1a85ec53ULL;
-	x ^= x >> 33;
+    x ^= x >> 33;
+    x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33;
+    x *= 0xc4ceb9fe1a85ec53ULL;
+    x ^= x >> 33;
 
-	return x;
+    return x;
 }
 
 /** CRC32C является не очень качественной в роли хэш функции,
@@ -31,12 +31,12 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 {
 #if defined(__x86_64__)
-	DB::UInt64 crc = -1ULL;
-	asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x));
-	return crc;
+    DB::UInt64 crc = -1ULL;
+    asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x));
+    return crc;
 #else
-	/// На других платформах используем не обязательно CRC32. NOTE Это может сбить с толку.
-	return intHash64(x);
+    /// На других платформах используем не обязательно CRC32. NOTE Это может сбить с толку.
+    return intHash64(x);
 #endif
 }
 
@@ -46,23 +46,23 @@ template <typename T> struct DefaultHash;
 template <typename T>
 inline size_t DefaultHash64(T key)
 {
-	union
-	{
-		T in;
-		DB::UInt64 out;
-	} u;
-	u.out = 0;
-	u.in = key;
-	return intHash64(u.out);
+    union
+    {
+        T in;
+        DB::UInt64 out;
+    } u;
+    u.out = 0;
+    u.in = key;
+    return intHash64(u.out);
 }
 
 #define DEFINE_HASH(T) \
 template <> struct DefaultHash<T>\
 {\
-	size_t operator() (T key) const\
-	{\
-		return DefaultHash64<T>(key);\
-	}\
+    size_t operator() (T key) const\
+    {\
+        return DefaultHash64<T>(key);\
+    }\
 };
 
 DEFINE_HASH(DB::UInt8)
@@ -84,23 +84,23 @@ template <typename T> struct HashCRC32;
 template <typename T>
 inline size_t hashCRC32(T key)
 {
-	union
-	{
-		T in;
-		DB::UInt64 out;
-	} u;
-	u.out = 0;
-	u.in = key;
-	return intHashCRC32(u.out);
+    union
+    {
+        T in;
+        DB::UInt64 out;
+    } u;
+    u.out = 0;
+    u.in = key;
+    return intHashCRC32(u.out);
 }
 
 #define DEFINE_HASH(T) \
 template <> struct HashCRC32<T>\
 {\
-	size_t operator() (T key) const\
-	{\
-		return hashCRC32<T>(key);\
-	}\
+    size_t operator() (T key) const\
+    {\
+        return hashCRC32<T>(key);\
+    }\
 };
 
 DEFINE_HASH(DB::UInt8)
@@ -120,11 +120,11 @@ DEFINE_HASH(DB::Float64)
 /// Разумно использовать для UInt8, UInt16 при достаточном размере хэш-таблицы.
 struct TrivialHash
 {
-	template <typename T>
-	size_t operator() (T key) const
-	{
-		return key;
-	}
+    template <typename T>
+    size_t operator() (T key) const
+    {
+        return key;
+    }
 };
 
 
@@ -143,16 +143,16 @@ struct TrivialHash
 template <DB::UInt64 salt>
 inline DB::UInt32 intHash32(DB::UInt64 key)
 {
-	key ^= salt;
+    key ^= salt;
 
-	key = (~key) + (key << 18);
-	key = key ^ ((key >> 31) | (key << 33));
-	key = key * 21;
-	key = key ^ ((key >> 11) | (key << 53));
-	key = key + (key << 6);
-	key = key ^ ((key >> 22) | (key << 42));
+    key = (~key) + (key << 18);
+    key = key ^ ((key >> 31) | (key << 33));
+    key = key * 21;
+    key = key ^ ((key >> 11) | (key << 53));
+    key = key + (key << 6);
+    key = key ^ ((key >> 22) | (key << 42));
 
-	return key;
+    return key;
 }
 
 
@@ -160,8 +160,8 @@ inline DB::UInt32 intHash32(DB::UInt64 key)
 template <typename T, DB::UInt64 salt = 0>
 struct IntHash32
 {
-	size_t operator() (const T & key) const
-	{
-		return intHash32<salt>(key);
-	}
+    size_t operator() (const T & key) const
+    {
+        return intHash32<salt>(key);
+    }
 };

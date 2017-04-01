@@ -25,105 +25,105 @@ using Value = UInt64;
 
 int main(int argc, char ** argv)
 {
-	size_t n = atoi(argv[1]);
+    size_t n = atoi(argv[1]);
 
-	std::vector<Key> data(n);
+    std::vector<Key> data(n);
 
-	std::cerr << "sizeof(Key) = " << sizeof(Key) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
+    std::cerr << "sizeof(Key) = " << sizeof(Key) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
 
-	{
-		Stopwatch watch;
-		DB::ReadBufferFromFileDescriptor in1(STDIN_FILENO);
-		DB::CompressedReadBuffer in2(in1);
+    {
+        Stopwatch watch;
+        DB::ReadBufferFromFileDescriptor in1(STDIN_FILENO);
+        DB::CompressedReadBuffer in2(in1);
 
-		in2.readStrict(reinterpret_cast<char*>(&data[0]), sizeof(data[0]) * n);
+        in2.readStrict(reinterpret_cast<char*>(&data[0]), sizeof(data[0]) * n);
 
-		watch.stop();
-		std::cerr << std::fixed << std::setprecision(2)
-			<< "Vector. Size: " << n
-			<< ", elapsed: " << watch.elapsedSeconds()
-			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
-			<< std::endl;
-	}
+        watch.stop();
+        std::cerr << std::fixed << std::setprecision(2)
+            << "Vector. Size: " << n
+            << ", elapsed: " << watch.elapsedSeconds()
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << std::endl;
+    }
 
-	{
-		Stopwatch watch;
+    {
+        Stopwatch watch;
 
-		std::cerr << sizeof(HashMapCell<Key, Value, DefaultHash<Key> >) << std::endl;
+        std::cerr << sizeof(HashMapCell<Key, Value, DefaultHash<Key> >) << std::endl;
 
-		using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
+        using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
 
-		Map map;
-		Map::iterator it;
-		bool inserted;
+        Map map;
+        Map::iterator it;
+        bool inserted;
 
-		for (size_t i = 0; i < n; ++i)
-		{
-			map.emplace(data[i], it, inserted);
-			if (inserted)
-				it->second = 0;
-			++it->second;
-		}
+        for (size_t i = 0; i < n; ++i)
+        {
+            map.emplace(data[i], it, inserted);
+            if (inserted)
+                it->second = 0;
+            ++it->second;
+        }
 
-		watch.stop();
-		std::cerr << std::fixed << std::setprecision(2)
-			<< "HashMap. Size: " << map.size()
-			<< ", elapsed: " << watch.elapsedSeconds()
-			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
-			<< std::endl;
+        watch.stop();
+        std::cerr << std::fixed << std::setprecision(2)
+            << "HashMap. Size: " << map.size()
+            << ", elapsed: " << watch.elapsedSeconds()
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << std::endl;
 
-		size_t sum_counts = 0;
-		size_t elems = 0;
-		for (const auto & kv : map)
-		{
-			sum_counts += kv.second;
-			++elems;
-		}
+        size_t sum_counts = 0;
+        size_t elems = 0;
+        for (const auto & kv : map)
+        {
+            sum_counts += kv.second;
+            ++elems;
+        }
 
-		std::cerr << "sum_counts: " << sum_counts << ", elems: " << elems << std::endl;
-	}
+        std::cerr << "sum_counts: " << sum_counts << ", elems: " << elems << std::endl;
+    }
 
-	{
-		Stopwatch watch;
+    {
+        Stopwatch watch;
 
-		using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
-		//using Map = HashMap<Key, Value, UniquesHashSetDefaultHash>;
+        using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
+        //using Map = HashMap<Key, Value, UniquesHashSetDefaultHash>;
 
-		Map map;
-		Map::iterator it;
-		bool inserted;
+        Map map;
+        Map::iterator it;
+        bool inserted;
 
-		for (size_t i = 0; i < n; ++i)
-		{
-			map.emplace(i, it, inserted);
-			if (inserted)
-				it->second = 0;
-			++it->second;
-		}
+        for (size_t i = 0; i < n; ++i)
+        {
+            map.emplace(i, it, inserted);
+            if (inserted)
+                it->second = 0;
+            ++it->second;
+        }
 
-		watch.stop();
-		std::cerr << std::fixed << std::setprecision(2)
-			<< "HashMap. Size: " << map.size()
-			<< ", elapsed: " << watch.elapsedSeconds()
-			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
-			<< std::endl;
+        watch.stop();
+        std::cerr << std::fixed << std::setprecision(2)
+            << "HashMap. Size: " << map.size()
+            << ", elapsed: " << watch.elapsedSeconds()
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << std::endl;
 
-		size_t sum_counts = 0;
-		size_t elems = 0;
-		for (const auto & kv : map)
-		{
-			sum_counts += kv.second;
-			++elems;
+        size_t sum_counts = 0;
+        size_t elems = 0;
+        for (const auto & kv : map)
+        {
+            sum_counts += kv.second;
+            ++elems;
 
-			if (kv.first > n)
-				std::cerr << kv.first << std::endl;
-		}
+            if (kv.first > n)
+                std::cerr << kv.first << std::endl;
+        }
 
-		std::cerr << "sum_counts: " << sum_counts << ", elems: " << elems << std::endl;
+        std::cerr << "sum_counts: " << sum_counts << ", elems: " << elems << std::endl;
 
-		if (sum_counts != n)
-			std::cerr << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
-	}
+        if (sum_counts != n)
+            std::cerr << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
+    }
 
-	return 0;
+    return 0;
 }

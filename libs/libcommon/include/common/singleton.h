@@ -2,13 +2,13 @@
 
 /** Пример:
   *
-  *	class Derived : public Singleton<Derived>
-  *	{
-  *	    friend class Singleton<Derived>;
+  *    class Derived : public Singleton<Derived>
+  *    {
+  *        friend class Singleton<Derived>;
   *     ...
-  *	protected:
-  *		Derived() {};
-  *	};
+  *    protected:
+  *        Derived() {};
+  *    };
   *
   * Или так:
   *
@@ -22,17 +22,17 @@
 template<class Subject> class Singleton
 {
 public:
-	static Subject & instance()
-	{
-		/// Нормально при включенных thread safe statics в gcc (по-умолчанию).
-		static Subject instance;
-		return instance;
-	}
+    static Subject & instance()
+    {
+        /// Нормально при включенных thread safe statics в gcc (по-умолчанию).
+        static Subject instance;
+        return instance;
+    }
 
 protected:
-	Singleton(){};
+    Singleton(){};
 
 private:
-	Singleton(const Singleton&);
-	Singleton& operator=(const Singleton&);
+    Singleton(const Singleton&);
+    Singleton& operator=(const Singleton&);
 };

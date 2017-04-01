@@ -16,16 +16,16 @@ class WriteBuffer;
 class BinaryRowOutputStream : public IRowOutputStream
 {
 public:
-	BinaryRowOutputStream(WriteBuffer & ostr_);
+    BinaryRowOutputStream(WriteBuffer & ostr_);
 
-	void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
 
-	void flush() override;
+    void flush() override;
 
-	String getContentType() const override { return "application/octet-stream"; }
+    String getContentType() const override { return "application/octet-stream"; }
 
 protected:
-	WriteBuffer & ostr;
+    WriteBuffer & ostr;
 };
 
 }

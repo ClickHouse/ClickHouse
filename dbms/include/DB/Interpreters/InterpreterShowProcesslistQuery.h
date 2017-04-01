@@ -13,16 +13,16 @@ namespace DB
 class InterpreterShowProcesslistQuery : public IInterpreter
 {
 public:
-	InterpreterShowProcesslistQuery(ASTPtr query_ptr_, Context & context_)
-		: query_ptr(query_ptr_), context(context_) {}
+    InterpreterShowProcesslistQuery(ASTPtr query_ptr_, Context & context_)
+        : query_ptr(query_ptr_), context(context_) {}
 
-	BlockIO execute() override;
+    BlockIO execute() override;
 
 private:
-	ASTPtr query_ptr;
-	Context context;
+    ASTPtr query_ptr;
+    Context context;
 
-	String getRewrittenQuery();
+    String getRewrittenQuery();
 };
 
 

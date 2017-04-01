@@ -24,30 +24,30 @@ class WriteBuffer;
   */
 struct CollectTables
 {
-	void process(ASTPtr & ast, Context & context, const CollectAliases & aliases);
+    void process(ASTPtr & ast, Context & context, const CollectAliases & aliases);
 
-	enum class Kind
-	{
-		OrdinaryTable,
-		TableFunction,
-		Subquery
-	};
+    enum class Kind
+    {
+        OrdinaryTable,
+        TableFunction,
+        Subquery
+    };
 
-	struct TableInfo
-	{
-		ASTPtr node;
-		String database_name;
-		String table_name;
-		String alias;
-		StoragePtr storage;
-		Block structure_of_subquery;
-	};
+    struct TableInfo
+    {
+        ASTPtr node;
+        String database_name;
+        String table_name;
+        String alias;
+        StoragePtr storage;
+        Block structure_of_subquery;
+    };
 
-	using Tables = std::vector<TableInfo>;
-	Tables tables;
+    using Tables = std::vector<TableInfo>;
+    Tables tables;
 
-	/// Debug output
-	void dump(WriteBuffer & out) const;
+    /// Debug output
+    void dump(WriteBuffer & out) const;
 };
 
 }

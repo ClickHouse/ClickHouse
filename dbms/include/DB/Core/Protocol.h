@@ -55,68 +55,68 @@ namespace DB
 
 namespace Protocol
 {
-	/// То, что передаёт сервер.
-	namespace Server
-	{
-		enum Enum
-		{
-			Hello = 0,			/// Имя, версия, ревизия.
-			Data = 1,			/// Блок данных со сжатием или без.
-			Exception = 2,		/// Исключение во время обработки запроса.
-			Progress = 3,		/// Прогресс выполнения запроса: строк считано, байт считано.
-			Pong = 4,			/// Ответ на Ping.
-			EndOfStream = 5,	/// Все пакеты были переданы.
-			ProfileInfo = 6,	/// Пакет с профайлинговой информацией.
-			Totals = 7,			/// Блок данных с тотальными значениями, со сжатием или без.
-			Extremes = 8,		/// Блок данных с минимумами и максимумами, аналогично.
-		};
+    /// То, что передаёт сервер.
+    namespace Server
+    {
+        enum Enum
+        {
+            Hello = 0,            /// Имя, версия, ревизия.
+            Data = 1,            /// Блок данных со сжатием или без.
+            Exception = 2,        /// Исключение во время обработки запроса.
+            Progress = 3,        /// Прогресс выполнения запроса: строк считано, байт считано.
+            Pong = 4,            /// Ответ на Ping.
+            EndOfStream = 5,    /// Все пакеты были переданы.
+            ProfileInfo = 6,    /// Пакет с профайлинговой информацией.
+            Totals = 7,            /// Блок данных с тотальными значениями, со сжатием или без.
+            Extremes = 8,        /// Блок данных с минимумами и максимумами, аналогично.
+        };
 
-		/** NOTE: Если бы в качестве типа агрумента функции был бы Enum, то сравнение packet >= 0 && packet < 7
-		  * срабатывало бы всегда из-за оптимизации компилятором, даже если packet некорректный, и было бы чтение за границей массива.
-		  * https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
-		  */
-		inline const char * toString(UInt64 packet)
-		{
-			static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo", "Totals", "Extremes" };
-			return packet < 9
-				? data[packet]
-				: "Unknown packet";
-		}
-	}
+        /** NOTE: Если бы в качестве типа агрумента функции был бы Enum, то сравнение packet >= 0 && packet < 7
+          * срабатывало бы всегда из-за оптимизации компилятором, даже если packet некорректный, и было бы чтение за границей массива.
+          * https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
+          */
+        inline const char * toString(UInt64 packet)
+        {
+            static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo", "Totals", "Extremes" };
+            return packet < 9
+                ? data[packet]
+                : "Unknown packet";
+        }
+    }
 
-	/// То, что передаёт клиент.
-	namespace Client
-	{
-		enum Enum
-		{
-			Hello = 0,			/// Имя, версия, ревизия, БД по-умолчанию.
-			Query = 1,			/** Идентификатор запроса, настройки на отдельный запрос,
-								  * информация, до какой стадии исполнять запрос,
-								  * использовать ли сжатие, текст запроса (без данных для INSERT-а).
-								  */
-			Data = 2,			/// Блок данных со сжатием или без.
-			Cancel = 3,			/// Отменить выполнение запроса.
-			Ping = 4,			/// Проверка живости соединения с сервером.
-		};
+    /// То, что передаёт клиент.
+    namespace Client
+    {
+        enum Enum
+        {
+            Hello = 0,            /// Имя, версия, ревизия, БД по-умолчанию.
+            Query = 1,            /** Идентификатор запроса, настройки на отдельный запрос,
+                                  * информация, до какой стадии исполнять запрос,
+                                  * использовать ли сжатие, текст запроса (без данных для INSERT-а).
+                                  */
+            Data = 2,            /// Блок данных со сжатием или без.
+            Cancel = 3,            /// Отменить выполнение запроса.
+            Ping = 4,            /// Проверка живости соединения с сервером.
+        };
 
-		inline const char * toString(UInt64 packet)
-		{
-			static const char * data[] = { "Hello", "Query", "Data", "Cancel", "Ping" };
-			return packet < 5
-				? data[packet]
-				: "Unknown packet";
-		}
-	}
+        inline const char * toString(UInt64 packet)
+        {
+            static const char * data[] = { "Hello", "Query", "Data", "Cancel", "Ping" };
+            return packet < 5
+                ? data[packet]
+                : "Unknown packet";
+        }
+    }
 
-	/// Использовать ли сжатие.
-	namespace Compression
-	{
-		enum Enum
-		{
-			Disable = 0,
-			Enable = 1,
-		};
-	}
+    /// Использовать ли сжатие.
+    namespace Compression
+    {
+        enum Enum
+        {
+            Disable = 0,
+            Enable = 1,
+        };
+    }
 }
 
 }

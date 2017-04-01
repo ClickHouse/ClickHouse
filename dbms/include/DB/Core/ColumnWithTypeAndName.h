@@ -14,17 +14,17 @@ namespace DB
 
 struct ColumnWithTypeAndName
 {
-	ColumnPtr column;
-	DataTypePtr type;
-	String name;
+    ColumnPtr column;
+    DataTypePtr type;
+    String name;
 
-	ColumnWithTypeAndName() {}
-	ColumnWithTypeAndName(const ColumnPtr & column_, const DataTypePtr & type_, const String name_)
-		: column(column_), type(type_), name(name_) {}
+    ColumnWithTypeAndName() {}
+    ColumnWithTypeAndName(const ColumnPtr & column_, const DataTypePtr & type_, const String name_)
+        : column(column_), type(type_), name(name_) {}
 
-	ColumnWithTypeAndName cloneEmpty() const;
-	bool operator==(const ColumnWithTypeAndName & other) const;
-	String prettyPrint() const;
+    ColumnWithTypeAndName cloneEmpty() const;
+    bool operator==(const ColumnWithTypeAndName & other) const;
+    String prettyPrint() const;
 };
 
 }

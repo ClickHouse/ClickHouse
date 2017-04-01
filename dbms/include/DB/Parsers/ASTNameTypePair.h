@@ -11,35 +11,35 @@ namespace DB
 class ASTNameTypePair : public IAST
 {
 public:
-	/// имя
-	String name;
-	/// тип
-	ASTPtr type;
+    /// имя
+    String name;
+    /// тип
+    ASTPtr type;
 
-	ASTNameTypePair() = default;
-	ASTNameTypePair(const StringRange range_) : IAST(range_) {}
+    ASTNameTypePair() = default;
+    ASTNameTypePair(const StringRange range_) : IAST(range_) {}
 
-	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const override { return "NameTypePair_" + name; }
+    /** Получить текст, который идентифицирует этот элемент. */
+    String getID() const override { return "NameTypePair_" + name; }
 
-	ASTPtr clone() const override
-	{
-		auto res = std::make_shared<ASTNameTypePair>(*this);
-		res->children.clear();
+    ASTPtr clone() const override
+    {
+        auto res = std::make_shared<ASTNameTypePair>(*this);
+        res->children.clear();
 
-		if (type) 	{ res->type = type->clone(); 	res->children.push_back(res->type); }
+        if (type)     { res->type = type->clone();     res->children.push_back(res->type); }
 
-		return res;
-	}
+        return res;
+    }
 
 protected:
-	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
-	{
-		std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    {
+        std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-		settings.ostr << settings.nl_or_ws << indent_str << backQuoteIfNeed(name) << " ";
-		type->formatImpl(settings, state, frame);
-	}
+        settings.ostr << settings.nl_or_ws << indent_str << backQuoteIfNeed(name) << " ";
+        type->formatImpl(settings, state, frame);
+    }
 };
 
 

@@ -15,35 +15,35 @@ class MemoryWriteBuffer : public WriteBuffer, public IReadableWriteBuffer, boost
 {
 public:
 
-	/// Use max_total_size_ = 0 for unlimited storage
-	MemoryWriteBuffer(
-		size_t max_total_size_ = 0,
-		size_t initial_chunk_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-		double growth_rate_ = 2.0,
-		size_t max_chunk_size_ = 128 * DBMS_DEFAULT_BUFFER_SIZE);
+    /// Use max_total_size_ = 0 for unlimited storage
+    MemoryWriteBuffer(
+        size_t max_total_size_ = 0,
+        size_t initial_chunk_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+        double growth_rate_ = 2.0,
+        size_t max_chunk_size_ = 128 * DBMS_DEFAULT_BUFFER_SIZE);
 
-	void nextImpl() override;
+    void nextImpl() override;
 
-	~MemoryWriteBuffer() override;
+    ~MemoryWriteBuffer() override;
 
 protected:
 
-	std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
+    std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
 
-	const size_t max_total_size;
-	const size_t initial_chunk_size;
-	const size_t max_chunk_size;
-	const double growth_rate;
+    const size_t max_total_size;
+    const size_t initial_chunk_size;
+    const size_t max_chunk_size;
+    const double growth_rate;
 
-	using Container = std::forward_list<BufferBase::Buffer>;
+    using Container = std::forward_list<BufferBase::Buffer>;
 
-	Container chunk_list;
-	Container::iterator chunk_tail;
-	size_t total_chunks_size = 0;
+    Container chunk_list;
+    Container::iterator chunk_tail;
+    size_t total_chunks_size = 0;
 
-	void addChunk();
+    void addChunk();
 
-	friend class ReadBufferFromMemoryWriteBuffer;
+    friend class ReadBufferFromMemoryWriteBuffer;
 };
 
 

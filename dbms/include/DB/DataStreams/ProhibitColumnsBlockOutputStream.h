@@ -9,7 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -17,21 +17,21 @@ namespace ErrorCodes
 class ProhibitColumnsBlockOutputStream : public IBlockOutputStream
 {
 public:
-	ProhibitColumnsBlockOutputStream(const BlockOutputStreamPtr & output, const NamesAndTypesList & columns)
-		: output{output}, columns{columns}
-	{
-	}
+    ProhibitColumnsBlockOutputStream(const BlockOutputStreamPtr & output, const NamesAndTypesList & columns)
+        : output{output}, columns{columns}
+    {
+    }
 
 private:
-	void write(const Block & block) override;
+    void write(const Block & block) override;
 
-	void flush() override { output->flush(); }
+    void flush() override { output->flush(); }
 
-	void writePrefix() override { output->writePrefix(); }
-	void writeSuffix() override { output->writeSuffix(); }
+    void writePrefix() override { output->writePrefix(); }
+    void writeSuffix() override { output->writeSuffix(); }
 
-	BlockOutputStreamPtr output;
-	NamesAndTypesList columns;
+    BlockOutputStreamPtr output;
+    NamesAndTypesList columns;
 };
 
 

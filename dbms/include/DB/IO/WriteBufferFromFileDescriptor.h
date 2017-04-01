@@ -11,43 +11,43 @@ namespace DB
 class WriteBufferFromFileDescriptor : public WriteBufferFromFileBase
 {
 protected:
-	int fd;
+    int fd;
 
-	void nextImpl() override;
+    void nextImpl() override;
 
-	/// Name or some description of file.
-	std::string getFileName() const override;
+    /// Name or some description of file.
+    std::string getFileName() const override;
 
 public:
-	WriteBufferFromFileDescriptor(
-		int fd_ = -1,
-		size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-		char * existing_memory = nullptr,
-		size_t alignment = 0);
+    WriteBufferFromFileDescriptor(
+        int fd_ = -1,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        char * existing_memory = nullptr,
+        size_t alignment = 0);
 
-	/** Could be used before initialization if needed 'fd' was not passed to constructor.
-	  * It's not possible to change 'fd' during work.
-	  */
-	void setFD(int fd_)
-	{
-		fd = fd_;
-	}
+    /** Could be used before initialization if needed 'fd' was not passed to constructor.
+      * It's not possible to change 'fd' during work.
+      */
+    void setFD(int fd_)
+    {
+        fd = fd_;
+    }
 
-	~WriteBufferFromFileDescriptor() override;
+    ~WriteBufferFromFileDescriptor() override;
 
-	int getFD() const override
-	{
-		return fd;
-	}
+    int getFD() const override
+    {
+        return fd;
+    }
 
-	off_t getPositionInFile() override;
+    off_t getPositionInFile() override;
 
-	void sync() override;
+    void sync() override;
 
 private:
-	off_t doSeek(off_t offset, int whence) override;
+    off_t doSeek(off_t offset, int whence) override;
 
-	void doTruncate(off_t length) override;
+    void doTruncate(off_t length) override;
 };
 
 }

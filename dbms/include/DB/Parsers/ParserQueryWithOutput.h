@@ -11,12 +11,12 @@ namespace DB
 class ParserQueryWithOutput : public IParserBase
 {
 protected:
-	const char * getName() const override { return "Query with output"; }
+    const char * getName() const override { return "Query with output"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
 
 protected:
-	ParserWhiteSpaceOrComments ws;
+    ParserWhiteSpaceOrComments ws;
 };
 
 }

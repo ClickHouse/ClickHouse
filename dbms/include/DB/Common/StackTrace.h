@@ -10,14 +10,14 @@
 class StackTrace
 {
 public:
-	/// Стектрейс снимается в момент создания объекта
-	StackTrace();
+    /// Стектрейс снимается в момент создания объекта
+    StackTrace();
 
-	/// Вывести в строку
-	std::string toString() const;
+    /// Вывести в строку
+    std::string toString() const;
 
 private:
-	using Frame = void*;
-	Frame frames[STACK_TRACE_MAX_DEPTH];
-	size_t frames_size;
+    using Frame = void*;
+    Frame frames[STACK_TRACE_MAX_DEPTH];
+    size_t frames_size;
 };

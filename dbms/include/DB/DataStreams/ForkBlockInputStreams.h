@@ -18,54 +18,54 @@ namespace DB
 class ForkBlockInputStreams : private boost::noncopyable
 {
 public:
-	ForkBlockInputStreams(BlockInputStreamPtr source_) : source(source_) {}
+    ForkBlockInputStreams(BlockInputStreamPtr source_) : source(source_) {}
 
-	/// Создать источник. Вызывайте функцию столько раз, сколько размноженных источников вам нужно.
-	BlockInputStreamPtr createInput()
-	{
-		destinations.emplace_back(std::make_shared<QueueBlockIOStream>(1));
-		return destinations.back();
-	}
+    /// Создать источник. Вызывайте функцию столько раз, сколько размноженных источников вам нужно.
+    BlockInputStreamPtr createInput()
+    {
+        destinations.emplace_back(std::make_shared<QueueBlockIOStream>(1));
+        return destinations.back();
+    }
 
-	/// Перед тем, как из полученных источников можно будет читать, необходимо "запустить" эту конструкцию.
-	void run()
-	{
-		while (1)
-		{
-			if (destinations.empty())
-				return;
+    /// Перед тем, как из полученных источников можно будет читать, необходимо "запустить" эту конструкцию.
+    void run()
+    {
+        while (1)
+        {
+            if (destinations.empty())
+                return;
 
-			Block block = source->read();
+            Block block = source->read();
 
-			for (Destinations::iterator it = destinations.begin(); it != destinations.end();)
-			{
-				if ((*it)->isCancelled())
-				{
-					destinations.erase(it++);
-				}
-				else
-				{
-					(*it)->write(block);
-					++it;
-				}
-			}
+            for (Destinations::iterator it = destinations.begin(); it != destinations.end();)
+            {
+                if ((*it)->isCancelled())
+                {
+                    destinations.erase(it++);
+                }
+                else
+                {
+                    (*it)->write(block);
+                    ++it;
+                }
+            }
 
-			if (!block)
-				return;
-		}
-	}
+            if (!block)
+                return;
+        }
+    }
 
 private:
-	/// Откуда читать.
-	BlockInputStreamPtr source;
+    /// Откуда читать.
+    BlockInputStreamPtr source;
 
-	/** Размноженные источники.
-	  * Сделаны на основе очереди небольшой длины.
-	  * Блок из source кладётся в каждую очередь.
-	  */
-	using Destination = std::shared_ptr<QueueBlockIOStream>;
-	using Destinations = std::list<Destination>;
-	Destinations destinations;
+    /** Размноженные источники.
+      * Сделаны на основе очереди небольшой длины.
+      * Блок из source кладётся в каждую очередь.
+      */
+    using Destination = std::shared_ptr<QueueBlockIOStream>;
+    using Destinations = std::list<Destination>;
+    Destinations destinations;
 };
 
 using ForkPtr = std::shared_ptr<ForkBlockInputStreams>;

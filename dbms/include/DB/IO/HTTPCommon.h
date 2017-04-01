@@ -4,10 +4,10 @@
 
 namespace Poco
 {
-	namespace Net
-	{
-		class HTTPServerResponse;
-	}
+    namespace Net
+    {
+        class HTTPServerResponse;
+    }
 }
 
 

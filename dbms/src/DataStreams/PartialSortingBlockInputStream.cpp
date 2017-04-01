@@ -9,9 +9,9 @@ namespace DB
 
 Block PartialSortingBlockInputStream::readImpl()
 {
-	Block res = children.back()->read();
-	sortBlock(res, description, limit);
-	return res;
+    Block res = children.back()->read();
+    sortBlock(res, description, limit);
+    return res;
 }
 
 

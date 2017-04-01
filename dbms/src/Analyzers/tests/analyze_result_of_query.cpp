@@ -16,34 +16,34 @@
 int main(int argc, char ** argv)
 try
 {
-	using namespace DB;
+    using namespace DB;
 
-	ReadBufferFromFileDescriptor in(STDIN_FILENO);
-	WriteBufferFromFileDescriptor out(STDOUT_FILENO);
+    ReadBufferFromFileDescriptor in(STDIN_FILENO);
+    WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
-	String query;
-	readStringUntilEOF(query, in);
+    String query;
+    readStringUntilEOF(query, in);
 
-	ParserSelectQuery parser;
-	ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "query");
+    ParserSelectQuery parser;
+    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "query");
 
-	Context context;
+    Context context;
 
-	auto system_database = std::make_shared<DatabaseMemory>("system");
-	context.addDatabase("system", system_database);
-	context.setCurrentDatabase("system");
-	system_database->attachTable("one",			StorageSystemOne::create("one"));
-	system_database->attachTable("numbers", 	StorageSystemNumbers::create("numbers"));
+    auto system_database = std::make_shared<DatabaseMemory>("system");
+    context.addDatabase("system", system_database);
+    context.setCurrentDatabase("system");
+    system_database->attachTable("one",            StorageSystemOne::create("one"));
+    system_database->attachTable("numbers",     StorageSystemNumbers::create("numbers"));
 
-	AnalyzeResultOfQuery analyzer;
-	analyzer.process(ast, context);
+    AnalyzeResultOfQuery analyzer;
+    analyzer.process(ast, context);
 
-	analyzer.dump(out);
+    analyzer.dump(out);
 
-	return 0;
+    return 0;
 }
 catch (...)
 {
-	std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
-	return 1;
+    std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+    return 1;
 }

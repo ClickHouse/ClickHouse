@@ -28,85 +28,85 @@ namespace DB
 class BufferBase
 {
 public:
-	/** Курсор в буфере. Позиция записи или чтения. */
-	using Position = char *;
+    /** Курсор в буфере. Позиция записи или чтения. */
+    using Position = char *;
 
-	/** Ссылка на диапазон памяти. */
-	struct Buffer
-	{
-		Buffer(Position begin_pos_, Position end_pos_) : begin_pos(begin_pos_), end_pos(end_pos_) {}
+    /** Ссылка на диапазон памяти. */
+    struct Buffer
+    {
+        Buffer(Position begin_pos_, Position end_pos_) : begin_pos(begin_pos_), end_pos(end_pos_) {}
 
-		inline Position begin() const { return begin_pos; }
-		inline Position end() const { return end_pos; }
-		inline size_t size() const { return end_pos - begin_pos; }
-		inline void resize(size_t size) { end_pos = begin_pos + size; }
+        inline Position begin() const { return begin_pos; }
+        inline Position end() const { return end_pos; }
+        inline size_t size() const { return end_pos - begin_pos; }
+        inline void resize(size_t size) { end_pos = begin_pos + size; }
 
-		inline void swap(Buffer & other)
-		{
-			std::swap(begin_pos, other.begin_pos);
-			std::swap(end_pos, other.end_pos);
-		}
+        inline void swap(Buffer & other)
+        {
+            std::swap(begin_pos, other.begin_pos);
+            std::swap(end_pos, other.end_pos);
+        }
 
-	private:
-		Position begin_pos;
-		Position end_pos;		/// на 1 байт после конца буфера
-	};
+    private:
+        Position begin_pos;
+        Position end_pos;        /// на 1 байт после конца буфера
+    };
 
-	/** Конструктор принимает диапазон памяти, который следует использовать под буфер.
-	  * offset - начальное место курсора. ReadBuffer должен установить его в конец диапазона, а WriteBuffer - в начало.
-	  */
-	BufferBase(Position ptr, size_t size, size_t offset)
-		: internal_buffer(ptr, ptr + size), working_buffer(ptr, ptr + size), pos(ptr + offset) {}
+    /** Конструктор принимает диапазон памяти, который следует использовать под буфер.
+      * offset - начальное место курсора. ReadBuffer должен установить его в конец диапазона, а WriteBuffer - в начало.
+      */
+    BufferBase(Position ptr, size_t size, size_t offset)
+        : internal_buffer(ptr, ptr + size), working_buffer(ptr, ptr + size), pos(ptr + offset) {}
 
-	void set(Position ptr, size_t size, size_t offset)
-	{
-		internal_buffer = Buffer(ptr, ptr + size);
-		working_buffer = Buffer(ptr, ptr + size);
-		pos = ptr + offset;
-	}
+    void set(Position ptr, size_t size, size_t offset)
+    {
+        internal_buffer = Buffer(ptr, ptr + size);
+        working_buffer = Buffer(ptr, ptr + size);
+        pos = ptr + offset;
+    }
 
-	/// получить буфер
-	inline Buffer & internalBuffer() { return internal_buffer; }
+    /// получить буфер
+    inline Buffer & internalBuffer() { return internal_buffer; }
 
-	/// получить часть буфера, из которого можно читать / в который можно писать данные
-	inline Buffer & buffer() { return working_buffer; }
+    /// получить часть буфера, из которого можно читать / в который можно писать данные
+    inline Buffer & buffer() { return working_buffer; }
 
-	/// получить (для чтения и изменения) позицию в буфере
-	inline Position & position() { return pos; };
+    /// получить (для чтения и изменения) позицию в буфере
+    inline Position & position() { return pos; };
 
-	/// смещение в байтах курсора от начала буфера
-	inline size_t offset() const { return pos - working_buffer.begin(); }
+    /// смещение в байтах курсора от начала буфера
+    inline size_t offset() const { return pos - working_buffer.begin(); }
 
-	/** Сколько байт было прочитано/записано, считая те, что ещё в буфере. */
-	size_t count() const
-	{
-		return bytes + offset();
-	}
+    /** Сколько байт было прочитано/записано, считая те, что ещё в буфере. */
+    size_t count() const
+    {
+        return bytes + offset();
+    }
 
-	/** Check that there is more bytes in buffer after cursor. */
-	bool ALWAYS_INLINE hasPendingData() const
-	{
-		return pos != working_buffer.end();
-	}
+    /** Check that there is more bytes in buffer after cursor. */
+    bool ALWAYS_INLINE hasPendingData() const
+    {
+        return pos != working_buffer.end();
+    }
 
 protected:
-	/// Ссылка на кусок памяти для буфера.
-	Buffer internal_buffer;
+    /// Ссылка на кусок памяти для буфера.
+    Buffer internal_buffer;
 
-	/** Часть куска памяти, которую можно использовать.
-	  * Например, если internal_buffer - 1MB, а из файла для чтения было загружено в буфер
-	  *  только 10 байт, то working_buffer будет иметь размер 10 байт
-	  *  (working_buffer.end() будет указывать на позицию сразу после тех 10 байт, которых можно прочитать).
-	  */
-	Buffer working_buffer;
+    /** Часть куска памяти, которую можно использовать.
+      * Например, если internal_buffer - 1MB, а из файла для чтения было загружено в буфер
+      *  только 10 байт, то working_buffer будет иметь размер 10 байт
+      *  (working_buffer.end() будет указывать на позицию сразу после тех 10 байт, которых можно прочитать).
+      */
+    Buffer working_buffer;
 
-	/// Позиция чтения/записи.
-	Position pos;
+    /// Позиция чтения/записи.
+    Position pos;
 
-	/** Сколько байт было прочитано/записано, не считая тех, что сейчас в буфере.
-	  * (считая те, что были уже использованы и "удалены" из буфера)
-	  */
-	size_t bytes = 0;
+    /** Сколько байт было прочитано/записано, не считая тех, что сейчас в буфере.
+      * (считая те, что были уже использованы и "удалены" из буфера)
+      */
+    size_t bytes = 0;
 };
 
 

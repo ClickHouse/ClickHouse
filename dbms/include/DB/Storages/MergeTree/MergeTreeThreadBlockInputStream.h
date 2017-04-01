@@ -19,55 +19,55 @@ class MarkCache;
   */
 class MergeTreeThreadBlockInputStream : public IProfilingBlockInputStream
 {
-	/// "thread" index (there are N threads and each thread is assigned index in interval [0..N-1])
-	std::size_t thread;
+    /// "thread" index (there are N threads and each thread is assigned index in interval [0..N-1])
+    std::size_t thread;
 public:
-	MergeTreeThreadBlockInputStream(
-		const std::size_t thread,
-		const std::shared_ptr<MergeTreeReadPool> & pool, const std::size_t min_marks_to_read, const std::size_t block_size,
-		MergeTreeData & storage, const bool use_uncompressed_cache, const ExpressionActionsPtr & prewhere_actions,
-		const String & prewhere_column, const Settings & settings, const Names & virt_column_names);
+    MergeTreeThreadBlockInputStream(
+        const std::size_t thread,
+        const std::shared_ptr<MergeTreeReadPool> & pool, const std::size_t min_marks_to_read, const std::size_t block_size,
+        MergeTreeData & storage, const bool use_uncompressed_cache, const ExpressionActionsPtr & prewhere_actions,
+        const String & prewhere_column, const Settings & settings, const Names & virt_column_names);
 
-	~MergeTreeThreadBlockInputStream() override;
+    ~MergeTreeThreadBlockInputStream() override;
 
-	String getName() const override { return "MergeTreeThread"; }
+    String getName() const override { return "MergeTreeThread"; }
 
-	String getID() const override;
+    String getID() const override;
 
 protected:
-	/// Будем вызывать progressImpl самостоятельно.
-	void progress(const Progress & value) override {}
+    /// Будем вызывать progressImpl самостоятельно.
+    void progress(const Progress & value) override {}
 
-	Block readImpl() override;
+    Block readImpl() override;
 
 private:
-	/// Requests read task from MergeTreeReadPool and signals whether it got one
-	bool getNewTask();
-	Block readFromPart();
+    /// Requests read task from MergeTreeReadPool and signals whether it got one
+    bool getNewTask();
+    Block readFromPart();
 
-	void injectVirtualColumns(Block & block);
+    void injectVirtualColumns(Block & block);
 
-	std::shared_ptr<MergeTreeReadPool> pool;
-	const std::size_t block_size_marks;
-	const std::size_t min_marks_to_read;
-	MergeTreeData & storage;
-	const bool use_uncompressed_cache;
-	ExpressionActionsPtr prewhere_actions;
-	const String prewhere_column;
-	const std::size_t min_bytes_to_use_direct_io;
-	const std::size_t max_read_buffer_size;
-	const Names virt_column_names;
+    std::shared_ptr<MergeTreeReadPool> pool;
+    const std::size_t block_size_marks;
+    const std::size_t min_marks_to_read;
+    MergeTreeData & storage;
+    const bool use_uncompressed_cache;
+    ExpressionActionsPtr prewhere_actions;
+    const String prewhere_column;
+    const std::size_t min_bytes_to_use_direct_io;
+    const std::size_t max_read_buffer_size;
+    const Names virt_column_names;
 
-	Logger * log;
+    Logger * log;
 
-	using MergeTreeReaderPtr = std::unique_ptr<MergeTreeReader>;
+    using MergeTreeReaderPtr = std::unique_ptr<MergeTreeReader>;
 
-	std::shared_ptr<UncompressedCache> owned_uncompressed_cache;
-	std::shared_ptr<MarkCache> owned_mark_cache;
+    std::shared_ptr<UncompressedCache> owned_uncompressed_cache;
+    std::shared_ptr<MarkCache> owned_mark_cache;
 
-	std::shared_ptr<MergeTreeReadTask> task;
-	MergeTreeReaderPtr reader;
-	MergeTreeReaderPtr pre_reader;
+    std::shared_ptr<MergeTreeReadTask> task;
+    MergeTreeReaderPtr reader;
+    MergeTreeReaderPtr pre_reader;
 };
 
 

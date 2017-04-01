@@ -27,51 +27,51 @@ class Context;
 class ConfigReloader
 {
 public:
-	using Updater = std::function<void(ConfigurationPtr)>;
+    using Updater = std::function<void(ConfigurationPtr)>;
 
-	/** include_from_path is usually /etc/metrika.xml (i.e. value of <include_from> tag)
-	  */
-	ConfigReloader(
-			const std::string & path,
-			const std::string & include_from_path,
-			zkutil::ZooKeeperNodeCache && zk_node_cache,
-			Updater && updater,
-			bool already_loaded);
+    /** include_from_path is usually /etc/metrika.xml (i.e. value of <include_from> tag)
+      */
+    ConfigReloader(
+            const std::string & path,
+            const std::string & include_from_path,
+            zkutil::ZooKeeperNodeCache && zk_node_cache,
+            Updater && updater,
+            bool already_loaded);
 
-	~ConfigReloader();
-
-private:
-	void run();
-
-	void reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed);
-
-	struct FileWithTimestamp;
-
-	struct FilesChangesTracker
-	{
-		std::set<FileWithTimestamp> files;
-
-		void addIfExists(const std::string & path);
-		bool isDifferOrNewerThan(const FilesChangesTracker & rhs);
-	};
-
-	FilesChangesTracker getNewFileList() const;
+    ~ConfigReloader();
 
 private:
+    void run();
 
-	static constexpr auto reload_interval = std::chrono::seconds(2);
+    void reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed);
 
-	Poco::Logger * log = &Logger::get("ConfigReloader");
+    struct FileWithTimestamp;
 
-	std::string path;
-	std::string include_from_path;
-	FilesChangesTracker files;
-	zkutil::ZooKeeperNodeCache zk_node_cache;
+    struct FilesChangesTracker
+    {
+        std::set<FileWithTimestamp> files;
 
-	Updater updater;
+        void addIfExists(const std::string & path);
+        bool isDifferOrNewerThan(const FilesChangesTracker & rhs);
+    };
 
-	std::atomic<bool> quit{false};
-	std::thread thread;
+    FilesChangesTracker getNewFileList() const;
+
+private:
+
+    static constexpr auto reload_interval = std::chrono::seconds(2);
+
+    Poco::Logger * log = &Logger::get("ConfigReloader");
+
+    std::string path;
+    std::string include_from_path;
+    FilesChangesTracker files;
+    zkutil::ZooKeeperNodeCache zk_node_cache;
+
+    Updater updater;
+
+    std::atomic<bool> quit{false};
+    std::thread thread;
 };
 
 }

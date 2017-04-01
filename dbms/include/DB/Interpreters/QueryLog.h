@@ -16,54 +16,54 @@ namespace DB
 /// A struct which will be inserted as row into query_log table
 struct QueryLogElement
 {
-	enum Type
-	{
-		QUERY_START = 1,
-		QUERY_FINISH = 2,
-		EXCEPTION_BEFORE_START = 3,
-		EXCEPTION_WHILE_PROCESSING = 4,
-	};
+    enum Type
+    {
+        QUERY_START = 1,
+        QUERY_FINISH = 2,
+        EXCEPTION_BEFORE_START = 3,
+        EXCEPTION_WHILE_PROCESSING = 4,
+    };
 
-	Type type = QUERY_START;
+    Type type = QUERY_START;
 
-	/// Depending on the type of query and type of stage, not all the fields may be filled.
+    /// Depending on the type of query and type of stage, not all the fields may be filled.
 
-	time_t event_time{};
-	time_t query_start_time{};
-	UInt64 query_duration_ms{};
+    time_t event_time{};
+    time_t query_start_time{};
+    UInt64 query_duration_ms{};
 
-	/// The data fetched from DB to execute the query
-	UInt64 read_rows{};
-	UInt64 read_bytes{};
+    /// The data fetched from DB to execute the query
+    UInt64 read_rows{};
+    UInt64 read_bytes{};
 
-	/// The data written to DB
-	UInt64 written_rows{};
-	UInt64 written_bytes{};
+    /// The data written to DB
+    UInt64 written_rows{};
+    UInt64 written_bytes{};
 
-	/// The data sent to the client
-	UInt64 result_rows{};
-	UInt64 result_bytes{};
+    /// The data sent to the client
+    UInt64 result_rows{};
+    UInt64 result_bytes{};
 
-	UInt64 memory_usage{};
+    UInt64 memory_usage{};
 
-	String query;
+    String query;
 
-	String exception;
-	String stack_trace;
+    String exception;
+    String stack_trace;
 
-	ClientInfo client_info;
+    ClientInfo client_info;
 
-	static std::string name() { return "QueryLog"; }
+    static std::string name() { return "QueryLog"; }
 
-	static Block createBlock();
-	void appendToBlock(Block & block) const;
+    static Block createBlock();
+    void appendToBlock(Block & block) const;
 };
 
 
 /// Instead of typedef - to allow forward declaration.
 class QueryLog : public SystemLog<QueryLogElement>
 {
-	using SystemLog<QueryLogElement>::SystemLog;
+    using SystemLog<QueryLogElement>::SystemLog;
 };
 
 }

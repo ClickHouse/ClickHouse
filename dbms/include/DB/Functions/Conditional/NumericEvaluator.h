@@ -34,8 +34,8 @@ template <typename TResult>
 class NumericSource
 {
 public:
-	virtual TResult get(size_t i) const = 0;
-	virtual ~NumericSource() = default;
+    virtual TResult get(size_t i) const = 0;
+    virtual ~NumericSource() = default;
 };
 
 template <typename TResult>
@@ -52,66 +52,66 @@ template <typename TResult, typename TType>
 class NumericSourceImpl<TResult, TType, true> final : public NumericSource<TResult>
 {
 public:
-	NumericSourceImpl(const Block & block, const ColumnNumbers & args, const Branch & br)
-	{
-		size_t index = br.index;
+    NumericSourceImpl(const Block & block, const ColumnNumbers & args, const Branch & br)
+    {
+        size_t index = br.index;
 
-		const ColumnPtr & col = block.safeGetByPosition(args[index]).column;
-		const auto * const_col = typeid_cast<const ColumnConst<TType> *>(&*col);
-		if (const_col == nullptr)
-			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-		data = const_col->getData();
-	}
+        const ColumnPtr & col = block.safeGetByPosition(args[index]).column;
+        const auto * const_col = typeid_cast<const ColumnConst<TType> *>(&*col);
+        if (const_col == nullptr)
+            throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+        data = const_col->getData();
+    }
 
-	NumericSourceImpl(const NumericSourceImpl &) = delete;
-	NumericSourceImpl & operator=(const NumericSourceImpl &) = delete;
+    NumericSourceImpl(const NumericSourceImpl &) = delete;
+    NumericSourceImpl & operator=(const NumericSourceImpl &) = delete;
 
-	NumericSourceImpl(NumericSourceImpl &&) = default;
-	NumericSourceImpl & operator=(NumericSourceImpl &&) = default;
+    NumericSourceImpl(NumericSourceImpl &&) = default;
+    NumericSourceImpl & operator=(NumericSourceImpl &&) = default;
 
-	TResult get(size_t i) const override
-	{
-		return static_cast<TResult>(data);
-	};
+    TResult get(size_t i) const override
+    {
+        return static_cast<TResult>(data);
+    };
 
 private:
-	TType data;
+    TType data;
 };
 
 template <typename TResult, typename TType>
 class NumericSourceImpl<TResult, TType, false> final : public NumericSource<TResult>
 {
 public:
-	NumericSourceImpl(const Block & block, const ColumnNumbers & args, const Branch & br)
-		: data_array{initDataArray(block, args, br)}
-	{
-	}
+    NumericSourceImpl(const Block & block, const ColumnNumbers & args, const Branch & br)
+        : data_array{initDataArray(block, args, br)}
+    {
+    }
 
-	NumericSourceImpl(const NumericSourceImpl &) = delete;
-	NumericSourceImpl & operator=(const NumericSourceImpl &) = delete;
+    NumericSourceImpl(const NumericSourceImpl &) = delete;
+    NumericSourceImpl & operator=(const NumericSourceImpl &) = delete;
 
-	NumericSourceImpl(NumericSourceImpl &&) = default;
-	NumericSourceImpl & operator=(NumericSourceImpl &&) = default;
+    NumericSourceImpl(NumericSourceImpl &&) = default;
+    NumericSourceImpl & operator=(NumericSourceImpl &&) = default;
 
-	TResult get(size_t i) const override
-	{
-		return static_cast<TResult>(data_array[i]);
-	};
-
-private:
-	static const PaddedPODArray<TType> & initDataArray(const Block & block,
-		const ColumnNumbers & args, const Branch & br)
-	{
-		size_t index = br.index;
-		const ColumnPtr & col = block.safeGetByPosition(args[index]).column;
-		const auto * vec_col = typeid_cast<const ColumnVector<TType> *>(&*col);
-		if (vec_col == nullptr)
-			throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-		return vec_col->getData();
-	}
+    TResult get(size_t i) const override
+    {
+        return static_cast<TResult>(data_array[i]);
+    };
 
 private:
-	const PaddedPODArray<TType> & data_array;
+    static const PaddedPODArray<TType> & initDataArray(const Block & block,
+        const ColumnNumbers & args, const Branch & br)
+    {
+        size_t index = br.index;
+        const ColumnPtr & col = block.safeGetByPosition(args[index]).column;
+        const auto * vec_col = typeid_cast<const ColumnVector<TType> *>(&*col);
+        if (vec_col == nullptr)
+            throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+        return vec_col->getData();
+    }
+
+private:
+    const PaddedPODArray<TType> & data_array;
 };
 
 /// Create a numeric column accessor if TType is the type registered
@@ -120,21 +120,21 @@ template <typename TResult, typename TType>
 class NumericSourceCreator final
 {
 public:
-	static bool execute(NumericSourcePtr<TResult> & source, const Block & block,
-		const ColumnNumbers & args, const Branch & br)
-	{
-		auto type_name = br.type->getName();
-		if (TypeName<TType>::get() == type_name)
-		{
-			if (br.is_const)
-				source = std::make_unique<NumericSourceImpl<TResult, TType, true> >(block, args, br);
-			else
-				source = std::make_unique<NumericSourceImpl<TResult, TType, false> >(block, args, br);
-			return true;
-		}
-		else
-			return false;
-	}
+    static bool execute(NumericSourcePtr<TResult> & source, const Block & block,
+        const ColumnNumbers & args, const Branch & br)
+    {
+        auto type_name = br.type->getName();
+        if (TypeName<TType>::get() == type_name)
+        {
+            if (br.is_const)
+                source = std::make_unique<NumericSourceImpl<TResult, TType, true> >(block, args, br);
+            else
+                source = std::make_unique<NumericSourceImpl<TResult, TType, false> >(block, args, br);
+            return true;
+        }
+        else
+            return false;
+    }
 };
 
 }
@@ -144,96 +144,96 @@ template <typename TResult>
 class NumericEvaluator final
 {
 public:
-	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
-	{
-		const CondSources conds = createConds(block, args);
-		const NumericSources<TResult> sources = createNumericSources(block, args, branches);
-		size_t row_count = conds[0].getSize();
-		PaddedPODArray<TResult> & res = createSink(block, result, row_count);
+    static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
+    {
+        const CondSources conds = createConds(block, args);
+        const NumericSources<TResult> sources = createNumericSources(block, args, branches);
+        size_t row_count = conds[0].getSize();
+        PaddedPODArray<TResult> & res = createSink(block, result, row_count);
 
-		if (builder)
-			builder.init(args);
+        if (builder)
+            builder.init(args);
 
-		for (size_t cur_row = 0; cur_row < row_count; ++cur_row)
-		{
-			bool has_triggered_cond = false;
+        for (size_t cur_row = 0; cur_row < row_count; ++cur_row)
+        {
+            bool has_triggered_cond = false;
 
-			size_t cur_source = 0;
-			for (const auto & cond : conds)
-			{
-				if (cond.get(cur_row))
-				{
-					res[cur_row] = sources[cur_source]->get(cur_row);
-					if (builder)
-						builder.update(args[branches[cur_source].index], cur_row);
-					has_triggered_cond = true;
-					break;
-				}
-				++cur_source;
-			}
+            size_t cur_source = 0;
+            for (const auto & cond : conds)
+            {
+                if (cond.get(cur_row))
+                {
+                    res[cur_row] = sources[cur_source]->get(cur_row);
+                    if (builder)
+                        builder.update(args[branches[cur_source].index], cur_row);
+                    has_triggered_cond = true;
+                    break;
+                }
+                ++cur_source;
+            }
 
-			if (!has_triggered_cond)
-			{
-				res[cur_row] = sources.back()->get(cur_row);
-				if (builder)
-					builder.update(args[branches.back().index], cur_row);
-			}
-		}
-	}
+            if (!has_triggered_cond)
+            {
+                res[cur_row] = sources.back()->get(cur_row);
+                if (builder)
+                    builder.update(args[branches.back().index], cur_row);
+            }
+        }
+    }
 
 private:
-	/// Create the result column.
-	static PaddedPODArray<TResult> & createSink(Block & block, size_t result, size_t size)
-	{
-		std::shared_ptr<ColumnVector<TResult>> col_res = std::make_shared<ColumnVector<TResult>>();
-		block.safeGetByPosition(result).column = col_res;
+    /// Create the result column.
+    static PaddedPODArray<TResult> & createSink(Block & block, size_t result, size_t size)
+    {
+        std::shared_ptr<ColumnVector<TResult>> col_res = std::make_shared<ColumnVector<TResult>>();
+        block.safeGetByPosition(result).column = col_res;
 
-		typename ColumnVector<TResult>::Container_t & vec_res = col_res->getData();
-		vec_res.resize(size);
+        typename ColumnVector<TResult>::Container_t & vec_res = col_res->getData();
+        vec_res.resize(size);
 
-		return vec_res;
-	}
+        return vec_res;
+    }
 
-	/// Create accessors for condition values.
-	static CondSources createConds(const Block & block, const ColumnNumbers & args)
-	{
-		CondSources conds;
-		conds.reserve(getCondCount(args));
+    /// Create accessors for condition values.
+    static CondSources createConds(const Block & block, const ColumnNumbers & args)
+    {
+        CondSources conds;
+        conds.reserve(getCondCount(args));
 
-		for (size_t i = firstCond(); i < elseArg(args); i = nextCond(i))
-			conds.emplace_back(block, args, i);
-		return conds;
-	}
+        for (size_t i = firstCond(); i < elseArg(args); i = nextCond(i))
+            conds.emplace_back(block, args, i);
+        return conds;
+    }
 
-	/// Create accessors for branch values.
-	static NumericSources<TResult> createNumericSources(const Block & block,
-		const ColumnNumbers & args, const Branches & branches)
-	{
-		NumericSources<TResult> sources;
-		sources.reserve(branches.size());
+    /// Create accessors for branch values.
+    static NumericSources<TResult> createNumericSources(const Block & block,
+        const ColumnNumbers & args, const Branches & branches)
+    {
+        NumericSources<TResult> sources;
+        sources.reserve(branches.size());
 
-		for (const auto & br : branches)
-		{
-			NumericSourcePtr<TResult> source;
+        for (const auto & br : branches)
+        {
+            NumericSourcePtr<TResult> source;
 
-			if (! (NumericSourceCreator<TResult, UInt8>::execute(source, block, args, br)
-				|| NumericSourceCreator<TResult, UInt16>::execute(source, block, args, br)
-				|| NumericSourceCreator<TResult, UInt32>::execute(source, block, args, br)
-				|| NumericSourceCreator<TResult, UInt64>::execute(source, block, args, br)
-				|| NumericSourceCreator<TResult, Int8>::execute(source, block, args, br)
-				|| NumericSourceCreator<TResult, Int16>::execute(source, block, args, br)
-				|| NumericSourceCreator<TResult, Int32>::execute(source, block, args, br)
-				|| NumericSourceCreator<TResult, Int64>::execute(source, block, args, br)
-				|| NumericSourceCreator<TResult, Float32>::execute(source, block, args, br)
-				|| NumericSourceCreator<TResult, Float64>::execute(source, block, args, br)
-				|| NumericSourceCreator<TResult, Null>::execute(source, block, args, br)))
-				throw CondException{CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT, toString(br.index)};
+            if (! (NumericSourceCreator<TResult, UInt8>::execute(source, block, args, br)
+                || NumericSourceCreator<TResult, UInt16>::execute(source, block, args, br)
+                || NumericSourceCreator<TResult, UInt32>::execute(source, block, args, br)
+                || NumericSourceCreator<TResult, UInt64>::execute(source, block, args, br)
+                || NumericSourceCreator<TResult, Int8>::execute(source, block, args, br)
+                || NumericSourceCreator<TResult, Int16>::execute(source, block, args, br)
+                || NumericSourceCreator<TResult, Int32>::execute(source, block, args, br)
+                || NumericSourceCreator<TResult, Int64>::execute(source, block, args, br)
+                || NumericSourceCreator<TResult, Float32>::execute(source, block, args, br)
+                || NumericSourceCreator<TResult, Float64>::execute(source, block, args, br)
+                || NumericSourceCreator<TResult, Null>::execute(source, block, args, br)))
+                throw CondException{CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT, toString(br.index)};
 
-			sources.push_back(std::move(source));
-		}
+            sources.push_back(std::move(source));
+        }
 
-		return sources;
-	}
+        return sources;
+    }
 };
 
 /// Processing of multiIf in the case of an invalid return type.
@@ -241,11 +241,11 @@ template <>
 class NumericEvaluator<NumberTraits::Error>
 {
 public:
-	/// For the meaning of the builder parameter, see the FunctionMultiIf::perform() declaration.
-	static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
-	{
-		throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-	}
+    /// For the meaning of the builder parameter, see the FunctionMultiIf::perform() declaration.
+    static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
+    {
+        throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+    }
 };
 
 }

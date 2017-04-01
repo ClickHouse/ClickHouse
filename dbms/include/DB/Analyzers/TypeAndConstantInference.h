@@ -30,30 +30,30 @@ class IAggregateFunction;
   */
 struct TypeAndConstantInference
 {
-	void process(ASTPtr & ast, Context & context,
-		CollectAliases & aliases,
-		const AnalyzeColumns & columns,
-		const AnalyzeLambdas & analyze_lambdas);
+    void process(ASTPtr & ast, Context & context,
+        CollectAliases & aliases,
+        const AnalyzeColumns & columns,
+        const AnalyzeLambdas & analyze_lambdas);
 
-	struct ExpressionInfo
-	{
-		/// Must identify identical expressions.
-		/// For example following three expressions in query are the same: SELECT sum(x) AS a, SUM(t.x) AS b, a FROM t
-		UInt128 id {};
-		ASTPtr node;
-		DataTypePtr data_type;
-		bool is_constant_expression = false;
-		Field value;	/// Has meaning if is_constant_expression == true.
-		std::shared_ptr<IFunction> function;
-		std::shared_ptr<IAggregateFunction> aggregate_function;
-	};
+    struct ExpressionInfo
+    {
+        /// Must identify identical expressions.
+        /// For example following three expressions in query are the same: SELECT sum(x) AS a, SUM(t.x) AS b, a FROM t
+        UInt128 id {};
+        ASTPtr node;
+        DataTypePtr data_type;
+        bool is_constant_expression = false;
+        Field value;    /// Has meaning if is_constant_expression == true.
+        std::shared_ptr<IFunction> function;
+        std::shared_ptr<IAggregateFunction> aggregate_function;
+    };
 
-	/// Key is getColumnName of AST node.
-	using Info = std::unordered_map<String, ExpressionInfo>;
-	Info info;
+    /// Key is getColumnName of AST node.
+    using Info = std::unordered_map<String, ExpressionInfo>;
+    Info info;
 
-	/// Debug output
-	void dump(WriteBuffer & out) const;
+    /// Debug output
+    void dump(WriteBuffer & out) const;
 };
 
 }

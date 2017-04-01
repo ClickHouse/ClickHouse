@@ -10,14 +10,14 @@ namespace DB
 
 std::string SortColumnDescription::getID() const
 {
-	std::string res;
-	{
-		WriteBufferFromString out(res);
-		out << column_name << ", " << column_number << ", " << direction << ", " << nulls_direction;
-		if (collator)
-			out << ", collation locale: " << collator->getLocale();
-	}
-	return res;
+    std::string res;
+    {
+        WriteBufferFromString out(res);
+        out << column_name << ", " << column_number << ", " << direction << ", " << nulls_direction;
+        if (collator)
+            out << ", collation locale: " << collator->getLocale();
+    }
+    return res;
 }
 
 }

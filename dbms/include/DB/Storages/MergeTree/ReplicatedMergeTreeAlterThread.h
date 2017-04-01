@@ -20,26 +20,26 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeAlterThread
 {
 public:
-	ReplicatedMergeTreeAlterThread(StorageReplicatedMergeTree & storage_);
+    ReplicatedMergeTreeAlterThread(StorageReplicatedMergeTree & storage_);
 
-	~ReplicatedMergeTreeAlterThread()
-	{
-		need_stop = true;
-		wakeup_event->set();
-		if (thread.joinable())
-			thread.join();
-	}
+    ~ReplicatedMergeTreeAlterThread()
+    {
+        need_stop = true;
+        wakeup_event->set();
+        if (thread.joinable())
+            thread.join();
+    }
 
 private:
-	void run();
+    void run();
 
-	StorageReplicatedMergeTree & storage;
-	Logger * log;
+    StorageReplicatedMergeTree & storage;
+    Logger * log;
 
-	zkutil::EventPtr wakeup_event { std::make_shared<Poco::Event>() };
-	std::atomic<bool> need_stop { false };
+    zkutil::EventPtr wakeup_event { std::make_shared<Poco::Event>() };
+    std::atomic<bool> need_stop { false };
 
-	std::thread thread;
+    std::thread thread;
 };
 
 }

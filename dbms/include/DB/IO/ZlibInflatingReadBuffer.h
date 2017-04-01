@@ -12,7 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int ZLIB_INFLATE_FAILED;
+    extern const int ZLIB_INFLATE_FAILED;
 }
 
 /// Reads compressed data from ReadBuffer in_ and performs decompression using zlib library.
@@ -20,21 +20,21 @@ namespace ErrorCodes
 class ZlibInflatingReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
-	ZlibInflatingReadBuffer(
-			ReadBuffer & in_,
-			ZlibCompressionMethod compression_method,
-			size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-			char * existing_memory = nullptr,
-			size_t alignment = 0);
+    ZlibInflatingReadBuffer(
+            ReadBuffer & in_,
+            ZlibCompressionMethod compression_method,
+            size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+            char * existing_memory = nullptr,
+            size_t alignment = 0);
 
-	~ZlibInflatingReadBuffer() override;
+    ~ZlibInflatingReadBuffer() override;
 
 private:
-	bool nextImpl() override;
+    bool nextImpl() override;
 
-	ReadBuffer & in;
-	z_stream zstr;
-	bool eof;
+    ReadBuffer & in;
+    z_stream zstr;
+    bool eof;
 };
 
 }

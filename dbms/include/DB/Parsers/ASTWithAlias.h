@@ -12,26 +12,26 @@ namespace DB
 class ASTWithAlias : public IAST
 {
 public:
-	/// Алиас, если есть, или пустая строка.
-	String alias;
+    /// Алиас, если есть, или пустая строка.
+    String alias;
 
-	using IAST::IAST;
+    using IAST::IAST;
 
-	String getAliasOrColumnName() const override 	{ return alias.empty() ? getColumnName() : alias; }
-	String tryGetAlias() const override 			{ return alias; }
-	void setAlias(const String & to) override 		{ alias = to; }
+    String getAliasOrColumnName() const override     { return alias.empty() ? getColumnName() : alias; }
+    String tryGetAlias() const override             { return alias; }
+    void setAlias(const String & to) override         { alias = to; }
 
-	/// Вызывает formatImplWithoutAlias, а также выводит алиас. Если надо - заключает всё выражение в скобки.
-	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override final;
+    /// Вызывает formatImplWithoutAlias, а также выводит алиас. Если надо - заключает всё выражение в скобки.
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override final;
 
-	virtual void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
+    virtual void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
 };
 
 /// helper for setting aliases and chaining result to other functions
 inline ASTPtr setAlias(ASTPtr ast, const String & alias)
 {
-	ast->setAlias(alias);
-	return ast;
+    ast->setAlias(alias);
+    return ast;
 };
 
 

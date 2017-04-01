@@ -16,13 +16,13 @@ using DataTypePtr = std::shared_ptr<IDataType>;
 class FieldToDataType : public StaticVisitor<DataTypePtr>
 {
 public:
-	DataTypePtr operator() (Null & x) const;
-	DataTypePtr operator() (UInt64 & x) const;
-	DataTypePtr operator() (Int64 & x) const;
-	DataTypePtr operator() (Float64 & x) const;
-	DataTypePtr operator() (String & x) const;
-	DataTypePtr operator() (Array & x) const;
-	DataTypePtr operator() (Tuple & x) const;
+    DataTypePtr operator() (Null & x) const;
+    DataTypePtr operator() (UInt64 & x) const;
+    DataTypePtr operator() (Int64 & x) const;
+    DataTypePtr operator() (Float64 & x) const;
+    DataTypePtr operator() (String & x) const;
+    DataTypePtr operator() (Array & x) const;
+    DataTypePtr operator() (Tuple & x) const;
 };
 
 }
