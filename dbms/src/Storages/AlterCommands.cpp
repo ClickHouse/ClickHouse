@@ -1,14 +1,14 @@
-#include <DB/Storages/AlterCommands.h>
-#include <DB/Storages/IStorage.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeNested.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Interpreters/ExpressionActions.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTFunction.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/IStorage.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNested.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace DB

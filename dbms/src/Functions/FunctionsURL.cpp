@@ -1,7 +1,7 @@
-#include <DB/Common/hex.h>
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsURL.h>
-#include <DB/Functions/FunctionsStringSearch.h>
+#include <Common/hex.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsURL.h>
+#include <Functions/FunctionsStringSearch.h>
 #include <common/find_first_symbols.h>
 
 namespace DB

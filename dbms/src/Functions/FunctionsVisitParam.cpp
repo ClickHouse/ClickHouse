@@ -1,8 +1,8 @@
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsVisitParam.h>
-#include <DB/Functions/FunctionsStringSearch.h>
-#include <DB/Functions/FunctionsString.h>
-#include <DB/Functions/FunctionsURL.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsVisitParam.h>
+#include <Functions/FunctionsStringSearch.h>
+#include <Functions/FunctionsString.h>
+#include <Functions/FunctionsURL.h>
 
 
 namespace DB

@@ -4,8 +4,8 @@
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <zkutil/ZooKeeperNodeCache.h>
-#include <DB/Common/ConfigProcessor.h>
-#include <DB/Common/Exception.h>
+#include <Common/ConfigProcessor.h>
+#include <Common/Exception.h>
 
 
 static std::string extractFromConfig(

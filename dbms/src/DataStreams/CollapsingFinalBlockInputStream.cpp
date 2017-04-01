@@ -1,4 +1,4 @@
-#include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
+#include <DataStreams/CollapsingFinalBlockInputStream.h>
 
 /// Maximum number of messages about incorrect data in the log.
 #define MAX_ERROR_MESSAGES 10

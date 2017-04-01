@@ -1,7 +1,7 @@
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/Core/Block.h>
-#include <DB/DataStreams/ODBCDriverBlockOutputStream.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <Core/Block.h>
+#include <DataStreams/ODBCDriverBlockOutputStream.h>
 
 
 namespace DB

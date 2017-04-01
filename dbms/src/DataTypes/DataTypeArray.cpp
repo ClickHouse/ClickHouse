@@ -1,13 +1,13 @@
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnConst.h>
-#include <DB/Columns/ColumnNullable.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
 
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 
 
 namespace DB

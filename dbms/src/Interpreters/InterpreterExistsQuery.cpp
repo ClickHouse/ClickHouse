@@ -1,11 +1,11 @@
-#include <DB/Storages/IStorage.h>
-#include <DB/Parsers/TablePropertiesQueriesASTs.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/DataStreams/BlockIO.h>
-#include <DB/DataStreams/copyData.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Interpreters/InterpreterExistsQuery.h>
+#include <Storages/IStorage.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/BlockIO.h>
+#include <DataStreams/copyData.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnsNumber.h>
+#include <Interpreters/InterpreterExistsQuery.h>
 
 
 namespace DB

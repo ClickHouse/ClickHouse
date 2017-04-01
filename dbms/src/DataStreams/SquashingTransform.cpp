@@ -1,4 +1,4 @@
-#include <DB/DataStreams/SquashingTransform.h>
+#include <DataStreams/SquashingTransform.h>
 
 
 namespace DB

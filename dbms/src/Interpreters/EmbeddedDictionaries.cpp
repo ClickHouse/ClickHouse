@@ -1,11 +1,11 @@
 #include <common/logger_useful.h>
 #include <Poco/Util/Application.h>
-#include <DB/Interpreters/EmbeddedDictionaries.h>
-#include <DB/Dictionaries/Embedded/RegionsHierarchies.h>
-#include <DB/Dictionaries/Embedded/TechDataHierarchy.h>
-#include <DB/Dictionaries/Embedded/RegionsNames.h>
-#include <DB/Common/setThreadName.h>
-#include <DB/Common/Exception.h>
+#include <Interpreters/EmbeddedDictionaries.h>
+#include <Dictionaries/Embedded/RegionsHierarchies.h>
+#include <Dictionaries/Embedded/TechDataHierarchy.h>
+#include <Dictionaries/Embedded/RegionsNames.h>
+#include <Common/setThreadName.h>
+#include <Common/Exception.h>
 
 
 namespace DB

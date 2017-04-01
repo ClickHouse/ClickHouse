@@ -7,7 +7,7 @@
 
 #include <common/Common.h>
 #include <Poco/NumberParser.h>
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 
 /** Считает количество нулей в файле.
   * Выводит "заполненность" файла - отношение количества ненулевых байт к ожидаемому количеству ненулевых байт в файле со случайными байтами.

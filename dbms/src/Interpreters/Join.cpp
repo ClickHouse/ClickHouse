@@ -1,13 +1,13 @@
 #include <common/logger_useful.h>
 
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 
-#include <DB/Interpreters/Join.h>
-#include <DB/Interpreters/NullableUtils.h>
+#include <Interpreters/Join.h>
+#include <Interpreters/NullableUtils.h>
 
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/Core/ColumnNumbers.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
+#include <Core/ColumnNumbers.h>
 
 
 namespace DB

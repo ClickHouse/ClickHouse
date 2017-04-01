@@ -9,14 +9,14 @@
 
 //#define DBMS_HASH_MAP_DEBUG_RESIZES
 
-#include <DB/Common/Stopwatch.h>
-#include <DB/AggregateFunctions/UniquesHashSet.h>
+#include <Common/Stopwatch.h>
+#include <AggregateFunctions/UniquesHashSet.h>
 
-#include <DB/Core/Types.h>
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/Common/HashTable/TwoLevelHashTable.h>
-#include <DB/Common/HashTable/HashMap.h>
+#include <Core/Types.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/CompressedReadBuffer.h>
+#include <Common/HashTable/TwoLevelHashTable.h>
+#include <Common/HashTable/HashMap.h>
 
 
 using Key = UInt64;

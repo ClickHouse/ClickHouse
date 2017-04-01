@@ -1,5 +1,5 @@
-#include <DB/IO/WriteBufferAIO.h>
-#include <DB/Core/Defines.h>
+#include <IO/WriteBufferAIO.h>
+#include <Core/Defines.h>
 
 #include <boost/filesystem.hpp>
 

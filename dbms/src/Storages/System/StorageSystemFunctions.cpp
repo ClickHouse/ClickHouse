@@ -1,13 +1,13 @@
-#include <DB/Storages/System/StorageSystemFunctions.h>
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/IFunction.h>
-#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Interpreters/Context.h>
+#include <Storages/System/StorageSystemFunctions.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB

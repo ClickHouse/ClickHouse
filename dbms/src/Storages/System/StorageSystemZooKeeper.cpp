@@ -1,16 +1,16 @@
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Storages/System/StorageSystemZooKeeper.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Interpreters/Context.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <Storages/System/StorageSystemZooKeeper.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Interpreters/Context.h>
 #include <zkutil/ZooKeeper.h>
 
 

@@ -1,15 +1,15 @@
-#include <DB/IO/ReadWriteBufferFromHTTP.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 
 #include <Poco/Version.h>
 #include <Poco/URI.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <DB/IO/ReadBufferFromIStream.h>
-#include <DB/Common/SimpleCache.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <Common/SimpleCache.h>
 #include <common/logger_useful.h>
 
-#include <DB/Common/config.h>
+#include <Common/config.h>
 #if Poco_NetSSL_FOUND
 #include <Poco/Net/HTTPSClientSession.h>
 #endif

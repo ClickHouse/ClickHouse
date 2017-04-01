@@ -1,15 +1,15 @@
-#include <DB/Common/Exception.h>
+#include <Common/Exception.h>
 
-#include <DB/Core/Block.h>
+#include <Core/Block.h>
 
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNullable.h>
-#include <DB/Columns/ColumnTuple.h>
-#include <DB/DataTypes/DataTypeNested.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/Operators.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #include <iterator>
 #include <memory>

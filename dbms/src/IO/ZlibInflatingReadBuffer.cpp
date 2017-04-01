@@ -1,4 +1,4 @@
-#include <DB/IO/ZlibInflatingReadBuffer.h>
+#include <IO/ZlibInflatingReadBuffer.h>
 
 
 namespace DB

@@ -1,9 +1,9 @@
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Columns/ColumnNullable.h>
-#include <DB/Columns/ColumnsCommon.h>
-#include <DB/Interpreters/ExpressionActions.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
+#include <Interpreters/ExpressionActions.h>
 
-#include <DB/DataStreams/FilterBlockInputStream.h>
+#include <DataStreams/FilterBlockInputStream.h>
 
 
 namespace DB

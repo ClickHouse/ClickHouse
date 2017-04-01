@@ -1,11 +1,11 @@
-#include <DB/Common/Exception.h>
-#include <DB/Interpreters/Context.h>
+#include <Common/Exception.h>
+#include <Interpreters/Context.h>
 
-#include <DB/TableFunctions/TableFunctionMerge.h>
-#include <DB/TableFunctions/TableFunctionRemote.h>
-#include <DB/TableFunctions/TableFunctionShardByHash.h>
+#include <TableFunctions/TableFunctionMerge.h>
+#include <TableFunctions/TableFunctionRemote.h>
+#include <TableFunctions/TableFunctionShardByHash.h>
 
-#include <DB/TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 
 namespace DB

@@ -1,13 +1,13 @@
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/find_vectorclass.cmake)
 
-set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/include/DB/Common/config_version.h)
-set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/DB/Common/config.h)
+set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_version.h)
+set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config.h)
 set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_build.cpp)
 
 include (cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL}")
-configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/DB/Common/config.h.in ${CONFIG_COMMON})
-configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/DB/Common/config_version.h.in ${CONFIG_VERSION})
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config.h.in ${CONFIG_COMMON})
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_version.h.in ${CONFIG_VERSION})
 
 get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
 get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
@@ -23,7 +23,7 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 include_directories (${ODBC_INCLUDE_DIRECTORIES})
-include_directories (${ClickHouse_BINARY_DIR}/dbms/include)
+include_directories (${ClickHouse_BINARY_DIR}/dbms/src)
 
 if (NOT NO_WERROR)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
@@ -35,7 +35,7 @@ find_package (Threads)
 add_subdirectory (src)
 
 add_library(string_utils
-    include/DB/Common/StringUtils.h
+    src/Common/StringUtils.h
     src/Common/StringUtils.cpp)
 
 set(dbms_headers)
@@ -80,9 +80,9 @@ list(REMOVE_ITEM dbms_sources
 
 if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
     list(REMOVE_ITEM dbms_headers
-        include/DB/Common/AIO.h
-        include/DB/IO/WriteBufferAIO.h
-        include/DB/IO/ReadBufferAIO.h)
+        src/Common/AIO.h
+        src/IO/WriteBufferAIO.h
+        src/IO/ReadBufferAIO.h)
     list(REMOVE_ITEM dbms_sources
         src/IO/ReadBufferAIO.cpp
         src/IO/WriteBufferAIO.cpp)

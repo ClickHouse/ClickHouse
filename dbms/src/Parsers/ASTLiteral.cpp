@@ -1,7 +1,7 @@
-#include <DB/Common/SipHash.h>
-#include <DB/Core/FieldVisitors.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Common/SipHash.h>
+#include <Core/FieldVisitors.h>
+#include <Parsers/ASTLiteral.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

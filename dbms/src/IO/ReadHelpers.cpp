@@ -2,10 +2,10 @@
 
 #include <mysqlxx/Manip.h>
 
-#include <DB/Core/Defines.h>
-#include <DB/Common/PODArray.h>
-#include <DB/Common/StringUtils.h>
-#include <DB/IO/ReadHelpers.h>
+#include <Core/Defines.h>
+#include <Common/PODArray.h>
+#include <Common/StringUtils.h>
+#include <IO/ReadHelpers.h>
 #include <common/find_first_symbols.h>
 
 namespace DB

@@ -1,6 +1,6 @@
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/WriteBufferValidUTF8.h>
-#include <DB/DataStreams/XMLRowOutputStream.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferValidUTF8.h>
+#include <DataStreams/XMLRowOutputStream.h>
 
 
 namespace DB

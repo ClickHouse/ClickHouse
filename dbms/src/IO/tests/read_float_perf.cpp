@@ -3,10 +3,10 @@
 #include <iostream>
 #include <fstream>
 
-#include <DB/Core/Types.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/ReadBufferFromIStream.h>
-#include <DB/IO/CompressedReadBuffer.h>
+#include <Core/Types.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <IO/CompressedReadBuffer.h>
 
 
 int main(int argc, char ** argv)

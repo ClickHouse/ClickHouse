@@ -1,20 +1,20 @@
-#include <DB/Interpreters/InterpreterAlterQuery.h>
-#include <DB/Interpreters/InterpreterCreateQuery.h>
-#include <DB/Parsers/ASTAlterQuery.h>
-#include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTNameTypePair.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTWeightedZooKeeperPath.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTNameTypePair.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTWeightedZooKeeperPath.h>
 
-#include <DB/Parsers/ParserCreateQuery.h>
-#include <DB/IO/copyData.h>
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/Common/escapeForFileName.h>
-#include <DB/DataTypes/DataTypeFactory.h>
-#include <DB/Parsers/formatAST.h>
-#include <DB/Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <IO/copyData.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Common/escapeForFileName.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
 
 #include <Poco/FileStream.h>
 

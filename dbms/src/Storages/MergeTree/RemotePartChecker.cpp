@@ -1,9 +1,9 @@
-#include <DB/Storages/MergeTree/RemotePartChecker.h>
-#include <DB/Storages/MergeTree/ReshardingWorker.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/IO/ReadBufferFromHTTP.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Storages/MergeTree/RemotePartChecker.h>
+#include <Storages/MergeTree/ReshardingWorker.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <IO/ReadBufferFromHTTP.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/File.h>
 
 

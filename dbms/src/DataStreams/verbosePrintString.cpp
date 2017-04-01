@@ -1,5 +1,5 @@
-#include <DB/DataStreams/verbosePrintString.h>
-#include <DB/IO/Operators.h>
+#include <DataStreams/verbosePrintString.h>
+#include <IO/Operators.h>
 
 
 namespace DB

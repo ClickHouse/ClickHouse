@@ -1,12 +1,12 @@
-#include <DB/Functions/Conditional/StringArrayEvaluator.h>
-#include <DB/Functions/Conditional/CondSource.h>
-#include <DB/Functions/Conditional/common.h>
-#include <DB/Functions/Conditional/NullMapBuilder.h>
-#include <DB/Columns/ColumnVector.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnConst.h>
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnFixedString.h>
+#include <Functions/Conditional/StringArrayEvaluator.h>
+#include <Functions/Conditional/CondSource.h>
+#include <Functions/Conditional/common.h>
+#include <Functions/Conditional/NullMapBuilder.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
 
 /// NOTE: this code is quite complicated and ugly because it handles
 /// the internals of arrays of strings.

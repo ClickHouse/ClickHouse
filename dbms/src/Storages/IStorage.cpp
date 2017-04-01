@@ -1,4 +1,4 @@
-#include <DB/Storages/IStorage.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB

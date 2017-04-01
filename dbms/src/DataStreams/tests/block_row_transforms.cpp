@@ -3,20 +3,20 @@
 #include <iostream>
 #include <fstream>
 
-#include <DB/Core/Block.h>
-#include <DB/Core/ColumnWithTypeAndName.h>
+#include <Core/Block.h>
+#include <Core/ColumnWithTypeAndName.h>
 
-#include <DB/IO/ReadBufferFromIStream.h>
-#include <DB/IO/WriteBufferFromOStream.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <IO/WriteBufferFromOStream.h>
 
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 
-#include <DB/DataStreams/TabSeparatedRowInputStream.h>
-#include <DB/DataStreams/TabSeparatedRowOutputStream.h>
-#include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
-#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
-#include <DB/DataStreams/copyData.h>
+#include <DataStreams/TabSeparatedRowInputStream.h>
+#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <DataStreams/BlockInputStreamFromRowInputStream.h>
+#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <DataStreams/copyData.h>
 
 
 int main(int argc, char ** argv)

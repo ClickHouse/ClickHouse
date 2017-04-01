@@ -1,14 +1,14 @@
-#include <DB/Analyzers/AnalyzeResultOfQuery.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/Common/Exception.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Storages/System/StorageSystemOne.h>
-#include <DB/Storages/System/StorageSystemNumbers.h>
-#include <DB/Databases/DatabaseMemory.h>
+#include <Analyzers/AnalyzeResultOfQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadHelpers.h>
+#include <Common/Exception.h>
+#include <Interpreters/Context.h>
+#include <Storages/System/StorageSystemOne.h>
+#include <Storages/System/StorageSystemNumbers.h>
+#include <Databases/DatabaseMemory.h>
 
 
 /// Parses query from stdin and print names and types of result columns.

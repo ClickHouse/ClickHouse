@@ -1,11 +1,11 @@
-#include <DB/IO/ReadHelpers.h>
-#include <DB/Interpreters/evaluateConstantExpression.h>
-#include <DB/Interpreters/convertFieldToType.h>
-#include <DB/Parsers/ExpressionListParsers.h>
-#include <DB/DataStreams/ValuesRowInputStream.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/Core/FieldVisitors.h>
-#include <DB/Core/Block.h>
+#include <IO/ReadHelpers.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <DataStreams/ValuesRowInputStream.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Core/FieldVisitors.h>
+#include <Core/Block.h>
 
 
 namespace DB

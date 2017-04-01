@@ -1,7 +1,7 @@
 #include <future>
-#include <DB/Common/setThreadName.h>
-#include <DB/Common/CurrentMetrics.h>
-#include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
+#include <Common/setThreadName.h>
+#include <Common/CurrentMetrics.h>
+#include <DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 
 
 namespace CurrentMetrics

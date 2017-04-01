@@ -1,10 +1,10 @@
 #include <iostream>
-#include <DB/Storages/MergeTree/PKCondition.h>
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/Core/Block.h>
-#include <DB/Core/NamesAndTypes.h>
+#include <Storages/MergeTree/PKCondition.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/parseQuery.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Core/Block.h>
+#include <Core/NamesAndTypes.h>
 
 
 using namespace DB;

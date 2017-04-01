@@ -1,5 +1,5 @@
-#include <DB/IO/WriteHelpers.h>
-#include <DB/DataStreams/TSKVRowOutputStream.h>
+#include <IO/WriteHelpers.h>
+#include <DataStreams/TSKVRowOutputStream.h>
 
 
 namespace DB

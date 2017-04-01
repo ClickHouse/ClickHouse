@@ -1,10 +1,10 @@
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/queryToString.h>
-#include <DB/Interpreters/LogicalExpressionsOptimizer.h>
-#include <DB/Interpreters/Settings.h>
-#include <DB/Common/typeid_cast.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
+#include <Interpreters/LogicalExpressionsOptimizer.h>
+#include <Interpreters/Settings.h>
+#include <Common/typeid_cast.h>
 
 #include <iostream>
 #include <vector>

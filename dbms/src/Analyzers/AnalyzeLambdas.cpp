@@ -1,12 +1,12 @@
 #include <vector>
-#include <DB/Analyzers/AnalyzeLambdas.h>
-#include <DB/Parsers/formatAST.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ASTTablesInSelectQuery.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Analyzers/AnalyzeLambdas.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

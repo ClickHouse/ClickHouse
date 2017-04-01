@@ -1,12 +1,12 @@
-#include <DB/Interpreters/AsynchronousMetrics.h>
-#include <DB/Common/Exception.h>
-#include <DB/Common/setThreadName.h>
-#include <DB/Common/CurrentMetrics.h>
-#include <DB/Storages/MarkCache.h>
-#include <DB/Storages/StorageMergeTree.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/IO/UncompressedCache.h>
-#include <DB/Databases/IDatabase.h>
+#include <Interpreters/AsynchronousMetrics.h>
+#include <Common/Exception.h>
+#include <Common/setThreadName.h>
+#include <Common/CurrentMetrics.h>
+#include <Storages/MarkCache.h>
+#include <Storages/StorageMergeTree.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <IO/UncompressedCache.h>
+#include <Databases/IDatabase.h>
 #include <chrono>
 
 #include <common/config_common.h>

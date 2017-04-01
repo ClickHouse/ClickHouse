@@ -1,12 +1,12 @@
-#include <DB/Interpreters/InterpreterCheckQuery.h>
-#include <DB/Parsers/ASTCheckQuery.h>
-#include <DB/Storages/StorageDistributed.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/DataStreams/UnionBlockInputStream.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnsNumber.h>
+#include <Interpreters/InterpreterCheckQuery.h>
+#include <Parsers/ASTCheckQuery.h>
+#include <Storages/StorageDistributed.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/UnionBlockInputStream.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <openssl/sha.h>
 #include <deque>

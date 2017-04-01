@@ -1,10 +1,10 @@
 #include <iostream>
 #include <iomanip>
 
-#include <DB/Interpreters/AggregationCommon.h>
+#include <Interpreters/AggregationCommon.h>
 
-#include <DB/Common/HashTable/HashMap.h>
-#include <DB/Common/HashTable/HashSet.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
 
 
 

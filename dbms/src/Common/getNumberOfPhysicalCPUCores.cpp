@@ -1,10 +1,10 @@
-#include <DB/Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <thread>
 
 #if defined(__x86_64__)
 
     #include <cpuid/libcpuid.h>
-    #include <DB/Common/Exception.h>
+    #include <Common/Exception.h>
 
     namespace DB { namespace ErrorCodes { extern const int CPUID_ERROR; }}
 

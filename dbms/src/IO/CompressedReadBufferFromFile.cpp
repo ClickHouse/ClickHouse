@@ -1,6 +1,6 @@
-#include <DB/IO/CompressedReadBufferFromFile.h>
-#include <DB/IO/createReadBufferFromFileBase.h>
-#include <DB/IO/WriteHelpers.h>
+#include <IO/CompressedReadBufferFromFile.h>
+#include <IO/createReadBufferFromFileBase.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

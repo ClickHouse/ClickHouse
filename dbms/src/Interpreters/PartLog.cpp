@@ -1,15 +1,15 @@
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnFixedString.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/Interpreters/PartLog.h>
-#include <DB/Common/ClickHouseRevision.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <Interpreters/PartLog.h>
+#include <Common/ClickHouseRevision.h>
 #include <Poco/Net/IPAddress.h>
 #include <array>
 

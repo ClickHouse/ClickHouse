@@ -1,13 +1,13 @@
 #include <string.h> // memcpy
 
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnsCommon.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsCommon.h>
 
-#include <DB/Common/Exception.h>
-#include <DB/Common/Arena.h>
-#include <DB/Common/SipHash.h>
+#include <Common/Exception.h>
+#include <Common/Arena.h>
+#include <Common/SipHash.h>
 
 
 

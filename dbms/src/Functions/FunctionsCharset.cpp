@@ -1,10 +1,10 @@
-#include <DB/Functions/IFunction.h>
-#include <DB/Functions/ObjectPool.h>
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnConst.h>
+#include <Functions/IFunction.h>
+#include <Functions/ObjectPool.h>
+#include <Functions/FunctionFactory.h>
+#include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
 #include <ext/range.hpp>
 
 #include <unicode/ucnv.h>

@@ -1,4 +1,4 @@
-#include <DB/DataStreams/SquashingBlockInputStream.h>
+#include <DataStreams/SquashingBlockInputStream.h>
 
 
 namespace DB

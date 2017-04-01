@@ -1,5 +1,5 @@
-#include <DB/Storages/MergeTree/RangesInDataPart.h>
-#include <DB/Storages/MergeTree/MergeTreeReadPool.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <ext/range.hpp>
 
 

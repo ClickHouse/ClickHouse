@@ -3,9 +3,9 @@
 #include <iostream>
 #include <sstream>
 
-#include <DB/Core/Types.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/ReadBufferFromIStream.h>
+#include <Core/Types.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromIStream.h>
 
 
 int main(int argc, char ** argv)

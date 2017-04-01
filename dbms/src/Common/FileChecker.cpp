@@ -1,13 +1,13 @@
 #include <common/JSON.h>
 #include <Poco/Path.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/Common/escapeForFileName.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <Common/escapeForFileName.h>
 
-#include <DB/Common/FileChecker.h>
+#include <Common/FileChecker.h>
 
 
 namespace DB

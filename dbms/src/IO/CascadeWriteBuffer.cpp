@@ -1,5 +1,5 @@
-#include <DB/IO/CascadeWriteBuffer.h>
-#include <DB/Common/Exception.h>
+#include <IO/CascadeWriteBuffer.h>
+#include <Common/Exception.h>
 
 namespace DB
 {

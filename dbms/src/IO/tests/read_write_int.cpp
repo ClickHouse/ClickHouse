@@ -3,11 +3,11 @@
 #include <iostream>
 #include <sstream>
 
-#include <DB/Core/Types.h>
-#include <DB/IO/ReadBufferFromString.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Core/Types.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 int main(int argc, char ** argv)

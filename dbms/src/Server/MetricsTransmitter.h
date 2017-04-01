@@ -5,7 +5,7 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include <DB/Common/ProfileEvents.h>
+#include <Common/ProfileEvents.h>
 
 
 namespace DB

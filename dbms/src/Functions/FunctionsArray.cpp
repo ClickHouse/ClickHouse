@@ -1,20 +1,20 @@
-﻿#include <DB/Functions/FunctionsArray.h>
+﻿#include <Functions/FunctionsArray.h>
 
-#include <DB/AggregateFunctions/IAggregateFunction.h>
-#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsConversion.h>
-#include <DB/Functions/Conditional/getArrayType.h>
-#include <DB/Functions/Conditional/CondException.h>
-#include <DB/Common/HashTable/HashMap.h>
-#include <DB/Common/HashTable/ClearableHashMap.h>
-#include <DB/Parsers/ExpressionListParsers.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Interpreters/AggregationCommon.h>
-#include <DB/Columns/ColumnTuple.h>
-#include <DB/Columns/ColumnAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsConversion.h>
+#include <Functions/Conditional/getArrayType.h>
+#include <Functions/Conditional/CondException.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/ClearableHashMap.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
+#include <Interpreters/AggregationCommon.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <tuple>
 #include <array>
 

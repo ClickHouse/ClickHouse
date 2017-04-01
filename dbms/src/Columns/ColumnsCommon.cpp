@@ -2,7 +2,7 @@
     #include <emmintrin.h>
 #endif
 
-#include <DB/Columns/IColumn.h>
+#include <Columns/IColumn.h>
 
 
 namespace DB

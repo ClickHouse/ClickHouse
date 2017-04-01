@@ -1,9 +1,9 @@
-#include <DB/Interpreters/ProcessList.h>
-#include <DB/Interpreters/Settings.h>
-#include <DB/Parsers/ASTKillQueryQuery.h>
-#include <DB/Common/Exception.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <Interpreters/ProcessList.h>
+#include <Interpreters/Settings.h>
+#include <Parsers/ASTKillQueryQuery.h>
+#include <Common/Exception.h>
+#include <IO/WriteHelpers.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB

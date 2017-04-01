@@ -1,10 +1,10 @@
-#include <DB/Analyzers/CollectAliases.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/Common/Exception.h>
+#include <Analyzers/CollectAliases.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadHelpers.h>
+#include <Common/Exception.h>
 
 
 /// Parses query from stdin and print found aliases.

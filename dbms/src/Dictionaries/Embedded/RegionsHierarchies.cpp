@@ -1,4 +1,4 @@
-#include <DB/Dictionaries/Embedded/RegionsHierarchies.h>
+#include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>

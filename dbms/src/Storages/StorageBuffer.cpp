@@ -1,14 +1,14 @@
-#include <DB/Interpreters/InterpreterSelectQuery.h>
-#include <DB/Interpreters/InterpreterInsertQuery.h>
-#include <DB/Interpreters/InterpreterAlterQuery.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/Databases/IDatabase.h>
-#include <DB/Storages/StorageBuffer.h>
-#include <DB/Parsers/ASTInsertQuery.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Common/setThreadName.h>
-#include <DB/Common/CurrentMetrics.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
+#include <Databases/IDatabase.h>
+#include <Storages/StorageBuffer.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Common/setThreadName.h>
+#include <Common/CurrentMetrics.h>
 #include <common/logger_useful.h>
 #include <Poco/Ext/ThreadNumber.h>
 

@@ -4,9 +4,9 @@
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #endif
 
-#include <DB/Common/CompactArray.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/ReadBufferFromFile.h>
+#include <Common/CompactArray.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/ReadBufferFromFile.h>
 
 #include <boost/filesystem.hpp>
 

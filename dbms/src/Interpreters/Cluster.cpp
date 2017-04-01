@@ -1,9 +1,9 @@
-#include <DB/Interpreters/Cluster.h>
-#include <DB/Common/escapeForFileName.h>
-#include <DB/Common/isLocalAddress.h>
-#include <DB/Common/SimpleCache.h>
-#include <DB/Common/StringUtils.h>
-#include <DB/IO/HexWriteBuffer.h>
+#include <Interpreters/Cluster.h>
+#include <Common/escapeForFileName.h>
+#include <Common/isLocalAddress.h>
+#include <Common/SimpleCache.h>
+#include <Common/StringUtils.h>
+#include <IO/HexWriteBuffer.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <openssl/sha.h>

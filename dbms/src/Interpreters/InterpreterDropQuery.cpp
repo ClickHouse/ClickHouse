@@ -1,10 +1,10 @@
 #include <Poco/File.h>
 
-#include <DB/Common/escapeForFileName.h>
-#include <DB/Parsers/ASTDropQuery.h>
-#include <DB/Interpreters/InterpreterDropQuery.h>
-#include <DB/Storages/IStorage.h>
-#include <DB/Databases/IDatabase.h>
+#include <Common/escapeForFileName.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Interpreters/InterpreterDropQuery.h>
+#include <Storages/IStorage.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB

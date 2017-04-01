@@ -1,11 +1,11 @@
-#include <DB/Analyzers/TranslatePositionalArguments.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/Parsers/formatAST.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/Common/Exception.h>
+#include <Analyzers/TranslatePositionalArguments.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/formatAST.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadHelpers.h>
+#include <Common/Exception.h>
 
 
 /// Parses query from stdin and print same query with translated positional arguments.

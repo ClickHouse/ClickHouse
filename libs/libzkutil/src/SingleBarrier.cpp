@@ -1,9 +1,9 @@
 #include <zkutil/SingleBarrier.h>
 #include <zkutil/RWLock.h>
-#include <DB/Common/getFQDNOrHostName.h>
-#include <DB/Common/Exception.h>
-#include <DB/Common/Stopwatch.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Common/getFQDNOrHostName.h>
+#include <Common/Exception.h>
+#include <Common/Stopwatch.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {

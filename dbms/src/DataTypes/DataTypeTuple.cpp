@@ -1,8 +1,8 @@
-#include <DB/Columns/ColumnTuple.h>
-#include <DB/Columns/ColumnConst.h>
-#include <DB/DataStreams/NativeBlockInputStream.h>
-#include <DB/DataStreams/NativeBlockOutputStream.h>
-#include <DB/DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnConst.h>
+#include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <ext/map.hpp>
 #include <ext/enumerate.hpp>

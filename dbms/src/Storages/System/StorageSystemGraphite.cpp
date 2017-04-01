@@ -1,11 +1,11 @@
-#include <DB/Storages/System/StorageSystemGraphite.h>
+#include <Storages/System/StorageSystemGraphite.h>
 
-#include <DB/Core/Field.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnsNumber.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumber.h>
+#include <Core/Field.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Poco/Util/Application.h>
 

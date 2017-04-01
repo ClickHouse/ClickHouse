@@ -10,14 +10,14 @@
 
 #include <utility>
 
-#include <DB/Core/Types.h>
-#include <DB/Common/Exception.h>
+#include <Core/Types.h>
+#include <Common/Exception.h>
 
-#include <DB/IO/ReadHelpers.h>
+#include <IO/ReadHelpers.h>
 
-#include <DB/Core/StringRef.h>
+#include <Core/StringRef.h>
 
-#include <DB/Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashMap.h>
 
 
 template

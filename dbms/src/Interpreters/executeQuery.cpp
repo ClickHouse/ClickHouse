@@ -1,27 +1,27 @@
-#include <DB/Common/ProfileEvents.h>
-#include <DB/Common/formatReadable.h>
+#include <Common/ProfileEvents.h>
+#include <Common/formatReadable.h>
 
-#include <DB/IO/ConcatReadBuffer.h>
-#include <DB/IO/WriteBufferFromFile.h>
+#include <IO/ConcatReadBuffer.h>
+#include <IO/WriteBufferFromFile.h>
 
-#include <DB/DataStreams/BlockIO.h>
-#include <DB/DataStreams/copyData.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/DataStreams/InputStreamFromASTInsertQuery.h>
-#include <DB/DataStreams/CountingBlockOutputStream.h>
+#include <DataStreams/BlockIO.h>
+#include <DataStreams/copyData.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/InputStreamFromASTInsertQuery.h>
+#include <DataStreams/CountingBlockOutputStream.h>
 
-#include <DB/Parsers/ASTInsertQuery.h>
-#include <DB/Parsers/ASTShowProcesslistQuery.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ParserQuery.h>
-#include <DB/Parsers/parseQuery.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTShowProcesslistQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 
-#include <DB/Interpreters/Quota.h>
-#include <DB/Interpreters/InterpreterFactory.h>
-#include <DB/Interpreters/ProcessList.h>
-#include <DB/Interpreters/QueryLog.h>
-#include <DB/Interpreters/executeQuery.h>
+#include <Interpreters/Quota.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/ProcessList.h>
+#include <Interpreters/QueryLog.h>
+#include <Interpreters/executeQuery.h>
 
 
 namespace ProfileEvents

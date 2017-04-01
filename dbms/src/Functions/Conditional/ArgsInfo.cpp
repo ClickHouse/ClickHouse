@@ -1,13 +1,13 @@
-#include <DB/Functions/Conditional/ArgsInfo.h>
-#include <DB/Functions/Conditional/CondException.h>
-#include <DB/Functions/Conditional/common.h>
-#include <DB/Functions/DataTypeTraits.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Functions/Conditional/ArgsInfo.h>
+#include <Functions/Conditional/CondException.h>
+#include <Functions/Conditional/common.h>
+#include <Functions/DataTypeTraits.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {

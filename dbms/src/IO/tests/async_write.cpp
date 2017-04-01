@@ -1,10 +1,10 @@
 #include <iostream>
 
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/AsynchronousWriteBuffer.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/copyData.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/AsynchronousWriteBuffer.h>
+#include <IO/CompressedWriteBuffer.h>
+#include <IO/copyData.h>
 
 
 int main(int argc, char ** argv)

@@ -2,7 +2,7 @@
 
 #include <Poco/ErrorHandler.h>
 #include <common/logger_useful.h>
-#include <DB/Common/Exception.h>
+#include <Common/Exception.h>
 
 
 /** ErrorHandler для потоков, который в случае неперехваченного исключения,

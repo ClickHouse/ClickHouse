@@ -1,25 +1,25 @@
-#include <DB/Storages/System/attachSystemTables.h>
+#include <Storages/System/attachSystemTables.h>
 
-#include <DB/Storages/System/StorageSystemAsynchronousMetrics.h>
-#include <DB/Storages/System/StorageSystemBuildOptions.h>
-#include <DB/Storages/System/StorageSystemClusters.h>
-#include <DB/Storages/System/StorageSystemColumns.h>
-#include <DB/Storages/System/StorageSystemDatabases.h>
-#include <DB/Storages/System/StorageSystemDictionaries.h>
-#include <DB/Storages/System/StorageSystemEvents.h>
-#include <DB/Storages/System/StorageSystemFunctions.h>
-#include <DB/Storages/System/StorageSystemGraphite.h>
-#include <DB/Storages/System/StorageSystemMerges.h>
-#include <DB/Storages/System/StorageSystemMetrics.h>
-#include <DB/Storages/System/StorageSystemNumbers.h>
-#include <DB/Storages/System/StorageSystemOne.h>
-#include <DB/Storages/System/StorageSystemParts.h>
-#include <DB/Storages/System/StorageSystemProcesses.h>
-#include <DB/Storages/System/StorageSystemReplicas.h>
-#include <DB/Storages/System/StorageSystemReplicationQueue.h>
-#include <DB/Storages/System/StorageSystemSettings.h>
-#include <DB/Storages/System/StorageSystemTables.h>
-#include <DB/Storages/System/StorageSystemZooKeeper.h>
+#include <Storages/System/StorageSystemAsynchronousMetrics.h>
+#include <Storages/System/StorageSystemBuildOptions.h>
+#include <Storages/System/StorageSystemClusters.h>
+#include <Storages/System/StorageSystemColumns.h>
+#include <Storages/System/StorageSystemDatabases.h>
+#include <Storages/System/StorageSystemDictionaries.h>
+#include <Storages/System/StorageSystemEvents.h>
+#include <Storages/System/StorageSystemFunctions.h>
+#include <Storages/System/StorageSystemGraphite.h>
+#include <Storages/System/StorageSystemMerges.h>
+#include <Storages/System/StorageSystemMetrics.h>
+#include <Storages/System/StorageSystemNumbers.h>
+#include <Storages/System/StorageSystemOne.h>
+#include <Storages/System/StorageSystemParts.h>
+#include <Storages/System/StorageSystemProcesses.h>
+#include <Storages/System/StorageSystemReplicas.h>
+#include <Storages/System/StorageSystemReplicationQueue.h>
+#include <Storages/System/StorageSystemSettings.h>
+#include <Storages/System/StorageSystemTables.h>
+#include <Storages/System/StorageSystemZooKeeper.h>
 
 namespace DB
 {

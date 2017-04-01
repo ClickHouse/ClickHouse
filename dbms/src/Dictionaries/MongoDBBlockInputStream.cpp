@@ -1,4 +1,4 @@
-#include <DB/Common/config.h>
+#include <Common/config.h>
 #if Poco_MongoDB_FOUND
 
 #include <vector>
@@ -9,16 +9,16 @@
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Element.h>
 
-#include <DB/Dictionaries/DictionaryStructure.h>
-#include <DB/Dictionaries/MongoDBBlockInputStream.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnsNumber.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/MongoDBBlockInputStream.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <ext/range.hpp>
-#include <DB/Core/FieldVisitors.h>
+#include <Core/FieldVisitors.h>
 
 
 namespace DB

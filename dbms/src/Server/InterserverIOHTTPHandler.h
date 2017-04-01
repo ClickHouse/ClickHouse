@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Server.h"
-#include <DB/Common/CurrentMetrics.h>
+#include <Common/CurrentMetrics.h>
 
 
 namespace CurrentMetrics

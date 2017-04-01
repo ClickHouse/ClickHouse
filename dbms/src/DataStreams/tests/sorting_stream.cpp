@@ -1,29 +1,29 @@
 #include <iostream>
 #include <iomanip>
 
-#include <DB/IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromOStream.h>
 
-#include <DB/Storages/StorageLog.h>
+#include <Storages/StorageLog.h>
 
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeDateTime.h>
 
-#include <DB/DataStreams/LimitBlockInputStream.h>
-#include <DB/DataStreams/PartialSortingBlockInputStream.h>
-#include <DB/DataStreams/MergeSortingBlockInputStream.h>
-#include <DB/DataStreams/TabSeparatedRowOutputStream.h>
-#include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
-#include <DB/DataStreams/copyData.h>
+#include <DataStreams/LimitBlockInputStream.h>
+#include <DataStreams/PartialSortingBlockInputStream.h>
+#include <DataStreams/MergeSortingBlockInputStream.h>
+#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <DataStreams/copyData.h>
 
-#include <DB/DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesNumber.h>
 
-#include <DB/Parsers/ParserSelectQuery.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/Parsers/formatAST.h>
+#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/formatAST.h>
 
-#include <DB/Interpreters/Context.h>
+#include <Interpreters/Context.h>
 
 
 using namespace DB;

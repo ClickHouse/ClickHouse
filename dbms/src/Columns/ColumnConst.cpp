@@ -1,14 +1,14 @@
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeArray.h>
 
-#include <DB/Columns/ColumnString.h>
-#include <DB/Columns/ColumnConst.h>
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnTuple.h>
-#include <DB/Columns/ColumnFixedString.h>
-#include <DB/Columns/ColumnNullable.h>
-#include <DB/DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <ext/enumerate.hpp>
 
 

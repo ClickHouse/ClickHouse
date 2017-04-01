@@ -6,31 +6,31 @@
 #include <Poco/Path.h>
 #include <Poco/Util/XMLConfiguration.h>
 
-#include <DB/Common/escapeForFileName.h>
+#include <Common/escapeForFileName.h>
 
-#include <DB/Common/Exception.h>
+#include <Common/Exception.h>
 
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/CompressedReadBuffer.h>
+#include <IO/CompressedWriteBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNested.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/DataStreams/IBlockOutputStream.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
 
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNullable.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 
-#include <DB/Interpreters/Settings.h>
+#include <Interpreters/Settings.h>
 
-#include <DB/Storages/StorageTinyLog.h>
+#include <Storages/StorageTinyLog.h>
 #include <Poco/DirectoryIterator.h>
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION     ".bin"

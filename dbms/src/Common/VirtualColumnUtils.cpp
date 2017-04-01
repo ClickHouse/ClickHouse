@@ -1,18 +1,18 @@
 #include <numeric>
 
-#include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Interpreters/ExpressionActions.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
 
-#include <DB/Columns/ColumnsNumber.h>
+#include <Columns/ColumnsNumber.h>
 
-#include <DB/Common/VirtualColumnUtils.h>
+#include <Common/VirtualColumnUtils.h>
 
 
 namespace DB

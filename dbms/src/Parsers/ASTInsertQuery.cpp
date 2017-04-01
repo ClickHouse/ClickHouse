@@ -1,5 +1,5 @@
 #include <mysqlxx/Manip.h>
-#include <DB/Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 
 
 namespace DB

@@ -7,31 +7,31 @@
 #include <Poco/Path.h>
 #include <Poco/Util/XMLConfiguration.h>
 
-#include <DB/Common/escapeForFileName.h>
+#include <Common/escapeForFileName.h>
 
-#include <DB/Common/Exception.h>
+#include <Common/Exception.h>
 
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/CompressedReadBufferFromFile.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/CompressedReadBufferFromFile.h>
+#include <IO/CompressedWriteBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNested.h>
 
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/DataStreams/NativeBlockInputStream.h>
-#include <DB/DataStreams/NativeBlockOutputStream.h>
-#include <DB/DataStreams/NullBlockInputStream.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NullBlockInputStream.h>
 
-#include <DB/Columns/ColumnArray.h>
+#include <Columns/ColumnArray.h>
 
-#include <DB/Interpreters/Settings.h>
+#include <Interpreters/Settings.h>
 
-#include <DB/Storages/StorageStripeLog.h>
+#include <Storages/StorageStripeLog.h>
 #include <Poco/DirectoryIterator.h>
 
 

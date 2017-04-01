@@ -4,16 +4,16 @@
 #include <unordered_map>
 #include <sparsehash/dense_hash_map>
 
-#include <DB/Common/Stopwatch.h>
+#include <Common/Stopwatch.h>
 
-#include <DB/Core/StringRef.h>
-#include <DB/Common/Arena.h>
+#include <Core/StringRef.h>
+#include <Common/Arena.h>
 
-#include <DB/IO/ReadBufferFromFileDescriptor.h>
-#include <DB/IO/ReadHelpers.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadHelpers.h>
 
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
-#include <DB/Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashMap.h>
 
 int main(int argc, char ** argv)
 {

@@ -1,13 +1,13 @@
-#include <DB/Analyzers/AnalyzeResultOfQuery.h>
-#include <DB/Analyzers/CollectAliases.h>
-#include <DB/Analyzers/CollectTables.h>
-#include <DB/Analyzers/AnalyzeLambdas.h>
-#include <DB/Analyzers/AnalyzeColumns.h>
-#include <DB/Analyzers/TypeAndConstantInference.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/Parsers/ASTSelectQuery.h>
+#include <Analyzers/AnalyzeResultOfQuery.h>
+#include <Analyzers/CollectAliases.h>
+#include <Analyzers/CollectTables.h>
+#include <Analyzers/AnalyzeLambdas.h>
+#include <Analyzers/AnalyzeColumns.h>
+#include <Analyzers/TypeAndConstantInference.h>
+#include <Interpreters/Context.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ASTSelectQuery.h>
 
 
 namespace DB

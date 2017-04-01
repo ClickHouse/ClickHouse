@@ -1,12 +1,12 @@
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTShowTablesQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTShowTablesQuery.h>
 
-#include <DB/Parsers/CommonParsers.h>
-#include <DB/Parsers/ParserShowTablesQuery.h>
-#include <DB/Parsers/ExpressionElementParsers.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ParserShowTablesQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
 
-#include <DB/Common/typeid_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

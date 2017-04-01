@@ -1,10 +1,10 @@
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Storages/MergeTree/AbandonableLockInZooKeeper.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
-#include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
-#include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/Common/SipHash.h>
-#include <DB/IO/Operators.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/AbandonableLockInZooKeeper.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <Common/SipHash.h>
+#include <IO/Operators.h>
 
 
 namespace DB

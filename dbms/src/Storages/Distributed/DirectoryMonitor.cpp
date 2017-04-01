@@ -1,11 +1,11 @@
-#include <DB/DataStreams/RemoteBlockOutputStream.h>
-#include <DB/Common/escapeForFileName.h>
-#include <DB/Common/setThreadName.h>
-#include <DB/Common/CurrentMetrics.h>
-#include <DB/Common/StringUtils.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Storages/Distributed/DirectoryMonitor.h>
-#include <DB/IO/ReadBufferFromFile.h>
+#include <DataStreams/RemoteBlockOutputStream.h>
+#include <Common/escapeForFileName.h>
+#include <Common/setThreadName.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/StringUtils.h>
+#include <Interpreters/Context.h>
+#include <Storages/Distributed/DirectoryMonitor.h>
+#include <IO/ReadBufferFromFile.h>
 
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>

@@ -1,11 +1,11 @@
 #include <ext/range.hpp>
 #include <boost/range/join.hpp>
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/Dictionaries/writeParenthesisedString.h>
-#include <DB/Dictionaries/DictionaryStructure.h>
-#include <DB/Dictionaries/ExternalQueryBuilder.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Dictionaries/writeParenthesisedString.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
 
 
 namespace DB

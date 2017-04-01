@@ -2,7 +2,7 @@
 
 #include <typeinfo>
 #include <Poco/Exception.h>
-#include <DB/Core/StringRef.h>
+#include <Core/StringRef.h>
 #include <common/Common.h>
 
 

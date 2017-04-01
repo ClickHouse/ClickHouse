@@ -1,30 +1,30 @@
-#include <DB/IO/ReadHelpers.h>
+#include <IO/ReadHelpers.h>
 
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/DataTypes/DataTypeAggregateFunction.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeTuple.h>
-#include <DB/DataTypes/DataTypeNested.h>
-#include <DB/DataTypes/DataTypeNull.h>
-#include <DB/DataTypes/DataTypeNullable.h>
-#include <DB/DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeNull.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeFactory.h>
 
-#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
-#include <DB/Parsers/ExpressionListParsers.h>
-#include <DB/Parsers/ParserCreateQuery.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTNameTypePair.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTEnumElement.h>
-#include <DB/Parsers/ParserEnumElement.h>
-#include <DB/Parsers/parseQuery.h>
-#include <DB/DataTypes/DataTypeEnum.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTNameTypePair.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTEnumElement.h>
+#include <Parsers/ParserEnumElement.h>
+#include <Parsers/parseQuery.h>
+#include <DataTypes/DataTypeEnum.h>
 
 #include <ext/map.hpp>
 

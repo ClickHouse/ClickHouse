@@ -1,4 +1,4 @@
-#include <DB/Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 
 namespace DB
 {

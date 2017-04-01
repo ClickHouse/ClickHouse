@@ -1,6 +1,6 @@
-#include <DB/IO/ReadHelpers.h>
-#include <DB/Common/StringUtils.h>
-#include <DB/Common/escapeForFileName.h>
+#include <IO/ReadHelpers.h>
+#include <Common/StringUtils.h>
+#include <Common/escapeForFileName.h>
 
 namespace DB
 {

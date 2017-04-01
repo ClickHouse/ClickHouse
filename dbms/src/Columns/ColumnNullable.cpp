@@ -1,10 +1,10 @@
-#include <DB/Common/Arena.h>
-#include <DB/Common/SipHash.h>
-#include <DB/Common/NaNUtils.h>
-#include <DB/Columns/ColumnNullable.h>
-#include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnTuple.h>
-#include <DB/Columns/ColumnAggregateFunction.h>
+#include <Common/Arena.h>
+#include <Common/SipHash.h>
+#include <Common/NaNUtils.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnAggregateFunction.h>
 
 
 namespace DB

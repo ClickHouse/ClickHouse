@@ -1,23 +1,23 @@
-#include <DB/Functions/FunctionsMiscellaneous.h>
+#include <Functions/FunctionsMiscellaneous.h>
 
 #include <cmath>
 #include <ext/range.hpp>
 #include <Poco/Net/DNS.h>
-#include <DB/Common/ClickHouseRevision.h>
-#include <DB/Columns/ColumnSet.h>
-#include <DB/Common/UnicodeBar.h>
-#include <DB/Core/FieldVisitors.h>
-#include <DB/DataTypes/DataTypeAggregateFunction.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeTuple.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/Set.h>
-#include <DB/Storages/IStorage.h>
+#include <Common/ClickHouseRevision.h>
+#include <Columns/ColumnSet.h>
+#include <Common/UnicodeBar.h>
+#include <Core/FieldVisitors.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Set.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB

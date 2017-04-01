@@ -1,11 +1,11 @@
-#include <DB/Core/Types.h>
-#include <DB/Common/Exception.h>
-#include <DB/IO/ReadBuffer.h>
-#include <DB/IO/WriteBuffer.h>
-#include <DB/IO/VarInt.h>
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/Core/BlockInfo.h>
+#include <Core/Types.h>
+#include <Common/Exception.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+#include <IO/VarInt.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Core/BlockInfo.h>
 
 
 namespace DB

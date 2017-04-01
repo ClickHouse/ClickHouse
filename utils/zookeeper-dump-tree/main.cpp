@@ -1,6 +1,6 @@
 #include <iostream>
 #include <boost/program_options.hpp>
-#include <DB/Common/Exception.h>
+#include <Common/Exception.h>
 #include <Poco/Event.h>
 #include <zkutil/ZooKeeper.h>
 

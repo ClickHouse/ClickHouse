@@ -2,12 +2,12 @@
 #include <iomanip>
 #include <map>
 
-#include <DB/Core/Field.h>
-#include <DB/Common/HashTable/HashMap.h>
-#include <DB/Common/AutoArray.h>
-#include <DB/IO/WriteHelpers.h>
+#include <Core/Field.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/AutoArray.h>
+#include <IO/WriteHelpers.h>
 
-#include <DB/Common/Stopwatch.h>
+#include <Common/Stopwatch.h>
 
 
 int main(int argc, char ** argv)

@@ -1,20 +1,20 @@
-#include <DB/Storages/MergeTree/PKCondition.h>
-#include <DB/Storages/MergeTree/BoolMask.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Interpreters/ExpressionActions.h>
-#include <DB/DataTypes/DataTypeEnum.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/Columns/ColumnSet.h>
-#include <DB/Columns/ColumnTuple.h>
-#include <DB/Parsers/ASTSet.h>
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/IFunction.h>
-#include <DB/Core/FieldVisitors.h>
-#include <DB/Interpreters/convertFieldToType.h>
-#include <DB/Interpreters/Set.h>
+#include <Storages/MergeTree/PKCondition.h>
+#include <Storages/MergeTree/BoolMask.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnSet.h>
+#include <Columns/ColumnTuple.h>
+#include <Parsers/ASTSet.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Core/FieldVisitors.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/Set.h>
 
 
 namespace DB

@@ -1,5 +1,5 @@
-#include <DB/IO/HashingWriteBuffer.h>
-#include <DB/IO/WriteBufferFromFile.h>
+#include <IO/HashingWriteBuffer.h>
+#include <IO/WriteBufferFromFile.h>
 
 #include "hashing_buffer.h"
 

@@ -9,9 +9,9 @@
 #include <lz4hc.h>
 #include <zstd.h>
 
-#include <DB/Common/unaligned.h>
+#include <Common/unaligned.h>
 
-#include <DB/IO/CompressedWriteBuffer.h>
+#include <IO/CompressedWriteBuffer.h>
 
 
 namespace DB

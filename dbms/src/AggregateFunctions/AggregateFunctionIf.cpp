@@ -1,4 +1,4 @@
-#include <DB/AggregateFunctions/AggregateFunctionIf.h>
+#include <AggregateFunctions/AggregateFunctionIf.h>
 
 namespace DB
 {

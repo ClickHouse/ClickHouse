@@ -1,44 +1,44 @@
 #include <experimental/optional>
 
-#include <DB/DataStreams/ExpressionBlockInputStream.h>
-#include <DB/DataStreams/FilterBlockInputStream.h>
-#include <DB/DataStreams/LimitBlockInputStream.h>
-#include <DB/DataStreams/LimitByBlockInputStream.h>
-#include <DB/DataStreams/PartialSortingBlockInputStream.h>
-#include <DB/DataStreams/MergeSortingBlockInputStream.h>
-#include <DB/DataStreams/MergingSortedBlockInputStream.h>
-#include <DB/DataStreams/AggregatingBlockInputStream.h>
-#include <DB/DataStreams/MergingAggregatedBlockInputStream.h>
-#include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
-#include <DB/DataStreams/AsynchronousBlockInputStream.h>
-#include <DB/DataStreams/UnionBlockInputStream.h>
-#include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
-#include <DB/DataStreams/DistinctBlockInputStream.h>
-#include <DB/DataStreams/NullBlockInputStream.h>
-#include <DB/DataStreams/TotalsHavingBlockInputStream.h>
-#include <DB/DataStreams/copyData.h>
-#include <DB/DataStreams/CreatingSetsBlockInputStream.h>
-#include <DB/DataStreams/MaterializingBlockInputStream.h>
-#include <DB/DataStreams/ConcatBlockInputStream.h>
+#include <DataStreams/ExpressionBlockInputStream.h>
+#include <DataStreams/FilterBlockInputStream.h>
+#include <DataStreams/LimitBlockInputStream.h>
+#include <DataStreams/LimitByBlockInputStream.h>
+#include <DataStreams/PartialSortingBlockInputStream.h>
+#include <DataStreams/MergeSortingBlockInputStream.h>
+#include <DataStreams/MergingSortedBlockInputStream.h>
+#include <DataStreams/AggregatingBlockInputStream.h>
+#include <DataStreams/MergingAggregatedBlockInputStream.h>
+#include <DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
+#include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/UnionBlockInputStream.h>
+#include <DataStreams/ParallelAggregatingBlockInputStream.h>
+#include <DataStreams/DistinctBlockInputStream.h>
+#include <DataStreams/NullBlockInputStream.h>
+#include <DataStreams/TotalsHavingBlockInputStream.h>
+#include <DataStreams/copyData.h>
+#include <DataStreams/CreatingSetsBlockInputStream.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/ConcatBlockInputStream.h>
 
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTOrderByElement.h>
-#include <DB/Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
-#include <DB/Interpreters/InterpreterSelectQuery.h>
-#include <DB/Interpreters/InterpreterSetQuery.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 
-#include <DB/Storages/IStorage.h>
+#include <Storages/IStorage.h>
 
-#include <DB/TableFunctions/ITableFunction.h>
-#include <DB/TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
-#include <DB/Core/Field.h>
-#include <DB/Common/Collator.h>
+#include <Core/Field.h>
+#include <Common/Collator.h>
 
 
 namespace ProfileEvents

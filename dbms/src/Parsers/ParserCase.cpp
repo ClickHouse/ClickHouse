@@ -1,9 +1,9 @@
-#include <DB/Parsers/ParserCase.h>
-#include <DB/Parsers/ExpressionElementParsers.h>
-#include <DB/Parsers/ExpressionListParsers.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Core/Field.h>
+#include <Parsers/ParserCase.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Core/Field.h>
 
 namespace DB
 {

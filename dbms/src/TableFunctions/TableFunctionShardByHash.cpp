@@ -1,14 +1,14 @@
-#include <DB/TableFunctions/getStructureOfRemoteTable.h>
-#include <DB/Storages/StorageDistributed.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Interpreters/evaluateConstantExpression.h>
-#include <DB/Interpreters/Cluster.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/getClusterName.h>
-#include <DB/Common/SipHash.h>
-#include <DB/TableFunctions/TableFunctionShardByHash.h>
+#include <TableFunctions/getStructureOfRemoteTable.h>
+#include <Storages/StorageDistributed.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/getClusterName.h>
+#include <Common/SipHash.h>
+#include <TableFunctions/TableFunctionShardByHash.h>
 
 
 namespace DB

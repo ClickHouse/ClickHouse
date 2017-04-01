@@ -1,36 +1,36 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <DB/Core/FieldVisitors.h>
-#include <DB/Common/StringUtils.h>
+#include <Core/FieldVisitors.h>
+#include <Common/StringUtils.h>
 
-#include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTLiteral.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 
-#include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/evaluateConstantExpression.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Interpreters/getClusterName.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/getClusterName.h>
 
-#include <DB/Storages/StorageLog.h>
-#include <DB/Storages/StorageTinyLog.h>
-#include <DB/Storages/StorageStripeLog.h>
-#include <DB/Storages/StorageMemory.h>
-#include <DB/Storages/StorageBuffer.h>
-#include <DB/Storages/StorageNull.h>
-#include <DB/Storages/StorageMerge.h>
-#include <DB/Storages/StorageMergeTree.h>
-#include <DB/Storages/StorageDistributed.h>
-#include <DB/Storages/StorageFactory.h>
-#include <DB/Storages/StorageView.h>
-#include <DB/Storages/StorageMaterializedView.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
-#include <DB/Storages/StorageSet.h>
-#include <DB/Storages/StorageJoin.h>
-#include <DB/Storages/StorageFile.h>
-#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+#include <Storages/StorageLog.h>
+#include <Storages/StorageTinyLog.h>
+#include <Storages/StorageStripeLog.h>
+#include <Storages/StorageMemory.h>
+#include <Storages/StorageBuffer.h>
+#include <Storages/StorageNull.h>
+#include <Storages/StorageMerge.h>
+#include <Storages/StorageMergeTree.h>
+#include <Storages/StorageDistributed.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageView.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageSet.h>
+#include <Storages/StorageJoin.h>
+#include <Storages/StorageFile.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <unistd.h>
 

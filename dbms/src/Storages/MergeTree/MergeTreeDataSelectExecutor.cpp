@@ -15,28 +15,28 @@
 
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
 
-#include <DB/Core/FieldVisitors.h>
-#include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
-#include <DB/Storages/MergeTree/MergeTreeReadPool.h>
-#include <DB/Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
-#include <DB/Storages/MergeTree/PKCondition.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTFunction.h>
-#include <DB/Parsers/ASTSampleRatio.h>
-#include <DB/DataStreams/ExpressionBlockInputStream.h>
-#include <DB/DataStreams/FilterBlockInputStream.h>
-#include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
-#include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
-#include <DB/DataStreams/CreatingSetsBlockInputStream.h>
-#include <DB/DataStreams/NullBlockInputStream.h>
-#include <DB/DataStreams/SummingSortedBlockInputStream.h>
-#include <DB/DataStreams/ReplacingSortedBlockInputStream.h>
-#include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeEnum.h>
-#include <DB/Common/VirtualColumnUtils.h>
+#include <Core/FieldVisitors.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
+#include <Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
+#include <Storages/MergeTree/PKCondition.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSampleRatio.h>
+#include <DataStreams/ExpressionBlockInputStream.h>
+#include <DataStreams/FilterBlockInputStream.h>
+#include <DataStreams/CollapsingFinalBlockInputStream.h>
+#include <DataStreams/AddingConstColumnBlockInputStream.h>
+#include <DataStreams/CreatingSetsBlockInputStream.h>
+#include <DataStreams/NullBlockInputStream.h>
+#include <DataStreams/SummingSortedBlockInputStream.h>
+#include <DataStreams/ReplacingSortedBlockInputStream.h>
+#include <DataStreams/AggregatingSortedBlockInputStream.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <Common/VirtualColumnUtils.h>
 
 
 namespace ProfileEvents

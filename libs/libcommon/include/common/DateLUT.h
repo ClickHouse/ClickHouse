@@ -2,7 +2,7 @@
 
 #include <common/DateLUTImpl.h>
 #include <common/singleton.h>
-#include <DB/Core/Defines.h>
+#include <Core/Defines.h>
 
 #include <unordered_map>
 #include <atomic>

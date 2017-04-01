@@ -4,8 +4,8 @@
 
 #include <iostream>
 #include <Poco/Net/StreamSocket.h>
-#include <DB/Common/Exception.h>
-#include <DB/IO/ReadHelpers.h>
+#include <Common/Exception.h>
+#include <IO/ReadHelpers.h>
 
 
 /** In a loop it connects to the server and immediately breaks the connection.

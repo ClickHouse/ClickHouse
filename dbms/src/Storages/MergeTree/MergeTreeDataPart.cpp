@@ -1,17 +1,17 @@
-#include <DB/IO/ReadHelpers.h>
-#include <DB/IO/WriteHelpers.h>
-#include <DB/IO/CompressedStream.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/CompressedWriteBuffer.h>
-#include <DB/IO/ReadBufferFromString.h>
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/Core/Defines.h>
-#include <DB/Common/SipHash.h>
-#include <DB/Common/escapeForFileName.h>
-#include <DB/Common/StringUtils.h>
-#include <DB/Storages/MergeTree/MergeTreeDataPart.h>
-#include <DB/Storages/MergeTree/MergeTreeData.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/CompressedStream.h>
+#include <IO/CompressedReadBuffer.h>
+#include <IO/CompressedWriteBuffer.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Core/Defines.h>
+#include <Common/SipHash.h>
+#include <Common/escapeForFileName.h>
+#include <Common/StringUtils.h>
+#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Poco/File.h>
 

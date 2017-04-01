@@ -1,12 +1,12 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include <DB/Common/Exception.h>
-#include <DB/Common/ProfileEvents.h>
-#include <DB/Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 
-#include <DB/IO/WriteBufferFromFileDescriptor.h>
-#include <DB/IO/WriteHelpers.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace ProfileEvents

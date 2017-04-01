@@ -1,6 +1,6 @@
 #include <set>
 
-#include <DB/DataStreams/glueBlockInputStreams.h>
+#include <DataStreams/glueBlockInputStreams.h>
 
 
 namespace DB

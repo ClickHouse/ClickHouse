@@ -1,7 +1,7 @@
 #include <Poco/Data/SessionPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <DB/Dictionaries/ODBCDictionarySource.h>
-#include <DB/Dictionaries/ODBCBlockInputStream.h>
+#include <Dictionaries/ODBCDictionarySource.h>
+#include <Dictionaries/ODBCBlockInputStream.h>
 #include <common/logger_useful.h>
 
 

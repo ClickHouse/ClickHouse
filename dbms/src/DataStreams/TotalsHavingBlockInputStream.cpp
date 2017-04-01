@@ -1,8 +1,8 @@
-#include <DB/DataStreams/TotalsHavingBlockInputStream.h>
-#include <DB/Interpreters/ExpressionActions.h>
-#include <DB/Interpreters/AggregateDescription.h>
-#include <DB/Columns/ColumnAggregateFunction.h>
-#include <DB/Columns/ColumnsNumber.h>
+#include <DataStreams/TotalsHavingBlockInputStream.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/AggregateDescription.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnsNumber.h>
 
 namespace DB
 {

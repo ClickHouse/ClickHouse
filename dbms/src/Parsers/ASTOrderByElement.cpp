@@ -1,5 +1,5 @@
-#include <DB/Common/Collator.h>
-#include <DB/Parsers/ASTOrderByElement.h>
+#include <Common/Collator.h>
+#include <Parsers/ASTOrderByElement.h>
 
 
 namespace DB

@@ -1,10 +1,10 @@
-#include <DB/Parsers/ParserCheckQuery.h>
-#include <DB/Parsers/CommonParsers.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ExpressionElementParsers.h>
-#include <DB/Parsers/ASTCheckQuery.h>
+#include <Parsers/ParserCheckQuery.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTCheckQuery.h>
 
-#include <DB/Common/typeid_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

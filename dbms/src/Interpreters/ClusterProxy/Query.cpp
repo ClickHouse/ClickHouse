@@ -1,11 +1,11 @@
-#include <DB/Interpreters/ClusterProxy/Query.h>
-#include <DB/Interpreters/ClusterProxy/IQueryConstructor.h>
-#include <DB/Interpreters/Settings.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/Cluster.h>
-#include <DB/Interpreters/IInterpreter.h>
-#include <DB/Parsers/queryToString.h>
-#include <DB/DataStreams/RemoteBlockInputStream.h>
+#include <Interpreters/ClusterProxy/Query.h>
+#include <Interpreters/ClusterProxy/IQueryConstructor.h>
+#include <Interpreters/Settings.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/IInterpreter.h>
+#include <Parsers/queryToString.h>
+#include <DataStreams/RemoteBlockInputStream.h>
 
 
 namespace DB

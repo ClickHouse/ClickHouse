@@ -1,4 +1,4 @@
-#include <DB/Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithOutput.h>
 
 namespace DB
 {

@@ -1,8 +1,8 @@
-#include <DB/DataStreams/SummingSortedBlockInputStream.h>
-#include <DB/DataTypes/DataTypeNested.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/Common/StringUtils.h>
-#include <DB/Core/FieldVisitors.h>
+#include <DataStreams/SummingSortedBlockInputStream.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Common/StringUtils.h>
+#include <Core/FieldVisitors.h>
 #include <common/logger_useful.h>
 
 

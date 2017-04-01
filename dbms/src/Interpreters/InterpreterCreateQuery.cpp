@@ -3,40 +3,40 @@
 #include <Poco/File.h>
 #include <Poco/FileStream.h>
 
-#include <DB/Common/escapeForFileName.h>
+#include <Common/escapeForFileName.h>
 
-#include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
 
-#include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
-#include <DB/DataStreams/ProhibitColumnsBlockOutputStream.h>
-#include <DB/DataStreams/MaterializingBlockOutputStream.h>
-#include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
-#include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
+#include <DataStreams/NullAndDoCopyBlockInputStream.h>
+#include <DataStreams/ProhibitColumnsBlockOutputStream.h>
+#include <DataStreams/MaterializingBlockOutputStream.h>
+#include <DataStreams/AddingDefaultBlockOutputStream.h>
+#include <DataStreams/PushingToViewsBlockOutputStream.h>
 
-#include <DB/Parsers/ASTCreateQuery.h>
-#include <DB/Parsers/ASTNameTypePair.h>
-#include <DB/Parsers/ASTColumnDeclaration.h>
-#include <DB/Parsers/formatAST.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ParserCreateQuery.h>
-#include <DB/Parsers/parseQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTNameTypePair.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
 
-#include <DB/Storages/StorageFactory.h>
-#include <DB/Storages/StorageLog.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageLog.h>
 
-#include <DB/Interpreters/InterpreterSelectQuery.h>
-#include <DB/Interpreters/InterpreterCreateQuery.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 
-#include <DB/DataTypes/DataTypesNumber.h>
-#include <DB/DataTypes/DataTypeNested.h>
-#include <DB/DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeFactory.h>
 
-#include <DB/Databases/DatabaseFactory.h>
-#include <DB/Databases/IDatabase.h>
+#include <Databases/DatabaseFactory.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB

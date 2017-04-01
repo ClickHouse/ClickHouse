@@ -1,11 +1,11 @@
-#include <DB/Storages/MergeTree/MergeTreeSharder.h>
-#include <DB/Storages/MergeTree/ReshardingJob.h>
-#include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
-#include <DB/Common/escapeForFileName.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/IO/HashingWriteBuffer.h>
-#include <DB/Interpreters/createBlockSelector.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <Storages/MergeTree/MergeTreeSharder.h>
+#include <Storages/MergeTree/ReshardingJob.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Common/escapeForFileName.h>
+#include <DataTypes/DataTypeArray.h>
+#include <IO/HashingWriteBuffer.h>
+#include <Interpreters/createBlockSelector.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 
 #include <ctime>
 
