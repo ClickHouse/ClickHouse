@@ -21,9 +21,10 @@ Cpp11BracedListStyle: true
 ColumnLimit:     140
 ConstructorInitializerAllOnOneLineOrOnePerLine: true
 ExperimentalAutoDetectBinPacking: true
-UseTab: Always
+UseTab: Never
+TabWidth: 4
+IndentWidth: 4
 Standard: Cpp11
-TabWidth:        4
 PointerAlignment: Middle
 MaxEmptyLinesToKeep: 2
 KeepEmptyLinesAtTheStartOfBlocks: false
