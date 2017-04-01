@@ -9,7 +9,7 @@ ZooKeeperNodeCache::ZooKeeperNodeCache(GetZooKeeper get_zookeeper_)
 {
 }
 
-std::optional<std::string> ZooKeeperNodeCache::get(const std::string & path)
+std::experimental::optional<std::string> ZooKeeperNodeCache::get(const std::string & path)
 {
     zkutil::ZooKeeperPtr zookeeper;
     std::unordered_set<std::string> invalidated_paths;
@@ -39,7 +39,7 @@ std::optional<std::string> ZooKeeperNodeCache::get(const std::string & path)
     }
 
     if (nonexistent_nodes.count(path))
-        return std::nullopt;
+        return std::experimental::nullopt;
 
     auto watch_callback = [context=context](zkutil::ZooKeeper & zookeeper, int type, int state, const char * path)
     {
@@ -83,7 +83,7 @@ std::optional<std::string> ZooKeeperNodeCache::get(const std::string & path)
     nonexistent_nodes.insert(path);
 
     if (!zookeeper->existsWatch(path, /* stat = */nullptr, watch_callback))
-        return std::nullopt;
+        return std::experimental::nullopt;
 
     /// Node was created between the two previous calls, try again. Watch is already set.
     if (zookeeper->tryGet(path, contents))
@@ -93,7 +93,7 @@ std::optional<std::string> ZooKeeperNodeCache::get(const std::string & path)
         return contents;
     }
 
-    return std::nullopt;
+    return std::experimental::nullopt;
 }
 
 }

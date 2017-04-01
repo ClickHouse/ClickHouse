@@ -51,7 +51,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
     {
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorRead);
 
-        std::optional<Stopwatch> watch;
+        std::experimental::optional<Stopwatch> watch;
         if (profile_callback)
             watch.emplace(clock_type);
 

@@ -83,11 +83,11 @@ struct DictionarySpecialAttribute final
 /// Name of identifier plus list of attributes
 struct DictionaryStructure final
 {
-    std::optional<DictionarySpecialAttribute> id;
-    std::optional<std::vector<DictionaryAttribute>> key;
+    std::experimental::optional<DictionarySpecialAttribute> id;
+    std::experimental::optional<std::vector<DictionaryAttribute>> key;
     std::vector<DictionaryAttribute> attributes;
-    std::optional<DictionarySpecialAttribute> range_min;
-    std::optional<DictionarySpecialAttribute> range_max;
+    std::experimental::optional<DictionarySpecialAttribute> range_min;
+    std::experimental::optional<DictionarySpecialAttribute> range_max;
     bool has_expressions = false;
 
     DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);

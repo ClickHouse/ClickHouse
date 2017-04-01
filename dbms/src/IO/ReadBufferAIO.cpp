@@ -88,7 +88,7 @@ bool ReadBufferAIO::nextImpl()
     if (is_eof)
         return false;
 
-    std::optional<Stopwatch> watch;
+    std::experimental::optional<Stopwatch> watch;
     if (profile_callback)
         watch.emplace(clock_type);
 
