@@ -1,17 +1,13 @@
-#include <cstdlib>
+#include <gtest/gtest.h>
 #include <DataStreams/ColumnGathererStream.h>
 using DB::RowSourcePart;
 
 static void check(const RowSourcePart & s, size_t num, bool flag)
 {
-    if ((s.getSourceNum() != num || s.getSkipFlag() != flag) || (!flag && s.getData() != num))
-    {
-        printf("FAIL");
-        std::exit(-1);
-    }
+	EXPECT_FALSE((s.getSourceNum() != num || s.getSkipFlag() != flag) || (!flag && s.getData() != num));
 }
 
-int main(int, char **)
+TEST(ColumnGathererStream, RowSourcePartBitsTest)
 {
     check(RowSourcePart(0, false), 0, false);
     check(RowSourcePart(0, true), 0, true);
@@ -20,15 +16,12 @@ int main(int, char **)
     check(RowSourcePart(RowSourcePart::MAX_PARTS, false), RowSourcePart::MAX_PARTS, false);
     check(RowSourcePart(RowSourcePart::MAX_PARTS, true), RowSourcePart::MAX_PARTS, true);
 
-    RowSourcePart p{80, false};
-    check(p, 80, false);
-    p.setSkipFlag(true);
-    check(p, 80, true);
-    p.setSkipFlag(false);
-    check(p, 80, false);
-    p.setSourceNum(RowSourcePart::MAX_PARTS);
-    check(p, RowSourcePart::MAX_PARTS, false);
-
-    printf("PASSED");
-    return 0;
+	RowSourcePart p{80, false};
+	check(p, 80, false);
+	p.setSkipFlag(true);
+	check(p, 80, true);
+	p.setSkipFlag(false);
+	check(p, 80, false);
+	p.setSourceNum(RowSourcePart::MAX_PARTS);
+	check(p, RowSourcePart::MAX_PARTS, false);
 }

@@ -23,11 +23,24 @@ ColumnGathererStream::ColumnGathererStream(const BlockInputStreams & source_stre
         throw Exception("There are no streams to gather", ErrorCodes::EMPTY_DATA_PASSED);
 
     children.assign(source_streams.begin(), source_streams.end());
+}
 
-    /// Trivial case
-    if (children.size() == 1)
-        return;
 
+String ColumnGathererStream::getID() const
+{
+    std::stringstream res;
+
+    res << getName() << "(";
+    for (size_t i = 0; i < children.size(); i++)
+        res << (i == 0 ? "" : ", " ) << children[i]->getID();
+    res << ")";
+
+    return res.str();
+}
+
+
+void ColumnGathererStream::init()
+{
     sources.reserve(children.size());
     for (size_t i = 0; i < children.size(); i++)
     {
@@ -52,23 +65,15 @@ ColumnGathererStream::ColumnGathererStream(const BlockInputStreams & source_stre
 }
 
 
-String ColumnGathererStream::getID() const
-{
-    std::stringstream res;
-
-    res << getName() << "(";
-    for (size_t i = 0; i < children.size(); i++)
-        res << (i == 0 ? "" : ", " ) << children[i]->getID();
-    res << ")";
-
-    return res.str();
-}
-
-
 Block ColumnGathererStream::readImpl()
 {
-    if (children.size() == 1)
+    /// Special case: single source and there are no skipped rows
+    if (children.size() == 1 && row_source.size() == 0)
         return children[0]->read();
+
+    /// Initialize first source blocks
+    if (sources.empty())
+        init();
 
     if (pos_global_start >= row_source.size())
         return Block();
@@ -154,13 +159,10 @@ void ColumnGathererStream::fetchNewBlock(Source & source, size_t source_num)
 
 void ColumnGathererStream::readSuffixImpl()
 {
-    if (children.size() == 1)
-        return;
-
     const BlockStreamProfileInfo & profile_info = getProfileInfo();
     double seconds = profile_info.total_stopwatch.elapsedSeconds();
     LOG_DEBUG(log, std::fixed << std::setprecision(2)
-        << "Gathered column " << column.name << " " << column.type->getName()
+        << "Gathered column " << name
         << " (" << static_cast<double>(profile_info.bytes) / profile_info.rows << " bytes/elem.)"
         << " in " << seconds << " sec., "
         << profile_info.rows / seconds << " rows/sec., "

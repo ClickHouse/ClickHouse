@@ -21,6 +21,8 @@ MergingSortedBlockInputStream::MergingSortedBlockInputStream(BlockInputStreams &
     source_blocks(inputs_.size()), cursors(inputs_.size()), out_row_sources(out_row_sources_)
 {
     children.insert(children.end(), inputs_.begin(), inputs_.end());
+    if (out_row_sources)
+        out_row_sources->clear();
 }
 
 String MergingSortedBlockInputStream::getID() const
