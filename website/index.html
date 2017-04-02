@@ -90,7 +90,7 @@
 
         body {
             background: #fff;
-            font: 300 15pt/200% 'Yandex Sans Text Web', Arial, sans-serif;
+            font: 300 14pt/200% 'Yandex Sans Text Web', Arial, sans-serif;
             margin: 0;
             padding: 0;
         }
@@ -102,13 +102,28 @@
             width: 100%;
             background: #fff;
             border-bottom: 1px solid #efefef;
-            padding: 8px 0px 8px 12px;
+            padding: 6px 0 0 0;
             margin: 0;
         }
 
         #navbar-inner {
             max-width: 1280px;
-            margin: auto;
+            margin: 4px auto;
+        }
+
+        #logo {
+            color: #000;
+            text-decoration: none;
+            font-size: 110%;
+        }
+
+        #main-title {
+            font: 400 42pt/90% 'Yandex Sans Display Web', Arial, sans-serif;
+            margin: 0;
+        }
+
+        #title-logo {
+            margin: 2px 8px 0 12px;
         }
 
         #github {
@@ -141,21 +156,6 @@
             margin: auto;
         }
 
-        #logo {
-            color: #000;
-            text-decoration: none;
-            font-size: 110%;
-        }
-
-        #main_title {
-            font: 400 275% 'Yandex Sans Display Web', Arial, sans-serif;
-            margin: 0 0 0 0;
-        }
-
-        #title_logo {
-            margin-right: 0.05em;
-        }
-
         h2 {
             margin: 47px 0 23px;
             font: 400 200%/133% 'Yandex Sans Display Web', Arial, sans-serif;
@@ -175,8 +175,8 @@
             text-decoration: underline;
         }
 
-        .menu {
-            padding: 18px 12px 0 0;
+        #menu {
+            margin: 12px 0 0 0;
             font: 400 18pt 'Yandex Sans Display Web', Arial, sans-serif;
             float: right;
         }
@@ -264,7 +264,6 @@
         #benchmark_learn_more {
             background: url('yandex-black-button.png') no-repeat;
             float: right;
-            margin-right: 7.5%;
             color: #000;
         }
 
@@ -450,7 +449,7 @@
 <body>
 <div id="navbar">
     <div id="navbar-inner">
-        <div class="menu desktop-only">
+        <div id="top-menu" class="desktop-only">
             <a class="menu_item" href="#quick-start">Quick Start</a>
             <a class="menu_item" href="#performance">Performance</a>
             <a class="menu_item" href="reference_en.html">Documentation</a>
@@ -458,8 +457,8 @@
         </div>
 
         <a id="logo" href="#">
-            <h1 id="main_title">
-                <svg id="title_logo" xmlns="http://www.w3.org/2000/svg" width="48" height="44" viewBox="0 0 9 8">
+            <h1 id="main-title">
+                <svg id="title-logo" xmlns="http://www.w3.org/2000/svg" width="48" height="44" viewBox="0 0 9 8">
                     <path class="red" d="M0,7 h1 v1 h-1 z"></path>
                     <path class="orange" d="M0,0 h1 v7 h-1 z"></path>
                     <path class="orange" d="M2,0 h1 v8 h-1 z"></path>
@@ -596,7 +595,7 @@
     <div class="page">
         <h2>ClickHouse works 100-1,000x faster than traditional approaches</h2>
         <p>In contrast to data management methods, where vast amounts of raw data in its native format are available as
-            a ‘data lake’ for any
+            a "data lake" for any
             given query, ClickHouse, in most cases, offers instant results: the data is processed faster than it&nbsp;takes
             to make a query. Follow the link to see detailed benchmarks in comparison with other database management
             systems.</p>
@@ -823,7 +822,7 @@ clickhouse-client
 <script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
 <script type="text/javascript">
     $(document).ready(function () {
-        var name = $('#main_title').text().trim().toLowerCase();
+        var name = $('#main-title').text().trim().toLowerCase();
         var feedback_address = name + '-feedback' + '@yandex-team.com';
         var feedback_email = $('#feedback_email');
         feedback_email.attr('href', 'mailto:' + feedback_address);
