@@ -4,13 +4,13 @@
     <meta charset="utf-8"/>
     <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
 
-    <title>ClickHouse — open-source distributed column-oriented DBMS</title>
+    <title>ClickHouse — open source distributed column-oriented DBMS</title>
 
     <link rel="shortcut icon" href="favicon.ico"/>
 
     <meta property="og:title" content="ClickHouse DBMS"/>
     <meta property="og:description"
-          content="ClickHouse is an open-source column-oriented database management system that allows generating analytical data reports in real time using SQL queries."/>
+          content="ClickHouse is an open source column-oriented database management system that allows generating analytical data reports in real time using SQL queries."/>
     <meta property="og:type" content="website"/>
     <meta property="og:url" content="https://clickhouse.yandex"/>
     <meta property="og:image" content="https://clickhouse.yandex/logo.png"/>
@@ -18,7 +18,7 @@
     <meta property="twitter:title" content="ClickHouse DBMS"/>
 
     <meta name="description"
-          content="ClickHouse is an open-source distributed column-oriented database management system that allows generating analytical data reports in real time using SQL queries. Сreated by Yandex ClickHouse manages extremely large volumes of data in a stable and sustainable manner."/>
+          content="ClickHouse is an open source distributed column-oriented database management system that allows generating analytical data reports in real time using SQL queries. Сreated by Yandex ClickHouse manages extremely large volumes of data in a stable and sustainable manner."/>
     <meta name="keywords"
           content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics" />
 
@@ -90,7 +90,7 @@
 
         body {
             background: #fff;
-            font: 300 1.1em/200% 'Yandex Sans Text Web', Arial, sans-serif;
+            font: 300 15pt/200% 'Yandex Sans Text Web', Arial, sans-serif;
             margin: 0;
             padding: 0;
         }
@@ -124,7 +124,8 @@
             -ms-transform: rotate(-45deg);
             -o-transform: rotate(-45deg);
             background: #fc0;
-            border: 2px solid #000;
+            border: 3px solid #000;
+            mix-blend-mode: hard-light;
         }
 
         #github_link {
@@ -149,6 +150,10 @@
         #main_title {
             font: 400 275% 'Yandex Sans Display Web', Arial, sans-serif;
             margin: 0 0 0 0;
+        }
+
+        #title_logo {
+            margin-right: 0.05em;
         }
 
         h2 {
@@ -185,6 +190,7 @@
         }
 
         .menu_item:hover, .index_item:hover {
+            padding-bottom: 4px;
             border-bottom: 2px solid #fc0;
             text-decoration: none;
         }
@@ -193,12 +199,13 @@
         .index_item:active,
         .index_item:visited {
             color: #ededed;
-            font: 300 18pt/200% 'Yandex Sans Display Web', Arial, sans-serif;
+            font: 300 100% 'Yandex Sans Display Web', Arial, sans-serif;
         }
 
         #short-description {
-            font: 300 23pt/175% 'Yandex Sans Display Web', Arial, sans-serif;
-            margin: 0 0 58px 0;
+            font: 300 125%/150% 'Yandex Sans Display Web', Arial, sans-serif;
+            margin: 0 1em 1.75em 0;
+            text-align: left;
         }
 
         #hero {
@@ -208,23 +215,30 @@
         }
 
         #index_ul {
-            padding-left: 18px;
+            margin-top: 2px;
+            padding-left: 20px;
         }
 
         #slogan {
-            color: #555;
         }
 
         #placeholder {
             width: 66%;
-            margin: 10% auto 0 auto;
+            margin: 5% auto 0 auto;
+        }
+
+        .colored-block {
+            width: 100%;
+            padding: 20px 0 60px 0;
+            margin: 60px 0;
+        }
+
+        .colored-block>h2 {
+            margin-top: 0;
         }
 
         #performance {
-            width: 100%;
             background: #fc0;
-            padding: 60px 0 120px 0;
-            margin-top: 70px;
         }
 
         #call_to_action, #benchmark_learn_more {
@@ -235,6 +249,7 @@
             height: 50px;
             line-height: 50px;
             display: block;
+            margin-bottom: 15px;
         }
 
         #call_to_action {
@@ -254,9 +269,7 @@
         }
 
         #grey-block {
-            width: 100%;
             background: #555;
-            padding: 10px 0 35px 0;
             color: #ededed;
         }
 
@@ -292,7 +305,8 @@
         }
 
         ul.dashed > li {
-            text-indent: 5px;
+            text-indent: 15px;
+            margin-top: -5px;
         }
 
         ul.dashed > li:before {
@@ -317,7 +331,7 @@
         .distributive_not_selected {
             color: #08f;
             cursor: pointer;
-            border-bottom: 1px dashed #08f;
+            border-bottom: 1px solid #08f;
         }
 
         .block-50 {
@@ -376,17 +390,13 @@
                 border: none;
             }
 
-            #hero {
-                padding: 10px 0;
-                text-align: center;
-            }
-
             #hero ul.dashed > li:before {
                 content: '';
             }
 
             #hero .index_item {
-                font-size: 160%;
+                font-size: 150%;
+                margin-left: 4px;
             }
 
             #hero .dashed {
@@ -420,7 +430,7 @@
 
         <a id="logo" href="#">
             <h1 id="main_title">
-                <svg xmlns="http://www.w3.org/2000/svg" width="54" height="48" viewBox="0 0 9 8">
+                <svg id="title_logo" xmlns="http://www.w3.org/2000/svg" width="48" height="44" viewBox="0 0 9 8">
                     <path class="red" d="M0,7 h1 v1 h-1 z"></path>
                     <path class="orange" d="M0,0 h1 v7 h-1 z"></path>
                     <path class="orange" d="M2,0 h1 v8 h-1 z"></path>
@@ -438,9 +448,9 @@
 <div id="hero">
     <div class="page">
         <div class="block-70">
-            <p id="short-description">ClickHouse is a free <span class="orange">open-source</span> column-oriented
+            <p id="short-description">ClickHouse is an <span class="orange">open&nbsp;source</span> column-oriented
                 database management system
-                capable of <span class="orange">real time</span> generation of analytical data reports using <span
+                capable of <span class="orange">real&nbsp;time</span> generation of analytical data reports using <span
                         class="orange">SQL</span> queries.</p>
             <a id="call_to_action" href="#quick-start">
                 Quick Start
@@ -553,7 +563,7 @@
         processing performance for a single query (after decompression, only used columns) stands at more than 2&nbsp;terabytes
         per second.</p>
 </div>
-<div id="performance">
+<div id="performance" class="colored-block">
     <div class="page">
         <h2>ClickHouse works 100-1,000x faster than traditional approaches</h2>
         <p>In contrast to data management methods, where vast amounts of raw data in its native format are available as
@@ -564,6 +574,7 @@
         <a id="benchmark_learn_more" href="benchmark.html">
             Learn more
         </a>
+        <div class="clear"></div>
     </div>
 </div>
 
@@ -595,7 +606,7 @@
     <p>By minimizing data transfers for most types of queries, ClickHouse enables companies to manage their data and
         create reports without using a network that supports high-performance computing.</p>
 </div>
-<div id="grey-block">
+<div id="grey-block" class="colored-block">
     <div class="page">
         <h2 id="fault-tolerant">Fault Tolerant</h2>
 
@@ -668,20 +679,6 @@
             <li>Online games</li>
             <li>Internet of Things</li>
         </ul>
-
-        <h2>Use Cases</h2>
-        <div class="smaller-font">
-        <p>ClickHouse currently powers
-            <a href="https://metrica.yandex.com/" rel="external nofollow">Yandex.Metrica</a>, world’s <a
-                    href="http://w3techs.com/technologies/overview/traffic_analysis/all" rel="external nofollow">second
-                largest</a> web analytics
-            platform, with over 13 trillion database records and over 20 billion events a day, generating customized
-            reports on-the-fly, directly from non-aggregated data. Another example is <a
-                href="https://www.yandex.com/company/press_center/press_releases/2012/2012-04-10/"
-                rel="external nofollow">CERN’s LHCb
-            experiment</a> to store and process metadata on 10bn events with over 1000 attributes per event registered
-            in 2011.</p>
-        </div>
     </div>
 
     <div class="clear"></div>
@@ -716,14 +713,28 @@
         It&nbsp;is possible to simultaneously serve both a number of high priority low-latency requests and some
         long-running queries with lowered priority.</p>
 
+    <h2>Use Cases</h2>
+
+    <p>ClickHouse currently powers
+        <a href="https://metrica.yandex.com/" rel="external nofollow">Yandex.Metrica</a>, world's <a
+                href="http://w3techs.com/technologies/overview/traffic_analysis/all" rel="external nofollow">second
+            largest</a> web analytics
+        platform, with over 13 trillion database records and over 20 billion events a day, generating customized
+        reports on the fly directly from non-aggregated data.</p>
+    <p>Another example is <a
+                href="https://www.yandex.com/company/press_center/press_releases/2012/2012-04-10/"
+                rel="external nofollow">CERN’s LHCb experiment</a>
+        to store and process metadata on 10bn events with over 1000 attributes per event registered
+        in 2011.</p>
+
     <h2 id="quick-start">Quick Start</h2>
 
     <p>System requirements: Linux, x86_64 with SSE 4.2.</p>
 
     <p>Install packages for
-        <span class="distributive_not_selected" id="ubuntu_xenial">Ubuntu 16.04 (Xenial)</span> or <span
-                class="distributive_selected" id="ubuntu_trusty">Ubuntu 14.04 (Trusty)</span> or <span
-                class="distributive_not_selected" id="ubuntu_precise">Ubuntu 12.04 (Precise)</span>:
+        <span class="distributive_not_selected" id="ubuntu_xenial">Ubuntu 16.04 Xenial</span>, <span
+                class="distributive_selected" id="ubuntu_trusty">Ubuntu 14.04 Trusty</span> or <span
+                class="distributive_not_selected" id="ubuntu_precise">Ubuntu 12.04 Precise</span>:
     </p>
 
     <code id="ubuntu-install">
@@ -763,7 +774,7 @@ clickhouse-client
         <li>Use <a href="https://groups.google.com/group/clickhouse" rel="external nofollow">Google Group</a> for
             discussion.
         </li>
-        <li>Or send private message to developers:
+        <li>Or email ClickHouse team at Yandex:
             <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
         </li>
     </ul>
@@ -804,8 +815,8 @@ clickhouse-client
         });
 
         var available_distributives = ['xenial', 'trusty', 'precise'];
-        available_distributives.forEach(function (distr) {
-            $('#ubuntu_' + distr).on('click', function () {
+        available_distributives.forEach(function (name) {
+            $('#ubuntu_' + name).on('click', function () {
                 $('#distributive').html(name);
                 available_distributives.forEach(function (distr) {
                     $('#ubuntu_' + distr).attr('class', (name == distr) ? 'distributive_selected' : 'distributive_not_selected');
