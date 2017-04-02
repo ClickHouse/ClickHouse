@@ -26,7 +26,7 @@ namespace DB
 }
 
 
-/// Упрощённый вариант класса StorageDistributed.
+/// Simplified version of the StorageDistributed class.
 class StorageDistributedFake : private ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
 {
 friend class ext::shared_ptr_helper<StorageDistributedFake>;
@@ -107,7 +107,7 @@ void reorder(DB::IAST * ast);
 
 TestEntries entries =
 {
-    /// Тривиальный запрос.
+    /// Trivial query.
 
     {
         __LINE__,
@@ -217,7 +217,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция IN / глубина 1
+    /// Section IN / depth 1
 
     {
         __LINE__,
@@ -291,7 +291,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция NOT IN / глубина 1
+    /// Section NOT IN / depth 1
 
     {
         __LINE__,
@@ -347,7 +347,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция GLOBAL IN / глубина 1
+    /// Section GLOBAL IN / depth 1
 
     {
         __LINE__,
@@ -385,7 +385,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция GLOBAL NOT IN / глубина 1
+    /// Section GLOBAL NOT IN / depth 1
 
     {
         __LINE__,
@@ -423,7 +423,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция JOIN / глубина 1
+    /// Section JOIN / depth 1
 
     {
         __LINE__,
@@ -479,7 +479,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция GLOBAL JOIN / глубина 1
+    /// Section GLOBAL JOIN / depth 1
 
     {
         __LINE__,
@@ -517,7 +517,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция JOIN / глубина 1 / 2 подзапроса.
+    /// Section JOIN / depth 1 / 2 of the subquery.
 
     {
         __LINE__,
@@ -564,7 +564,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция IN / глубина 1 / таблица на уровне 2
+    /// Section IN / depth 1 / table at level 2
 
     {
         __LINE__,
@@ -620,7 +620,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция GLOBAL IN / глубина 1 / таблица на уровне 2
+    /// Section GLOBAL IN / depth 1 / table at level 2
 
     {
         __LINE__,
@@ -658,7 +658,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция IN на уровне 1, секция GLOBAL IN на уровне 2.
+    /// Section IN at level 1, GLOBAL IN section at level 2.
 
     {
         __LINE__,
@@ -687,7 +687,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция JOIN / глубина 1 / таблица на уровне 2
+    /// Section JOIN / depth 1 / table at level 2
 
     {
         __LINE__,
@@ -743,7 +743,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция IN / глубина 2
+    /// Section IN / depth 2
 
     {
         __LINE__,
@@ -817,7 +817,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция JOIN / глубина 2
+    /// Section JOIN / depth 2
 
     {
         __LINE__,
@@ -864,7 +864,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция JOIN / глубина 2
+    /// Section JOIN / depth 2
 
     {
         __LINE__,
@@ -920,7 +920,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция JOIN / секция IN
+    /// Section JOIN / section IN
 
     {
         __LINE__,
@@ -967,7 +967,7 @@ TestEntries entries =
         true
     },
 
-    /// Табличная функция.
+    /// Table function.
 
     {
         __LINE__,
@@ -1032,7 +1032,7 @@ TestEntries entries =
         true
     },
 
-    /// Секция IN / глубина 2 / две распределённые таблицы
+    /// Section IN / depth 2 / two distributed tables
 
     {
         __LINE__,
@@ -1043,7 +1043,7 @@ TestEntries entries =
         true
     },
 
-    /// Агрегатная функция.
+    /// Aggregate function.
 
     {
         __LINE__,
@@ -1187,7 +1187,7 @@ TestResult check(const TestEntry & entry)
         auto & settings = context.getSettingsRef();
         settings.distributed_product_mode = entry.mode;
 
-        /// Парсить и обработать входящий запрос.
+        /// Parse and process the incoming query.
         DB::ASTPtr ast_input;
         if (!parse(ast_input, entry.input))
             return TestResult(false, "parse error");
@@ -1215,12 +1215,12 @@ TestResult check(const TestEntry & entry)
         if (success != entry.expected_success)
             return TestResult(false, "unexpected result");
 
-        /// Парсить ожидаемый результат.
+        /// Parse the expected result.
         DB::ASTPtr ast_expected;
         if (!parse(ast_expected, entry.expected_output))
             return TestResult(false, "parse error");
 
-        /// Сравнить обработанный запрос и ожидаемый результат.
+        /// Compare the processed query and the expected result.
         bool res = equals(ast_input, ast_expected);
         std::string output = DB::queryToString(ast_input);
 

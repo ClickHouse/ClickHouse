@@ -38,7 +38,7 @@ String ASTFunction::getColumnName() const
     return res;
 }
 
-/** Получить текст, который идентифицирует этот элемент. */
+/** Get the text that identifies this element. */
 String ASTFunction::getID() const
 {
     return "Function_" + name;
@@ -102,10 +102,10 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 {
                     settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
 
-                    /** Особо дурацкий случай. Если у нас унарный минус перед литералом, являющимся отрицательным числом:
-                        * "-(-1)" или "- -1", то это нельзя форматировать как --1, так как это будет воспринято как комментарий.
-                        * Вместо этого, добавим пробел.
-                        * PS. Нельзя просто попросить добавить скобки - см. formatImpl для ASTLiteral.
+                    /** A particularly stupid case. If we have a unary minus before a literal that is a negative number
+                        * "-(-1)" or "- -1", this can not be formatted as `--1`, since this will be interpreted as a comment.
+                        * Instead, add a space.
+                        * PS. You can not just ask to add parentheses - see formatImpl for ASTLiteral.
                         */
                     if (name == "negate" && typeid_cast<const ASTLiteral *>(&*arguments->children[0]))
                         settings.ostr << ' ';
@@ -116,9 +116,9 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             }
         }
 
-        /** need_parens - нужны ли скобки вокруг выражения с оператором.
-            * Они нужны, только если это выражение входит в другое выражение с оператором.
-            */
+        /** need_parens - do I need parentheses around the expression with the operator.
+          * They are needed only if this expression is included in another expression with the operator.
+          */
 
         if (!written && arguments->children.size() == 2)
         {

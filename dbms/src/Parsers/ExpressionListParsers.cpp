@@ -140,7 +140,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
         {
             ws.ignore(pos, end);
 
-            /// пробуем найти какой-нибудь из допустимых операторов
+            /// try to find any of the valid operators
 
             const char ** it;
             for (it = operators; *it; it += 2)
@@ -155,17 +155,17 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 
             ws.ignore(pos, end);
 
-            /// функция, соответствующая оператору
+            /// the function corresponding to the operator
             auto function = std::make_shared<ASTFunction>();
 
-            /// аргументы функции
+            /// function arguments
             auto exp_list = std::make_shared<ASTExpressionList>();
 
             ASTPtr elem;
             if (!(remaining_elem_parser ? remaining_elem_parser : first_elem_parser)->parse(pos, end, elem, max_parsed_pos, expected))
                 return false;
 
-            /// первым аргументом функции будет предыдущий элемент, вторым - следующий
+            /// the first argument of the function is the previous element, the second is the next one
             function->range.first = begin;
             function->range.second = pos;
             function->name = it[1];
@@ -177,8 +177,8 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
             exp_list->range.first = begin;
             exp_list->range.second = pos;
 
-            /** специальное исключение для оператора доступа к элементу массива x[y], который
-                * содержит инфиксную часть '[' и суффиксную ']' (задаётся в виде '[')
+            /** special exception for the access operator to the element of the array `x[y]`, which
+                * contains the infix part '[' and the suffix ''] '(specified as' [')
                 */
             if (0 == strcmp(it[0], "["))
             {
@@ -236,8 +236,8 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 
 bool ParserBetweenExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    /// Для выражения (subject BETWEEN left AND right)
-    ///  создаём AST такое же, как для (subject >= left AND subject <= right).
+    /// For the expression (subject BETWEEN left AND right)
+    ///  create an AST the same as for (subject> = left AND subject <= right).
 
     ParserWhiteSpaceOrComments ws;
     ParserString s_between("BETWEEN", true, true);
@@ -273,7 +273,7 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
         if (!elem_parser.parse(pos, end, right, max_parsed_pos, expected))
             return false;
 
-        /// функция AND
+        /// AND function
         auto f_and = std::make_shared<ASTFunction>();
         auto args_and = std::make_shared<ASTExpressionList>();
 
@@ -354,10 +354,10 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & nod
         if (!elem_parser.parse(pos, end, elem_else, max_parsed_pos, expected))
             return false;
 
-        /// функция, соответствующая оператору
+        /// the function corresponding to the operator
         auto function = std::make_shared<ASTFunction>();
 
-        /// аргументы функции
+        /// function arguments
         auto exp_list = std::make_shared<ASTExpressionList>();
 
         function->range.first = begin;
@@ -450,7 +450,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 {
     ParserWhiteSpaceOrComments ws;
 
-    /// пробуем найти какой-нибудь из допустимых операторов
+    /// try to find any of the valid operators
     Pos begin = pos;
     const char ** it;
     for (it = operators; *it; it += 2)
@@ -462,13 +462,13 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 
     ws.ignore(pos, end);
 
-    /// Позволяем парсить цепочки вида NOT NOT x. Это хак.
-    /** Так сделано, потому что среди унарных операторов есть только минус и NOT.
-      * Но для минуса цепочку из унарных операторов не требуется поддерживать.
+    /// Let's parse chains of the form `NOT NOT x`. This is hack.
+    /** This is done, because among the unary operators there is only a minus and NOT.
+      * But for a minus the chain of unary operators does not need to be supported.
       */
     if (it[0] && 0 == strncmp(it[0], "NOT", 3))
     {
-        /// Было ли чётное количество NOT.
+        /// Was there an even number of NOTs.
         bool even = false;
 
         const char ** jt;
@@ -490,7 +490,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
         }
 
         if (even)
-            it = jt;    /// Зануляем результат парсинга первого NOT. Получается, как будто цепочки NOT нет вообще.
+            it = jt;    /// Zero the result of parsing the first NOT. It turns out, as if there is no `NOT` chain at all.
     }
 
     ASTPtr elem;
@@ -501,10 +501,10 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
         node = elem;
     else
     {
-        /// функция, соответствующая оператору
+        /// the function corresponding to the operator
         auto function = std::make_shared<ASTFunction>();
 
-        /// аргументы функции
+        /// function arguments
         auto exp_list = std::make_shared<ASTExpressionList>();
 
         function->range.first = begin;
@@ -526,7 +526,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 
 bool ParserUnaryMinusExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    /// В качестве исключения, отрицательные числа должны парситься, как литералы, а не как применение оператора.
+    /// As an exception, negative numbers should be parsed as literals, and not as an application of the operator.
 
     if (pos < end && *pos == '-')
     {

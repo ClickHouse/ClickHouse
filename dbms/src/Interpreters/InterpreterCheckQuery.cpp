@@ -25,8 +25,8 @@ namespace ErrorCodes
 namespace
 {
 
-/// Вспомогательная структура для оформления ответа на запрос DESCRIBE TABLE с Distributed-таблицей.
-/// Содержит информацию про локальную таблицу, которая была получена с одной реплики.
+/// A helper structure for performing a response to a DESCRIBE TABLE query with a Distributed table.
+/// Contains information about the local table that was retrieved from a single replica.
 struct TableDescription
 {
     TableDescription(const Block & block, const BlockExtraInfo & extra_info_)
@@ -145,9 +145,9 @@ BlockIO InterpreterCheckQuery::execute()
     auto distributed_table = typeid_cast<StorageDistributed *>(&*table);
     if (distributed_table != nullptr)
     {
-        /// Для таблиц с движком Distributed запрос CHECK TABLE отправляет запрос DESCRIBE TABLE на все реплики.
-        /// Проверяется идентичность структур (имена столбцов + типы столбцов + типы по-умолчанию + выражения
-        /// по-умолчанию) таблиц, на котороые смотрит распределённая таблица.
+        /// For tables with the Distributed engine, the CHECK TABLE query sends a DESCRIBE TABLE request to all replicas.
+        /// The identity of the structures is checked (column names + column types + default types + expressions
+        /// by default) of the tables that the distributed table looks at.
 
         const auto settings = context.getSettings();
 
@@ -161,7 +161,7 @@ BlockIO InterpreterCheckQuery::execute()
             throw Exception("InterpreterCheckQuery: Internal error", ErrorCodes::LOGICAL_ERROR);
         auto & stream = *stream_ptr;
 
-        /// Получить все данные от запросов DESCRIBE TABLE.
+        /// Get all data from the DESCRIBE TABLE queries.
 
         TableDescriptions table_descriptions;
 
@@ -188,7 +188,7 @@ BlockIO InterpreterCheckQuery::execute()
         if (table_descriptions.empty())
             throw Exception("Received empty data", ErrorCodes::RECEIVED_EMPTY_DATA);
 
-        /// Определить класс эквивалентности каждой структуры таблицы.
+        /// Define an equivalence class for each table structure.
 
         std::sort(table_descriptions.begin(), table_descriptions.end());
 
@@ -206,7 +206,7 @@ BlockIO InterpreterCheckQuery::execute()
             prev = it;
         }
 
-        /// Составить результат.
+        /// Construct the result.
 
         ColumnPtr status_column = std::make_shared<ColumnUInt8>();
         ColumnPtr host_name_column = std::make_shared<ColumnString>();
@@ -216,7 +216,7 @@ BlockIO InterpreterCheckQuery::execute()
         ColumnPtr structure_class_column = std::make_shared<ColumnUInt32>();
         ColumnPtr structure_column = std::make_shared<ColumnString>();
 
-        /// Это значение равно 1, если структура нигде не отлчиается, а 0 в противном случае.
+        /// This value is 1 if the structure is not disposed of anywhere, but 0 otherwise.
         UInt8 status_value = (structure_class == 0) ? 1 : 0;
 
         for (const auto & desc : table_descriptions)

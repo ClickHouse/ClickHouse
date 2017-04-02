@@ -29,11 +29,11 @@ void InterpreterSetQuery::executeForCurrentContext()
 
 void InterpreterSetQuery::executeImpl(ASTSetQuery & ast, Context & target)
 {
-    /** Значение readonly понимается следующим образом:
-        * 0 - можно всё.
-        * 1 - можно делать только запросы на чтение; в том числе, нельзя менять настройки.
-        * 2 - можно делать только запросы на чтение и можно менять настройки, кроме настройки readonly.
-        */
+    /** The `readonly` value is understood as follows:
+      * 0 - everything allowed.
+      * 1 - only read queries can be made; you can not change the settings.
+      * 2 - You can only do read queries and you can change the settings, except for the `readonly` setting.
+      */
 
     if (context.getSettingsRef().limits.readonly == 1)
         throw Exception("Cannot execute SET query in readonly mode", ErrorCodes::READONLY);

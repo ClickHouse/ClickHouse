@@ -139,7 +139,7 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 
         try
         {
-            /// Если словарь не удалось ни разу загрузить или даже не удалось инициализировать из конфига.
+            /// If the dictionary failed to load or even failed to initialize from the config.
             if (!dictionary.second.dict)
                 continue;
 
@@ -250,7 +250,7 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 
                     auto dict_ptr = DictionaryFactory::instance().create(name, *config, key, context);
 
-                    /// Если словарь не удалось загрузить.
+                    /// If the dictionary could not be loaded.
                     if (const auto exception_ptr = dict_ptr->getCreationException())
                     {
                         const auto failed_dict_it = failed_dictionaries.find(name);
@@ -308,8 +308,8 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
                 {
                     if (!name.empty())
                     {
-                        /// Если для словаря не удалось загрузить данные или даже не удалось инициализировать из конфига.
-                        /// - всё-равно вставляем информацию в dictionaries, с нулевым указателем dict.
+                        /// If the dictionary could not load data or even failed to initialize from the config.
+                        /// - all the same we insert information into the `dictionaries`, with the zero pointer `dict`.
 
                         const std::lock_guard<std::mutex> lock{dictionaries_mutex};
 

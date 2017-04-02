@@ -12,7 +12,7 @@ namespace DB
 {
 
 
-/// Парсит name = value.
+/// Parse `name = value`.
 static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos, IParser::Pos end, IParser::Pos & max_parsed_pos, Expected & expected)
 {
     ParserIdentifier name_p;
