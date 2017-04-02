@@ -113,16 +113,16 @@
 
         #github {
             bottom: 0;
-            left: 0;
+            right: 0;
             z-index: 100;
             position: fixed;
             font-size: 75%;
             padding: 0 4em;
-            margin: 0 0 2.5em -4em;
-            -webkit-transform: rotate(45deg);
-            -moz-transform: rotate(45deg);
-            -ms-transform: rotate(45deg);
-            -o-transform: rotate(45deg);
+            margin: 0 -4em 2.5em 0;
+            -webkit-transform: rotate(-45deg);
+            -moz-transform: rotate(-45deg);
+            -ms-transform: rotate(-45deg);
+            -o-transform: rotate(-45deg);
             background: #fc0;
             border: 2px solid #000;
         }
@@ -268,7 +268,7 @@
 
         #footer {
             text-align: right;
-            padding: 8px 18px 0 0;
+            padding: 8px 0 0 0;
             color: #888;
             font-size: 10pt;
         }
@@ -777,9 +777,9 @@ clickhouse-client
     <p class="warranty">Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
         KIND, either express or implied.</p>
 
-</div>
+    <p id="footer">&copy; 2016–2017 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
 
-<p id="footer">&copy; 2016–2017 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
+</div>
 
 <script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
 <script type="text/javascript">
