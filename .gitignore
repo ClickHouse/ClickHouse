@@ -226,3 +226,4 @@ config-preprocessed.xml
 
 # Gulp dependencies used to minify website
 node_modules
+public
