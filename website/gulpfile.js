@@ -16,7 +16,8 @@ var paths = {
     reference: ['reference_ru.html', 'reference_en.html'],
     scripts: ['*.js', '!gulpfile.js'],
     styles: ['*.css'],
-    images: ['*.png', '*.ico']
+    images: ['*.png', '*.ico'],
+    presentations: ['../doc/presentations/**']
 };
 
 gulp.task('clean', function () {
@@ -30,7 +31,13 @@ gulp.task('reference', [], function () {
         .pipe(connect.reload())
 });
 
-gulp.task('htmls', ['reference'], function () {
+gulp.task('presentations', [], function () {
+    return gulp.src(paths.presentations)
+        .pipe(gulp.dest(outputDir + '/presentations'))
+        .pipe(connect.reload())
+});
+
+gulp.task('htmls', ['reference', 'presentations'], function () {
     return gulp.src(paths.htmls)
         .pipe(htmlmin({collapseWhitespace: true}))
         .pipe(minifyInline())
