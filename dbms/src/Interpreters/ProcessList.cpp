@@ -62,7 +62,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
 						/// Kill query could be replaced since system.processes is continuously updated
 						element->second->is_cancelled = true;
-						/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
+                        /// If the request is canceled, the data about it is deleted from the map at the time of cancellation.
 						user_process_list->second.queries.erase(element);
 					}
 				}
@@ -114,19 +114,19 @@ ProcessListEntry::~ProcessListEntry()
 
 	std::lock_guard<std::mutex> lock(parent.mutex);
 
-	/// Важен порядок удаления memory_tracker-ов.
+	/// The order of removing memory_trackers is important.
 
 	String user = it->client_info.current_user;
 	String query_id = it->client_info.current_query_id;
 	bool is_cancelled = it->is_cancelled;
 
-	/// Здесь удаляется memory_tracker одного запроса.
+	/// This removes the memory_tracker of one request.
 	parent.cont.erase(it);
 
 	ProcessList::UserToQueries::iterator user_process_list = parent.user_to_queries.find(user);
 	if (user_process_list != parent.user_to_queries.end())
 	{
-		/// В случае, если запрос отменяется, данные о нем удаляются из мапа в момент отмены, а не здесь.
+		/// In case the request is canceled, the data about it is deleted from the map at the time of cancellation, and not here.
 		if (!is_cancelled && !query_id.empty())
 		{
 			ProcessListForUser::QueryToElement::iterator element = user_process_list->second.queries.find(query_id);
@@ -134,12 +134,12 @@ ProcessListEntry::~ProcessListEntry()
 				user_process_list->second.queries.erase(element);
 		}
 
-		/// Здесь удаляется memory_tracker на пользователя. В это время, ссылающийся на него memory_tracker одного запроса не живёт.
+        /// This removes the memory_tracker from the user. At this time, the memory_tracker that references it does not live.
 
-		/// Если запросов для пользователя больше нет, то удаляем запись.
-		/// При этом также очищается MemoryTracker на пользователя, и сообщение о потреблении памяти выводится в лог.
-		/// Важно иногда сбрасывать MemoryTracker, так как в нём может накапливаться смещённость
-		///  в следствие того, что есть случаи, когда память может быть выделена при обработке запроса, а освобождена - позже.
+        /// If there are no more queries for the user, then we delete the record.
+        /// This also clears the MemoryTracker for the user, and a message about the memory consumption is output to the log.
+        /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
+        ///  due to the fact that there are cases when memory can be allocated while processing the request, but released later.
 		if (user_process_list->second.queries.empty())
 			parent.user_to_queries.erase(user_process_list);
 	}
@@ -147,10 +147,10 @@ ProcessListEntry::~ProcessListEntry()
 	--parent.cur_size;
 	parent.have_space.signal();
 
-	/// Здесь удаляется memory_tracker на все запросы. В это время никакие другие memory_tracker-ы не живут.
+	/// This removes memory_tracker for all requests. At this time, no other memory_trackers live.
 	if (parent.cur_size == 0)
 	{
-		/// Сбрасываем MemoryTracker, аналогично (см. выше).
+        /// Reset MemoryTracker, similarly (see above).
 		parent.total_memory_tracker.logPeakMemoryUsage();
 		parent.total_memory_tracker.reset();
 	}
@@ -208,7 +208,7 @@ StoragePtr ProcessList::tryGetTemporaryTable(const String & query_id, const Stri
 {
 	std::lock_guard<std::mutex> lock(mutex);
 
-	/// NOTE Ищем по всем user-ам. То есть, нет изоляции, и сложность O(users).
+    /// NOTE We search for all user-s. That is, there is no isolation, and the complexity is O(users).
 	for (const auto & user_queries : user_to_queries)
 	{
 		auto it = user_queries.second.queries.find(query_id);

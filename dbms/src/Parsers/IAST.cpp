@@ -24,7 +24,7 @@ const char * IAST::hilite_alias 		= "\033[0;32m";
 const char * IAST::hilite_none 			= "\033[0m";
 
 
-/// Квотировать идентификатор обратными кавычками, если это требуется.
+/// Quota the identifier with backquotes, if required.
 String backQuoteIfNeed(const String & x)
 {
 	String res(x.size(), '\0');

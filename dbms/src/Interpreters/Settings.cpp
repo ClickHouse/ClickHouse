@@ -12,7 +12,7 @@ namespace ErrorCodes
 }
 
 
-/// Установить настройку по имени.
+/// Set the configuration by name.
 void Settings::set(const String & name, const Field & value)
 {
 #define TRY_SET(TYPE, NAME, DEFAULT) \
@@ -26,7 +26,7 @@ void Settings::set(const String & name, const Field & value)
 #undef TRY_SET
 }
 
-/// Установить настройку по имени. Прочитать сериализованное в бинарном виде значение из буфера (для межсерверного взаимодействия).
+/// Set the configuration by name. Read the binary serialized value from the buffer (for interserver interaction).
 void Settings::set(const String & name, ReadBuffer & buf)
 {
 #define TRY_SET(TYPE, NAME, DEFAULT) \
@@ -40,7 +40,7 @@ void Settings::set(const String & name, ReadBuffer & buf)
 #undef TRY_SET
 }
 
-/// Пропустить сериализованное в бинарном виде значение из буфера.
+/// Skip the binary-serialized value from the buffer.
 void Settings::ignore(const String & name, ReadBuffer & buf)
 {
 #define TRY_IGNORE(TYPE, NAME, DEFAULT) \
@@ -54,7 +54,7 @@ void Settings::ignore(const String & name, ReadBuffer & buf)
 	#undef TRY_IGNORE
 }
 
-/** Установить настройку по имени. Прочитать значение в текстовом виде из строки (например, из конфига, или из параметра URL).
+/** Set the setting by name. Read the value in text form from a string (for example, from a config, or from a URL parameter).
 	*/
 void Settings::set(const String & name, const String & value)
 {
@@ -69,8 +69,8 @@ void Settings::set(const String & name, const String & value)
 #undef TRY_SET
 }
 
-/** Установить настройки из профиля (в конфиге сервера, в одном профиле может быть перечислено много настроек).
-	* Профиль также может быть установлен с помощью функций set, как настройка profile.
+/** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
+    * The profile can also be set using the `set` functions, like the `profile` setting.
 	*/
 void Settings::setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config)
 {
@@ -84,7 +84,7 @@ void Settings::setProfile(const String & profile_name, Poco::Util::AbstractConfi
 
 	for (const std::string & key : config_keys)
 	{
-		if (key == "profile")	/// Наследование одного профиля от другого.
+        if (key == "profile")   /// Inheritance of one profile from another.
 			setProfile(config.getString(elem + "." + key), config);
 		else
 			set(key, config.getString(elem + "." + key));
@@ -105,8 +105,8 @@ void Settings::loadSettingsFromConfig(const String & path, const Poco::Util::Abs
 	}
 }
 
-/// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
-/// Если выставлен флаг check_readonly, в настройках выставлено readonly, но пришли какие-то изменения кинуть исключение.
+/// Read the settings from the buffer. They are written as a set of name-value pairs that go successively, ending with an empty `name`.
+/// If the `check_readonly` flag is set, `readonly` is set in the preferences, but some changes have occurred - throw an exception.
 void Settings::deserialize(ReadBuffer & buf)
 {
 	auto before_readonly = limits.readonly;
@@ -116,11 +116,11 @@ void Settings::deserialize(ReadBuffer & buf)
 		String name;
 		readBinary(name, buf);
 
-		/// Пустая строка - это маркер конца настроек.
+        /// An empty string is the marker for the end of the settings.
 		if (name.empty())
 			break;
 
-		/// Если readonly = 2, то можно менять настройки, кроме настройки readonly.
+		/// If readonly = 2, then you can change the settings, except for the readonly setting.
 		if (before_readonly == 0 || (before_readonly == 2 && name != "readonly"))
 			set(name, buf);
 		else
@@ -128,7 +128,7 @@ void Settings::deserialize(ReadBuffer & buf)
 	}
 }
 
-/// Записать изменённые настройки в буфер. (Например, для отправки на удалённый сервер.)
+/// Record the changed settings to the buffer. (For example, to send to a remote server.)
 void Settings::serialize(WriteBuffer & buf) const
 {
 #define WRITE(TYPE, NAME, DEFAULT) \
@@ -142,7 +142,7 @@ void Settings::serialize(WriteBuffer & buf) const
 
 	limits.serialize(buf);
 
-	/// Пустая строка - это маркер конца настроек.
+	/// An empty string is a marker for the end of the settings.
 	writeStringBinary("", buf);
 
 #undef WRITE

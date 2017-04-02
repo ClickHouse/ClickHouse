@@ -203,7 +203,6 @@ void RemoteBlockInputStream::readSuffixImpl()
 	/** If one of:
 	  * - nothing started to do;
 	  * - received all packets before EndOfStream;
-	  * - получили с одной реплики эксепшен;
 	  * - received exception from one replica;
 	  * - received an unknown packet from one replica;
 	  * then you do not need to read anything.

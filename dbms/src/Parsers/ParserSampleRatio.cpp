@@ -61,29 +61,29 @@ static bool parseDecimal(IParser::Pos & pos, IParser::Pos end, ASTSampleRatio::R
 	if (exponent < 0)
 		res.denominator *= exp10(-exponent);
 
-	/// NOTE Удаление общих степеней десяти из числителя и знаменателя - не нужно.
+    /// NOTE You do not need to delete the common power of ten from the numerator and denominator.
 	return true;
 }
 
 
-/** Возможные варианты:
+/** Possible options:
   *
   * 12345
-  * - целое число
+  * - an integer
   *
   * 0.12345
   * .12345
   * 0.
-  * - дробь в обычной десятичной записи
+  * - fraction in ordinary decimal notation
   *
   * 1.23e-1
-  * - дробь в инженерной десятичной записи
+  * - fraction in engineering decimal notation
   *
   * 123 / 456
-  * - дробь с произвольным знаменателем
+  * - fraction with an ordinary denominator
   *
-  * На всякий случай, в числителе и знаменателе дроби, поддерживаем предыдущие случаи.
-  * Пример:
+  * Just in case, in the numerator and denominator of the fraction, we support the previous cases.
+  * Example:
   * 123.0 / 456e0
   */
 bool ParserSampleRatio::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr & node, IParser::Pos & max_parsed_pos, Expected & expected)

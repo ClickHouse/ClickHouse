@@ -23,7 +23,7 @@
 #endif
 
 
-/** Выполнять так:
+/** Do this:
 for file in MobilePhoneModel PageCharset Params URLDomain UTMSource Referer URL Title; do
  for size in 30000 100000 300000 1000000 5000000; do
   echo

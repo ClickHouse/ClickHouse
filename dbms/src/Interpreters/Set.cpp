@@ -105,10 +105,10 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 		data_types.reserve(keys_size);
 	}
 
-	/// Константные столбцы справа от IN поддерживается не напрямую. Для этого, они сначала материализуется.
+	/// The constant columns to the right of IN are not supported directly. For this, they first materialize.
 	Columns materialized_columns;
 
-	/// Запоминаем столбцы, с которыми будем работать
+	/// Remember the columns we will work with
 	for (size_t i = 0; i < keys_size; ++i)
 	{
 		key_columns.emplace_back(block.safeGetByPosition(i).column.get());
@@ -257,7 +257,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 			{
 				Field value = extractValueFromNode(func->arguments->children[j], *data_types[j], context);
 
-				/// Если хотя бы один из элементов кортежа имеет невозможное (вне диапазона типа) значение, то и весь кортеж тоже.
+				/// If at least one of the elements of the tuple has an impossible (outside the range of the type) value, then the entire tuple too.
 				if (value.isNull())
 					break;
 
@@ -329,7 +329,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
 		const IColumn * in_column = block.safeGetByPosition(0).column.get();
 
-		/// Константный столбец слева от IN поддерживается не напрямую. Для этого, он сначала материализуется.
+        /// The constant column to the left of IN is not supported directly. For this, it first materializes.
 		ColumnPtr materialized_column = in_column->convertToFullColumnIfConst();
 		if (materialized_column)
 			in_column = materialized_column.get();
@@ -349,11 +349,11 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 			throw Exception(message.str(), ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 		}
 
-		/// Запоминаем столбцы, с которыми будем работать. Также проверим, что типы данных правильные.
+		/// Remember the columns we will work with. Also check that the data types are correct.
 		ConstColumnPlainPtrs key_columns;
 		key_columns.reserve(num_key_columns);
 
-		/// Константные столбцы слева от IN поддерживается не напрямую. Для этого, они сначала материализуется.
+		/// The constant columns to the left of IN are not supported directly. For this, they first materialize.
 		Columns materialized_columns;
 
 		for (size_t i = 0; i < num_key_columns; ++i)
@@ -414,16 +414,16 @@ void NO_INLINE Set::executeImplCase(
 	state.init(key_columns);
 	size_t keys_size = key_columns.size();
 
-	/// NOTE Не используется оптимизация для подряд идущих одинаковых значений.
+	/// NOTE Optimization is not used for consecutive identical values.
 
-	/// Для всех строчек
+    /// For all rows
 	for (size_t i = 0; i < rows; ++i)
 	{
 		if (has_null_map && (*null_map)[i])
 			vec_res[i] = negative;
 		else
 		{
-			/// Строим ключ
+			/// Build the key
 			typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
 			vec_res[i] = negative ^ method.data.has(key);
 		}
@@ -444,14 +444,14 @@ void NO_INLINE Set::executeArrayImpl(
 	size_t keys_size = key_columns.size();
 
 	size_t prev_offset = 0;
-	/// Для всех строчек
+    /// For all rows
 	for (size_t i = 0; i < rows; ++i)
 	{
 		UInt8 res = 0;
-		/// Для всех элементов
+		/// For all elements
 		for (size_t j = prev_offset; j < offsets[i]; ++j)
 		{
-			/// Строим ключ
+			/// Build the key
 			typename Method::Key key = state.getKey(key_columns, keys_size, j, key_sizes);
 			res |= negative ^ method.data.has(key);
 			if (res)
@@ -504,9 +504,9 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 }
 
 
-/// Возвращаем BoolMask.
-/// Первый элемент - может ли в диапазоне range быть элемент множества.
-/// Второй элемент - может ли в диапазоне range быть элемент не из множества.
+/// Return the BoolMask.
+/// The first element is whether the `range` element can be an element of a set.
+/// The second element is whether the element in the `range` range is not from the set.
 BoolMask Set::mayBeTrueInRange(const Range & range) const
 {
 	if (!ordered_set_elements)
@@ -515,14 +515,14 @@ BoolMask Set::mayBeTrueInRange(const Range & range) const
 	if (ordered_set_elements->empty())
 		return {false, true};
 
-	/// Диапазон (-inf; +inf)
+	/// Range (-inf; + inf)
 	if (!range.left_bounded && !range.right_bounded)
 		return {true, true};
 
 	const Field & left = range.left;
 	const Field & right = range.right;
 
-	/// Диапазон (-inf; right|
+    /// Range (-inf; right|
 	if (!range.left_bounded)
 	{
 		if (range.right_included)
@@ -531,7 +531,7 @@ BoolMask Set::mayBeTrueInRange(const Range & range) const
 			return {ordered_set_elements->front() < right, true};
 	}
 
-	/// Диапазон |left; +inf)
+    /// Range |left; +Inf)
 	if (!range.right_bounded)
 	{
 		if (range.left_included)
@@ -540,7 +540,7 @@ BoolMask Set::mayBeTrueInRange(const Range & range) const
 			return {ordered_set_elements->back() > left, true};
 	}
 
-	/// Диапазон из одного значения [left].
+	/// Range from one value [left].
 	if (range.left_included && range.right_included && left == right)
 	{
 		if (std::binary_search(ordered_set_elements->begin(), ordered_set_elements->end(), left))
@@ -549,38 +549,38 @@ BoolMask Set::mayBeTrueInRange(const Range & range) const
 			return {false, true};
 	}
 
-	/// Первый элемент множества, который больше или равен left.
+    /// The first element of the set that is greater than or equal to `left`.
 	auto left_it = std::lower_bound(ordered_set_elements->begin(), ordered_set_elements->end(), left);
 
-	/// Если left не входит в диапазон (открытый диапазон), то возьмём следующий по порядку элемент множества.
+    /// If `left` is not in the range (open range), then take the next element in the order of the set.
 	if (!range.left_included && left_it != ordered_set_elements->end() && *left_it == left)
 		++left_it;
 
-	/// если весь диапазон правее множества: { set } | range |
+    /// if the entire range is to the right of the set: `{ set } | range |`
 	if (left_it == ordered_set_elements->end())
 		return {false, true};
 
-	/// Первый элемент множества, который строго больше right.
+    /// The first element of the set, which is strictly greater than `right`.
 	auto right_it = std::upper_bound(ordered_set_elements->begin(), ordered_set_elements->end(), right);
 
-	/// весь диапазон левее множества: | range | { set }
+    /// the whole range to the left of the set: `| range | { set }`
 	if (right_it == ordered_set_elements->begin())
 		return {false, true};
 
-	/// Последний элемент множества, который меньше или равен right.
+    /// The last element of the set that is less than or equal to `right`.
 	--right_it;
 
-	/// Если right не входит в диапазон (открытый диапазон), то возьмём предыдущий по порядку элемент множества.
+    /// If `right` does not enter the range (open range), then take the previous element in the order of the set.
 	if (!range.right_included && *right_it == right)
 	{
-		/// весь диапазон левее множества, хотя открытый диапазон касается множества: | range ){ set }
+        /// the entire range to the left of the set, although the open range is tangent to the set: `| range) { set }`
 		if (right_it == ordered_set_elements->begin())
 			return {false, true};
 
 		--right_it;
 	}
 
-	/// В диапазон не попадает ни одного ключа из множества, хотя он расположен где-то посередине относительно его элементов: * * * * [ ] * * * *
+    /// The range does not contain any keys from the set, although it is located somewhere in the middle relative to its elements: * * * * [ ] * * * *
 	if (right_it < left_it)
 		return {false, true};
 

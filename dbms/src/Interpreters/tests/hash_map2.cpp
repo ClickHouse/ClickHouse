@@ -40,15 +40,15 @@ struct CellWithoutZeroWithSavedHash : public HashMapCell<Key, Value, DefaultHash
 
 struct Grower : public HashTableGrower<>
 {
-	/// Состояние этой структуры достаточно, чтобы получить размер буфера хэш-таблицы.
+	/// The state of this structure is enough to get the buffer size of the hash table.
 
-	/// Определяет начальный размер хэш-таблицы.
+	/// Specifies the initial size of the hash table.
 	static const size_t initial_size_degree = 16;
 	Grower() { size_degree = initial_size_degree; }
 
 //	size_t max_fill = (1 << initial_size_degree) * 0.9;
 
-	/// Размер хэш-таблицы в ячейках.
+	/// The size of the hash table in the cells.
 	size_t bufSize() const				{ return 1 << size_degree; }
 
 	size_t maxFill() const				{ return 1 << (size_degree - 1); }
@@ -56,23 +56,23 @@ struct Grower : public HashTableGrower<>
 
 	size_t mask() const					{ return bufSize() - 1; }
 
-	/// Из значения хэш-функции получить номер ячейки в хэш-таблице.
+	/// From the hash value, get the cell number in the hash table.
 	size_t place(size_t x) const 		{ return x & mask(); }
 
-	/// Следующая ячейка в цепочке разрешения коллизий.
+	/// The next cell in the collision resolution chain.
 	size_t next(size_t pos) const		{ ++pos; return pos & mask(); }
 
-	/// Является ли хэш-таблица достаточно заполненной. Нужно увеличить размер хэш-таблицы, или удалить из неё что-нибудь ненужное.
+	/// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
 	bool overflow(size_t elems) const	{ return elems > maxFill(); }
 
-	/// Увеличить размер хэш-таблицы.
+	/// Increase the size of the hash table.
 	void increaseSize()
 	{
 		size_degree += size_degree >= 23 ? 1 : 2;
 //		max_fill = (1 << size_degree) * 0.9;
 	}
 
-	/// Установить размер буфера по количеству элементов хэш-таблицы. Используется при десериализации хэш-таблицы.
+	/// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
 	void set(size_t num_elems)
 	{
 		throw Poco::Exception(__PRETTY_FUNCTION__);
@@ -110,7 +110,7 @@ int main(int argc, char ** argv)
 
 //		using Map = HashMap<Key, Value>;
 
-		/// Из-за WithoutZero быстрее на 0.7% (для не влезающей в L3-кэш) - 2.3% (для влезающей в L3-кэш).
+        /// Due to `WithoutZero`, it's faster by 0.7% (if not fits into L3-cache) - 2.3% (if fits into L3-cache).
 		using Map = HashMapTable<Key, CellWithoutZeroWithSavedHash, DefaultHash<Key>, Grower>;
 
 		Map map;

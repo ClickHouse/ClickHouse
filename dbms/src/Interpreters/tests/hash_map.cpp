@@ -20,32 +20,32 @@
 #include <DB/DataTypes/DataTypesNumber.h>
 
 
-/** Тест проверяет скорость работы хэш-таблиц, имитируя их использование для агрегации.
-  * Первым аргументом указывается количество элементов, которое будет вставлено.
-  * Вторым аргументом может быть указано число от 1 до 4 - номер тестируемой структуры данных.
-  * Это важно, так как если запускать все тесты один за другим, то результаты будут некорректными.
-  * (Из-за особенностей работы аллокатора, первый тест получает преимущество.)
+/** The test checks the speed of hash tables, simulating their use for aggregation.
+  * The first argument specifies the number of elements to be inserted.
+  * The second argument can be a number from 1 to 4 - the number of the data structure being tested.
+  * This is important, because if you run all the tests one by one, the results will be incorrect.
+  * (Due to the peculiarities of the work of the allocator, the first test takes advantage.)
   *
-  * В зависимости от USE_AUTO_ARRAY, выбирается одна из структур в качестве значения.
-  * USE_AUTO_ARRAY = 0 - используется std::vector (сложно-копируемая структура, sizeof = 24 байта).
-  * USE_AUTO_ARRAY = 1 - используется AutoArray (структура специально разработанная для таких случаев, sizeof = 8 байт).
+  * Depending on USE_AUTO_ARRAY, one of the structures is selected as the value.
+  * USE_AUTO_ARRAY = 0 - uses std::vector (hard-copy structure, sizeof = 24 bytes).
+  * USE_AUTO_ARRAY = 1 - uses AutoArray (a structure specially designed for such cases, sizeof = 8 bytes).
   *
-  * То есть, тест также позволяет сравнить AutoArray и std::vector.
+  * That is, the test also allows you to compare AutoArray and std::vector.
   *
-  * Если USE_AUTO_ARRAY = 0, то HashMap уверенно обгоняет всех.
-  * Если USE_AUTO_ARRAY = 1, то HashMap чуть менее серьёзно (20%) обгоняет google::dense_hash_map.
+  * If USE_AUTO_ARRAY = 0, then HashMap confidently overtakes all.
+  * If USE_AUTO_ARRAY = 1, then HashMap is slightly less serious (20%) ahead of google::dense_hash_map.
   *
-  * При использовании HashMap, AutoArray имеет довольно серьёзное (40%) преимущество перед std::vector.
-  * А при использовании других хэш-таблиц, AutoArray ещё более серьёзно обгоняет std::vector
-  *  (до трёх c половиной раз в случае std::unordered_map и google::sparse_hash_map).
+  * When using HashMap, AutoArray has a rather serious (40%) advantage over std::vector.
+  * And when using other hash tables, AutoArray even more seriously overtakes std::vector
+  *  (up to three and a half times in the case of std::unordered_map and google::sparse_hash_map).
   *
-  * HashMap, в отличие от google::dense_hash_map, гораздо больше зависит от качества хэш-функции.
+  * HashMap, unlike google::dense_hash_map, much more depends on the quality of the hash function.
   *
-  * PS. Измеряйте всё сами, а то я почти запутался.
+  * PS. Measure everything yourself, otherwise I'm almost confused.
   *
-  * PPS. Сейчас при агрегации не используется массив агрегатных функций в качестве значений.
-  * Состояния агрегатных функций были отделены от интерфейса для манипуляции с ними, и кладутся в пул.
-  * Но в этом тесте осталось нечто похожее на старый сценарий использования хэш-таблиц при агрегации.
+  * PPS. Now the aggregation does not use an array of aggregate functions as values.
+  * States of aggregate functions were separated from the interface to manipulate them, and put in the pool.
+  * But in this test, there was something similar to the old scenario of using hash tables in the aggregation.
   */
 
 #define USE_AUTO_ARRAY	0

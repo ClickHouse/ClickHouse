@@ -71,7 +71,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		ws.ignore(pos, end);
 	}
 
-	/// FROM database.table или FROM table или FROM (subquery) или FROM tableFunction
+	/// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction
 	if (s_from.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);

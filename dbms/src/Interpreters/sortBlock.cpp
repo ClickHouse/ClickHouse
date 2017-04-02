@@ -197,9 +197,9 @@ bool isAlreadySorted(const Block & block, const SortDescription & description)
 
 	PartialSortingLess less(columns_with_sort_desc);
 
-	/** Если строк не слишком мало, то предпримем быструю попытку проверить, что блок не сортирован.
-	  * Константы - наугад.
-	  */
+	/** If the rows are not too few, then let's make a quick attempt to verify that the block is not sorted.
+     * Constants - at random.
+     */
 	static constexpr size_t num_rows_to_try = 10;
 	if (rows > num_rows_to_try * 5)
 	{

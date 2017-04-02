@@ -57,7 +57,7 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & 
 		keys_bytes += key_sizes[j];
 	}
 
-	/// Если есть один числовой ключ, который помещается в 64 бита
+	/// If there is one numeric key that fits in 64 bits
 	if (keys_size == 1 && key_columns[0]->isNumericNotNullable())
 	{
 		size_t size_of_field = key_columns[0]->sizeOfField();
@@ -72,7 +72,7 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & 
 		throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
 	}
 
-	/// Если ключи помещаются в N бит, будем использовать хэш-таблицу по упакованным в N-бит ключам
+	/// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
 	if (all_fixed && keys_bytes <= 16)
 		return Type::keys128;
 	if (all_fixed && keys_bytes <= 32)
@@ -159,7 +159,7 @@ template <> struct KeyGetterForType<Join::Type::keys256> { using Type = JoinKeyG
 template <> struct KeyGetterForType<Join::Type::hashed> { using Type = JoinKeyGetterHashed; };
 
 
-/// Нужно ли использовать хэш-таблицы maps_*_full, в которых запоминается, была ли строчка присоединена.
+/// Do I need to use the hash table maps_*_full, in which we remember whether the row was joined.
 static bool getFullness(ASTTableJoin::Kind kind)
 {
 	return kind == ASTTableJoin::Kind::Right || kind == ASTTableJoin::Kind::Full;
@@ -259,7 +259,7 @@ void Join::setSampleBlock(const Block & block)
 
 	sample_block_with_columns_to_add = block;
 
-	/// Переносим из sample_block_with_columns_to_add ключевые столбцы в sample_block_with_keys, сохраняя порядок.
+	/// Move from `sample_block_with_columns_to_add` key columns to `sample_block_with_keys`, keeping the order.
 	size_t pos = 0;
 	while (pos < sample_block_with_columns_to_add.columns())
 	{
@@ -284,7 +284,7 @@ void Join::setSampleBlock(const Block & block)
 
 namespace
 {
-	/// Вставка элемента в хэш-таблицу вида ключ -> ссылка на строку, которая затем будет использоваться при JOIN-е.
+	/// Inserting an element into a hash table of the form `key -> reference to a string`, which will then be used by JOIN.
 	template <ASTTableJoin::Strictness STRICTNESS, typename Map, typename KeyGetter>
 	struct Inserter
 	{
@@ -324,10 +324,10 @@ namespace
 			}
 			else
 			{
-				/** Первый элемент списка хранится в значении хэш-таблицы, остальные - в pool-е.
-				* Мы будем вставлять каждый раз элемент на место второго.
-				* То есть, бывший второй элемент, если он был, станет третьим, и т. п.
-				*/
+				/** The first element of the list is stored in the value of the hash table, the rest in the pool.
+                 * We will insert each time the element into the second place.
+                 * That is, the former second element, if it was, will be the third, and so on.
+                 */
 				auto elem = reinterpret_cast<typename Map::mapped_type *>(pool.alloc(sizeof(typename Map::mapped_type)));
 
 				elem->next = it->second.next;
@@ -431,8 +431,8 @@ bool Join::insertFromBlock(const Block & block)
 
 	if (getFullness(kind))
 	{
-		/** Переносим ключевые столбцы в начало блока.
-		  * Именно там их будет ожидать NonJoinedBlockInputStream.
+        /** Transfer the key columns to the beginning of the block.
+          * This is where NonJoinedBlockInputStream will wait for them.
 		  */
 		size_t key_num = 0;
 		for (const auto & name : key_names_right)
@@ -446,7 +446,7 @@ bool Join::insertFromBlock(const Block & block)
 	}
 	else
 	{
-		/// Удаляем из stored_block ключевые столбцы, так как они не нужны.
+		/// Remove the key columns from stored_block, as they are not needed.
 		for (const auto & name : key_names_right)
 			stored_block->erase(stored_block->getPositionByName(name));
 	}
@@ -642,7 +642,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	/// Rare case, when keys are constant. To avoid code bloat, simply materialize them.
 	Columns materialized_columns;
 
-	/// Memoize key columns to work.
+	/// Memoize key columns to work with.
 	for (size_t i = 0; i < keys_size; ++i)
 	{
 		key_columns[i] = block.getByName(key_names_left[i]).column.get();
@@ -661,9 +661,9 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 
 	size_t existing_columns = block.columns();
 
-	/** Если используется FULL или RIGHT JOIN, то столбцы из "левой" части надо материализовать.
-	  * Потому что, если они константы, то в "неприсоединённых" строчках, у них могут быть другие значения
-	  *  - значения по-умолчанию, которые могут отличаться от значений этих констант.
+    /** If you use FULL or RIGHT JOIN, then the columns from the "left" table must be materialized.
+      * Because if they are constants, then in the "not joined" rows, they may have different values
+      *  - default values, which can differ from the values ​​of these constants.
 	  */
 	if (getFullness(kind))
 	{
@@ -676,7 +676,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 		}
 	}
 
-	/// Добавляем в блок новые столбцы.
+	/// Add new columns to the block.
 	size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
 	ColumnPlainPtrs added_columns(num_columns_to_add);
 
@@ -691,22 +691,22 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 
 	size_t rows = block.rows();
 
-	/// Используется при ANY INNER JOIN
+	/// Used with ANY INNER JOIN
 	std::unique_ptr<IColumn::Filter> filter;
 
 	if ((kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Right) && strictness == ASTTableJoin::Strictness::Any)
 		filter = std::make_unique<IColumn::Filter>(rows);
 
-	/// Используется при ALL ... JOIN
+	/// Used with ALL ... JOIN
 	IColumn::Offset_t current_offset = 0;
 	std::unique_ptr<IColumn::Offsets_t> offsets_to_replicate;
 
 	if (strictness == ASTTableJoin::Strictness::All)
 		offsets_to_replicate = std::make_unique<IColumn::Offsets_t>(rows);
 
-	/** Для LEFT/INNER JOIN, сохранённые блоки не содержат ключи.
-	  * Для FULL/RIGHT JOIN, сохранённые блоки содержат ключи;
-	  *  но они не будут использоваться на этой стадии соединения (а будут в AdderNonJoined), и их нужно пропустить.
+    /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
+      * For FULL/RIGHT JOIN, the saved blocks contain keys;
+      *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.
 	  */
 	size_t num_columns_to_skip = 0;
 	if (getFullness(kind))
@@ -730,12 +730,12 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 			throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 	}
 
-	/// Если ANY INNER|RIGHT JOIN - фильтруем все столбцы кроме новых.
+	/// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
 	if (filter)
 		for (size_t i = 0; i < existing_columns; ++i)
 			block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(*filter, -1);
 
-	/// Если ALL ... JOIN - размножаем все столбцы кроме новых.
+    /// If ALL ... JOIN - we replicate all the columns except the new ones.
 	if (offsets_to_replicate)
 		for (size_t i = 0; i < existing_columns; ++i)
 			block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->replicate(*offsets_to_replicate);
@@ -746,7 +746,7 @@ void Join::joinBlockImplCross(Block & block) const
 {
 	Block res = block.cloneEmpty();
 
-	/// Добавляем в блок новые столбцы.
+	/// Add new columns to the block.
 	size_t num_existing_columns = res.columns();
 	size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
 
@@ -770,7 +770,7 @@ void Join::joinBlockImplCross(Block & block) const
 
 	size_t rows_left = block.rows();
 
-	/// NOTE Было бы оптимальнее использовать reserve, а также методы replicate для размножения значений левого блока.
+    /// NOTE It would be better to use `reserve`, as well as `replicate` methods to duplicate the values ​​of the left block.
 
 	for (size_t i = 0; i < rows_left; ++i)
 	{
@@ -854,7 +854,7 @@ void Join::joinTotals(Block & block) const
 	}
 	else
 	{
-		/// Будем присоединять пустые totals - из одной строчки со значениями по-умолчанию.
+        /// We will attach empty `totals` - from one row with the default values.
 		totals_without_keys = sample_block_with_columns_to_add.cloneEmpty();
 
 		for (size_t i = 0; i < totals_without_keys.columns(); ++i)
@@ -903,15 +903,15 @@ struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 };
 
 
-/// Поток из неприсоединённых ранее строк правой таблицы.
+/// Stream from not joined earlier rows of the right table.
 class NonJoinedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	NonJoinedBlockInputStream(const Join & parent_, Block & left_sample_block, size_t max_block_size_)
 		: parent(parent_), max_block_size(max_block_size_)
 	{
-		/** left_sample_block содержит ключи и "левые" столбцы.
-		  * result_sample_block - ключи, "левые" столбцы и "правые" столбцы.
+        /** left_sample_block contains keys and "left" columns.
+		  * result_sample_block - keys, "left" columns, and "right" columns.
 		  */
 
 		size_t num_keys = parent.key_names_left.size();
@@ -922,7 +922,7 @@ public:
 
 //		std::cerr << result_sample_block.dumpStructure() << "\n";
 
-		/// Добавляем в блок новые столбцы.
+		/// Add new columns to the block.
 		for (size_t i = 0; i < num_columns_right; ++i)
 		{
 			const ColumnWithTypeAndName & src_column = parent.sample_block_with_columns_to_add.safeGetByPosition(i);

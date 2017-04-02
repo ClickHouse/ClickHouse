@@ -78,7 +78,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 
 	if (is_first_select_inside_union_all)
 	{
-		/// Создать цепочку запросов SELECT.
+		/// Create a SELECT query chain.
 		InterpreterSelectQuery * interpreter = this;
 		ASTPtr tail = query.next_union_all;
 
@@ -98,15 +98,15 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 	{
 		basicInit(input);
 
-		// Мы выполняем этот код именно здесь, потому что в противном случае следующего рода запрос бы не срабатывал:
+        // We execute this code here, because otherwise the following kind of query would not work
 		// SELECT X FROM (SELECT * FROM (SELECT 1 AS X, 2 AS Y) UNION ALL SELECT 3, 4)
-		// из-за того, что астериски заменены столбцами только при создании объектов query_analyzer в basicInit().
+        // because the asterisk is replaced with columns only when query_analyzer objects are created in basicInit().
 		renameColumns();
 
 		if (!required_column_names.empty() && (table_column_names.size() != required_column_names.size()))
 		{
 			rewriteExpressionList(required_column_names);
-			/// Теперь имеется устаревшая информация для выполнения запроса. Обновляем эту информацию.
+			/// Now there is obsolete information to execute the query. We update this information.
 			initQueryAnalyzer();
 		}
 	}
@@ -135,9 +135,9 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 	{
 		if (query_table && typeid_cast<const ASTFunction *>(query_table.get()))
 		{
-			/// Получить табличную функцию
+			/// Get the table function
 			TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(typeid_cast<const ASTFunction *>(query_table.get())->name, context);
-			/// Выполнить ее и запомнить результат
+			/// Run it and remember the result
 			storage = table_function_ptr->execute(query_table, context);
 		}
 		else
@@ -160,7 +160,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 
 	query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze);
 
-	/// Сохраняем в query context новые временные таблицы
+	/// Save the new temporary tables in the query context
 	for (auto & it : query_analyzer->getExternalTables())
 		if (!context.tryGetExternalTable(it.first))
 			context.addExternalTable(it.first, it.second);
@@ -170,7 +170,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 
 	if (is_first_select_inside_union_all)
 	{
-		/// Проверяем, что результаты всех запросов SELECT cовместимые.
+		/// We check that the results of all SELECT queries are compatible.
 		Block first = getSampleBlock();
 		for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
 		{
@@ -294,8 +294,8 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 	auto query_database = query.database();
 	auto query_table = query.table();
 
-	/** Если таблица не указана - используем таблицу system.one.
-	 *  Если база данных не указана - используем текущую базу данных.
+    /** If the table is not specified - use the table `system.one`.
+     *  If the database is not specified - use the current database.
 	 */
 	if (query_database)
 		database_name = typeid_cast<ASTIdentifier &>(*query_database).name;
@@ -331,8 +331,8 @@ DataTypes InterpreterSelectQuery::getReturnTypes()
 Block InterpreterSelectQuery::getSampleBlock()
 {
 	Block block = query_analyzer->getSelectSampleBlock();
-	/// создадим ненулевые колонки, чтобы SampleBlock можно было
-	/// писать (читать) с помощью BlockOut(In)putStream'ов
+	/// create non-zero columns so that SampleBlock can be
+    /// written (read) with BlockOut(In)putStreams
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		ColumnWithTypeAndName & col = block.safeGetByPosition(i);
@@ -362,10 +362,10 @@ BlockIO InterpreterSelectQuery::execute()
 
 	executeUnion();
 
-	/// Ограничения на результат, квота на результат, а также колбек для прогресса.
+    /// Constraints on the result, the quota on the result, and also callback for progress.
 	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(streams[0].get()))
 	{
-		/// Ограничения действуют только на конечный результат.
+        /// Constraints apply only to the final result.
 		if (to_stage == QueryProcessingStage::Complete)
 		{
 			IProfilingBlockInputStream::LocalLimits limits;
@@ -411,21 +411,21 @@ const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
 
 void InterpreterSelectQuery::executeSingleQuery()
 {
-	/** Потоки данных. При параллельном выполнении запроса, имеем несколько потоков данных.
-	 *  Если нет GROUP BY, то выполним все операции до ORDER BY и LIMIT параллельно, затем
-	 *  если есть ORDER BY, то склеим потоки с помощью UnionBlockInputStream, а затем MergеSortingBlockInputStream,
-	 *  если нет, то склеим с помощью UnionBlockInputStream,
-	 *  затем применим LIMIT.
-	 *  Если есть GROUP BY, то выполним все операции до GROUP BY, включительно, параллельно;
-	 *  параллельный GROUP BY склеит потоки в один,
-	 *  затем выполним остальные операции с одним получившимся потоком.
-	 *  Если запрос является членом цепочки UNION ALL и не содержит GROUP BY, ORDER BY, DISTINCT, или LIMIT,
-	 *  то объединение источников данных выполняется не на этом уровне, а на верхнем уровне.
+    /** Streams of data. When the query is executed in parallel, we have several data streams.
+     *  If there is no GROUP BY, then perform all operations before ORDER BY and LIMIT in parallel, then
+     *  if there is an ORDER BY, then glue the streams using UnionBlockInputStream, and then MergeSortingBlockInputStream,
+     *  if not, then glue it using UnionBlockInputStream,
+     *  then apply LIMIT.
+     *  If there is GROUP BY, then we will perform all operations up to GROUP BY, inclusive, in parallel;
+     *  a parallel GROUP BY will glue streams into one,
+     *  then perform the remaining operations with one resulting stream.
+     *  If the query is a member of the UNION ALL chain and does not contain GROUP BY, ORDER BY, DISTINCT, or LIMIT,
+     *  then the data sources are merged not at this level, but at the upper level.
 	 */
 
 	union_within_single_query = false;
 
-	/** Вынем данные из Storage. from_stage - до какой стадии запрос был выполнен в Storage. */
+    /** Take out the data from Storage. from_stage - to what stage the request was completed in Storage. */
 	QueryProcessingStage::Enum from_stage = executeFetchColumns();
 
 	LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
@@ -438,26 +438,26 @@ void InterpreterSelectQuery::executeSingleQuery()
 		bool has_having     = false;
 		bool has_order_by   = false;
 
-		ExpressionActionsPtr before_join;	/// включая JOIN
+        ExpressionActionsPtr before_join;   /// including JOIN
 		ExpressionActionsPtr before_where;
 		ExpressionActionsPtr before_aggregation;
 		ExpressionActionsPtr before_having;
 		ExpressionActionsPtr before_order_and_select;
 		ExpressionActionsPtr final_projection;
 
-		/// Столбцы из списка SELECT, до переименования в алиасы.
+        /// Columns from the SELECT list, before renaming them to aliases.
 		Names selected_columns;
 
-		/// Нужно ли выполнять первую часть конвейера - выполняемую на удаленных серверах при распределенной обработке.
+        /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
 		bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
 			&& to_stage >= QueryProcessingStage::WithMergeableState;
-		/// Нужно ли выполнять вторую часть конвейера - выполняемую на сервере-инициаторе при распределенной обработке.
+        /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
 		bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
 			&& to_stage > QueryProcessingStage::WithMergeableState;
 
-		/** Сначала составим цепочку действий и запомним нужные шаги из нее.
-		 *  Независимо от from_stage и to_stage составим полную последовательность действий, чтобы выполнять оптимизации и
-		 *  выбрасывать ненужные столбцы с учетом всего запроса. В ненужных частях запроса не будем выполнять подзапросы.
+        /** First we compose a chain of actions and remember the necessary steps from it.
+         *  Regardless of from_stage and to_stage, we will compose a complete sequence of actions to perform optimization and
+         *  throw out unnecessary columns based on the entire query. In unnecessary parts of the query, we will not execute subqueries.
 		 */
 
 		{
@@ -502,7 +502,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 				}
 			}
 
-			/// Если есть агрегация, выполняем выражения в SELECT и ORDER BY на инициировавшем сервере, иначе - на серверах-источниках.
+            /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
 			query_analyzer->appendSelect(chain, need_aggregate ? !second_stage : !first_stage);
 			selected_columns = chain.getLastStep().required_output;
 			has_order_by = query_analyzer->appendOrderBy(chain, need_aggregate ? !second_stage : !first_stage);
@@ -516,23 +516,23 @@ void InterpreterSelectQuery::executeSingleQuery()
 			chain.clear();
 		}
 
-		/** Если данных нет.
-		 *  Эта проверка специально вынесена чуть ниже, чем она могла бы быть (сразу после executeFetchColumns),
-		 *  чтобы запрос был проанализирован, и в нём могли бы быть обнаружены ошибки (например, несоответствия типов).
-		 *  Иначе мог бы вернуться пустой результат на некорректный запрос.
+        /** If there is no data.
+         *  This check is specially postponed slightly lower than it could be (immediately after executeFetchColumns),
+         *  for the query to be analyzed, and errors (for example, type mismatches) could be found in it.
+         *  Otherwise, the empty result could be returned for the incorrect query.
 		 */
 		if (hasNoData())
 			return;
 
-		/// Перед выполнением WHERE и HAVING уберем из блока лишние столбцы (в основном, ключи агрегации).
+		/// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
 		if (has_where)
 			before_where->prependProjectInput();
 		if (has_having)
 			before_having->prependProjectInput();
 
-		/// Теперь составим потоки блоков, выполняющие нужные действия.
+        /// Now we will compose block streams that perform the necessary actions.
 
-		/// Нужно ли агрегировать в отдельную строку строки, не прошедшие max_rows_to_group_by.
+        /// Do I need to aggregate in a separate row rows that have not passed max_rows_to_group_by.
 		bool aggregate_overflow_row =
 			need_aggregate &&
 			query.group_by_with_totals &&
@@ -540,7 +540,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 			settings.limits.group_by_overflow_mode == OverflowMode::ANY &&
 			settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
 
-		/// Нужно ли после агрегации сразу финализировать агрегатные функции.
+		/// Do I need to immediately finalize the aggregate functions after the aggregation?
 		bool aggregate_final =
 			need_aggregate &&
 			to_stage > QueryProcessingStage::WithMergeableState &&
@@ -549,7 +549,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 		if (first_stage)
 		{
 			if (has_join)
-				for (auto & stream : streams)	/// Применяем ко всем источникам кроме stream_with_non_joined_data.
+                for (auto & stream : streams)   /// Applies to all sources except stream_with_non_joined_data.
 					stream = std::make_shared<ExpressionBlockInputStream>(stream, before_join);
 
 			if (has_where)
@@ -563,10 +563,10 @@ void InterpreterSelectQuery::executeSingleQuery()
 				executeDistinct(true, selected_columns);
 			}
 
-			/** При распределённой обработке запроса,
-			  *  если не указаны GROUP, HAVING,
-			  *  но есть ORDER или LIMIT,
-			  *  то выполним предварительную сортировку и LIMIT на удалёном сервере.
+            /** For distributed query processing,
+              *  if no GROUP, HAVING set,
+              *  but there is an ORDER or LIMIT,
+              *  then we will perform the preliminary sorting and LIMIT on the remote server.
 			  */
 			if (!second_stage && !need_aggregate && !has_having)
 			{
@@ -587,7 +587,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 			if (need_aggregate)
 			{
-				/// Если нужно объединить агрегированные результаты с нескольких серверов
+                /// If you need to combine aggregated results from multiple servers
 				if (!first_stage)
 					executeMergeAggregated(aggregate_overflow_row, aggregate_final);
 
@@ -611,19 +611,19 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 			if (has_order_by)
 			{
-				/** Если при распределённой обработке запроса есть ORDER BY,
-				  *  но нет агрегации, то на удалённых серверах был сделан ORDER BY
-				  *  - поэтому, делаем merge сортированных потоков с удалённых серверов.
+                /** If there is an ORDER BY for distributed query processing,
+                  *  but there is no aggregation, then on the remote servers ORDER BY was made
+                  *  - therefore, we merge the sorted streams from remote servers.
 				  */
 				if (!first_stage && !need_aggregate && !(query.group_by_with_totals && !aggregate_final))
 					executeMergeSorted();
-				else	/// Иначе просто сортировка.
+                else    /// Otherwise, just sort.
 					executeOrder();
 			}
 
 			executeProjection(final_projection);
 
-			/// На этой стадии можно считать минимумы и максимумы, если надо.
+            /// At this stage, we can calculate the minimums and maximums, if necessary.
 			if (settings.extremes)
 			{
 				transformStreams([&](auto & stream)
@@ -633,8 +633,8 @@ void InterpreterSelectQuery::executeSingleQuery()
 				});
 			}
 
-			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
-				* ограничивающий число записей в каждом до offset + limit.
+            /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
+                * limiting the number of entries in each up to `offset + limit`.
 				*/
 			if (query.limit_length && hasMoreThanOneStream() && !query.distinct && !query.limit_by_expression_list)
 				executePreLimit();
@@ -663,7 +663,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 		}
 	}
 
-	/** Если данных нет. */
+	/** If there is no data. */
 	if (hasNoData())
 		return;
 
@@ -690,14 +690,14 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 	if (!hasNoData())
 		return QueryProcessingStage::FetchColumns;
 
-	/// Интерпретатор подзапроса, если подзапрос
+	/// The subquery interpreter, if the subquery
 	std::experimental::optional<InterpreterSelectQuery> interpreter_subquery;
 
-	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
+	/// List of columns to read to execute the query.
 	Names required_columns = query_analyzer->getRequiredColumns();
-	/// Действия для вычисления ALIAS, если потребуется.
+	/// Actions to calculate ALIAS if required.
 	ExpressionActionsPtr alias_actions;
-	/// Требуются ли ALIAS столбцы для выполнения запроса?
+	/// Are ALIAS columns required for query execution?
 	auto alias_columns_required = false;
 
 	if (storage && !storage->alias_columns.empty())
@@ -714,7 +714,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 
 		if (alias_columns_required)
 		{
-			/// Составим выражение для возврата всех запрошенных столбцов, с вычислением требуемых ALIAS столбцов.
+            /// We will create an expression to return all the requested columns, with the calculation of the required ALIAS columns.
 			auto required_columns_expr_list = std::make_shared<ASTExpressionList>();
 
 			for (const auto & column : required_columns)
@@ -728,7 +728,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 
 			alias_actions = ExpressionAnalyzer{required_columns_expr_list, context, storage, table_column_names}.getActions(true);
 
-			/// Множество требуемых столбцов могло быть дополнено в результате добавления действия для вычисления ALIAS.
+			/// The set of required columns could be added as a result of adding an action to calculate ALIAS.
 			required_columns = alias_actions->getRequiredColumns();
 		}
 	}
@@ -736,21 +736,21 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 	auto query_table = query.table();
 	if (query_table && typeid_cast<ASTSelectQuery *>(query_table.get()))
 	{
-		/** Для подзапроса не действуют ограничения на максимальный размер результата.
-		 *  Так как результат поздапроса - ещё не результат всего запроса.
+        /** There are no limits on the maximum size of the result for the subquery.
+         *  Since the result of the query is not the result of the entire query.
 		 */
 		Context subquery_context = context;
 		Settings subquery_settings = context.getSettings();
 		subquery_settings.limits.max_result_rows = 0;
 		subquery_settings.limits.max_result_bytes = 0;
-		/// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
+        /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
 		subquery_settings.extremes = 0;
 		subquery_context.setSettings(subquery_settings);
 
 		interpreter_subquery.emplace(
 			query_table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
 
-		/// Если во внешнем запросе есть аггрегация, то WITH TOTALS игнорируется в подзапросе.
+		/// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
 		if (query_analyzer->hasAggregation())
 			interpreter_subquery->ignoreWithTotals();
 	}
@@ -764,16 +764,16 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 	if (query.prewhere_expression && (!storage || !storage->supportsPrewhere()))
 		throw Exception(storage ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
 
-	/** При распределённой обработке запроса, в потоках почти не делается вычислений,
-	 *  а делается ожидание и получение данных с удалённых серверов.
-	 *  Если у нас 20 удалённых серверов, а max_threads = 8, то было бы не очень хорошо
-	 *  соединяться и опрашивать только по 8 серверов одновременно.
-	 *  Чтобы одновременно опрашивалось больше удалённых серверов,
-	 *  вместо max_threads используется max_distributed_connections.
+	/** With distributed query processing, almost no computations are done in the threads,
+     *  but wait and receive data from remote servers.
+     *  If we have 20 remote servers, and max_threads = 8, then it would not be very good
+     *  connect and ask only 8 servers at a time.
+     *  To simultaneously query more remote servers,
+     *  instead of max_threads, max_distributed_connections is used.
 	 *
-	 *  Сохраним изначальное значение max_threads в settings_for_storage
-	 *  - эти настройки будут переданы на удалённые серверы при распределённой обработке запроса,
-	 *  и там должно быть оригинальное значение max_threads, а не увеличенное.
+     *  Save the initial value of max_threads in settings_for_storage
+     *  - these settings will be passed to remote servers for distributed query processing,
+     *  and there must be an original value of max_threads, not an increased value.
 	 */
 	bool is_remote = false;
 	Settings settings_for_storage = settings;
@@ -783,7 +783,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 		settings.max_threads = settings.max_distributed_connections;
 	}
 
-	/// Ограничение на количество столбцов для чтения.
+    /// Limitation on the number of columns to read.
 	if (settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
 		throw Exception("Limit for number of columns to read exceeded. "
 			"Requested: " + toString(required_columns.size())
@@ -794,9 +794,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 	size_t limit_offset = 0;
 	getLimitLengthAndOffset(query, limit_length, limit_offset);
 
-	/** Оптимизация - если не указаны DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY но указан LIMIT, и limit + offset < max_block_size,
-	 *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено),
-	 *  а также установим количество потоков в 1.
+    /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY but LIMIT is specified, and limit + offset < max_block_size,
+     *  then as the block size we will use limit + offset (not to read more from the table than requested),
+     *  and also set the number of threads to 1.
 	 */
 	if (!query.distinct
 		&& !query.prewhere_expression
@@ -817,7 +817,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 
 	query_analyzer->makeSetsForIndex();
 
-	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
+	/// Initialize the initial data streams to which the query transforms are superimposed. Table or subquery?
 	if (!interpreter_subquery)
 	{
 		size_t max_streams = settings.max_threads;
@@ -825,14 +825,14 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 		if (max_streams == 0)
 			throw Exception("Logical error: zero number of streams requested", ErrorCodes::LOGICAL_ERROR);
 
-		/// Если надо - запрашиваем больше источников, чем количество потоков - для более равномерного распределения работы по потокам.
+		/// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
 		if (max_streams > 1 && !is_remote)
 			max_streams *= settings.max_streams_to_max_threads_ratio;
 
 		ASTPtr actual_query_ptr;
 		if (storage->isRemote())
 		{
-			/// В случае удаленного запроса отправляем только SELECT, который выполнится.
+			/// In case of a remote query, we send only SELECT, which will be executed.
 			actual_query_ptr = query.cloneFirstSelect();
 		}
 		else
@@ -843,7 +843,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 			settings.max_block_size, max_streams);
 
 		if (alias_actions)
-			/// Обернем каждый поток, возвращенный из таблицы, с целью вычисления и добавления ALIAS столбцов
+            /// Wrap each stream returned from the table to calculate and add ALIAS columns
 			transformStreams([&] (auto & stream)
 			{
 				stream = std::make_shared<ExpressionBlockInputStream>(stream, alias_actions);
@@ -860,9 +860,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 		streams.insert(streams.end(), subquery_streams.begin(), subquery_streams.end());
 	}
 
-	/** Установка ограничений и квоты на чтение данных, скорость и время выполнения запроса.
-	 *  Такие ограничения проверяются на сервере-инициаторе запроса, а не на удалённых серверах.
-	 *  Потому что сервер-инициатор имеет суммарные данные о выполнении запроса на всех серверах.
+    /** Set the limits and quota for reading data, the speed and time of the query.
+     *  Such restrictions are checked on the initiating server of the request, and not on remote servers.
+     *  Because the initiating server has a summary of the execution of the request on all servers.
 	 */
 	if (storage && to_stage == QueryProcessingStage::Complete)
 	{
@@ -912,9 +912,9 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
 
-	/** Двухуровневая агрегация полезна в двух случаях:
-	  * 1. Делается параллельная агрегация, и результаты надо параллельно мерджить.
-	  * 2. Делается агрегация с сохранением временных данных на диск, и их нужно мерджить эффективно по памяти.
+    /** Two-level aggregation is useful in two cases:
+      * 1. Parallel aggregation is done, and the results should be measured in parallel.
+      * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged memory efficient.
 	  */
 	bool allow_to_use_two_level_group_by = streams.size() > 1 || settings.limits.max_bytes_before_external_group_by != 0;
 
@@ -925,7 +925,7 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 		allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
 		settings.limits.max_bytes_before_external_group_by, context.getTemporaryPath());
 
-	/// Если источников несколько, то выполняем параллельную агрегацию
+    /// If there are several sources, then we perform parallel aggregation
 	if (streams.size() > 1)
 	{
 		streams[0] = std::make_shared<ParallelAggregatingBlockInputStream>(
@@ -962,29 +962,29 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
 
-	/** Есть два режима распределённой агрегации.
+    /** There are two modes of distributed aggregation.
 	  *
-	  * 1. В разных потоках читать из удалённых серверов блоки.
-	  * Сохранить все блоки в оперативку. Объединить блоки.
-	  * Если агрегация двухуровневая - распараллелить по номерам корзин.
+      * 1. In different threads read from the remote servers blocks.
+      * Save all the blocks in the RAM. Merge blocks.
+      * If the aggregation is two-level - parallelize to the number of buckets.
 	  *
-	  * 2. В одном потоке читать по очереди блоки с разных серверов.
-	  * В оперативке хранится только по одному блоку с каждого сервера.
-	  * Если агрегация двухуровневая - последовательно объединяем блоки каждого следующего уровня.
+      * 2. In one thread, read blocks from different servers in order.
+      * RAM stores only one block from each server.
+      * If the aggregation is a two-level aggregation, we consistently merge the blocks of each next level.
 	  *
-	  * Второй вариант расходует меньше памяти (до 256 раз меньше)
-	  *  в случае двухуровневой агрегации, которая используется для больших результатов после GROUP BY,
-	  *  но при этом может работать медленнее.
+      * The second option consumes less memory (up to 256 times less)
+      *  in the case of two-level aggregation, which is used for large results after GROUP BY,
+      *  but it can work more slowly.
 	  */
 
 	Aggregator::Params params(key_names, aggregates, overflow_row);
 
 	if (!settings.distributed_aggregation_memory_efficient)
 	{
-		/// Склеим несколько источников в один, распараллеливая работу.
+        /// We union several sources into one, parallelizing the work.
 		executeUnion();
 
-		/// Теперь объединим агрегированные блоки
+		/// Now merge the aggregated blocks
 		streams[0] = std::make_shared<MergingAggregatedBlockInputStream>(streams[0], params, final, original_max_threads);
 	}
 	else
@@ -1072,7 +1072,7 @@ void InterpreterSelectQuery::executeOrder()
 	{
 		auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
 
-		/// Ограничения на сортировку
+        /// Limits on sorting
 		IProfilingBlockInputStream::LocalLimits limits;
 		limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
 		limits.max_rows_to_read = settings.limits.max_rows_to_sort;
@@ -1083,10 +1083,10 @@ void InterpreterSelectQuery::executeOrder()
 		stream = sorting_stream;
 	});
 
-	/// Если потоков несколько, то объединяем их в один
+    /// If there are several streams, we merge them into one
 	executeUnion();
 
-	/// Сливаем сортированные блоки.
+	/// Merge the sorted blocks.
 	streams[0] = std::make_shared<MergeSortingBlockInputStream>(
 		streams[0], order_descr, settings.max_block_size, limit,
 		settings.limits.max_bytes_before_external_sort, context.getTemporaryPath());
@@ -1098,18 +1098,18 @@ void InterpreterSelectQuery::executeMergeSorted()
 	SortDescription order_descr = getSortDescription(query);
 	size_t limit = getLimitForSorting(query);
 
-	/// Если потоков несколько, то объединяем их в один
+    /// If there are several streams, then we merge them into one
 	if (hasMoreThanOneStream())
 	{
-		/** MergingSortedBlockInputStream читает источники последовательно.
-		  * Чтобы данные на удалённых серверах готовились параллельно, оборачиваем в AsynchronousBlockInputStream.
+        /** MergingSortedBlockInputStream reads the sources sequentially.
+          * To make the data on the remote servers prepared in parallel, we wrap it in AsynchronousBlockInputStream.
 		  */
 		transformStreams([&](auto & stream)
 		{
 			stream = std::make_shared<AsynchronousBlockInputStream>(stream);
 		});
 
-		/// Сливаем сортированные источники в один сортированный источник.
+		/// Merge the sorted sources into one sorted source.
 		streams[0] = std::make_shared<MergingSortedBlockInputStream>(streams, order_descr, settings.max_block_size, limit);
 		streams.resize(1);
 	}
@@ -1135,7 +1135,7 @@ void InterpreterSelectQuery::executeDistinct(bool before_order, Names columns)
 
 		size_t limit_for_distinct = 0;
 
-		/// Если после этой стадии DISTINCT не будет выполняться ORDER BY, то можно достать не более limit_length + limit_offset различных строк.
+        /// If after this stage of DISTINCT ORDER BY is not executed, then you can get no more than limit_length + limit_offset of different rows.
 		if (!query.order_expression_list || !before_order)
 			limit_for_distinct = limit_length + limit_offset;
 
@@ -1152,7 +1152,7 @@ void InterpreterSelectQuery::executeDistinct(bool before_order, Names columns)
 
 void InterpreterSelectQuery::executeUnion()
 {
-	/// Если до сих пор есть несколько потоков, то объединяем их в один
+    /// If there are still several streams, then we combine them into one
 	if (hasMoreThanOneStream())
 	{
 		streams[0] = std::make_shared<UnionBlockInputStream<>>(streams, stream_with_non_joined_data, settings.max_threads);
@@ -1169,14 +1169,14 @@ void InterpreterSelectQuery::executeUnion()
 }
 
 
-/// Предварительный LIMIT - применяется в каждом источнике, если источников несколько, до их объединения.
+/// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
 void InterpreterSelectQuery::executePreLimit()
 {
 	size_t limit_length = 0;
 	size_t limit_offset = 0;
 	getLimitLengthAndOffset(query, limit_length, limit_offset);
 
-	/// Если есть LIMIT
+	/// If there is LIMIT
 	if (query.limit_length)
 	{
 		transformStreams([&](auto & stream)
@@ -1218,17 +1218,17 @@ void InterpreterSelectQuery::executeLimit()
 	size_t limit_offset = 0;
 	getLimitLengthAndOffset(query, limit_length, limit_offset);
 
-	/// Если есть LIMIT
+	/// If there is LIMIT
 	if (query.limit_length)
 	{
-		/** Редкий случай:
-		  *  если нет WITH TOTALS и есть подзапрос в FROM, и там на одном из уровней есть WITH TOTALS,
-		  *  то при использовании LIMIT-а следует читать данные до конца, а не отменять выполнение запроса раньше,
-		  *  потому что при отмене выполнения запроса, мы не получим данные для totals с удалённого сервера.
+        /** Rare case:
+          *  if there is no WITH TOTALS and there is a subquery in FROM, and there is WITH TOTALS on one of the levels,
+          *  then when using LIMIT, you should read the data to the end, rather than cancel the query earlier,
+          *  because if you cancel the query, we will not get `totals` data from the remote server.
 		  *
-		  * Ещё случай:
-		  *  если есть WITH TOTALS и нет ORDER BY, то читать данные до конца,
-		  *  иначе TOTALS посчитается по неполным данным.
+          * Another case:
+          *  if there is WITH TOTALS and there is no ORDER BY, then read the data to the end,
+          *  otherwise TOTALS is counted according to incomplete data.
 		  */
 		bool always_read_till_end = false;
 
@@ -1246,8 +1246,8 @@ void InterpreterSelectQuery::executeLimit()
 			{
 				if (subquery->group_by_with_totals)
 				{
-					/** NOTE Можно ещё проверять, что таблица в подзапросе - распределённая, и что она смотрит только на один шард.
-					  * В остальных случаях totals будет вычислен на сервере-инициаторе запроса, и читать данные до конца не обязательно.
+					/** NOTE You can also check that the table in the subquery is distributed, and that it only looks at one shard.
+                      * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
 					  */
 
 					always_read_till_end = true;
@@ -1272,7 +1272,7 @@ void InterpreterSelectQuery::executeLimit()
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(SubqueriesForSets & subqueries_for_sets)
 {
-	/// Если запрос не распределённый, то удалим создание временных таблиц из подзапросов (предназначавшихся для отправки на удалённые серверы).
+	/// If the query is not distributed, then remove the creation of temporary tables from subqueries (intended for sending to remote servers).
 	if (!(storage && storage->isRemote()))
 		for (auto & elem : subqueries_for_sets)
 			elem.second.table.reset();

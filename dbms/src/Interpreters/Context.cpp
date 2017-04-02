@@ -94,37 +94,37 @@ struct ContextShared
 	/// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
 	mutable std::mutex zookeeper_mutex;
 
-	mutable zkutil::ZooKeeperPtr zookeeper;					/// Клиент для ZooKeeper.
+    mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
 
-	String interserver_io_host;								/// Имя хоста по которым это сервер доступен для других серверов.
-	int interserver_io_port;								///	и порт,
+    String interserver_io_host;                             /// The host name by which this server is available for other servers.
+    int interserver_io_port;                                /// and port,
 
-	String path;											/// Путь к директории с данными, со слешем на конце.
-	String tmp_path;										/// Путь ко временным файлам, возникающим при обработке запроса.
+    String path;                                            /// Path to the data directory, with a slash at the end.
+    String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
 	String flags_path;										///
-	Databases databases;									/// Список БД и таблиц в них.
-	TableFunctionFactory table_function_factory;			/// Табличные функции.
-	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
-	FormatFactory format_factory;							/// Форматы.
+	Databases databases;									/// List of databases and tables in them.
+    TableFunctionFactory table_function_factory;            /// Table functions.
+    AggregateFunctionFactory aggregate_function_factory;    /// Aggregate functions.
+    FormatFactory format_factory;                           /// Formats.
 	mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;	/// Metrica's dictionaeis. Have lazy initialization.
 	mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
 	String default_profile_name;							/// Default profile name used for default values.
 	Users users;											/// Known users.
-	Quotas quotas;											/// Известные квоты на использование ресурсов.
-	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
-	mutable MarkCachePtr mark_cache;						/// Кэш засечек в сжатых файлах.
-	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
-	MergeList merge_list;									/// Список выполняемых мерджей (для (Replicated)?MergeTree)
-	ViewDependencies view_dependencies;						/// Текущие зависимости
-	ConfigurationPtr users_config;							/// Конфиг с секциями users, profiles и quotas.
-	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
-	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
+    Quotas quotas;                                          /// Known quotas for resource use.
+    mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
+    mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
+    ProcessList process_list;                               /// Executing queries at the moment.
+    MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
+    ViewDependencies view_dependencies;                     /// Current dependencies
+    ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
+    InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
+    BackgroundProcessingPoolPtr background_pool;            /// The thread pool for the background work performed by the tables.
 	ReshardingWorkerPtr resharding_worker;
 	Macros macros;											/// Substitutions extracted from config.
 	std::unique_ptr<Compiler> compiler;						/// Used for dynamic compilation of queries' parts if it necessary.
 	std::unique_ptr<QueryLog> query_log;					/// Used to log queries.
 	std::shared_ptr<PartLog> part_log;						/// Used to log operations with parts
-	/// Правила для выбора метода сжатия в зависимости от размера куска.
+    /// Rules for selecting the compression method, depending on the size of the part.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
 	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Settings of MergeTree* engines.
 	size_t max_table_size_to_drop = 50000000000lu;			/// Protects MergeTree tables from accidental DROP (50GB by default)
@@ -139,13 +139,13 @@ struct ContextShared
 
 	bool shutdown_called = false;
 
-	/// Позволяют запретить одновременное выполнение DDL запросов над одной и той же таблицей.
+    /// Do not allow simultaneous execution of DDL requests on the same table.
 	/// database -> table -> exception_message
-	/// На время выполнения операции, сюда помещается элемент, и возвращается объект, который в деструкторе удаляет элемент.
-	/// В случае, если элемент уже есть - кидается исключение. См. class DDLGuard ниже.
+    /// For the duration of the operation, an element is placed here, and an object is returned, which deletes the element in the destructor.
+    /// In case the element already exists, an exception is thrown. See class DDLGuard below.
 	using DDLGuards = std::unordered_map<String, DDLGuard::Map>;
 	DDLGuards ddl_guards;
-	/// Если вы захватываете mutex и ddl_guards_mutex, то захватывать их нужно строго в этом порядке.
+    /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
 	mutable std::mutex ddl_guards_mutex;
 
 	Stopwatch uptime_watch;
@@ -166,7 +166,7 @@ struct ContextShared
 	}
 
 
-	/** Выполнить сложную работу по уничтожению объектов заранее.
+    /** Perform a complex job of destroying objects in advance.
 	  */
 	void shutdown()
 	{
@@ -177,10 +177,10 @@ struct ContextShared
 		query_log.reset();
 		part_log.reset();
 
-		/** В этот момент, некоторые таблицы могут иметь потоки, которые блокируют наш mutex.
-		  * Чтобы корректно их завершить, скопируем текущий список таблиц,
-		  *  и попросим их всех закончить свою работу.
-		  * Потом удалим все объекты с таблицами.
+        /** At this point, some tables may have threads that block our mutex.
+          * To complete them correctly, we will copy the current list of tables,
+          *  and ask them all to finish their work.
+          * Then delete all objects with tables.
 		  */
 
 		Databases current_databases;
@@ -382,8 +382,8 @@ void Context::checkDatabaseAccessRights(const std::string & database_name) const
 {
 	if (client_info.current_user.empty() || (database_name == "system"))
 	{
-		/// Безымянный пользователь, т.е. сервер, имеет доступ ко всем БД.
-		/// Все пользователи имеют доступ к БД system.
+		 /// An unnamed user, i.e. server, has access to all databases.
+         /// All users have access to the database system.
 		return;
 	}
 	if (!shared->users.isAllowedDatabase(client_info.current_user, database_name))
@@ -548,8 +548,8 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 {
 	auto lock = getLock();
 
-	/** Возможность обратиться к временным таблицам другого запроса в виде _query_QUERY_ID.table
-	  * NOTE В дальнейшем может потребоваться подумать об изоляции.
+	/** Ability to access the temporary tables of another query in the form _query_QUERY_ID.table
+      * NOTE In the future, you may need to think about isolation.
 	  */
 	if (startsWith(database_name, "_query_"))
 	{
@@ -742,7 +742,7 @@ void Context::setCurrentQueryId(const String & query_id)
 		throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
 
 	String query_id_to_set = query_id;
-	if (query_id_to_set.empty())	/// Если пользователь не передал свой query_id, то генерируем его самостоятельно.
+	if (query_id_to_set.empty())	/// If the user did not submit his query_id, then we generate it ourselves.
 		query_id_to_set = shared->uuid_generator.createRandom().toString();
 
 	auto lock = getLock();
@@ -770,7 +770,7 @@ const Macros& Context::getMacros() const
 
 void Context::setMacros(Macros && macros)
 {
-	/// Полагаемся, что это присваивание происходит один раз при старте сервера. Если это не так, нужно использовать мьютекс.
+    /// We assume that this assignment occurs once when the server starts. If this is not the case, you need to use a mutex.
 	shared->macros = macros;
 }
 
@@ -855,7 +855,7 @@ void Context::tryCreateExternalDictionaries() const
 
 void Context::setProgressCallback(ProgressCallback callback)
 {
-	/// Колбек устанавливается на сессию или на запрос. В сессии одновременно обрабатывается только один запрос. Поэтому блокировка не нужна.
+	/// Callback is set to a session or to a query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
 	progress_callback = callback;
 }
 
@@ -867,7 +867,7 @@ ProgressCallback Context::getProgressCallback() const
 
 void Context::setProcessListElement(ProcessList::Element * elem)
 {
-	/// Устанавливается на сессию или на запрос. В сессии одновременно обрабатывается только один запрос. Поэтому блокировка не нужна.
+	/// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
 	process_list_elem = elem;
 }
 

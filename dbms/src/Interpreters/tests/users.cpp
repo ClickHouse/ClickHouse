@@ -35,7 +35,7 @@ struct TestDescriptor
 
 using TestSet = std::vector<TestDescriptor>;
 
-/// Описание тестов.
+/// Tests description.
 
 TestSet test_set =
 {

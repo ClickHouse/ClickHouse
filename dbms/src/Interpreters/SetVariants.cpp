@@ -130,7 +130,7 @@ SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_col
 		return SetVariants::Type::hashed;
 	}
 
-	/// Если есть один числовой ключ, который помещается в 64 бита
+	/// If there is one numeric key that fits into 64 bits
 	if (keys_size == 1 && nested_key_columns[0]->isNumericNotNullable())
 	{
 		size_t size_of_field = nested_key_columns[0]->sizeOfField();
@@ -145,7 +145,7 @@ SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_col
 		throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
 	}
 
-	/// Если ключи помещаются в N бит, будем использовать хэш-таблицу по упакованным в N-бит ключам
+    /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
 	if (all_fixed && keys_bytes <= 16)
 		return SetVariants::Type::keys128;
 	if (all_fixed && keys_bytes <= 32)

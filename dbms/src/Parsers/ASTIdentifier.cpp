@@ -19,7 +19,7 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
 		settings.ostr << (settings.hilite ? hilite_none : "");
 	};
 
-	/// Простой или составной идентификатор?
+	/// A simple or compound identifier?
 
 	if (children.size() > 1)
 	{

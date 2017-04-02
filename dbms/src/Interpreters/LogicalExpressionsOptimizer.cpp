@@ -117,7 +117,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 			auto expression_list = typeid_cast<ASTExpressionList *>(&*(function->children[0]));
 			if (expression_list != nullptr)
 			{
-				/// Цепочка элементов выражения OR.
+				/// The chain of elements of the OR expression.
 				for (auto & child : expression_list->children)
 				{
 					auto equals = typeid_cast<ASTFunction *>(&*child);
@@ -126,7 +126,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 						auto equals_expression_list = typeid_cast<ASTExpressionList *>(&*(equals->children[0]));
 						if ((equals_expression_list != nullptr) && (equals_expression_list->children.size() == 2))
 						{
-							/// Равенство expr = xN.
+							/// Equality expr = xN.
 							auto literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
 							if (literal != nullptr)
 							{
@@ -163,7 +163,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 						to_visit.push_back(Edge(to_node, &*child));
 					else
 					{
-						/// Если узел является функцией OR, обновляем информацию про его родителей.
+						/// If the node is an OR function, update the information about its parents.
 						auto it = or_parent_map.find(&*child);
 						if (it != or_parent_map.end())
 						{
@@ -200,11 +200,11 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
 	const auto & equalities =  chain.second;
 	const auto & equality_functions = equalities.functions;
 
-	/// Исключаем слишком короткие цепочки.
+	/// We eliminate too short chains.
 	if (equality_functions.size() < settings.optimize_min_equality_disjunction_chain_length)
 		return false;
 
-	/// Проверяем, что правые части всех равенств имеют один и тот же тип.
+	/// We check that the right-hand sides of all equalities have the same type.
 	auto & first_operands = getFunctionOperands(equality_functions[0]);
 	auto first_literal = static_cast<ASTLiteral *>(&*first_operands[1]);
 	for (size_t i = 1; i < equality_functions.size(); ++i)
@@ -224,9 +224,9 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 	const auto & equalities = chain.second;
 	const auto & equality_functions = equalities.functions;
 
-	/// 1. Создать новое выражение IN на основе информации из OR-цепочки.
+	/// 1. Create a new IN expression based on information from the OR-chain.
 
-	/// Построить список литералов x1, ..., xN из цепочки expr = x1 OR ... OR expr = xN
+    /// Construct a list of literals `x1, ..., xN` from the string `expr = x1 OR ... OR expr = xN`
 	ASTPtr value_list = std::make_shared<ASTExpressionList>();
 	for (const auto function : equality_functions)
 	{
@@ -234,8 +234,8 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 		value_list->children.push_back(operands[1]);
 	}
 
-	/// Отсортировать литералы, чтобы они были указаны в одном и том же порядке в выражении IN.
-	/// Иначе они указывались бы в порядке адресов ASTLiteral, который недетерминирован.
+	/// Sort the literals so that they are specified in the same order in the IN expression.
+	/// Otherwise, they would be specified in the order of the ASTLiteral addresses, which is nondeterministic.
 	std::sort(value_list->children.begin(), value_list->children.end(), [](const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
 	{
 		const auto val_lhs = static_cast<const ASTLiteral *>(&*lhs);
@@ -243,7 +243,7 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 		return val_lhs->value < val_rhs->value;
 	});
 
-	/// Получить выражение expr из цепочки expr = x1 OR ... OR expr = xN
+    /// Get the expression `expr` from the chain `expr = x1 OR ... OR expr = xN`
 	ASTPtr equals_expr_lhs;
 	{
 		auto function = equality_functions[0];
@@ -260,14 +260,14 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 	expression_list->children.push_back(equals_expr_lhs);
 	expression_list->children.push_back(tuple_function);
 
-	/// Построить выражение expr IN (x1, ..., xN)
+    /// Construct the expression `expr IN (x1, ..., xN)`
 	auto in_function = std::make_shared<ASTFunction>();
 	in_function->name = "in";
 	in_function->arguments = expression_list;
 	in_function->children.push_back(in_function->arguments);
 	in_function->setAlias(or_with_expression.alias);
 
-	/// 2. Вставить новое выражение IN.
+	/// 2. Insert the new IN expression.
 
 	auto & operands = getFunctionOperands(or_with_expression.or_function);
 	operands.push_back(in_function);
@@ -275,11 +275,11 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 
 void LogicalExpressionsOptimizer::cleanupOrExpressions()
 {
-	/// Сохраняет для каждой оптимизированной OR-цепочки итератор на первый элемент
-	/// списка операндов, которые надо удалить.
+	/// Saves for each optimized OR-chain the iterator on the first element
+	/// list of operands to be deleted.
 	std::unordered_map<ASTFunction *, ASTs::iterator> garbage_map;
 
-	/// Инициализация.
+	/// Initialization.
 	garbage_map.reserve(processed_count);
 	for (const auto & chain : disjunctive_equality_chains_map)
 	{
@@ -291,7 +291,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 		garbage_map.emplace(or_with_expression.or_function, operands.end());
 	}
 
-	/// Собрать мусор.
+	/// Collect garbage.
 	for (const auto & chain : disjunctive_equality_chains_map)
 	{
 		const auto & equalities = chain.second;
@@ -314,7 +314,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 		});
 	}
 
-	/// Удалить мусор.
+	/// Delete garbage.
 	for (const auto & entry : garbage_map)
 	{
 		auto function = entry.first;
@@ -364,8 +364,8 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 				parent->children.erase(first_erased, parent->children.end());
 			}
 
-			/// Если узел OR был корнем выражения WHERE, PREWHERE или HAVING, то следует обновить этот корень.
-			/// Из-за того, что имеем дело с направленным ациклическим графом, надо проверить все случаи.
+			/// If the OR node was the root of the WHERE, PREWHERE, or HAVING expression, then update this root.
+			/// Due to the fact that we are dealing with a directed acyclic graph, we must check all cases.
 			if (select_query->where_expression && (or_function == &*(select_query->where_expression)))
 				select_query->where_expression = operands[0];
 			if (select_query->prewhere_expression && (or_function == &*(select_query->prewhere_expression)))

@@ -29,10 +29,10 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
 	String database = query.from.empty() ? context.getCurrentDatabase() : query.from;
 
-	/** Параметр check_database_access_rights сбрасывается при обработке запроса SHOW TABLES для того,
-	  * чтобы все клиенты могли видеть список всех БД и таблиц в них независимо от их прав доступа
-	  * к этим БД.
-	  */
+	/** The parameter check_database_access_rights is reset when the SHOW TABLES query is processed,
+      * So that all clients can see a list of all databases and tables in them regardless of their access rights
+      * to these databases.
+      */
 	context.assertDatabaseExists(database, false);
 
 	std::stringstream rewritten_query;

@@ -84,7 +84,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
 	}
 	else if (typeid_cast<ASTSetQuery *>(query.get()))
 	{
-		/// readonly проверяется внутри InterpreterSetQuery
+        /// readonly is checked inside InterpreterSetQuery
 		return std::make_unique<InterpreterSetQuery>(query, context);
 	}
 	else if (typeid_cast<ASTOptimizeQuery *>(query.get()))

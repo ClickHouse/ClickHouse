@@ -100,7 +100,7 @@ void QuotaForInterval::checkAndAddReadRowsBytes(time_t current_time, const Strin
 
 void QuotaForInterval::checkAndAddExecutionTime(time_t current_time, const String & quota_name, const String & user_name, Poco::Timespan amount)
 {
-	/// Используется информация о внутреннем представлении Poco::Timespan.
+	/// Information about internals of Poco::Timespan used.
 	used.execution_time_usec += amount.totalMicroseconds();
 	checkExceeded(current_time, quota_name, user_name);
 }
