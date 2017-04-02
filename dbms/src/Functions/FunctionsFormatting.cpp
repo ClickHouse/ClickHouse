@@ -1,13 +1,13 @@
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsFormatting.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsFormatting.h>
 
 namespace DB
 {
 
 void registerFunctionsFormatting(FunctionFactory & factory)
 {
-	factory.registerFunction<FunctionBitmaskToList>();
-	factory.registerFunction<FunctionFormatReadableSize>();
+    factory.registerFunction<FunctionBitmaskToList>();
+    factory.registerFunction<FunctionFormatReadableSize>();
 }
 
 }

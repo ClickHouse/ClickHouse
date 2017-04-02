@@ -4,24 +4,24 @@ include_directories (${ClickHouse_SOURCE_DIR}/libs/libcommon/include)
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 add_library(zkutil
-	src/ZooKeeper.cpp
-	src/Lock.cpp
-	src/SingleBarrier.cpp
-	src/RWLock.cpp
-	src/ZooKeeperHolder.cpp
-	src/ZooKeeperNodeCache.cpp
+    src/ZooKeeper.cpp
+    src/Lock.cpp
+    src/SingleBarrier.cpp
+    src/RWLock.cpp
+    src/ZooKeeperHolder.cpp
+    src/ZooKeeperNodeCache.cpp
 
-	include/zkutil/Increment.h
-	include/zkutil/LeaderElection.h
-	include/zkutil/KeeperException.h
-	include/zkutil/Common.h
-	include/zkutil/Lock.h
-	include/zkutil/SingleBarrier.h
-	include/zkutil/RWLock.h
-	include/zkutil/ZooKeeper.h
-	include/zkutil/Types.h
-	include/zkutil/ZooKeeperHolder.h
-	include/zkutil/ZooKeeperNodeCache.h)
+    include/zkutil/Increment.h
+    include/zkutil/LeaderElection.h
+    include/zkutil/KeeperException.h
+    include/zkutil/Common.h
+    include/zkutil/Lock.h
+    include/zkutil/SingleBarrier.h
+    include/zkutil/RWLock.h
+    include/zkutil/ZooKeeper.h
+    include/zkutil/Types.h
+    include/zkutil/ZooKeeperHolder.h
+    include/zkutil/ZooKeeperNodeCache.h)
 
 find_package (Threads)
 

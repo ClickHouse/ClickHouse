@@ -10,72 +10,72 @@ class Lock;
 
 class ZooKeeperHolder : public boost::noncopyable
 {
-	friend class zkutil::Lock;
+    friend class zkutil::Lock;
 
 protected:
-	class UnstorableZookeeperHandler;
+    class UnstorableZookeeperHandler;
 
 public:
-	ZooKeeperHolder() = default;
+    ZooKeeperHolder() = default;
 
-	/// вызывать из одного потока - не thread safe
-	template <class... Args>
-	void init(Args&&... args);
-	/// был ли класс инициализирован
-	bool isInitialized() const { return ptr != nullptr; }
+    /// вызывать из одного потока - не thread safe
+    template <class... Args>
+    void init(Args&&... args);
+    /// был ли класс инициализирован
+    bool isInitialized() const { return ptr != nullptr; }
 
-	UnstorableZookeeperHandler getZooKeeper();
-	bool replaceZooKeeperSessionToNewOne();
+    UnstorableZookeeperHandler getZooKeeper();
+    bool replaceZooKeeperSessionToNewOne();
 
-	bool isSessionExpired() const;
+    bool isSessionExpired() const;
 
 protected:
-	/** Хендлер для подсчета количества используемых ссылок на ZooKeeper
-	*
-	*   Запрещается переинициализировать ZooKeeper пока, хранится хотя бы один хендлер на него.
-	*   Большинство классов должны хранить хендлер на стеке и не хранить как член класса.
-	*   Т.е. хранить holder и запрашивать хендлер перед каждым использованием.
-	*   Поэтому класс специально объявлен, как protected.
-	*
-	*   Исключение - классы, работающие с эфимерными нодами. Пример: zkutil::Lock
-	*
-	*   Как использовать:
-	*   auto zookeeper = zookeeper_holder->getZooKeeper();
-	*   zookeeper->get(path);
-	*/
-	class UnstorableZookeeperHandler
-	{
-	public:
-		UnstorableZookeeperHandler(ZooKeeper::Ptr zk_ptr_);
+    /** Хендлер для подсчета количества используемых ссылок на ZooKeeper
+    *
+    *   Запрещается переинициализировать ZooKeeper пока, хранится хотя бы один хендлер на него.
+    *   Большинство классов должны хранить хендлер на стеке и не хранить как член класса.
+    *   Т.е. хранить holder и запрашивать хендлер перед каждым использованием.
+    *   Поэтому класс специально объявлен, как protected.
+    *
+    *   Исключение - классы, работающие с эфимерными нодами. Пример: zkutil::Lock
+    *
+    *   Как использовать:
+    *   auto zookeeper = zookeeper_holder->getZooKeeper();
+    *   zookeeper->get(path);
+    */
+    class UnstorableZookeeperHandler
+    {
+    public:
+        UnstorableZookeeperHandler(ZooKeeper::Ptr zk_ptr_);
 
-		explicit operator bool() const { return bool(zk_ptr); }
-		bool operator==(std::nullptr_t) const { return zk_ptr == nullptr; }
-		bool operator!=(std::nullptr_t) const { return !(*this == nullptr); }
+        explicit operator bool() const { return bool(zk_ptr); }
+        bool operator==(std::nullptr_t) const { return zk_ptr == nullptr; }
+        bool operator!=(std::nullptr_t) const { return !(*this == nullptr); }
 
-		/// в случае nullptr методы разыменования кидают исключение,
-		/// с более подробным текстом, чем просто nullptr
-		ZooKeeper * operator->();
-		const ZooKeeper * operator->() const;
-		ZooKeeper & operator*();
-		const ZooKeeper & operator*() const;
+        /// в случае nullptr методы разыменования кидают исключение,
+        /// с более подробным текстом, чем просто nullptr
+        ZooKeeper * operator->();
+        const ZooKeeper * operator->() const;
+        ZooKeeper & operator*();
+        const ZooKeeper & operator*() const;
 
-	private:
-		ZooKeeper::Ptr zk_ptr;
-	};
+    private:
+        ZooKeeper::Ptr zk_ptr;
+    };
 
 private:
-	mutable std::mutex mutex;
-	ZooKeeper::Ptr ptr;
+    mutable std::mutex mutex;
+    ZooKeeper::Ptr ptr;
 
-	Logger * log = &Logger::get("ZooKeeperHolder");
+    Logger * log = &Logger::get("ZooKeeperHolder");
 
-	static std::string nullptr_exception_message;
+    static std::string nullptr_exception_message;
 };
 
 template <class... Args>
 void ZooKeeperHolder::init(Args&&... args)
 {
-	ptr = std::make_shared<ZooKeeper>(std::forward<Args>(args)...);
+    ptr = std::make_shared<ZooKeeper>(std::forward<Args>(args)...);
 }
 
 using ZooKeeperHolderPtr = std::shared_ptr<ZooKeeperHolder>;

@@ -1,4 +1,4 @@
-#include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
+#include <Storages/MergeTree/DiskSpaceMonitor.h>
 
 namespace DB
 {

@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <yandex>
-	<profiles>
-		<default>
-			<log_queries>1</log_queries>
-		</default>
-	</profiles>
+    <profiles>
+        <default>
+            <log_queries>1</log_queries>
+        </default>
+    </profiles>
 </yandex>

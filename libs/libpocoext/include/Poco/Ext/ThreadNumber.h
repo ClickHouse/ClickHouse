@@ -8,7 +8,7 @@ namespace Poco
 
 namespace ThreadNumber
 {
-	unsigned get();
+    unsigned get();
 }
 
 }

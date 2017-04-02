@@ -2,9 +2,9 @@ enable_testing()
 
 # Run tests with "make check"
 if (TARGET check)
-	message (STATUS "Target check already exists")
+    message (STATUS "Target check already exists")
 else ()
-	include (${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake)
+    include (${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake)
 endif ()
 
 
@@ -16,6 +16,6 @@ target_include_directories (gtest INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/goo
 
 
 macro(grep_gtest_sources BASE_DIR DST_VAR)
-	# Cold match files that are not in tests/ directories
-	file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
+    # Cold match files that are not in tests/ directories
+    file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
 endmacro()

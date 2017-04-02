@@ -13,12 +13,12 @@ namespace DB
 class StatusFile : private boost::noncopyable
 {
 public:
-	StatusFile(const std::string & path_);
-	~StatusFile();
+    StatusFile(const std::string & path_);
+    ~StatusFile();
 
 private:
-	const std::string path;
-	int fd = -1;
+    const std::string path;
+    int fd = -1;
 };
 
 
