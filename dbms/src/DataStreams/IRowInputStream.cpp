@@ -1,5 +1,5 @@
-#include <DB/DataStreams/IRowInputStream.h>
-#include <DB/Common/Exception.h>
+#include <DataStreams/IRowInputStream.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -7,12 +7,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int NOT_IMPLEMENTED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 void IRowInputStream::syncAfterError()
 {
-	throw Exception("Method syncAfterError is not implemented for input format", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("Method syncAfterError is not implemented for input format", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

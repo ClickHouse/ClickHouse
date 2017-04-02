@@ -13,14 +13,14 @@ include (CheckCXXSourceCompiles)
 set (TEST_FLAG "-msse4.1")
 set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
 check_cxx_source_compiles("
-	#include <smmintrin.h>
-	int main() {
-		_mm_insert_epi8(__m128i(), 0, 0);
-		return 0;
-	}
+    #include <smmintrin.h>
+    int main() {
+        _mm_insert_epi8(__m128i(), 0, 0);
+        return 0;
+    }
 " HAVE_SSE41)
 if (HAVE_SSE41)
-	set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
 endif ()
 
 
@@ -30,14 +30,14 @@ endif ()
 set (TEST_FLAG "-msse4.2")
 set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
 check_cxx_source_compiles("
-	#include <nmmintrin.h>
-	int main() {
-		_mm_crc32_u64(0, 0);
-		return 0;
-	}
+    #include <nmmintrin.h>
+    int main() {
+        _mm_crc32_u64(0, 0);
+        return 0;
+    }
 " HAVE_SSE42)
 if (HAVE_SSE42)
-	set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
 endif ()
 
 
@@ -48,14 +48,14 @@ set (TEST_FLAG "-mpopcnt")
 
 set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
 check_cxx_source_compiles("
-	int main() {
-		__builtin_popcountll(0);
-		return 0;
-	}
+    int main() {
+        __builtin_popcountll(0);
+        return 0;
+    }
 " HAVE_POPCNT)
 
 if (HAVE_POPCNT AND NOT AARCH64)
-	set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
 endif ()
 
 set (CMAKE_REQUIRED_FLAGS "")

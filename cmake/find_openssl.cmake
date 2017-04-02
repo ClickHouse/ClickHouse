@@ -1,15 +1,15 @@
 set (OPENSSL_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
 if (APPLE)
-	set (OPENSSL_ROOT_DIR "/usr/local/opt/openssl")
+    set (OPENSSL_ROOT_DIR "/usr/local/opt/openssl")
 endif ()
 find_package (OpenSSL)
 if (NOT OPENSSL_FOUND)
-	# Try to find manually.
-	set (OPENSSL_INCLUDE_DIR "/usr/local/opt/openssl/include")
-	set (OPENSSL_PATHS "/usr/local/opt/openssl/lib")
-	find_library (OPENSSL_SSL_LIBRARY ssl PATHS ${OPENSSL_PATHS})
-	find_library (OPENSSL_CRYPTO_LIBRARY crypto PATHS ${OPENSSL_PATHS})
-	set (OPENSSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+    # Try to find manually.
+    set (OPENSSL_INCLUDE_DIR "/usr/local/opt/openssl/include")
+    set (OPENSSL_PATHS "/usr/local/opt/openssl/lib")
+    find_library (OPENSSL_SSL_LIBRARY ssl PATHS ${OPENSSL_PATHS})
+    find_library (OPENSSL_CRYPTO_LIBRARY crypto PATHS ${OPENSSL_PATHS})
+    set (OPENSSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
 endif ()
 
 message (STATUS "Using openssl: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")

@@ -1,5 +1,5 @@
-#include <DB/Functions/FunctionFactory.h>
-#include <DB/Functions/FunctionsGeo.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsGeo.h>
 
 
 namespace DB
@@ -7,7 +7,7 @@ namespace DB
 
 void registerFunctionsGeo(FunctionFactory & factory)
 {
-	factory.registerFunction<FunctionGreatCircleDistance>();
-	factory.registerFunction<FunctionPointInEllipses>();
+    factory.registerFunction<FunctionGreatCircleDistance>();
+    factory.registerFunction<FunctionPointInEllipses>();
 }
 }

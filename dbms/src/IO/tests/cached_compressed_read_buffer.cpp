@@ -2,56 +2,56 @@
 #include <iomanip>
 #include <limits>
 
-#include <DB/IO/CachedCompressedReadBuffer.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/copyData.h>
+#include <IO/CachedCompressedReadBuffer.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/copyData.h>
 
-#include <DB/Common/Stopwatch.h>
+#include <Common/Stopwatch.h>
 
 
 int main(int argc, char ** argv)
 {
-	using namespace DB;
-	
-	try
-	{
-		UncompressedCache cache(1024);
-		std::string path = argv[1];
+    using namespace DB;
 
-		std::cerr << std::fixed << std::setprecision(3);
+    try
+    {
+        UncompressedCache cache(1024);
+        std::string path = argv[1];
 
-		size_t hits = 0;
-		size_t misses = 0;
+        std::cerr << std::fixed << std::setprecision(3);
 
-		{
-			Stopwatch watch;
-			CachedCompressedReadBuffer in(path, &cache, 0, 0);
-			WriteBufferFromFile out("/dev/null");
-			copyData(in, out);
+        size_t hits = 0;
+        size_t misses = 0;
 
-			std::cerr << "Elapsed: " << watch.elapsedSeconds() << std::endl;
-		}
+        {
+            Stopwatch watch;
+            CachedCompressedReadBuffer in(path, &cache, 0, 0);
+            WriteBufferFromFile out("/dev/null");
+            copyData(in, out);
 
-		cache.getStats(hits, misses);
-		std::cerr << "Hits: " << hits << ", misses: " << misses << std::endl;
+            std::cerr << "Elapsed: " << watch.elapsedSeconds() << std::endl;
+        }
 
-		{
-			Stopwatch watch;
-			CachedCompressedReadBuffer in(path, &cache, 0, 0);
-			WriteBufferFromFile out("/dev/null");
-			copyData(in, out);
+        cache.getStats(hits, misses);
+        std::cerr << "Hits: " << hits << ", misses: " << misses << std::endl;
 
-			std::cerr << "Elapsed: " << watch.elapsedSeconds() << std::endl;
-		}
+        {
+            Stopwatch watch;
+            CachedCompressedReadBuffer in(path, &cache, 0, 0);
+            WriteBufferFromFile out("/dev/null");
+            copyData(in, out);
 
-		cache.getStats(hits, misses);
-		std::cerr << "Hits: " << hits << ", misses: " << misses << std::endl;
-	}
-	catch (const Exception & e)
-	{
-		std::cerr << e.what() << ", " << e.displayText() << std::endl;
-		return 1;
-	}
+            std::cerr << "Elapsed: " << watch.elapsedSeconds() << std::endl;
+        }
 
-	return 0;
+        cache.getStats(hits, misses);
+        std::cerr << "Hits: " << hits << ", misses: " << misses << std::endl;
+    }
+    catch (const Exception & e)
+    {
+        std::cerr << e.what() << ", " << e.displayText() << std::endl;
+        return 1;
+    }
+
+    return 0;
 }

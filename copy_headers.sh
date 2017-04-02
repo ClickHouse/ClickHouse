@@ -24,7 +24,7 @@ PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 
 for src_file in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
 	$(cat "$SOURCE_PATH/build/include_directories.txt") \
-	"$SOURCE_PATH/dbms/include/DB/Interpreters/SpecializedAggregator.h" |
+	"$SOURCE_PATH/dbms/src/Interpreters/SpecializedAggregator.h" |
 	tr -d '\\' |
 	grep -v '.o:' |
 	sed -r -e 's/^.+\.cpp / /');

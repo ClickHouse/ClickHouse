@@ -21,8 +21,8 @@ using UInt64 = Poco::UInt64;
 
 /// Обход проблемы с тем, что KDevelop не видит time_t и size_t (для подсветки синтаксиса).
 #ifdef IN_KDEVELOP_PARSER
-	using time_t = Int64;
-	using size_t = UInt64;
+    using time_t = Int64;
+    using size_t = UInt64;
 #endif
 
 
@@ -43,8 +43,8 @@ STRONG_TYPEDEF(UInt64, VisitID_t);
 
 namespace std
 {
-	template <> struct is_integral<VisitID_t> : std::true_type {};
-	template <> struct is_arithmetic<VisitID_t> : std::true_type {};
+    template <> struct is_integral<VisitID_t> : std::true_type {};
+    template <> struct is_arithmetic<VisitID_t> : std::true_type {};
 }
 
 /** Идентификатор клика */

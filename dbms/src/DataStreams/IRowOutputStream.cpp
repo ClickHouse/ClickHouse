@@ -1,5 +1,5 @@
-#include <DB/Core/Block.h>
-#include <DB/DataStreams/IRowOutputStream.h>
+#include <Core/Block.h>
+#include <DataStreams/IRowOutputStream.h>
 
 
 namespace DB
@@ -7,20 +7,20 @@ namespace DB
 
 void IRowOutputStream::write(const Block & block, size_t row_num)
 {
-	size_t columns = block.columns();
+    size_t columns = block.columns();
 
-	writeRowStartDelimiter();
+    writeRowStartDelimiter();
 
-	for (size_t i = 0; i < columns; ++i)
-	{
-		if (i != 0)
-			writeFieldDelimiter();
+    for (size_t i = 0; i < columns; ++i)
+    {
+        if (i != 0)
+            writeFieldDelimiter();
 
-		auto & col = block.getByPosition(i);
-		writeField(*col.column.get(), *col.type.get(), row_num);
-	}
+        auto & col = block.getByPosition(i);
+        writeField(*col.column.get(), *col.type.get(), row_num);
+    }
 
-	writeRowEndDelimiter();
+    writeRowEndDelimiter();
 }
 
 }

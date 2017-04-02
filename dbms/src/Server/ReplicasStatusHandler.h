@@ -12,12 +12,12 @@ class Context;
 class ReplicasStatusHandler : public Poco::Net::HTTPRequestHandler
 {
 private:
-	Context & context;
+    Context & context;
 
 public:
-	ReplicasStatusHandler(Context & context_);
+    ReplicasStatusHandler(Context & context_);
 
-	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
+    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 };
 
 

@@ -20,38 +20,38 @@ namespace zkutil
 class SingleBarrier final
 {
 public:
-	using CancellationHook = std::function<void()>;
+    using CancellationHook = std::function<void()>;
 
 public:
-	SingleBarrier(GetZooKeeper get_zookeeper_, const std::string & path_, size_t counter_);
+    SingleBarrier(GetZooKeeper get_zookeeper_, const std::string & path_, size_t counter_);
 
-	SingleBarrier(const SingleBarrier &) = delete;
-	SingleBarrier & operator=(const SingleBarrier &) = delete;
+    SingleBarrier(const SingleBarrier &) = delete;
+    SingleBarrier & operator=(const SingleBarrier &) = delete;
 
-	SingleBarrier(SingleBarrier &&) = default;
-	SingleBarrier & operator=(SingleBarrier &&) = default;
+    SingleBarrier(SingleBarrier &&) = default;
+    SingleBarrier & operator=(SingleBarrier &&) = default;
 
-	/// Register a function that cancels barrier operations if requested.
-	void setCancellationHook(CancellationHook cancellation_hook_);
+    /// Register a function that cancels barrier operations if requested.
+    void setCancellationHook(CancellationHook cancellation_hook_);
 
-	void enter(UInt64 timeout = 0);
-
-private:
-	/// Cancel any ongoing operation if requested. Additionally perform cleanup.
-	void abortIfRequested();
+    void enter(UInt64 timeout = 0);
 
 private:
-	/// Helper that acquires an alive ZooKeeper session.
-	GetZooKeeper get_zookeeper;
-	EventPtr event = std::make_shared<Poco::Event>();
-	/// Function that cancels barrier operations if requested.
-	CancellationHook cancellation_hook;
-	/// Path to the barrier storage.
-	std::string path;
-	/// Token created by the node attempting to enter the barrier.
-	std::string token;
-	/// Number of available slots.
-	size_t counter;
+    /// Cancel any ongoing operation if requested. Additionally perform cleanup.
+    void abortIfRequested();
+
+private:
+    /// Helper that acquires an alive ZooKeeper session.
+    GetZooKeeper get_zookeeper;
+    EventPtr event = std::make_shared<Poco::Event>();
+    /// Function that cancels barrier operations if requested.
+    CancellationHook cancellation_hook;
+    /// Path to the barrier storage.
+    std::string path;
+    /// Token created by the node attempting to enter the barrier.
+    std::string token;
+    /// Number of available slots.
+    size_t counter;
 };
 
 }

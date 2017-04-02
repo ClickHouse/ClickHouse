@@ -19,9 +19,9 @@
 
 #include <common/logger_useful.h>
 #include <daemon/BaseDaemon.h>
-#include <DB/Common/HTMLForm.h>
+#include <Common/HTMLForm.h>
 
-#include <DB/Interpreters/Context.h>
+#include <Interpreters/Context.h>
 
 /** Server provides three interfaces:
   * 1. HTTP - simple interface for any applications.
@@ -40,29 +40,29 @@ namespace DB
 class Server : public BaseDaemon
 {
 public:
-	/// Global settings of server.
-	std::unique_ptr<Context> global_context;
+    /// Global settings of server.
+    std::unique_ptr<Context> global_context;
 
 protected:
-	void initialize(Application & self) override
-	{
-		BaseDaemon::initialize(self);
-		logger().information("starting up");
-	}
+    void initialize(Application & self) override
+    {
+        BaseDaemon::initialize(self);
+        logger().information("starting up");
+    }
 
-	void uninitialize() override
-	{
-		logger().information("shutting down");
-		BaseDaemon::uninitialize();
-	}
+    void uninitialize() override
+    {
+        logger().information("shutting down");
+        BaseDaemon::uninitialize();
+    }
 
-	int main(const std::vector<std::string> & args) override;
+    int main(const std::vector<std::string> & args) override;
 
 private:
 
-	void attachSystemTables(const std::string & path, bool has_zookeeper) const;
+    void attachSystemTables(const std::string & path, bool has_zookeeper) const;
 
-	std::string getDefaultCorePath() const override;
+    std::string getDefaultCorePath() const override;
 };
 
 }

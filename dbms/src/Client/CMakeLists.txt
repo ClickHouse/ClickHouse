@@ -6,5 +6,5 @@ add_library (clickhouse-benchmark Benchmark.cpp)
 target_link_libraries (clickhouse-benchmark dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 if (ENABLE_TESTS)
-	add_subdirectory (tests)
+    add_subdirectory (tests)
 endif (ENABLE_TESTS)
