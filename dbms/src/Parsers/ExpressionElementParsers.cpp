@@ -84,7 +84,7 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, P
 
     ASTExpressionList & expr_list = typeid_cast<ASTExpressionList &>(*contents_node);
 
-    /// пустое выражение в скобках недопустимо
+    /// empty expression in parentheses is not allowed
     if (expr_list.children.empty())
     {
         expected = "non-empty parenthesized list of expressions";
@@ -137,14 +137,14 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 {
     Pos begin = pos;
 
-    /// Идентификатор в обратных кавычках
+    /// Identifier in backquotes
     if (pos != end && *pos == '`')
     {
         ReadBufferFromMemory buf(pos, end - pos);
         String s;
         readBackQuotedString(s, buf);
 
-        if (s.empty())    /// Не разрешены идентификаторы "пустая строка".
+        if (s.empty())    /// Identifiers "empty string" are not allowed.
             return false;
 
         pos += buf.count();
@@ -190,7 +190,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos 
 
     node = std::make_shared<ASTIdentifier>(StringRange(begin, pos), name);
 
-    /// В children запомним идентификаторы-составляющие, если их больше одного.
+    /// In `children`, remember the identifiers-components, if there are more than one.
     if (list.children.size() > 1)
         node->children.insert(node->children.end(), list.children.begin(), list.children.end());
 
@@ -239,10 +239,10 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
     if (!close.ignore(pos, end, max_parsed_pos, expected))
         return false;
 
-    /** Проверка на распространённый случай ошибки - часто из-за сложности квотирования аргументов командной строки,
-      *  в запрос попадает выражение вида toDate(2014-01-01) вместо toDate('2014-01-01').
-      * Если не сообщить, что первый вариант - ошибка, то аргумент будет проинтерпретирован как 2014 - 01 - 01 - некоторое число,
-      *  и запрос тихо вернёт неожиданный результат.
+    /** Check for a common error case - often due to the complexity of quoting command-line arguments,
+      *  an expression of the form toDate(2014-01-01) appears in the query instead of toDate('2014-01-01').
+      * If you do not report that the first option is an error, then the argument will be interpreted as 2014 - 01 - 01 - some number,
+      *  and the query silently returns an unexpected result.
       */
     if (typeid_cast<const ASTIdentifier &>(*identifier).name == "toDate"
         && contents_end - contents_begin == strlen("2014-01-01")
@@ -262,7 +262,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
             , ErrorCodes::SYNTAX_ERROR);
     }
 
-    /// У параметрической агрегатной функции - два списка (параметры и аргументы) в круглых скобках. Пример: quantile(0.9)(x).
+    /// The parametric aggregate function has two lists (parameters and arguments) in parentheses. Example: quantile(0.9)(x).
     if (open.ignore(pos, end, max_parsed_pos, expected))
     {
         /// Parametric aggregate functions cannot have DISTINCT in parameters list.
@@ -664,9 +664,9 @@ bool ParserAliasImpl<ParserIdentifier>::parseImpl(Pos & pos, Pos end, ASTPtr & n
 
     if (!has_as_word)
     {
-        /** В этом случае алиас не может совпадать с ключевым словом - для того,
-          *  чтобы в запросе "SELECT x FROM t", слово FROM не считалось алиасом,
-          *  а в запросе "SELECT x FRO FROM t", слово FRO считалось алиасом.
+        /** In this case, the alias can not match the keyword -
+          *  so that in the query "SELECT x FROM t", the word FROM was not considered an alias,
+          *  and in the query "SELECT x FRO FROM t", the word FRO was considered an alias.
           */
 
         const String & name = static_cast<const ASTIdentifier &>(*node.get()).name;
@@ -772,24 +772,24 @@ bool ParserWithOptionalAliasImpl<ParserAlias>::parseImpl(Pos & pos, Pos end, AST
     if (!elem_parser->parse(pos, end, node, max_parsed_pos, expected))
         return false;
 
-    /** Маленький хак.
+    /** Little hack.
       *
-      * В секции SELECT мы разрешаем парсить алиасы без указания ключевого слова AS.
-      * Эти алиасы не могут совпадать с ключевыми словами запроса.
-      * А само выражение может быть идентификатором, совпадающем с ключевым словом.
-      * Например, столбец может называться where. И в запросе может быть написано SELECT where AS x FROM table или даже SELECT where x FROM table.
-      * Даже может быть написано SELECT where AS from FROM table, но не может быть написано SELECT where from FROM table.
-      * Смотрите подробнее в реализации ParserAlias.
+      * In the SELECT section, we allow parsing aliases without specifying the AS keyword.
+      * These aliases can not be the same as the query keywords.
+      * And the expression itself can be an identifier that matches the keyword.
+      * For example, a column may be called where. And in the query it can be written `SELECT where AS x FROM table` or even `SELECT where x FROM table`.
+      * Even can be written `SELECT where AS from FROM table`, but it can not be written `SELECT where from FROM table`.
+      * See the ParserAlias implementation for details.
       *
-      * Но возникает небольшая проблема - неудобное сообщение об ошибке, если в секции SELECT в конце есть лишняя запятая.
-      * Хотя такая ошибка очень распространена. Пример: SELECT x, y, z, FROM tbl
-      * Если ничего не предпринять, то это парсится как выбор столбца с именем FROM и алиасом tbl.
-      * Чтобы избежать такой ситуации, мы не разрешаем парсить алиас без ключевого слова AS для идентификатора с именем FROM.
+      * But there is a small problem - an inconvenient error message if there is an extra comma in the SELECT section at the end.
+      * Although this error is very common. Example: `SELECT x, y, z, FROM tbl`
+      * If you do nothing, it's parsed as a column with the name FROM and alias tbl.
+      * To avoid this situation, we do not allow the parsing of the alias without the AS keyword for the identifier with the name FROM.
       *
-      * Замечание: это также фильтрует случай, когда идентификатор квотирован.
-      * Пример: SELECT x, y, z, `FROM` tbl. Но такой случай можно было бы разрешить.
+      * Note: this also filters the case when the identifier is quoted.
+      * Example: SELECT x, y, z, `FROM` tbl. But such a case could be solved.
       *
-      * В дальнейшем было бы проще запретить неквотированные идентификаторы, совпадающие с ключевыми словами.
+      * In the future it would be easier to disallow unquoted identifiers that match the keywords.
       */
     bool allow_alias_without_as_keyword_now = allow_alias_without_as_keyword;
     if (allow_alias_without_as_keyword)

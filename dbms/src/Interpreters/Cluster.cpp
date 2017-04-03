@@ -158,7 +158,7 @@ Clusters::Impl Clusters::getContainer() const
     return impl;
 }
 
-/// Реализация класса Cluster
+/// Implementation of `Cluster` class
 
 Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name)
 {
@@ -176,7 +176,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
     {
         if (startsWith(key, "node"))
         {
-            /// Шард без реплик.
+            /// Shard without replicas.
 
             const auto & prefix = config_prefix + key;
             const auto weight = config.getInt(prefix + ".weight", default_weight);
@@ -211,7 +211,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
         }
         else if (startsWith(key, "shard"))
         {
-            /// Шард с репликами.
+            /// Shard with replicas.
 
             Poco::Util::AbstractConfiguration::Keys replica_keys;
             config.keys(config_prefix + key, replica_keys);

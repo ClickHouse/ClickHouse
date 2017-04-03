@@ -23,7 +23,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
     Pos begin = pos;
 
-    /// Пока name == 'Nested', возможно потом появятся альтернативные вложенные структуры данных
+    /// For now `name == 'Nested'`, probably alternative nested data structures will appear
     if (!name_p.parse(pos, end, name, max_parsed_pos, expected))
         return false;
 
@@ -244,7 +244,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             ws.ignore(pos, end);
         }
 
-        /// Список столбцов
+        /// Columns list
         if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
         {
             ws.ignore(pos, end);
@@ -263,7 +263,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             if (!engine_p.parse(pos, end, storage, max_parsed_pos, expected))
                 return false;
 
-            /// Для engine VIEW необходимо так же считать запрос AS SELECT
+            /// For engine VIEW, you also need to read AS SELECT
             if (storage && (typeid_cast<ASTFunction &>(*storage).name == "View"
                         || typeid_cast<ASTFunction &>(*storage).name == "MaterializedView"))
             {
@@ -314,7 +314,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
                 ws.ignore(pos, end);
 
-                /// Опционально - может быть указана ENGINE.
+                /// Optional - ENGINE can be specified.
                 engine_p.parse(pos, end, storage, max_parsed_pos, expected);
             }
         }
@@ -351,7 +351,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             ws.ignore(pos, end);
         }
 
-        /// Опционально - может быть указан список столбцов. Он должен полностью соответствовать SELECT-у.
+        /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
         {
             ws.ignore(pos, end);
@@ -365,7 +365,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
                 return false;
         }
 
-        /// Опционально - может быть указана внутренняя ENGINE для MATERIALIZED VIEW
+        /// Optional - internal ENGINE for MATERIALIZED VIEW can be specified
         engine_p.parse(pos, end, inner_storage, max_parsed_pos, expected);
 
         ws.ignore(pos, end);
