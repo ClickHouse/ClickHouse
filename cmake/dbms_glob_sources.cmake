@@ -4,14 +4,10 @@ macro(add_glob cur_list)
 endmacro()
 
 macro(add_headers_and_sources prefix common_path)
-    add_glob(${prefix}_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} src/${common_path}/*.h src/${common_path}/*.inl)
-    add_glob(${prefix}_sources src/${common_path}/*.cpp src/${common_path}/*.h)
+    add_glob(${prefix}_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${common_path}/*.h ${common_path}/*.inl)
+    add_glob(${prefix}_sources ${common_path}/*.cpp ${common_path}/*.h)
 endmacro()
 
 macro(add_headers_only prefix common_path)
-    add_glob(${prefix}_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} src/${common_path}/*.h src/${common_path}/*.h)
-endmacro()
-
-macro(add_path_sources prefix common_path)
-    add_glob(${prefix}_sources ${common_path}/*.cpp)
+    add_glob(${prefix}_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${common_path}/*.h)
 endmacro()
