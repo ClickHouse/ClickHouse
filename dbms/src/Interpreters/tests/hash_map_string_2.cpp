@@ -20,7 +20,7 @@
 #endif
 
 
-/** Выполнять так:
+/** Do this:
 for file in MobilePhoneModel PageCharset Params URLDomain UTMSource Referer URL Title; do
  for size in 30000 100000 300000 1000000 5000000; do
   echo
@@ -207,7 +207,7 @@ inline bool compare_byIntSSE(const char * p1, const char * p2)
 
 inline bool compare_byFloatSSE(const char * p1, const char * p2)
 {
-    return !_mm_movemask_ps(_mm_cmpneq_ps(                    /// Кажется, некорректно при сравнении субнормальных float-ов.
+    return !_mm_movemask_ps(_mm_cmpneq_ps(                    /// Looks like incorrect while comparing subnormal floats.
         _mm_loadu_ps(reinterpret_cast<const float *>(p1)),
         _mm_loadu_ps(reinterpret_cast<const float *>(p2))));
 }

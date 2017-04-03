@@ -170,23 +170,23 @@ void ExpressionAnalyzer::init()
 
     select_query = typeid_cast<ASTSelectQuery *>(ast.get());
 
-    /// В зависимости от профиля пользователя проверить наличие прав на выполнение
-    /// распределённых подзапросов внутри секций IN или JOIN и обработать эти подзапросы.
+    /// Depending on the user's profile, check for the execution rights
+    /// distributed subqueries inside the IN or JOIN sections and process these subqueries.
     InJoinSubqueriesPreprocessor(context).process(select_query);
 
-    /// Оптимизирует логические выражения.
+    /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings).perform();
 
-    /// Создаёт словарь aliases: alias -> ASTPtr
+    /// Creates a dictionary `aliases`: alias -> ASTPtr
     addASTAliases(ast);
 
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree();
 
-    /// ALIAS столбцы не должны подставляться вместо ASTAsterisk, добавим их теперь, после normalizeTree.
+    /// ALIAS columns should not be substituted for ASTAsterisk, we will add them now, after normalizeTree.
     addAliasColumns();
 
-    /// Выполнение скалярных подзапросов - замена их на значения-константы.
+    /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries();
 
     /// Optimize if with constant condition after constats are substituted instead of sclalar subqueries
@@ -195,7 +195,7 @@ void ExpressionAnalyzer::init()
     /// GROUP BY injective function elimination.
     optimizeGroupBy();
 
-    /// Удалить из ORDER BY повторяющиеся элементы.
+    /// Remove duplicate items from ORDER BY.
     optimizeOrderBy();
 
     // Remove duplicated elements from LIMIT BY clause.
@@ -204,20 +204,20 @@ void ExpressionAnalyzer::init()
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns();
 
-    /// Удалить ненужное из списка columns. Создать unknown_required_columns. Сформировать columns_added_by_join.
+    /// Delete the unnecessary from `columns` list. Create `unknown_required_columns`. Form `columns_added_by_join`.
     collectUsedColumns();
 
-    /// external_tables, subqueries_for_sets для глобальных подзапросов.
-    /// Заменяет глобальные подзапросы на сгенерированные имена временных таблиц, которые будут отправлены на удалённые серверы.
+    /// external_tables, subqueries_for_sets for global subqueries.
+    /// Replaces global subqueries with the generated names of temporary tables that will be sent to remote servers.
     initGlobalSubqueriesAndExternalTables();
 
     /// has_aggregation, aggregation_keys, aggregate_descriptions, aggregated_columns.
-    /// Этот анализ надо провести после обработки глобальных подзапросов, потому что в противном случае,
-    /// если агрегатная функция содержит глобальный подзапрос, то метод analyzeAggregation сохранит
-    /// в aggregate_descriptions информацию о параметрах этой агрегатной функции, среди которых окажется
-    /// глобальный подзапрос. Затем при вызове метода initGlobalSubqueriesAndExternalTables, этот
-    /// глобальный подзапрос будет заменён на временную таблицу, в результате чего aggregate_descriptions
-    /// будет содержать устаревшую информацию, что приведёт к ошибке при выполнении запроса.
+    /// This analysis should be performed after processing global subqueries, because otherwise,
+    /// if the aggregate function contains a global subquery, then `analyzeAggregation` method will save
+    /// in `aggregate_descriptions` the information about the parameters of this aggregate function, among which
+    /// global subquery. Then, when you call `initGlobalSubqueriesAndExternalTables` method, this
+    /// the global subquery will be replaced with a temporary table, resulting in aggregate_descriptions
+    /// will contain out-of-date information, which will lead to an error when the query is executed.
     analyzeAggregation();
 }
 
@@ -317,11 +317,11 @@ void ExpressionAnalyzer::optimizeIfWithConstantConditionImpl(ASTPtr & current_as
 
 void ExpressionAnalyzer::analyzeAggregation()
 {
-    /** Найдем ключи агрегации (aggregation_keys), информацию об агрегатных функциях (aggregate_descriptions),
-     *  а также набор столбцов, получаемых после агрегации, если она есть,
-     *  или после всех действий, которые обычно выполняются до агрегации (aggregated_columns).
+    /** Find aggregation keys (aggregation_keys), information about aggregate functions (aggregate_descriptions),
+     *  as well as a set of columns obtained after the aggregation, if any,
+     *  or after all the actions that are usually performed before aggregation (aggregated_columns).
      *
-     * Всё, что ниже (составление временных ExpressionActions) - только в целях анализа запроса (вывода типов).
+     * Everything below (compiling temporary ExpressionActions) - only for the purpose of query analysis (type output).
      */
 
     if (select_query && (select_query->group_expression_list || select_query->having_expression))
@@ -422,33 +422,33 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
 {
-    /// Добавляет уже существующие внешние таблицы (не подзапросы) в словарь external_tables.
+    /// Adds existing external tables (not subqueries) to the external_tables dictionary.
     findExternalTables(ast);
 
-    /// Преобразует GLOBAL-подзапросы во внешние таблицы; кладёт их в словарь external_tables: name -> StoragePtr.
+    /// Converts GLOBAL subqueries to external tables; Puts them into the external_tables dictionary: name -> StoragePtr.
     initGlobalSubqueries(ast);
 }
 
 
 void ExpressionAnalyzer::initGlobalSubqueries(ASTPtr & ast)
 {
-    /// Рекурсивные вызовы. Не опускаемся в подзапросы.
+    /// Recursive calls. We do not go into subqueries.
 
     for (auto & child : ast->children)
         if (!typeid_cast<ASTSelectQuery *>(child.get()))
             initGlobalSubqueries(child);
 
-    /// Действия, выполняемые снизу вверх.
+    /// Bottom-up actions.
 
     if (ASTFunction * node = typeid_cast<ASTFunction *>(ast.get()))
     {
-        /// Для GLOBAL IN.
+        /// For GLOBAL IN.
         if (do_global && (node->name == "globalIn" || node->name == "globalNotIn"))
             addExternalStorage(node->arguments->children.at(1));
     }
     else if (ASTTablesInSelectQueryElement * node = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
     {
-        /// Для GLOBAL JOIN.
+        /// For GLOBAL JOIN.
         if (do_global && node->table_join
             && static_cast<const ASTTableJoin &>(*node->table_join).locality == ASTTableJoin::Locality::Global)
             addExternalStorage(node->table_expression);
@@ -458,11 +458,11 @@ void ExpressionAnalyzer::initGlobalSubqueries(ASTPtr & ast)
 
 void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
 {
-    /// Обход снизу. Намеренно опускаемся в подзапросы.
+    /// Traverse from the bottom. Intentionally go into subqueries.
     for (auto & child : ast->children)
         findExternalTables(child);
 
-    /// Если идентификатор типа таблица
+    /// If table type identifier
     StoragePtr external_storage;
 
     if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(ast.get()))
@@ -478,7 +478,7 @@ static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
 
 void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_table_expression)
 {
-    /// При нераспределённых запросах, создание временных таблиц не имеет смысла.
+    /// With nondistributed queries, creating temporary tables does not make sense.
     if (!(storage && storage->isRemote()))
         return;
 
@@ -515,12 +515,12 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
 
     if (table_name)
     {
-        /// Если это уже внешняя таблица, ничего заполять не нужно. Просто запоминаем ее наличие.
+        /// If this is already an external table, you do not need to add anything. Just remember its presence.
         if (external_tables.end() != external_tables.find(static_cast<const ASTIdentifier &>(*table_name).name))
             return;
     }
 
-    /// Сгенерируем имя для внешней таблицы.
+    /// Generate the name for the external table.
     String external_table_name = "_data" + toString(external_table_id);
     while (external_tables.count(external_table_name))
     {
@@ -535,27 +535,27 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
 
     StoragePtr external_storage = StorageMemory::create(external_table_name, columns);
 
-    /** Есть два способа выполнения распределённых GLOBAL-подзапросов.
+    /** There are two ways to perform distributed GLOBAL subqueries.
       *
-      * Способ push:
-      * Данные подзапроса отправляются на все удалённые серверы, где они затем используются.
-      * Для этого способа, данные отправляются в виде "внешних таблиц" и будут доступны на каждом удалённом сервере по имени типа _data1.
-      * Заменяем в запросе подзапрос на это имя.
+      * "push" method:
+      * Subquery data is sent to all remote servers, where they are then used.
+      * For this method, the data is sent in the form of "external tables" and will be available on each remote server by the name of the type _data1.
+      * Replace in the query a subquery for this name.
       *
-      * Способ pull:
-      * Удалённые серверы скачивают данные подзапроса с сервера-инициатора запроса.
-      * Для этого способа, заменяем подзапрос на другой подзапрос вида (SELECT * FROM remote('host:port', _query_QUERY_ID, _data1))
-      * Этот подзапрос, по факту, говорит - "надо скачать данные оттуда".
+      * "pull" method:
+      * Remote servers download the subquery data from the request initiating server.
+      * For this method, replace the subquery with another subquery of the form (SELECT * FROM remote ('host: port', _query_QUERY_ID, _data1))
+      * This subquery, in fact, says - "you need to download data from there."
       *
-      * Способ pull имеет преимущество, потому что в нём удалённый сервер может решить, что ему не нужны данные и не скачивать их в таких случаях.
+      * The "pull" method takes precedence, because in it a remote server can decide that it does not need data and does not download it in such cases.
       */
 
     if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
     {
-        /** Заменяем подзапрос на имя временной таблицы.
-          * Именно в таком виде, запрос отправится на удалённый сервер.
-          * На удалённый сервер отправится эта временная таблица, и на его стороне,
-          *  вместо выполнения подзапроса, надо будет просто из неё прочитать.
+        /** We replace the subquery with the name of the temporary table.
+          * It is in this form, the request will go to the remote server.
+          * This temporary table will go to the remote server, and on its side,
+          *  instead of doing a subquery, you just need to read it.
           */
 
         auto database_and_table_name = std::make_shared<ASTIdentifier>(StringRange(), external_table_name, ASTIdentifier::Table);
@@ -619,10 +619,10 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
     subqueries_for_sets[external_table_name].source_sample = interpreter->getSampleBlock();
     subqueries_for_sets[external_table_name].table = external_storage;
 
-    /** NOTE Если было написано IN tmp_table - существующая временная (но не внешняя) таблица,
-      *  то здесь будет создана новая временная таблица (например, _data1),
-      *  и данные будут затем в неё скопированы.
-      * Может быть, этого можно избежать.
+    /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,
+      *  then a new temporary table will be created (for example, _data1),
+      *  and the data will then be copied to it.
+      * Maybe this can be avoided.
       */
 }
 
@@ -634,17 +634,17 @@ NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, 
 }
 
 
-/// ignore_levels - алиасы в скольки верхних уровнях поддерева нужно игнорировать.
-/// Например, при ignore_levels=1 ast не может быть занесен в словарь, но его дети могут.
+/// ignore_levels - aliases in how many upper levels of the subtree should be ignored.
+/// For example, with ignore_levels=1 ast can not be put in the dictionary, but its children can.
 void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
 {
-    /// Обход снизу-вверх. Не опускаемся в подзапросы.
+    /// Bottom-up traversal. We do not go into subqueries.
     for (auto & child : ast->children)
     {
         int new_ignore_levels = std::max(0, ignore_levels - 1);
 
-        /// Алиасы верхнего уровня в секции ARRAY JOIN имеют особый смысл, их добавлять не будем
-        ///  (пропустим сам expression list и его детей).
+        /// The top-level aliases in the ARRAY JOIN section have a special meaning, we will not add them
+        ///  (skip the expression list itself and its children).
         if (typeid_cast<ASTArrayJoin *>(ast.get()))
             new_ignore_levels = 3;
 
@@ -699,9 +699,9 @@ void ExpressionAnalyzer::normalizeTree()
 }
 
 
-/// finished_asts - уже обработанные вершины (и на что они заменены)
-/// current_asts - вершины в текущем стеке вызовов этого метода
-/// current_alias - алиас, повешенный на предка ast (самого глубокого из предков с алиасами)
+/// finished_asts - already processed vertices (and by what they replaced)
+/// current_asts - vertices in the current call stack of this method
+/// current_alias - the alias referencing to the ancestor of ast (the deepest ancestor with aliases)
 void ExpressionAnalyzer::normalizeTreeImpl(
     ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level)
 {
@@ -721,14 +721,14 @@ void ExpressionAnalyzer::normalizeTreeImpl(
     if (!my_alias.empty())
         current_alias = my_alias;
 
-    /// rewrite правила, которые действуют при обходе сверху-вниз.
+    /// rewrite rules that act when you go from top to bottom.
     bool replaced = false;
 
     ASTFunction * func_node = typeid_cast<ASTFunction *>(ast.get());
     if (func_node)
     {
-        /** Нет ли в таблице столбца, название которого полностью совпадает с записью функции?
-          * Например, в таблице есть столбец "domain(URL)", и мы запросили domain(URL).
+        /** Is there a column in the table whose name fully matches the function entry?
+          * For example, in the table there is a column "domain(URL)", and we requested domain(URL).
           */
         String function_string = func_node->getColumnName();
         NamesAndTypesList::const_iterator it = findColumn(function_string);
@@ -739,7 +739,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
             replaced = true;
         }
 
-        /// Может быть указано IN t, где t - таблица, что равносильно IN (SELECT * FROM t).
+        /// `IN t` can be specified, where t is a table, which is equivalent to `IN (SELECT * FROM t)`.
         if (functionIsInOrGlobalInOperator(func_node->name))
             if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(func_node->arguments->children.at(1).get()))
                 right->kind = ASTIdentifier::Table;
@@ -767,16 +767,16 @@ void ExpressionAnalyzer::normalizeTreeImpl(
     {
         if (node->kind == ASTIdentifier::Column)
         {
-            /// Если это алиас, но не родительский алиас (чтобы работали конструкции вроде "SELECT column+1 AS column").
+            /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
             Aliases::const_iterator jt = aliases.find(node->name);
             if (jt != aliases.end() && current_alias != node->name)
             {
-                /// Заменим его на соответствующий узел дерева.
+                /// Let's replace it with the corresponding tree node.
                 if (current_asts.count(jt->second.get()))
                     throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
                 if (!my_alias.empty() && my_alias != jt->second->getAliasOrColumnName())
                 {
-                    /// В конструкции вроде "a AS b", где a - алиас, нужно перевесить алиас b на результат подстановки алиаса a.
+                    /// In a construct like "a AS b", where a is an alias, you must set alias b to the result of substituting alias a.
                     ast = jt->second->clone();
                     ast->setAlias(my_alias);
                 }
@@ -791,7 +791,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
     }
     else if (ASTExpressionList * node = typeid_cast<ASTExpressionList *>(ast.get()))
     {
-        /// Заменим * на список столбцов.
+        /// Replace * with a list of columns.
         ASTs & asts = node->children;
         for (int i = static_cast<int>(asts.size()) - 1; i >= 0; --i)
         {
@@ -821,7 +821,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
         }
     }
 
-    /// Если заменили корень поддерева вызовемся для нового корня снова - на случай, если алиас заменился на алиас.
+    /// If we replace the root of the subtree, we will be called again for the new root, in case the alias is replaced by an alias.
     if (replaced)
     {
         normalizeTreeImpl(ast, finished_asts, current_asts, current_alias, level + 1);
@@ -831,13 +831,13 @@ void ExpressionAnalyzer::normalizeTreeImpl(
         return;
     }
 
-    /// Рекурсивные вызовы. Не опускаемся в подзапросы.
-    /// Также не опускаемся в левый аргумент лямбда-выражений, чтобы не заменять формальные параметры
-    ///  по алиасам в выражениях вида 123 AS x, arrayMap(x -> 1, [2]).
+    /// Recurring calls. Don't go into subqueries.
+    /// We also do not go to the left argument of lambda expressions, so as not to replace the formal parameters
+    ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
 
     if (func_node && func_node->name == "lambda")
     {
-        /// Пропускаем первый аргумент. Также предполагаем, что у функции lambda не может быть parameters.
+        /// We skip the first argument. We also assume that the lambda function can not have parameters.
         for (size_t i = 1, size = func_node->arguments->children.size(); i < size; ++i)
         {
             auto & child = func_node->arguments->children[i];
@@ -861,7 +861,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
         }
     }
 
-    /// Если секция WHERE или HAVING состоит из одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
+    /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children, but also in where_expression and having_expression.
     if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
         if (select->prewhere_expression)
@@ -872,7 +872,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
             normalizeTreeImpl(select->having_expression, finished_asts, current_asts, current_alias, level + 1);
     }
 
-    /// Действия, выполняемые снизу вверх.
+    /// Actions to be performed from the bottom up.
 
     if (ASTFunction * node = typeid_cast<ASTFunction *>(ast.get()))
     {
@@ -927,7 +927,7 @@ void ExpressionAnalyzer::executeScalarSubqueries()
     {
         for (auto & child : ast->children)
         {
-            /// Не опускаемся в FROM, JOIN, UNION.
+            /// Do not go to FROM, JOIN, UNION.
             if (!typeid_cast<const ASTTableExpression *>(child.get())
                 && child.get() != select_query->next_union_all.get())
             {
@@ -957,21 +957,21 @@ static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String
 
 void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 {
-    /** Заменяем подзапросы, возвращающие ровно одну строку
-      * ("скалярные" подзапросы) на соответствующие константы.
+    /** Replace subqueries that return exactly one row
+      * ("scalar" subqueries) to the corresponding constants.
       *
-      * Если подзапрос возвращает более одного столбца, то он заменяется на кортеж констант.
+      * If the subquery returns more than one column, it is replaced by a tuple of constants.
       *
-      * Особенности:
+      * Features
       *
-      * Замена происходит во время анализа запроса, а не во время основной стадии выполнения.
-      * Это значит, что не будет работать индикатор прогресса во время выполнения этих запросов,
-      *  а также такие запросы нельзя будет прервать.
+      * A replacement occurs during query analysis, and not during the main runtime.
+      * This means that the progress indicator will not work during the execution of these requests,
+      *  and also such queries can not be aborted.
       *
-      * Зато результат запросов может быть использован для индекса в таблице.
+      * But the query result can be used for the index in the table.
       *
-      * Скалярные подзапросы выполняются на сервере-инициаторе запроса.
-      * На удалённые серверы запрос отправляется с уже подставленными константами.
+      * Scalar subqueries are executed on the request-initializer server.
+      * The request is sent to remote servers with already substituted constants.
       */
 
     if (ASTSubquery * subquery = typeid_cast<ASTSubquery *>(ast.get()))
@@ -1149,12 +1149,12 @@ void ExpressionAnalyzer::optimizeGroupBy()
 
     if (group_exprs.empty())
     {
-        /** Нельзя полностью убирать GROUP BY. Потому что если при этом даже агрегатных функций не было, то получится, что не будет агрегации.
-          * Вместо этого оставим GROUP BY const.
-          * Далее см. удаление констант в методе analyzeAggregation.
+        /** You can not completely remove GROUP BY. Because if there were no aggregate functions, then it turns out that there will be no aggregation.
+          * Instead, leave `GROUP BY const`.
+          * Next, see deleting the constants in the analyzeAggregation method.
           */
 
-        /// Нужно вставить константу, которая не является именем столбца таблицы. Такой случай редкий, но бывает.
+        /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
         UInt64 unused_column = 0;
         String unused_column_name = toString(unused_column);
 
@@ -1176,7 +1176,7 @@ void ExpressionAnalyzer::optimizeOrderBy()
     if (!(select_query && select_query->order_expression_list))
         return;
 
-    /// Уникализируем условия сортировки.
+    /// Make unique sorting conditions.
     using NameAndLocale = std::pair<String, String>;
     std::set<NameAndLocale> elems_set;
 
@@ -1245,7 +1245,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sampl
             }
             catch (const DB::Exception & e)
             {
-                /// в sample_block нет колонок, которые добаляет getActions
+                /// in `sample_block` there are no columns that add `getActions`
                 if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
                     throw;
             }
@@ -1257,25 +1257,25 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sampl
 static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
     ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns)
 {
-    /// Подзапрос или имя таблицы. Имя таблицы аналогично подзапросу SELECT * FROM t.
+    /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
     const ASTSubquery * subquery = typeid_cast<const ASTSubquery *>(subquery_or_table_name.get());
     const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(subquery_or_table_name.get());
 
     if (!subquery && !table)
         throw Exception("IN/JOIN supports only SELECT subqueries.", ErrorCodes::BAD_ARGUMENTS);
 
-    /** Для подзапроса в секции IN/JOIN не действуют ограничения на максимальный размер результата.
-      * Так как результат этого поздапроса - ещё не результат всего запроса.
-      * Вместо этого работают ограничения
+    /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
+      * Because the result of this query is not the result of the entire query.
+      * Constraints work instead
       *  max_rows_in_set, max_bytes_in_set, set_overflow_mode,
       *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
-      *  которые проверяются отдельно (в объектах Set, Join).
+      *  which are checked separately (in the Set, Join objects).
       */
     Context subquery_context = context;
     Settings subquery_settings = context.getSettings();
     subquery_settings.limits.max_result_rows = 0;
     subquery_settings.limits.max_result_bytes = 0;
-    /// Вычисление extremes не имеет смысла и не нужно (если его делать, то в результате всего запроса могут взяться extremes подзапроса).
+    /// The calculation of `extremes` does not make sense and is not necessary (if you do it, then the `extremes` of the subquery can be taken instead of the whole query).
     subquery_settings.extremes = 0;
     subquery_context.setSettings(subquery_settings);
 
@@ -1306,11 +1306,11 @@ static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
     {
         query = subquery->children.at(0);
 
-        /** В подзапросе могут быть указаны столбцы с одинаковыми именами. Например, SELECT x, x FROM t
-          * Это плохо, потому что результат такого запроса нельзя сохранить в таблицу, потому что в таблице не может быть одноимённых столбцов.
-          * Сохранение в таблицу требуется для GLOBAL-подзапросов.
+        /** Columns with the same name can be specified in a subquery. For example, SELECT x, x FROM t
+          * This is bad, because the result of such a query can not be saved to the table, because the table can not have the same name columns.
+          * Saving to the table is required for GLOBAL subqueries.
           *
-          * Чтобы избежать такой ситуации, будем переименовывать одинаковые столбцы.
+          * To avoid this situation, we will rename the same columns.
           */
 
         std::set<std::string> all_column_names;
@@ -1332,7 +1332,7 @@ static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
                         ++i;
 
                     name = name + "_" + toString(i);
-                    expr = expr->clone();    /// Отменяет склейку одинаковых выражений в дереве.
+                    expr = expr->clone();   /// Cancels fuse of the same expressions in the tree.
                     expr->setAlias(name);
 
                     all_column_names.insert(name);
@@ -1353,28 +1353,28 @@ static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
 
 void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 {
-    /** Нужно преобразовать правый аргумент в множество.
-      * Это может быть имя таблицы, значение, перечисление значений или подзапрос.
-      * Перечисление значений парсится как функция tuple.
+    /** You need to convert the right argument to a set.
+      * This can be a table name, a value, a value enumeration, or a subquery.
+      * The enumeration of values is parsed as a function `tuple`.
       */
     IAST & args = *node->arguments;
     ASTPtr & arg = args.children.at(1);
 
-    /// Уже преобразовали.
+    /// Already converted.
     if (typeid_cast<ASTSet *>(arg.get()))
         return;
 
-    /// Если подзапрос или имя таблицы для SELECT.
+    /// If the subquery or table name for SELECT.
     ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(arg.get());
     if (typeid_cast<ASTSubquery *>(arg.get()) || identifier)
     {
-        /// Получаем поток блоков для подзапроса. Создаём Set и кладём на место подзапроса.
+        /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
         String set_id = arg->getColumnName();
         auto ast_set = std::make_shared<ASTSet>(set_id);
         ASTPtr ast_set_ptr = ast_set;
 
-        /// Особый случай - если справа оператора IN указано имя таблицы, при чём, таблица имеет тип Set (заранее подготовленное множество).
-        /// TODO В этом синтаксисе не поддерживается указание имени БД.
+        /// A special case is if the name of the table is specified on the right side of the IN statement, and the table has the type Set (a previously prepared set).
+        /// TODO This syntax does not support the specification of the database name.
         if (identifier)
         {
             StoragePtr table = context.tryGetTable("", identifier->name);
@@ -1395,7 +1395,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 
         SubqueryForSet & subquery_for_set = subqueries_for_sets[set_id];
 
-        /// Если уже создали Set с таким же подзапросом/таблицей.
+        /// If you already created a Set with the same subquery / table.
         if (subquery_for_set.set)
         {
             ast_set->set = subquery_for_set.set;
@@ -1405,10 +1405,10 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 
         ast_set->set = std::make_shared<Set>(settings.limits);
 
-        /** Для GLOBAL IN-ов происходит следующее:
-          * - в функции addExternalStorage подзапрос IN (SELECT ...) заменяется на IN _data1,
-          *   в объекте subquery_for_set выставляется этот подзапрос в качестве source и временная таблица _data1 в качестве table.
-          * - в этой функции видно выражение IN _data1.
+        /** The following happens for GLOBAL INs:
+          * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
+          *   in the subquery_for_set object, this subquery is set as source and the temporary table _data1 as the table.
+          * - this function shows the expression IN_data1.
           */
         if (!subquery_for_set.source)
         {
@@ -1417,31 +1417,31 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
                 [interpreter]() mutable { return interpreter->execute().in; });
             subquery_for_set.source_sample = interpreter->getSampleBlock();
 
-            /** Зачем используется LazyBlockInputStream?
+            /** Why is LazyBlockInputStream used?
               *
-              * Дело в том, что при обработке запроса вида
+              * The fact is that when processing a request of the form
               *  SELECT ... FROM remote_test WHERE column GLOBAL IN (subquery),
-              *  если распределённая таблица remote_test содержит в качестве одного из серверов localhost,
-              *  то запрос будет ещё раз интерпретирован локально (а не отправлен по TCP, как в случае удалённого сервера).
+              *  if the distributed remote_test table contains localhost as one of the servers,
+              *  the request will be interpreted locally again (and not sent over TCP, as in the case of a remote server).
               *
-              * Конвейер выполнения запроса будет такой:
+              * The query execution pipeline will be:
               * CreatingSets
-              *  выполнение подзапроса subquery, заполнение временной таблицы _data1 (1)
+              *  subquery execution, filling the temporary table with _data1 (1)
               *  CreatingSets
-              *   чтение из таблицы _data1, создание множества (2)
-              *   чтение из таблицы, подчинённой remote_test.
+              *   reading from the table _data1, creating the set (2)
+              *   read from the table subordinate to remote_test.
               *
-              * (Вторая часть конвейера под CreatingSets - это повторная интерпретация запроса внутри StorageDistributed,
-              *  запрос отличается тем, что имя БД и таблицы заменены на подчинённые, а также подзапрос заменён на _data1.)
+              * (The second part of the pipeline under CreateSets is a reinterpretation of the request inside StorageDistributed,
+              *  the query differs in that the database name and tables are replaced with subordinates, and the subquery is replaced with _data1.)
               *
-              * Но при создании конвейера, при создании источника (2), будет обнаружено, что таблица _data1 пустая
-              *  (потому что запрос ещё не начал выполняться), и будет возвращён в качестве источника пустой источник.
-              * И затем, при выполнении запроса, на шаге (2), будет создано пустое множество.
+              * But when creating the pipeline, when creating the source (2), it will be found that the _data1 table is empty
+              *  (because the query has not started yet), and empty source will be returned as the source.
+              * And then, when the query is executed, an empty set will be created in step (2).
               *
-              * Поэтому, мы делаем инициализацию шага (2) ленивой
-              *  - чтобы она произошла только после выполнения шага (1), на котором нужная таблица будет заполнена.
+              * Therefore, we make the initialization of step (2) lazy
+              *  - so that it does not occur until step (1) is completed, on which the table will be populated.
               *
-              * Замечание: это решение не очень хорошее, надо подумать лучше.
+              * Note: this solution is not very good, you need to think better.
               */
         }
 
@@ -1450,12 +1450,12 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
     }
     else
     {
-        /// Явное перечисление значений в скобках.
+        /// An explicit enumeration of values in parentheses.
         makeExplicitSet(node, sample_block, false);
     }
 }
 
-/// Случай явного перечисления значений.
+/// The case of an explicit enumeration of values.
 void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set)
 {
     IAST & args = *node->arguments;
@@ -1497,7 +1497,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
             set_element_types.push_back(left_type);
     }
 
-    /// Отличим случай x in (1, 2) от случая x in 1 (он же x in (1)).
+    /// The case `x in (1, 2)` distinguishes from the case `x in 1` (also `x in (1)`).
     bool single_value = false;
     ASTPtr elements_ast = arg;
 
@@ -1507,12 +1507,12 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
         {
             if (set_func->arguments->children.empty())
             {
-                /// Пустое множество.
+                /// Empty set.
                 elements_ast = set_func->arguments;
             }
             else
             {
-                /// Отличим случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
+                /// Distinguish the case `(x, y) in ((1, 2), (3, 4))` from the case `(x, y) in (1, 2)`.
                 ASTFunction * any_element = typeid_cast<ASTFunction *>(set_func->arguments->children.at(0).get());
                 if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
                     single_value = true;
@@ -1564,11 +1564,11 @@ static String getUniqueName(const Block & block, const String & prefix)
 }
 
 
-/** Для getActionsImpl.
-  * Стек из ExpressionActions, соответствующих вложенным лямбда-выражениям.
-  * Новое действие нужно добавлять на самый высокий возможный уровень.
-  * Например, в выражении "select arrayMap(x -> x + column1 * column2, array1)"
-  *  вычисление произведения нужно делать вне лямбда-выражения (оно не зависит от x), а вычисление суммы - внутри (зависит от x).
+/** For getActionsImpl.
+  * A stack of ExpressionActions corresponding to nested lambda expressions.
+  * The new action should be added to the highest possible level.
+  * For example, in the expression "select arrayMap(x -> x + column1 * column2, array1)"
+  *  calculation of the product must be done outside the lambda expression (it does not depend on x), and the calculation of the sum is inside (depends on x).
   */
 struct ExpressionAnalyzer::ScopeStack
 {
@@ -1695,20 +1695,20 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 
         getArrayJoinedColumnsImpl(ast);
 
-        /// Если результат ARRAY JOIN не используется, придется все равно по-ARRAY-JOIN-ить какой-нибудь столбец,
-        /// чтобы получить правильное количество строк.
+        /// If the result of ARRAY JOIN is not used, it is necessary to ARRAY-JOIN any column,
+        /// to get the correct number of rows.
         if (array_join_result_to_source.empty())
         {
             ASTPtr expr = select_query->array_join_expression_list()->children.at(0);
             String source_name = expr->getColumnName();
             String result_name = expr->getAliasOrColumnName();
 
-            /// Это массив.
+            /// This is an array.
             if (!typeid_cast<ASTIdentifier *>(expr.get()) || findColumn(source_name, columns) != columns.end())
             {
                 array_join_result_to_source[result_name] = source_name;
             }
-            else /// Это вложенная таблица.
+            else /// This is a nested table.
             {
                 bool found = false;
                 for (const auto & column_name_type : columns)
@@ -1730,7 +1730,7 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 }
 
 
-/// Заполняет array_join_result_to_source: по каким столбцам-массивам размножить, и как их после этого назвать.
+/// Fills the array_join_result_to_source: on which columns-arrays to replicate, and how to call them after that.
 void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 {
     if (typeid_cast<ASTTablesInSelectQuery *>(ast.get()))
@@ -1744,20 +1744,20 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 
             if (array_join_alias_to_name.count(node->name))
             {
-                /// Был написан ARRAY JOIN со столбцом-массивом. Пример: SELECT K1 FROM ... ARRAY JOIN ParsedParams.Key1 AS K1
+                /// ARRAY JOIN was written with an array column. Example: SELECT K1 FROM ... ARRAY JOIN ParsedParams.Key1 AS K1
                 array_join_result_to_source[node->name] = array_join_alias_to_name[node->name];    /// K1 -> ParsedParams.Key1
             }
             else if (array_join_alias_to_name.count(table_name))
             {
-                /// Был написан ARRAY JOIN с вложенной таблицей. Пример: SELECT PP.Key1 FROM ... ARRAY JOIN ParsedParams AS PP
+                /// ARRAY JOIN was written with a nested table. Example: SELECT PP.KEY1 FROM ... ARRAY JOIN ParsedParams AS PP
                 String nested_column = DataTypeNested::extractNestedColumnName(node->name);    /// Key1
                 array_join_result_to_source[node->name]    /// PP.Key1 -> ParsedParams.Key1
                     = DataTypeNested::concatenateNestedName(array_join_alias_to_name[table_name], nested_column);
             }
             else if (array_join_name_to_alias.count(table_name))
             {
-                /** Пример: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams AS PP.
-                  * То есть, в запросе используется исходный массив, размноженный по самому себе.
+                /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams AS PP.
+                  * That is, the query uses the original array, replicated by itself.
                   */
 
                 String nested_column = DataTypeNested::extractNestedColumnName(node->name);    /// Key1
@@ -1778,7 +1778,7 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 
 void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack)
 {
-    /// Если результат вычисления уже есть в блоке.
+    /// If the result of the calculation already exists in the block.
     if ((typeid_cast<ASTFunction *>(ast.get()) || typeid_cast<ASTLiteral *>(ast.get()))
         && actions_stack.getSampleBlock().has(ast->getColumnName()))
         return;
@@ -1788,8 +1788,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
         std::string name = node->getColumnName();
         if (!only_consts && !actions_stack.getSampleBlock().has(name))
         {
-            /// Запрошенного столбца нет в блоке.
-            /// Если такой столбец есть в таблице, значит пользователь наверно забыл окружить его агрегатной функцией или добавить в GROUP BY.
+            /// The requested column is not in the block.
+            /// If such a column exists in the table, then the user probably forgot to surround it with an aggregate function or add it to GROUP BY.
 
             bool found = false;
             for (const auto & column_name_type : columns)
@@ -1806,7 +1806,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
         if (node->kind == ASTFunction::LAMBDA_EXPRESSION)
             throw Exception("Unexpected lambda expression", ErrorCodes::UNEXPECTED_EXPRESSION);
 
-        /// Функция arrayJoin.
+        /// Function arrayJoin.
         if (node->kind == ASTFunction::ARRAY_JOIN)
         {
             if (node->arguments->children.size() != 1)
@@ -1832,18 +1832,18 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
             {
                 if (!no_subqueries)
                 {
-                    /// Найдем тип первого аргумента (потом getActionsImpl вызовется для него снова и ни на что не повлияет).
+                    /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
                     getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack);
 
-                    /// Превратим tuple или подзапрос в множество.
+                    /// Transform tuple or subquery into a set.
                     makeSet(node, actions_stack.getSampleBlock());
                 }
                 else
                 {
                     if (!only_consts)
                     {
-                        /// Мы в той части дерева, которую не собираемся вычислять. Нужно только определить типы.
-                        /// Не будем выполнять подзапросы и составлять множества. Вставим произвольный столбец правильного типа.
+                        /// We are in the part of the tree that we are not going to compute. You just need to define types.
+                        /// Do not subquery and create sets. We insert an arbitrary column of the correct type.
                         ColumnWithTypeAndName fake_column;
                         fake_column.name = node->getColumnName();
                         fake_column.type = std::make_shared<DataTypeUInt8>();
@@ -1854,8 +1854,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
                 }
             }
 
-            /// Особая функция indexHint. Всё, что внутри неё не вычисляется
-            /// (а используется только для анализа индекса, см. PKCondition).
+            /// A special function `indexHint`. Everything that is inside it is not calculated
+            /// (and is used only for index analysis, see PKCondition).
             if (node->name == "indexHint")
             {
                 actions_stack.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
@@ -1869,7 +1869,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
             DataTypes argument_types;
             bool arguments_present = true;
 
-            /// Если у функции есть аргумент-лямбда-выражение, нужно определить его тип до рекурсивного вызова.
+            /// If the function has an argument-lambda expression, you need to determine its type before the recursive call.
             bool has_lambda_arguments = false;
 
             for (auto & child : node->arguments->children)
@@ -1878,7 +1878,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
                 ASTSet * set = typeid_cast<ASTSet *>(child.get());
                 if (lambda && lambda->name == "lambda")
                 {
-                    /// Если аргумент - лямбда-выражение, только запомним его примерный тип.
+                    /// If the argument is a lambda expression, just remember its approximate type.
                     if (lambda->arguments->children.size() != 2)
                         throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -1889,7 +1889,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 
                     has_lambda_arguments = true;
                     argument_types.emplace_back(std::make_shared<DataTypeExpression>(DataTypes(lambda_args_tuple->arguments->children.size())));
-                    /// Выберем название в следующем цикле.
+                    /// Select the name in the next cycle.
                     argument_names.emplace_back();
                 }
                 else if (set)
@@ -1897,8 +1897,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
                     ColumnWithTypeAndName column;
                     column.type = std::make_shared<DataTypeSet>();
 
-                    /// Если аргумент - множество, заданное перечислением значений, дадим ему уникальное имя,
-                    ///  чтобы множества с одинаковой записью не склеивались (у них может быть разный тип).
+                    /// If the argument is a set given by an enumeration of values, give it a unique name,
+                    ///  so that sets with the same record do not fuse together (they can have different types).
                     if (set->is_explicit)
                         column.name = getUniqueName(actions_stack.getSampleBlock(), "__set");
                     else
@@ -1916,7 +1916,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
                 }
                 else
                 {
-                    /// Если аргумент не лямбда-выражение, вызовемся рекурсивно и узнаем его тип.
+                    /// If the argument is not a lambda expression, call it recursively and find out its type.
                     getActionsImpl(child, no_subqueries, only_consts, actions_stack);
                     std::string name = child->getColumnName();
                     if (actions_stack.getSampleBlock().has(name))
@@ -1947,7 +1947,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
             {
                 function->getLambdaArgumentTypes(argument_types);
 
-                /// Вызовемся рекурсивно для лямбда-выражений.
+                /// Call recursively for lambda expressions.
                 for (size_t i = 0; i < node->arguments->children.size(); ++i)
                 {
                     ASTPtr child = node->arguments->children[i];
@@ -1985,8 +1985,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
                             if (findColumn(captured[j], lambda_arguments) == lambda_arguments.end())
                                 additional_requirements.push_back(captured[j]);
 
-                        /// Не можем дать название getColumnName(),
-                        ///  потому что оно не однозначно определяет выражение (типы аргументов могут быть разными).
+                        /// We can not name `getColumnName()`,
+                        ///  because it does not uniquely define the expression (the types of arguments can be different).
                         argument_names[i] = getUniqueName(actions_stack.getSampleBlock(), "__lambda");
 
                         ColumnWithTypeAndName lambda_column;
@@ -2036,14 +2036,14 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 
 void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr & actions)
 {
-    /// Внутри WHERE и PREWHERE не может быть агрегатных функций.
+    /// There can not be aggregate functions inside the WHERE and PREWHERE.
     if (select_query && (ast.get() == select_query->where_expression.get() || ast.get() == select_query->prewhere_expression.get()))
     {
         assertNoAggregates(ast, "in WHERE or PREWHERE");
         return;
     }
 
-    /// Если мы анализируем не запрос SELECT, а отдельное выражение, то в нём не может быть агрегатных функций.
+    /// If we are not analyzing a SELECT query, but a separate expression, then there can not be aggregate functions in it.
     if (!select_query)
     {
         assertNoAggregates(ast, "in wrong place");
@@ -2057,7 +2057,7 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
         AggregateDescription aggregate;
         aggregate.column_name = node->getColumnName();
 
-        /// Агрегатные функции уникализируются.
+        /// Make unique aggregate functions.
         for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
             if (aggregate_descriptions[i].column_name == aggregate.column_name)
                 return;
@@ -2068,7 +2068,7 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            /// Внутри агрегатных функций не может быть других агрегатных функций.
+            /// There can not be other aggregate functions within the aggregate functions.
             assertNoAggregates(arguments[i], "inside another aggregate function");
 
             getRootActions(arguments[i], true, false, actions);
@@ -2158,7 +2158,7 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actio
         if (result_source.first != result_source.second)
             actions->add(ExpressionAction::copyColumn(result_source.second, result_source.first));
 
-        /// Сделать ARRAY JOIN (заменить массивы на их внутренности) для столбцов в этими новыми именами.
+        /// Make ARRAY JOIN (replace arrays with their insides) for the columns in these new names.
         result_columns.insert(result_source.first);
     }
 
@@ -2209,13 +2209,13 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     if (join_params.using_expression_list)
         getRootActions(join_params.using_expression_list, only_types, false, step.actions);
 
-    /// Не поддерживается два JOIN-а с одинаковым подзапросом, но разными USING-ами.
+    /// Two JOINs are not supported with the same subquery, but different USINGs.
     String join_id = join_element.getTreeID();
 
     SubqueryForSet & subquery_for_set = subqueries_for_sets[join_id];
 
-    /// Особый случай - если справа JOIN указано имя таблицы, при чём, таблица имеет тип Join (заранее подготовленное отображение).
-    /// TODO В этом синтаксисе не поддерживается указание имени БД.
+    /// Special case - if table name is specified on the right of JOIN, then the table has the type Join (the previously prepared mapping).
+    /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)
     {
         StoragePtr table = context.tryGetTable("", static_cast<const ASTIdentifier &>(*table_to_join.database_and_table_name).name);
@@ -2227,7 +2227,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             if (storage_join)
             {
                 storage_join->assertCompatible(join_params.kind, join_params.strictness);
-                /// TODO Проверять набор ключей.
+                /// TODO Check the set of keys.
 
                 JoinPtr & join = storage_join->getJoin();
                 subquery_for_set.join = join;
@@ -2245,10 +2245,10 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
         for (const auto & name_type : columns_added_by_join)
             required_joined_columns.push_back(name_type.name);
 
-        /** Для GLOBAL JOIN-ов (в случае, например, push-метода выполнения GLOBAL подзапросов) происходит следующее:
-          * - в функции addExternalStorage подзапрос JOIN (SELECT ...) заменяется на JOIN _data1,
-          *   в объекте subquery_for_set выставляется этот подзапрос в качестве source и временная таблица _data1 в качестве table.
-          * - в этой функции видно выражение JOIN _data1.
+        /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
+          * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
+          *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
+          * - this function shows the expression JOIN _data1.
           */
         if (!subquery_for_set.source)
         {
@@ -2263,7 +2263,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             subquery_for_set.source_sample = interpreter->getSampleBlock();
         }
 
-        /// TODO Это не нужно выставлять, когда JOIN нужен только на удалённых серверах.
+        /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_set.join = join;
         subquery_for_set.join->setSampleBlock(subquery_for_set.source_sample);
     }
@@ -2475,7 +2475,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
     }
     else
     {
-        /// Не будем удалять исходные столбцы.
+        /// We will not delete the original columns.
         for (const auto & column_name_type : columns)
             result_names.push_back(column_name_type.name);
     }
@@ -2505,9 +2505,9 @@ void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptio
 
 void ExpressionAnalyzer::collectUsedColumns()
 {
-    /** Вычислим, какие столбцы требуются для выполнения выражения.
-      * Затем, удалим все остальные столбцы из списка доступных столбцов.
-      * После выполнения, columns будет содержать только список столбцов, нужных для чтения из таблицы.
+    /** Calculate which columns are required to execute the expression.
+      * Then, delete all other columns from the list of available columns.
+      * After execution, columns will only contain the list of columns needed to read from the table.
       */
 
     NameSet required;
@@ -2518,15 +2518,15 @@ void ExpressionAnalyzer::collectUsedColumns()
         ASTs & expressions = select_query->array_join_expression_list()->children;
         for (size_t i = 0; i < expressions.size(); ++i)
         {
-            /// Игнорируем идентификаторы верхнего уровня из секции ARRAY JOIN.
-            /// Их потом добавим отдельно.
+            /// Ignore the top-level identifiers from the ARRAY JOIN section.
+            /// Then add them separately.
             if (typeid_cast<ASTIdentifier *>(expressions[i].get()))
             {
                 ignored.insert(expressions[i]->getColumnName());
             }
             else
             {
-                /// Для выражений в ARRAY JOIN ничего игнорировать не нужно.
+                /// Nothing needs to be ignored for expressions in ARRAY JOIN.
                 NameSet empty;
                 getRequiredColumnsImpl(expressions[i], required, empty, empty, empty);
             }
@@ -2535,8 +2535,8 @@ void ExpressionAnalyzer::collectUsedColumns()
         }
     }
 
-    /** Также нужно не учитывать идентификаторы столбцов, получающихся путём JOIN-а.
-      * (Не считать, что они требуются для чтения из "левой" таблицы).
+    /** You also need to ignore the identifiers of the columns that are obtained by JOIN.
+      * (Do not assume that they are required for reading from the "left" table).
       */
     NameSet available_joined_columns;
     collectJoinedColumns(available_joined_columns, columns_added_by_join);
@@ -2556,7 +2556,7 @@ void ExpressionAnalyzer::collectUsedColumns()
         std::cerr << "JOINed column (required, not key): " << name_type.name << std::endl;
     std::cerr << std::endl;*/
 
-    /// Вставляем в список требуемых столбцов столбцы, нужные для вычисления ARRAY JOIN.
+    /// Insert the columns required for the ARRAY JOIN calculation into the required columns list.
     NameSet array_join_sources;
     for (const auto & result_source : array_join_result_to_source)
         array_join_sources.insert(result_source.second);
@@ -2565,7 +2565,7 @@ void ExpressionAnalyzer::collectUsedColumns()
         if (array_join_sources.count(column_name_type.name))
             required.insert(column_name_type.name);
 
-    /// Нужно прочитать хоть один столбец, чтобы узнать количество строк.
+    /// You need to read at least one column to find the number of rows.
     if (required.empty())
         required.insert(ExpressionActions::getSmallestColumn(columns));
 
@@ -2581,8 +2581,8 @@ void ExpressionAnalyzer::collectUsedColumns()
             ++it;
     }
 
-    /// Возможно, среди неизвестных столбцов есть виртуальные. Удаляем их из списка неизвестных и добавляем
-    /// в columns list, чтобы при дальнейшей обработке запроса они воспринимались как настоящие.
+    /// Perhaps, there are virtual columns among the unknown columns. Remove them from the list of unknown and add
+    /// in columns list, so that when further processing the request they are perceived as real.
     if (storage)
     {
         for (auto it = unknown_required_columns.begin(); it != unknown_required_columns.end();)
@@ -2644,7 +2644,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
     {
         const auto & col = nested_result_sample.safeGetByPosition(i);
         if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name)
-            && !joined_columns.count(col.name))    /// Дублирующиеся столбцы в подзапросе для JOIN-а не имеют смысла.
+            && !joined_columns.count(col.name)) /// Duplicate columns in the subquery for JOIN do not make sense.
         {
             joined_columns.insert(col.name);
             joined_columns_name_type.emplace_back(col.name, col.type);
@@ -2679,13 +2679,13 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
     NameSet & required_columns, NameSet & ignored_names,
     const NameSet & available_joined_columns, NameSet & required_joined_columns)
 {
-    /** Найдём все идентификаторы в запросе.
-      * Будем искать их рекурсивно, обходя в глубину AST.
-      * При этом:
-      * - для лямбда функций не будем брать формальные параметры;
-      * - не опускаемся в подзапросы (там свои идентификаторы);
-      * - некоторое исключение для секции ARRAY JOIN (в ней идентификаторы немного другие);
-      * - идентификаторы, доступные из JOIN-а, кладём в required_joined_columns.
+    /** Find all the identifiers in the query.
+      * We will look for them recursively, bypassing by depth AST.
+      * In this case
+      * - for lambda functions we will not take formal parameters;
+      * - do not go into subqueries (there are their identifiers);
+      * - is some exception for the ARRAY JOIN section (it has a slightly different identifier);
+      * - identifiers available from JOIN, we put in required_joined_columns.
       */
 
     if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(ast.get()))
@@ -2715,7 +2715,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
             if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
                 throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
 
-            /// Не нужно добавлять формальные параметры лямбда-выражения в required_columns.
+            /// You do not need to add formal parameters of the lambda expression in required_columns.
             Names added_ignored;
             for (auto & child : lambda_args_tuple->arguments->children)
             {
@@ -2741,17 +2741,17 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
             return;
         }
 
-        /// Особая функция indexHint. Всё, что внутри неё не вычисляется
-        /// (а используется только для анализа индекса, см. PKCondition).
+        /// A special function `indexHint`. Everything that is inside it is not calculated
+        /// (and is used only for index analysis, see PKCondition).
         if (node->name == "indexHint")
             return;
     }
 
-    /// Рекурсивный обход выражения.
+    /// Recursively traverses an expression.
     for (auto & child : ast->children)
     {
-        /** Не пойдем в секцию ARRAY JOIN, потому что там нужно смотреть на имена не-ARRAY-JOIN-енных столбцов.
-          * Туда collectUsedColumns отправит нас отдельно.
+        /** We will not go to the ARRAY JOIN section, because we need to look at the names of non-ARRAY-JOIN columns.
+          * There, `collectUsedColumns` will send us separately.
           */
         if (!typeid_cast<ASTSelectQuery *>(child.get())
             && !typeid_cast<ASTArrayJoin *>(child.get()))

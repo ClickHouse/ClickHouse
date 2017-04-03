@@ -118,21 +118,21 @@ BlockIO InterpreterDropQuery::execute()
 
     if (drop_database)
     {
-        /// Удаление базы данных. Таблицы в ней уже удалены.
+        /// Delete the database. The tables in it have already been deleted.
 
         auto lock = context.getLock();
 
-        /// Кто-то мог успеть удалить БД до нас.
+        /// Someone could have time to delete the database before us.
         context.assertDatabaseExists(database_name);
 
-        /// Кто-то мог успеть создать таблицу в удаляемой БД, пока мы удаляли таблицы без лока контекста.
+        /// Someone could have time to create a table in the database to be deleted while we deleted the tables without the context lock.
         if (!context.getDatabase(database_name)->empty())
             throw Exception("New table appeared in database being dropped. Try dropping it again.", ErrorCodes::DATABASE_NOT_EMPTY);
 
-        /// Удаляем информацию о БД из оперативки
+        /// Delete database information from the RAM
         auto database = context.detachDatabase(database_name);
 
-        /// Удаляем БД.
+        /// Delete the database.
         database->drop();
 
         Poco::File(data_path).remove(false);

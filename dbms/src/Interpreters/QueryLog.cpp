@@ -80,7 +80,7 @@ static std::array<char, 16> IPv6ToBinary(const Poco::Net::IPAddress & address)
     }
     else if (Poco::Net::IPAddress::IPv4 == address.family())
     {
-        /// Преобразуем в IPv6-mapped адрес.
+        /// Convert to IPv6-mapped address.
         memset(res.data(), 0, 10);
         res[10] = '\xFF';
         res[11] = '\xFF';

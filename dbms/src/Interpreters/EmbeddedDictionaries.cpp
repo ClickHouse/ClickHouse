@@ -46,11 +46,11 @@ bool EmbeddedDictionaries::reloadDictionary(MultiVersion<Dictionary> & dictionar
 
 bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error)
 {
-    /** Если не удаётся обновить справочники, то несмотря на это, не кидаем исключение (используем старые справочники).
-        * Если старых корректных справочников нет, то при использовании функций, которые от них зависят,
-        *  будет кидаться исключение.
-        * Производится попытка загрузить каждый справочник по-отдельности.
-        */
+    /** If you can not update the directories, then despite this, do not throw an exception (use the old directories).
+      * If there are no old correct directories, then when using functions that depend on them,
+      *  will throw an exception.
+      * An attempt is made to load each directory separately.
+      */
 
     LOG_INFO(log, "Loading dictionaries.");
 

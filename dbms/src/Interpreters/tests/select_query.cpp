@@ -25,7 +25,7 @@ try
     Logger::root().setChannel(channel);
     Logger::root().setLevel("trace");
 
-    /// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
+    /// Pre-initialize the `DateLUT` so that the first initialization does not affect the measured execution speed.
     DateLUT::instance();
 
     Context context;

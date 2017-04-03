@@ -58,8 +58,8 @@ void ASTSelectQuery::renameColumns(const ASTSelectQuery & source)
 
     for (size_t i = 0; i < from.size(); ++i)
     {
-        /// Если столбец имеет алиас, то он должен совпадать с названием исходного столбца.
-        /// В противном случае мы ему присваиваем алиас, если требуется.
+        /// If the column has an alias, it must match the name of the original column.
+        /// Otherwise, we assign it an alias, if required.
         if (!to[i]->tryGetAlias().empty())
         {
             if (to[i]->tryGetAlias() != from[i]->getAliasOrColumnName())
@@ -76,9 +76,9 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_n
     ASTPtr result = std::make_shared<ASTExpressionList>();
     ASTs asts = select_expression_list->children;
 
-    /// Создать отображение.
+    /// Create a mapping.
 
-    /// Элемент отображения.
+    /// The element of mapping.
     struct Arrow
     {
         Arrow() = default;
@@ -90,15 +90,15 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_n
         bool is_selected = false;
     };
 
-    /// Отображение одного SELECT выражения в другое.
+    /// Mapping of one SELECT expression to another.
     using Mapping = std::vector<Arrow>;
 
     Mapping mapping(asts.size());
 
-    /// На какой позиции в SELECT-выражении находится соответствующий столбец из column_names.
+    /// On which position in the SELECT expression is the corresponding column from `column_names`.
     std::vector<size_t> positions_of_required_columns(required_column_names.size());
 
-    /// Не будем выбрасывать выражения, содержащие функцию arrayJoin.
+    /// We will not throw out expressions that contain the `arrayJoin` function.
     for (size_t i = 0; i < asts.size(); ++i)
     {
         if (hasArrayJoin(asts[i]))
@@ -129,7 +129,7 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_n
         mapping[positions_of_required_columns_in_subquery_order[i]] = Arrow(positions_of_required_columns[i]);
 
 
-    /// Составить новое выражение.
+    /// Construct a new expression.
     for (const auto & arrow : mapping)
     {
         if (arrow.is_selected)
@@ -146,9 +146,9 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_n
     }
     select_expression_list = result;
 
-    /** NOTE: Может показаться, что мы могли испортить запрос, выбросив выражение с алиасом, который используется где-то еще.
-        *       Такого произойти не может, потому что этот метод вызывается всегда для запроса, на котором хоть раз создавали
-        *       ExpressionAnalyzer, что гарантирует, что в нем все алиасы уже подставлены. Не совсем очевидная логика.
+    /** NOTE: It might seem that we could spoil the query by throwing an expression with an alias that is used somewhere else.
+        *       This can not happen, because this method is always called for a query, for which ExpressionAnalyzer was created at least once,
+        *       which ensures that all aliases in it are already set. Not quite obvious logic.
         */
 }
 
@@ -156,7 +156,7 @@ ASTPtr ASTSelectQuery::clone() const
 {
     auto ptr = cloneImpl(true);
 
-    /// Установить указатели на предыдущие запросы SELECT.
+    /// Set pointers to previous SELECT queries.
     ASTPtr current = ptr;
     static_cast<ASTSelectQuery *>(current.get())->prev_union_all = nullptr;
     ASTPtr next = static_cast<ASTSelectQuery *>(current.get())->next_union_all;
@@ -187,15 +187,15 @@ std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneImpl(bool traverse_union_al
 
 #define CLONE(member) if (member) { res->member = member->clone(); res->children.push_back(res->member); }
 
-    /** NOTE Члены должны клонироваться точно в таком же порядке,
-        *  в каком они были вставлены в children в ParserSelectQuery.
-        * Это важно, потому что из имён children-ов составляется идентификатор (getTreeID),
-        *  который может быть использован для идентификаторов столбцов в случае подзапросов в операторе IN.
-        * При распределённой обработке запроса, в случае, если один из серверов localhost, а другой - нет,
-        *  запрос на localhost выполняется в рамках процесса и при этом клонируется,
-        *  а на удалённый сервер запрос отправляется в текстовом виде по TCP.
-        * И если порядок при клонировании не совпадает с порядком при парсинге,
-        *  то на разных серверах получатся разные идентификаторы.
+    /** NOTE Members must clone exactly in the same order,
+        *  in which they were inserted into `children` in ParserSelectQuery.
+        * This is important because of the children's names the identifier (getTreeID) is compiled,
+        *  which can be used for column identifiers in the case of subqueries in the IN statement.
+        * For distributed query processing, in case one of the servers is localhost and the other one is not,
+        *  localhost query is executed within the process and is cloned,
+        *  and the request is sent to the remote server in text form via TCP.
+        * And if the cloning order does not match the parsing order,
+        *  then different servers will get different identifiers.
         */
     CLONE(select_expression_list)
     CLONE(tables)
@@ -320,8 +320,8 @@ void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & sta
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "UNION ALL " << s.nl_or_ws << (s.hilite ? hilite_none : "");
 
-        // NOTE Мы можем безопасно применить static_cast вместо typeid_cast, потому что знаем, что в цепочке UNION ALL
-        // имеются только деревья типа SELECT.
+        // NOTE We can safely apply `static_cast` instead of `typeid_cast` because we know that in the `UNION ALL` chain
+        // there are only trees of type SELECT.
         const ASTSelectQuery & next_ast = static_cast<const ASTSelectQuery &>(*next_union_all);
 
         next_ast.formatImpl(s, state, frame);

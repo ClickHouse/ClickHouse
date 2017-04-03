@@ -173,11 +173,11 @@ void ExpressionAction::prepare(Block & sample_block)
 {
 //    std::cerr << "preparing: " << toString() << std::endl;
 
-    /** Константные выражения следует вычислить, и положить результат в sample_block.
-      * Для неконстантных столбцов, следует в качестве column в sample_block положить nullptr.
+    /** Constant expressions should be evaluated, and put the result in sample_block.
+      * For non-constant columns, put the nullptr as the column in sample_block.
       *
-      * Тот факт, что только для константных выражений column != nullptr,
-      *  может использоваться в дальнейшем при оптимизации запроса.
+      * The fact that only for constant expressions column != nullptr,
+      *  can be used later when optimizing the query.
       */
 
     switch (type)
@@ -221,7 +221,7 @@ void ExpressionAction::prepare(Block & sample_block)
 
                 function->execute(sample_block, arguments, prerequisites, result_position);
 
-                /// Если получилась не константа, на всякий случай будем считать результат неизвестным.
+                /// If the result is not a constant, just in case, we will consider the result as unknown.
                 ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
                 if (!col.column->isConst())
                     col.column = nullptr;
@@ -357,7 +357,7 @@ void ExpressionAction::execute(Block & block) const
             if (!any_array)
                 throw Exception("ARRAY JOIN of not array: " + *array_joined_columns.begin(), ErrorCodes::TYPE_MISMATCH);
 
-            /// Если LEFT ARRAY JOIN, то создаём столбцы, в которых пустые массивы заменены на массивы с одним элементом - значением по-умолчанию.
+            /// If LEFT ARRAY JOIN, then we create columns in which empty arrays are replaced by arrays with one element - the default value.
             std::map<String, ColumnPtr> non_empty_array_columns;
             if (array_join_is_left)
             {
@@ -668,7 +668,7 @@ void ExpressionActions::execute(Block & block) const
 
 void ExpressionActions::executeOnTotals(Block & block) const
 {
-    /// Если в подзапросе для JOIN-а есть totals, а у нас нет, то возьмём блок со значениями по-умолчанию вместо totals.
+    /// If there is `totals` in the subquery for JOIN, but we do not, then take the block with the default values instead of `totals`.
     if (!block)
     {
         bool has_totals_in_join = false;
@@ -691,7 +691,7 @@ void ExpressionActions::executeOnTotals(Block & block) const
             }
         }
         else
-            return;    /// Нечего JOIN-ить.
+            return; /// There's nothing to JOIN.
     }
 
     for (const auto & action : actions)
@@ -732,9 +732,9 @@ void ExpressionActions::finalize(const Names & output_columns)
         final_columns.insert(name);
     }
 
-    /// Какие столбцы нужны, чтобы выполнить действия от текущего до последнего.
+    /// Which columns are needed to perform actions from the current to the last.
     NameSet needed_columns = final_columns;
-    /// Какие столбцы никто не будет трогать от текущего действия до последнего.
+    /// Which columns nobody will touch from the current action to the last.
     NameSet unmodified_columns;
 
     {
@@ -743,8 +743,8 @@ void ExpressionActions::finalize(const Names & output_columns)
             unmodified_columns.insert(it->name);
     }
 
-    /// Будем идти с конца и поддерживать множество нужных на данном этапе столбцов.
-    /// Будем выбрасывать ненужные действия, хотя обычно их нет по построению.
+    /// Let's go from the end and maintain set of required columns at this stage.
+    /// We will throw out unnecessary actions, although usually they are absent by construction.
     for (int i = static_cast<int>(actions.size()) - 1; i >= 0; --i)
     {
         ExpressionAction & action = actions[i];
@@ -757,9 +757,9 @@ void ExpressionActions::finalize(const Names & output_columns)
         }
         else if (action.type == ExpressionAction::ARRAY_JOIN)
         {
-            /// Не будем ARRAY JOIN-ить столбцы, которые дальше не используются.
-            /// Обычно такие столбцы не используются и до ARRAY JOIN, и поэтому выбрасываются дальше в этой функции.
-            /// Не будем убирать все столбцы, чтобы не потерять количество строк.
+            /// Do not ARRAY JOIN columns that are not used anymore.
+            /// Usually, such columns are not used until ARRAY JOIN, and therefore are ejected further in this function.
+            /// We will not remove all the columns so as not to lose the number of rows.
             for (auto it = action.array_joined_columns.begin(); it != action.array_joined_columns.end();)
             {
                 bool need = needed_columns.count(*it);
@@ -772,8 +772,8 @@ void ExpressionActions::finalize(const Names & output_columns)
                     needed_columns.insert(*it);
                     unmodified_columns.erase(*it);
 
-                    /// Если никакие результаты ARRAY JOIN не используются, принудительно оставим на выходе произвольный столбец,
-                    ///  чтобы не потерять количество строк.
+                    /// If no ARRAY JOIN results are used, forcibly leave an arbitrary column at the output,
+                    ///  so you do not lose the number of rows.
                     if (!need)
                         final_columns.insert(*it);
 
@@ -786,7 +786,7 @@ void ExpressionActions::finalize(const Names & output_columns)
             std::string out = action.result_name;
             if (!out.empty())
             {
-                /// Если результат не используется и нет побочных эффектов, выбросим действие.
+                /// If the result is not used and there are no side effects, throw out the action.
                 if (!needed_columns.count(out) &&
                     (action.type == ExpressionAction::APPLY_FUNCTION
                     || action.type == ExpressionAction::ADD_COLUMN
@@ -806,8 +806,8 @@ void ExpressionActions::finalize(const Names & output_columns)
                 unmodified_columns.erase(out);
                 needed_columns.erase(out);
 
-                /** Если функция - константное выражение, то заменим действие на добавление столбца-константы - результата.
-                  * То есть, осуществляем constant folding.
+                /** If the function is a constant expression, then replace the action by adding a column-constant - result.
+                  * That is, we perform constant folding.
                   */
                 if (action.type == ExpressionAction::APPLY_FUNCTION && sample_block.has(out))
                 {
@@ -828,11 +828,11 @@ void ExpressionActions::finalize(const Names & output_columns)
         }
     }
 
-    /// Не будем выбрасывать все входные столбцы, чтобы не потерять количество строк в блоке.
+    /// We will not throw out all the input columns, so as not to lose the number of rows in the block.
     if (needed_columns.empty() && !input_columns.empty())
         needed_columns.insert(getSmallestColumn(input_columns));
 
-    /// Не будем оставлять блок пустым, чтобы не потерять количество строк в нем.
+    /// We will not leave the block empty so as not to lose the number of rows in it.
     if (final_columns.empty())
         final_columns.insert(getSmallestColumn(input_columns));
 
@@ -853,9 +853,9 @@ void ExpressionActions::finalize(const Names & output_columns)
         std::cerr << action.toString() << "\n";
     std::cerr << "\n";*/
 
-    /// Удаление ненужных временных столбцов.
+    /// Deletes unnecessary temporary columns.
 
-    /// Если у столбца после выполнения функции refcount = 0, то его можно удалить.
+    /// If the column after performing the function `refcount = 0`, it can be deleted.
     std::map<String, int> columns_refcount;
 
     for (const auto & name : final_columns)
@@ -903,7 +903,7 @@ void ExpressionActions::finalize(const Names & output_columns)
         for (const auto & name : action.prerequisite_names)
             process(name);
 
-        /// Для projection тут нет уменьшения refcount, так как действие project заменяет имена у столбцов, по сути, уже удаляя их под старыми именами.
+        /// For `projection`, there is no reduction in `refcount`, because the `project` action replaces the names of the columns, in effect, already deleting them under the old names.
     }
 
     actions.swap(new_actions);
@@ -987,17 +987,17 @@ void ExpressionActions::optimizeArrayJoin()
     const size_t NONE = actions.size();
     size_t first_array_join = NONE;
 
-    /// Столбцы, для вычисления которых нужен arrayJoin.
-    /// Действия для их добавления нельзя переместить левее arrayJoin.
+    /// Columns that need to be evaluated for arrayJoin.
+    /// Actions for adding them can not be moved to the left of the arrayJoin.
     NameSet array_joined_columns;
 
-    /// Столбцы, нужные для вычисления arrayJoin или тех, кто от него зависит.
-    /// Действия для их удаления нельзя переместить левее arrayJoin.
+    /// Columns needed to evaluate arrayJoin or those that depend on it.
+    /// Actions to delete them can not be moved to the left of the arrayJoin.
     NameSet array_join_dependencies;
 
     for (size_t i = 0; i < actions.size(); ++i)
     {
-        /// Не будем перемещать действия правее проецирования (тем более, что их там обычно нет).
+        /// Do not move the action to the right of the projection (the more that they are not usually there).
         if (actions[i].type == ExpressionAction::PROJECT)
             break;
 
@@ -1043,19 +1043,19 @@ void ExpressionActions::optimizeArrayJoin()
 
             if (actions[i].type == ExpressionAction::REMOVE_COLUMN)
             {
-                /// Если удаляем столбец, не нужный для arrayJoin (и тех, кто от него зависит), можно его удалить до arrayJoin.
+                /// If you delete a column that is not needed for arrayJoin (and those who depend on it), you can delete it before arrayJoin.
                 can_move = !array_join_dependencies.count(actions[i].source_name);
             }
             else
             {
-                /// Если действие не удаляет столбцы и не зависит от результата arrayJoin, можно сделать его до arrayJoin.
+                /// If the action does not delete the columns and does not depend on the result of arrayJoin, you can make it until arrayJoin.
                 can_move = true;
             }
 
-            /// Переместим текущее действие в позицию сразу перед первым arrayJoin.
+            /// Move the current action to the position just before the first arrayJoin.
             if (can_move)
             {
-                /// Переместим i-й элемент в позицию first_array_join.
+                /// Move the i-th element to the position `first_array_join`.
                 std::rotate(actions.begin() + first_array_join, actions.begin() + i, actions.begin() + i + 1);
                 ++first_array_join;
             }
@@ -1093,7 +1093,7 @@ void ExpressionActionsChain::addStep()
 
 void ExpressionActionsChain::finalize()
 {
-    /// Финализируем все шаги. Справа налево, чтобы определять ненужные входные столбцы.
+    /// Finalize all steps. Right to left to define unnecessary input columns.
     for (int i = static_cast<int>(steps.size()) - 1; i >= 0; --i)
     {
         Names required_output = steps[i].required_output;
@@ -1105,7 +1105,7 @@ void ExpressionActionsChain::finalize()
         steps[i].actions->finalize(required_output);
     }
 
-    /// Когда возможно, перенесем ARRAY JOIN из более ранних шагов в более поздние.
+    /// When possible, move the ARRAY JOIN from earlier steps to later steps.
     for (size_t i = 1; i < steps.size(); ++i)
     {
         ExpressionAction action;
@@ -1113,13 +1113,13 @@ void ExpressionActionsChain::finalize()
             steps[i].actions->prependArrayJoin(action, steps[i - 1].actions->getSampleBlock());
     }
 
-    /// Добавим выбрасывание ненужных столбцов в начало каждого шага.
+    /// Adding the ejection of unnecessary columns to the beginning of each step.
     for (size_t i = 1; i < steps.size(); ++i)
     {
         size_t columns_from_previous = steps[i - 1].actions->getSampleBlock().columns();
 
-        /// Если на выходе предыдущего шага образуются ненужные столбцы, добавим в начало этого шага их выбрасывание.
-        /// За исключением случая, когда мы выбросим все столбцы и потеряем количество строк в блоке.
+        /// If unnecessary columns are formed at the output of the previous step, we'll add them to the beginning of this step.
+        /// Except when we drop all the columns and lose the number of rows in the block.
         if (!steps[i].actions->getRequiredColumnsWithTypes().empty()
             && columns_from_previous > steps[i].actions->getRequiredColumnsWithTypes().size())
             steps[i].actions->prependProjectInput();

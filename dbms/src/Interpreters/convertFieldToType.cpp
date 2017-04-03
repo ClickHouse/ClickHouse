@@ -26,13 +26,13 @@ namespace ErrorCodes
 }
 
 
-/** Проверка попадания Field from, имеющим тип From в диапазон значений типа To.
-  * From и To - числовые типы. Могут быть типами с плавающей запятой.
-  * From - это одно из UInt64, Int64, Float64,
-  *  тогда как To может быть также 8, 16, 32 битным.
+/** Checking for a `Field from` of `From` type falls to a range of values of type `To`.
+  * `From` and `To` - numeric types. They can be floating-point types.
+  * `From` is one of UInt64, Int64, Float64,
+  *  whereas `To` can also be 8, 16, 32 bit.
   *
-  * Если попадает в диапазон, то from конвертируется в Field ближайшего к To типа.
-  * Если не попадает - возвращается Field(Null).
+  * If falls into a range, then `from` is converted to the `Field` closest to the `To` type.
+  * If not, return Field(Null).
   */
 
 namespace

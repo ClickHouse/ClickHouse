@@ -11,7 +11,7 @@ namespace DB
 {
 
 
-/// Парсит database.table или table.
+/// Parse database.table or table.
 static bool parseDatabaseAndTable(
     ASTRenameQuery::Table & db_and_table, IParser::Pos & pos, IParser::Pos end, IParser::Pos & max_parsed_pos, Expected & expected)
 {
