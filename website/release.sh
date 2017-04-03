@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -ex
 BASE_DIR=$(dirname $(readlink -f $0))
+cd "${BASE_DIR}"
+gulp build
 IMAGE="clickhouse/website"
 if [[ -z "$1" ]]
 then
