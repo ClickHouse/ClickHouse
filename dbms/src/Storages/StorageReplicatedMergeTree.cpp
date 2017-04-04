@@ -1418,17 +1418,18 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 }
             }
 
-	        try {
-	            if (!fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
-	                return false;
-	        } catch (const Exception & e) {
-	            // no stacktrace
-	            if (e.code() == ErrorCodes::RECEIVED_ERROR_BANDWIDTH_LIMIT_EXCEEDED)
-	            {
-	                return false;
-	            }
-	            throw e;
-	        }
+           try {
+                if (!fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
+                    return false;
+            } catch (const Exception & e) {
+                /// No stacktrace, just log message
+                if (e.code() == ErrorCodes::RECEIVED_ERROR_BANDWIDTH_LIMIT_EXCEEDED)
+                {
+                    LOG_INFO(log, "Too busy replica " << replica << " with part " << entry.new_part_name << ". Will try later.");
+                    return false;
+                }
+                throw e;
+            }
 
             if (entry.type == LogEntry::MERGE_PARTS)
                 ProfileEvents::increment(ProfileEvents::ReplicatedPartFetchesOfMerged);
@@ -3454,7 +3455,7 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
             }
             catch (const DB::Exception & e)
             {
-                if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+                if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_BANDWIDTH_LIMIT_EXCEEDED)
                     throw;
 
                 LOG_INFO(log, e.displayText());
