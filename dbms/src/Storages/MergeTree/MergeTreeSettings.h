@@ -78,6 +78,9 @@ struct MergeTreeSettings
     /// Limit parallel fetches
     size_t replicated_max_parallel_fetches = 4;
     size_t replicated_max_parallel_fetches_for_table = 2;
+    /// Limit parallel sends
+    size_t replicated_max_parallel_sends = 4;
+    size_t replicated_max_parallel_sends_for_table = 2;
 
     /// If ration of wrong parts to total number of parts is less than this - allow to start anyway.
     double replicated_max_ratio_of_wrong_parts = 0.05;

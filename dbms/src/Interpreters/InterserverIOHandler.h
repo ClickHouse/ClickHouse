@@ -11,6 +11,8 @@
 #include <atomic>
 #include <Poco/Net/HTMLForm.h>
 
+namespace Poco { namespace Net {class HTTPServerResponse; } }
+
 namespace DB
 {
 
@@ -64,7 +66,7 @@ class InterserverIOEndpoint
 {
 public:
     virtual std::string getId(const std::string & path) const = 0;
-    virtual void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out) = 0;
+    virtual void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) = 0;
     virtual ~InterserverIOEndpoint() {}
 
     void cancel() { is_cancelled = true; }

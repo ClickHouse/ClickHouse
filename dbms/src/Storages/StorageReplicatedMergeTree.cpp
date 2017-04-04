@@ -103,6 +103,7 @@ namespace ErrorCodes
     extern const int UNFINISHED;
     extern const int METADATA_MISMATCH;
     extern const int RESHARDING_NULLABLE_SHARDING_KEY;
+    extern const int RECEIVED_ERROR_BANDWIDTH_LIMIT_EXCEEDED;
 }
 
 
@@ -1417,8 +1418,17 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 }
             }
 
-            if (!fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
-                return false;
+	        try {
+	            if (!fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
+	                return false;
+	        } catch (const Exception & e) {
+	            // no stacktrace
+	            if (e.code() == ErrorCodes::RECEIVED_ERROR_BANDWIDTH_LIMIT_EXCEEDED)
+	            {
+	                return false;
+	            }
+	            throw e;
+	        }
 
             if (entry.type == LogEntry::MERGE_PARTS)
                 ProfileEvents::increment(ProfileEvents::ReplicatedPartFetchesOfMerged);

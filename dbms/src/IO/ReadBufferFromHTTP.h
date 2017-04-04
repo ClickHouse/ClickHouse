@@ -14,6 +14,8 @@
 namespace DB
 {
 
+const int HTTP_BANDWIDTH_LIMIT_EXCEEDED = 509;
+
 /** Perform HTTP-request and provide response to read.
   */
 class ReadBufferFromHTTP : public ReadBuffer
