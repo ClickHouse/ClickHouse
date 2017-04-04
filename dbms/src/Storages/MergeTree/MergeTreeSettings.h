@@ -141,6 +141,8 @@ struct MergeTreeSettings
         SET_SIZE_T(replicated_max_missing_active_parts);
         SET_SIZE_T(replicated_max_parallel_fetches);
         SET_SIZE_T(replicated_max_parallel_fetches_for_table);
+        SET_SIZE_T(replicated_max_parallel_sends);
+        SET_SIZE_T(replicated_max_parallel_sends_for_table);
         SET_DOUBLE(replicated_max_ratio_of_wrong_parts);
         SET_SIZE_T(zookeeper_session_expiration_check_period);
         SET_SIZE_T(check_delay_period);
