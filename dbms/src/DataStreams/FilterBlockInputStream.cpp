@@ -78,20 +78,21 @@ Block FilterBlockInputStream::readImpl()
 
         if (column)
         {
-            if (column->isNullable())
+            if (column->isNull())
             {
-                ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
-                column = nullable_col.getNestedColumn();
+                filter_always_false = true;
             }
-
-            const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(&*column);
-
-            if (column_const)
+            else
             {
-                if (column_const->getData())
-                    filter_always_true = true;
-                else
-                    filter_always_false = true;
+                const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(&*column);
+
+                if (column_const)
+                {
+                    if (column_const->getData())
+                        filter_always_true = true;
+                    else
+                        filter_always_false = true;
+                }
             }
         }
 
@@ -99,7 +100,7 @@ Block FilterBlockInputStream::readImpl()
             return res;
     }
 
-    /// Until the block is encountered, after filtering which something remains, or the stream does not end.
+    /// Until non-empty block after filtering or end of stream.
     while (1)
     {
         res = children.back()->read();
@@ -220,7 +221,7 @@ Block FilterBlockInputStream::readImpl()
         if (filtered_rows == filter.size())
         {
             /// Replace the column with the filter by a constant.
-            res.safeGetByPosition(filter_column).column = std::make_shared<ColumnConstUInt8>(filtered_rows, 1);
+            res.safeGetByPosition(filter_column).column = res.safeGetByPosition(filter_column).type->createConstColumn(filtered_rows, UInt64(1));
             /// No need to touch the rest of the columns.
             return res;
         }
@@ -233,7 +234,7 @@ Block FilterBlockInputStream::readImpl()
             if (i == static_cast<size_t>(filter_column))
             {
                 /// The column with filter itself is replaced with a column with a constant `1`, since after filtering, nothing else will remain.
-                current_column.column = std::make_shared<ColumnConstUInt8>(filtered_rows, 1);
+                current_column.column = current_column.type->createConstColumn(filtered_rows, UInt64(1));
                 continue;
             }
 
