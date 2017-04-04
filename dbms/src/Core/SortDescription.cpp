@@ -1,8 +1,8 @@
 #include <sstream>
-#include <DB/Core/SortDescription.h>
-#include <DB/Common/Collator.h>
-#include <DB/IO/Operators.h>
-#include <DB/IO/WriteBufferFromString.h>
+#include <Core/SortDescription.h>
+#include <Common/Collator.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -10,14 +10,14 @@ namespace DB
 
 std::string SortColumnDescription::getID() const
 {
-	std::string res;
-	{
-		WriteBufferFromString out(res);
-		out << column_name << ", " << column_number << ", " << direction << ", " << nulls_direction;
-		if (collator)
-			out << ", collation locale: " << collator->getLocale();
-	}
-	return res;
+    std::string res;
+    {
+        WriteBufferFromString out(res);
+        out << column_name << ", " << column_number << ", " << direction << ", " << nulls_direction;
+        if (collator)
+            out << ", collation locale: " << collator->getLocale();
+    }
+    return res;
 }
 
 }

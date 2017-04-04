@@ -438,7 +438,7 @@ bool TimeZoneInfo::Load(const std::string& name, FILE* fp) {
   // Determine the before-first-transition type.
   default_transition_type_ = 0;
   if (seen_type_0 && hdr.timecnt != 0) {
-    std::uint_fast8_t index = 0;
+    std::int_fast8_t index = 0;
     if (transition_types_[0].is_dst) {
       index = transitions_[0].type_index;
       while (index != 0 && transition_types_[index].is_dst)

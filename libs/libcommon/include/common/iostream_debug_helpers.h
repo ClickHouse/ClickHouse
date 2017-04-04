@@ -6,24 +6,24 @@
 template <typename K, typename V>
 std::ostream & operator<<(std::ostream & stream, const std::pair<K, V> & what)
 {
-	stream << "pair{" << what.first << ", " << what.second << "}";
-	return stream;
+    stream << "pair{" << what.first << ", " << what.second << "}";
+    return stream;
 }
 
 
 template <typename T>
 void dumpContainer(std::ostream & stream, const T & container)
 {
-	stream << "{";
-	bool first = true;
-	for (const auto & elem : container)
-	{
-		if (!first)
-			stream << ", ";
-		first = false;
-		stream << elem;
-	}
-	stream << "}";
+    stream << "{";
+    bool first = true;
+    for (const auto & elem : container)
+    {
+        if (!first)
+            stream << ", ";
+        first = false;
+        stream << elem;
+    }
+    stream << "}";
 }
 
 
@@ -32,9 +32,9 @@ void dumpContainer(std::ostream & stream, const T & container)
 template <typename T>
 std::ostream & operator<<(std::ostream & stream, const std::vector<T> & what)
 {
-	stream << "vector(size = " << what.size() << ", capacity = " << what.capacity() << ")";
-	dumpContainer(stream, what);
-	return stream;
+    stream << "vector(size = " << what.size() << ", capacity = " << what.capacity() << ")";
+    dumpContainer(stream, what);
+    return stream;
 }
 
 
@@ -43,9 +43,9 @@ std::ostream & operator<<(std::ostream & stream, const std::vector<T> & what)
 template <typename T, size_t N>
 std::ostream & operator<<(std::ostream & stream, const std::array<T, N> & what)
 {
-	stream << "array<" << what.size() << ">";
-	dumpContainer(stream, what);
-	return stream;
+    stream << "array<" << what.size() << ">";
+    dumpContainer(stream, what);
+    return stream;
 }
 
 
@@ -54,9 +54,9 @@ std::ostream & operator<<(std::ostream & stream, const std::array<T, N> & what)
 template <typename K, typename V>
 std::ostream & operator<<(std::ostream & stream, const std::map<K, V> & what)
 {
-	stream << "map(size = " << what.size() << ")";
-	dumpContainer(stream, what);
-	return stream;
+    stream << "map(size = " << what.size() << ")";
+    dumpContainer(stream, what);
+    return stream;
 }
 
 
@@ -65,9 +65,9 @@ std::ostream & operator<<(std::ostream & stream, const std::map<K, V> & what)
 template <typename K, typename V>
 std::ostream & operator<<(std::ostream & stream, const std::unordered_map<K, V> & what)
 {
-	stream << "unordered_map(size = " << what.size() << ")";
-	dumpContainer(stream, what);
-	return stream;
+    stream << "unordered_map(size = " << what.size() << ")";
+    dumpContainer(stream, what);
+    return stream;
 }
 
 
@@ -76,9 +76,9 @@ std::ostream & operator<<(std::ostream & stream, const std::unordered_map<K, V> 
 template <typename K>
 std::ostream & operator<<(std::ostream & stream, const std::set<K> & what)
 {
-	stream << "set(size = " << what.size() << ")";
-	dumpContainer(stream, what);
-	return stream;
+    stream << "set(size = " << what.size() << ")";
+    dumpContainer(stream, what);
+    return stream;
 }
 
 
@@ -87,9 +87,9 @@ std::ostream & operator<<(std::ostream & stream, const std::set<K> & what)
 template <typename K>
 std::ostream & operator<<(std::ostream & stream, const std::unordered_set<K> & what)
 {
-	stream << "unordered_set(size = " << what.size() << ")";
-	dumpContainer(stream, what);
-	return stream;
+    stream << "unordered_set(size = " << what.size() << ")";
+    dumpContainer(stream, what);
+    return stream;
 }
 
 
@@ -98,23 +98,23 @@ std::ostream & operator<<(std::ostream & stream, const std::unordered_set<K> & w
 template <std::intmax_t Num, std::intmax_t Denom>
 std::ostream & operator<<(std::ostream & stream, const std::ratio<Num, Denom> & what)
 {
-	stream << "ratio<Num=" << Num << ", Denom=" << Denom << ">";
-	return stream;
+    stream << "ratio<Num=" << Num << ", Denom=" << Denom << ">";
+    return stream;
 }
 
 #include <chrono>
 template <class clock, class duration>
 std::ostream & operator<<(std::ostream & stream, const std::chrono::duration<clock, duration> & what)
 {
-	stream << "chrono::duration<clock=" << clock() << ", duration=" << duration() << ">{" << what.count() << "}";
-	return stream;
+    stream << "chrono::duration<clock=" << clock() << ", duration=" << duration() << ">{" << what.count() << "}";
+    return stream;
 }
 
 template <class clock, class duration>
 std::ostream & operator<<(std::ostream & stream, const std::chrono::time_point<clock, duration> & what)
 {
-	stream << "chrono::time_point{" << what.time_since_epoch() << "}";
-	return stream;
+    stream << "chrono::time_point{" << what.time_since_epoch() << "}";
+    return stream;
 }
 
 

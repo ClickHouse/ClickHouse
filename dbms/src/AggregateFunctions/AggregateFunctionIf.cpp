@@ -1,11 +1,11 @@
-#include <DB/AggregateFunctions/AggregateFunctionIf.h>
+#include <AggregateFunctions/AggregateFunctionIf.h>
 
 namespace DB
 {
 
 AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested)
 {
-	return std::make_shared<AggregateFunctionIf>(nested);
+    return std::make_shared<AggregateFunctionIf>(nested);
 }
 
 }

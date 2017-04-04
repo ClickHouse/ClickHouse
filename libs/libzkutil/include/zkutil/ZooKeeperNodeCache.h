@@ -11,10 +11,10 @@
 
 namespace DB
 {
-	namespace ErrorCodes
-	{
-		extern const int NO_ZOOKEEPER;
-	}
+    namespace ErrorCodes
+    {
+        extern const int NO_ZOOKEEPER;
+    }
 }
 
 namespace zkutil
@@ -27,31 +27,31 @@ namespace zkutil
 class ZooKeeperNodeCache
 {
 public:
-	ZooKeeperNodeCache(GetZooKeeper get_zookeeper);
+    ZooKeeperNodeCache(GetZooKeeper get_zookeeper);
 
-	ZooKeeperNodeCache(const ZooKeeperNodeCache &) = delete;
-	ZooKeeperNodeCache(ZooKeeperNodeCache &&) = default;
+    ZooKeeperNodeCache(const ZooKeeperNodeCache &) = delete;
+    ZooKeeperNodeCache(ZooKeeperNodeCache &&) = default;
 
-	std::experimental::optional<std::string> get(const std::string & path);
+    std::experimental::optional<std::string> get(const std::string & path);
 
-	Poco::Event & getChangedEvent() { return context->changed_event; }
+    Poco::Event & getChangedEvent() { return context->changed_event; }
 
 private:
-	GetZooKeeper get_zookeeper;
+    GetZooKeeper get_zookeeper;
 
-	struct Context
-	{
-		Poco::Event changed_event;
+    struct Context
+    {
+        Poco::Event changed_event;
 
-		std::mutex mutex;
-		zkutil::ZooKeeperPtr zookeeper;
-		std::unordered_set<std::string> invalidated_paths;
-	};
+        std::mutex mutex;
+        zkutil::ZooKeeperPtr zookeeper;
+        std::unordered_set<std::string> invalidated_paths;
+    };
 
-	std::shared_ptr<Context> context;
+    std::shared_ptr<Context> context;
 
-	std::unordered_set<std::string> nonexistent_nodes;
-	std::unordered_map<std::string, std::string> node_cache;
+    std::unordered_set<std::string> nonexistent_nodes;
+    std::unordered_map<std::string, std::string> node_cache;
 };
 
 }

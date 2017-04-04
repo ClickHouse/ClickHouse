@@ -7,26 +7,26 @@ namespace mysqlxx
 
 std::string errorMessage(MYSQL * driver)
 {
-	std::stringstream res;
-	res << mysql_error(driver) << " (" << driver->host << ":" << driver->port << ")";
-	return res.str();
+    std::stringstream res;
+    res << mysql_error(driver) << " (" << driver->host << ":" << driver->port << ")";
+    return res.str();
 }
 
 
 /// Для внутренних нужд библиотеки.
 void checkError(MYSQL * driver)
 {
-	unsigned num = mysql_errno(driver);
+    unsigned num = mysql_errno(driver);
 
-	if (num)
-		throw Exception(errorMessage(driver), num);
+    if (num)
+        throw Exception(errorMessage(driver), num);
 }
 
 
 /// Для внутренних нужд библиотеки.
 void onError(MYSQL * driver)
 {
-	throw Exception(errorMessage(driver), mysql_errno(driver));
+    throw Exception(errorMessage(driver), mysql_errno(driver));
 }
 
 }

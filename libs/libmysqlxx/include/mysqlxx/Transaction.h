@@ -14,33 +14,33 @@ namespace mysqlxx
 class Transaction : private boost::noncopyable
 {
 public:
-	Transaction(Connection & conn_)
-		: conn(conn_), finished(false)
-	{
-		conn.query("START TRANSACTION").execute();
-	}
+    Transaction(Connection & conn_)
+        : conn(conn_), finished(false)
+    {
+        conn.query("START TRANSACTION").execute();
+    }
 
-	virtual ~Transaction()
-	{
-		if (!finished)
-			rollback();
-	}
+    virtual ~Transaction()
+    {
+        if (!finished)
+            rollback();
+    }
 
-	void commit()
-	{
-		conn.query("COMMIT").execute();
-		finished = true;
-	}
+    void commit()
+    {
+        conn.query("COMMIT").execute();
+        finished = true;
+    }
 
-	void rollback()
-	{
-		conn.query("ROLLBACK").execute();
-		finished = true;
-	}
+    void rollback()
+    {
+        conn.query("ROLLBACK").execute();
+        finished = true;
+    }
 
 private:
-	Connection & conn;
-	bool finished;
+    Connection & conn;
+    bool finished;
 };
 
 

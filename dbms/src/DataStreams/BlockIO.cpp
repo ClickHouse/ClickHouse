@@ -1,5 +1,5 @@
-#include <DB/Interpreters/ProcessList.h>
-#include <DB/DataStreams/BlockIO.h>
+#include <Interpreters/ProcessList.h>
+#include <DataStreams/BlockIO.h>
 
 namespace DB
 {
