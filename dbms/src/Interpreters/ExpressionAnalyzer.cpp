@@ -2238,7 +2238,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     if (!subquery_for_set.join)
     {
         JoinPtr join = std::make_shared<Join>(
-            join_key_names_left, join_key_names_right, settings.limits,
+            join_key_names_left, join_key_names_right,
+            settings.join_use_nulls, settings.limits,
             join_params.kind, join_params.strictness);
 
         Names required_joined_columns(join_key_names_right.begin(), join_key_names_right.end());
