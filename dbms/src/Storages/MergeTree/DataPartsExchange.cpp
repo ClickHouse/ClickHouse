@@ -57,8 +57,9 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
     if (total_sends >= data.settings.replicated_max_parallel_sends
         || data.current_table_sends >= data.settings.replicated_max_parallel_sends_for_table)
     {
-        response.setStatus(std::to_string(509));
+        response.setStatus(std::to_string(HTTP_TOO_MANY_REQUESTS));
         response.setReason("Too many concurrent fetches, try again later");
+        response.set("Retry-After", "10");
         response.setChunkedTransferEncoding(false);
         return;
     }

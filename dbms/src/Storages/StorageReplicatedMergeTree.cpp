@@ -103,7 +103,7 @@ namespace ErrorCodes
     extern const int UNFINISHED;
     extern const int METADATA_MISMATCH;
     extern const int RESHARDING_NULLABLE_SHARDING_KEY;
-    extern const int RECEIVED_ERROR_BANDWIDTH_LIMIT_EXCEEDED;
+    extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
 }
 
 
@@ -1423,7 +1423,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                     return false;
             } catch (const Exception & e) {
                 /// No stacktrace, just log message
-                if (e.code() == ErrorCodes::RECEIVED_ERROR_BANDWIDTH_LIMIT_EXCEEDED)
+                if (e.code() == ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
                 {
                     LOG_INFO(log, "Too busy replica " << replica << " with part " << entry.new_part_name << ". Will try later.");
                     return false;
@@ -3455,7 +3455,7 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
             }
             catch (const DB::Exception & e)
             {
-                if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_BANDWIDTH_LIMIT_EXCEEDED)
+                if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
                     throw;
 
                 LOG_INFO(log, e.displayText());
