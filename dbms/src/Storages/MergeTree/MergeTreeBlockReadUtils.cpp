@@ -63,4 +63,6 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
 }
 
 
+MergeTreeReadTask::~MergeTreeReadTask() = default;
+
 }

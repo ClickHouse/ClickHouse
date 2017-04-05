@@ -665,8 +665,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
             for (size_t part_num = 0; part_num < parts.size(); ++part_num)
             {
                 auto column_part_stream = std::make_shared<MergeTreeBlockInputStream>(
-                    data, parts[part_num], DEFAULT_MERGE_BLOCK_SIZE, 0, column_name_, MarkRanges(1, MarkRange(0, parts[part_num]->size)),
-                    false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false, true);
+                    data, parts[part_num], DEFAULT_MERGE_BLOCK_SIZE, 0, column_name_, MarkRanges{MarkRange(0, parts[part_num]->size)},
+                    false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false, Names{}, 0, true);
 
                 column_part_stream->setProgressCallback(
                     MergeProgressCallbackVerticalStep{merge_entry, sum_input_rows_exact, column_sizes, column_name, watch_prev_elapsed});

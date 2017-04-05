@@ -51,6 +51,8 @@ struct MergeTreeReadTask
     ordered_names{ordered_names}, column_name_set{column_name_set}, columns{columns}, pre_columns{pre_columns},
     remove_prewhere_column{remove_prewhere_column}, should_reorder{should_reorder}
     {}
+
+    virtual ~MergeTreeReadTask();
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
@@ -104,6 +106,7 @@ struct MergeTreeBlockSizePredictor
             info.bytes_per_row = info.bytes_per_row_global;
             bytes_per_row_global += info.bytes_per_row_global;
         }
+        bytes_per_row_current = bytes_per_row_global;
     }
 
     void startBlock()

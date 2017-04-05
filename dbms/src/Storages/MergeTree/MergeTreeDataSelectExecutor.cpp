@@ -710,19 +710,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
                 BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io,
-                    settings.max_read_buffer_size, true);
+                    settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query);
 
                 res.push_back(source_stream);
-
-                for (const String & virt_column : virt_columns)
-                {
-                    if (virt_column == "_part")
-                        res.back() = std::make_shared<AddingConstColumnBlockInputStream<String>>(
-                            res.back(), std::make_shared<DataTypeString>(), part.data_part->name, "_part");
-                    else if (virt_column == "_part_index")
-                        res.back() = std::make_shared<AddingConstColumnBlockInputStream<UInt64>>(
-                            res.back(), std::make_shared<DataTypeUInt64>(), part.part_index_in_query, "_part_index");
-                }
             }
         }
 
@@ -766,17 +756,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 
         BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
             data, part.data_part, max_block_size, settings.preferred_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
-            prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true);
-
-        for (const String & virt_column : virt_columns)
-        {
-            if (virt_column == "_part")
-                source_stream = std::make_shared<AddingConstColumnBlockInputStream<String>>(
-                    source_stream, std::make_shared<DataTypeString>(), part.data_part->name, "_part");
-            else if (virt_column == "_part_index")
-                source_stream = std::make_shared<AddingConstColumnBlockInputStream<UInt64>>(
-                    source_stream, std::make_shared<DataTypeUInt64>(), part.part_index_in_query, "_part_index");
-        }
+            prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
+            virt_columns, part.part_index_in_query);
 
         to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.getPrimaryExpression()));
     }
