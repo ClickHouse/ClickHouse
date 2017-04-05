@@ -17,6 +17,7 @@ var paths = {
     scripts: ['*.js', '!gulpfile.js'],
     styles: ['*.css'],
     images: ['*.png', '*.ico'],
+    robotstxt: ['robots.txt'],
     presentations: ['../doc/presentations/**']
 };
 
@@ -37,7 +38,13 @@ gulp.task('presentations', [], function () {
         .pipe(connect.reload())
 });
 
-gulp.task('htmls', ['reference', 'presentations'], function () {
+gulp.task('robotstxt', [], function () {
+    return gulp.src(paths.robotstxt)
+        .pipe(gulp.dest(outputDir))
+        .pipe(connect.reload())
+});
+
+gulp.task('htmls', ['reference', 'robotstxt', 'presentations'], function () {
     return gulp.src(paths.htmls)
         .pipe(htmlmin({collapseWhitespace: true}))
         .pipe(minifyInline())
