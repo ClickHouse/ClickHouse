@@ -1425,7 +1425,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 /// No stacktrace, just log message
                 if (e.code() == ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
                 {
-                    LOG_INFO(log, "Too busy replica " << replica << " with part " << entry.new_part_name << ". Will try later.");
+                    LOG_INFO(log, "Too busy replica " << replica << " with part " << entry.new_part_name << ". Will try later. " << e.what());
                     return false;
                 }
                 throw e;
