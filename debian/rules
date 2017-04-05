@@ -5,6 +5,10 @@
 export DH_VERBOSE=1
 
 export DEB_BUILD_MAINT_OPTIONS=hardening=+all
+
+BUILDDIR = $(CURDIR)/debian/build
+DESTDIR = $(CURDIR)/debian/tmp
+
 CPPFLAGS:=$(shell dpkg-buildflags --get CPPFLAGS)
 CFLAGS:=$(shell dpkg-buildflags --get CFLAGS) $(CPPFLAGS)
 CXXFLAGS:=$(shell dpkg-buildflags --get CXXFLAGS) $(CPPFLAGS)
@@ -40,7 +44,7 @@ CC := $(DEB_HOST_GNU_TYPE)-$(DEB_CC)$(DEB_COMPILER_VERSION)
 CXX := $(DEB_HOST_GNU_TYPE)-$(DEB_CXX)$(DEB_COMPILER_VERSION)
 endif
 
-CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` -DCMAKE_INSTALL_PREFIX=/usr $(CMAKE_FLAGS_ADD)
+CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` $(CMAKE_FLAGS_ADD) -DCMAKE_INSTALL_PREFIX=$(DESTDIR)
 
 ifdef CMAKE_BUILD_TYPE
 	CMAKE_FLAGS += -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
@@ -50,12 +54,14 @@ ifdef USE_STATIC_LIBRARIES
 	CMAKE_FLAGS += -DUSE_STATIC_LIBRARIES=$(USE_STATIC_LIBRARIES)
 endif
 
+
 %:
-	dh $@ --parallel --buildsystem=cmake
+	dh $@ --parallel --max-parallel=$(THREADS_COUNT) --buildsystem=cmake --builddirectory=$(BUILDDIR)
 #--sourcedir=debian/tmp
 # --with=systemd  --max-parallel=4
 
 override_dh_auto_configure:
+	dh_auto_configure -- $(CMAKE_FLAGS)
 
 zzzzconfigure-stamp:
 	dh_testdir
@@ -71,18 +77,22 @@ override_dh_auto_test:
 
 #build: build-stamp
 #build-stamp: configure-stamp
-override_dh_auto_build:
-	dh_testdir
+ZZoverride_dh_auto_build:
+	#dh_testdir
 	# если не задан тип сборки запускаем cmake без указания типа, если задан - передаём его
 	# for building Debug run: debuild -e CMAKE_BUILD_TYPE=Debug
 	# for building with shared libs run: debuild -e USE_STATIC_LIBRARIES=0
-	mkdir -p build && cd build && pwd && cmake .. $(CMAKE_FLAGS)
+	#mkdir -p build && cd build && pwd && cmake .. $(CMAKE_FLAGS)
 	# TODO: возможно надо исправить
 	# последовательно запускаем make для каждой из целей.
 	# т.к. при параллельном запуске (make target1 target2) несколько раз одновременно создаются бинарники
 	# и возникает raise с custom_command, использующие эти бинарники
 	for target in ${BUILD_TARGETS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$target || exit $$?; done
-	touch $@
+	#touch $@
+
+override_dh_auto_build:
+	for target in ${BUILD_TARGETS}; do $(MAKE) -j$(THREADS_COUNT) -C $(BUILDDIR) $$target || exit $$?; done
+
 
 #clean:
 #override_dh_auto_clean:
@@ -102,16 +112,24 @@ ZZoverride_dh_auto_clean:
 	#for DAEMON_PKG in ${DAEMONS}; do AUTO=`grep "# automatically created" debian/$$DAEMON_PKG.install`; if [ "x$$AUTO" != "x" ]; then rm -f debian/$$DAEMON_PKG.install; fi; done
 	dh_clean
 
+override_dh_auto_clean:
+	rm -rf $(BUILDDIR)
+	rm -rf $(DESTDIR)
+	dh_clean
+
 #dh_install:
-install:
+#install:
 
 #install: build
 override_dh_auto_install:
 	#dh_testdir
 	#dh_testroot
 	#dh_prep
-	cd build && \
-	for target in ${BUILD_TARGETS}; do DESTDIR=../debian/tmp cmake -DCOMPONENT=$$target -P cmake_install.cmake; done
+
+	dh_auto_install -- DESTDIR=$(DESTDIR)
+
+	#cd build && \
+	#for target in ${BUILD_TARGETS}; do DESTDIR=$(DESTDIR) cmake -DCOMPONENT=$$target -P cmake_install.cmake; done
 
 	# Создаём нужные файлы для dh_installinit, т.к. он их понимает только внутри debian/
 	#for I in debian/tmp/etc/init.d/*; do echo $$I; ln -s tmp/etc/init.d/`basename $$I` debian/`basename $$I`.init; done
@@ -157,9 +175,9 @@ override_dh_auto_install:
 
 
 	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
-	mkdir -p debian/tmp/usr/share/clickhouse/bin debian/tmp/usr/share/clickhouse/headers
-	debian/copy_clang_binaries.sh debian/tmp/usr/share/clickhouse/bin/
-	./copy_headers.sh . debian/tmp/usr/share/clickhouse/headers
+	mkdir -p $(DESTDIR)/usr/share/clickhouse/bin $(DESTDIR)/usr/share/clickhouse/headers
+	debian/copy_clang_binaries.sh $(DESTDIR)/usr/share/clickhouse/bin/
+	./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
 
 	# Making docs
 	cp LICENSE debian/copyright
@@ -174,14 +192,15 @@ override_dh_auto_install:
 	#ln -s clickhouse-server.docs debian/clickhouse-server-common.docs
 	#ln -s clickhouse-server.docs debian/clickhouse-server-metrika.docs
 
-	mkdir -p debian/tmp/etc/security/limits.d
-	cp debian/clickhouse-server.limits debian/tmp/etc/security/limits.d/clickhouse.conf
-	mkdir -p debian/tmp/etc/init.d
-	cp debian/clickhouse-server.init debian/tmp/etc/init.d/clickhouse-server
-	mkdir -p debian/tmp/etc/cron.d
-	cp debian/clickhouse-server.cron.d debian/tmp/etc/cron.d/clickhouse-server
+	mkdir -p $(DESTDIR)/etc/security/limits.d
+	cp debian/clickhouse-server.limits $(DESTDIR)/etc/security/limits.d/clickhouse.conf
+	mkdir -p $(DESTDIR)/etc/init.d
+	cp debian/clickhouse-server.init $(DESTDIR)/etc/init.d/clickhouse-server
+	mkdir -p $(DESTDIR)/etc/cron.d
+	cp debian/clickhouse-server.cron.d $(DESTDIR)/etc/cron.d/clickhouse-server
 
-	dh_auto_install --sourcedir=debian/tmp
+	#dh_auto_install --sourcedir=$(DESTDIR)
+	#dh_auto_install -- DESTDIR=$(DESTDIR)
 	#dh_install --sourcedir=debian/tmp
 	#touch $@
 
@@ -200,7 +219,7 @@ zzzbinary-arch: build install
 	dh_installcron
 	dh_installdirs
 	dh_installchangelogs
-	dh_install --sourcedir=debian/tmp
+	dh_install --sourcedir=$(DESTDIR)
 	dh_link
 	dh_compress
 	dh_fixperms
