@@ -32,12 +32,15 @@ struct MergeTreeBaseBlockInputStream : public IProfilingBlockInputStream
 
 protected:
 
-    Block readFromPart(MergeTreeReadTask * task);
-
-    void injectVirtualColumns(Block & block, const MergeTreeReadTask * task);
+    /// Creates new this->task, and initilizes readers
+    virtual bool getNewTask() = 0;
 
     /// We will call progressImpl manually.
     void progress(const Progress & value) override {}
+
+    Block readFromPart();
+
+    void injectVirtualColumns(Block & block);
 
 protected:
 
@@ -55,6 +58,10 @@ protected:
     bool use_uncompressed_cache;
     bool save_marks_in_cache;
 
+    Names virt_column_names;
+
+    std::unique_ptr<MergeTreeReadTask> task;
+
     std::shared_ptr<UncompressedCache> owned_uncompressed_cache;
     std::shared_ptr<MarkCache> owned_mark_cache;
 
@@ -62,11 +69,8 @@ protected:
     MergeTreeReaderPtr reader;
     MergeTreeReaderPtr pre_reader;
 
-    size_t max_block_size_marks;
-
-    Names virt_column_names;
-
     Logger * log;
+    size_t max_block_size_marks;
 };
 
 
@@ -100,13 +104,12 @@ protected:
 
 private:
     /// Requests read task from MergeTreeReadPool and signals whether it got one
-    bool getNewTask();
+    bool getNewTask() override;
 
     /// "thread" index (there are N threads and each thread is assigned index in interval [0..N-1])
     size_t thread;
 
     std::shared_ptr<MergeTreeReadPool> pool;
-    std::shared_ptr<MergeTreeReadTask> task;
     size_t min_marks_to_read;
 };
 

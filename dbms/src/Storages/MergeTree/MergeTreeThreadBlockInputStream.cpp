@@ -35,6 +35,7 @@ MergeTreeBaseBlockInputStream::MergeTreeBaseBlockInputStream(
     max_read_buffer_size(max_read_buffer_size),
     use_uncompressed_cache(use_uncompressed_cache),
     save_marks_in_cache(save_marks_in_cache),
+    virt_column_names(virt_column_names),
     max_block_size_marks(max_block_size_rows / storage.index_granularity)
 {
 }
@@ -92,13 +93,13 @@ Block MergeTreeThreadBlockInputStream::readImpl()
         if (!task && !getNewTask())
             break;
 
-        res = readFromPart(task.get());
+        res = readFromPart();
 
         if (res)
-            injectVirtualColumns(res, task.get());
+            injectVirtualColumns(res);
 
         if (task->mark_ranges.empty())
-            task = {};
+            task.reset();
     }
 
     return res;
@@ -162,7 +163,7 @@ bool MergeTreeThreadBlockInputStream::getNewTask()
 }
 
 
-Block MergeTreeBaseBlockInputStream::readFromPart(MergeTreeReadTask * task)
+Block MergeTreeBaseBlockInputStream::readFromPart()
 {
     Block res;
 
@@ -355,6 +356,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart(MergeTreeReadTask * task)
                 marks_to_read = std::min(marks_to_read, std::max(1UL, recommended_marks));
             }
 
+            LOG_TRACE(log, "Will read " << marks_to_read << " marks");
             reader->readRange(range.begin, range.begin + marks_to_read, res);
 
             if (preferred_block_size_bytes)
@@ -374,7 +376,8 @@ Block MergeTreeBaseBlockInputStream::readFromPart(MergeTreeReadTask * task)
         reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
     }
 
-    LOG_TRACE(log, "Read block with " << res.rows() << " rows");
+    LOG_TRACE(log, "task->ordered_names.size()=" << task->ordered_names.size());
+    LOG_TRACE(log, "Read block with " << res.rows() << " rows: " << res.dumpStructure());
 
     if (preferred_block_size_bytes && bytes_exceeded)
     {
@@ -387,7 +390,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart(MergeTreeReadTask * task)
 }
 
 
-void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block, const MergeTreeReadTask * task)
+void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block)
 {
     const auto rows = block.rows();
 
