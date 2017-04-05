@@ -26,8 +26,7 @@ for src_file in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -msse4 -mcx16 -mpopc
     $(cat "$SOURCE_PATH/build/include_directories.txt") \
     "$SOURCE_PATH/dbms/src/Interpreters/SpecializedAggregator.h" |
     tr -d '\\' |
-    grep -v '.o:' |
-    sed -r -e 's/^.+\.cpp / /');
+    sed -r -e 's/^\w+\.o://');
 do
     dst_file=$src_file;
     mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
