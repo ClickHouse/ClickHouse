@@ -29,8 +29,7 @@ for src_file in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -msse4 -mcx16 -mpopc
     grep -v '.o:' |
     sed -r -e 's/^.+\.cpp / /');
 do
-    # Для совместимости со случаем сборки ClickHouse из репозитория Метрики, удаляем префикс ClickHouse из результирующих путей.
-    dst_file=$(echo $src_file | sed -r -e 's/^ClickHouse\///');
+    dst_file=$src_file;
     mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$dst_file";
 done
