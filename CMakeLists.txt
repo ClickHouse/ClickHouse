@@ -137,9 +137,8 @@ if (ENABLE_TESTS)
     add_subdirectory (dbms/tests)
 endif (ENABLE_TESTS)
 
-# Installation prefix
-if (NOT CMAKE_SYSTEM MATCHES "FreeBSD")
-    set (CMAKE_INSTALL_PREFIX /usr)
+# when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
+if (CMAKE_INSTALL_PREFIX MATCHES "/usr")
     set (CLICKHOUSE_ETC_DIR /etc)
 else ()
     set (CLICKHOUSE_ETC_DIR ${CMAKE_INSTALL_PREFIX}/etc)
