@@ -97,6 +97,7 @@ private:
         }
     };
 
+    void init();
     void fetchNewBlock(Source & source, size_t source_num);
 
     std::vector<Source> sources;

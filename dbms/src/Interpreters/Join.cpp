@@ -2,6 +2,9 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
+
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Interpreters/Join.h>
 #include <Interpreters/NullableUtils.h>
@@ -23,11 +26,12 @@ namespace ErrorCodes
 }
 
 
-Join::Join(const Names & key_names_left_, const Names & key_names_right_,
+Join::Join(const Names & key_names_left_, const Names & key_names_right_, bool use_nulls_,
     const Limits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
     : kind(kind_), strictness(strictness_),
     key_names_left(key_names_left_),
     key_names_right(key_names_right_),
+    use_nulls(use_nulls_),
     log(&Logger::get("Join")),
     max_rows(limits.max_rows_in_join),
     max_bytes(limits.max_bytes_in_join),
@@ -241,6 +245,18 @@ bool Join::checkSizeLimits() const
 }
 
 
+static void convertColumnToNullable(ColumnWithTypeAndName & column)
+{
+    if (column.type->isNullable() || column.type->isNull())
+        return;
+
+    column.type = std::make_shared<DataTypeNullable>(column.type);
+
+    column.column = std::make_shared<ColumnNullable>(column.column,
+        std::make_shared<ColumnConstUInt8>(column.column->size(), 0)->convertToFullColumn());
+}
+
+
 void Join::setSampleBlock(const Block & block)
 {
     Poco::ScopedWriteRWLock lock(rwlock);
@@ -273,12 +289,19 @@ void Join::setSampleBlock(const Block & block)
             ++pos;
     }
 
-    for (size_t i = 0, size = sample_block_with_columns_to_add.columns(); i < size; ++i)
+    size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
+
+    for (size_t i = 0; i < num_columns_to_add; ++i)
     {
         auto & column = sample_block_with_columns_to_add.getByPosition(i);
         if (!column.column)
             column.column = column.type->createColumn();
     }
+
+    /// In case of LEFT and FULL joins, if use_nulls, convert joined columns to Nullable.
+    if (use_nulls && (kind == ASTTableJoin::Kind::Left || kind == ASTTableJoin::Kind::Full))
+        for (size_t i = 0; i < num_columns_to_add; ++i)
+            convertColumnToNullable(sample_block_with_keys.getByPosition(i));
 }
 
 
@@ -451,12 +474,23 @@ bool Join::insertFromBlock(const Block & block)
             stored_block->erase(stored_block->getPositionByName(name));
     }
 
+    size_t size = stored_block->columns();
+
     /// Rare case, when joined columns are constant. To avoid code bloat, simply materialize them.
-    for (size_t i = 0, size = stored_block->columns(); i < size; ++i)
+    for (size_t i = 0; i < size; ++i)
     {
         ColumnPtr col = stored_block->safeGetByPosition(i).column;
         if (auto converted = col->convertToFullColumnIfConst())
             stored_block->safeGetByPosition(i).column = converted;
+    }
+
+    /// In case of LEFT and FULL joins, if use_nulls, convert joined columns to Nullable.
+    if (use_nulls && (kind == ASTTableJoin::Kind::Left || kind == ASTTableJoin::Kind::Full))
+    {
+        for (size_t i = getFullness(kind) ? keys_size : 0; i < size; ++i)
+        {
+            convertColumnToNullable(stored_block->getByPosition(i));
+        }
     }
 
     if (kind != ASTTableJoin::Kind::Cross)
@@ -946,6 +980,11 @@ public:
 
         for (size_t i = 0; i < num_columns_right; ++i)
             column_numbers_keys_and_right.push_back(num_keys + num_columns_left + i);
+
+        /// If use_nulls, convert left columns to Nullable.
+        if (parent.use_nulls)
+            for (size_t i = 0; i < num_columns_left; ++i)
+                convertColumnToNullable(result_sample_block.getByPosition(column_numbers_left[i]));
 
         columns_left.resize(num_columns_left);
         columns_keys_and_right.resize(num_keys + num_columns_right);

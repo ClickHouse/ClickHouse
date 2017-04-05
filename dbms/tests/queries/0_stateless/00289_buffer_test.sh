@@ -34,13 +34,13 @@ wait
 # To avoid race conditions (see comments in StorageBuffer.cpp)
 function retry()
 {
-	RES=$(clickhouse-client --query="$1")
-	if [[ $RES != "20000	1	20000	200010000	20000" ]]; then
-		sleep 10;
-		RES=$(clickhouse-client --query="$1");
-	fi;
+    RES=$(clickhouse-client --query="$1")
+    if [[ $RES != "20000    1    20000    200010000    20000" ]]; then
+        sleep 10;
+        RES=$(clickhouse-client --query="$1");
+    fi;
 
-	echo $RES;
+    echo $RES;
 }
 
 retry "SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.buffer;";

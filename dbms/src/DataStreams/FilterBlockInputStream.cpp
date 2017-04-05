@@ -51,6 +51,27 @@ const Block & FilterBlockInputStream::getTotals()
 }
 
 
+static void analyzeConstantFilter(const IColumn & column, bool & filter_always_false, bool & filter_always_true)
+{
+    if (column.isNull())
+    {
+        filter_always_false = true;
+    }
+    else
+    {
+        const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(&column);
+
+        if (column_const)
+        {
+            if (column_const->getData())
+                filter_always_true = true;
+            else
+                filter_always_false = true;
+        }
+    }
+}
+
+
 Block FilterBlockInputStream::readImpl()
 {
     Block res;
@@ -77,29 +98,13 @@ Block FilterBlockInputStream::readImpl()
         ColumnPtr column = sample_block.safeGetByPosition(filter_column_in_sample_block).column;
 
         if (column)
-        {
-            if (column->isNullable())
-            {
-                ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
-                column = nullable_col.getNestedColumn();
-            }
-
-            const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(&*column);
-
-            if (column_const)
-            {
-                if (column_const->getData())
-                    filter_always_true = true;
-                else
-                    filter_always_false = true;
-            }
-        }
+            analyzeConstantFilter(*column, filter_always_false, filter_always_true);
 
         if (filter_always_false)
             return res;
     }
 
-    /// Until the block is encountered, after filtering which something remains, or the stream does not end.
+    /// Until non-empty block after filtering or end of stream.
     while (1)
     {
         res = children.back()->read();
@@ -140,23 +145,18 @@ Block FilterBlockInputStream::readImpl()
               * This happens if the function returns a constant for a non-constant argument.
               * For example, `ignore` function.
               */
-            const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(observed_column);
+            analyzeConstantFilter(*observed_column, filter_always_false, filter_always_true);
 
-            if (column_const)
+            if (filter_always_false)
             {
-                if (column_const->getData())
-                {
-                    filter_always_true = true;
-                }
-                else
-                {
-                    filter_always_false = true;
-                    res.clear();
-                }
+                res.clear();
                 return res;
             }
 
-            throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.",
+            if (filter_always_true)
+                return res;
+
+            throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8 or Nullable variants of them.",
                 ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
         }
 
@@ -220,7 +220,7 @@ Block FilterBlockInputStream::readImpl()
         if (filtered_rows == filter.size())
         {
             /// Replace the column with the filter by a constant.
-            res.safeGetByPosition(filter_column).column = std::make_shared<ColumnConstUInt8>(filtered_rows, 1);
+            res.safeGetByPosition(filter_column).column = res.safeGetByPosition(filter_column).type->createConstColumn(filtered_rows, UInt64(1));
             /// No need to touch the rest of the columns.
             return res;
         }
@@ -233,7 +233,7 @@ Block FilterBlockInputStream::readImpl()
             if (i == static_cast<size_t>(filter_column))
             {
                 /// The column with filter itself is replaced with a column with a constant `1`, since after filtering, nothing else will remain.
-                current_column.column = std::make_shared<ColumnConstUInt8>(filtered_rows, 1);
+                current_column.column = current_column.type->createConstColumn(filtered_rows, UInt64(1));
                 continue;
             }
 

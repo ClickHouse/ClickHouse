@@ -9,13 +9,13 @@ CLANG=$(command -v clang)
 LD=$(command -v gold || command -v ld.gold || command -v ld)
 
 if [ ! -x "$CLANG" ]; then
-	echo "Not found executable clang."
-	exit 1
+    echo "Not found executable clang."
+    exit 1
 fi
 
 if [ ! -x "$LD" ]; then
-	echo "Not found executable gold or ld."
-	exit 1
+    echo "Not found executable gold or ld."
+    exit 1
 fi
 
 cp "$CLANG" $DST

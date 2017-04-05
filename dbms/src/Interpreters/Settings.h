@@ -258,7 +258,13 @@ struct Settings
       *  will skip until next line and continue. \
       */ \
     M(SettingUInt64, input_format_allow_errors_num, 0) \
-    M(SettingFloat, input_format_allow_errors_ratio, 0)
+    M(SettingFloat, input_format_allow_errors_ratio, 0) \
+    \
+   /** Use NULLs for non-joined rows of outer JOINs. \
+     * If false, use default value of corresponding columns data type. \
+     */ \
+    M(SettingBool, join_use_nulls, 0) \
+
 
     /// Possible limits for query execution.
     Limits limits;
