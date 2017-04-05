@@ -16,12 +16,15 @@ LDFLAGS:=$(shell dpkg-buildflags --get LDFLAGS)
 
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
+
 include /usr/share/dpkg/pkg-info.mk
 export LIBCOMMON_REVISION=$(DEB_VERSION_UPSTREAM)
 
 ifndef THREADS_COUNT
     THREADS_COUNT=`nproc || grep -c ^processor /proc/cpuinfo`
 endif
+
+#DEB_BUILD_OPTIONS:="parallel=$(THREADS_COUNT)"
 
 #BUILD_TARGETS=clickhouse $(DAEMONS)
 BUILD_TARGETS=clickhouse clickhouse-client clickhouse-server clickhouse-compressor
@@ -44,7 +47,7 @@ CC := $(DEB_HOST_GNU_TYPE)-$(DEB_CC)$(DEB_COMPILER_VERSION)
 CXX := $(DEB_HOST_GNU_TYPE)-$(DEB_CXX)$(DEB_COMPILER_VERSION)
 endif
 
-CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` $(CMAKE_FLAGS_ADD) -DCMAKE_INSTALL_PREFIX=$(DESTDIR)
+CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` $(CMAKE_FLAGS_ADD) -DCMAKE_INSTALL_PREFIX=$(DESTDIR) -DENABLE_TESTS=0
 
 ifdef CMAKE_BUILD_TYPE
 	CMAKE_FLAGS += -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
@@ -56,7 +59,9 @@ endif
 
 
 %:
+	echo "DBO= $(DEB_BUILD_OPTIONS)"
 	dh $@ --parallel --max-parallel=$(THREADS_COUNT) --buildsystem=cmake --builddirectory=$(BUILDDIR)
+
 #--sourcedir=debian/tmp
 # --with=systemd  --max-parallel=4
 
@@ -90,8 +95,11 @@ ZZoverride_dh_auto_build:
 	for target in ${BUILD_TARGETS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$target || exit $$?; done
 	#touch $@
 
-override_dh_auto_build:
-	for target in ${BUILD_TARGETS}; do $(MAKE) -j$(THREADS_COUNT) -C $(BUILDDIR) $$target || exit $$?; done
+#override_dh_auto_build:
+#	for target in ${BUILD_TARGETS}; do $(MAKE) -j$(THREADS_COUNT) -C $(BUILDDIR) $$target || exit $$?; done
+
+#override_dh_auto_build:
+#	dh_auto_build --parallel
 
 
 #clean:
@@ -126,7 +134,9 @@ override_dh_auto_install:
 	#dh_testroot
 	#dh_prep
 
-	dh_auto_install -- DESTDIR=$(DESTDIR)
+	#dh_auto_install -- DESTDIR=$(DESTDIR)
+	#dh_auto_install -- ${BUILD_TARGETS}
+	dh_auto_install
 
 	#cd build && \
 	#for target in ${BUILD_TARGETS}; do DESTDIR=$(DESTDIR) cmake -DCOMPONENT=$$target -P cmake_install.cmake; done
@@ -204,6 +214,9 @@ override_dh_auto_install:
 	#dh_install --sourcedir=debian/tmp
 	#touch $@
 
+
+override_dh_install:
+    dh_install --list-missing -- DESTDIR=$(DESTDIR)
 
 # Build architecture-independent files here.
 zzzbinary-indep: build install

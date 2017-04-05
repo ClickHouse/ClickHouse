@@ -87,4 +87,4 @@ target_link_libraries (
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)
-endif (ENABLE_TESTS)
+endif ()

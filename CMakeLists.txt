@@ -134,8 +134,7 @@ endif (TEST_COVERAGE)
 if (ENABLE_TESTS)
     message (STATUS "Tests are enabled")
     enable_testing()
-    add_subdirectory (dbms/tests)
-endif (ENABLE_TESTS)
+endif ()
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX MATCHES "/usr")
