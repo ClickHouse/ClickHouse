@@ -16,18 +16,18 @@ f=0
 
 if [ `cat /tmp/t1 | wc -l` -ne 5 ]
 then
-	echo 'Failed 1'
-	f=1
+    echo 'Failed 1'
+    f=1
 fi
 
 if [ `cat /tmp/t2 | wc -l` -ne 0 ]
 then
-	echo 'Failed 2'
-	f=1
+    echo 'Failed 2'
+    f=1
 fi
 
 if [ $f -eq 0 ]
 then
-	echo 'Passed'
+    echo 'Passed'
 fi
 

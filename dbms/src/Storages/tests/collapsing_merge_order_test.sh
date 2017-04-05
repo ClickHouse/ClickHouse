@@ -60,9 +60,9 @@ echo "SELECT * FROM collapsing_test.m1" | clickhouse-client | tee /tmp/t2 || exi
 diff -q /tmp/t{1,2}
 if [ $? -ne 0 ]
 then
-	echo 'Failed'
-	exit 27
+    echo 'Failed'
+    exit 27
 else
-	echo 'Passed'
+    echo 'Passed'
 fi
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from __future__ import print_function 
+from __future__ import print_function
 import sys
 import json
 
@@ -19,12 +19,12 @@ def parse_block(block=[], options=[]):
         timing1 = block[1].strip().split()[1]
         timing2 = block[2].strip().split()[1]
         timing3 = block[3].strip().split()[1]
-    if options.show_queries:    
+    if options.show_queries:
         result.append( query )
     if not options.show_first_timings:
-        result += [ timing1 , timing2, timing3 ] 
+        result += [ timing1 , timing2, timing3 ]
     else:
-        result.append(timing1) 
+        result.append(timing1)
     return result
 
 
@@ -44,7 +44,7 @@ def read_stats_file(options, fname):
             elif 'Time:' in line:
                 block.append( line )
 
-    return result 
+    return result
 
 
 def compare_stats_files(options, arguments):
@@ -58,12 +58,12 @@ def compare_stats_files(options, arguments):
     for idx, data_set in enumerate(file_output):
         int_result = []
         for timing in data_set:
-           int_result.append(float(timing[0])) #y values 
-        result.append([[x for x in range(0, len(int_result)) ], int_result, 
+           int_result.append(float(timing[0])) #y values
+        result.append([[x for x in range(0, len(int_result)) ], int_result,
 pyplot_colors[idx] + '^' ] )
-#        result.append([x for x in range(1, len(int_result)) ]) #x values 
+#        result.append([x for x in range(1, len(int_result)) ]) #x values
 #        result.append( pyplot_colors[idx] + '^' )
-    
+
     return result
 
 def parse_args():
@@ -85,7 +85,7 @@ def gen_pyplot_code(options, arguments):
         x_values, y_values, line_style = data_set
         result += '\nplt.plot('
         result += '%s, %s, \'%s\'' % ( x_values, y_values, line_style )
-        result += ', label=\'%s try\')' % idx 
+        result += ', label=\'%s try\')' % idx
     print('import matplotlib.pyplot as plt')
     print(result)
     print( 'plt.xlabel(\'Try number\')' )
