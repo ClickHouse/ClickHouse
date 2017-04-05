@@ -2,14 +2,14 @@
 
 function perform()
 {
-	local query=$1
-	TZ=UTC clickhouse-client \
-		--use_client_time_zone=1 \
-		--input_format_values_interpret_expressions=0 \
-		--query "$query" 2>/dev/null
-	if [ "$?" -ne 0 ]; then
-		echo "query failed"
-	fi
+    local query=$1
+    TZ=UTC clickhouse-client \
+        --use_client_time_zone=1 \
+        --input_format_values_interpret_expressions=0 \
+        --query "$query" 2>/dev/null
+    if [ "$?" -ne 0 ]; then
+        echo "query failed"
+    fi
 }
 
 perform "DROP TABLE IF EXISTS test.alter"

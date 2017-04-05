@@ -5,7 +5,7 @@ clickhouse-client --query="CREATE TABLE test.csv (s String, n UInt64, d Date) EN
 
 echo '"Hello, world", 123, "2016-01-01"
 "Hello, ""world""", "456", 2016-01-02,
-Hello "world", 789 ,2016-01-03   
+Hello "world", 789 ,2016-01-03
 "Hello
  world", 100, 2016-01-04,' | clickhouse-client --query="INSERT INTO test.csv FORMAT CSV";
 

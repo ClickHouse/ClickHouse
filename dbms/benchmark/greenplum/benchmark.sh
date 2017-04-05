@@ -10,7 +10,7 @@ mem='15GB'
 cat $filename  | sed "s/{table}/$table/g" | while read query ;
 do
     ssh -n $host1 'echo 3 |  tee /proc/sys/vm/drop_caches; sync' > /dev/null
-    ssh -n $host2 'echo 3 |  tee /proc/sys/vm/drop_caches; sync' > /dev/null 
+    ssh -n $host2 'echo 3 |  tee /proc/sys/vm/drop_caches; sync' > /dev/null
     sleep 5
     echo $query | egrep "SELECT UserID, date_trunc\('minute', EventTime\) AS m|SELECT Referer AS key, avg\(length\(Referer\)\) AS l|SELECT URL, count(1) AS c FROM.*GROUP BY URL|SELECT 1, URL, count\(1\) AS c FROM.*GROUP BY 1" && mem='10GB'
    echo $query | egrep 'SELECT DISTINCT|GROUP BY UserID, SearchPhrase LIMIT 10|count\(DISTINCT UserID\) AS u' && mem='5GB'

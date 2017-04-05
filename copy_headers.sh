@@ -23,16 +23,15 @@ PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 # Опция -mcx16 для того, чтобы выбиралось больше заголовочных файлов (с запасом).
 
 for src_file in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
-	$(cat "$SOURCE_PATH/build/include_directories.txt") \
-	"$SOURCE_PATH/dbms/src/Interpreters/SpecializedAggregator.h" |
-	tr -d '\\' |
-	grep -v '.o:' |
-	sed -r -e 's/^.+\.cpp / /');
+    $(cat "$SOURCE_PATH/build/include_directories.txt") \
+    "$SOURCE_PATH/dbms/src/Interpreters/SpecializedAggregator.h" |
+    tr -d '\\' |
+    grep -v '.o:' |
+    sed -r -e 's/^.+\.cpp / /');
 do
-	# Для совместимости со случаем сборки ClickHouse из репозитория Метрики, удаляем префикс ClickHouse из результирующих путей.
-	dst_file=$(echo $src_file | sed -r -e 's/^ClickHouse\///');
-	mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
-	cp "$src_file" "$DST/$dst_file";
+    dst_file=$src_file;
+    mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
+    cp "$src_file" "$DST/$dst_file";
 done
 
 
@@ -41,5 +40,5 @@ done
 
 for i in $(ls -1 $(clang -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep '/lib/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
 do
-	cp "$i" "$DST/$i";
+    cp "$i" "$DST/$i";
 done

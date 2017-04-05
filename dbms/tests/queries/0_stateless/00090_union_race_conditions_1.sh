@@ -4,8 +4,8 @@ set -o errexit
 set -o pipefail
 
 echo "
-    DROP TABLE IF EXISTS test.two_blocks; 
-    CREATE TABLE test.two_blocks (d Date) ENGINE = MergeTree(d, d, 1); 
+    DROP TABLE IF EXISTS test.two_blocks;
+    CREATE TABLE test.two_blocks (d Date) ENGINE = MergeTree(d, d, 1);
     INSERT INTO test.two_blocks VALUES ('2000-01-01');
     INSERT INTO test.two_blocks VALUES ('2000-01-02');
 " | clickhouse-client -n
