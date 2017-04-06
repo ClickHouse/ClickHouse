@@ -1,13 +1,12 @@
 #include "InterserverIOHTTPHandler.h"
-#include <Interpreters/InterserverIOHandler.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
+#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Interpreters/InterserverIOHandler.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ABORTED;
@@ -61,7 +60,6 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
     }
     catch (Exception & e)
     {
-
         if (e.code() == ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES)
         {
             if (!response.sent())
@@ -92,6 +90,4 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
         LOG_ERROR(log, message);
     }
 }
-
-
 }
