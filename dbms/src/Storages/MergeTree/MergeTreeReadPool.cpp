@@ -17,10 +17,10 @@ MergeTreeReadPool::MergeTreeReadPool(
     const std::size_t threads, const std::size_t sum_marks, const std::size_t min_marks_for_concurrent_read,
     RangesInDataParts parts, MergeTreeData & data, const ExpressionActionsPtr & prewhere_actions,
     const String & prewhere_column_name, const bool check_columns, const Names & column_names,
-    const BackoffSettings & backoff_settings,
+    const BackoffSettings & backoff_settings, size_t preferred_block_size_bytes,
     const bool do_not_steal_tasks)
-    : backoff_settings{backoff_settings}, backoff_state{threads},
-    data{data}, column_names{column_names}, do_not_steal_tasks{do_not_steal_tasks}
+    : backoff_settings{backoff_settings}, backoff_state{threads}, data{data},
+    column_names{column_names}, do_not_steal_tasks{do_not_steal_tasks}, predict_block_size_bytes{preferred_block_size_bytes > 0}
 {
     const auto per_part_sum_marks = fillPerPartInfo(parts, prewhere_actions, prewhere_column_name, check_columns);
     fillPerThreadInfo(threads, sum_marks, per_part_sum_marks, parts, min_marks_for_concurrent_read);
@@ -110,7 +110,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const std::size_t min_marks_to_r
     return std::make_unique<MergeTreeReadTask>(
         part.data_part, ranges_to_get_from_part, part.part_index_in_query, column_names,
         per_part_column_name_set[part_idx], per_part_columns[part_idx], per_part_pre_columns[part_idx],
-        per_part_remove_prewhere_column[part_idx], per_part_should_reorder[part_idx]);
+        per_part_remove_prewhere_column[part_idx], per_part_should_reorder[part_idx], per_part_size_predictor[part_idx]);
 }
 
 
@@ -241,6 +241,14 @@ std::vector<std::size_t> MergeTreeReadPool::fillPerPartInfo(
         per_part_should_reorder.push_back(should_reoder);
 
         this->parts.push_back({ part.data_part, part.part_index_in_query });
+
+        if (predict_block_size_bytes)
+        {
+            per_part_size_predictor.emplace_back(std::make_shared<MergeTreeBlockSizePredictor>(
+                part.data_part, per_part_columns.back(), per_part_pre_columns.back(), data.index_granularity));
+        }
+        else
+            per_part_size_predictor.emplace_back(nullptr);
     }
 
     return per_part_sum_marks;

@@ -1,77 +1,11 @@
 #pragma once
-
-#include <DataStreams/IProfilingBlockInputStream.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include "MergeTreeBaseBlockInputStream.h"
 
 
 namespace DB
 {
 
-class MergeTreeReader;
 class MergeTreeReadPool;
-struct MergeTreeReadTask;
-class UncompressedCache;
-class MarkCache;
-
-
-struct MergeTreeBaseBlockInputStream : public IProfilingBlockInputStream
-{
-    MergeTreeBaseBlockInputStream(
-        MergeTreeData & storage,
-        const ExpressionActionsPtr & prewhere_actions,
-        const String & prewhere_column,
-        size_t max_block_size_rows,
-        size_t preferred_block_size_bytes,
-        size_t min_bytes_to_use_direct_io,
-        size_t max_read_buffer_size,
-        bool use_uncompressed_cache,
-        bool save_marks_in_cache = true,
-        const Names & virt_column_names = {});
-
-    ~MergeTreeBaseBlockInputStream() override;
-
-protected:
-
-    /// Creates new this->task, and initilizes readers
-    virtual bool getNewTask() = 0;
-
-    /// We will call progressImpl manually.
-    void progress(const Progress & value) override {}
-
-    Block readFromPart();
-
-    void injectVirtualColumns(Block & block);
-
-protected:
-
-    MergeTreeData & storage;
-
-    ExpressionActionsPtr prewhere_actions;
-    String prewhere_column;
-
-    size_t max_block_size_rows;
-    size_t preferred_block_size_bytes;
-
-    size_t min_bytes_to_use_direct_io;
-    size_t max_read_buffer_size;
-
-    bool use_uncompressed_cache;
-    bool save_marks_in_cache;
-
-    Names virt_column_names;
-
-    std::unique_ptr<MergeTreeReadTask> task;
-
-    std::shared_ptr<UncompressedCache> owned_uncompressed_cache;
-    std::shared_ptr<MarkCache> owned_mark_cache;
-
-    using MergeTreeReaderPtr = std::unique_ptr<MergeTreeReader>;
-    MergeTreeReaderPtr reader;
-    MergeTreeReaderPtr pre_reader;
-
-    Logger * log;
-    size_t max_block_size_marks;
-};
 
 
 /** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
@@ -85,6 +19,7 @@ public:
         const std::shared_ptr<MergeTreeReadPool> & pool,
         const size_t min_marks_to_read,
         const size_t max_block_size,
+        size_t preferred_block_size_bytes,
         MergeTreeData & storage,
         const bool use_uncompressed_cache,
         const ExpressionActionsPtr & prewhere_actions,
@@ -99,10 +34,6 @@ public:
     ~MergeTreeThreadBlockInputStream() override;
 
 protected:
-
-    Block readImpl() override;
-
-private:
     /// Requests read task from MergeTreeReadPool and signals whether it got one
     bool getNewTask() override;
 
@@ -112,6 +43,5 @@ private:
     std::shared_ptr<MergeTreeReadPool> pool;
     size_t min_marks_to_read;
 };
-
 
 }
