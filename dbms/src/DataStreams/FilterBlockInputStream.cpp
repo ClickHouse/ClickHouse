@@ -233,6 +233,10 @@ Block FilterBlockInputStream::readImpl()
             if (i == static_cast<size_t>(filter_column))
             {
                 /// The column with filter itself is replaced with a column with a constant `1`, since after filtering, nothing else will remain.
+                /// NOTE User could pass column with something different than 0 and 1 for filter.
+                /// Example:
+                ///  SELECT materialize(100) AS x WHERE x
+                /// will work incorrectly.
                 current_column.column = current_column.type->createConstColumn(filtered_rows, UInt64(1));
                 continue;
             }
