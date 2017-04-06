@@ -6,8 +6,11 @@ export DH_VERBOSE=1
 
 export DEB_BUILD_MAINT_OPTIONS=hardening=+all
 
-BUILDDIR = $(CURDIR)/debian/build
-DESTDIR = $(CURDIR)/debian/tmp
+# because copy_headers.sh have hardcoded path to build/include_directories.txt
+BUILDDIR = build
+DESTDIR = debian/tmp
+BUILDDIR_FULL = $(CURDIR)/$(BUILDDIR)
+DESTDIR_FULL = $(CURDIR)/$(DESTDIR)
 
 CPPFLAGS:=$(shell dpkg-buildflags --get CPPFLAGS)
 CFLAGS:=$(shell dpkg-buildflags --get CFLAGS) $(CPPFLAGS)
@@ -39,7 +42,8 @@ CC := $(DEB_HOST_GNU_TYPE)-$(DEB_CC)$(DEB_COMPILER_VERSION)
 CXX := $(DEB_HOST_GNU_TYPE)-$(DEB_CXX)$(DEB_COMPILER_VERSION)
 endif
 
-CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` $(CMAKE_FLAGS_ADD) -DCMAKE_INSTALL_PREFIX=$(DESTDIR) -DENABLE_TESTS=0
+CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` $(CMAKE_FLAGS_ADD) -DENABLE_TESTS=0
+#-DCMAKE_INSTALL_PREFIX=$(DESTDIR)
 
 ifdef CMAKE_BUILD_TYPE
 	CMAKE_FLAGS += -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
@@ -62,8 +66,8 @@ override_dh_auto_test:
 	#./debian/tests_wrapper.sh
 
 override_dh_auto_clean:
-	rm -rf $(BUILDDIR)
-	rm -rf $(DESTDIR)
+	rm -rf $(BUILDDIR_FULL)
+	rm -rf $(DESTDIR_FULL)
 	git clean -fdx --exclude=changelog ./debian
 	dh_clean
 
@@ -71,9 +75,9 @@ override_dh_auto_install:
 	dh_auto_install
 
 	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
-	mkdir -p $(DESTDIR)/usr/share/clickhouse/bin $(DESTDIR)/usr/share/clickhouse/headers
-	debian/copy_clang_binaries.sh $(DESTDIR)/usr/share/clickhouse/bin/
-	./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
+	mkdir -p $(DESTDIR_FULL)/usr/share/clickhouse/bin $(DESTDIR_FULL)/usr/share/clickhouse/headers
+	debian/copy_clang_binaries.sh $(DESTDIR_FULL)/usr/share/clickhouse/bin/
+	./copy_headers.sh . $(DESTDIR_FULL)/usr/share/clickhouse/headers
 
 	# Making docs
 	cp LICENSE debian/copyright
@@ -96,4 +100,4 @@ override_dh_auto_install:
 	#cp debian/clickhouse-server.cron.d $(DESTDIR)/etc/cron.d/clickhouse-server
 
 override_dh_install:
-    dh_install --list-missing -- DESTDIR=debian/tmp
+    dh_install --list-missing -- DESTDIR=$(DESTDIR)
