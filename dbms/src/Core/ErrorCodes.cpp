@@ -366,6 +366,7 @@ namespace ErrorCodes
     extern const int SEEK_POSITION_OUT_OF_BOUND = 361;
     extern const int CURRENT_WRITE_BUFFER_IS_EXHAUSTED = 362;
     extern const int CANNOT_CREATE_IO_BUFFER = 363;
+    extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS = 364;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

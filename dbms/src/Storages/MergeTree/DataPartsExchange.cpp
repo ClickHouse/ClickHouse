@@ -4,6 +4,8 @@
 #include <Common/NetException.h>
 #include <IO/ReadBufferFromHTTP.h>
 #include <Poco/File.h>
+#include <ext/scope_guard.hpp>
+#include <Poco/Net/HTTPServerResponse.h>
 
 
 namespace CurrentMetrics
@@ -19,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
+    extern const int TOO_MUCH_SIMULTANEOUS_QUERIES;
 }
 
 namespace DataPartsExchange
@@ -39,7 +42,7 @@ std::string Service::getId(const std::string & node_id) const
     return getEndpointId(node_id);
 }
 
-void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out)
+void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response)
 {
     if (is_cancelled)
         throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
@@ -48,6 +51,24 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
     String shard_str = params.get("shard");
 
     bool send_sharded_part = !shard_str.empty();
+
+    static std::atomic_uint total_sends {0};
+
+    if (total_sends >= data.settings.replicated_max_parallel_sends
+        || data.current_table_sends >= data.settings.replicated_max_parallel_sends_for_table)
+    {
+        response.setStatus(std::to_string(HTTP_TOO_MANY_REQUESTS));
+        response.setReason("Too many concurrent fetches, try again later");
+        response.set("Retry-After", "10");
+        response.setChunkedTransferEncoding(false);
+        return;
+    }
+    ++total_sends;
+    SCOPE_EXIT({--total_sends;});
+
+    ++data.current_table_sends;
+    SCOPE_EXIT({--data.current_table_sends;});
+
 
     LOG_TRACE(log, "Sending part " << part_name);
 

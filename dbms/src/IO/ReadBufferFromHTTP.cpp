@@ -18,8 +18,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+    extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
 }
-
 
 static Poco::Net::IPAddress resolveHostImpl(const String & host)
 {
@@ -91,9 +91,9 @@ ReadBufferFromHTTP::ReadBufferFromHTTP(
     {
         std::stringstream error_message;
         error_message << "Received error from remote server " << uri.str() << ". HTTP status code: "
-            << status << ", body: " << istr->rdbuf();
+            << status << " " << response.getReason() << ", body: " << istr->rdbuf();
 
-        throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
+        throw Exception(error_message.str(), status == HTTP_TOO_MANY_REQUESTS ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
     }
 
     impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);

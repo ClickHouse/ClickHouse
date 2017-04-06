@@ -103,6 +103,7 @@ namespace ErrorCodes
     extern const int UNFINISHED;
     extern const int METADATA_MISMATCH;
     extern const int RESHARDING_NULLABLE_SHARDING_KEY;
+    extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
 }
 
 
@@ -1417,8 +1418,21 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 }
             }
 
-            if (!fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
-                return false;
+            try
+            {
+                if (!fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
+                    return false;
+            }
+            catch (const Exception & e)
+            {
+                /// No stacktrace, just log message
+                if (e.code() == ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
+                {
+                    LOG_INFO(log, "Too busy replica. Will try later. " << e.message());
+                    return false;
+                }
+                throw;
+            }
 
             if (entry.type == LogEntry::MERGE_PARTS)
                 ProfileEvents::increment(ProfileEvents::ReplicatedPartFetchesOfMerged);
@@ -3444,7 +3458,7 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
             }
             catch (const DB::Exception & e)
             {
-                if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+                if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
                     throw;
 
                 LOG_INFO(log, e.displayText());
