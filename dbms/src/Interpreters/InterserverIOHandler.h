@@ -11,7 +11,7 @@
 #include <atomic>
 #include <Poco/Net/HTMLForm.h>
 
-namespace Poco { namespace Net {class HTTPServerResponse; } }
+namespace Poco { namespace Net { class HTTPServerResponse; } }
 
 namespace DB
 {
