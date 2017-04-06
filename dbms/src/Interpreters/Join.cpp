@@ -252,8 +252,9 @@ static void convertColumnToNullable(ColumnWithTypeAndName & column)
 
     column.type = std::make_shared<DataTypeNullable>(column.type);
 
-    column.column = std::make_shared<ColumnNullable>(column.column,
-        std::make_shared<ColumnConstUInt8>(column.column->size(), 0)->convertToFullColumn());
+    if (column.column)
+        column.column = std::make_shared<ColumnNullable>(column.column,
+            std::make_shared<ColumnConstUInt8>(column.column->size(), 0)->convertToFullColumn());
 }
 
 
@@ -301,7 +302,7 @@ void Join::setSampleBlock(const Block & block)
     /// In case of LEFT and FULL joins, if use_nulls, convert joined columns to Nullable.
     if (use_nulls && (kind == ASTTableJoin::Kind::Left || kind == ASTTableJoin::Kind::Full))
         for (size_t i = 0; i < num_columns_to_add; ++i)
-            convertColumnToNullable(sample_block_with_keys.getByPosition(i));
+            convertColumnToNullable(sample_block_with_columns_to_add.getByPosition(i));
 }
 
 
@@ -983,8 +984,12 @@ public:
 
         /// If use_nulls, convert left columns to Nullable.
         if (parent.use_nulls)
+        {
             for (size_t i = 0; i < num_columns_left; ++i)
+            {
                 convertColumnToNullable(result_sample_block.getByPosition(column_numbers_left[i]));
+            }
+        }
 
         columns_left.resize(num_columns_left);
         columns_keys_and_right.resize(num_keys + num_columns_right);
