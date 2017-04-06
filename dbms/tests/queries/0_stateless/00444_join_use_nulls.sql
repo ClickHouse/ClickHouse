@@ -8,7 +8,7 @@ FROM
 ANY INNER JOIN
 (
     SELECT number AS k, toString(number) AS b FROM system.numbers LIMIT 5, 10
-) USING (k);
+) USING (k) ORDER BY k;
 
 SELECT k, a, b
 FROM
@@ -18,7 +18,7 @@ FROM
 ANY LEFT JOIN
 (
     SELECT number AS k, toString(number) AS b FROM system.numbers LIMIT 5, 10
-) USING (k);
+) USING (k) ORDER BY k;
 
 SELECT k, a, b
 FROM
@@ -28,7 +28,7 @@ FROM
 ANY RIGHT JOIN
 (
     SELECT number AS k, toString(number) AS b FROM system.numbers LIMIT 5, 10
-) USING (k);
+) USING (k) ORDER BY k;
 
 SELECT k, a, b
 FROM
@@ -38,7 +38,7 @@ FROM
 ANY FULL JOIN
 (
     SELECT number AS k, toString(number) AS b FROM system.numbers LIMIT 5, 10
-) USING (k);
+) USING (k) ORDER BY k;
 
 
 SET join_use_nulls = 1;
@@ -51,7 +51,7 @@ FROM
 ANY INNER JOIN
 (
     SELECT number AS k, toString(number) AS b FROM system.numbers LIMIT 5, 10
-) USING (k);
+) USING (k) ORDER BY k;
 
 SELECT k, a, b
 FROM
@@ -61,7 +61,7 @@ FROM
 ANY LEFT JOIN
 (
     SELECT number AS k, toString(number) AS b FROM system.numbers LIMIT 5, 10
-) USING (k);
+) USING (k) ORDER BY k;
 
 SELECT k, a, b
 FROM
@@ -71,7 +71,7 @@ FROM
 ANY RIGHT JOIN
 (
     SELECT number AS k, toString(number) AS b FROM system.numbers LIMIT 5, 10
-) USING (k);
+) USING (k) ORDER BY k;
 
 SELECT k, a, b
 FROM
@@ -81,4 +81,4 @@ FROM
 ANY FULL JOIN
 (
     SELECT number AS k, toString(number) AS b FROM system.numbers LIMIT 5, 10
-) USING (k);
+) USING (k) ORDER BY k;
