@@ -62,7 +62,8 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
     catch (Exception & e)
     {
 
-        if (e.code() == ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES) {
+        if (e.code() == ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES)
+        {
             if (!response.sent())
                 response.send();
             return;
