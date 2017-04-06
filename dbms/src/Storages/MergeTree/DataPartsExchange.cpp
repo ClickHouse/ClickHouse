@@ -2,7 +2,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
-#include <IO/ReadBufferFromHTTP.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
 #include <ext/scope_guard.hpp>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -194,15 +194,20 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
     const String & shard_no,
     bool to_detached)
 {
-    ReadBufferFromHTTP::Params params =
+    Poco::URI uri;
+    uri.setScheme("http");
+    uri.setHost(host);
+    uri.setPort(port);
+    uri.setQueryParameters(
     {
         {"endpoint", getEndpointId(replica_path)},
         {"part", part_name},
         {"shard", shard_no},
         {"compress", "false"}
-    };
+    }
+    );
 
-    ReadBufferFromHTTP in(host, port, "", params);
+    ReadWriteBufferFromHTTP in(uri);
 
     String full_part_name = String(to_detached ? "detached/" : "") + "tmp_" + part_name;
     String part_path = data.getFullPath() + full_part_name + "/";

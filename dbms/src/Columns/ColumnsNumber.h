@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/** Столбцы чисел. */
+/** Columns with numbers. */
 
 using ColumnUInt8 = ColumnVector<UInt8>;
 using ColumnUInt16 = ColumnVector<UInt16>;

@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/RemoteDiskSpaceMonitor.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Interpreters/Context.h>
-#include <IO/ReadBufferFromHTTP.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -48,13 +48,18 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
 size_t Client::getFreeSpace(const InterserverIOEndpointLocation & location) const
 {
-    ReadBufferFromHTTP::Params params =
+    Poco::URI uri;
+    uri.setScheme("http");
+    uri.setHost(location.host);
+    uri.setPort(location.port);
+    uri.setQueryParameters(
     {
         {"endpoint", getEndpointId(location.name) },
         {"compress", "false"}
-    };
+    }
+    );
 
-    ReadBufferFromHTTP in{location.host, location.port, "", params};
+    ReadWriteBufferFromHTTP in{uri};
 
     size_t free_disk_space;
     readBinary(free_disk_space, in);

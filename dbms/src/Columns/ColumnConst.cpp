@@ -9,6 +9,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <ext/enumerate.hpp>
 
 
@@ -27,10 +28,20 @@ template <>
 ColumnPtr ColumnConst<Null>::convertToFullColumn() const
 {
     /// We basically create a column whose rows have NULL values.
-    ColumnPtr full_col = std::make_shared<ColumnUInt8>(size(), 0);
-    ColumnPtr null_map = std::make_shared<ColumnUInt8>(size(), 1);
-    return std::make_shared<ColumnNullable>(full_col, null_map);
+
+    ColumnPtr nested_col;
+
+    if (data_type)
+        nested_col = data_type->createConstColumn(
+            s, typeid_cast<const DataTypeNullable &>(*data_type).getNestedType()->getDefault())->convertToFullColumnIfConst();
+    else
+        nested_col = std::make_shared<ColumnUInt8>(s, 0);
+
+    ColumnPtr null_map = std::make_shared<ColumnUInt8>(s, 1);
+
+    return std::make_shared<ColumnNullable>(nested_col, null_map);
 }
+
 
 template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 {

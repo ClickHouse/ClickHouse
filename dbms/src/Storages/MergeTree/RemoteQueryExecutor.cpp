@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/RemoteQueryExecutor.h>
 #include <Interpreters/executeQuery.h>
-#include <IO/ReadBufferFromHTTP.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -60,14 +60,18 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
 bool Client::executeQuery(const InterserverIOEndpointLocation & location, const std::string & query)
 {
-    ReadBufferFromHTTP::Params params =
+    Poco::URI uri;
+    uri.setScheme("http");
+    uri.setHost(location.host);
+    uri.setPort(location.port);
+    uri.setQueryParameters(
     {
         {"endpoint", getEndpointId(location.name)},
         {"compress", "false"},
         {"query", query}
-    };
+    });
 
-    ReadBufferFromHTTP in{location.host, location.port, "", params};
+    ReadWriteBufferFromHTTP in{uri};
 
     bool flag;
     readBinary(flag, in);
