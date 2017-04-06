@@ -11,6 +11,7 @@ namespace DB
 
 /// Used to read data from single part.
 /// To read data from multiple parts, a Storage creates multiple such objects.
+/// TODO: Make special lightweight version of the reader for merges and other utilites, remove this from SelectExecutor.
 class MergeTreeBlockInputStream : public MergeTreeBaseBlockInputStream
 {
 public:
@@ -38,22 +39,29 @@ public:
 
     String getID() const override;
 
-protected:
+    /// Closes readers and unlock part locks
+    void finish();
 
-    Block readImpl() override;
+protected:
 
     bool getNewTask() override;
 
 private:
 
+    /// Used by Task
     Names ordered_names;
     NameSet column_name_set;
     NamesAndTypesList columns;
     NamesAndTypesList pre_columns;
 
-    MergeTreeData::DataPartPtr data_part;    /// Кусок не будет удалён, пока им владеет этот объект.
-    std::unique_ptr<Poco::ScopedReadRWLock> part_columns_lock; /// Не дадим изменить список столбцов куска, пока мы из него читаем.
-    MarkRanges all_mark_ranges; /// В каких диапазонах засечек читать. В порядке возрастания номеров.
+    /// Data part will not be removed if the pointer owns it
+    MergeTreeData::DataPartPtr data_part;
+    /// Forbids to change columns list of the part during reading
+    std::unique_ptr<Poco::ScopedReadRWLock> part_columns_lock;
+
+    /// Mark ranges we should read (in ascending order)
+    MarkRanges all_mark_ranges;
+    /// Value of _part_index virtual column (used only in SelectExecutor)
     size_t part_index_in_query = 0;
 
     bool check_columns;

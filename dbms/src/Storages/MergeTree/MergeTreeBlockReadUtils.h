@@ -9,6 +9,9 @@ struct MergeTreeData;
 struct MergeTreeReadTask;
 class MergeTreeBlockSizePredictor;
 
+using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
+using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredictor>;
+
 
 /** Если некоторых запрошенных столбцов нет в куске,
     *  то выясняем, какие столбцы может быть необходимо дополнительно прочитать,
@@ -40,112 +43,31 @@ struct MergeTreeReadTask
     const bool remove_prewhere_column;
     /// resulting block may require reordering in accordance with `ordered_names`
     const bool should_reorder;
-
-    std::shared_ptr<MergeTreeBlockSizePredictor> size_predictor;
+    /// Used to satistfy preferred_block_size_bytes limitation
+    MergeTreeBlockSizePredictorPtr size_predictor;
 
     MergeTreeReadTask(
         const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const std::size_t part_index_in_query,
         const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
-        const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder)
-    : data_part{data_part}, mark_ranges{mark_ranges}, part_index_in_query{part_index_in_query},
-    ordered_names{ordered_names}, column_name_set{column_name_set}, columns{columns}, pre_columns{pre_columns},
-    remove_prewhere_column{remove_prewhere_column}, should_reorder{should_reorder}
-    {}
+        const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
+        const MergeTreeBlockSizePredictorPtr & size_predictor);
 
     virtual ~MergeTreeReadTask();
 };
 
-using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
-
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const MergeTreeData & storage, MergeTreeReadTask & task)
-    : task{task}
-    {
-        index_granularity = storage.index_granularity;
-    }
+    MergeTreeBlockSizePredictor(
+        const MergeTreeData::DataPartPtr & data_part_,
+        const NamesAndTypesList & columns,
+        const NamesAndTypesList & pre_columns,
+        size_t index_granularity_);
 
-    void init()
-    {
-        auto add_column = [&] (const NameAndTypePair & column)
-        {
-            ColumnPtr column_data = column.type->createColumn();
-            const auto column_checksum = task.data_part->tryGetBinChecksum(column.name);
+    void startBlock();
 
-            /// There are no data files, column will be const
-            if (!column_checksum)
-                return;
-
-            if (column_data->isFixed())
-            {
-                fixed_columns_bytes_per_row += column_data->sizeOfField();
-            }
-            else
-            {
-                ColumnInfo info;
-                info.name = column.name;
-                info.bytes_per_row_global = column_checksum->uncompressed_size;
-
-                dynamic_columns_infos.emplace_back(info);
-            }
-        };
-
-        for (const NameAndTypePair & column : task.pre_columns)
-            add_column(column);
-
-        for (const NameAndTypePair & column : task.columns)
-            add_column(column);
-
-        size_t rows_approx = task.data_part->tryGetExactSizeRows().first;
-
-        bytes_per_row_global = fixed_columns_bytes_per_row;
-        for (auto & info : dynamic_columns_infos)
-        {
-            info.bytes_per_row_global /= rows_approx;
-            info.bytes_per_row = info.bytes_per_row_global;
-            bytes_per_row_global += info.bytes_per_row_global;
-        }
-        bytes_per_row_current = bytes_per_row_global;
-    }
-
-    void startBlock()
-    {
-        if (!is_initialized)
-        {
-            is_initialized = true;
-            init();
-        }
-
-        block_size_bytes = 0;
-        block_size_rows = 0;
-        for (auto & info : dynamic_columns_infos)
-            info.size_bytes = 0;
-    }
-
-    void update(const Block & block, size_t read_marks)
-    {
-        size_t dif_rows = read_marks * index_granularity;
-        block_size_rows += dif_rows;
-        block_size_bytes = block_size_rows * fixed_columns_bytes_per_row;
-        bytes_per_row_current = fixed_columns_bytes_per_row;
-
-        for (auto & info : dynamic_columns_infos)
-        {
-            size_t new_size = block.getByName(info.name).column->byteSize();
-            size_t dif_size = new_size - info.size_bytes;
-
-            double local_bytes_per_row = static_cast<double>(dif_size) / dif_rows;
-
-            /// Make recursive updates for each read mark
-            for (size_t i = 0; i < read_marks; ++i)
-                info.bytes_per_row +=  decay * (local_bytes_per_row - info.bytes_per_row);
-
-            info.size_bytes = new_size;
-            block_size_bytes += new_size;
-            bytes_per_row_current += info.bytes_per_row;
-        }
-    }
+    /// TODO: take into account gaps between adjacent marks
+    void update(const Block & block, size_t read_marks);
 
     size_t estimateByteSize(size_t num_marks)
     {
@@ -157,7 +79,7 @@ struct MergeTreeBlockSizePredictor
         return static_cast<size_t>(bytes_quota / bytes_per_row_current / index_granularity);
     }
 
-    MergeTreeReadTask & task;
+    MergeTreeData::DataPartPtr data_part;
     bool is_initialized = false;
     size_t index_granularity;
     const double decay = 0.75;

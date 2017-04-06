@@ -627,7 +627,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 
         MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
             threads, sum_marks, min_marks_for_concurrent_read, parts, data, prewhere_actions, prewhere_column, true,
-            column_names, MergeTreeReadPool::BackoffSettings(settings));
+            column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
 
         /// Let's estimate total number of rows for progress bar.
         const std::size_t total_rows = data.index_granularity * sum_marks;
@@ -636,9 +636,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
         for (std::size_t i = 0; i < threads; ++i)
         {
             res.emplace_back(std::make_shared<MergeTreeThreadBlockInputStream>(
-                i, pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache,
-                prewhere_actions,
-                prewhere_column, settings, virt_columns));
+                i, pool, min_marks_for_concurrent_read, max_block_size, settings.preferred_block_size_bytes, data, use_uncompressed_cache,
+                prewhere_actions, prewhere_column, settings, virt_columns));
 
             if (i == 0)
             {

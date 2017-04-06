@@ -1,7 +1,6 @@
-#include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockInputStream.h>
-#include <Columns/ColumnNullable.h>
-#include <Common/escapeForFileName.h>
+#include <Storages/MergeTree/MergeTreeBaseBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeReader.h>
 #include <Core/Defines.h>
 
 
@@ -44,8 +43,6 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
     check_columns(check_columns),
     path(data_part->getFullPath())
 {
-try
-{
     log = &Logger::get("MergeTreeBlockInputStream");
 
     /// Let's estimate total number of rows for progress bar.
@@ -64,20 +61,6 @@ try
 
     setTotalRowsApprox(total_rows);
 }
-catch (const Exception & e)
-{
-    /// Suspicion of the broken part. A part is added to the queue for verification.
-    if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-        storage.reportBrokenPart(data_part->name);
-    throw;
-}
-catch (...)
-{
-    storage.reportBrokenPart(data_part->name);
-    throw;
-}
-}
-
 
 String MergeTreeBlockInputStream::getID() const
 {
@@ -100,11 +83,12 @@ String MergeTreeBlockInputStream::getID() const
 }
 
 bool MergeTreeBlockInputStream::getNewTask()
+try
 {
     /// Produce only one task
     if (!is_first_task)
     {
-        task.reset();
+        finish();
         return false;
     }
     is_first_task = false;
@@ -165,12 +149,12 @@ bool MergeTreeBlockInputStream::getNewTask()
     MarkRanges remaining_mark_ranges = all_mark_ranges;
     std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
-    task = std::make_unique<MergeTreeReadTask>(data_part, remaining_mark_ranges, part_index_in_query, ordered_names, column_name_set,
-                 columns, pre_columns, remove_prewhere_column, should_reorder);
+    auto size_predictor = (preferred_block_size_bytes == 0) ? nullptr
+                          : std::make_shared<MergeTreeBlockSizePredictor>(data_part, columns, pre_columns, storage.index_granularity);
 
-    if (preferred_block_size_bytes)
-        task->size_predictor = std::make_shared<MergeTreeBlockSizePredictor>(storage, *task);
-
+    task = std::make_unique<MergeTreeReadTask>(data_part, remaining_mark_ranges, part_index_in_query, ordered_names,
+                                               column_name_set, columns, pre_columns, remove_prewhere_column, should_reorder,
+                                               size_predictor);
 
     if (!reader)
     {
@@ -193,37 +177,25 @@ bool MergeTreeBlockInputStream::getNewTask()
 
     return true;
 }
-
-
-Block MergeTreeBlockInputStream::readImpl()
+catch (...)
 {
-    Block res;
+    /// Suspicion of the broken part. A part is added to the queue for verification.
+    if (getCurrentExceptionCode() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+        storage.reportBrokenPart(data_part->name);
+    throw;
+}
 
-    while (!res && !isCancelled())
-    {
-        if (!task && !getNewTask())
-            break;
 
-        res = readFromPart();
-
-        if (res)
-            injectVirtualColumns(res);
-
-        if (task->mark_ranges.empty())
-        {
-            /** Close the files (before destroying the object).
-            * When many sources are created, but simultaneously reading only a few of them,
-            * buffers don't waste memory.
-            */
-            reader.reset();
-            pre_reader.reset();
-            part_columns_lock.reset();
-            data_part.reset();
-            task.reset();
-        }
-    }
-
-    return res;
+void MergeTreeBlockInputStream::finish()
+{
+    /** Close the files (before destroying the object).
+    * When many sources are created, but simultaneously reading only a few of them,
+    * buffers don't waste memory.
+    */
+    reader.reset();
+    pre_reader.reset();
+    part_columns_lock.reset();
+    data_part.reset();
 }
 
 
