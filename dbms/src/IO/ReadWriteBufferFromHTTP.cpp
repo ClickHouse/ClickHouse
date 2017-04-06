@@ -17,7 +17,6 @@
 namespace DB
 {
 
-// copypaste from ReadBufferFromHTTP.cpp
 namespace ErrorCodes
 {
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
