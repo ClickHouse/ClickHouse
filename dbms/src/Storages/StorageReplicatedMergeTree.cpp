@@ -1418,17 +1418,20 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 }
             }
 
-           try {
+            try
+            {
                 if (!fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
                     return false;
-            } catch (const Exception & e) {
+            }
+            catch (const Exception & e)
+            {
                 /// No stacktrace, just log message
                 if (e.code() == ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
                 {
                     LOG_INFO(log, "Too busy replica. Will try later. " << e.message());
                     return false;
                 }
-                throw e;
+                throw;
             }
 
             if (entry.type == LogEntry::MERGE_PARTS)
