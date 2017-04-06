@@ -14,6 +14,8 @@
 namespace DB
 {
 
+const int HTTP_TOO_MANY_REQUESTS = 429;
+
 /** Perform HTTP-request and provide response to read.
   */
 class ReadBufferFromHTTP : public ReadBuffer
