@@ -7,11 +7,16 @@ Build-Depends: debhelper (>= 5), cmake, gcc-6, g++-6,
 Standards-Version: 3.8.0
 Section: libs
 
-Package: clickhouse-utils
+
+
+Package: clickhouse-compressor
 Section: libdevel
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: clickhouse-compressor
+
+
+
 
 Package: clickhouse-client
 Section: libdevel
@@ -21,21 +26,17 @@ Description: clickhouse-client
  ClickHouse client and additional tools such as clickhouse-local and clickhouse-benchmark.
 
 
-Package: clickhouse-server
+
+Package: clickhouse-server-base
 Section: libdevel
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, adduser
-Description: clickhouse-server
+Description: clickhouse-server-base
  clickhouse-server binary
 
-#Package: clickhouse-server-metrika
-#Section: libdevel
-#Architecture: any
-#Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
-#Description: clickhouse-server-metrika
-# Configuration files specific for Metrika project for clickhouse-server-base package
 
-Package: clickhouse-common
+
+Package: clickhouse-server-common
 Section: libdevel
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
