@@ -5,6 +5,7 @@
 #include <functional>
 #include <boost/noncopyable.hpp>
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
 
 
 namespace DB
@@ -75,6 +76,9 @@ public:
       * Если источник нельзя склеивать ни с каким другим - верните в качестве идентификатора адрес объекта.
       */
     virtual String getID() const = 0;
+
+    virtual bool isSortedOutput() const { return false; }
+    virtual const SortDescription & getSortDescription() const { throw std::logic_error( "has no SortDescription" ); }
 
     BlockInputStreams & getChildren() { return children; }
 
