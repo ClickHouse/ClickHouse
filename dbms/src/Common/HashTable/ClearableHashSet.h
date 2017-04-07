@@ -68,3 +68,23 @@ public:
         this->m_size = 0;
     }
 };
+
+template
+<
+    typename Key,
+    typename Hash = DefaultHash<Key>,
+    typename Grower = HashTableGrower<>,
+    typename Allocator = HashTableAllocator
+>
+class ClearableHashSetWithSavedHash: public HashTable<Key, ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
+{
+public:
+    using key_type = Key;
+    using value_type = typename ClearableHashSetWithSavedHash::cell_type::value_type;
+
+    void clear()
+    {
+        ++this->version;
+        this->m_size = 0;
+    }
+};
