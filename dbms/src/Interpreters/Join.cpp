@@ -710,10 +710,17 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
     {
         for (size_t i = 0; i < existing_columns; ++i)
         {
-            auto & col = block.safeGetByPosition(i).column;
+            auto & col = block.getByPosition(i).column;
 
             if (auto converted = col->convertToFullColumnIfConst())
                 col = converted;
+
+            /// If use_nulls, convert left columns (except keys) to Nullable.
+            if (use_nulls)
+            {
+                if (std::end(key_names_left) == std::find(key_names_left.begin(), key_names_left.end(), block.getByPosition(i).name))
+                    convertColumnToNullable(block.getByPosition(i));
+            }
         }
     }
 
