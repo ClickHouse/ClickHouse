@@ -1,3 +1,5 @@
+include (${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake)
+
 include_directories (${CMAKE_CURRENT_BINARY_DIR})
 
 add_executable (date_lut_init date_lut_init.cpp)
