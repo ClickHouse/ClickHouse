@@ -71,6 +71,9 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
     size_t res_block_size_bytes = 0;
     bool bytes_exceeded = false;
 
+    if (task->size_predictor)
+        task->size_predictor->startBlock();
+
     if (prewhere_actions)
     {
         do
