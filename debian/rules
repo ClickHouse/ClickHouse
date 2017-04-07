@@ -26,6 +26,7 @@ ifndef THREADS_COUNT
     THREADS_COUNT=`nproc || grep -c ^processor /proc/cpuinfo`
 endif
 
+#TODO: why it not working?
 #DEB_BUILD_OPTIONS:="parallel=$(THREADS_COUNT)"
 
 DEB_COMPILER_VERSION ?= -6
@@ -59,7 +60,7 @@ override_dh_auto_configure:
 	dh_auto_configure -- $(CMAKE_FLAGS)
 
 override_dh_auto_test:
-	#TODO
+	#TODO, use ENABLE_TESTS=1
 	#./debian/tests_wrapper.sh
 
 override_dh_auto_clean:
@@ -71,10 +72,10 @@ ZZoverride_dh_auto_clean:
 	git clean -fdx --exclude=changelog ./debian
 	dh_clean
 
-ZZZoverride_dh_auto_install:
+override_dh_strip:
+	dh_strip --dbg-package=clickhouse-server-base-dbg
+
 override_dh_install:
-	#dh_install --list-missing --destdir=$(DESTDIR)
-	#dh_install --list-missing -- DESTDIR=$(DESTDIR)
 	# Making docs
 	cp LICENSE debian/copyright
 
@@ -96,20 +97,10 @@ override_dh_install:
 	mkdir -p $(DESTDIR)/etc/cron.d
 	cp debian/clickhouse-server.cron.d $(DESTDIR)/etc/cron.d/clickhouse-server
 
-	#dh_auto_install --destdir=$(DESTDIR)
-
 	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
 	mkdir -p $(DESTDIR)/usr/share/clickhouse/bin $(DESTDIR)/usr/share/clickhouse/headers
 	debian/copy_clang_binaries.sh $(DESTDIR)/usr/share/clickhouse/bin/
 	./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
 
-	#dh_install --list-missing --destdir=$(DESTDIR)
-	#dh_install --list-missing -- DESTDIR=$(DESTDIR)
-    # sourcedir for old debhelper <7
 	dh_install --list-missing --sourcedir=$(DESTDIR)
-
-zzzoverride_dh_install:
-	#dh_install --list-missing -- DESTDIR=$(DESTDIR)
-	dh_install --list-missing -- DESTDIR=$(DESTDIR)
-	dh_install --list-missing --destdir=$(DESTDIR)
 
