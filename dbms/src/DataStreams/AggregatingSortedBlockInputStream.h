@@ -45,6 +45,9 @@ public:
         return res.str();
     }
 
+    bool isSortedOutput() const override { return true; }
+    const SortDescription & getSortDescription() const override { return description; }
+
 protected:
     /// Может возвращаться на 1 больше записей, чем max_block_size.
     Block readImpl() override;
