@@ -42,7 +42,7 @@ CC := $(DEB_HOST_GNU_TYPE)-$(DEB_CC)$(DEB_COMPILER_VERSION)
 CXX := $(DEB_HOST_GNU_TYPE)-$(DEB_CXX)$(DEB_COMPILER_VERSION)
 endif
 
-CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` $(CMAKE_FLAGS_ADD) -DENABLE_TESTS=0
+CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` -DCMAKE_BUILD_TYPE= -DENABLE_TESTS=0 $(CMAKE_FLAGS_ADD) 
 
 ifdef CMAKE_BUILD_TYPE
 	CMAKE_FLAGS += -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
@@ -63,12 +63,18 @@ override_dh_auto_test:
 	#./debian/tests_wrapper.sh
 
 override_dh_auto_clean:
+override_dh_clean:
+
+ZZoverride_dh_auto_clean:
 	rm -rf $(BUILDDIR_FULL)
 	rm -rf $(DESTDIR_FULL)
 	git clean -fdx --exclude=changelog ./debian
 	dh_clean
 
-override_dh_auto_install:
+ZZZoverride_dh_auto_install:
+override_dh_install:
+	#dh_install --list-missing --destdir=$(DESTDIR)
+	#dh_install --list-missing -- DESTDIR=$(DESTDIR)
 	# Making docs
 	cp LICENSE debian/copyright
 
@@ -78,15 +84,32 @@ override_dh_auto_install:
 		echo "README.md" >> debian/$$DAEMON_PKG.docs; \
 	done
 
-	ln -s clickhouse-server.docs debian/clickhouse-server-base.docs
-	ln -s clickhouse-server.docs debian/clickhouse-server-common.docs
+	ln -sf clickhouse-server.docs debian/clickhouse-server-base.docs
+	ln -sf clickhouse-server.docs debian/clickhouse-server-common.docs
 
-	dh_auto_install
+	mkdir -p $(DESTDIR)/etc/security/limits.d
+	cp debian/clickhouse.limits $(DESTDIR)/etc/security/limits.d/
+
+	# todo: remove after renaming package:
+	mkdir -p $(DESTDIR)/etc/init.d
+	cp debian/clickhouse-server.init $(DESTDIR)/etc/init.d/clickhouse-server
+	mkdir -p $(DESTDIR)/etc/cron.d
+	cp debian/clickhouse-server.cron $(DESTDIR)/etc/cron.d/clickhouse-server
+
+	#dh_auto_install --destdir=$(DESTDIR)
 
 	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
-	mkdir -p $(DESTDIR_FULL)/usr/share/clickhouse/bin $(DESTDIR_FULL)/usr/share/clickhouse/headers
-	debian/copy_clang_binaries.sh $(DESTDIR_FULL)/usr/share/clickhouse/bin/
-	./copy_headers.sh . $(DESTDIR_FULL)/usr/share/clickhouse/headers
+	mkdir -p $(DESTDIR)/usr/share/clickhouse/bin $(DESTDIR)/usr/share/clickhouse/headers
+	debian/copy_clang_binaries.sh $(DESTDIR)/usr/share/clickhouse/bin/
+	./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
 
-override_dh_install:
-    dh_install --list-missing -- DESTDIR=$(DESTDIR)
+	#dh_install --list-missing --destdir=$(DESTDIR)
+	#dh_install --list-missing -- DESTDIR=$(DESTDIR)
+    # sourcedir for old debhelper <7
+	dh_install --list-missing --sourcedir=$(DESTDIR)
+
+zzzoverride_dh_install:
+	#dh_install --list-missing -- DESTDIR=$(DESTDIR)
+	dh_install --list-missing -- DESTDIR=$(DESTDIR)
+	dh_install --list-missing --destdir=$(DESTDIR)
+
