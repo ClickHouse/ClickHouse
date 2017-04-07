@@ -40,7 +40,7 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:
 Description: clickhouse-server-common
  Common configuration files for clickhouse-server-base package
 
-Package: clickhouse-server-dbg
+Package: clickhouse-common-dbg
 Architecture: any
 Section: debug
 Priority: extra

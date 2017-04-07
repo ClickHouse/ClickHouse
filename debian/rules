@@ -10,8 +10,6 @@ export DEB_BUILD_MAINT_OPTIONS=hardening=+all,-pie
 # because copy_headers.sh have hardcoded path to build/include_directories.txt
 BUILDDIR = build
 DESTDIR = debian/tmp
-BUILDDIR_FULL = $(CURDIR)/$(BUILDDIR)
-DESTDIR_FULL = $(CURDIR)/$(DESTDIR)
 
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
@@ -47,13 +45,13 @@ override_dh_auto_test:
 	#./debian/tests_wrapper.sh
 
 override_dh_auto_clean:
-	rm -rf $(BUILDDIR_FULL)
-	rm -rf $(DESTDIR_FULL)
-	git clean -fdx --exclude=changelog ./debian
+	#rm -rf $(BUILDDIR)
+	rm -rf $(DESTDIR)
+	rm -rf debian/copyright debian/changelog
 	dh_clean
 
 override_dh_strip:
-	dh_strip -pclickhouse-server-base --dbg-package=clickhouse-server-dbg
+	dh_strip -pclickhouse-server-base --dbg-package=clickhouse-common-dbg
 
 override_dh_install:
 	# Making docs
