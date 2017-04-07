@@ -37,7 +37,7 @@ endif
 CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` -DENABLE_TESTS=0 $(CMAKE_FLAGS_ADD)
 
 %:
-	dh $@ --parallel  --buildsystem=cmake --builddirectory=$(BUILDDIR)
+	dh $@ --parallel --buildsystem=cmake --builddirectory=$(BUILDDIR)
 
 override_dh_auto_configure:
 	dh_auto_configure -- $(CMAKE_FLAGS)
