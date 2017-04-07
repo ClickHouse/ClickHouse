@@ -5,6 +5,7 @@ function get_revision {
 
 # remove me after fixing all testing-building scripts
 function make_control {
+    true
 }
 
 # Генерируем номер ревизии.
