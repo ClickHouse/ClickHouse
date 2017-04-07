@@ -44,7 +44,7 @@ Description: clickhouse-server-common
  Common configuration files for clickhouse-server-base package
 
 
-Package: clickhouse-server-base-dbg
+Package: clickhouse-server-dbg
 Architecture: any
 Section: debug
 Priority: extra

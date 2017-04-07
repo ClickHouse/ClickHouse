@@ -53,7 +53,7 @@ override_dh_auto_clean:
 	dh_clean
 
 override_dh_strip:
-	dh_strip -pclickhouse-server-base --dbg-package=clickhouse-server-base-dbg
+	dh_strip -pclickhouse-server-base --dbg-package=clickhouse-server-dbg
 
 override_dh_install:
 	# Making docs
