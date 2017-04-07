@@ -13,7 +13,7 @@ DESTDIR = debian/tmp
 
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
-#TODO: why it not working?
+#TODO: why it not working? (maybe works in debhelper 10+)
 #ifndef THREADS_COUNT
 #    THREADS_COUNT:=$(shell nproc || grep -c ^processor /proc/cpuinfo)
 #endif
