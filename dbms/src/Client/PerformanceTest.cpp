@@ -27,7 +27,7 @@
 
 /** Tests launcher for ClickHouse.
   * The tool walks through given or default folder in order to find files with
-  * tests' description and launches it.
+  * tests' descriptions and launches it.
   */
 namespace DB
 {
@@ -218,28 +218,30 @@ private:
 		Keys keys;
 		stopCriterionsView->keys(priority, keys);
 
+		PriorityType priorityType = (priority == "min" ? min : max);
+
 		for (const std::string & key : keys) {
 			if (key == "timeout_ms") {
 				timeout_ms.value    = stopCriterionsView->getUInt64(priority + ".timeout_ms");
-				timeout_ms.priority = (priority == "min" ? min : max);
+				timeout_ms.priority = priorityType;
 			} else if (key == "rows_read") {
 				rows_read.value    = stopCriterionsView->getUInt64(priority + ".rows_read");
-				rows_read.priority = (priority == "min" ? min : max);
+				rows_read.priority = priorityType;
 			} else if (key == "bytes_read_uncompressed") {
 				bytes_read_uncompressed.value    = stopCriterionsView->getUInt64(priority + ".bytes_read_uncompressed");
-				bytes_read_uncompressed.priority = (priority == "min" ? min : max);
+				bytes_read_uncompressed.priority = priorityType;
 			} else if (key == "iterations") {
 				iterations.value    = stopCriterionsView->getUInt64(priority + ".iterations");
-				iterations.priority = (priority == "min" ? min : max);
+				iterations.priority = priorityType;
 			} else if (key == "min_time_not_changing_for_ms") {
 				min_time_not_changing_for_ms.value    = stopCriterionsView->getUInt64(priority + ".min_time_not_changing_for_ms");
-				min_time_not_changing_for_ms.priority = (priority == "min" ? min : max);
+				min_time_not_changing_for_ms.priority = priorityType;
 			} else if (key == "max_speed_not_changing_for_ms") {
 				max_speed_not_changing_for_ms.value    = stopCriterionsView->getUInt64(priority + ".max_speed_not_changing_for_ms");
-				max_speed_not_changing_for_ms.priority = (priority == "min" ? min : max);
+				max_speed_not_changing_for_ms.priority = priorityType;
 			} else if (key == "average_speed_not_changing_for_ms") {
 				average_speed_not_changing_for_ms.value    = stopCriterionsView->getUInt64(priority + ".average_speed_not_changing_for_ms");
-				average_speed_not_changing_for_ms.priority = (priority == "min" ? min : max);
+				average_speed_not_changing_for_ms.priority = priorityType;
 			} else {
 				throw Poco::Exception("Met unkown stop criterion: " + key, 1);
 			}
@@ -332,7 +334,7 @@ struct Stats
 	double total_time = 0;
 
 	double max_rows_speed  = 0;
-	double max_bytes_speed  = 0;
+	double max_bytes_speed = 0;
 
 	double avg_rows_speed_value = 0;
 	double avg_rows_speed_first = 0;
@@ -491,7 +493,7 @@ struct Stats
 	}
 };
 
-double Stats::avg_rows_speed_precision = 0.001;
+double Stats::avg_rows_speed_precision  = 0.001;
 double Stats::avg_bytes_speed_precision = 0.001;
 
 class PerformanceTest
@@ -1106,21 +1108,21 @@ public:
 			}
 
 	        if (execType == loop) {
-		    	runJSON["min_time"].set(std::to_string(statistics[numberOfLaunch].min_time / 1000)
-		    			  				   + "." + std::to_string(statistics[numberOfLaunch].min_time % 1000) + "s");
+	        	/// in seconds
+		    	runJSON["min_time"].set(statistics[numberOfLaunch].min_time / double(1000));
 
 	    		JSONString quantiles(4); /// here, 4 is the size of \t padding
 		    	for (double percent = 10; percent <= 90; percent += 10) {
 		    		quantiles[percent / 100].set(statistics[numberOfLaunch].sampler.quantileInterpolated(percent / 100.0));
 		    	}
-				quantiles[0.95].set(statistics[numberOfLaunch].sampler.quantileInterpolated(95 / 100.0));
-				quantiles[0.99].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99 / 100.0));
-				quantiles[0.999].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99.9 / 100.0));
+				quantiles[ 0.95 ].set(statistics[numberOfLaunch].sampler.quantileInterpolated(95    / 100.0));
+				quantiles[ 0.99 ].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99    / 100.0));
+				quantiles[ 0.999].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99.9  / 100.0));
 				quantiles[0.9999].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99.99 / 100.0));
 
 				runJSON["quantiles"].set(quantiles);
 
-			    runJSON["total_time"].set(std::to_string(statistics[numberOfLaunch].total_time) + "s");
+			    runJSON["total_time"].set(statistics[numberOfLaunch].total_time);
 			    runJSON["queries_per_second"].set(double(statistics[numberOfLaunch].queries)  / statistics[numberOfLaunch].total_time);
 			    runJSON["rows_per_second"].set(double(statistics[numberOfLaunch].rows_read)   / statistics[numberOfLaunch].total_time);
 			    runJSON["bytes_per_second"].set(double(statistics[numberOfLaunch].bytes_read) / statistics[numberOfLaunch].total_time);
