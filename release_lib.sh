@@ -3,6 +3,10 @@ function get_revision {
     grep "set(VERSION_REVISION" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\))$/\1/'
 }
 
+# remove me after fixing all testing-building scripts
+function make_control {
+}
+
 # Генерируем номер ревизии.
 # выставляются переменные окружения REVISION, AUTHOR
 function gen_revision_author {
