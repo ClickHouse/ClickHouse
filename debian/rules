@@ -57,14 +57,8 @@ override_dh_install:
 	# Making docs
 	cp LICENSE debian/copyright
 
-	for DAEMON_PKG in ${DAEMONS}; do \
-		echo "LICENSE" > debian/$$DAEMON_PKG.docs; \
-		echo "AUTHORS" >> debian/$$DAEMON_PKG.docs; \
-		echo "README.md" >> debian/$$DAEMON_PKG.docs; \
-	done
-
-	ln -sf clickhouse-server.docs debian/clickhouse-server-base.docs
-	ln -sf clickhouse-server.docs debian/clickhouse-server-common.docs
+	ln -sf clickhouse-server-base.docs debian/clickhouse-client.docs
+	ln -sf clickhouse-server-base.docs debian/clickhouse-server-common.docs
 
 	mkdir -p $(DESTDIR)/etc/security/limits.d
 	cp debian/clickhouse.limits $(DESTDIR)/etc/security/limits.d/clickhouse.conf
