@@ -80,9 +80,11 @@ struct MergeTreeBlockSizePredictor
     }
 
     MergeTreeData::DataPartPtr data_part;
-    bool is_initialized = false;
     size_t index_granularity;
-    const double decay = 0.75;
+
+    /// Aggressiveness of bytes_per_row updates
+    /// One update per mark
+    static constexpr double decay = 0.5;
 
     struct ColumnInfo
     {

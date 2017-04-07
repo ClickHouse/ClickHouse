@@ -127,12 +127,6 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
 
 void MergeTreeBlockSizePredictor::startBlock()
 {
-    if (!is_initialized)
-    {
-        is_initialized = true;
-        //init();
-    }
-
     block_size_bytes = 0;
     block_size_rows = 0;
     for (auto & info : dynamic_columns_infos)
@@ -140,28 +134,28 @@ void MergeTreeBlockSizePredictor::startBlock()
 }
 
 
-void MergeTreeBlockSizePredictor::update(const Block& block, size_t read_marks)
+void MergeTreeBlockSizePredictor::update(const Block & block, size_t read_marks)
+{
+    size_t dif_rows = read_marks * index_granularity;
+    block_size_rows += dif_rows;
+    block_size_bytes = block_size_rows * fixed_columns_bytes_per_row;
+    bytes_per_row_current = fixed_columns_bytes_per_row;
+
+    /// Make recursive updates for each read mark
+    double alpha = std::pow(1. - decay, read_marks);
+
+    for (auto & info : dynamic_columns_infos)
     {
-        size_t dif_rows = read_marks * index_granularity;
-        block_size_rows += dif_rows;
-        block_size_bytes = block_size_rows * fixed_columns_bytes_per_row;
-        bytes_per_row_current = fixed_columns_bytes_per_row;
+        size_t new_size = block.getByName(info.name).column->byteSize();
+        size_t dif_size = new_size - info.size_bytes;
 
-        for (auto & info : dynamic_columns_infos)
-        {
-            size_t new_size = block.getByName(info.name).column->byteSize();
-            size_t dif_size = new_size - info.size_bytes;
+        double local_bytes_per_row = static_cast<double>(dif_size) / dif_rows;
+        info.bytes_per_row = alpha * info.bytes_per_row + (1. - alpha) * local_bytes_per_row;
 
-            double local_bytes_per_row = static_cast<double>(dif_size) / dif_rows;
-
-            /// Make recursive updates for each read mark
-            for (size_t i = 0; i < read_marks; ++i)
-                info.bytes_per_row +=  decay * (local_bytes_per_row - info.bytes_per_row);
-
-            info.size_bytes = new_size;
-            block_size_bytes += new_size;
-            bytes_per_row_current += info.bytes_per_row;
-        }
+        info.size_bytes = new_size;
+        block_size_bytes += new_size;
+        bytes_per_row_current += info.bytes_per_row;
     }
+}
 
 }
