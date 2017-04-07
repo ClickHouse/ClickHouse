@@ -4,13 +4,17 @@
 namespace DB
 {
 
+template class SetVariantsTemplate<NonClearableSet>;
+template class SetVariantsTemplate<ClearableSet>;
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SET_DATA_VARIANT;
     extern const int LOGICAL_ERROR;
 }
 
-void SetVariants::init(Type type_)
+template <typename Variant>
+void SetVariantsTemplate<Variant>::init(Type type_)
 {
     type = type_;
 
@@ -19,7 +23,7 @@ void SetVariants::init(Type type_)
         case Type::EMPTY: break;
 
     #define M(NAME) \
-        case Type::NAME: NAME = std::make_unique<decltype(NAME)::element_type>(); break;
+        case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
 
@@ -28,7 +32,8 @@ void SetVariants::init(Type type_)
     }
 }
 
-size_t SetVariants::getTotalRowCount() const
+template <typename Variant>
+size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
 {
     switch (type)
     {
@@ -44,7 +49,8 @@ size_t SetVariants::getTotalRowCount() const
     }
 }
 
-size_t SetVariants::getTotalByteCount() const
+template <typename Variant>
+size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
 {
     switch (type)
     {
@@ -60,7 +66,8 @@ size_t SetVariants::getTotalByteCount() const
     }
 }
 
-SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
+template <typename Variant>
+typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
 {
     /// Check if at least one of the specified keys is nullable.
     /// Create a set of nested key columns from the corresponding key columns.
@@ -108,7 +115,7 @@ SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_col
             /// which specifies whether its value is null or not.
             size_t size_of_field = nested_key_columns[0]->sizeOfField();
             if ((size_of_field == 1) || (size_of_field == 2) || (size_of_field == 4) || (size_of_field == 8))
-                return SetVariants::Type::nullable_keys128;
+                return Type::nullable_keys128;
             else
                 throw Exception{"Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.",
                     ErrorCodes::LOGICAL_ERROR};
@@ -121,13 +128,13 @@ SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_col
             if (keys_bytes > (std::numeric_limits<size_t>::max() - std::tuple_size<KeysNullMap<UInt128>>::value))
                 throw Exception{"Aggregator: keys sizes overflow", ErrorCodes::LOGICAL_ERROR};
             if ((std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes) <= 16)
-                return SetVariants::Type::nullable_keys128;
+                return Type::nullable_keys128;
             if ((std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes) <= 32)
-                return SetVariants::Type::nullable_keys256;
+                return Type::nullable_keys256;
         }
 
         /// Fallback case.
-        return SetVariants::Type::hashed;
+        return Type::hashed;
     }
 
     /// If there is one numeric key that fits into 64 bits
@@ -135,31 +142,31 @@ SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_col
     {
         size_t size_of_field = nested_key_columns[0]->sizeOfField();
         if (size_of_field == 1)
-            return SetVariants::Type::key8;
+            return Type::key8;
         if (size_of_field == 2)
-            return SetVariants::Type::key16;
+            return Type::key16;
         if (size_of_field == 4)
-            return SetVariants::Type::key32;
+            return Type::key32;
         if (size_of_field == 8)
-            return SetVariants::Type::key64;
+            return Type::key64;
         throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
     if (all_fixed && keys_bytes <= 16)
-        return SetVariants::Type::keys128;
+        return Type::keys128;
     if (all_fixed && keys_bytes <= 32)
-        return SetVariants::Type::keys256;
+        return Type::keys256;
 
     /// If there is single string key, use hash table of it's values.
     if (keys_size == 1 && (typeid_cast<const ColumnString *>(nested_key_columns[0]) || typeid_cast<const ColumnConstString *>(nested_key_columns[0])))
-        return SetVariants::Type::key_string;
+        return Type::key_string;
 
     if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(nested_key_columns[0]))
-        return SetVariants::Type::key_fixed_string;
+        return Type::key_fixed_string;
 
     /// Otherwise, will use set of cryptographic hashes of unambiguously serialized values.
-    return SetVariants::Type::hashed;
+    return Type::hashed;
 }
 
 }
