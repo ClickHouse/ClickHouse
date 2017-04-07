@@ -24,7 +24,7 @@ endif ()
 cmake_policy (SET CMP0014 OLD) # Ignore warning about CMakeLists.txt in each directory
 cmake_policy (SET CMP0012 NEW) # Don't dereference TRUE and FALSE
 
-if (NOT CMAKE_BUILD_TYPE)
+if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE MATCHES "None")
     message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = RELWITHDEBINFO")
     set (CMAKE_BUILD_TYPE "RELWITHDEBINFO")
 endif ()
