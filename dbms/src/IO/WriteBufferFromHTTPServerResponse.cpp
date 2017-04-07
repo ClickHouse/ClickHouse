@@ -1,17 +1,16 @@
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 
-#include <Poco/Version.h>
-#include <Poco/Net/HTTPServerResponse.h>
 #include <Common/Exception.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/HTTPCommon.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
 #include <Core/Progress.h>
+#include <IO/HTTPCommon.h>
+#include <IO/WriteBufferFromString.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Version.h>
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -84,16 +83,17 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 #endif
                 }
                 else
-                    throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
-                                    ErrorCodes::LOGICAL_ERROR);
-                /// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
+                    throw Exception(
+                        "Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse", ErrorCodes::LOGICAL_ERROR);
+/// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
 
 #if !POCO_CLICKHOUSE_PATCH
                 response_body_ostr = &(response.send());
 #endif
 
                 out_raw.emplace(*response_body_ostr);
-                deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
+                deflating_buf.emplace(
+                    out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
                 out = &deflating_buf.value();
             }
             else
@@ -108,7 +108,6 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
         }
 
         finishSendHeaders();
-
     }
 
     out->position() = position();
@@ -117,12 +116,8 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 
 
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
-    Poco::Net::HTTPServerResponse & response_,
-    bool compress_,
-    ZlibCompressionMethod compression_method_,
-    size_t size)
-    : BufferWithOwnMemory<WriteBuffer>(size), response(response_),
-    compress(compress_), compression_method(compression_method_)
+    Poco::Net::HTTPServerResponse & response_, bool compress_, ZlibCompressionMethod compression_method_, size_t size)
+    : BufferWithOwnMemory<WriteBuffer>(size), response(response_), compress(compress_), compression_method(compression_method_)
 {
 }
 
@@ -184,5 +179,4 @@ WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
-
 }

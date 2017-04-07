@@ -1,13 +1,12 @@
-#include <Storages/MergeTree/RemoteDiskSpaceMonitor.h>
-#include <Storages/MergeTree/DiskSpaceMonitor.h>
-#include <Interpreters/Context.h>
+#include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
+#include <Storages/MergeTree/DiskSpaceMonitor.h>
+#include <Storages/MergeTree/RemoteDiskSpaceMonitor.h>
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ABORTED;
@@ -15,59 +14,49 @@ namespace ErrorCodes
 
 namespace RemoteDiskSpaceMonitor
 {
-
-namespace
-{
-
-std::string getEndpointId(const std::string & node_id)
-{
-    return "RemoteDiskSpaceMonitor:" + node_id;
-}
-
-}
-
-Service::Service(const Context & context_)
-    : context{context_}
-{
-}
-
-std::string Service::getId(const std::string & node_id) const
-{
-    return getEndpointId(node_id);
-}
-
-void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response)
-{
-    if (is_cancelled)
-        throw Exception{"RemoteDiskSpaceMonitor service terminated", ErrorCodes::ABORTED};
-
-    size_t free_space = DiskSpaceMonitor::getUnreservedFreeSpace(context.getPath());
-    writeBinary(free_space, out);
-    out.next();
-}
-
-size_t Client::getFreeSpace(const InterserverIOEndpointLocation & location) const
-{
-    Poco::URI uri;
-    uri.setScheme("http");
-    uri.setHost(location.host);
-    uri.setPort(location.port);
-    uri.setQueryParameters(
+    namespace
     {
-        {"endpoint", getEndpointId(location.name) },
-        {"compress", "false"}
+        std::string getEndpointId(const std::string & node_id)
+        {
+            return "RemoteDiskSpaceMonitor:" + node_id;
+        }
     }
-    );
 
-    ReadWriteBufferFromHTTP in{uri};
+    Service::Service(const Context & context_) : context{context_}
+    {
+    }
 
-    size_t free_disk_space;
-    readBinary(free_disk_space, in);
-    assertEOF(in);
+    std::string Service::getId(const std::string & node_id) const
+    {
+        return getEndpointId(node_id);
+    }
 
-    return free_disk_space;
+    void Service::processQuery(
+        const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response)
+    {
+        if (is_cancelled)
+            throw Exception{"RemoteDiskSpaceMonitor service terminated", ErrorCodes::ABORTED};
+
+        size_t free_space = DiskSpaceMonitor::getUnreservedFreeSpace(context.getPath());
+        writeBinary(free_space, out);
+        out.next();
+    }
+
+    size_t Client::getFreeSpace(const InterserverIOEndpointLocation & location) const
+    {
+        Poco::URI uri;
+        uri.setScheme("http");
+        uri.setHost(location.host);
+        uri.setPort(location.port);
+        uri.setQueryParameters({{"endpoint", getEndpointId(location.name)}, {"compress", "false"}});
+
+        ReadWriteBufferFromHTTP in{uri};
+
+        size_t free_disk_space;
+        readBinary(free_disk_space, in);
+        assertEOF(in);
+
+        return free_disk_space;
+    }
 }
-
-}
-
 }

@@ -1,6 +1,5 @@
 namespace DB
 {
-
 namespace ErrorCodes
 {
     /** Previously, these constants were located in one enum.
@@ -373,5 +372,4 @@ namespace ErrorCodes
     extern const int STD_EXCEPTION = 1001;
     extern const int UNKNOWN_EXCEPTION = 1002;
 }
-
 }

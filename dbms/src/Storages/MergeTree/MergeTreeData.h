@@ -1,18 +1,18 @@
 #pragma once
 
 #include <Core/SortDescription.h>
+#include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 
 struct SimpleIncrement;
@@ -20,7 +20,6 @@ struct SimpleIncrement;
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -84,13 +83,19 @@ class MergeTreeData : public ITableDeclaration
 
 public:
     /// Function to call if the part is suspected to contain corrupt data.
-    using BrokenPartCallback = std::function<void (const String &)>;
+    using BrokenPartCallback = std::function<void(const String &)>;
     using DataPart = MergeTreeDataPart;
 
     using MutableDataPartPtr = std::shared_ptr<DataPart>;
     /// After the DataPart is added to the working set, it cannot be changed.
     using DataPartPtr = std::shared_ptr<const DataPart>;
-    struct DataPartPtrLess { bool operator() (const DataPartPtr & lhs, const DataPartPtr & rhs) const { return *lhs < *rhs; } };
+    struct DataPartPtrLess
+    {
+        bool operator()(const DataPartPtr & lhs, const DataPartPtr & rhs) const
+        {
+            return *lhs < *rhs;
+        }
+    };
     using DataParts = std::set<DataPartPtr, DataPartPtrLess>;
     using DataPartsVector = std::vector<DataPartPtr>;
 
@@ -103,7 +108,9 @@ public:
     class Transaction : private boost::noncopyable
     {
     public:
-        Transaction() {}
+        Transaction()
+        {
+        }
 
         void commit()
         {
@@ -127,11 +134,12 @@ public:
             {
                 rollback();
             }
-            catch(...)
+            catch (...)
             {
                 tryLogCurrentException("~MergeTreeData::Transaction");
             }
         }
+
     private:
         friend class MergeTreeData;
 
@@ -161,13 +169,21 @@ public:
         ~AlterDataPartTransaction();
 
         /// Review the changes before the commit.
-        const NamesAndTypesList & getNewColumns() const { return new_columns; }
-        const DataPart::Checksums & getNewChecksums() const { return new_checksums; }
+        const NamesAndTypesList & getNewColumns() const
+        {
+            return new_columns;
+        }
+        const DataPart::Checksums & getNewChecksums() const
+        {
+            return new_checksums;
+        }
 
     private:
         friend class MergeTreeData;
 
-        AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_), alter_lock(data_part->alter_mutex) {}
+        AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_), alter_lock(data_part->alter_mutex)
+        {
+        }
 
         void clear()
         {
@@ -193,13 +209,13 @@ public:
         /// Merging mode. See above.
         enum Mode
         {
-            Ordinary     = 0,    /// Enum values are saved. Do not change them.
-            Collapsing     = 1,
-            Summing     = 2,
+            Ordinary = 0, /// Enum values are saved. Do not change them.
+            Collapsing = 1,
+            Summing = 2,
             Aggregating = 3,
-            Unsorted     = 4,
-            Replacing    = 5,
-            Graphite    = 6,
+            Unsorted = 4,
+            Replacing = 5,
+            Graphite = 6,
         };
 
         Mode mode;
@@ -230,40 +246,49 @@ public:
     /// index_granularity - how many rows correspond to one primary key value.
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
-    MergeTreeData(    const String & database_, const String & table_,
-                    const String & full_path_, NamesAndTypesListPtr columns_,
-                    const NamesAndTypesList & materialized_columns_,
-                    const NamesAndTypesList & alias_columns_,
-                    const ColumnDefaults & column_defaults_,
-                    Context & context_,
-                    ASTPtr & primary_expr_ast_,
-                    const String & date_column_name_,
-                    const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-                    size_t index_granularity_,
-                    const MergingParams & merging_params_,
-                    const MergeTreeSettings & settings_,
-                    const String & log_name_,
-                    bool require_part_metadata_,
-                    bool attach,
-                    BrokenPartCallback broken_part_callback_ = [](const String &){});
+    MergeTreeData(const String & database_,
+        const String & table_,
+        const String & full_path_,
+        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_,
+        Context & context_,
+        ASTPtr & primary_expr_ast_,
+        const String & date_column_name_,
+        const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
+        size_t index_granularity_,
+        const MergingParams & merging_params_,
+        const MergeTreeSettings & settings_,
+        const String & log_name_,
+        bool require_part_metadata_,
+        bool attach,
+        BrokenPartCallback broken_part_callback_ = [](const String &) {});
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
 
-    bool supportsSampling() const { return !!sampling_expression; }
-    bool supportsPrewhere() const { return true; }
+    bool supportsSampling() const
+    {
+        return !!sampling_expression;
+    }
+    bool supportsPrewhere() const
+    {
+        return true;
+    }
 
     bool supportsFinal() const
     {
-        return merging_params.mode == MergingParams::Collapsing
-            || merging_params.mode == MergingParams::Summing
-            || merging_params.mode == MergingParams::Aggregating
-            || merging_params.mode == MergingParams::Replacing;
+        return merging_params.mode == MergingParams::Collapsing || merging_params.mode == MergingParams::Summing
+            || merging_params.mode == MergingParams::Aggregating || merging_params.mode == MergingParams::Replacing;
     }
 
     Int64 getMaxDataPartIndex();
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override
+    {
+        return *columns;
+    }
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
@@ -279,19 +304,29 @@ public:
 
     bool hasColumn(const String & column_name) const override
     {
-        return ITableDeclaration::hasColumn(column_name)
-            || column_name == "_part"
-            || column_name == "_part_index"
+        return ITableDeclaration::hasColumn(column_name) || column_name == "_part" || column_name == "_part_index"
             || column_name == "_sample_factor";
     }
 
-    String getDatabaseName() const { return database_name; }
+    String getDatabaseName() const
+    {
+        return database_name;
+    }
 
-    String getTableName() const override { return table_name; }
+    String getTableName() const override
+    {
+        return table_name;
+    }
 
-    String getFullPath() const { return full_path; }
+    String getFullPath() const
+    {
+        return full_path;
+    }
 
-    String getLogName() const { return log_name; }
+    String getLogName() const
+    {
+        return log_name;
+    }
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
     DataParts getDataParts() const;
@@ -344,7 +379,8 @@ public:
     /// Renames the part to detached/<prefix>_<part> and forgets about it. The data won't be deleted in
     /// clearOldParts.
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
-    void renameAndDetachPart(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
+    void renameAndDetachPart(
+        const DataPartPtr & part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
 
     /// Removes the part from the list of parts (including all_data_parts), but doesn't move the directory.
     void detachPartInPlace(const DataPartPtr & part);
@@ -382,13 +418,13 @@ public:
     /// If the number of affected columns is suspiciously high and skip_sanity_checks is false, throws an exception.
     /// If no data transformations are necessary, returns nullptr.
     AlterDataPartTransactionPtr alterDataPart(
-        const DataPartPtr & part,
-        const NamesAndTypesList & new_columns,
-        const ASTPtr & new_primary_key,
-        bool skip_sanity_checks);
+        const DataPartPtr & part, const NamesAndTypesList & new_columns, const ASTPtr & new_primary_key, bool skip_sanity_checks);
 
     /// Must be called with locked lockStructureForAlter().
-    void setColumnsList(const NamesAndTypesList & new_columns) { columns = std::make_shared<NamesAndTypesList>(new_columns); }
+    void setColumnsList(const NamesAndTypesList & new_columns)
+    {
+        columns = std::make_shared<NamesAndTypesList>(new_columns);
+    }
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name)
@@ -396,8 +432,14 @@ public:
         broken_part_callback(name);
     }
 
-    ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
-    SortDescription getSortDescription() const { return sort_descr; }
+    ExpressionActionsPtr getPrimaryExpression() const
+    {
+        return primary_expr;
+    }
+    SortDescription getSortDescription() const
+    {
+        return sort_descr;
+    }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     /// Проверить, что кусок не сломан и посчитать для него чексуммы, если их нет.
@@ -473,7 +515,7 @@ public:
     DataTypes primary_key_data_types;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
-    std::atomic_uint current_table_sends {0};
+    std::atomic_uint current_table_sends{0};
 
 private:
     friend struct MergeTreeDataPart;
@@ -532,8 +574,12 @@ private:
     /// for transformation-free changing of Enum values list).
     /// Files to be deleted are mapped to an empty string in out_rename_map.
     /// If part == nullptr, just checks that all type conversions are possible.
-    void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-        ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
+    void createConvertExpression(const DataPartPtr & part,
+        const NamesAndTypesList & old_columns,
+        const NamesAndTypesList & new_columns,
+        ExpressionActionsPtr & out_expression,
+        NameToNameMap & out_rename_map,
+        bool & out_force_update_metadata) const;
 
     /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
     void calculateColumnSizes();
@@ -541,5 +587,4 @@ private:
     void addPartContributionToColumnSizes(const DataPartPtr & part);
     void removePartContributionToColumnSizes(const DataPartPtr & part);
 };
-
 }

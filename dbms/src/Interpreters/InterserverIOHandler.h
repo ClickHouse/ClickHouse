@@ -1,21 +1,26 @@
 #pragma once
 
+#include <atomic>
+#include <map>
+#include <Core/Types.h>
 #include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Core/Types.h>
-#include <map>
-#include <atomic>
 #include <Poco/Net/HTMLForm.h>
 
-namespace Poco { namespace Net { class HTTPServerResponse; } }
+namespace Poco
+{
+namespace Net
+{
+    class HTTPServerResponse;
+}
+}
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int DUPLICATE_INTERSERVER_IO_ENDPOINT;
@@ -66,14 +71,21 @@ class InterserverIOEndpoint
 {
 public:
     virtual std::string getId(const std::string & path) const = 0;
-    virtual void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) = 0;
-    virtual ~InterserverIOEndpoint() {}
+    virtual void processQuery(
+        const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response)
+        = 0;
+    virtual ~InterserverIOEndpoint()
+    {
+    }
 
-    void cancel() { is_cancelled = true; }
+    void cancel()
+    {
+        is_cancelled = true;
+    }
 
 protected:
     /// Нужно остановить передачу данных.
-    std::atomic<bool> is_cancelled {false};
+    std::atomic<bool> is_cancelled{false};
 };
 
 using InterserverIOEndpointPtr = std::shared_ptr<InterserverIOEndpoint>;
@@ -145,7 +157,10 @@ public:
         }
     }
 
-    void cancel() { endpoint->cancel(); }
+    void cancel()
+    {
+        endpoint->cancel();
+    }
 
 private:
     String name;
@@ -154,5 +169,4 @@ private:
 };
 
 using InterserverIOEndpointHolderPtr = std::shared_ptr<InterserverIOEndpointHolder>;
-
 }
