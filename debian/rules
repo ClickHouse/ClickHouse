@@ -47,7 +47,7 @@ override_dh_auto_test:
 override_dh_auto_clean:
 	#rm -rf $(BUILDDIR)
 	rm -rf $(DESTDIR)
-	rm -rf debian/copyright debian/changelog
+	rm -rf debian/copyright
 	dh_clean
 
 override_dh_strip:
