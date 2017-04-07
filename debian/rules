@@ -15,9 +15,9 @@ DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
 #TODO: why it not working?
 #ifndef THREADS_COUNT
-#    THREADS_COUNT=`nproc || grep -c ^processor /proc/cpuinfo`
+#    THREADS_COUNT:=$(shell nproc || grep -c ^processor /proc/cpuinfo)
 #endif
-#DEB_BUILD_OPTIONS:="parallel=$(THREADS_COUNT)"
+#DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
 
 DEB_CC ?= gcc-6
 DEB_CXX ?= g++-6
@@ -44,10 +44,10 @@ override_dh_auto_test:
 	#TODO, use ENABLE_TESTS=1
 	#./debian/tests_wrapper.sh
 
-override_dh_auto_clean:
-	#rm -rf $(BUILDDIR)
+override_dh_clean:
+	rm -rf $(BUILDDIR)
 	rm -rf $(DESTDIR)
-	rm -rf debian/copyright
+	rm -rf debian/copyright debian/clickhouse-server-base.docs debian/clickhouse-server-common.docs
 	dh_clean
 
 override_dh_strip:

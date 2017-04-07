@@ -51,7 +51,7 @@ echo -e "\nCurrent revision is $REVISION"
 gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG"
 
 # Build (only binary packages).
-debuild -e DAEMONS="${DAEMONS}" -eDEB_BUILD_OPTIONS=parallel=`nproc || grep -c ^processor /proc/cpuinfo`  -e DEB_CC -e DEB_CXX -e CMAKE_FLAGS_ADD -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+debuild -eDEB_BUILD_OPTIONS=parallel=`nproc || grep -c ^processor /proc/cpuinfo` -e DEB_CC -e DEB_CXX -e CMAKE_FLAGS_ADD -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 
 if [[ $STANDALONE != 'yes' ]]
 then
