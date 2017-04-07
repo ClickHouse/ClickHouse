@@ -25,6 +25,10 @@ using TableStructureReadLocksList = std::list<TableStructureReadLockPtr>;
 
 struct Progress;
 
+namespace ErrorCodes
+{
+    extern const int OUTPUT_IS_NOT_SORTED;
+}
 
 
 /** Коллбэк для отслеживания прогресса выполнения запроса.
@@ -77,8 +81,10 @@ public:
       */
     virtual String getID() const = 0;
 
+    /// If this stream generates data in order by some keys, return true.
     virtual bool isSortedOutput() const { return false; }
-    virtual const SortDescription & getSortDescription() const { throw std::logic_error( "has no SortDescription" ); }
+    /// In case of isSortedOutput, return corresponding SortDescription
+    virtual const SortDescription & getSortDescription() const { throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED); }
 
     BlockInputStreams & getChildren() { return children; }
 
