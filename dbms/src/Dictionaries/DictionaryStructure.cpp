@@ -11,6 +11,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TYPE_MISMATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 

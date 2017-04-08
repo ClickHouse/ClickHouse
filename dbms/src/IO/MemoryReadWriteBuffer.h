@@ -5,6 +5,8 @@
 #include <IO/IReadableWriteBuffer.h>
 #include <Common/Allocator.h>
 #include <Core/Defines.h>
+#include <boost/noncopyable.hpp>
+
 
 namespace DB
 {

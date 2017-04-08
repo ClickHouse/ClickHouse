@@ -6,9 +6,31 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/Stopwatch.h>
 #include <Common/ProfilingScopedRWLock.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 #include <ext/size.hpp>
 #include <ext/range.hpp>
 #include <ext/map.hpp>
+
+
+namespace ProfileEvents
+{
+    extern const Event DictCacheKeysRequested;
+    extern const Event DictCacheKeysRequestedMiss;
+    extern const Event DictCacheKeysRequestedFound;
+    extern const Event DictCacheKeysExpired;
+    extern const Event DictCacheKeysNotFound;
+    extern const Event DictCacheKeysHit;
+    extern const Event DictCacheRequestTimeNs;
+    extern const Event DictCacheRequests;
+    extern const Event DictCacheLockWriteNs;
+    extern const Event DictCacheLockReadNs;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric DictCacheRequests;
+}
 
 
 namespace DB

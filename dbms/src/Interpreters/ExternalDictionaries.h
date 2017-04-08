@@ -37,8 +37,6 @@ class Context;
 class ExternalDictionaries
 {
 private:
-    static const auto check_period_sec = 5;
-
     friend class StorageSystemDictionaries;
 
     mutable std::mutex dictionaries_mutex;
@@ -85,41 +83,12 @@ private:
     void reloadImpl(bool throw_on_error = false);
     void reloadFromFile(const std::string & config_path, bool throw_on_error);
 
-    void reloadPeriodically()
-    {
-        setThreadName("ExterDictReload");
-
-        while (true)
-        {
-            if (destroy.tryWait(check_period_sec * 1000))
-                return;
-
-            reloadImpl();
-        }
-    }
+    void reloadPeriodically();
 
 public:
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    ExternalDictionaries(Context & context, const bool throw_on_error)
-        : context(context), log(&Logger::get("ExternalDictionaries"))
-    {
-        {
-            /** During synchronous loading of external dictionaries at moment of query execution,
-              *  we should not use per query memory limit.
-              */
-            TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
-
-            reloadImpl(throw_on_error);
-        }
-
-        reloading_thread = std::thread{&ExternalDictionaries::reloadPeriodically, this};
-    }
-
-    ~ExternalDictionaries()
-    {
-        destroy.set();
-        reloading_thread.join();
-    }
+    ExternalDictionaries(Context & context, const bool throw_on_error);
+    ~ExternalDictionaries();
 
     MultiVersion<IDictionaryBase>::Version getDictionary(const std::string & name) const;
 };

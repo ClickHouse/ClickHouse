@@ -6,6 +6,7 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
+#include <Common/MemoryTracker.h>
 
 
 namespace CurrentMetrics
