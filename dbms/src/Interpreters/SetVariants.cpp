@@ -4,9 +4,6 @@
 namespace DB
 {
 
-template class SetVariantsTemplate<NonClearableSet>;
-template class SetVariantsTemplate<ClearableSet>;
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SET_DATA_VARIANT;
@@ -168,5 +165,8 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     /// Otherwise, will use set of cryptographic hashes of unambiguously serialized values.
     return Type::hashed;
 }
+
+template struct SetVariantsTemplate<NonClearableSet>;
+template struct SetVariantsTemplate<ClearableSet>;
 
 }
