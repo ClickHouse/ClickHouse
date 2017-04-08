@@ -75,4 +75,3 @@ override_dh_install:
 	./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
 
 	dh_install --list-missing --sourcedir=$(DESTDIR)
-
