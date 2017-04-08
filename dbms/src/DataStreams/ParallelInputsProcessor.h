@@ -11,6 +11,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/MemoryTracker.h>
 
 
 /** Allows to process multiple block input streams (sources) in parallel, using specified number of threads.

@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int REQUIRED_PASSWORD;
     extern const int WRONG_PASSWORD;
     extern const int IP_ADDRESS_NOT_ALLOWED;
+    extern const int BAD_ARGUMENTS;
 }
 
 

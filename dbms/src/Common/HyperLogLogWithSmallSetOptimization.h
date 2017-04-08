@@ -2,6 +2,8 @@
 
 #include <Common/HyperLogLogCounter.h>
 #include <Common/HashTable/SmallTable.h>
+#include <Common/MemoryTracker.h>
+
 
 namespace DB
 {
@@ -12,7 +14,8 @@ namespace DB
   * Смотрите также более практичную реализацию в CombinedCardinalityEstimator.h,
   *  где используется также хэш-таблица для множеств среднего размера.
   */
-template <
+template
+<
     typename Key,
     UInt8 small_set_size,
     UInt8 K,

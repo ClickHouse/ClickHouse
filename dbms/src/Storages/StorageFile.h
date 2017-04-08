@@ -8,6 +8,9 @@
 
 #include <common/logger_useful.h>
 
+#include <atomic>
+
+
 namespace DB
 {
 

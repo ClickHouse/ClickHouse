@@ -3,6 +3,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Common/StringUtils.h>
+#include <Common/MemoryTracker.h>
 #include <ext/scope_guard.hpp>
 #include <Poco/Util/Application.h>
 #include <Poco/Glob.h>
@@ -11,7 +12,7 @@
 
 namespace
 {
-    /// 5 seconds
+    const auto check_period_sec = 5;
     const auto backoff_initial_sec = 5;
     /// 10 minutes
     const auto backoff_max_sec = 10 * 60;
@@ -25,6 +26,44 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
+
+
+void ExternalDictionaries::reloadPeriodically()
+{
+    setThreadName("ExterDictReload");
+
+    while (true)
+    {
+        if (destroy.tryWait(check_period_sec * 1000))
+            return;
+
+        reloadImpl();
+    }
+}
+
+
+ExternalDictionaries::ExternalDictionaries(Context & context, const bool throw_on_error)
+    : context(context), log(&Logger::get("ExternalDictionaries"))
+{
+    {
+        /** During synchronous loading of external dictionaries at moment of query execution,
+            *  we should not use per query memory limit.
+            */
+        TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
+
+        reloadImpl(throw_on_error);
+    }
+
+    reloading_thread = std::thread{&ExternalDictionaries::reloadPeriodically, this};
+}
+
+
+ExternalDictionaries::~ExternalDictionaries()
+{
+    destroy.set();
+    reloading_thread.join();
+}
+
 
 
 namespace

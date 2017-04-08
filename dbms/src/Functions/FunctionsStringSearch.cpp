@@ -23,6 +23,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+
 /** Implementation details for functions of 'position' family depending on ASCII/UTF8 and case sensitiveness.
   */
 struct PositionCaseSensitiveASCII
