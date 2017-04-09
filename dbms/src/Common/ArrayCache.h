@@ -110,12 +110,14 @@ private:
     {
         bool operator() (const RegionMetadata & a, const RegionMetadata & b) const { return a.size < b.size; }
         bool operator() (const RegionMetadata & a, size_t size) const { return a.size < size; }
+        bool operator() (size_t size, const RegionMetadata & b) const { return size < b.size; }
     };
 
     struct RegionCompareByKey
     {
         bool operator() (const RegionMetadata & a, const RegionMetadata & b) const { return a.key < b.key; }
         bool operator() (const RegionMetadata & a, Key key) const { return a.key < key; }
+        bool operator() (Key key, const RegionMetadata & b) const { return key < b.key; }
     };
 
     using LRUList = boost::intrusive::list<RegionMetadata, boost::intrusive::base_hook<LRUListHook>>;
@@ -179,6 +181,7 @@ private:
     size_t misses = 0;
 
 
+public:
     /// Holds region as in use. Regions in use could not be evicted from cache.
     /// In constructor, increases refcount.
     /// In destructor, decreases refcount and if it becomes zero, insert region to lru_list.
@@ -211,7 +214,7 @@ private:
     };
 
     using HolderPtr = std::shared_ptr<Holder>;
-
+private:
 
     /// Represents pending insertion attempt.
     struct InsertToken
@@ -313,7 +316,7 @@ private:
         if (has_free_region_at_left)
         {
             region.size += left_it->size;
-            region.ptr -= left_it->size;
+            *reinterpret_cast<char **>(&region.ptr) -= left_it->size;
             size_multimap.erase(*left_it);
             adjacency_list.erase(left_it);
             left_it->destroy();
@@ -366,6 +369,8 @@ private:
 
         adjacency_list.push_back(free_region);
         size_multimap.insert(free_region);
+
+        return free_region;
     }
 
 
@@ -387,7 +392,7 @@ private:
 
         size_multimap.erase(free_region);
         free_region.size -= size;
-        free_region.ptr += size;
+        *reinterpret_cast<char **>(&free_region.ptr) += size;
         size_multimap.insert(free_region);
 
         adjacency_list.insert(adjacency_list.iterator_to(free_region), allocated_region);
@@ -472,7 +477,7 @@ public:
                 if (was_calculated)
                     *was_calculated = false;
 
-                return std::make_shared<Holder>(*this, it->second);
+                return std::make_shared<Holder>(*this, *it);
             }
 
             auto & token = insert_tokens[key];
@@ -520,7 +525,7 @@ public:
 
             try
             {
-                initialize(*region);
+                initialize(region->ptr, region->payload);
             }
             catch (...)
             {
