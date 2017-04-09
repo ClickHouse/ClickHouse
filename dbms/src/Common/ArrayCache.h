@@ -446,8 +446,10 @@ public:
     {
         std::lock_guard<std::mutex> cache_lock(mutex);
 
-        for (auto & elem : adjacency_list)
-            elem.destroy();
+        key_map.clear();
+        lru_list.clear();
+        size_multimap.clear();
+        adjacency_list.clear_and_dispose([](RegionMetadata * elem) { elem->destroy(); });
     }
 
 
