@@ -4,6 +4,7 @@
 #include <mutex>
 #include <list>
 #include <memory>
+#include <random>
 #include <unordered_map>
 #include <sys/mman.h>
 #include <boost/intrusive/list.hpp>
@@ -12,6 +13,7 @@
 #include <ext/scope_guard.hpp>
 
 #include <Common/Exception.h>
+#include <Common/randomSeed.h>
 
 
 namespace DB
@@ -141,15 +143,16 @@ private:
 
     std::mutex mutex;
 
+    std::mt19937 rng {randomSeed()};
 
     struct Chunk : private boost::noncopyable
     {
         void * ptr;
         size_t size;
 
-        Chunk(size_t size_) : size(size_)
+        Chunk(size_t size_, void * address_hint) : size(size_)
         {
-            ptr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            ptr = mmap(address_hint, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             if (MAP_FAILED == ptr)
                 DB::throwFromErrno("Allocator: Cannot mmap.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         }
@@ -355,7 +358,10 @@ private:
     /// Allocates a chunk of specified size. Creates free region, spanning through whole chunk and returns it.
     RegionMetadata & addNewChunk(size_t size)
     {
-        chunks.emplace_back(size);
+        /// ASLR by hand.
+        void * address_hint = reinterpret_cast<void *>(std::uniform_int_distribution<size_t>(0x100000000000UL, 0x700000000000UL)(rng));
+
+        chunks.emplace_back(size, address_hint);
         Chunk & chunk = chunks.back();
 
         total_chunks_size += size;
