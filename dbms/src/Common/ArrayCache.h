@@ -9,6 +9,7 @@
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/set.hpp>
 #include <boost/noncopyable.hpp>
+#include <ext/scope_guard.hpp>
 
 #include <Common/Exception.h>
 
@@ -40,7 +41,7 @@ namespace DB
   * Cache is represented by list of mmapped chunks.
   * Each chunk holds free and occupied memory regions. Contiguous free regions are always coalesced.
   *
-  * Each region is linked by following metadata structures:
+  * Each region could be linked by following metadata structures:
   * 1. LRU list - to find next region for eviction.
   * 2. Adjacency list - to find neighbour free regions to coalesce on eviction.
   * 3. Size multimap - to find free region with at least requested size.
@@ -83,7 +84,7 @@ private:
 
         void * ptr;
         size_t size;
-        std::atomic<size_t> refcount {0};
+        size_t refcount = 0;
         void * chunk;
 
         bool operator< (const RegionMetadata & other) const { return size < other.size; }
@@ -114,12 +115,15 @@ private:
     struct RegionCompareByKey
     {
         bool operator() (const RegionMetadata & a, const RegionMetadata & b) const { return a.key < b.key; }
+        bool operator() (const RegionMetadata & a, Key key) const { return a.key < key; }
     };
 
-    using LRUList = boost::intrusive::list<RegionMetadata, LRUListHook>;
-    using AdjacencyList = boost::intrusive::list<RegionMetadata, AdjacencyListHook>;
-    using SizeMultimap = boost::intrusive::multiset<RegionMetadata, RegionCompareBySize, SizeMultimapHook>;
-    using KeyMap = boost::intrusive::set<RegionMetadata, RegionCompareByKey, SizeMultimapHook>;
+    using LRUList = boost::intrusive::list<RegionMetadata, boost::intrusive::base_hook<LRUListHook>>;
+    using AdjacencyList = boost::intrusive::list<RegionMetadata, boost::intrusive::base_hook<AdjacencyListHook>>;
+    using SizeMultimap = boost::intrusive::multiset<RegionMetadata,
+        boost::intrusive::compare<RegionCompareBySize>, boost::intrusive::base_hook<SizeMultimapHook>>;
+    using KeyMap = boost::intrusive::set<RegionMetadata,
+        boost::intrusive::compare<RegionCompareByKey>, boost::intrusive::base_hook<SizeMultimapHook>>;
 
     /** Invariants:
       * adjacency_list contains all regions
@@ -160,7 +164,7 @@ private:
 
     size_t total_chunks_size = 0;
     size_t total_allocated_size = 0;
-    size_t total_size_currently_initialized = 0;
+    std::atomic<size_t> total_size_currently_initialized {0};
     size_t total_size_in_use = 0;
 
     /// Max size of cache.
@@ -171,27 +175,37 @@ private:
     static constexpr size_t min_chunk_size = 64 * 1024 * 1024;
 
     /// Cache stats.
-    size_t hits;
-    size_t misses;
+    size_t hits = 0;
+    size_t misses = 0;
 
 
     /// Holds region as in use. Regions in use could not be evicted from cache.
-    /// In constructor, increases refcount and if it becomes greater than zero, removes region from lru_list.
+    /// In constructor, increases refcount.
     /// In destructor, decreases refcount and if it becomes zero, insert region to lru_list.
     struct Holder : private boost::noncopyable
     {
         Holder(ArrayCache & cache_, RegionMetadata & region_) : cache(cache_), region(region_)
         {
-            if (++region.refcount == 1)
-                cache.lru_list.erase(region);
+            ++region.refcount;
+            cache.total_size_in_use += region.size;
         }
 
         ~Holder()
         {
+            std::lock_guard<std::mutex> cache_lock(cache.mutex);
             if (--region.refcount == 0)
                 cache.lru_list.push_back(region);
+            cache.total_size_in_use -= region.size;
         }
 
+        void * ptr() { return region.ptr; }
+        const void * ptr() const { return region.ptr; }
+        size_t size() const { return region.size; }
+        Key key() const { return region.key; }
+        Payload & payload() { return region.payload; }
+        const Payload & payload() const { return region.payload; }
+
+    private:
         ArrayCache & cache;
         RegionMetadata & region;
     };
@@ -271,19 +285,9 @@ private:
     }
 
 
-    /// Evict one region from cache and return it, coalesced with neighbours.
-    /// If nothing to evict, returns nullptr.
-    RegionMetadata * evictOne()
+    void freeRegion(RegionMetadata & region)
     {
-        if (lru_list.empty())
-            return nullptr;
-
-        RegionMetadata & evicted_region = lru_list.front();
-
-        lru_list.pop_front();
-        key_map.erase(evicted_region);
-
-        auto adjacency_list_it = adjacency_list.iterator_to(evicted_region);
+        auto adjacency_list_it = adjacency_list.iterator_to(region);
 
         bool has_free_region_at_left = false;
         bool has_free_region_at_right = false;
@@ -294,22 +298,22 @@ private:
         if (left_it != adjacency_list.begin())
         {
             --left_it;
-            if (left_it->chunk == evicted_region.chunk && left_it->isFree())
+            if (left_it->chunk == region.chunk && left_it->isFree())
                 has_free_region_at_left = true;
         }
 
         ++right_it;
         if (right_it != adjacency_list.end())
         {
-            if (right_it->chunk == evicted_region.chunk && right_it->isFree())
+            if (right_it->chunk == region.chunk && right_it->isFree())
                 has_free_region_at_right = true;
         }
 
         /// Coalesce free regions.
         if (has_free_region_at_left)
         {
-            evicted_region.size += left_it->size;
-            evicted_region.ptr -= left_it->size;
+            region.size += left_it->size;
+            region.ptr -= left_it->size;
             size_multimap.erase(*left_it);
             adjacency_list.erase(left_it);
             left_it->destroy();
@@ -317,20 +321,65 @@ private:
 
         if (has_free_region_at_right)
         {
-            evicted_region.size += right_it->size;
+            region.size += right_it->size;
             size_multimap.erase(*right_it);
             adjacency_list.erase(right_it);
             right_it->destroy();
         }
 
-        size_multimap.insert(evicted_region);
+        size_multimap.insert(region);
+    }
+
+
+    /// Evict one region from cache and return it, coalesced with neighbours.
+    /// If nothing to evict, returns nullptr.
+    RegionMetadata * evictOne()
+    {
+        if (lru_list.empty())
+            return nullptr;
+
+        RegionMetadata & evicted_region = lru_list.front();
+        total_allocated_size -= evicted_region.size;
+
+        lru_list.pop_front();
+        key_map.erase(evicted_region);
+
+        freeRegion(evicted_region);
         return &evicted_region;
     }
 
 
-    /// Precondition: free_region.size > size.
-    RegionMetadata & splitFreeRegion(RegionMetadata & free_region, size_t size)
+    /// Allocates a chunk of specified size. Creates free region, spanning through whole chunk and returns it.
+    RegionMetadata & addNewChunk(size_t size)
     {
+        chunks.emplace_back(size);
+        Chunk & chunk = chunks.back();
+
+        total_chunks_size += size;
+
+        /// Create free region spanning through chunk.
+        RegionMetadata & free_region = RegionMetadata::create();
+
+        free_region.ptr = chunk.ptr;
+        free_region.chunk = chunk.ptr;
+        free_region.size = chunk.size;
+
+        adjacency_list.push_back(free_region);
+        size_multimap.insert(free_region);
+    }
+
+
+    /// Precondition: free_region.size >= size.
+    RegionMetadata & allocateFromFreeRegion(RegionMetadata & free_region, size_t size)
+    {
+        total_allocated_size += size;
+
+        if (free_region.size == size)
+        {
+             size_multimap.erase(free_region);
+             return free_region;
+        }
+
         RegionMetadata & allocated_region = RegionMetadata::create();
         allocated_region.ptr = free_region.ptr;
         allocated_region.chunk = free_region.ptr;
@@ -352,9 +401,7 @@ private:
         auto it = size_multimap.lower_bound(size, RegionCompareBySize());
         if (size_multimap.end() != it)
         {
-            RegionMetadata & res = *it;
-            size_multimap.erase(res);
-            return &res;
+            return &allocateFromFreeRegion(*it, size);
         }
 
         /// If nothing was found and total size of allocated chunks plus required size is lower than maximum,
@@ -362,26 +409,9 @@ private:
         size_t required_chunk_size = std::max(min_chunk_size, roundUpToPageSize(size));
         if (total_chunks_size + required_chunk_size <= max_total_size)
         {
-            chunks.emplace_back(required_chunk_size);
-            Chunk & chunk = chunks.back();
-
             /// Create free region spanning through chunk.
-            RegionMetadata & free_region = RegionMetadata::create();
-
-            free_region.ptr = chunk.ptr;
-            free_region.chunk = chunk.ptr;
-            free_region.size = chunk.size;
-
-            adjacency_list.push_back(free_region);
-
-            /// Cut region from the beginning of free space.
-            if (chunk.size > size)
-            {
-                size_multimap.insert(free_region);
-                return &splitFreeRegion(free_region, size);
-            }
-            else
-                return &free_region;
+            RegionMetadata & free_region = addNewChunk(required_chunk_size);
+            return &allocateFromFreeRegion(free_region, size);
         }
 
         /// Evict something from cache and continue.
@@ -397,22 +427,21 @@ private:
             if (res->size < size)
                 continue;
 
-            /// Cut region from the beginning of free space.
-            if (res->size > size)
-                res = &splitFreeRegion(*res, size);
-
-            size_multimap.erase(*res);
-            return res;
+            return &allocateFromFreeRegion(*res, size);
         }
     }
 
 
 public:
+    ArrayCache(size_t max_total_size_) : max_total_size(max_total_size_)
+    {
+    }
+
     ~ArrayCache()
     {
         std::lock_guard<std::mutex> cache_lock(mutex);
 
-        for (auto elem : adjacency_list)
+        for (auto & elem : adjacency_list)
             elem.destroy();
     }
 
@@ -430,17 +459,20 @@ public:
     ///
     /// Returns std::pair of the cached value and a bool indicating whether the value was produced during this call.
     template <typename GetSizeFunc, typename InitializeFunc>
-    std::pair<HolderPtr, bool> getOrSet(const Key & key, GetSizeFunc && get_size, InitializeFunc && initialize)
+    HolderPtr getOrSet(const Key & key, GetSizeFunc && get_size, InitializeFunc && initialize, bool * was_calculated)
     {
         InsertTokenHolder token_holder;
         {
             std::lock_guard<std::mutex> cache_lock(mutex);
 
-            auto val = getImpl(key, cache_lock);
-            if (val)
+            auto it = key_map.find(key, RegionCompareByKey());
+            if (key_map.end() != it)
             {
                 ++hits;
-                return std::make_pair(val, false);
+                if (was_calculated)
+                    *was_calculated = false;
+
+                return std::make_shared<Holder>(*this, it->second);
             }
 
             auto & token = insert_tokens[key];
@@ -460,23 +492,63 @@ public:
         {
             /// Another thread already produced the value while we waited for token->mutex.
             ++hits;
-            return std::make_pair(token->value, false);
+            if (was_calculated)
+                *was_calculated = false;
+
+            return token->value;
         }
 
         ++misses;
-        token->value = load_func();
+
+        size_t size = get_size();
+
+        RegionMetadata * region;
+        {
+            std::lock_guard<std::mutex> cache_lock(mutex);
+            region = allocate(size);
+        }
+
+        /// Cannot allocate memory.
+        if (!region)
+            return {};
+
+        region->key = key;
+
+        {
+            total_size_currently_initialized += size;
+            SCOPE_EXIT({ total_size_currently_initialized -= size; });
+
+            try
+            {
+                initialize(*region);
+            }
+            catch (...)
+            {
+                {
+                    std::lock_guard<std::mutex> cache_lock(mutex);
+                    freeRegion(*region);
+                }
+                throw;
+            }
+        }
 
         std::lock_guard<std::mutex> cache_lock(mutex);
+        token->value = std::make_shared<Holder>(*this, *region);
 
         /// Insert the new value only if the token is still in present in insert_tokens.
         /// (The token may be absent because of a concurrent reset() call).
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
-            setImpl(key, token->value, cache_lock);
+        {
+            key_map.insert(*region);
+        }
 
         if (!token->cleaned_up)
             token_holder.cleanup(token_lock, cache_lock);
 
-        return std::make_pair(token->value, true);
+        if (was_calculated)
+            *was_calculated = true;
+
+        return token->value;
     }
 };
