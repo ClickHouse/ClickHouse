@@ -61,30 +61,43 @@ struct MergeTreeBlockSizePredictor
     MergeTreeBlockSizePredictor(
         const MergeTreeData::DataPartPtr & data_part_,
         const NamesAndTypesList & columns,
-        const NamesAndTypesList & pre_columns,
-        size_t index_granularity_);
+        const NamesAndTypesList & pre_columns);
 
+    /// Reset some values for correct statistics calculating
     void startBlock();
 
-    /// TODO: take into account gaps between adjacent marks
-    void update(const Block & block, size_t read_marks);
+    /// Updates statistic for more accurate prediction
+    void update(const Block & block, double decay = DECAY);
 
-    size_t estimateByteSize(size_t num_marks)
+    /// Return current block size (after update())
+    inline size_t getBlockSize() const
     {
-        return static_cast<size_t>(bytes_per_row_current * num_marks * index_granularity);
+        return block_size_bytes;
     }
 
-    size_t estimateNumMarks(size_t bytes_quota)
+    /// Predicts what number of rows should be read to exhaust byte quota
+    inline size_t estimateNumRows(size_t bytes_quota) const
     {
-        return static_cast<size_t>(bytes_quota / bytes_per_row_current / index_granularity);
+        return (bytes_quota > block_size_bytes)
+            ? static_cast<size_t>((bytes_quota - block_size_bytes) / bytes_per_row_current)
+            : 0;
     }
+
+    /// Predicts what number of marks should be read to exhaust byte quota
+    inline size_t estimateNumMarks(size_t bytes_quota, size_t index_granularity) const
+    {
+        return (estimateNumRows(bytes_quota) + index_granularity / 2) / index_granularity;
+    }
+
+    /// Aggressiveness of bytes_per_row updates. See update() implementation.
+    /// After n=NUM_UPDATES_TO_TARGET_WEIGHT updates v_{n} = (1 - TARGET_WEIGHT) * v_{0} + TARGET_WEIGHT * v_{target}
+    static constexpr double TARGET_WEIGHT = 0.5;
+    static constexpr size_t NUM_UPDATES_TO_TARGET_WEIGHT = 8192;
+    static constexpr double DECAY = 1. - std::pow(TARGET_WEIGHT, 1. / NUM_UPDATES_TO_TARGET_WEIGHT);
+
+protected:
 
     MergeTreeData::DataPartPtr data_part;
-    size_t index_granularity;
-
-    /// Aggressiveness of bytes_per_row updates
-    /// One update per mark
-    static constexpr double decay = 0.5;
 
     struct ColumnInfo
     {
@@ -96,6 +109,8 @@ struct MergeTreeBlockSizePredictor
 
     std::vector<ColumnInfo> dynamic_columns_infos;
     size_t fixed_columns_bytes_per_row = 0;
+
+public:
 
     size_t block_size_bytes = 0;
     size_t block_size_rows = 0;

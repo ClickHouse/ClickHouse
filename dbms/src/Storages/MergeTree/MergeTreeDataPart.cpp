@@ -331,59 +331,40 @@ String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 }
 
 
-std::pair<size_t, bool> MergeTreeDataPart::tryGetExactSizeRows() const
+size_t MergeTreeDataPart::getExactSizeRows() const
 {
     size_t rows_approx = storage.index_granularity * size;
-    size_t rows = rows_approx;
-    NameAndTypePair exact_column;
 
     for (const NameAndTypePair & column : columns)
     {
         ColumnPtr column_col = column.type->createColumn();
         const auto checksum = tryGetBinChecksum(column.name);
 
-        if (!checksum || !column_col->isFixed())
+        /// Should be fixed non-nullable column
+        if (!checksum || !column_col->isFixed() || column_col->isNullable())
             continue;
 
-        size_t sizeof_field;
-        if (column_col->isNullable())
-            sizeof_field = typeid_cast<const ColumnNullable &>(*column_col).getNestedColumn()->sizeOfField();
-        else
-            sizeof_field = column_col->sizeOfField();
-
-        size_t rows_current = checksum->uncompressed_size / sizeof_field;
+        size_t sizeof_field = column_col->sizeOfField();
+        size_t rows = checksum->uncompressed_size / sizeof_field;
 
         if (checksum->uncompressed_size % sizeof_field != 0)
-            throw Exception("Column " + column.name + " has indivisible uncompressed size " + toString(checksum->uncompressed_size) + ", sizeof " + toString(sizeof_field), ErrorCodes::LOGICAL_ERROR);
-
-        if (!(rows_approx - storage.index_granularity < rows_current && rows_current <= rows_approx))
-            throw Exception("Unexpected size of column " + column.name + ": " + toString(rows_current) + " rows", ErrorCodes::LOGICAL_ERROR);
-
-        if (exact_column.type)
         {
-            /// Check size consistency. TODO: delete me after test
-            if (rows != rows_current)
-            {
-                std::stringstream ss;
-                ss << "Two different number of rows: "
-                << rows << " (column " << exact_column.name << ", bytes " << getColumnCompressedSize(exact_column.name)
-                    << ", sizeof "<< exact_column.type->createColumn()->sizeOfField() << ") "
-                << " and "
-                << rows_current << " (column " << column.name << ", bytes " << getColumnCompressedSize(column.name)
-                    << ", sizeof " << column_col->sizeOfField() << ")"
-                << " part " << getFullPath();
+            throw Exception(
+                "Column " + column.name + " has indivisible uncompressed size " + toString(checksum->uncompressed_size)
+                + ", sizeof " + toString(sizeof_field),
+                ErrorCodes::LOGICAL_ERROR);
+        }
 
-                throw Exception(ss.str(), ErrorCodes::LOGICAL_ERROR);
-            }
-        }
-        else
+        if (!(rows_approx - storage.index_granularity < rows && rows <= rows_approx))
         {
-            rows = rows_current;
-            exact_column = column;
+            throw Exception("Unexpected size of column " + column.name + ": " + toString(rows) + " rows",
+                            ErrorCodes::LOGICAL_ERROR);
         }
+
+        return rows;
     }
 
-    return {rows, exact_column.type != nullptr};
+    throw Exception("Data part doesn't contain fixed size column (even data column)", ErrorCodes::LOGICAL_ERROR);
 }
 
 
