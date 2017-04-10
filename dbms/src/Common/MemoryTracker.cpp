@@ -116,3 +116,24 @@ void MemoryTracker::setOrRaiseLimit(Int64 value)
 
 
 __thread MemoryTracker * current_memory_tracker = nullptr;
+
+namespace CurrentMemoryTracker
+{
+    void alloc(Int64 size)
+    {
+        if (current_memory_tracker)
+            current_memory_tracker->alloc(size);
+    }
+
+    void realloc(Int64 old_size, Int64 new_size)
+    {
+        if (current_memory_tracker)
+            current_memory_tracker->alloc(new_size - old_size);
+    }
+
+    void free(Int64 size)
+    {
+        if (current_memory_tracker)
+            current_memory_tracker->free(size);
+    }
+}
