@@ -82,3 +82,6 @@ override_dh_install:
 	touch debian/tmp/etc/clickhouse-server/metrika/users.xml
 
 	dh_install --list-missing --sourcedir=$(DESTDIR)
+
+override_dh_shlibdeps:
+	dh_shlibdeps -Xdebian/clickhouse-server-base/usr/share/clickhouse/bin/*
