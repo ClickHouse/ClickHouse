@@ -135,5 +135,7 @@ namespace CurrentMemoryTracker
     {
         if (current_memory_tracker)
             current_memory_tracker->free(size);
+        else
+            std::cerr << "Freed " << size << " bytes without current_memory_tracker " << StackTrace().toString() << "\n";
     }
 }
