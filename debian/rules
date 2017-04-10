@@ -59,6 +59,7 @@ override_dh_install:
 
 	ln -sf clickhouse-server-base.docs debian/clickhouse-client.docs
 	ln -sf clickhouse-server-base.docs debian/clickhouse-server-common.docs
+	ln -sf clickhouse-server-base.docs debian/clickhouse-server-metrika.docs
 
 	mkdir -p $(DESTDIR)/etc/security/limits.d
 	cp debian/clickhouse.limits $(DESTDIR)/etc/security/limits.d/clickhouse.conf
@@ -73,5 +74,11 @@ override_dh_install:
 	mkdir -p $(DESTDIR)/usr/share/clickhouse/bin $(DESTDIR)/usr/share/clickhouse/headers
 	debian/copy_clang_binaries.sh $(DESTDIR)/usr/share/clickhouse/bin/
 	./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
+
+
+	# fake metrika files when private dir is empty
+	mkdir -p debian/tmp/etc/clickhouse-server/metrika
+	touch debian/tmp/etc/clickhouse-server/metrika/config.xml
+	touch debian/tmp/etc/clickhouse-server/metrika/users.xml
 
 	dh_install --list-missing --sourcedir=$(DESTDIR)
