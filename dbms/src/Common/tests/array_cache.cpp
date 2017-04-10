@@ -5,9 +5,34 @@
 #include <IO/ReadHelpers.h>
 
 
+template <typename Cache>
+void printStats(const Cache & cache)
+{
+    typename Cache::Statistics statistics = cache.getStatistics();
+    std::cerr
+        << "total_chunks_size: " << statistics.total_chunks_size << "\n"
+        << "total_allocated_size: " << statistics.total_allocated_size << "\n"
+        << "total_size_currently_initialized: " << statistics.total_size_currently_initialized << "\n"
+        << "total_size_in_use: " << statistics.total_size_in_use << "\n"
+        << "num_chunks: " << statistics.num_chunks << "\n"
+        << "num_regions: " << statistics.num_regions << "\n"
+        << "num_free_regions: " << statistics.num_free_regions << "\n"
+        << "num_regions_in_use: " << statistics.num_regions_in_use << "\n"
+        << "num_keyed_regions: " << statistics.num_keyed_regions << "\n"
+        << "hits: " << statistics.hits << "\n"
+        << "concurrent_hits: " << statistics.concurrent_hits << "\n"
+        << "misses: " << statistics.misses << "\n"
+        << "allocations: " << statistics.allocations << "\n"
+        << "allocated_bytes: " << statistics.allocated_bytes << "\n"
+        << "evictions: " << statistics.evictions << "\n"
+        << "evicted_bytes: " << statistics.evicted_bytes << "\n"
+        << "\n";
+}
+
+
 int main(int argc, char ** argv)
 {
-    size_t cache_size = DB::parse<size_t>(argv[1]);
+/*    size_t cache_size = DB::parse<size_t>(argv[1]);
     size_t num_threads = DB::parse<size_t>(argv[2]);
     size_t num_iterations = DB::parse<size_t>(argv[3]);
     size_t region_max_size = DB::parse<size_t>(argv[4]);
@@ -48,20 +73,7 @@ int main(int argc, char ** argv)
         while (!stop)
         {
             sleep(1);
-            Cache::Statistics statistics = cache.getStatistics();
-            std::cerr
-                << "total_chunks_size: " << statistics.total_chunks_size << "\n"
-                << "total_allocated_size: " << statistics.total_allocated_size << "\n"
-                << "total_size_currently_initialized: " << statistics.total_size_currently_initialized << "\n"
-                << "total_size_in_use: " << statistics.total_size_in_use << "\n"
-                << "num_chunks: " << statistics.num_chunks << "\n"
-                << "num_regions: " << statistics.num_regions << "\n"
-                << "num_free_regions: " << statistics.num_free_regions << "\n"
-                << "num_regions_in_use: " << statistics.num_regions_in_use << "\n"
-                << "num_keyed_regions: " << statistics.num_keyed_regions << "\n"
-                << "hits: " << statistics.hits << "\n"
-                << "concurrent_hits: " << statistics.concurrent_hits << "\n"
-                << "misses: " << statistics.misses << "\n\n";
+            printStats(cache);
         }
     });
 
@@ -72,4 +84,41 @@ int main(int argc, char ** argv)
     stats_thread.join();
 
     return 0;
+    */
+
+    using Cache = ArrayCache<int, int>;
+    Cache cache(64 * 1024 * 1024);
+
+    cache.getOrSet(
+        1,
+        [=]{ return 32 * 1024 * 1024; },
+        [=](void * ptr, int & payload)
+        {
+            payload = 1;
+        },
+        nullptr);
+
+    printStats(cache);
+
+    cache.getOrSet(
+        2,
+        [=]{ return 32 * 1024 * 1024; },
+        [=](void * ptr, int & payload)
+        {
+            payload = 2;
+        },
+        nullptr);
+
+    printStats(cache);
+
+    cache.getOrSet(
+        3,
+        [=]{ return 32 * 1024 * 1024; },
+        [=](void * ptr, int & payload)
+        {
+            payload = 3;
+        },
+        nullptr);
+
+    printStats(cache);
 }

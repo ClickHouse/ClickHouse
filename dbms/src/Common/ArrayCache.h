@@ -129,7 +129,7 @@ private:
     using SizeMultimap = boost::intrusive::multiset<RegionMetadata,
         boost::intrusive::compare<RegionCompareBySize>, boost::intrusive::base_hook<SizeMultimapHook>, boost::intrusive::constant_time_size<true>>;
     using KeyMap = boost::intrusive::set<RegionMetadata,
-        boost::intrusive::compare<RegionCompareByKey>, boost::intrusive::base_hook<SizeMultimapHook>, boost::intrusive::constant_time_size<true>>;
+        boost::intrusive::compare<RegionCompareByKey>, boost::intrusive::base_hook<KeyMapHook>, boost::intrusive::constant_time_size<true>>;
 
     /** Each region could be:
       * - free: not holding any data;
@@ -197,6 +197,12 @@ private:
     std::atomic<size_t> hits {0};            /// Value was in cache.
     std::atomic<size_t> concurrent_hits {0}; /// Value was calculated by another thread and we was waiting for it. Also summed in hits.
     std::atomic<size_t> misses {0};
+
+    /// For whole lifetime.
+    size_t allocations = 0;
+    size_t allocated_bytes = 0;
+    size_t evictions = 0;
+    size_t evicted_bytes = 0;
 
 
 public:
@@ -313,13 +319,10 @@ private:
 
     /// Precondition: region is not in lru_list, not in key_map, not in size_multimap.
     /// Postcondition: region is not in lru_list, not in key_map,
-    ///  possibly coalesced with adjacent free regions and inserted into size_multimap.
+    ///  inserted into size_multimap, possibly coalesced with adjacent free regions.
     void freeRegion(RegionMetadata & region) noexcept
     {
         auto adjacency_list_it = adjacency_list.iterator_to(region);
-
-        bool has_free_region_at_left = false;
-        bool has_free_region_at_right = false;
 
         auto left_it = adjacency_list_it;
         auto right_it = adjacency_list_it;
@@ -328,32 +331,23 @@ private:
         {
             --left_it;
             if (left_it->chunk == region.chunk && left_it->isFree())
-                has_free_region_at_left = true;
+            {
+                region.size += left_it->size;
+                *reinterpret_cast<char **>(&region.ptr) -= left_it->size;
+                size_multimap.erase(size_multimap.iterator_to(*left_it));
+                adjacency_list.erase_and_dispose(left_it, [](RegionMetadata * elem) { elem->destroy(); });
+            }
         }
 
         ++right_it;
         if (right_it != adjacency_list.end())
         {
             if (right_it->chunk == region.chunk && right_it->isFree())
-                has_free_region_at_right = true;
-        }
-
-        /// Coalesce free regions.
-        if (has_free_region_at_left)
-        {
-            region.size += left_it->size;
-            *reinterpret_cast<char **>(&region.ptr) -= left_it->size;
-            size_multimap.erase(size_multimap.iterator_to(*left_it));
-            adjacency_list.erase(left_it);
-            left_it->destroy();
-        }
-
-        if (has_free_region_at_right)
-        {
-            region.size += right_it->size;
-            size_multimap.erase(size_multimap.iterator_to(*right_it));
-            adjacency_list.erase(right_it);
-            right_it->destroy();
+            {
+                region.size += right_it->size;
+                size_multimap.erase(size_multimap.iterator_to(*right_it));
+                adjacency_list.erase_and_dispose(right_it, [](RegionMetadata * elem) { elem->destroy(); });
+            }
         }
 
         size_multimap.insert(region);
@@ -372,7 +366,17 @@ private:
         total_allocated_size -= evicted_region.size;
 
         lru_list.pop_front();
-        key_map.erase(key_map.iterator_to(evicted_region));
+
+  /*      std::cerr << "evicting " << evicted_region.key << ", " << &evicted_region << ", " << evicted_region.KeyMapHook::is_linked() << "\n";
+
+        for (const auto & elem : key_map)
+            std::cerr << elem.key << ", " << &elem << "\n";*/
+
+        if (evicted_region.KeyMapHook::is_linked())
+            key_map.erase(key_map.iterator_to(evicted_region));
+
+        ++evictions;
+        evicted_bytes += evicted_region.size;
 
         freeRegion(evicted_region);
         return &evicted_region;
@@ -417,6 +421,9 @@ private:
     /// Precondition: free_region.size >= size.
     RegionMetadata * allocateFromFreeRegion(RegionMetadata & free_region, size_t size)
     {
+        ++allocations;
+        allocated_bytes += size;
+
         if (free_region.size == size)
         {
             total_allocated_size += size;
@@ -634,6 +641,11 @@ public:
         size_t hits = 0;
         size_t concurrent_hits = 0;
         size_t misses = 0;
+
+        size_t allocations = 0;
+        size_t allocated_bytes = 0;
+        size_t evictions = 0;
+        size_t evicted_bytes = 0;
     };
 
     Statistics getStatistics() const
@@ -655,6 +667,11 @@ public:
         res.hits = hits.load(std::memory_order_relaxed);
         res.concurrent_hits = concurrent_hits.load(std::memory_order_relaxed);
         res.misses = misses.load(std::memory_order_relaxed);
+
+        res.allocations = allocations;
+        res.allocated_bytes = allocated_bytes;
+        res.evictions = evictions;
+        res.evicted_bytes = evicted_bytes;
 
         return res;
     }
