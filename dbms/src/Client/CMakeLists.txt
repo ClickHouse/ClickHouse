@@ -7,4 +7,4 @@ target_link_libraries (clickhouse-benchmark dbms ${Boost_PROGRAM_OPTIONS_LIBRARY
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)
-endif (ENABLE_TESTS)
+endif ()

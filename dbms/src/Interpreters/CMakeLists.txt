@@ -40,4 +40,4 @@ configure_file (${ClickHouse_SOURCE_DIR}/dbms/src/Interpreters/config_compile.h.
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)
-endif (ENABLE_TESTS)
+endif ()

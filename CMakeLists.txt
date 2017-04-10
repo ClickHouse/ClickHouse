@@ -24,7 +24,7 @@ endif ()
 cmake_policy (SET CMP0014 OLD) # Ignore warning about CMakeLists.txt in each directory
 cmake_policy (SET CMP0012 NEW) # Don't dereference TRUE and FALSE
 
-if (NOT CMAKE_BUILD_TYPE)
+if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE MATCHES "None")
     message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = RELWITHDEBINFO")
     set (CMAKE_BUILD_TYPE "RELWITHDEBINFO")
 endif ()
@@ -134,8 +134,7 @@ endif (TEST_COVERAGE)
 if (ENABLE_TESTS)
     message (STATUS "Tests are enabled")
     enable_testing()
-    add_subdirectory (dbms/tests)
-endif (ENABLE_TESTS)
+endif ()
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX MATCHES "/usr")
@@ -152,6 +151,8 @@ else ()
 endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} UNBUNDLED=${UNBUNDLED}")
+
+include(GNUInstallDirs)
 
 include (cmake/find_openssl.cmake)
 include (cmake/find_icu4c.cmake)

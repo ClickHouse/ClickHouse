@@ -2,172 +2,83 @@
 # -*- makefile -*-
 
 # Uncomment this to turn on verbose mode.
-#export DH_VERBOSE=1
-ifndef THREADS_COUNT
-    THREADS_COUNT=`nproc || grep -c ^processor /proc/cpuinfo`
-endif
+export DH_VERBOSE=1
 
-BUILD_TARGETS=clickhouse $(DAEMONS)
+# -pie only for static mode
+export DEB_BUILD_MAINT_OPTIONS=hardening=+all,-pie
 
-DEB_COMPILER_VERSION ?= -6
-DEB_CC ?= gcc
-DEB_CXX ?= g++
+# because copy_headers.sh have hardcoded path to build/include_directories.txt
+BUILDDIR = build
+DESTDIR = debian/tmp
+
+DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+
+#TODO: why it not working? (maybe works in debhelper 10+)
+#ifndef THREADS_COUNT
+#    THREADS_COUNT:=$(shell nproc || grep -c ^processor /proc/cpuinfo)
+#endif
+#DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
+
+DEB_CC ?= gcc-6
+DEB_CXX ?= g++-6
 
 DEB_BUILD_GNU_TYPE := $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
 DEB_HOST_GNU_TYPE  := $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
 ifeq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
-CC := $(DEB_CC)$(DEB_COMPILER_VERSION)
-CXX := $(DEB_CXX)$(DEB_COMPILER_VERSION)
+CC := $(DEB_CC)
+CXX := $(DEB_CXX)
 else
-CC := $(DEB_HOST_GNU_TYPE)-$(DEB_CC)$(DEB_COMPILER_VERSION)
-CXX := $(DEB_HOST_GNU_TYPE)-$(DEB_CXX)$(DEB_COMPILER_VERSION)
+CC := $(DEB_HOST_GNU_TYPE)-$(DEB_CC)
+CXX := $(DEB_HOST_GNU_TYPE)-$(DEB_CXX)
 endif
 
-CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` -DCMAKE_INSTALL_PREFIX=/usr $(CMAKE_FLAGS_ADD)
+CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` -DENABLE_TESTS=0 $(CMAKE_FLAGS_ADD)
 
-ifdef CMAKE_BUILD_TYPE
-	CMAKE_FLAGS += -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
-endif
+%:
+	dh $@ --parallel --buildsystem=cmake --builddirectory=$(BUILDDIR)
 
-ifdef USE_STATIC_LIBRARIES
-	CMAKE_FLAGS += -DUSE_STATIC_LIBRARIES=$(USE_STATIC_LIBRARIES)
-endif
+override_dh_auto_configure:
+	dh_auto_configure -- $(CMAKE_FLAGS)
 
-configure-stamp:
-	dh_testdir
-	rm -rf build
-	make clean 1> /dev/null 2>&1 || echo "Nothing to clean"
-	rm -f CMakeCache.txt
-	mkdir -p build
-	touch configure-stamp
+override_dh_auto_test:
+	#TODO, use ENABLE_TESTS=1
+	#./debian/tests_wrapper.sh
 
-build: build-stamp
-build-stamp: configure-stamp
-	dh_testdir
-	# если не задан тип сборки запускаем cmake без указания типа, если задан - передаём его
-	# for building Debug run: debuild -e CMAKE_BUILD_TYPE=Debug
-	# for building with shared libs run: debuild -e USE_STATIC_LIBRARIES=0
-	cd build && pwd && cmake .. $(CMAKE_FLAGS)
-	# TODO: возможно надо исправить
-	# последовательно запускаем make для каждой из целей.
-	# т.к. при параллельном запуске (make target1 target2) несколько раз одновременно создаются бинарники
-	# и возникает raise с custom_command, использующие эти бинарники
-	for target in ${BUILD_TARGETS}; do $(MAKE) -j$(THREADS_COUNT) -C build $$target || exit $$?; done
-	touch $@
-
-clean:
-	dh_testdir
-	dh_testroot
-	rm -f configure-stamp build-stamp
-	rm -rf build
-	# Удалим созданные для dh_installinit файлы
-	find ./debian/ -name "*.init" -type l -delete
-	# Удалим созданные для dh_installcron файлы
-	find ./debian/ -name "*.cron.d" -type f -delete
-	# Удалим созданные ссылки на файлы документации
-	find ./debian/ -name "*.docs" -type l -delete
-	rm -f ./debian/copyright
-	# Удалим созданные *.install файлы
-	for DAEMON_PKG in ${DAEMONS}; do AUTO=`grep "# automatically created" debian/$$DAEMON_PKG.install`; if [ "x$$AUTO" != "x" ]; then rm -f debian/$$DAEMON_PKG.install; fi; done
+override_dh_clean:
+	rm -rf $(BUILDDIR)
+	rm -rf $(DESTDIR)
+	rm -rf debian/copyright debian/clickhouse-server-base.docs debian/clickhouse-server-common.docs
 	dh_clean
 
-install: build
-	dh_testdir
-	dh_testroot
-	dh_prep
-	cd build && \
-	for target in ${BUILD_TARGETS}; do DESTDIR=../debian/tmp cmake -DCOMPONENT=$$target -P cmake_install.cmake; done
+override_dh_strip:
+	dh_strip -pclickhouse-server-base --dbg-package=clickhouse-common-dbg
 
-	# Создаём нужные файлы для dh_installinit, т.к. он их понимает только внутри debian/
-	for I in debian/tmp/etc/init.d/*; do echo $$I; ln -s tmp/etc/init.d/`basename $$I` debian/`basename $$I`.init; done
-	# Хотим, чтобы для пакета clickhouse-server-base init file назывался clickhouse-server
-	if [ -e debian/tmp/etc/init.d/clickhouse-server ]; then ln -s tmp/etc/init.d/clickhouse-server debian/clickhouse-server-base.clickhouse-server.init; fi
-
-	# создаем дефолтный cron, если нет крон-файла созданного пользователем
-	# cron_name имеет вид daemonname
-	# Для ClickHouse не должно быть лишних зависимостей.
-	# Making necessary *.install files
-	for DAEMON_PKG in ${DAEMONS}; do \
-		if [ ! -e "debian/$$DAEMON_PKG.install" ]; then \
-			echo "# automatically created" > debian/$$DAEMON_PKG.install; \
-			echo "/etc/$$DAEMON_PKG/config.xml" >> debian/$$DAEMON_PKG.install; \
-			echo "/usr/bin/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.install; \
-			echo "/etc/cron.d/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.install; \
-			if [ -e "debian/tmp/etc/monrun/conf.d/$$DAEMON_PKG.conf" ]; then \
-				echo "/etc/monrun/conf.d/$$DAEMON_PKG.conf" >> debian/$$DAEMON_PKG.install; \
-			fi;\
-		fi;  \
-	done
-
-	# Making necessary *.postinst files
-	for DAEMON_PKG in ${DAEMONS}; do \
-		if [ ! -e "debian/$$DAEMON_PKG.postinst" ]; then \
-			echo "# automatically created" > debian/$$DAEMON_PKG.postinst; \
-			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d" >> debian/$$DAEMON_PKG.postinst; \
-			echo "chown -R clickhouse: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
-			if [ -e "debian/tmp/etc/init.d/$$DAEMON_PKG" ]; then \
-				if echo $$DAEMON_PKG | grep server > /dev/null; then\
-					echo "update-rc.d $$DAEMON_PKG defaults > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG.postinst; \
-				else\
-					echo "update-rc.d $$DAEMON_PKG start 30 2 3 4 5 . stop 70 0 1 6 . > /dev/null || exit \$$?" >> debian/$$DAEMON_PKG.postinst; \
-				fi\
-			fi\
-			\
-		else \
-			echo >> debian/$$DAEMON_PKG.postinst; \
-			echo "mkdir -p /etc/$$DAEMON_PKG/conf.d; chown -R clickhouse: /etc/$$DAEMON_PKG" >> debian/$$DAEMON_PKG.postinst; \
-		fi;  \
-	done
-
-
-	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
-	mkdir -p debian/tmp/usr/share/clickhouse/bin debian/tmp/usr/share/clickhouse/headers
-	debian/copy_clang_binaries.sh debian/tmp/usr/share/clickhouse/bin/
-	./copy_headers.sh . debian/tmp/usr/share/clickhouse/headers
-
+override_dh_install:
 	# Making docs
 	cp LICENSE debian/copyright
 
-	for DAEMON_PKG in ${DAEMONS}; do \
-		echo "LICENSE" > debian/$$DAEMON_PKG.docs; \
-		echo "AUTHORS" >> debian/$$DAEMON_PKG.docs; \
-		echo "README.md" >> debian/$$DAEMON_PKG.docs; \
-	done
+	ln -sf clickhouse-server-base.docs debian/clickhouse-client.docs
+	ln -sf clickhouse-server-base.docs debian/clickhouse-server-common.docs
+	ln -sf clickhouse-server-base.docs debian/clickhouse-server-metrika.docs
 
-	ln -s clickhouse-server.docs debian/clickhouse-server-base.docs
-	ln -s clickhouse-server.docs debian/clickhouse-server-common.docs
-	ln -s clickhouse-server.docs debian/clickhouse-server-metrika.docs
+	mkdir -p $(DESTDIR)/etc/security/limits.d
+	cp debian/clickhouse.limits $(DESTDIR)/etc/security/limits.d/clickhouse.conf
 
-	mkdir -p debian/tmp/etc/security/limits.d
-	cp tools/etc/security/limits.d/clickhouse.conf debian/tmp/etc/security/limits.d
-	mkdir -p debian/tmp/etc/init.d
-	cp tools/etc/init.d/clickhouse-server debian/tmp/etc/init.d
-	mkdir -p debian/tmp/etc/cron.d
-	cp tools/etc/cron.d/clickhouse-server debian/tmp/etc/cron.d
+	# todo: remove after renaming package:
+	mkdir -p $(DESTDIR)/etc/init.d
+	cp debian/clickhouse-server.init $(DESTDIR)/etc/init.d/clickhouse-server
+	mkdir -p $(DESTDIR)/etc/cron.d
+	cp debian/clickhouse-server.cron.d $(DESTDIR)/etc/cron.d/clickhouse-server
 
-# Build architecture-independent files here.
-binary-indep: build install
-# We have nothing to do by default.
+	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
+	mkdir -p $(DESTDIR)/usr/share/clickhouse/bin $(DESTDIR)/usr/share/clickhouse/headers
+	debian/copy_clang_binaries.sh $(DESTDIR)/usr/share/clickhouse/bin/
+	./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
 
-# Build architecture-dependent files here.
-binary-arch: build install
-	dh_testdir
-	dh_testroot
-	dh_installdocs
-	dh_installinit --no-start --no-package=clickhouse-server-base
-	dh_installinit --no-start --package=clickhouse-server-base --name=clickhouse-server
-	dh_installcron
-	dh_installdirs
-	dh_installchangelogs
-	dh_install --sourcedir=debian/tmp
-	dh_link
-	dh_compress
-	dh_fixperms
-	dh_installdeb
-	dh_shlibdeps --exclude=clang --exclude=stdc --exclude=ld
-	dh_gencontrol
-	dh_md5sums
-	dh_builddeb -- -Zgzip -z3
 
-binary: binary-indep binary-arch
-.PHONY: build clean binary-indep binary-arch binary install
+	# fake metrika files when private dir is empty
+	mkdir -p debian/tmp/etc/clickhouse-server/metrika
+	touch debian/tmp/etc/clickhouse-server/metrika/config.xml
+	touch debian/tmp/etc/clickhouse-server/metrika/users.xml
+
+	dh_install --list-missing --sourcedir=$(DESTDIR)

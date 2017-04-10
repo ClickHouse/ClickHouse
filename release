@@ -38,14 +38,6 @@ do
 	fi
 done
 
-# List of daemons to build could be specified in command line arguments.
-if [ $# -gt 0 ]
-then
-	DAEMONS="$@"
-else
-	DAEMONS="$(echo `cat debian/daemons`)"
-fi
-
 if [[ $TEST != 'yes' ]]
 then
 	# now incrementing done in external release scripts via --version
@@ -56,14 +48,12 @@ fi
 
 echo -e "\nCurrent revision is $REVISION"
 
-make_control "$CONTROL" "$DAEMONS"
-
-gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG" "$DAEMONS"
+gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG"
 
 # Build (only binary packages).
-debuild -e DAEMONS="${DAEMONS}" -e DEB_CC -e DEB_CXX -e DEB_COMPILER_VERSION -e CMAKE_FLAGS_ADD -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+debuild -eDEB_BUILD_OPTIONS=parallel=`nproc || grep -c ^processor /proc/cpuinfo` -e DEB_CC -e DEB_CXX -e CMAKE_FLAGS_ADD -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 
 if [[ $STANDALONE != 'yes' ]]
 then
-	upload_debs "$REVISION" "$DAEMONS"
+	upload_debs "$REVISION"
 fi
