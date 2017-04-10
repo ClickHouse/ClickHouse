@@ -265,7 +265,7 @@ struct Settings
      */ \
     M(SettingBool, join_use_nulls, 0) \
     /* */ \
-    M(SettingUInt64, preferred_block_size_bytes, 0)
+    M(SettingUInt64, preferred_block_size_bytes, 1000000)
 
     /// Possible limits for query execution.
     Limits limits;

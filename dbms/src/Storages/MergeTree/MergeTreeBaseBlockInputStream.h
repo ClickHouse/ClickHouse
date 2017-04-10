@@ -74,9 +74,9 @@ protected:
     size_t max_block_size_marks;
 
     size_t num_blocks = 0;
-    size_t min_block_size_bytes;
     size_t max_block_size_bytes = 0;
-    size_t sum_block_size_bytes;
+    size_t sum_block_size_bytes = 0;
+    size_t sum_block_size_rows = 0;
 };
 
 }

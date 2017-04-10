@@ -107,10 +107,13 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const std::size_t min_marks_to_r
         std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
     }
 
+    auto curr_task_size_predictor = !per_part_size_predictor[part_idx] ? nullptr
+        : std::make_shared<MergeTreeBlockSizePredictor>(*per_part_size_predictor[part_idx]); /// make a copy
+
     return std::make_unique<MergeTreeReadTask>(
         part.data_part, ranges_to_get_from_part, part.part_index_in_query, column_names,
         per_part_column_name_set[part_idx], per_part_columns[part_idx], per_part_pre_columns[part_idx],
-        per_part_remove_prewhere_column[part_idx], per_part_should_reorder[part_idx], per_part_size_predictor[part_idx]);
+        per_part_remove_prewhere_column[part_idx], per_part_should_reorder[part_idx], curr_task_size_predictor);
 }
 
 
