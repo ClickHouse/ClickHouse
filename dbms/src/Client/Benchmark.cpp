@@ -52,6 +52,7 @@ namespace ErrorCodes
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int BAD_ARGUMENTS;
 }
 
 class Benchmark

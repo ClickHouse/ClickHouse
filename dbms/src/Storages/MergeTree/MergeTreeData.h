@@ -472,6 +472,9 @@ public:
     Block primary_key_sample;
     DataTypes primary_key_data_types;
 
+    /// Limiting parallel sends per one table, used in DataPartsExchange
+    std::atomic_uint current_table_sends {0};
+
 private:
     friend struct MergeTreeDataPart;
     friend class StorageMergeTree;

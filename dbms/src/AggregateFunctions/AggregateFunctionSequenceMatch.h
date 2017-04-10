@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MUCH_ARGUMENTS_FOR_FUNCTION;
     extern const int SYNTAX_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 /// helper type for comparing `std::pair`s using solely the .first member

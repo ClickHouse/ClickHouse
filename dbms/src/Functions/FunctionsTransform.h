@@ -19,6 +19,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+
 /** transform(x, from_array, to_array[, default]) - преобразовать x согласно переданному явным образом соответствию.
   */
 

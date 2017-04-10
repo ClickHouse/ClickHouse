@@ -3,12 +3,15 @@
 #include <functional>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/URI.h>
-#include <IO/ReadBufferFromHTTP.h>
 #include <IO/ReadBuffer.h>
 
+#define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
+#define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
 
 namespace DB
 {
+
+const int HTTP_TOO_MANY_REQUESTS = 429;
 
 struct HTTPTimeouts
 {

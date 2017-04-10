@@ -6,6 +6,7 @@
 
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/ClearableHashSet.h>
 #include <Common/UInt128.h>
 
 
@@ -301,47 +302,77 @@ struct SetMethodHashed
 
 /** Разные варианты реализации множества.
   */
-struct SetVariants
+struct NonClearableSet
 {
     /// TODO Использовать для этих двух вариантов bit- или byte- set.
-    std::unique_ptr<SetMethodOneNumber<UInt8, HashSet<UInt8, TrivialHash, HashTableFixedGrower<8>>>>     key8;
-    std::unique_ptr<SetMethodOneNumber<UInt16, HashSet<UInt16, TrivialHash, HashTableFixedGrower<16>>>> key16;
+    std::unique_ptr<SetMethodOneNumber<UInt8, HashSet<UInt8, TrivialHash, HashTableFixedGrower<8>>>>            key8;
+    std::unique_ptr<SetMethodOneNumber<UInt16, HashSet<UInt16, TrivialHash, HashTableFixedGrower<16>>>>         key16;
 
     /** Также для эксперимента проверялась возможность использовать SmallSet,
       *  пока количество элементов в множестве небольшое (и, при необходимости, конвертировать в полноценный HashSet).
       * Но этот эксперимент показал, что преимущество есть только в редких случаях.
       */
-    std::unique_ptr<SetMethodOneNumber<UInt32, HashSet<UInt32, HashCRC32<UInt32>>>> key32;
-    std::unique_ptr<SetMethodOneNumber<UInt64, HashSet<UInt64, HashCRC32<UInt64>>>> key64;
-    std::unique_ptr<SetMethodString<HashSetWithSavedHash<StringRef>>>                 key_string;
-    std::unique_ptr<SetMethodFixedString<HashSetWithSavedHash<StringRef>>>             key_fixed_string;
-    std::unique_ptr<SetMethodKeysFixed<HashSet<UInt128, UInt128HashCRC32>>>         keys128;
-    std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>>>         keys256;
-    std::unique_ptr<SetMethodHashed<HashSet<UInt128, UInt128TrivialHash>>>             hashed;
+    std::unique_ptr<SetMethodOneNumber<UInt32, HashSet<UInt32, HashCRC32<UInt32>>>>                             key32;
+    std::unique_ptr<SetMethodOneNumber<UInt64, HashSet<UInt64, HashCRC32<UInt64>>>>                             key64;
+    std::unique_ptr<SetMethodString<HashSetWithSavedHash<StringRef>>>                                           key_string;
+    std::unique_ptr<SetMethodFixedString<HashSetWithSavedHash<StringRef>>>                                      key_fixed_string;
+    std::unique_ptr<SetMethodKeysFixed<HashSet<UInt128, UInt128HashCRC32>>>                                     keys128;
+    std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>>>                                     keys256;
+    std::unique_ptr<SetMethodHashed<HashSet<UInt128, UInt128TrivialHash>>>                                      hashed;
 
     /// Support for nullable keys (for DISTINCT implementation).
-    std::unique_ptr<SetMethodKeysFixed<HashSet<UInt128, UInt128HashCRC32>, true>>         nullable_keys128;
-    std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>, true>>         nullable_keys256;
-
+    std::unique_ptr<SetMethodKeysFixed<HashSet<UInt128, UInt128HashCRC32>, true>>                               nullable_keys128;
+    std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>, true>>                               nullable_keys256;
     /** В отличие от Aggregator, здесь не используется метод concat.
       * Это сделано потому что метод hashed, хоть и медленнее, но в данном случае, использует меньше оперативки.
       *  так как при его использовании, сами значения ключей не сохраняются.
       */
+};
 
+struct ClearableSet
+{
+    /// TODO Использовать для этих двух вариантов bit- или byte- set.
+    std::unique_ptr<SetMethodOneNumber<UInt8, ClearableHashSet<UInt8, TrivialHash, HashTableFixedGrower<8>>>>       key8;
+    std::unique_ptr<SetMethodOneNumber<UInt16, ClearableHashSet<UInt16, TrivialHash, HashTableFixedGrower<16>>>>    key16;
+
+    std::unique_ptr<SetMethodOneNumber<UInt32, ClearableHashSet<UInt32, HashCRC32<UInt32>>>>                        key32;
+    std::unique_ptr<SetMethodOneNumber<UInt64, ClearableHashSet<UInt64, HashCRC32<UInt64>>>>                        key64;
+    std::unique_ptr<SetMethodString<ClearableHashSetWithSavedHash<StringRef>>>                                      key_string;
+    std::unique_ptr<SetMethodFixedString<ClearableHashSetWithSavedHash<StringRef>>>                                 key_fixed_string;
+    std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt128, UInt128HashCRC32>>>                                keys128;
+    std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>>>                                keys256;
+    std::unique_ptr<SetMethodHashed<ClearableHashSet<UInt128, UInt128TrivialHash>>>                                 hashed;
+
+    /// Support for nullable keys (for DISTINCT implementation).
+    std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt128, UInt128HashCRC32>, true>>                          nullable_keys128;
+    std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>, true>>                          nullable_keys256;
+    /** В отличие от Aggregator, здесь не используется метод concat.
+      * Это сделано потому что метод hashed, хоть и медленнее, но в данном случае, использует меньше оперативки.
+      *  так как при его использовании, сами значения ключей не сохраняются.
+      */
+};
+
+template <typename Variant>
+struct SetVariantsTemplate: public Variant
+{
     Arena string_pool;
 
     #define APPLY_FOR_SET_VARIANTS(M) \
-        M(key8)             \
-        M(key16)             \
-        M(key32)             \
-        M(key64)             \
-        M(key_string)         \
-        M(key_fixed_string) \
-        M(keys128)             \
-        M(keys256)             \
-        M(nullable_keys128)    \
-        M(nullable_keys256)    \
+        M(key8)                 \
+        M(key16)                \
+        M(key32)                \
+        M(key64)                \
+        M(key_string)           \
+        M(key_fixed_string)     \
+        M(keys128)              \
+        M(keys256)              \
+        M(nullable_keys128)     \
+        M(nullable_keys256)     \
         M(hashed)
+
+    #define M(NAME) using Variant::NAME;
+        APPLY_FOR_SET_VARIANTS(M)
+    #undef M
 
     enum class Type
     {
@@ -364,5 +395,8 @@ struct SetVariants
     /// Считает размер в байтах буфера Set и размер string_pool'а
     size_t getTotalByteCount() const;
 };
+
+using SetVariants = SetVariantsTemplate<NonClearableSet>;
+using ClearableSetVariants = SetVariantsTemplate<ClearableSet>;
 
 }

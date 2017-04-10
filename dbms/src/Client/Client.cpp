@@ -48,9 +48,13 @@
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
-#define SAVE_CURSOR_POSITION "\033[s"
-#define RESTORE_CURSOR_POSITION "\033[u"
+
+/// Similar codes \e[s, \e[u don't work in VT100 and Mosh.
+#define SAVE_CURSOR_POSITION "\e7"
+#define RESTORE_CURSOR_POSITION "\e8"
+
 #define CLEAR_TO_END_OF_LINE "\033[K"
+
 /// This codes are possibly not supported everywhere.
 #define DISABLE_LINE_WRAPPING "\033[?7l"
 #define ENABLE_LINE_WRAPPING "\033[?7h"

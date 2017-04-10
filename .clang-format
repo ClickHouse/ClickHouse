@@ -52,11 +52,11 @@ IncludeCategories:
   - Regex:           '.*'
     Priority:        40
 ReflowComments: false
+AlignEscapedNewlinesLeft: true
 
 # Not changed:
 AccessModifierOffset: -4
 AlignConsecutiveAssignments: false
-AlignEscapedNewlinesLeft: false
 AlignOperands:   false
 AlignTrailingComments: false
 AllowAllParametersOfDeclarationOnNextLine: true
