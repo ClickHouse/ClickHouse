@@ -14,6 +14,7 @@
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/ParallelAggregatingBlockInputStream.h>
 #include <DataStreams/DistinctBlockInputStream.h>
+#include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/TotalsHavingBlockInputStream.h>
 #include <DataStreams/copyData.h>
@@ -1141,7 +1142,10 @@ void InterpreterSelectQuery::executeDistinct(bool before_order, Names columns)
 
         transformStreams([&](auto & stream)
         {
-            stream = std::make_shared<DistinctBlockInputStream>(stream, settings.limits, limit_for_distinct, columns);
+            if (stream->isGroupedOutput())
+                stream = std::make_shared<DistinctSortedBlockInputStream>(stream, settings.limits, limit_for_distinct, columns);
+            else
+                stream = std::make_shared<DistinctBlockInputStream>(stream, settings.limits, limit_for_distinct, columns);
         });
 
         if (hasMoreThanOneStream())
