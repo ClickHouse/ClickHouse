@@ -81,9 +81,11 @@ public:
       */
     virtual String getID() const = 0;
 
+    /// If this stream generates data in grouped by some keys, return true.
+    virtual bool isGroupedOutput() const { return false; }
     /// If this stream generates data in order by some keys, return true.
     virtual bool isSortedOutput() const { return false; }
-    /// In case of isSortedOutput, return corresponding SortDescription
+    /// In case of isGroupedOutput or isSortedOutput, return corresponding SortDescription
     virtual const SortDescription & getSortDescription() const { throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED); }
 
     BlockInputStreams & getChildren() { return children; }
