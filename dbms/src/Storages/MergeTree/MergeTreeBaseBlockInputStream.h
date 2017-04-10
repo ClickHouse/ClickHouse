@@ -1,12 +1,12 @@
 #pragma once
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
 
 class MergeTreeReader;
-struct MergeTreeReadTask;
 class UncompressedCache;
 class MarkCache;
 
@@ -31,7 +31,7 @@ public:
 
 protected:
 
-    Block readImpl() override;
+    Block readImpl() override final;
 
     /// Creates new this->task, and initilizes readers
     virtual bool getNewTask() = 0;
@@ -72,6 +72,11 @@ protected:
 
     Logger * log;
     size_t max_block_size_marks;
+
+    size_t num_blocks = 0;
+    size_t min_block_size_bytes;
+    size_t max_block_size_bytes = 0;
+    size_t sum_block_size_bytes;
 };
 
 }

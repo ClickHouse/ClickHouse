@@ -6727,6 +6727,12 @@ By default, it is 65,536.
 Blocks the size of &#39;max_block_size&#39; are not always loaded from the table. If it is obvious that less data needs to be retrieved, a smaller block is processed.
 
 
+==preferred_block_size_bytes==
+Similar to %%max_block_size%%, but sets reccomended size of blocks in bytes, adaptively estimating number of required rows in a block.
+Wherein size of the block cannot be greater than %%max_block_size%% rows.
+The setting is off by default (set to 0), it works only during the reads froms MergeTree-engines.
+
+
 ==max_insert_block_size==
 
 The size of blocks to form for insertion into a table.

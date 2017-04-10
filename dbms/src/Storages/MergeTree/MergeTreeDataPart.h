@@ -98,8 +98,7 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
     String getColumnNameWithMinumumCompressedSize() const;
 
     /// If part has column with fixed size, will return exact size of part (in rows)
-    /// Otherwise will return approximate size and set flag to false
-    std::pair<size_t, bool> tryGetExactSizeRows() const;
+    size_t getExactSizeRows() const;
 
     /// Returns full path to part dir
     String getFullPath() const;

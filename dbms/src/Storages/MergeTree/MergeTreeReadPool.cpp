@@ -245,7 +245,7 @@ std::vector<std::size_t> MergeTreeReadPool::fillPerPartInfo(
         if (predict_block_size_bytes)
         {
             per_part_size_predictor.emplace_back(std::make_shared<MergeTreeBlockSizePredictor>(
-                part.data_part, per_part_columns.back(), per_part_pre_columns.back(), data.index_granularity));
+                part.data_part, per_part_columns.back(), per_part_pre_columns.back()));
         }
         else
             per_part_size_predictor.emplace_back(nullptr);

@@ -55,8 +55,26 @@ Block MergeTreeBaseBlockInputStream::readImpl()
         if (res)
             injectVirtualColumns(res);
 
-        if (task->mark_ranges.empty())
-            task.reset();
+        if (res)
+        {
+            size_t block_size_bytes = res.bytes();
+            if (num_blocks == 0)
+                min_block_size_bytes = max_block_size_bytes = block_size_bytes;
+            min_block_size_bytes = std::min(min_block_size_bytes, block_size_bytes);
+            max_block_size_bytes = std::max(max_block_size_bytes, block_size_bytes);
+            sum_block_size_bytes += block_size_bytes;
+            ++num_blocks;
+
+            if (task->mark_ranges.empty())
+                task.reset();
+        }
+    }
+
+    if ((!res || !task || num_blocks % 5 == 0) && num_blocks > 0)
+    {
+        LOG_INFO(log, "Read " << num_blocks << " blocks, max_size " << max_block_size_bytes
+        << ", avg_size " << sum_block_size_bytes / num_blocks
+        << " (requested " << max_block_size_rows << " max rows, " << preferred_block_size_bytes << " avg. bytes)");
     }
 
     return res;
@@ -66,10 +84,6 @@ Block MergeTreeBaseBlockInputStream::readImpl()
 Block MergeTreeBaseBlockInputStream::readFromPart()
 {
     Block res;
-
-    // For preferred_block_size_bytes
-    size_t res_block_size_bytes = 0;
-    bool bytes_exceeded = false;
 
     if (task->size_predictor)
         task->size_predictor->startBlock();
@@ -84,23 +98,16 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
             while (!task->mark_ranges.empty() && space_left && !isCancelled())
             {
-                if (task->size_predictor)
-                {
-                    res_block_size_bytes = res.bytes();
-                    if (res_block_size_bytes >= preferred_block_size_bytes)
-                    {
-                        bytes_exceeded = true;
-                        break;
-                    }
-                }
-
                 auto & range = task->mark_ranges.back();
 
                 size_t marks_to_read = std::min(range.end - range.begin, space_left);
                 if (task->size_predictor)
                 {
-                    size_t recommended_marks = task->size_predictor->estimateNumMarks(preferred_block_size_bytes - res_block_size_bytes);
-                    marks_to_read = std::min(marks_to_read, std::max(1UL, recommended_marks));
+                    size_t recommended_marks = task->size_predictor->estimateNumMarks(preferred_block_size_bytes, storage.index_granularity);
+                    if (res && recommended_marks < 1)
+                        break;
+
+                    marks_to_read = std::min(marks_to_read, std::max(1LU, recommended_marks));
                 }
 
                 pre_reader->readRange(range.begin, range.begin + marks_to_read, res);
@@ -150,6 +157,9 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 for (const auto & range : ranges_to_read)
                     reader->readRange(range.begin, range.end, res);
+
+                    if (task->size_predictor)
+                        task->size_predictor->update(res);
 
                 progressImpl({ 0, res.bytes() - pre_bytes });
             }
@@ -208,6 +218,9 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 progressImpl({ 0, res.bytes() - pre_bytes });
 
+                if (task->size_predictor)
+                    task->size_predictor->update(res);
+
                 post_filter.resize(post_filter_pos);
 
                 /// Filter the columns related to PREWHERE using pre_filter,
@@ -244,30 +257,22 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
         while (!task->mark_ranges.empty() && space_left && !isCancelled())
         {
-            if (task->size_predictor)
-            {
-                res_block_size_bytes = res.bytes();
-                if (res_block_size_bytes >= preferred_block_size_bytes)
-                {
-                    bytes_exceeded = true;
-                    break;
-                }
-            }
-
             auto & range = task->mark_ranges.back();
 
             size_t marks_to_read = std::min(range.end - range.begin, space_left);
             if (task->size_predictor)
             {
-                size_t recommended_marks = task->size_predictor->estimateNumMarks(preferred_block_size_bytes - res_block_size_bytes);
-                marks_to_read = std::min(marks_to_read, std::max(1UL, recommended_marks));
+                size_t recommended_marks = task->size_predictor->estimateNumMarks(preferred_block_size_bytes, storage.index_granularity);
+                if (res && recommended_marks < 1)
+                    break;
+
+                marks_to_read = std::min(marks_to_read, std::max(1LU, recommended_marks));
             }
 
-            LOG_TRACE(log, "Will read " << marks_to_read << " marks");
             reader->readRange(range.begin, range.begin + marks_to_read, res);
 
             if (task->size_predictor)
-                task->size_predictor->update(res, marks_to_read);
+                task->size_predictor->update(res);
 
             space_left -= marks_to_read;
             range.begin += marks_to_read;
@@ -281,13 +286,6 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
         progressImpl({ res.rows(), res.bytes() });
         reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
-    }
-
-    if (task->size_predictor && bytes_exceeded)
-    {
-        res_block_size_bytes = res.bytes();
-        double accuracy = static_cast<double>(res_block_size_bytes) / preferred_block_size_bytes - 1.;
-        LOG_TRACE(log, "Read block with " << res_block_size_bytes << " bytes (" << task->size_predictor->block_size_bytes << "), " << res.rows() << " rows, accuracy " << accuracy * 100 << " percent");
     }
 
     return res;

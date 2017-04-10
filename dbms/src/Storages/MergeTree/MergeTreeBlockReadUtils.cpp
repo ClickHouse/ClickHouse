@@ -79,9 +79,8 @@ MergeTreeReadTask::~MergeTreeReadTask() = default;
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns,
-    const NamesAndTypesList & pre_columns,
-    size_t index_granularity_)
-: data_part(data_part_), index_granularity(index_granularity_)
+    const NamesAndTypesList & pre_columns)
+: data_part(data_part_)
 {
     auto add_column = [&] (const NameAndTypePair & column)
     {
@@ -112,7 +111,7 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     for (const NameAndTypePair & column : columns)
         add_column(column);
 
-    size_t rows_approx = data_part->tryGetExactSizeRows().first;
+    size_t rows_approx = data_part->getExactSizeRows();
 
     bytes_per_row_global = fixed_columns_bytes_per_row;
     for (auto & info : dynamic_columns_infos)
@@ -134,15 +133,24 @@ void MergeTreeBlockSizePredictor::startBlock()
 }
 
 
-void MergeTreeBlockSizePredictor::update(const Block & block, size_t read_marks)
+/// FIXME: add last_read_row_in_part parameter to take into account gaps between adjacent ranges
+void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
 {
-    size_t dif_rows = read_marks * index_granularity;
-    block_size_rows += dif_rows;
-    block_size_bytes = block_size_rows * fixed_columns_bytes_per_row;
-    bytes_per_row_current = fixed_columns_bytes_per_row;
+    size_t new_rows = block.rows();
+    if (new_rows < block_size_rows)
+    {
+        throw Exception("Updated block has less rows (" + toString(new_rows) + ") than previous one (" + toString(block_size_rows) + ")",
+                        ErrorCodes::LOGICAL_ERROR);
+    }
 
-    /// Make recursive updates for each read mark
-    double alpha = std::pow(1. - decay, read_marks);
+    size_t dif_rows = new_rows - block_size_rows;
+    block_size_bytes = new_rows * fixed_columns_bytes_per_row;
+    bytes_per_row_current = fixed_columns_bytes_per_row;
+    block_size_rows = new_rows;
+
+    /// Make recursive updates for each read row: v_{i+1} = (1 - decay) v_{i} + decay v_{target}
+    /// Use sum of gemetric sequence formula to update multiple rows: v{n} = (1 - decay)^n v_{0} + (1 - (1 - decay)^n) v_{target}
+    double alpha = std::pow(1. - decay, dif_rows);
 
     for (auto & info : dynamic_columns_infos)
     {
