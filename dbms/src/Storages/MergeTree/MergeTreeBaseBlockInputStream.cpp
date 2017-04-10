@@ -55,26 +55,34 @@ Block MergeTreeBaseBlockInputStream::readImpl()
         if (res)
             injectVirtualColumns(res);
 
-        if (res)
+        if (preferred_block_size_bytes && res)
         {
             size_t block_size_bytes = res.bytes();
-            if (num_blocks == 0)
-                min_block_size_bytes = max_block_size_bytes = block_size_bytes;
-            min_block_size_bytes = std::min(min_block_size_bytes, block_size_bytes);
             max_block_size_bytes = std::max(max_block_size_bytes, block_size_bytes);
             sum_block_size_bytes += block_size_bytes;
+            sum_block_size_rows += res.rows();
             ++num_blocks;
 
-            if (task->mark_ranges.empty())
-                task.reset();
         }
+
+        if (task->mark_ranges.empty())
+            task.reset();
     }
 
-    if ((!res || !task || num_blocks % 5 == 0) && num_blocks > 0)
+    if (preferred_block_size_bytes && !res && num_blocks >= 4)
     {
-        LOG_INFO(log, "Read " << num_blocks << " blocks, max_size " << max_block_size_bytes
-        << ", avg_size " << sum_block_size_bytes / num_blocks
-        << " (requested " << max_block_size_rows << " max rows, " << preferred_block_size_bytes << " avg. bytes)");
+        size_t avg_bytes = sum_block_size_bytes / num_blocks;
+        size_t avg_rows = sum_block_size_bytes / num_blocks;
+        double rel_avg_err = 1. * avg_bytes / preferred_block_size_bytes - 1.;
+
+        /// TODO: remove diagnostic after test
+        if (avg_rows > 8000 && std::abs(rel_avg_err) > 25) // skip uninformative cases
+        {
+            LOG_INFO(log, "Read " << num_blocks << " blocks, max_size " << max_block_size_bytes
+            << ", avg_bytes " << avg_bytes
+            << ", rel_avg_err " <<  std::fixed << std::setprecision(2) << rel_avg_err * 100 << "%"
+            << ", avg_rows " << std::fixed << std::setprecision(2) << avg_rows);
+        }
     }
 
     return res;
@@ -96,19 +104,21 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             size_t space_left = std::max(1LU, max_block_size_marks);
             MarkRanges ranges_to_read;
 
+            if (task->size_predictor)
+            {
+                /// FIXME: size prediction model is updated by filtered rows, but it predicts size of unfiltered rows also
+
+                size_t recommended_marks = task->size_predictor->estimateNumMarks(preferred_block_size_bytes, storage.index_granularity);
+                if (res && recommended_marks < 1)
+                    break;
+
+                space_left = std::min(space_left, std::max(1LU, recommended_marks));
+            }
+
             while (!task->mark_ranges.empty() && space_left && !isCancelled())
             {
                 auto & range = task->mark_ranges.back();
-
                 size_t marks_to_read = std::min(range.end - range.begin, space_left);
-                if (task->size_predictor)
-                {
-                    size_t recommended_marks = task->size_predictor->estimateNumMarks(preferred_block_size_bytes, storage.index_granularity);
-                    if (res && recommended_marks < 1)
-                        break;
-
-                    marks_to_read = std::min(marks_to_read, std::max(1LU, recommended_marks));
-                }
 
                 pre_reader->readRange(range.begin, range.begin + marks_to_read, res);
 
@@ -157,9 +167,6 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 for (const auto & range : ranges_to_read)
                     reader->readRange(range.begin, range.end, res);
-
-                    if (task->size_predictor)
-                        task->size_predictor->update(res);
 
                 progressImpl({ 0, res.bytes() - pre_bytes });
             }
@@ -218,9 +225,6 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 progressImpl({ 0, res.bytes() - pre_bytes });
 
-                if (task->size_predictor)
-                    task->size_predictor->update(res);
-
                 post_filter.resize(post_filter_pos);
 
                 /// Filter the columns related to PREWHERE using pre_filter,
@@ -247,7 +251,12 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 };
 
             if (res)
+            {
+                if (task->size_predictor)
+                    task->size_predictor->update(res);
+
                 reader->fillMissingColumnsAndReorder(res, task->ordered_names);
+            }
         }
         while (!task->mark_ranges.empty() && !res && !isCancelled());
     }
