@@ -3,6 +3,7 @@
 #include <Common/HashTable/SmallTable.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogCounter.h>
+#include <Common/MemoryTracker.h>
 #include <Core/Defines.h>
 
 

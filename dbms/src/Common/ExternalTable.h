@@ -19,6 +19,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+
 /// Базовый класс содержащий основную информацию о внешней таблице и
 /// основные функции для извлечения этой информации из текстовых полей.
 class BaseExternalTable

@@ -51,4 +51,4 @@ target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)
-endif (ENABLE_TESTS)
+endif ()

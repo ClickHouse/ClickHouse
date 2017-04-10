@@ -10,6 +10,7 @@
 #include <zstd.h>
 
 #include <Common/unaligned.h>
+#include <Core/Types.h>
 
 #include <IO/CompressedWriteBuffer.h>
 

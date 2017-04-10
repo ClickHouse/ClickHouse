@@ -7,12 +7,14 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <Common/SimpleCache.h>
+#include <Common/config.h>
+#include <Core/Types.h>
 #include <common/logger_useful.h>
 
-#include <Common/config.h>
 #if Poco_NetSSL_FOUND
 #include <Poco/Net/HTTPSClientSession.h>
 #endif
+
 
 namespace DB
 {
@@ -33,7 +35,6 @@ static Poco::Net::IPAddress resolveHost(const String & host)
     static SimpleCache<decltype(resolveHostImpl), &resolveHostImpl> cache;
     return cache(host);
 }
-// ==========
 
 
 ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
