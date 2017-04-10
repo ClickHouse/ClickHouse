@@ -517,8 +517,7 @@ private:
 
     void mediumToLarge()
     {
-        if (current_memory_tracker)
-            current_memory_tracker->alloc(sizeof(detail::QuantileTimingLarge));
+        CurrentMemoryTracker::alloc(sizeof(detail::QuantileTimingLarge));
 
         /// While the data is copied from medium, it is not possible to set `large` value (otherwise it will overwrite some data).
         detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
@@ -533,8 +532,7 @@ private:
 
     void tinyToLarge()
     {
-        if (current_memory_tracker)
-            current_memory_tracker->alloc(sizeof(detail::QuantileTimingLarge));
+        CurrentMemoryTracker::alloc(sizeof(detail::QuantileTimingLarge));
 
         /// While the data is copied from `medium` it is not possible to set `large` value (otherwise it will overwrite some data).
         detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
@@ -569,8 +567,7 @@ public:
         {
             delete large;
 
-            if (current_memory_tracker)
-                current_memory_tracker->free(sizeof(detail::QuantileTimingLarge));
+            CurrentMemoryTracker::free(sizeof(detail::QuantileTimingLarge));
         }
     }
 
