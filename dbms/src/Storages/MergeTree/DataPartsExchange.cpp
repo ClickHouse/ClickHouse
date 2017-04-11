@@ -6,6 +6,7 @@
 #include <Poco/File.h>
 #include <ext/scope_guard.hpp>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/HTTPRequest.h>
 
 
 namespace CurrentMetrics
@@ -207,7 +208,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
     }
     );
 
-    ReadWriteBufferFromHTTP in(uri);
+    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
 
     String full_part_name = String(to_detached ? "detached/" : "") + "tmp_" + part_name;
     String part_path = data.getFullPath() + full_part_name + "/";
