@@ -56,6 +56,7 @@ Section: libdevel
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common (= ${binary:Version})
 Conflicts: clickhouse-server
+Replaces: clickhouse-server-base
 Provides: clickhouse-server
 Description: clickhouse-server-metrika
  Configuration files specific for Metrika project for clickhouse-server-base package
