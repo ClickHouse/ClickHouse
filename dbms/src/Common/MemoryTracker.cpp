@@ -26,6 +26,11 @@ MemoryTracker::~MemoryTracker()
       *
       * Sometimes, memory tracker could be destroyed before memory was freed, and on destruction, amount > 0.
       * For example, a query could allocate some data and leave it in cache.
+      *
+      * If memory will be freed outside of context of this memory tracker,
+      *  but in context of one of the 'next' memory trackers,
+      *  then memory usage of 'next' memory trackers will be underestimated,
+      *  because amount will be decreased twice (first - here, second - when real 'free' happens).
       */
     if (amount)
         free(amount);
@@ -91,6 +96,11 @@ void MemoryTracker::alloc(Int64 size)
 
 void MemoryTracker::free(Int64 size)
 {
+    /** Sometimes, query could free some data, that was allocated outside of query context.
+      * Example: cache eviction.
+      * To avoid negative memory usage, we "saturate" amount.
+      * Memory usage will be calculated with some error.
+      */
     if (size > amount)
         size = amount;
 
@@ -143,7 +153,5 @@ namespace CurrentMemoryTracker
     {
         if (current_memory_tracker)
             current_memory_tracker->free(size);
-        else
-            std::cerr << "Freed " << size << " bytes without current_memory_tracker " << StackTrace().toString() << "\n";
     }
 }
