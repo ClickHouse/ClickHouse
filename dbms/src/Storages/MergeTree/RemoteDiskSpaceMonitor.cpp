@@ -4,6 +4,7 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Poco/Net/HTTPRequest.h>
 
 namespace DB
 {
@@ -59,7 +60,7 @@ size_t Client::getFreeSpace(const InterserverIOEndpointLocation & location) cons
     }
     );
 
-    ReadWriteBufferFromHTTP in{uri};
+    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
 
     size_t free_disk_space;
     readBinary(free_disk_space, in);
