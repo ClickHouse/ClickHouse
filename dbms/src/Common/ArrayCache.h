@@ -155,7 +155,7 @@ private:
 
     mutable std::mutex mutex;
 
-    std::mt19937 rng {static_cast<std::uint_fast32_t>(randomSeed())};
+    std::mt19937_64 rng {static_cast<std::mt19937_64::result_type>(randomSeed())};
 
     struct Chunk : private boost::noncopyable
     {
