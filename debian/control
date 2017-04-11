@@ -12,7 +12,6 @@ Build-Depends: debhelper (>= 9),
                libssl-dev,
                unixodbc-dev
 Standards-Version: 3.9.8
-Section: libs
 
 Package: clickhouse-common
 Architecture: any
