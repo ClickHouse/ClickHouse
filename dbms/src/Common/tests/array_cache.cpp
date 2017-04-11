@@ -26,13 +26,18 @@ void printStats(const Cache & cache)
         << "allocated_bytes: " << statistics.allocated_bytes << "\n"
         << "evictions: " << statistics.evictions << "\n"
         << "evicted_bytes: " << statistics.evicted_bytes << "\n"
+        << "secondary_evictions: " << statistics.secondary_evictions << "\n"
         << "\n";
 }
+
+/** Example:
+  * time ./array_cache 68000000 1 10000000 2000000 200
+  */
 
 
 int main(int argc, char ** argv)
 {
-/*    size_t cache_size = DB::parse<size_t>(argv[1]);
+    size_t cache_size = DB::parse<size_t>(argv[1]);
     size_t num_threads = DB::parse<size_t>(argv[2]);
     size_t num_iterations = DB::parse<size_t>(argv[3]);
     size_t region_max_size = DB::parse<size_t>(argv[4]);
@@ -59,9 +64,11 @@ int main(int argc, char ** argv)
                     [=](void * ptr, int & payload)
                     {
                         payload = i;
-                        memset(ptr, i, size);
+                //        memset(ptr, i, size);
                     },
                     nullptr);
+
+            //    printStats(cache);
             }
         });
     }
@@ -72,7 +79,7 @@ int main(int argc, char ** argv)
     {
         while (!stop)
         {
-            sleep(1);
+            usleep(100000);
             printStats(cache);
         }
     });
@@ -84,8 +91,8 @@ int main(int argc, char ** argv)
     stats_thread.join();
 
     return 0;
-    */
 
+/*
     using Cache = ArrayCache<int, int>;
     Cache cache(64 * 1024 * 1024);
 
@@ -120,5 +127,5 @@ int main(int argc, char ** argv)
         },
         nullptr);
 
-    printStats(cache);
+    printStats(cache);*/
 }

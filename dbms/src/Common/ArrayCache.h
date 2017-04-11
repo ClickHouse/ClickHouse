@@ -44,7 +44,7 @@ namespace DB
   * Each chunk holds free and occupied memory regions. Contiguous free regions are always coalesced.
   *
   * Each region could be linked by following metadata structures:
-  * 1. LRU list - to find next region for eviction.
+  * 1. LRU list - to find next region for eviction. NOTE Replace with exponentially-smoothed size-weighted LFU map.
   * 2. Adjacency list - to find neighbour free regions to coalesce on eviction.
   * 3. Size multimap - to find free region with at least requested size.
   * 4. Key map - to find element by key.
@@ -57,12 +57,15 @@ namespace DB
   * During insertion, each key is locked - to avoid parallel initialization of regions for same key.
   *
   * On insertion, we search for free region of at least requested size.
-  * If nothing was found, we evict oldest unused region and try again.
+  * If nothing was found, we evict oldest unused region; if not enogh size, we evict it neighbours; and try again.
   *
   * Metadata is allocated by usual allocator and its memory usage is not accounted.
   *
   * Caveats:
   * - cache is not NUMA friendly.
+  *
+  * Performance: few million ops/sec from single thread, less in case of concurrency.
+  * Fragmentation is usually less than 10%.
   */
 
 template <typename Key, typename Payload>
@@ -203,6 +206,7 @@ private:
     size_t allocated_bytes = 0;
     size_t evictions = 0;
     size_t evicted_bytes = 0;
+    size_t secondary_evictions = 0;
 
 
 public:
@@ -327,9 +331,14 @@ private:
         auto left_it = adjacency_list_it;
         auto right_it = adjacency_list_it;
 
+        //size_t was_size = region.size;
+
         if (left_it != adjacency_list.begin())
         {
             --left_it;
+
+            //std::cerr << "left_it->isFree(): " << left_it->isFree() << "\n";
+
             if (left_it->chunk == region.chunk && left_it->isFree())
             {
                 region.size += left_it->size;
@@ -342,6 +351,8 @@ private:
         ++right_it;
         if (right_it != adjacency_list.end())
         {
+            //std::cerr << "right_it->isFree(): " << right_it->isFree() << "\n";
+
             if (right_it->chunk == region.chunk && right_it->isFree())
             {
                 region.size += right_it->size;
@@ -350,27 +361,17 @@ private:
             }
         }
 
+        //std::cerr << "size is enlarged: " << was_size << " -> " << region.size << "\n";
+
         size_multimap.insert(region);
     }
 
 
-    /// Evict one region from cache and return it, coalesced with neighbours.
-    /// If nothing to evict, returns nullptr.
-    /// Region is removed from lru_list and key_map and inserted into size_multimap.
-    RegionMetadata * evictOne() noexcept
+    void evictRegion(RegionMetadata & evicted_region) noexcept
     {
-        if (lru_list.empty())
-            return nullptr;
-
-        RegionMetadata & evicted_region = lru_list.front();
         total_allocated_size -= evicted_region.size;
 
-        lru_list.pop_front();
-
-  /*      std::cerr << "evicting " << evicted_region.key << ", " << &evicted_region << ", " << evicted_region.KeyMapHook::is_linked() << "\n";
-
-        for (const auto & elem : key_map)
-            std::cerr << elem.key << ", " << &elem << "\n";*/
+        lru_list.erase(lru_list.iterator_to(evicted_region));
 
         if (evicted_region.KeyMapHook::is_linked())
             key_map.erase(key_map.iterator_to(evicted_region));
@@ -379,7 +380,38 @@ private:
         evicted_bytes += evicted_region.size;
 
         freeRegion(evicted_region);
-        return &evicted_region;
+    }
+
+
+    /// Evict region from cache and return it, coalesced with nearby free regions.
+    /// While size is not enough, evict adjacent regions at right, if any.
+    /// If nothing to evict, returns nullptr.
+    /// Region is removed from lru_list and key_map and inserted into size_multimap.
+    RegionMetadata * evictSome(size_t requested_size) noexcept
+    {
+        if (lru_list.empty())
+            return nullptr;
+
+        /*for (const auto & elem : adjacency_list)
+            std::cerr << (!elem.SizeMultimapHook::is_linked() ? "\033[1m" : "") << elem.size << (!elem.SizeMultimapHook::is_linked() ? "\033[0m " : " ");
+        std::cerr << '\n';*/
+
+        auto it = adjacency_list.iterator_to(lru_list.front());
+
+        while (true)
+        {
+            RegionMetadata & evicted_region = *it;
+            evictRegion(evicted_region);
+
+            if (evicted_region.size >= requested_size)
+                return &evicted_region;
+
+            ++it;
+            if (it == adjacency_list.end() || it->chunk != evicted_region.chunk || !it->LRUListHook::is_linked())
+                return &evicted_region;
+
+            ++secondary_evictions;
+        }
     }
 
 
@@ -435,7 +467,7 @@ private:
         total_allocated_size += size;
 
         allocated_region->ptr = free_region.ptr;
-        allocated_region->chunk = free_region.ptr;
+        allocated_region->chunk = free_region.chunk;
         allocated_region->size = size;
 
         size_multimap.erase(size_multimap.iterator_to(free_region));
@@ -470,10 +502,12 @@ private:
             return allocateFromFreeRegion(*free_region, size);
         }
 
+//        std::cerr << "Requested size: " << size << "\n";
+
         /// Evict something from cache and continue.
         while (true)
         {
-            RegionMetadata * res = evictOne();
+            RegionMetadata * res = evictSome(size);
 
             /// Nothing to evict. All cache is full and in use - cannot allocate memory.
             if (!res)
@@ -646,6 +680,7 @@ public:
         size_t allocated_bytes = 0;
         size_t evictions = 0;
         size_t evicted_bytes = 0;
+        size_t secondary_evictions = 0;
     };
 
     Statistics getStatistics() const
@@ -672,6 +707,7 @@ public:
         res.allocated_bytes = allocated_bytes;
         res.evictions = evictions;
         res.evicted_bytes = evicted_bytes;
+        res.secondary_evictions = secondary_evictions;
 
         return res;
     }
