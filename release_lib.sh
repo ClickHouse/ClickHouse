@@ -20,7 +20,7 @@ function gen_revision_author {
         # Создадим номер ревизии и попытаемся залить на сервер.
         succeeded=0
         attempts=0
-        max_attempts=5
+        max_attempts=20
         while [ $succeeded -eq 0 ] && [ $attempts -le $max_attempts ]
         do
             REVISION=$(($REVISION + 1))
@@ -52,10 +52,12 @@ function gen_revision_author {
         git_log_grep=`git log --oneline --max-count=1 | grep "$auto_message"`
         if [ "$git_log_grep" == "" ]; then
             git_describe=`git describe`
-            sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g" dbms/cmake/version.cmake
-            sed -i -- "s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
+            sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g;s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
             git commit -m "$auto_message [$REVISION]" dbms/cmake/version.cmake
-            # git push
+            #git push
+            tag="v1.1.$REVISION-testing"
+            git tag --force -a "$tag" -m "$tag"
+            git push --force origin "$tag"
         else
             REVISION=$(get_revision)
             echo reusing old version $REVISION
