@@ -40,8 +40,7 @@ static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
 template <bool clear_memory_>
 void * Allocator<clear_memory_>::alloc(size_t size, size_t alignment)
 {
-    if (current_memory_tracker)
-        current_memory_tracker->alloc(size);
+    CurrentMemoryTracker::alloc(size);
 
     void * buf;
 
@@ -98,8 +97,7 @@ void Allocator<clear_memory_>::free(void * buf, size_t size)
         ::free(buf);
     }
 
-    if (current_memory_tracker)
-        current_memory_tracker->free(size);
+    CurrentMemoryTracker::free(size);
 }
 
 
@@ -109,8 +107,7 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
     if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT)
     {
-        if (current_memory_tracker)
-            current_memory_tracker->realloc(old_size, new_size);
+        CurrentMemoryTracker::realloc(old_size, new_size);
 
         buf = ::realloc(buf, new_size);
 
@@ -122,8 +119,7 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
     }
     else if (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD)
     {
-        if (current_memory_tracker)
-            current_memory_tracker->realloc(old_size, new_size);
+        CurrentMemoryTracker::realloc(old_size, new_size);
 
         buf = mremap(buf, old_size, new_size, MREMAP_MAYMOVE);
         if (MAP_FAILED == buf)
@@ -136,8 +132,7 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
     if ((old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT) ||
         (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD))
     {
-        if (current_memory_tracker)
-            current_memory_tracker->realloc(old_size, new_size);
+        CurrentMemoryTracker::realloc(old_size, new_size);
 
         buf = ::realloc(buf, new_size);
 

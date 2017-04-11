@@ -37,8 +37,7 @@ private:
 
     void toLarge()
     {
-        if (current_memory_tracker)
-            current_memory_tracker->alloc(sizeof(large));
+        CurrentMemoryTracker::alloc(sizeof(large));
 
         /// На время копирования данных из tiny, устанавливать значение large ещё нельзя (иначе оно перезатрёт часть данных).
         Large * tmp_large = new Large;
@@ -56,8 +55,7 @@ public:
         {
             delete large;
 
-            if (current_memory_tracker)
-                current_memory_tracker->free(sizeof(large));
+            CurrentMemoryTracker::free(sizeof(large));
         }
     }
 

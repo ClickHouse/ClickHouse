@@ -187,7 +187,6 @@ config-9001.xml
 core
 vgcore*
 
-*.install
 *.deb
 *.build
 *.upload
@@ -196,8 +195,6 @@ build-stamp
 configure-stamp
 debian/changelog
 debian/*.debhelper.log
-debian/*.cron.d
-debian/*.init
 debian/*.debhelper
 debian/*.substvars
 
@@ -223,3 +220,7 @@ config-preprocessed.xml
 
 # Ignore symlink to private repository
 /private
+
+# Gulp dependencies used to minify website
+node_modules
+public

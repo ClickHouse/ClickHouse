@@ -220,3 +220,10 @@ a:hover
 .c13 { color: #ff54ff; }
 .c14 { color: #54ffff; }
 .c15 { color: #fff; }
+
+.orange {
+    fill: #fc0;
+}
+.red {
+    fill: #f00
+}

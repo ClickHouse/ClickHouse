@@ -93,7 +93,7 @@ if (MAKE_STATIC_LIBRARIES)
 else ()
     add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
     set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse)
-    install (TARGETS dbms LIBRARY DESTINATION lib COMPONENT clickhouse)
+    install (TARGETS dbms LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
 endif ()
 
 
@@ -187,9 +187,10 @@ target_include_directories (dbms
 )
 
 if (ENABLE_TESTS)
+    add_subdirectory (tests)
     # attach all dbms gtest sources
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
     target_link_libraries(unit_tests_dbms gtest_main dbms)
     add_check(unit_tests_dbms)
-endif()
+endif ()
