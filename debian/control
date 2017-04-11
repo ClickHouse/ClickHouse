@@ -54,6 +54,8 @@ Description: debugging symbols for clickhouse-server-base
 Package: clickhouse-server-metrika
 Section: libdevel
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server (= ${binary:Version})
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common (= ${binary:Version})
+Conflicts: clickhouse-server
+Provides: clickhouse-server
 Description: clickhouse-server-metrika
  Configuration files specific for Metrika project for clickhouse-server-base package

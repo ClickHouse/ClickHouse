@@ -1,2 +1,2 @@
-/usr/bin/clickhouse
-/usr/share/clickhouse/*
+usr/bin/clickhouse
+usr/share/clickhouse/*

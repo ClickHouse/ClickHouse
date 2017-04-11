@@ -1,1 +1,1 @@
-/usr/bin/clickhouse /usr/bin/clickhouse-server
+usr/bin/clickhouse usr/bin/clickhouse-server
