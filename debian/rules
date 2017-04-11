@@ -47,19 +47,19 @@ override_dh_auto_test:
 override_dh_clean:
 	rm -rf $(BUILDDIR)
 	rm -rf $(DESTDIR)
-	rm -rf debian/copyright debian/clickhouse-server-base.docs debian/clickhouse-server-common.docs
+	#! TODO rm -rf debian/copyright debian/clickhouse-server-base.docs debian/clickhouse-server-common.docs
 	dh_clean
 
 override_dh_strip:
-	dh_strip -pclickhouse-server-base --dbg-package=clickhouse-common-dbg
+	dh_strip -pclickhouse-common --dbg-package=clickhouse-common-dbg
 
 override_dh_install:
 	# Making docs
 	cp LICENSE debian/copyright
 
-	ln -sf clickhouse-server-base.docs debian/clickhouse-client.docs
-	ln -sf clickhouse-server-base.docs debian/clickhouse-server-common.docs
-	ln -sf clickhouse-server-base.docs debian/clickhouse-server-metrika.docs
+	ln -sf clickhouse-server.docs debian/clickhouse-client.docs
+	ln -sf clickhouse-server.docs debian/clickhouse-common.docs
+	ln -sf clickhouse-server.docs debian/clickhouse-server-metrika.docs
 
 	mkdir -p $(DESTDIR)/etc/security/limits.d
 	cp debian/clickhouse.limits $(DESTDIR)/etc/security/limits.d/clickhouse.conf
@@ -84,4 +84,4 @@ override_dh_install:
 	dh_install --list-missing --sourcedir=$(DESTDIR)
 
 override_dh_shlibdeps:
-	dh_shlibdeps -Xdebian/clickhouse-server-base/usr/share/clickhouse/bin/*
+	dh_shlibdeps -Xdebian/clickhouse-common/usr/share/clickhouse/bin/*

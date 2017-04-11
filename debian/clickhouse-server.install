@@ -1,5 +1,5 @@
-/usr/bin/clickhouse
 /etc/init.d/clickhouse-server
 /etc/cron.d/clickhouse-server
-/usr/share/clickhouse/*
 /etc/security/limits.d/clickhouse.conf
+/etc/clickhouse-server/config.xml
+/etc/clickhouse-server/users.xml
