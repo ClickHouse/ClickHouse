@@ -846,6 +846,7 @@ clickhouse-client
             $('html, body').animate({
                 scrollTop: offset
             }, 500);
+            window.history.replaceState('', document.title, window.location.href.replace(location.hash, '') + this.hash);
         });
 
         var available_distributives = ['xenial', 'trusty', 'precise'];
