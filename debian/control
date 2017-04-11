@@ -11,6 +11,7 @@ Package: clickhouse-utils
 Section: libdevel
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
+Replaces: clickhouse-compressor
 Description: clickhouse-compressor
 
 Package: clickhouse-client
@@ -27,6 +28,7 @@ Package: clickhouse-server
 Section: libdevel
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, adduser, clickhouse-common (= ${binary:Version})
+Replaces: clickhouse-server-common
 Description: Server binary for clickhouse
  Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
@@ -37,6 +39,7 @@ Package: clickhouse-common
 Section: libdevel
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
+Replaces: clickhouse-server-base
 Description: clickhouse-server-common
  Common files for clickhouse
 
