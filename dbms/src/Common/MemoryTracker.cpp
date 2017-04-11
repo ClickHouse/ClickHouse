@@ -101,15 +101,17 @@ void MemoryTracker::free(Int64 size)
       * To avoid negative memory usage, we "saturate" amount.
       * Memory usage will be calculated with some error.
       */
-    if (size > amount)
-        size = amount;
+    Int64 size_to_subtract = size;
+    if (size_to_subtract > amount)
+        size_to_subtract = amount;
 
-    amount -= size;
+    amount -= size_to_subtract;
+    /// NOTE above code is not atomic. It's easy to fix.
 
     if (next)
         next->free(size);
     else
-        CurrentMetrics::sub(metric, size);
+        CurrentMetrics::sub(metric, size_to_subtract);
 }
 
 
