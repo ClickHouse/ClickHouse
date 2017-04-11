@@ -27,7 +27,7 @@ INSTALL(TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT
 
 # make symbolic links to concrete clickhouse applications
 macro(install_symlink_to_clickhouse app)
-    INSTALL(CODE "execute_process(COMMAND ln -sf clickhouse ${app} WORKING_DIRECTORY \"${CMAKE_INSTALL_FULL_BINDIR}\" )" COMPONENT ${app})
+    INSTALL(CODE "execute_process(COMMAND ln -sf clickhouse ${app} WORKING_DIRECTORY \"\$ENV{DESTDIR}${CMAKE_INSTALL_FULL_BINDIR}\" )" COMPONENT ${app})
 endmacro(install_symlink_to_clickhouse)
 
 install_symlink_to_clickhouse(clickhouse-server)
