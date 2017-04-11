@@ -3,7 +3,8 @@ Section: database
 Priority: optional
 Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
-               cmake, clang-3.8, gcc-6, g++-6,
+               cmake,
+               gcc-6, g++-6,
                default-libmysqlclient-dev | libmysqlclient-dev,
                libglib2.0-dev,
                libicu-dev,
