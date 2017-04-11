@@ -1,3 +1,2 @@
-etc/security/limits.d/clickhouse.conf
 etc/clickhouse-server/config.xml
 etc/clickhouse-server/users.xml
