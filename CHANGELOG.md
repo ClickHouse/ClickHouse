@@ -1,3 +1,10 @@
+## [1.1.?????]
+
+- Debian packages renamed
+  clickhouse-server-base -> clickhouse-common
+  clickhouse-server-common -> clickhouse-server
+  clickhouse-compressor -> clickhouse-utils
+
 
 ## [1.1.54189](https://github.com/yandex/Clickhouse/tree/v1.1.54189-testing) (2017-03-17)
 [Full Changelog](https://github.com/yandex/Clickhouse/compare/v1.1.54188-stable...v1.1.54189-testing)
