@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
+#include <Poco/Net/HTTPRequest.h>
 
 
 namespace DB
@@ -77,7 +78,7 @@ Status Client::check(const std::string & part_name, const std::string & hash,
         {"hash", hash}
     });
 
-    ReadWriteBufferFromHTTP in{uri};
+    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
 
     UInt8 val;
     readBinary(val, in);

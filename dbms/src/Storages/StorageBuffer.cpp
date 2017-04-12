@@ -121,7 +121,7 @@ protected:
     }
 
 private:
-    NameSet column_names;
+    Names column_names;
     StorageBuffer::Buffer & buffer;
     bool has_been_read = false;
 };

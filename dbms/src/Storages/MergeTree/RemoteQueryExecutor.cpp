@@ -3,6 +3,8 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/Net/HTTPRequest.h>
+
 
 namespace DB
 {
@@ -71,7 +73,7 @@ bool Client::executeQuery(const InterserverIOEndpointLocation & location, const 
         {"query", query}
     });
 
-    ReadWriteBufferFromHTTP in{uri};
+    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
 
     bool flag;
     readBinary(flag, in);
