@@ -57,7 +57,7 @@ private:
 
         Element(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
         {
-            min_part_size = parse<size_t>(config.getString(config_prefix + ".min_part_size", "0"));
+            min_part_size = config.getUInt64(config_prefix + ".min_part_size", 0);
             min_part_size_ratio = config.getDouble(config_prefix + ".min_part_size_ratio", 0);
 
             setMethod(config.getString(config_prefix + ".method"));
