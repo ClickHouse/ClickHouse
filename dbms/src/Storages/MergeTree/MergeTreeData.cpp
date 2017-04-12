@@ -912,8 +912,12 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     {
         transaction->clear();
 
+        const bool forbidden_because_of_modify = num_files_to_modify > settings.max_files_to_modify_in_alter_columns;
+
         std::stringstream exception_message;
-        exception_message << "Suspiciously many (" << transaction->rename_map.size()
+        exception_message
+            << "Suspiciously many ("
+            << (forbidden_because_of_modify ? num_files_to_modify : num_files_to_remove)
             << ") files (";
 
         bool first = true;
@@ -921,12 +925,27 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         {
             if (!first)
                 exception_message << ", ";
-            exception_message << "from '" << from_to.first << "' to '" << from_to.second << "'";
-            first = false;
+            if (forbidden_because_of_modify)
+            {
+                exception_message << "from `" << from_to.first << "' to `" << from_to.second << "'";
+                first = false;
+            }
+            else if (from_to.second.empty())
+            {
+                exception_message << "`" << from_to.first << "'";
+                first = false;
+            }
         }
 
-        exception_message << ") need to be modified in part " << part->name << " of table at " << full_path << ". Aborting just in case. "
-            << " If it is not an error, you could increase merge_tree/max_files_to_modify_in_alter_columns parameter in configuration file.";
+        exception_message
+            << ") need to be "
+            << (forbidden_because_of_modify ? "modified" : "removed")
+            << " in part " << part->name << " of table at " << full_path << ". Aborting just in case."
+            << " If it is not an error, you could increase merge_tree/"
+            << (forbidden_because_of_modify ? "max_files_to_modify_in_alter_columns" : "max_files_to_remove_in_alter_columns")
+            << " parameter in configuration file (current value: "
+            << (forbidden_because_of_modify ? settings.max_files_to_modify_in_alter_columns : settings.max_files_to_remove_in_alter_columns)
+            << ")";
 
         throw Exception(exception_message.str(), ErrorCodes::TABLE_DIFFERS_TOO_MUCH);
     }
