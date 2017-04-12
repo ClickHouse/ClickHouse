@@ -1059,8 +1059,8 @@ QueryLog & Context::getQueryLog()
 
         String database = config.getString("query_log.database", "system");
         String table = config.getString("query_log.table", "query_log");
-        size_t flush_interval_milliseconds = parse<size_t>(
-            config.getString("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
+        size_t flush_interval_milliseconds = config.getUInt64(
+                "query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
 
         shared->query_log = std::make_unique<QueryLog>(
             *global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
@@ -1088,8 +1088,8 @@ std::shared_ptr<PartLog> Context::getPartLog()
 
         String database = config.getString("part_log.database", "system");
         String table = config.getString("part_log.table", "part_log");
-        size_t flush_interval_milliseconds = parse<size_t>(
-            config.getString("part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
+        size_t flush_interval_milliseconds = config.getUInt64(
+                "part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
         shared->part_log = std::make_unique<PartLog>(
             *global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
     }

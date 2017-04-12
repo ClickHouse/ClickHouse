@@ -1,6 +1,11 @@
 #include <iostream>
 
 #include <boost/program_options.hpp>
+#include <Poco/Logger.h>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/FormattingChannel.h>
+#include <Poco/PatternFormatter.h>
+#include <Poco/AutoPtr.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <zkutil/ZooKeeperNodeCache.h>
@@ -8,10 +13,20 @@
 #include <Common/Exception.h>
 
 
+static void setupLogging(const std::string & log_level)
+{
+    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel);
+    Poco::AutoPtr<Poco::PatternFormatter> formatter(new Poco::PatternFormatter);
+    formatter->setProperty("pattern", "%L%Y-%m-%d %H:%M:%S.%i <%p> %s: %t");
+    Poco::AutoPtr<Poco::FormattingChannel> formatting_channel(new Poco::FormattingChannel(formatter, channel));
+    Poco::Logger::root().setChannel(formatting_channel);
+    Poco::Logger::root().setLevel(log_level);
+}
+
 static std::string extractFromConfig(
         const std::string & config_path, const std::string & key, bool process_zk_includes)
 {
-    ConfigProcessor processor(/* throw_on_bad_incl = */ false, /* log_to_console = */ true);
+    ConfigProcessor processor(/* throw_on_bad_incl = */ false, /* log_to_console = */ false);
     bool has_zk_includes;
     XMLDocumentPtr config_xml = processor.processConfig(config_path, &has_zk_includes);
     if (has_zk_includes && process_zk_includes)
@@ -30,6 +45,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
 {
     bool print_stacktrace = false;
     bool process_zk_includes = false;
+    std::string log_level;
     std::string config_path;
     std::string key;
 
@@ -41,6 +57,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         ("stacktrace", po::bool_switch(&print_stacktrace), "print stack traces of exceptions")
         ("process-zk-includes", po::bool_switch(&process_zk_includes),
          "if there are from_zk elements in config, connect to ZooKeeper and process them")
+        ("log-level", po::value<std::string>(&log_level)->default_value("error"), "log level")
         ("config-file,c", po::value<std::string>(&config_path)->required(), "path to config file")
         ("key,k", po::value<std::string>(&key)->required(), "key to get value for");
 
@@ -65,6 +82,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
 
         po::notify(options);
 
+        setupLogging(log_level);
         std::cout << extractFromConfig(config_path, key, process_zk_includes) << std::endl;
     }
     catch (...)

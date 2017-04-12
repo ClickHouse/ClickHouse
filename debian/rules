@@ -47,7 +47,7 @@ override_dh_auto_test:
 override_dh_clean:
 	rm -rf $(BUILDDIR)
 	rm -rf $(DESTDIR)
-	rm -rf debian/copyright debian/clickhouse-server-base.docs debian/clickhouse-server-common.docs
+	rm -rf debian/copyright debian/clickhouse-server-common.docs debian/clickhouse-client.docs debian/clickhouse-server-metrika.docs
 	dh_clean
 
 override_dh_strip:
