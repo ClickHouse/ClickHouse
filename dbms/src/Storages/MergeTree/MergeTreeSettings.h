@@ -129,38 +129,38 @@ struct MergeTreeSettings
                     ErrorCodes::INVALID_CONFIG_PARAMETER); \
         }
 
-        SET(max_bytes_to_merge_at_max_space_in_pool, getUInt);
-        SET(max_bytes_to_merge_at_min_space_in_pool, getUInt);
-        SET(max_replicated_merges_in_queue, getUInt);
-        SET(old_parts_lifetime, getUInt);
-        SET(temporary_directories_lifetime, getUInt);
-        SET(parts_to_delay_insert, getUInt);
-        SET(parts_to_throw_insert, getUInt);
-        SET(max_delay_to_insert, getUInt);
-        SET(replicated_deduplication_window, getUInt);
-        SET(replicated_logs_to_keep, getUInt);
-        SET(prefer_fetch_merged_part_time_threshold, getUInt);
-        SET(prefer_fetch_merged_part_size_threshold, getUInt);
-        SET(max_suspicious_broken_parts, getUInt);
-        SET(max_files_to_modify_in_alter_columns, getUInt);
-        SET(max_files_to_remove_in_alter_columns, getUInt);
-        SET(replicated_max_unexpected_parts, getUInt);
-        SET(replicated_max_unexpectedly_merged_parts, getUInt);
-        SET(replicated_max_missing_obsolete_parts, getUInt);
-        SET(replicated_max_missing_active_parts, getUInt);
-        SET(replicated_max_parallel_fetches, getUInt);
-        SET(replicated_max_parallel_fetches_for_table, getUInt);
-        SET(replicated_max_parallel_sends, getUInt);
-        SET(replicated_max_parallel_sends_for_table, getUInt);
+        SET(max_bytes_to_merge_at_max_space_in_pool, getUInt64);
+        SET(max_bytes_to_merge_at_min_space_in_pool, getUInt64);
+        SET(max_replicated_merges_in_queue, getUInt64);
+        SET(old_parts_lifetime, getUInt64);
+        SET(temporary_directories_lifetime, getUInt64);
+        SET(parts_to_delay_insert, getUInt64);
+        SET(parts_to_throw_insert, getUInt64);
+        SET(max_delay_to_insert, getUInt64);
+        SET(replicated_deduplication_window, getUInt64);
+        SET(replicated_logs_to_keep, getUInt64);
+        SET(prefer_fetch_merged_part_time_threshold, getUInt64);
+        SET(prefer_fetch_merged_part_size_threshold, getUInt64);
+        SET(max_suspicious_broken_parts, getUInt64);
+        SET(max_files_to_modify_in_alter_columns, getUInt64);
+        SET(max_files_to_remove_in_alter_columns, getUInt64);
+        SET(replicated_max_unexpected_parts, getUInt64);
+        SET(replicated_max_unexpectedly_merged_parts, getUInt64);
+        SET(replicated_max_missing_obsolete_parts, getUInt64);
+        SET(replicated_max_missing_active_parts, getUInt64);
+        SET(replicated_max_parallel_fetches, getUInt64);
+        SET(replicated_max_parallel_fetches_for_table, getUInt64);
+        SET(replicated_max_parallel_sends, getUInt64);
+        SET(replicated_max_parallel_sends_for_table, getUInt64);
         SET(replicated_max_ratio_of_wrong_parts, getDouble);
-        SET(zookeeper_session_expiration_check_period, getUInt);
-        SET(check_delay_period, getUInt);
-        SET(min_relative_delay_to_yield_leadership, getUInt);
-        SET(min_relative_delay_to_close, getUInt);
-        SET(min_absolute_delay_to_close, getUInt);
-        SET(enable_vertical_merge_algorithm, getUInt);
-        SET(vertical_merge_algorithm_min_rows_to_activate, getUInt);
-        SET(vertical_merge_algorithm_min_columns_to_activate, getUInt);
+        SET(zookeeper_session_expiration_check_period, getUInt64);
+        SET(check_delay_period, getUInt64);
+        SET(min_relative_delay_to_yield_leadership, getUInt64);
+        SET(min_relative_delay_to_close, getUInt64);
+        SET(min_absolute_delay_to_close, getUInt64);
+        SET(enable_vertical_merge_algorithm, getUInt64);
+        SET(vertical_merge_algorithm_min_rows_to_activate, getUInt64);
+        SET(vertical_merge_algorithm_min_columns_to_activate, getUInt64);
 
     #undef SET
     }
