@@ -21,6 +21,7 @@ public:
     bool is_temporary{false};
     String database;
     String table;
+    String cluster;
     ASTPtr columns;
     ASTPtr storage;
     ASTPtr inner_storage;    /// Internal engine for the CREATE MATERIALIZED VIEW query

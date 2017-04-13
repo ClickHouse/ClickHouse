@@ -12,12 +12,9 @@ namespace DB
 /** Takes a syntax tree and turns it back into text.
   * In case of INSERT query, the data will be missing.
   */
-inline void formatAST(const IAST & ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false)
-{
-    IAST::FormatSettings settings(s, hilite, one_line);
-    ast.format(settings);
-}
+void formatAST(const IAST & ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 
+std::string formatASTToString(const IAST & ast);
 
 String formatColumnsForCreateQuery(NamesAndTypesList & columns);
 

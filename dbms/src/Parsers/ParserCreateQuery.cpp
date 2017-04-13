@@ -151,6 +151,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     ParserString s_attach("ATTACH", true, true);
     ParserString s_table("TABLE", true, true);
     ParserString s_database("DATABASE", true, true);
+    ParserString s_on("ON", true, true);
+    ParserString s_cluster("CLUSTER", true, true);
     ParserString s_dot(".");
     ParserString s_lparen("(");
     ParserString s_rparen(")");
@@ -173,6 +175,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     ASTPtr inner_storage;
     ASTPtr as_database;
     ASTPtr as_table;
+    ASTPtr cluster;
     ASTPtr select;
     bool attach = false;
     bool if_not_exists = false;
@@ -244,7 +247,22 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             ws.ignore(pos, end);
         }
 
-        /// Columns list
+        if (s_on.ignore(pos, end, max_parsed_pos, expected))
+        {
+            ws.ignore(pos, end);
+
+            if (!s_cluster.ignore(pos, end, max_parsed_pos, expected))
+                return false;
+
+            ws.ignore(pos, end);
+
+            if (!name_p.parse(pos, end, cluster, max_parsed_pos, expected))
+                return false;
+
+            ws.ignore(pos, end);
+        }
+
+        /// List of columns.
         if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
         {
             ws.ignore(pos, end);
@@ -403,6 +421,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
         query->database = typeid_cast<ASTIdentifier &>(*database).name;
     if (table)
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
+    if (cluster)
+        query->cluster = typeid_cast<ASTIdentifier &>(*cluster).name;
     if (inner_storage)
         query->inner_storage = inner_storage;
 

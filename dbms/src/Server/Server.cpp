@@ -21,6 +21,8 @@
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DDLWorker.h>
+
 #include <Storages/MergeTree/ReshardingWorker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -412,7 +414,13 @@ int Server::main(const std::vector<std::string> & args)
         has_resharding_worker = true;
     }
 
-    SCOPE_EXIT({
+    if (has_zookeeper && config().has("distributed_ddl"))
+    {
+        auto ddl_worker = std::make_shared<DDLWorker>(config(), "distributed_ddl", *global_context);
+        global_context->setDDLWorker(ddl_worker);
+    }
+
+    SCOPE_EXIT(
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
           * It is important to do early, not in destructor of Context, because
