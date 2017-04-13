@@ -611,7 +611,7 @@ void Block::updateHash(SipHash & hash) const
     for (size_t row_no = 0; row_no < rows(); ++row_no)
     {
         for (auto & col : getColumns())
-        col.column->updateHashWithValue(row_no, hash);
+            col.column->updateHashWithValue(row_no, hash);
     }
 }
 
