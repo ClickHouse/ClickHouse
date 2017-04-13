@@ -21,6 +21,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
     ParserString s_table("TABLE", true, true);
     ParserString s_partition("PARTITION", true, true);
     ParserString s_final("FINAL", true, true);
+    ParserString s_deduplicate("DEDUPLICATE", true, true);
     ParserString s_dot(".");
     ParserIdentifier name_p;
     ParserLiteral partition_p;
@@ -29,6 +30,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
     ASTPtr table;
     ASTPtr partition;
     bool final = false;
+    bool deduplicate = false;
 
     ws.ignore(pos, end);
 
@@ -71,6 +73,11 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
     if (s_final.ignore(pos, end, max_parsed_pos, expected))
         final = true;
 
+    ws.ignore(pos, end);
+
+    if (s_deduplicate.ignore(pos, end, max_parsed_pos, expected))
+        deduplicate = true;
+
     auto query = std::make_shared<ASTOptimizeQuery>(StringRange(begin, pos));
     node = query;
 
@@ -81,6 +88,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
     if (partition)
         query->partition = applyVisitor(FieldVisitorToString(), typeid_cast<const ASTLiteral &>(*partition).value);
     query->final = final;
+    query->deduplicate = deduplicate;
 
     return true;
 }

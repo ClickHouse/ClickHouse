@@ -289,7 +289,8 @@ bool StorageMergeTree::merge(
     size_t aio_threshold,
     bool aggressive,
     const String & partition,
-    bool final)
+    bool final,
+    bool deduplicate)
 {
     /// Clear old parts. It does not matter to do it more frequently than each second.
     if (auto lock = time_after_previous_cleanup.lockTestAndRestartAfter(1))
@@ -342,7 +343,7 @@ bool StorageMergeTree::merge(
     Stopwatch stopwatch;
 
     auto new_part = merger.mergePartsToTemporaryPart(
-        merging_tagger->parts, merged_name, *merge_entry_ptr, aio_threshold, time(0), merging_tagger->reserved_space.get());
+        merging_tagger->parts, merged_name, *merge_entry_ptr, aio_threshold, time(0), merging_tagger->reserved_space.get(), deduplicate);
 
     merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
 
@@ -388,7 +389,7 @@ bool StorageMergeTree::mergeTask()
     try
     {
         size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
-        return merge(aio_threshold, false, {}, {});
+        return merge(aio_threshold, false /*aggressive*/, {} /*partition*/, false /*final*/, false /*deduplicate*/); //TODO: yurial deduplicate
     }
     catch (Exception & e)
     {
