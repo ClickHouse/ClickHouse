@@ -119,6 +119,11 @@ public:
       */
     void unshareColumns();
 
+    //NOTE: Do we need to sort columns?
+    //NOTE: What should we do with empty blocks?
+    /** Updates SipHash of the Block, using update method of columns. */
+    void updateHash(SipHash & hash) const;
+
 private:
     void eraseImpl(size_t position);
     void initializeIndexByName();
