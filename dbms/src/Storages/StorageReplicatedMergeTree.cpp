@@ -1160,7 +1160,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
             Stopwatch stopwatch;
 
             auto part = merger.mergePartsToTemporaryPart(
-                parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get());
+                parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), false /*deduplicate*/); //TODO: yurial deduplicate
 
             zkutil::Ops ops;
 
@@ -2400,7 +2400,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query, const Setti
 }
 
 
-bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, const Settings & settings)
+bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
 {
     /// If there is nonreplicated data, then merge them first.
     if (unreplicated_data)
@@ -2420,7 +2420,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
             Stopwatch stopwatch;
 
             auto new_part = unreplicated_merger->mergePartsToTemporaryPart(
-                parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io, time(0));
+                parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io, time(0), nullptr /*disk_reservation*/, deduplicate);
 
             unreplicated_merger->renameMergedTemporaryPart(parts, new_part, merged_name, nullptr);
 

@@ -21,7 +21,7 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     StoragePtr table = context.getTable(ast.database, ast.table);
     auto table_lock = table->lockStructure(true);
-    table->optimize(ast.partition, ast.final, context.getSettings());
+    table->optimize(ast.partition, ast.final, ast.deduplicate, context.getSettings());
     return {};
 }
 

@@ -257,7 +257,7 @@ public:
     /** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.
       * Возвращает - была ли выполнена какая-либо работа.
       */
-    virtual bool optimize(const String & partition, bool final, const Settings & settings)
+    virtual bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
