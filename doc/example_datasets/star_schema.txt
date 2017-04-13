@@ -8,7 +8,7 @@ make
 
 You will see some warnings. It's Ok.
 
-Place `dbgen` and `dists.dss` to some place with at least 200 GB free space available.
+Place `dbgen` and `dists.dss` to some place with at least 800 GB free space available.
 Generate data:
 
 ```
@@ -25,4 +25,5 @@ Then create MergeTree tables on each node and then create Distributed tables.
 Load data (change customer to customerd in case of distributed setup):
 ```
 cat customer.tbl | sed 's/$/2000-01-01/' | clickhouse-client --query "INSERT INTO customer FORMAT CSV"
+cat lineorder.tbl | clickhouse-client --query "INSERT INTO lineorder FORMAT CSV"
 ```
