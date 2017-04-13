@@ -55,34 +55,8 @@ Block MergeTreeBaseBlockInputStream::readImpl()
         if (res)
             injectVirtualColumns(res);
 
-        if (preferred_block_size_bytes && res)
-        {
-            size_t block_size_bytes = res.bytes();
-            max_block_size_bytes = std::max(max_block_size_bytes, block_size_bytes);
-            sum_block_size_bytes += block_size_bytes;
-            sum_block_size_rows += res.rows();
-            ++num_blocks;
-
-        }
-
         if (task->mark_ranges.empty())
             task.reset();
-    }
-
-    if (preferred_block_size_bytes && !res && num_blocks >= 4)
-    {
-        size_t avg_bytes = sum_block_size_bytes / num_blocks;
-        size_t avg_rows = sum_block_size_bytes / num_blocks;
-        double rel_avg_err = 1. * avg_bytes / preferred_block_size_bytes - 1.;
-
-        /// TODO: remove diagnostic after test
-        if (avg_rows > 8000 && std::abs(rel_avg_err) > 25) // skip uninformative cases
-        {
-            LOG_INFO(log, "Read " << num_blocks << " blocks, max_size " << max_block_size_bytes
-            << ", avg_bytes " << avg_bytes
-            << ", rel_avg_err " <<  std::fixed << std::setprecision(2) << rel_avg_err * 100 << "%"
-            << ", avg_rows " << std::fixed << std::setprecision(2) << avg_rows);
-        }
     }
 
     return res;
