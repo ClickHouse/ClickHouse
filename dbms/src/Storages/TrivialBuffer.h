@@ -102,8 +102,9 @@ private:
 
 	BlocksList data;
 
-	size_t current_rows, current_bytes;
-	time_t first_write_time;
+	size_t current_rows = 0;
+    size_t current_bytes = 0;
+	time_t first_write_time = 0;
 	const size_t num_blocks_to_deduplicate;
 	using HashType = UInt64;
 	using DeduplicationBuffer = std::unordered_set<HashType>;
