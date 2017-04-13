@@ -82,7 +82,8 @@ try
     }
     else if (options.count("generate"))
     {
-        MarkovModel model(in);
+        MarkovModel model;
+        model.read(in);
         String s;
 
         UInt64 limit = options.count("limit") ? options["limit"].as<UInt64>() : 0;
