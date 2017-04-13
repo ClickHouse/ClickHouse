@@ -27,7 +27,7 @@ struct Models
     static void read(MarkovModel & model, const String & path)
     {
         ReadBufferFromFile in(path);
-        model.read(path);
+        model.read(in);
     }
 
     Models()
