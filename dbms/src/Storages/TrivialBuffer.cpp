@@ -67,7 +67,6 @@ TrivialBuffer::TrivialBuffer(const std::string & name_, NamesAndTypesListPtr col
 	const String & destination_database_, const String & destination_table_)
 	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	name(name_), columns(columns_), context(context_),
-	current_rows(0), current_bytes(0), first_write_time(0),
 	num_blocks_to_deduplicate(num_blocks_to_deduplicate_),
 	current_hashes(std::make_unique<DeduplicationBuffer>()),
 	previous_hashes(std::make_unique<DeduplicationBuffer>()),
