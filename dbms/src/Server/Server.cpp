@@ -416,11 +416,11 @@ int Server::main(const std::vector<std::string> & args)
 
     if (has_zookeeper && config().has("distributed_ddl"))
     {
-        auto ddl_worker = std::make_shared<DDLWorker>(config(), "distributed_ddl", *global_context);
-        global_context->setDDLWorker(ddl_worker);
+        String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
+        global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context));
     }
 
-    SCOPE_EXIT(
+    SCOPE_EXIT({
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
           * It is important to do early, not in destructor of Context, because

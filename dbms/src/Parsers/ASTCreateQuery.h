@@ -2,15 +2,15 @@
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDDLQueryWithOnCluster.h>
 
 
 namespace DB
 {
 
 
-/** CREATE TABLE or ATTACH TABLE query
-  */
-class ASTCreateQuery : public IAST
+/// CREATE TABLE or ATTACH TABLE query
+class ASTCreateQuery : public IAST, public ASTDDLQueryWithOnCluster
 {
 public:
     bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
@@ -21,7 +21,6 @@ public:
     bool is_temporary{false};
     String database;
     String table;
-    String cluster;
     ASTPtr columns;
     ASTPtr storage;
     ASTPtr inner_storage;    /// Internal engine for the CREATE MATERIALIZED VIEW query
@@ -46,6 +45,18 @@ public:
         if (inner_storage)     { res->inner_storage = inner_storage->clone();     res->children.push_back(res->inner_storage); }
 
         return res;
+    }
+
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    {
+        auto query_ptr = clone();
+        ASTCreateQuery & query = static_cast<ASTCreateQuery &>(*query_ptr);
+
+        query.cluster.clear();
+        if (query.database.empty())
+            query.database = new_database;
+
+        return query_ptr;
     }
 
 protected:
@@ -81,10 +92,11 @@ protected:
                 << (settings.hilite ? hilite_keyword : "")
                     << (attach ? "ATTACH " : "CREATE ")
                     << (is_temporary ? "TEMPORARY " : "")
-                    << what
-                    << " " << (if_not_exists ? "IF NOT EXISTS " : "")
+                    << what << " "
+                    << (if_not_exists ? "IF NOT EXISTS " : "")
                 << (settings.hilite ? hilite_none : "")
-                << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+                << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table) << " "
+                << (!cluster.empty() ? "ON CLUSTER " + backQuoteIfNeed(cluster) + " " : "");
         }
 
         if (!as_table.empty())

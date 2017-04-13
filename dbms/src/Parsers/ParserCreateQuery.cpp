@@ -151,8 +151,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     ParserString s_attach("ATTACH", true, true);
     ParserString s_table("TABLE", true, true);
     ParserString s_database("DATABASE", true, true);
-    ParserString s_on("ON", true, true);
-    ParserString s_cluster("CLUSTER", true, true);
     ParserString s_dot(".");
     ParserString s_lparen("(");
     ParserString s_rparen(")");
@@ -247,11 +245,11 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             ws.ignore(pos, end);
         }
 
-        if (s_on.ignore(pos, end, max_parsed_pos, expected))
+        if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
         {
             ws.ignore(pos, end);
 
-            if (!s_cluster.ignore(pos, end, max_parsed_pos, expected))
+            if (!ParserString{"CLUSTER", true, true}.ignore(pos, end, max_parsed_pos, expected))
                 return false;
 
             ws.ignore(pos, end);

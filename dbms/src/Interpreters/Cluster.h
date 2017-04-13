@@ -58,6 +58,9 @@ public:
 
         Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);
         Address(const String & host_port_, const String & user_, const String & password_);
+
+        /// Returns 'host_name:port'
+        String toString() const;
     };
 
     using Addresses = std::vector<Address>;

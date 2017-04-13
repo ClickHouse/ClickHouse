@@ -18,12 +18,15 @@ class InterpreterDropQuery : public IInterpreter
 public:
     InterpreterDropQuery(const ASTPtr & query_ptr_, Context & context_);
 
-    /// Drop table.
+    /// Drop table or database.
     BlockIO execute() override;
 
 private:
     ASTPtr query_ptr;
     Context & context;
+
+    BlockIO executeOnServer(ASTDropQuery & drop);
+    BlockIO executeOnCluster(ASTDropQuery & drop);
 };
 
 

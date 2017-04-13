@@ -23,6 +23,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLog.h>
@@ -31,6 +32,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/DDLWorker.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNested.h>
@@ -57,21 +59,6 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
 }
 
-static void ExecuteQuery(const Cluster::Address & addr, const std::string & query)
-{
-    Connection conn(addr.host_name, addr.port, "", addr.user, addr.password);
-    conn.sendQuery(query);
-
-    while (true)
-    {
-        Connection::Packet packet = conn.receivePacket();
-
-        if (packet.type == Protocol::Server::Exception)
-            throw Exception(*packet.exception.get());
-        else if (packet.type == Protocol::Server::EndOfStream)
-            break;
-    }
-}
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Context & context_)
     : query_ptr(query_ptr_), context(context_)
@@ -474,7 +461,7 @@ String InterpreterCreateQuery::setEngine(
 }
 
 
-BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
+BlockIO InterpreterCreateQuery::createTableOnServer(ASTCreateQuery & create)
 {
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
@@ -578,62 +565,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     return {};
 }
 
-ASTPtr InterpreterCreateQuery::createQueryWithoutCluster(ASTCreateQuery & create) const
-{
-    ASTPtr cloned = create.clone();
-    ASTCreateQuery & tmp = typeid_cast<ASTCreateQuery &>(*cloned);
-    tmp.cluster.clear();
-    if (tmp.database.empty())
-        tmp.database = context.getCurrentDatabase();
-    return cloned;
-}
-
-void InterpreterCreateQuery::writeToZookeeper(ASTPtr query, const std::vector<Cluster::Address> & addrs)
-{
-    auto zookeeper = context.getZooKeeper();
-    ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query);
-    std::string table_name = create.database + "." + create.table;
-
-    for (const auto & addr : addrs)
-    {
-        const std::string & path =
-            "/clickhouse/task_queue/ddl/" +
-            addr.host_name +
-            "/create/" + table_name;
-
-        // TODO catch exceptions
-        zookeeper->createAncestors(path);
-        zookeeper->create(path, formatASTToString(*query), 0);
-    }
-}
 
 BlockIO InterpreterCreateQuery::createTableOnCluster(ASTCreateQuery & create)
 {
-    ClusterPtr cluster = context.getCluster(create.cluster);
-    Cluster::AddressesWithFailover shards = cluster->getShardsWithFailoverAddresses();
-    ASTPtr query_ptr = createQueryWithoutCluster(create);
-    std::string query = formatASTToString(*query_ptr);
-    std::vector<Cluster::Address> failed;
+    /// Do we really should use that database for each server?
+    String query = create.getRewrittenQueryWithoutOnCluster(context.getCurrentDatabase());
 
-    for (const auto & shard : shards)
-    {
-        for (const auto & addr : shard)
-        {
-            try
-            {
-                ExecuteQuery(addr, query);
-            }
-            catch (...)
-            {
-                failed.push_back(addr);
-            }
-        }
-    }
-
-    writeToZookeeper(query_ptr, failed);
-
-    return {};
+    return executeDDLQueryOnCluster(query, create.cluster, context);
 }
+
 
 BlockIO InterpreterCreateQuery::execute()
 {
@@ -648,7 +588,7 @@ BlockIO InterpreterCreateQuery::execute()
     else if (!create.cluster.empty())
         return createTableOnCluster(create);
     else
-        return createTable(create);
+        return createTableOnServer(create);
 }
 
 

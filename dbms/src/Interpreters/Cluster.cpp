@@ -4,6 +4,7 @@
 #include <Common/SimpleCache.h>
 #include <Common/StringUtils.h>
 #include <IO/HexWriteBuffer.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <openssl/sha.h>
@@ -106,6 +107,11 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
         host_name = host_port_;
         port = default_port;
     }
+}
+
+String Cluster::Address::toString() const
+{
+    return host_name + ':' + DB::toString(port);
 }
 
 /// Implementation of Clusters class

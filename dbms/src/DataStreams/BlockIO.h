@@ -25,7 +25,7 @@ struct BlockIO
     Block out_sample;   /// Example of a block to be written to `out`.
 
     /// Callbacks for query logging could be set here.
-     std::function<void(IBlockInputStream *, IBlockOutputStream *)>    finish_callback;
+    std::function<void(IBlockInputStream *, IBlockOutputStream *)>    finish_callback;
     std::function<void()>                                             exception_callback;
 
     /// Call these functions if you want to log the request.
@@ -44,18 +44,18 @@ struct BlockIO
     BlockIO & operator= (const BlockIO & rhs)
     {
         /// We provide the correct order of destruction.
-        out                 = nullptr;
-        in                     = nullptr;
-        process_list_entry     = nullptr;
+        out                     = nullptr;
+        in                      = nullptr;
+        process_list_entry      = nullptr;
 
-        process_list_entry     = rhs.process_list_entry;
-        in                     = rhs.in;
-        out                 = rhs.out;
-        in_sample             = rhs.in_sample;
-        out_sample             = rhs.out_sample;
+        process_list_entry      = rhs.process_list_entry;
+        in                      = rhs.in;
+        out                     = rhs.out;
+        in_sample               = rhs.in_sample;
+        out_sample              = rhs.out_sample;
 
-        finish_callback        = rhs.finish_callback;
-        exception_callback    = rhs.exception_callback;
+        finish_callback         = rhs.finish_callback;
+        exception_callback      = rhs.exception_callback;
 
         return *this;
     }
