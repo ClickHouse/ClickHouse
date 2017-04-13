@@ -126,7 +126,7 @@ protected:
 	}
 
 private:
-	NameSet column_names;
+	Names column_names;
 	TrivialBuffer & buffer;
 	bool has_been_read = false;
 };
