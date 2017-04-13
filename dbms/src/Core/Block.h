@@ -119,9 +119,10 @@ public:
       */
     void unshareColumns();
 
-    //NOTE: Do we need to sort columns?
-    //NOTE: What should we do with empty blocks?
-    /** Updates SipHash of the Block, using update method of columns. */
+    /** Updates SipHash of the Block, using update method of columns.
+      * Returns hash for block, that could be used to differentiate blocks 
+      *  with same structure, but different data.
+      */
     void updateHash(SipHash & hash) const;
 
 private:
