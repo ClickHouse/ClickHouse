@@ -43,6 +43,7 @@ struct Generator
 {
     WriteBufferFromFileDescriptor out;
     std::mt19937_64 random;
+    std::mt19937_64 random_with_seed;
     Models models;
 
 //    UInt64 WatchID = random();
@@ -80,7 +81,7 @@ struct Generator
 
     void generateRow()
     {
-        auto gen_random64 = [&]{ return random(); };
+//        auto gen_random64 = [&]{ return random(); };
 
         /// Unique identifier of event.
 /*        WatchID += std::uniform_int_distribution<UInt64>(0, 10000000000)(random);
@@ -89,15 +90,6 @@ struct Generator
 
         bool JavaEnable = std::bernoulli_distribution(0.6)(random);
         writeText(JavaEnable, out);
-        writeChar('\t', out);*/
-
-        Title.resize(10000);
-        Title.resize(models.Title.generate(&Title[0], Title.size(), gen_random64));
-        writeText(Title, out);
-        writeChar('\t', out);
-
-/*        bool GoodEvent = 1;
-        writeText(GoodEvent, out);
         writeChar('\t', out);*/
 
         LocalDateTime EventTime;
@@ -109,15 +101,28 @@ struct Generator
             13, 7, 4, 3, 2, 3, 4, 6, 10, 16, 20, 23, 24, 23, 18, 19, 19, 19, 14, 15, 14, 13, 17, 17})(random));
         EventTime.minute(std::uniform_int_distribution<UInt8>(0, 59)(random));
         EventTime.second(std::uniform_int_distribution<UInt8>(0, 59)(random));
+
+        UInt64 UserID = hash(4, powerLaw(5000, 1.1));
+        UserID = UserID / 10000000000ULL * 10000000000ULL + static_cast<time_t>(EventTime) + UserID % 1000000;
+
+        random_with_seed.seed(powerLaw(5000, 1.1));
+        auto get_random_with_seed = [&]{ return random_with_seed(); };
+
+        Title.resize(10000);
+        Title.resize(models.Title.generate(&Title[0], Title.size(), get_random_with_seed));
+        writeText(Title, out);
+        writeChar('\t', out);
+
+/*        bool GoodEvent = 1;
+        writeText(GoodEvent, out);
+        writeChar('\t', out);*/
+
         writeText(EventTime, out);
         writeChar('\t', out);
 
         LocalDate EventDate = EventTime.toDate();
         writeText(EventDate, out);
         writeChar('\t', out);
-
-        UInt64 UserID = hash(4, powerLaw(5000, 1.1));
-        UserID = UserID / 10000000000ULL * 10000000000ULL + static_cast<time_t>(EventTime) + UserID % 1000000;
 
         UInt32 CounterID = hash(1, powerLaw(20, 1.1)) % 10000000;
         writeText(CounterID, out);
@@ -130,11 +135,11 @@ struct Generator
         UInt32 RegionID = hash(3, powerLaw(15, 1.1)) % 5000;
         writeText(RegionID, out);
         writeChar('\t', out);
-
+*/
         writeText(UserID, out);
         writeChar('\t', out);
 
-        bool CounterClass = (hash(5, CounterID) % 100) < 25;
+/*        bool CounterClass = (hash(5, CounterID) % 100) < 25;
         writeText(CounterClass, out);
         writeChar('\t', out);
 
@@ -147,7 +152,7 @@ struct Generator
         writeChar('\t', out);
 */
         URL.resize(10000);
-        URL.resize(models.URL.generate(&URL[0], URL.size(), gen_random64));
+        URL.resize(models.URL.generate(&URL[0], URL.size(), get_random_with_seed));
         writeText(URL, out);
         writeChar('\t', out);
 
@@ -299,7 +304,7 @@ struct Generator
         else
         {*/
             SearchPhrase.resize(1000);
-            SearchPhrase.resize(models.SearchPhrase.generate(&SearchPhrase[0], SearchPhrase.size(), gen_random64));
+            SearchPhrase.resize(models.SearchPhrase.generate(&SearchPhrase[0], SearchPhrase.size(), get_random_with_seed));
 //        }
         writeText(SearchPhrase, out);
  /*       writeChar('\t', out);
