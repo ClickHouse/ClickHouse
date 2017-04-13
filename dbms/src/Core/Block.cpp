@@ -608,7 +608,7 @@ void Block::unshareColumns()
 
 void Block::updateHash(SipHash & hash) const
 {
-    for (size_t row_no = 0; row_no < rows(); ++row_no)
+    for (size_t row_no = 0, num_rows = rows(); row_no < num_rows; ++row_no)
     {
         for (auto & col : getColumns())
             col.column->updateHashWithValue(row_no, hash);
