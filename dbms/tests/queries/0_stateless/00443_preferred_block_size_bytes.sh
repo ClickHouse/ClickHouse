@@ -25,3 +25,11 @@ cat "$SCRIPTDIR"/00282_merging.sql | clickhouse-client --preferred_block_size_by
 cmp "$SCRIPTDIR"/00282_merging.reference preferred_block_size_bytes.stdout && echo PASSED || echo FAILED
 
 rm preferred_block_size_bytes.stdout
+
+# Nullable PREWHERE
+
+clickhouse-client -q "DROP TABLE IF EXISTS test.nullable_prewhere"
+clickhouse-client -q "CREATE TABLE test.nullable_prewhere (p Date, f Nullable(UInt64), d UInt64) ENGINE = MergeTree(p, p, 8)"
+clickhouse-client -q "INSERT INTO test.nullable_prewhere SELECT toDate(0) AS p, if(number % 2 = 0, CAST(number AS Nullable(UInt64)), CAST(NULL AS Nullable(UInt64))) AS f, number as d FROM system.numbers LIMIT 1001"
+clickhouse-client -q "SELECT sum(d), sum(f), max(d) FROM test.nullable_prewhere PREWHERE NOT isNull(f)"
+clickhouse-client -q "DROP TABLE IF EXISTS test.nullable_prewhere"
