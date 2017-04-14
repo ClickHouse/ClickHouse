@@ -1,6 +1,6 @@
 option (ENABLE_MYSQL "Enable Mysql" ON)
 
-    if (ENABLE_MYSQL)
+if (ENABLE_MYSQL)
 
     set (MYSQL_LIB_PATHS
         "/usr/local/opt/mysql/lib"
