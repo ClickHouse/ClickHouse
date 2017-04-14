@@ -66,7 +66,7 @@ struct ReplicatedMergeTreeLogEntryData
     String block_id;    /// For parts of level zero, the block identifier for deduplication (node ​​name in /blocks /).
 
     Strings parts_to_merge;
-    bool    deduplicate = false; ///Do deduplicate on merge
+    bool deduplicate = false; /// Do deduplicate on merge
 
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
