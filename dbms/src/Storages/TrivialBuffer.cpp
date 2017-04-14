@@ -335,19 +335,19 @@ public:
 
         time_t current_time = time(0);
         if (buffer.checkThresholds(current_time, rows, bytes))
-                {
-                        /** Если после вставки в буфер, ограничения будут превышены,
+        {
+            /** Если после вставки в буфер, ограничения будут превышены,
               * то будем сбрасывать буфер.
-                          * Это также защищает от неограниченного потребления оперативки,
+              * Это также защищает от неограниченного потребления оперативки,
               * так как в случае невозможности записать в таблицу,
-                          * будет выкинуто исключение, а новые данные не будут добавлены в буфер.
-                          */
+              * будет выкинуто исключение, а новые данные не будут добавлены в буфер.
+              */
 
-                        buffer.flush(true);
-                }
+            buffer.flush(true);
+        }
 
         if (!buffer.first_write_time)
-                        buffer.first_write_time = current_time;
+            buffer.first_write_time = current_time;
 
         buffer.addBlock(block);
     }
@@ -395,11 +395,11 @@ bool TrivialBuffer::optimize(const String & partition, bool final, const Setting
 {
     if (!partition.empty())
         throw Exception("Partition cannot be specified when optimizing table of type Buffer",
-                ErrorCodes::NOT_IMPLEMENTED);
+            ErrorCodes::NOT_IMPLEMENTED);
 
     if (final)
         throw Exception("FINAL cannot be specified when optimizing table of type Buffer",
-                ErrorCodes::NOT_IMPLEMENTED);
+            ErrorCodes::NOT_IMPLEMENTED);
 
     flush(false);
     return true;
