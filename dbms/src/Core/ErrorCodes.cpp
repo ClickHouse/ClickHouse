@@ -177,7 +177,7 @@ namespace ErrorCodes
     extern const int TOO_BIG_AST = 168;
     extern const int BAD_TYPE_OF_FIELD = 169;
     extern const int BAD_GET = 170;
-    extern const int BLOCKS_HAS_DIFFERENT_STRUCTURE = 171;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE = 171;
     extern const int CANNOT_CREATE_DIRECTORY = 172;
     extern const int CANNOT_ALLOCATE_MEMORY = 173;
     extern const int CYCLIC_ALIASES = 174;

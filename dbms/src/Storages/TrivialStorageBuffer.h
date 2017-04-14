@@ -31,9 +31,9 @@ class Context;
   * Данные в буфере не реплицируются, не логгируются на диск, не индексируются. При грубом
   * перезапуске сервера, данные пропадают.
   */
-class TrivialBuffer : private ext::shared_ptr_helper<TrivialBuffer>, public IStorage
+class TrivialStorageBuffer : private ext::shared_ptr_helper<TrivialStorageBuffer>, public IStorage
 {
-friend class ext::shared_ptr_helper<TrivialBuffer>;
+friend class ext::shared_ptr_helper<TrivialStorageBuffer>;
 friend class TrivialBufferBlockInputStream;
 friend class TrivialBufferBlockOutputStream;
 
@@ -126,7 +126,7 @@ private:
     /// Выполняет сброс данных по таймауту.
     std::thread flush_thread;
 
-    TrivialBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
+    TrivialStorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
