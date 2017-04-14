@@ -11,7 +11,7 @@ namespace DB
 
 void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 {
-    out << "format version: 3\n"
+    out << "format version: 4\n"
         << "create_time: " << LocalDateTime(create_time ? create_time : time(0)) << "\n"
         << "source replica: " << source_replica << '\n'
         << "block_id: " << escape << block_id << '\n';
@@ -27,6 +27,8 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             for (const String & s : parts_to_merge)
                 out << s << '\n';
             out << "into\n" << new_part_name;
+            if (deduplicate)
+                out << "deduplicate\n";
             break;
 
         case DROP_RANGE:
@@ -63,7 +65,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
     in >> "format version: " >> format_version >> "\n";
 
-    if (format_version != 1 && format_version != 2 && format_version != 3)
+    if (format_version < 1 || format_version > 4)
         throw Exception("Unknown ReplicatedMergeTreeLogEntry format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
     if (format_version >= 2)
@@ -99,6 +101,10 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
             parts_to_merge.push_back(s);
         }
         in >> new_part_name;
+        std::string flag;
+        in >> flag;
+        if (flag == "deduplicate")
+            deduplicate = true;
     }
     else if (type_str == "drop" || type_str == "detach")
     {
