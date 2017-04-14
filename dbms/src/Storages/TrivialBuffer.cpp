@@ -44,12 +44,12 @@ namespace ErrorCodes
 
 
 StoragePtr TrivialBuffer::create(const std::string & name_, NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        Context & context_, const size_t num_blocks_to_deduplicate_,
-        const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-                const String & destination_database_, const String & destination_table_)
+    const NamesAndTypesList & materialized_columns_,
+    const NamesAndTypesList & alias_columns_,
+    const ColumnDefaults & column_defaults_,
+    Context & context_, const size_t num_blocks_to_deduplicate_,
+    const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
+    const String & destination_database_, const String & destination_table_)
 {
     return make_shared(
         name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
@@ -158,18 +158,16 @@ BlockInputStreams TrivialBuffer::read(
         modified_settings.optimize_move_to_prewhere = false;
 
         streams = destination->read(column_names, query, context, modified_settings,
-                            processed_stage, max_block_size, threads);
+            processed_stage, max_block_size, threads);
     }
 
-    streams.push_back(std::make_shared<TrivialBufferBlockInputStream>(column_names,
-                        *this));
+    streams.push_back(std::make_shared<TrivialBufferBlockInputStream>(column_names, *this));
 
     /** Если источники из таблицы были обработаны до какой-то не начальной стадии выполнения запроса,
       * то тогда источники из буферов надо тоже обернуть в конвейер обработки до той же стадии.
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
-        streams.back() = InterpreterSelectQuery(query, context, processed_stage, 0,
-                            streams.back()).execute().in;
+        streams.back() = InterpreterSelectQuery(query, context, processed_stage, 0, streams.back()).execute().in;
 
     return streams;
 }
