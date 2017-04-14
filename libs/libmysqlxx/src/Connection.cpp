@@ -1,4 +1,8 @@
+
+#if USE_MYSQL
 #include <mysql/mysql.h>
+#endif
+
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Exception.h>
 
@@ -8,18 +12,24 @@ namespace mysqlxx
 
 LibrarySingleton::LibrarySingleton()
 {
+#if USE_MYSQL
     if (mysql_library_init(0, nullptr, nullptr))
         throw Exception("Cannot initialize MySQL library.");
+#endif
 }
 
 LibrarySingleton::~LibrarySingleton()
 {
+#if USE_MYSQL
     mysql_library_end();
+#endif
 }
 
 
 Connection::Connection()
+#if USE_MYSQL
     : driver(std::make_unique<MYSQL>())
+#endif
 {
     is_connected = false;
 
@@ -35,14 +45,18 @@ Connection::Connection(
     unsigned port,
     unsigned timeout,
     unsigned rw_timeout)
+#if USE_MYSQL
     : driver(std::make_unique<MYSQL>())
+#endif
 {
     is_connected = false;
     connect(db, server, user, password, port, timeout, rw_timeout);
 }
 
 Connection::Connection(const std::string & config_name)
+#if USE_MYSQL
     : driver(std::make_unique<MYSQL>())
+#endif
 {
     is_connected = false;
     connect(config_name);
@@ -51,7 +65,9 @@ Connection::Connection(const std::string & config_name)
 Connection::~Connection()
 {
     disconnect();
+#if USE_MYSQL
     mysql_thread_end();
+#endif
 }
 
 void Connection::connect(const char* db,
@@ -62,6 +78,7 @@ void Connection::connect(const char* db,
     unsigned timeout,
     unsigned rw_timeout)
 {
+#if USE_MYSQL
     if (is_connected)
         disconnect();
 
@@ -100,6 +117,7 @@ void Connection::connect(const char* db,
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
     is_connected = true;
+#endif
 }
 
 bool Connection::connected() const
@@ -112,14 +130,20 @@ void Connection::disconnect()
     if (!is_connected)
         return;
 
+#if USE_MYSQL
     mysql_close(driver.get());
     memset(driver.get(), 0, sizeof(*driver));
+#endif
     is_connected = false;
 }
 
 bool Connection::ping()
 {
+#if USE_MYSQL
     return is_connected && !mysql_ping(driver.get());
+#else
+    throw;
+#endif
 }
 
 Query Connection::query(const std::string & str)

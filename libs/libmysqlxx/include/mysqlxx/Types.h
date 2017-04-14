@@ -3,8 +3,14 @@
 #include <string>
 #include <Poco/Types.h>
 
+#if USE_MYSQL
 struct st_mysql;
+#else
+struct st_mysql {};
+#endif
+
 using MYSQL = st_mysql;
+
 
 struct st_mysql_res;
 using MYSQL_RES = st_mysql_res;

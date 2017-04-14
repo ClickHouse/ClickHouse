@@ -26,6 +26,9 @@ else ()
     find_library (MYSQLCLIENT_LIB mysqlclient PATHS ${MYSQL_LIB_PATHS})
 endif ()
 
-include_directories (${MYSQL_INCLUDE_DIR})
+if (MYSQL_INCLUDE_DIR AND (STATIC_MYSQLCLIENT_LIB OR MYSQLCLIENT_LIB))
+    set (MYSQL_FOUND 1)
+    include_directories (${MYSQL_INCLUDE_DIR})
+endif ()
 
-message (STATUS "Using mysqlclient: ${MYSQL_INCLUDE_DIR} : ${MYSQLCLIENT_LIB}; static=${STATIC_MYSQLCLIENT_LIB}")
+message (STATUS "Using mysqlclient=${MYSQL_FOUND}: ${MYSQL_INCLUDE_DIR} : ${MYSQLCLIENT_LIB}; static=${STATIC_MYSQLCLIENT_LIB}")

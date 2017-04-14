@@ -36,7 +36,11 @@ add_library (mysqlxx
 
 set(PLATFORM_LIBS ${CMAKE_DL_LIBS})
 
-if (USE_STATIC_LIBRARIES)
+if (MYSQL_FOUND)
+    add_definitions(-DUSE_MYSQL)
+endif ()
+
+if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
     set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)
     add_custom_command (
         OUTPUT ${MYSQLCLIENT_LIB}
@@ -47,7 +51,11 @@ if (USE_STATIC_LIBRARIES)
     add_dependencies (mysqlxx our_mysql_client)
 endif ()
 
-target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBS})
+target_link_libraries (mysqlxx common)
+if (MYSQLCLIENT_LIB)
+    target_link_libraries (mysqlxx ${MYSQLCLIENT_LIB})
+endif ()
+target_link_libraries (mysqlxx ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBS})
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)
