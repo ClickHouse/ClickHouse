@@ -11,7 +11,6 @@ struct st_mysql {};
 
 using MYSQL = st_mysql;
 
-
 struct st_mysql_res;
 using MYSQL_RES = st_mysql_res;
 
