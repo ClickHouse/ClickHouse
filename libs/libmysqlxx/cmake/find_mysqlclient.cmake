@@ -1,4 +1,4 @@
-option (ENABLE_MYSQL "Enamble Mysql" ON)
+option (ENABLE_MYSQL "Enable Mysql" ON)
 
     if (ENABLE_MYSQL)
 
