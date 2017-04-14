@@ -1,3 +1,7 @@
+option (ENABLE_MYSQL "Enamble Mysql" ON)
+
+if (ENABLE_MYSQL)
+
 set (MYSQL_LIB_PATHS
     "/usr/local/opt/mysql/lib"
     "/usr/local/lib/mysql/"
@@ -29,6 +33,8 @@ endif ()
 if (MYSQL_INCLUDE_DIR AND (STATIC_MYSQLCLIENT_LIB OR MYSQLCLIENT_LIB))
     set (MYSQL_FOUND 1)
     include_directories (${MYSQL_INCLUDE_DIR})
+endif ()
+
 endif ()
 
 message (STATUS "Using mysqlclient=${MYSQL_FOUND}: ${MYSQL_INCLUDE_DIR} : ${MYSQLCLIENT_LIB}; static=${STATIC_MYSQLCLIENT_LIB}")
