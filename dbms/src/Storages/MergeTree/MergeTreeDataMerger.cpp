@@ -552,9 +552,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
             src_streams.emplace_back(std::move(input));
     }
 
-    /// The order of the threads is important: when the key is matched, the elements go in the order of the source stream number.
+    /// The order of the streams is important: when the key is matched, the elements go in the order of the source stream number.
     /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
-    ///  that is (approximately) increasing insertion time.
+    ///  that is going in insertion order.
     std::shared_ptr<IProfilingBlockInputStream> merged_stream;
 
     switch (data.merging_params.mode)
