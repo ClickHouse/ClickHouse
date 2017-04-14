@@ -154,6 +154,18 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 
                 params.type = ASTAlterQuery::DROP_COLUMN;
                 params.detach = false;
+
+                if (s_from.ignore(pos, end, max_parsed_pos, expected))
+                {
+                    ws.ignore(pos, end);
+
+                    if (!s_partition.ignore(pos, end, max_parsed_pos, expected))
+                        return false;
+                    ws.ignore(pos, end);
+
+                    if (!parser_literal.parse(pos, end, params.partition, max_parsed_pos, expected))
+                        return false;
+                }
             }
             else
                 return false;
