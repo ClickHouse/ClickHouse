@@ -32,7 +32,7 @@ Block DistinctSortedBlockInputStream::readImpl()
     /// a block with some new records will be gotten.
     for (;;)
     {
-        /// Stop reading if we already reach the limit.
+        /// Stop reading if we already reached the limit.
         if (limit_hint && data.getTotalRowCount() >= limit_hint)
             return Block();
 
@@ -120,19 +120,19 @@ bool DistinctSortedBlockInputStream::buildFilter(
     /// Compare last row of previous block and first row of current block,
     /// If rows not equal, we can clear HashSet,
     /// If clearing_hint_columns is empty, we CAN'T clear HashSet.
-    if ( !clearing_hint_columns.empty() && !prev_block.clearing_hint_columns.empty()
-        && !rowsEqual(clearing_hint_columns, 0, prev_block.clearing_hint_columns, prev_block.block.rows()-1))
-        {
+    if (!clearing_hint_columns.empty() && !prev_block.clearing_hint_columns.empty()
+        && !rowsEqual(clearing_hint_columns, 0, prev_block.clearing_hint_columns, prev_block.block.rows() - 1))
+    {
         method.data.clear();
-        }
+    }
 
     bool has_new_data = false;
     for (size_t i = 0; i < rows; ++i)
     {
-        /// Compare i row and i-1 row,
-        /// If rows not equal, we can clear HashSet,
+        /// Compare i-th row and i-1-th row,
+        /// If rows are not equal, we can clear HashSet,
         /// If clearing_hint_columns is empty, we CAN'T clear HashSet.
-        if ( i > 0 && !clearing_hint_columns.empty() && !rowsEqual(clearing_hint_columns, i, clearing_hint_columns, i-1) )
+        if (i > 0 && !clearing_hint_columns.empty() && !rowsEqual(clearing_hint_columns, i, clearing_hint_columns, i - 1))
             method.data.clear();
 
         /// Make a key.
@@ -142,10 +142,10 @@ bool DistinctSortedBlockInputStream::buildFilter(
         method.data.emplace(key, it, inserted);
 
         if (inserted)
-            {
+        {
             method.onNewKey(*it, columns.size(), i, variants.string_pool);
-            has_new_data = inserted;
-            }
+            has_new_data = true;
+        }
 
         /// Emit the record if there is no such key in the current set yet.
         /// Skip it otherwise.
@@ -180,27 +180,27 @@ ConstColumnPlainPtrs DistinctSortedBlockInputStream::getClearingColumns(const Bl
     ConstColumnPlainPtrs clearing_hint_columns;
     clearing_hint_columns.reserve(description.size());
     for(const auto & sort_column_description : description)
-        {
+    {
         const auto sort_column_ptr = block.safeGetByPosition(sort_column_description.column_number).column.get();
         const auto it = std::find(key_columns.cbegin(), key_columns.cend(), sort_column_ptr);
-        if (it != key_columns.cend()) //if found in key_columns
+        if (it != key_columns.cend()) /// if found in key_columns
             clearing_hint_columns.emplace_back(sort_column_ptr);
         else
-            return clearing_hint_columns;
-        }
+            return clearing_hint_columns; /// We will use common prefix of sort description and requested DISTINCT key.
+    }
     return clearing_hint_columns;
 }
 
 bool DistinctSortedBlockInputStream::rowsEqual(const ConstColumnPlainPtrs & lhs, size_t n, const ConstColumnPlainPtrs & rhs, size_t m)
-    {
-    for (size_t column_index = 0; column_index < lhs.size(); ++column_index)
+{
+    for (size_t column_index = 0, num_columns = lhs.size(); column_index < num_columns; ++column_index)
     {
         const auto & lhs_column = *lhs[column_index];
         const auto & rhs_column = *rhs[column_index];
-        if (lhs_column.compareAt(n, m, rhs_column, 0) != 0) //not equal
+        if (lhs_column.compareAt(n, m, rhs_column, 0) != 0) /// not equal
             return false;
     }
     return true;
-    }
+}
 
 }
