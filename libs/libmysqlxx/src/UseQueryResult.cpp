@@ -21,7 +21,7 @@ Row UseQueryResult::fetch()
 
     return Row(row, this, mysql_fetch_lengths(res));
 #else
-    throw;
+    throw std::logic_error{"Mysql support not compiled"};
 #endif
 }
 

@@ -142,7 +142,7 @@ bool Connection::ping()
 #if USE_MYSQL
     return is_connected && !mysql_ping(driver.get());
 #else
-    throw;
+    throw std::logic_error{"Mysql support not compiled"};
 #endif
 }
 

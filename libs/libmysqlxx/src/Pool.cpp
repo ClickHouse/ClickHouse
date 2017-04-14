@@ -226,7 +226,7 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
     connections.push_back(connection);
     return connection;
 #else
-    return nullptr;
+    throw std::logic_error{"Mysql support not compiled"};
 #endif
 }
 

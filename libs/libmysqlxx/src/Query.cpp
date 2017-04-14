@@ -83,7 +83,7 @@ UseQueryResult Query::use()
 
     return UseQueryResult(res, conn, this);
 #else
-    throw;
+    throw std::logic_error{"Mysql support not compiled"};
 #endif
 }
 
@@ -97,7 +97,7 @@ StoreQueryResult Query::store()
 
     return StoreQueryResult(res, conn, this);
 #else
-    throw;
+    throw std::logic_error{"Mysql support not compiled"};
 #endif
 }
 
@@ -111,7 +111,7 @@ UInt64 Query::insertID()
 #if USE_MYSQL
     return mysql_insert_id(conn->getDriver());
 #else
-    throw;
+    throw std::logic_error{"Mysql support not compiled"};
 #endif
 }
 
