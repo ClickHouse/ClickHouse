@@ -1160,7 +1160,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
             Stopwatch stopwatch;
 
             auto part = merger.mergePartsToTemporaryPart(
-                parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate );
+                parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
 
             zkutil::Ops ops;
 
