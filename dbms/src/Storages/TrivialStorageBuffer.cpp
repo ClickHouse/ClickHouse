@@ -3,7 +3,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Databases/IDatabase.h>
-#include <Storages/TrivialBuffer.h>
+#include <Storages/TrivialStorageBuffer.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
@@ -18,18 +18,18 @@
 
 namespace ProfileEvents
 {
-    extern const Event TrivialBufferFlush;
-    extern const Event TrivialBufferErrorOnFlush;
-    extern const Event TrivialBufferPassedAllMinThresholds;
-    extern const Event TrivialBufferPassedTimeMaxThreshold;
-    extern const Event TrivialBufferPassedRowsMaxThreshold;
-    extern const Event TrivialBufferPassedBytesMaxThreshold;
+    extern const Event StorageBufferFlush;
+    extern const Event StorageBufferErrorOnFlush;
+    extern const Event StorageBufferPassedAllMinThresholds;
+    extern const Event StorageBufferPassedTimeMaxThreshold;
+    extern const Event StorageBufferPassedRowsMaxThreshold;
+    extern const Event StorageBufferPassedBytesMaxThreshold;
 }
 
 namespace CurrentMetrics
 {
-    extern const Metric TrivialBufferRows;
-    extern const Metric TrivialBufferBytes;
+    extern const Metric StorageBufferRows;
+    extern const Metric StorageBufferBytes;
 }
 
 
@@ -39,11 +39,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INFINITE_LOOP;
-    extern const int BLOCKS_HAS_DIFFERENT_STRUCTURE;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
-StoragePtr TrivialBuffer::create(const std::string & name_, NamesAndTypesListPtr columns_,
+StoragePtr TrivialStorageBuffer::create(const std::string & name_, NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -58,7 +58,7 @@ StoragePtr TrivialBuffer::create(const std::string & name_, NamesAndTypesListPtr
 }
 
 
-TrivialBuffer::TrivialBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
+TrivialStorageBuffer::TrivialBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -74,22 +74,24 @@ TrivialBuffer::TrivialBuffer(const std::string & name_, NamesAndTypesListPtr col
     destination_database(destination_database_), destination_table(destination_table_),
     no_destination(destination_database.empty() && destination_table.empty()),
     log(&Logger::get("TrivialBuffer (" + name + ")")),
-    flush_thread(&TrivialBuffer::flushThread, this)
+    flush_thread(&TrivialStorageBuffer::flushThread, this)
 {
 }
 
 class TrivialBufferBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    TrivialBufferBlockInputStream(const Names & column_names_, TrivialBuffer & buffer_)
-        : column_names(column_names_.begin(), column_names_.end()), buffer(buffer_) {}
+    TrivialBufferBlockInputStream(const Names & column_names_, BlocksList::iterator begin_,
+        BlocksList::iterator end_, TrivialStorageBuffer & buffer_)
+        : column_names(column_names_), begin(begin_), end(end_),
+        it(begin_), buffer(buffer_) {}
 
-    String getName() const { return "TrivialBuffer"; }
+    String getName() const { return "TrivialStorageBuffer"; }
 
     String getID() const
     {
         std::stringstream res;
-        res << "TrivialBuffer(" << &buffer;
+        res << "TrivialStorageBuffer(" << &buffer;
 
         for (const auto & name : column_names)
             res << ", " << name;
@@ -103,34 +105,23 @@ protected:
     {
         Block res;
 
-        if (has_been_read)
+        if (it == end)
             return res;
-        has_been_read = true;
 
-        std::lock_guard<std::mutex> lock(buffer.mutex);
-
-        for (auto & block : buffer.data)
-        {
-            if (!block.rows())
-                continue;
-
-            for (const auto & name : column_names)
-            {
-                auto & col = block.getByName(name);
-                res.insert(ColumnWithTypeAndName(col.column->clone(), col.type, name));
-            }
-        }
+        for (const auto & column : column_names)
+            res.insert(it->getByName(column));
+        ++it;
 
         return res;
     }
 
 private:
     Names column_names;
-    TrivialBuffer & buffer;
-    bool has_been_read = false;
+    TrivialStorageBuffer & buffer;
+    BlocksList::iterator begin, end, it;
 };
 
-BlockInputStreams TrivialBuffer::read(
+BlockInputStreams TrivialStorageBuffer::read(
     const Names & column_names,
     ASTPtr query,
     const Context & context,
@@ -139,6 +130,7 @@ BlockInputStreams TrivialBuffer::read(
     size_t max_block_size,
     unsigned threads)
 {
+    check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
     BlockInputStreams streams;
@@ -151,8 +143,8 @@ BlockInputStreams TrivialBuffer::read(
             throw Exception("Destination table is myself. Read will cause infinite loop.",
                     ErrorCodes::INFINITE_LOOP);
 
-        /** Отключаем оптимизацию "перенос в PREWHERE",
-          *  так как Buffer не поддерживает PREWHERE.
+        /** TrivialStorageBuffer does not support 'PREWHERE',
+          * so turn off corresponding optimization.
           */
         Settings modified_settings = settings;
         modified_settings.optimize_move_to_prewhere = false;
@@ -161,18 +153,35 @@ BlockInputStreams TrivialBuffer::read(
             processed_stage, max_block_size, threads);
     }
 
-    streams.push_back(std::make_shared<TrivialBufferBlockInputStream>(column_names, *this));
+    BlockInputStreams streams_from_buffers;
+    std::lock_guard<std::mutex> lock(buffer.mutex);
+    size_t size = data.size();
+    if (threads > size)
+        threads = size;
 
-    /** Если источники из таблицы были обработаны до какой-то не начальной стадии выполнения запроса,
-      * то тогда источники из буферов надо тоже обернуть в конвейер обработки до той же стадии.
+    for (size_t thread = 0; thread < threads; ++thread)
+    {
+        BlocksList::iterator begin = data.begin();
+        BlocksList::iterator end = data.begin();
+
+        std::advance(begin, thread * size / threads);
+        std::advance(end, (thread + 1) * size / threads);
+
+        streams_from_buffers.push_back(std::make_shared<TrivialBufferBlockInputStream>(column_names, begin, end, *this));
+    }
+
+    /** If sources from destination table are already processed to non-starting stage, then we should wrap
+      * sources from the buffer to the same stage of processing conveyor.
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
-        streams.back() = InterpreterSelectQuery(query, context, processed_stage, 0, streams.back()).execute().in;
+        for (auto & stream : streams_from_buffers)
+            stream = InterpreterSelectQuery(query, context, processed_stage, 0, stream).execute().in;
 
+    streams.insert(streams.end(), streams_from_buffers.begin(), streams_from_buffers.end());
     return streams;
 }
 
-void TrivialBuffer::addBlock(const Block & block)
+void TrivialStorageBuffer::addBlock(const Block & block)
 {
     SipHash hash;
     block.updateHash(hash);
@@ -192,25 +201,21 @@ void TrivialBuffer::addBlock(const Block & block)
         current_bytes += block.bytes();
         data.push_back(block);
 
-        CurrentMetrics::add(CurrentMetrics::TrivialBufferRows, current_rows);
-        CurrentMetrics::add(CurrentMetrics::TrivialBufferBytes, current_bytes);
+        CurrentMetrics::add(CurrentMetrics::StorageBufferRows, current_rows);
+        CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, current_bytes);
     }
     else
     {
-        //NOTE: может быть, если нашли этот блок в previous,
-        // то надо его хэш перенести в current?
-        /*
         auto it = previous_hashes->find(block_hash);
         if (it != previous_hashes->end())
         {
             current_hashes->insert(it);
             previous_hashes->erase(it);
         }
-        */
     }
 }
 
-void TrivialBuffer::flush(bool check_thresholds)
+void TrivialStorageBuffer::flush(bool check_thresholds)
 {
     Block block_to_write;
     time_t current_time = time(0);
@@ -254,31 +259,25 @@ void TrivialBuffer::flush(bool check_thresholds)
         }
         first_write_time = 0;
 
-        ProfileEvents::increment(ProfileEvents::TrivialBufferFlush);
+        ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
 
         LOG_TRACE(log, "Flushing buffer with " << block_to_write.rows() << " rows, " << block_to_write.bytes() << " bytes, age " << time_passed << " seconds.");
 
         if (no_destination)
             return;
 
-        /** For simplicity, buffer is locked during write.
-          * We could unlock buffer temporary, but it would lead to too much difficulties:
-          * - data, that is written, will not be visible for SELECTs;
-          * - new data could be appended to buffer, and in case of exception, we must merge it with old data, that has not been written;
-          * - this could lead to infinite memory growth.
-          */
         try
         {
             writeBlockToDestination(block_to_write, context.tryGetTable(destination_database, destination_table));
             data.clear();
 
-            CurrentMetrics::sub(CurrentMetrics::TrivialBufferRows, block_to_write.rows());
-            CurrentMetrics::sub(CurrentMetrics::TrivialBufferBytes, block_to_write.bytes());
+            CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_to_write.rows());
+            CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
         }
         catch (...)
         {
-            ProfileEvents::increment(ProfileEvents::TrivialBufferErrorOnFlush);
+            ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
 
             if (!first_write_time)
                 first_write_time = current_time;
@@ -293,7 +292,7 @@ void TrivialBuffer::flush(bool check_thresholds)
 class TrivialBufferBlockOutputStream : public IBlockOutputStream
 {
 public:
-    TrivialBufferBlockOutputStream(TrivialBuffer & buffer_) : buffer(buffer_) {}
+    TrivialBufferBlockOutputStream(TrivialStorageBuffer & buffer_) : buffer(buffer_) {}
     void write(const Block & block) override
     {
         if (!block)
@@ -352,15 +351,15 @@ public:
         buffer.addBlock(block);
     }
 private:
-    TrivialBuffer & buffer;
+    TrivialStorageBuffer & buffer;
 };
 
-BlockOutputStreamPtr TrivialBuffer::write(ASTPtr query, const Settings & settings)
+BlockOutputStreamPtr TrivialStorageBuffer::write(ASTPtr query, const Settings & settings)
 {
     return std::make_shared<TrivialBufferBlockOutputStream>(*this);
 }
 
-void TrivialBuffer::shutdown()
+void TrivialStorageBuffer::shutdown()
 {
     shutdown_event.set();
 
@@ -369,8 +368,6 @@ void TrivialBuffer::shutdown()
 
     try
     {
-        ///NOTE: в StorageBuffer здесь используется optimize({}, {}, context.getSettings()).
-        /// Зачем?
         flush(false);
     }
     catch (...)
@@ -384,14 +381,14 @@ void TrivialBuffer::shutdown()
   * it does not guarantee that all data will be in destination table at the time of
   * next SELECT just after OPTIMIZE.
   *
-  * Because in case if there was already running flushr method,
+  * Because in case if there was already running flush method,
   *  then call to flush inside OPTIMIZE will see empty buffer and return quickly,
   *  but at the same time, the already running flush method possibly is not finished,
   *  so next SELECT will observe missing data.
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool TrivialBuffer::optimize(const String & partition, bool final, const Settings & settings)
+bool TrivialStorageBuffer::optimize(const String & partition, bool final, const Settings & settings)
 {
     if (!partition.empty())
         throw Exception("Partition cannot be specified when optimizing table of type Buffer",
@@ -407,7 +404,7 @@ bool TrivialBuffer::optimize(const String & partition, bool final, const Setting
 
 
 
-bool TrivialBuffer::checkThresholds(const time_t current_time, const size_t additional_rows,
+bool TrivialStorageBuffer::checkThresholds(const time_t current_time, const size_t additional_rows,
                     const size_t additional_bytes) const
 {
     time_t time_passed = 0;
@@ -421,37 +418,37 @@ bool TrivialBuffer::checkThresholds(const time_t current_time, const size_t addi
 
 }
 
-bool TrivialBuffer::checkThresholdsImpl(const size_t rows, const size_t bytes,
+bool TrivialStorageBuffer::checkThresholdsImpl(const size_t rows, const size_t bytes,
                     const time_t time_passed) const
 {
     if (time_passed > min_thresholds.time && rows > min_thresholds.rows && bytes > min_thresholds.bytes)
     {
-        ProfileEvents::increment(ProfileEvents::TrivialBufferPassedAllMinThresholds);
+        ProfileEvents::increment(ProfileEvents::StorageBufferPassedAllMinThresholds);
         return true;
     }
 
     if (time_passed > max_thresholds.time)
     {
-        ProfileEvents::increment(ProfileEvents::TrivialBufferPassedTimeMaxThreshold);
+        ProfileEvents::increment(ProfileEvents::StorageBufferPassedTimeMaxThreshold);
         return true;
     }
 
     if (rows > max_thresholds.rows)
     {
-        ProfileEvents::increment(ProfileEvents::TrivialBufferPassedRowsMaxThreshold);
+        ProfileEvents::increment(ProfileEvents::StorageBufferPassedRowsMaxThreshold);
         return true;
     }
 
     if (bytes > max_thresholds.bytes)
     {
-        ProfileEvents::increment(ProfileEvents::TrivialBufferPassedBytesMaxThreshold);
+        ProfileEvents::increment(ProfileEvents::StorageBufferPassedBytesMaxThreshold);
         return true;
     }
 
     return false;
 }
 
-void TrivialBuffer::flushThread()
+void TrivialStorageBuffer::flushThread()
 {
     setThreadName("BufferFlush");
 
@@ -468,7 +465,7 @@ void TrivialBuffer::flushThread()
     } while (!shutdown_event.tryWait(1000));
 }
 
-void TrivialBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
+void TrivialStorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
 {
     if (no_destination || !block)
         return;
@@ -530,7 +527,7 @@ void TrivialBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     block_io.out->writeSuffix();
 }
 
-void TrivialBuffer::alter(const AlterCommands & params, const String & database_name,
+void TrivialStorageBuffer::alter(const AlterCommands & params, const String & database_name,
                 const String & table_name, const Context & context)
 {
     for (const auto & param : params)
@@ -541,7 +538,6 @@ void TrivialBuffer::alter(const AlterCommands & params, const String & database_
     auto lock = lockStructureForAlter();
 
     /// Чтобы не осталось блоков старой структуры.
-    ///NOTE: опять здесь optimize({}, {}, context.getSettings())
     flush(false);
 
     params.apply(*columns, materialized_columns, alias_columns, column_defaults);
