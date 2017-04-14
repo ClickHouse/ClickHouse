@@ -155,7 +155,7 @@ private:
 
     mutable std::mutex mutex;
 
-    std::mt19937 rng {randomSeed()};
+    std::mt19937_64 rng {static_cast<std::mt19937_64::result_type>(randomSeed())};
 
     struct Chunk : private boost::noncopyable
     {
@@ -712,3 +712,5 @@ public:
         return res;
     }
 };
+
+template <typename Key, typename Payload> constexpr size_t ArrayCache<Key, Payload>::min_chunk_size;

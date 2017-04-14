@@ -358,12 +358,12 @@ int Server::main(const std::vector<std::string> & args)
         global_context->setMaxTableSizeToDrop(config().getUInt64("max_table_size_to_drop"));
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
-    size_t uncompressed_cache_size = parse<size_t>(config().getString("uncompressed_cache_size", "0"));
+    size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
         global_context->setUncompressedCache(uncompressed_cache_size);
 
     /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
-    size_t mark_cache_size = parse<size_t>(config().getString("mark_cache_size"));
+    size_t mark_cache_size = config().getUInt64("mark_cache_size");
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_size);
 

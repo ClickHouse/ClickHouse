@@ -277,13 +277,13 @@ try
     context->getProcessList().setMaxSize(0);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
-    size_t uncompressed_cache_size = parse<size_t>(config().getString("uncompressed_cache_size", "0"));
+    size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
         context->setUncompressedCache(uncompressed_cache_size);
 
     /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
     /// Specify default value for mark_cache_size explicitly!
-    size_t mark_cache_size = parse<size_t>(config().getString("mark_cache_size", "5368709120"));
+    size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
         context->setMarkCache(mark_cache_size);
 

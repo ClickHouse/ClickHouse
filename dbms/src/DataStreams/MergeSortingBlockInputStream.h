@@ -35,6 +35,7 @@ public:
     String getName() const override { return "MergeSortingBlocks"; }
     String getID() const override { return getName(); }
 
+    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 
@@ -91,6 +92,7 @@ public:
         return res.str();
     }
 
+    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 
