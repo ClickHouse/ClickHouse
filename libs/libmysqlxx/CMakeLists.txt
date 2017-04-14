@@ -40,7 +40,7 @@ if (MYSQL_FOUND)
     add_definitions(-DUSE_MYSQL)
 endif ()
 
-if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
+if (MYSQL_FOUND AND USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
     set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)
     add_custom_command (
         OUTPUT ${MYSQLCLIENT_LIB}
@@ -52,7 +52,7 @@ if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
 endif ()
 
 target_link_libraries (mysqlxx common)
-if (MYSQLCLIENT_LIB)
+if (MYSQL_FOUND AND MYSQLCLIENT_LIB)
     target_link_libraries (mysqlxx ${MYSQLCLIENT_LIB})
 endif ()
 target_link_libraries (mysqlxx ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBS})
