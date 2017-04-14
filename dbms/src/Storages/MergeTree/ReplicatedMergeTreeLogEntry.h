@@ -66,7 +66,7 @@ struct ReplicatedMergeTreeLogEntryData
     String block_id;    /// Для кусков нулевого уровня - идентификатор блока для дедупликации (имя ноды в /blocks/).
 
     Strings parts_to_merge;
-    bool    deduplicate = false; ///Do deduplicate on merge
+    bool deduplicate = false; /// Do deduplicate on merge
 
     /// Для DROP_RANGE, true значит, что куски нужно не удалить, а перенести в директорию detached.
     bool detach = false;
