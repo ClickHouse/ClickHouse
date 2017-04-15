@@ -105,7 +105,6 @@ private:
             const WeightedZooKeeperPaths & weighted_zookeeper_paths_, const ASTPtr & sharding_key_expr_,
             bool do_copy_, const Field & coordinator_)
         {
-
             PartitionCommand res;
             res.type = RESHARD_PARTITION;
             res.partition = first_partition_;
