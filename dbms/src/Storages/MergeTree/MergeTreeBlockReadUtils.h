@@ -5,9 +5,9 @@
 namespace DB
 {
 
-struct MergeTreeData;
+class MergeTreeData;
 struct MergeTreeReadTask;
-class MergeTreeBlockSizePredictor;
+struct MergeTreeBlockSizePredictor;
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredictor>;
@@ -67,7 +67,7 @@ struct MergeTreeBlockSizePredictor
     void startBlock();
 
     /// Updates statistic for more accurate prediction
-    void update(const Block & block, double decay = DECAY);
+    void update(const Block & block, double decay = DECAY());
 
     /// Return current block size (after update())
     inline size_t getBlockSize() const
@@ -93,7 +93,7 @@ struct MergeTreeBlockSizePredictor
     /// After n=NUM_UPDATES_TO_TARGET_WEIGHT updates v_{n} = (1 - TARGET_WEIGHT) * v_{0} + TARGET_WEIGHT * v_{target}
     static constexpr double TARGET_WEIGHT = 0.5;
     static constexpr size_t NUM_UPDATES_TO_TARGET_WEIGHT = 8192;
-    static constexpr double DECAY = 1. - std::pow(TARGET_WEIGHT, 1. / NUM_UPDATES_TO_TARGET_WEIGHT);
+    static double DECAY() { return 1. - std::pow(TARGET_WEIGHT, 1. / NUM_UPDATES_TO_TARGET_WEIGHT); }
 
 protected:
 
