@@ -143,21 +143,21 @@ void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
                         ErrorCodes::LOGICAL_ERROR);
     }
 
-    size_t dif_rows = new_rows - block_size_rows;
+    size_t diff_rows = new_rows - block_size_rows;
     block_size_bytes = new_rows * fixed_columns_bytes_per_row;
     bytes_per_row_current = fixed_columns_bytes_per_row;
     block_size_rows = new_rows;
 
     /// Make recursive updates for each read row: v_{i+1} = (1 - decay) v_{i} + decay v_{target}
     /// Use sum of gemetric sequence formula to update multiple rows: v{n} = (1 - decay)^n v_{0} + (1 - (1 - decay)^n) v_{target}
-    double alpha = std::pow(1. - decay, dif_rows);
+    double alpha = std::pow(1. - decay, diff_rows);
 
     for (auto & info : dynamic_columns_infos)
     {
         size_t new_size = block.getByName(info.name).column->byteSize();
-        size_t dif_size = new_size - info.size_bytes;
+        size_t diff_size = new_size - info.size_bytes;
 
-        double local_bytes_per_row = static_cast<double>(dif_size) / dif_rows;
+        double local_bytes_per_row = static_cast<double>(diff_size) / diff_rows;
         info.bytes_per_row = alpha * info.bytes_per_row + (1. - alpha) * local_bytes_per_row;
 
         info.size_bytes = new_size;
