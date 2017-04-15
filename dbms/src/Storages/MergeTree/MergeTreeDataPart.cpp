@@ -364,7 +364,7 @@ size_t MergeTreeDataPart::getExactSizeRows() const
         return rows;
     }
 
-    throw Exception("Data part doesn't contain fixed size column (even data column)", ErrorCodes::LOGICAL_ERROR);
+    throw Exception("Data part doesn't contain fixed size column (even Date column)", ErrorCodes::LOGICAL_ERROR);
 }
 
 
