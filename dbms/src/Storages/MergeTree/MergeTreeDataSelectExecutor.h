@@ -10,15 +10,15 @@ namespace DB
 class PKCondition;
 
 
-/** Выполняет запросы SELECT на данных из merge-дерева.
+/** Executes SELECT queries on data from the merge tree.
   */
 class MergeTreeDataSelectExecutor
 {
 public:
     MergeTreeDataSelectExecutor(MergeTreeData & data_);
 
-    /** При чтении, выбирается набор кусков, покрывающий нужный диапазон индекса.
-      * max_block_number_to_read - если не ноль - не читать все куски, у которых правая граница больше этого порога.
+    /** When reading, selects a set of parts that covers the desired range of the index.
+      * max_block_number_to_read - if not zero, do not read all the parts whose right border is greater than this threshold.
       */
     BlockInputStreams read(
         const Names & column_names,
@@ -28,7 +28,7 @@ public:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned threads,
-        size_t * inout_part_index,    /// Если не nullptr, из этого счетчика берутся значения для виртуального столбца _part_index.
+        size_t * inout_part_index,    /// If not nullptr, from this counter values are taken ​​for the virtual column _part_index.
         Int64 max_block_number_to_read) const;
 
 private:
@@ -59,13 +59,13 @@ private:
         const Settings & settings,
         const Context & context) const;
 
-    /// Получить приблизительное значение (оценку снизу - только по полным засечкам) количества строк, попадающего под индекс.
+    /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(
         const MergeTreeData::DataPartsVector & parts,
         const PKCondition & key_condition,
         const Settings & settings) const;
 
-    /// Создать выражение "Sign == 1".
+    /// Create the expression "Sign == 1".
     void createPositiveSignCondition(
         ExpressionActionsPtr & out_expression,
         String & out_column,

@@ -10,7 +10,7 @@ namespace DB
 class StorageReplicatedMergeTree;
 
 
-/** Удаляет устаревшие данные таблицы типа ReplicatedMergeTree.
+/** Removes obsolete data from a table of type ReplicatedMergeTree.
   */
 class ReplicatedMergeTreeCleanupThread
 {
@@ -31,17 +31,17 @@ private:
     void run();
     void iterate();
 
-    /// Удалить старые куски с диска и из ZooKeeper.
+    /// Delete old chunks from disk and from ZooKeeper.
     void clearOldParts();
 
-    /// Удалить из ZooKeeper старые записи в логе.
+    /// Remove old records from ZooKeeper.
     void clearOldLogs();
 
-    /// Удалить из ZooKeeper старые хеши блоков. Это делает ведущая реплика.
+    /// Remove old block hashes from ZooKeeper. This makes a leading replica.
     void clearOldBlocks();
 
-    /// TODO Удаление старых quorum/failed_parts
-    /// TODO Удаление старых nonincrement_block_numbers
+    /// TODO Removing old quorum/failed_parts
+    /// TODO Removing old nonincrement_block_numbers
 };
 
 

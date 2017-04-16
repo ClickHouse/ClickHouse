@@ -1,6 +1,6 @@
 #pragma once
 
-/// Множество значений булевой переменной. То есть два булевых значения: может ли быть true, может ли быть false.
+/// Multiple Boolean values. That is, two Boolean values: can it be true, can it be false.
 struct BoolMask
 {
     bool can_be_true;

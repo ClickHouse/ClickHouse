@@ -14,8 +14,8 @@
 namespace DB
 {
 
-/** Реализует хранилище, подходящее для маленьких кусочков лога.
-  * При этом, хранит все столбцы в одном файле формата Native, с расположенным рядом индексом.
+/** Implements a repository that is suitable for small pieces of the log.
+  * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
 class StorageStripeLog : private ext::shared_ptr_helper<StorageStripeLog>, public IStorage
 {
@@ -24,10 +24,10 @@ friend class StripeLogBlockInputStream;
 friend class StripeLogBlockOutputStream;
 
 public:
-    /** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
-      *  (корректность имён и путей не проверяется)
-      *  состоящую из указанных столбцов.
-      * Если не указано attach - создать директорию, если её нет.
+    /** hook the table with the appropriate name, along the appropriate path (with / at the end),
+      *  (the correctness of names and paths is not checked)
+      *  consisting of the specified columns.
+      * If not specified `attach` - create a directory if it does not exist.
       */
     static StoragePtr create(
         const std::string & path_,
@@ -59,7 +59,7 @@ public:
 
     bool checkData() const override;
 
-    /// Данные файла.
+    /// Data of the file.
     struct ColumnData
     {
         Poco::File data_file;

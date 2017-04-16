@@ -7,11 +7,11 @@ namespace DB
 {
 
 /*
- * remote('address', db, table) - создаёт временный StorageDistributed.
- * Чтобы получить структуру таблицы, делается запрос DESC TABLE на удалённый сервер.
- * Например:
- * SELECT count() FROM remote('example01-01-1', merge, hits) - пойти на example01-01-1, в БД merge, таблицу hits.
- * В качестве имени хоста может быть указано также выражение, генерирующее множество шардов и реплик - см. ниже.
+ * remote ('address', db, table) - creates a temporary StorageDistributed.
+ * To get the table structure, a DESC TABLE request is made to the remote server.
+ * For example
+ * SELECT count() FROM remote('example01-01-1', merge, hits) - go to `example01-01-1`, in the merge database, the hits table.
+ * An expression that generates a lot of shards and replicas can also be specified as the host name - see below.
  */
 class TableFunctionRemote : public ITableFunction
 {

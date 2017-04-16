@@ -10,14 +10,14 @@ namespace DB
 
 class StorageReplicatedMergeTree;
 
-/** Описание задачи перешардирования.
+/** Description of the task of rescheduling.
   */
 struct ReshardingJob final
 {
 public:
     ReshardingJob() = default;
 
-    /// Создаёт описание на основе его сериализованного представления.
+    /// Creates a description based on its serialized representation.
     ReshardingJob(const std::string & serialized_job);
 
     ReshardingJob(const std::string & database_name_, const std::string & table_name_,
@@ -32,7 +32,7 @@ public:
 
     operator bool() const;
 
-    /// Сериализует описание задачи.
+    /// Serializes the task description.
     std::string toString() const;
 
     bool isCoordinated() const;

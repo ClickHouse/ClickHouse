@@ -11,7 +11,7 @@ class Context;
 namespace RemoteQueryExecutor
 {
 
-/** Сервис для выполнения SQL запросов.
+/** Service for executing SQL queries.
   */
 class Service final : public InterserverIOEndpoint
 {
@@ -26,7 +26,7 @@ private:
     Context & context;
 };
 
-/** Клиент для удалённого выполнения SQL запросов.
+/** Client for remote execution of SQL queries.
   */
 class Client final
 {

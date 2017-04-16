@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/// Операция из запроса ALTER (кроме манипуляции с PART/PARTITION). Добавление столбцов типа Nested не развернуто в добавление отдельных столбцов.
+/// Operation from the ALTER query (except for manipulation with PART/PARTITION). Adding Nested columns is not expanded to add individual columns.
 struct AlterCommand
 {
     enum Type
@@ -24,19 +24,19 @@ struct AlterCommand
     /// For DROP COLUMN ... FROM PARTITION
     String partition_name;
 
-    /// Для ADD и MODIFY - новый тип столбца.
+    /// For ADD and MODIFY, a new column type.
     DataTypePtr data_type;
 
     ColumnDefaultType default_type{};
     ASTPtr default_expression{};
 
-    /// Для ADD - после какого столбца добавить новый. Если пустая строка, добавить в конец. Добавить в начало сейчас нельзя.
+    /// For ADD - after which column to add a new one. If an empty string, add to the end. To add to the beginning now it is impossible.
     String after_column;
 
-    /// Для MODIFY_PRIMARY_KEY
+    /// For MODIFY_PRIMARY_KEY
     ASTPtr primary_key;
 
-    /// одинаковыми считаются имена, если они совпадают целиком или name_without_dot совпадает с частью имени до точки
+    /// the names are the same if they match the whole name or name_without_dot matches the part of the name up to the dot
     static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePair & name_type)
     {
         String name_with_dot = name_without_dot + ".";

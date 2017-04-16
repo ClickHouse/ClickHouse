@@ -13,10 +13,10 @@ namespace DB
 class StorageReplicatedMergeTree;
 
 
-/** Инициализирует сессию в ZK.
-  * Выставляет эфемерные ноды. Выставляет нужные для обнаружения реплики значения нод.
-  * Запускает участие в выборе лидера. Запускает все фоновые потоки.
-  * Затем следит за тем, не истекла ли сессия. И если истекла - переинициализирует её.
+/** Initializes ZK session.
+  * Exposes ephemeral nodes. It sets the node values ​​that are required for replica detection.
+  * Starts participation in the leader selection. Starts all background threads.
+  * Then monitors whether the session has expired. And if it expired, it will reinitialize it.
   */
 class ReplicatedMergeTreeRestartingThread
 {
@@ -51,23 +51,23 @@ private:
     Poco::Event wakeup_event;
     std::atomic<bool> need_stop {false};
 
-    /// Случайные данные, которые мы записали в /replicas/me/is_active.
+    /// The random data we wrote into `/replicas/me/is_active`.
     String active_node_identifier;
 
     std::thread thread;
 
     void run();
 
-    /// Запустить или остановить фоновые потоки. Используется для частичной переинициализации при пересоздании сессии в ZooKeeper.
-    bool tryStartup(); /// Возвращает false, если недоступен ZooKeeper.
+    /// Start or stop background threads. Used for partial reinitialization when re-creating a session in ZooKeeper.
+    bool tryStartup(); /// Returns false if ZooKeeper is not available.
 
-    /// Отметить в ZooKeeper, что эта реплика сейчас активна.
+    /// Note in ZooKeeper that this replica is currently active.
     void activateReplica();
 
-    /// Удалить куски, для которых кворум пофейлился (за то время, когда реплика была неактивной).
+    /// Delete the parts for which the quorum has failed (for the time when the replica was inactive).
     void removeFailedQuorumParts();
 
-    /// Если есть недостигнутый кворум, и у нас есть кусок, то добавить эту реплику в кворум.
+    /// If there is an unreachable quorum, and we have a part, then add this replica to the quorum.
     void updateQuorumIfWeHavePart();
 
     void partialShutdown();
