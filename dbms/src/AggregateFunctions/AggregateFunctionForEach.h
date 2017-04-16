@@ -158,9 +158,6 @@ public:
 
         size_t array_size = end - begin;
 
-        if (array_size <= 0)
-            return;
-
         AggregateFunctionForEachData & state = ensureAggregateData(place, array_size, *arena);
 
         char * nested_state = state.array_of_aggregate_datas;
