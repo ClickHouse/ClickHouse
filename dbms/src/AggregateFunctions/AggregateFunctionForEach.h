@@ -128,7 +128,7 @@ public:
         size_t num_arguments = arguments.size();
 
         if (1 != num_arguments)
-            throw Exception("Aggregate functions of the xxxForEach group require exactly one argument of array type",
+            throw Exception("Aggregate functions with -ForEach combinator require exactly one argument of array type",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         DataTypes nested_argument;
@@ -152,7 +152,7 @@ public:
     {
         const ColumnArray & first_array_column = static_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets_t & offsets = first_array_column.getOffsets();
-        const IColumn* array_data = &first_array_column.getData();
+        const IColumn * array_data = &first_array_column.getData();
         size_t begin = row_num == 0 ? 0 : offsets[row_num - 1];
         size_t end = offsets[row_num];
 
@@ -233,7 +233,7 @@ public:
             nested_state += nested_size_of_data;
         }
 
-        offsets_to.push_back(state.dynamic_array_size);
+        offsets_to.push_back(offsets_to.empty() ? state.dynamic_array_size : offsets_to.back() + state.dynamic_array_size);
     }
 
     bool allocatesMemoryInArena() const override
