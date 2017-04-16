@@ -21,3 +21,5 @@ SELECT k, groupArrayForEach(arr) FROM (SELECT number % 3 AS k, arrayMap(x -> toS
 SELECT k, groupArrayForEach(arr) FROM (SELECT intDiv(number, 3) AS k, arrayMap(x -> toString(x), range(number)) AS arr FROM system.numbers LIMIT 10) GROUP BY k ORDER BY k;
 
 SELECT k, groupArrayForEach(arr), quantilesExactForEach(0.5, 0.9)(arr) FROM (SELECT intDiv(number, 3) AS k, arrayMap(x -> number + x, range(number)) AS arr FROM system.numbers LIMIT 10) GROUP BY k ORDER BY k;
+
+SELECT uniqForEach(x) FROM (SELECT emptyArrayUInt8() AS x UNION ALL SELECT [1, 2, 3] UNION ALL SELECT emptyArrayUInt8() UNION ALL SELECT [2, 2]);
