@@ -2,7 +2,7 @@
 
 #include <vector>
 #include <boost/noncopyable.hpp>
-#include <common/Common.h>
+#include <common/Types.h>
 #include <common/singleton.h>
 
 

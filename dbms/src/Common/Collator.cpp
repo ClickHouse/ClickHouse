@@ -9,7 +9,6 @@
 
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
-#include <common/Common.h>
 #include <Poco/String.h>
 
 Collator::Collator(const std::string & locale_) : locale(Poco::toLower(locale_))

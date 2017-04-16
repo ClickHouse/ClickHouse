@@ -1,6 +1,6 @@
 #pragma once
 
-#include <mysqlxx/Manip.h>
+#include <iomanip>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
 
@@ -50,7 +50,7 @@ protected:
 
             if (!like.empty())
                 settings.ostr << (settings.hilite ? hilite_keyword : "") << " LIKE " << (settings.hilite ? hilite_none : "")
-                    << mysqlxx::quote << like;
+                    << std::quoted(like, '\'');
         }
     }
 };

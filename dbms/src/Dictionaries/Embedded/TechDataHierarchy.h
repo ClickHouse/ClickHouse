@@ -1,7 +1,7 @@
 #pragma once
 
 #include <common/singleton.h>
-#include <common/Common.h>
+#include <common/Types.h>
 
 
 /** @brief Класс, позволяющий узнавать, принадлежит ли поисковая система или операционная система

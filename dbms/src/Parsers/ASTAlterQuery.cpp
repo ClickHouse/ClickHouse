@@ -1,5 +1,6 @@
 #include <Parsers/ASTAlterQuery.h>
-#include <mysqlxx/Manip.h>
+#include <iomanip>
+
 
 namespace DB
 {
@@ -137,7 +138,7 @@ void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & st
             << "PARTITION " << (settings.hilite ? hilite_none : "");
             p.partition->formatImpl(settings, state, frame);
             settings.ostr << (settings.hilite ? hilite_keyword : "")
-                << " FROM " << (settings.hilite ? hilite_none : "") << mysqlxx::quote << p.from;
+                << " FROM " << (settings.hilite ? hilite_none : "") << std::quoted(p.from, '\'');
         }
         else if (p.type == ASTAlterQuery::FREEZE_PARTITION)
         {
@@ -147,7 +148,7 @@ void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & st
             if (!p.with_name.empty())
             {
                 settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
-                    << " " << mysqlxx::quote << p.with_name;
+                    << " " << std::quoted(p.with_name, '\'');
             }
         }
         else if (p.type == ASTAlterQuery::RESHARD_PARTITION)
