@@ -19,3 +19,5 @@ SELECT k, groupArrayForEach(arr) FROM (SELECT intDiv(number, 3) AS k, range(numb
 
 SELECT k, groupArrayForEach(arr) FROM (SELECT number % 3 AS k, arrayMap(x -> toString(x), range(number)) AS arr FROM system.numbers LIMIT 10) GROUP BY k ORDER BY k;
 SELECT k, groupArrayForEach(arr) FROM (SELECT intDiv(number, 3) AS k, arrayMap(x -> toString(x), range(number)) AS arr FROM system.numbers LIMIT 10) GROUP BY k ORDER BY k;
+
+SELECT k, groupArrayForEach(arr), quantilesExactForEach(0.5, 0.9)(arr) FROM (SELECT intDiv(number, 3) AS k, arrayMap(x -> number + x, range(number)) AS arr FROM system.numbers LIMIT 10) GROUP BY k ORDER BY k;
