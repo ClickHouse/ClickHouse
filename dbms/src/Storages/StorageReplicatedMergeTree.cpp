@@ -127,8 +127,8 @@ static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
   * Why is this number 200?
   * The fact is that previously negative block numbers were not supported.
   * And also, the merge is done that way so that when you increase the number of parts, insertion of new parts slows down on purpose,
-  *  until mergers have time to reduce the number of parts; and it was calculated for about 200 pieces.
-  * So, when you insert all the parts from the other table into the table, 200 numbers are sure enough.
+  *  until mergers have time to reduce the number of parts; and it was calculated for about 200 parts.
+  * So, when you insert all the parts from the other table into the table, 200 is sure enough.
   * In turn, this number is chosen almost at random.
   */
 extern const Int64 RESERVED_BLOCK_NUMBERS = 200;
@@ -2803,7 +2803,7 @@ void StorageReplicatedMergeTree::dropPartition(
     String fake_part_name = getFakePartNameForDrop(month_name, left, right);
 
     /** Forbid to choose the parts to be deleted for merging.
-      * Invariant: after the `DROP_RANGE` entry appears in the log, merge of deleted pieces will not appear in the log.
+      * Invariant: after the `DROP_RANGE` entry appears in the log, merge of deleted parts will not appear in the log.
       */
     {
         std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);

@@ -533,7 +533,7 @@ void StorageMergeTree::attachPartition(ASTPtr query, const Field & field, bool u
         LOG_INFO(log, "Finished attaching part");
     }
 
-    /// New parts with other data may appear in place of deleted pieces.
+    /// New parts with other data may appear in place of deleted parts.
     context.resetCaches();
 }
 

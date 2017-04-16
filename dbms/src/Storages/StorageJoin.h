@@ -13,12 +13,12 @@ class Join;
 using JoinPtr = std::shared_ptr<Join>;
 
 
-/** Позволяет сохранить состояние для последующего использования в правой части JOIN.
-  * При вставке в таблицу, данные будут вставлены в состояние,
-  *  а также записаны в файл-бэкап, для восстановления после перезапуска.
-  * Чтение из таблицы напрямую невозможно - возможно лишь указание в правой части JOIN.
+/** Allows you save the state for later use on the right side of the JOIN.
+  * When inserted into a table, the data will be inserted into the state,
+  *  and also written to the backup file, to restore after the restart.
+  * Reading from the table is not possible directly - only specifying on the right side of JOIN is possible.
   *
-  * При использовании, JOIN должен быть соответствующего типа (ANY|ALL LEFT|INNER ...).
+  * When using, JOIN must be of the appropriate type (ANY|ALL LEFT|INNER ...).
   */
 class StorageJoin : private ext::shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
 {
@@ -43,10 +43,10 @@ public:
 
     String getName() const override { return "Join"; }
 
-    /// Получить доступ к внутренностям.
+    /// Access the innards.
     JoinPtr & getJoin() { return join; }
 
-    /// Убедиться, что структура данных подходит для осуществления JOIN такого типа.
+    /// Verify that the data structure is suitable for implementing this type of JOIN.
     void assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const;
 
 private:

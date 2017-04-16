@@ -13,11 +13,11 @@ using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredictor>;
 
 
-/** Если некоторых запрошенных столбцов нет в куске,
-    *  то выясняем, какие столбцы может быть необходимо дополнительно прочитать,
-    *  чтобы можно было вычислить DEFAULT выражение для этих столбцов.
-    * Добавляет их в columns.
-    */
+/** If some of the requested columns are not in the part,
+  * then find out which columns may need to be read further,
+  * so that you can calculate the DEFAULT expression for these columns.
+  * Adds them to the `columns`.
+  */
 NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & part, Names & columns);
 
 

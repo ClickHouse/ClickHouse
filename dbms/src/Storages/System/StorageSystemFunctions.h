@@ -10,8 +10,8 @@ namespace DB
 class Context;
 
 
-/** Реализует системную таблицу functions, которая позволяет получить список
-  * всех обычных и агрегатных функций.
+/** Implements `functions`system table, which allows you to get a list
+  * all normal and aggregate functions.
   */
 class StorageSystemFunctions : private ext::shared_ptr_helper<StorageSystemFunctions>, public IStorage
 {

@@ -36,7 +36,7 @@ struct BlockWithDateInterval
 
 using BlocksWithDateIntervals = std::list<BlockWithDateInterval>;
 
-/** Записывает новые куски с данными в merge-дерево.
+ /** Writes new parts of data to the merge tree.
   */
 class MergeTreeDataWriter
 {

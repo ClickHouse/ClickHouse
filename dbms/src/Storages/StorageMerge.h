@@ -9,8 +9,8 @@
 namespace DB
 {
 
-/** Таблица, представляющая собой объединение произвольного количества других таблиц.
-  * У всех таблиц должна быть одинаковая структура.
+/** A table that represents the union of an arbitrary number of other tables.
+  * All tables must have the same structure.
   */
 class StorageMerge : private ext::shared_ptr_helper<StorageMerge>, public IStorage
 {
@@ -18,26 +18,26 @@ friend class ext::shared_ptr_helper<StorageMerge>;
 
 public:
     static StoragePtr create(
-        const std::string & name_,            /// Имя таблицы.
-        NamesAndTypesListPtr columns_,        /// Список столбцов.
-        const String & source_database_,    /// В какой БД искать таблицы-источники.
-        const String & table_name_regexp_,    /// Регексп имён таблиц-источников.
-        const Context & context_);            /// Известные таблицы.
+        const std::string & name_,            /// The name of the table.
+        NamesAndTypesListPtr columns_,        /// List of columns.
+        const String & source_database_,      /// In which database to look for source tables.
+        const String & table_name_regexp_,    /// Regex names of source tables.
+        const Context & context_);            /// Known tables.
 
     static StoragePtr create(
-        const std::string & name_,            /// Имя таблицы.
-        NamesAndTypesListPtr columns_,        /// Список столбцов.
+        const std::string & name_,            /// The name of the table.
+        NamesAndTypesListPtr columns_,        /// List of columns.
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
-        const String & source_database_,    /// В какой БД искать таблицы-источники.
-        const String & table_name_regexp_,    /// Регексп имён таблиц-источников.
-        const Context & context_);            /// Известные таблицы.
+        const String & source_database_,    /// In which database to look for source tables.
+        const String & table_name_regexp_,    /// Regex names of source tables.
+        const Context & context_);            /// Known tables.
 
     std::string getName() const override { return "Merge"; }
     std::string getTableName() const override { return name; }
 
-    /// Проверка откладывается до метода read. Там проверяется поддержка у использующихся таблиц.
+    /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override { return true; }
     bool supportsFinal() const override { return true; }
@@ -59,8 +59,8 @@ public:
     void drop() override {}
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
 
-    /// в подтаблицах добавлять и удалять столбы нужно вручную
-    /// структура подтаблиц не проверяется
+    /// you need to add and remove columns in the sub-tables manually
+    /// the structure of sub-tables is not checked
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
 private:

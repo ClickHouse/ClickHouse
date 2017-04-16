@@ -8,7 +8,7 @@ namespace DB
 {
 
 
-/** Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).
+/** A pair of marks that defines the range of rows in a part. Specifically, the range has the form [begin * index_granularity, end * index_granularity).
   */
 struct MarkRange
 {

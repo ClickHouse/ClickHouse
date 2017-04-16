@@ -10,7 +10,7 @@ namespace DB
 class Context;
 
 
-/** Реализует системную таблицу replication_queue, которая позволяет посмотреть очереди репликации для реплицируемых таблиц.
+/** Implements the `replication_queue` system table, which allows you to view the replication queues for the replicated tables.
   */
 class StorageSystemReplicationQueue : private ext::shared_ptr_helper<StorageSystemReplicationQueue>, public IStorage
 {

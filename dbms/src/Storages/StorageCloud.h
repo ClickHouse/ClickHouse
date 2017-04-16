@@ -13,8 +13,8 @@ class DatabaseCloud;
 class Context;
 
 
-/** Облачная таблица. Может находиться только в облачной базе данных.
-  * При записи в таблицу, данные записываются в локальные таблицы на нескольких серверах облака.
+/** Cloud table. It can only be in the cloud database.
+  * When writing to a table, data is written to local tables on multiple cloud servers.
   */
 class StorageCloud : private ext::shared_ptr_helper<StorageCloud>, public IStorage
 {
@@ -32,7 +32,7 @@ public:
     std::string getName() const override { return "Cloud"; }
     std::string getTableName() const override { return name; }
 
-    /// Проверка откладывается до метода read. Там проверяется поддержка у использующихся таблиц.
+    /// The check is postponed to the `read` method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override { return true; }
     bool supportsFinal()     const override { return true; }
@@ -50,7 +50,7 @@ public:
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1) override;
 
-    void drop() override {}        /// Вся нужная работа в DatabaseCloud::removeTable
+    void drop() override {}        /// All the necessary work in `DatabaseCloud::removeTable`
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override
     {

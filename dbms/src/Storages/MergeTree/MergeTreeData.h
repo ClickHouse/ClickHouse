@@ -400,7 +400,6 @@ public:
     SortDescription getSortDescription() const { return sort_descr; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    /// Проверить, что кусок не сломан и посчитать для него чексуммы, если их нет.
     MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
 
     /** Create local backup (snapshot) for parts with specified prefix.

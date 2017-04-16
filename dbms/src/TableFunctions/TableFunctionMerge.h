@@ -7,9 +7,9 @@ namespace DB
 {
 
 /*
- * merge(db_name, tables_regexp)- создаёт временный StorageMerge.
- * Cтруктура таблицы берётся из первой попавшейся таблицы, подходящей под регексп.
- * Если такой таблицы нет - кидается исключение.
+ * merge (db_name, tables_regexp) - creates a temporary StorageMerge.
+ * The structure of the table is taken from the first table that came up, suitable for regexp.
+ * If there is no such table, an exception is thrown.
  */
 class TableFunctionMerge: public ITableFunction
 {

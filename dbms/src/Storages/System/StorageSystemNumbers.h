@@ -10,9 +10,9 @@ namespace DB
 class Context;
 
 
-/** Реализует хранилище для системной таблицы Numbers.
-  * Таблица содержит единственный столбец number UInt64.
-  * Из этой таблицы можно прочитать все натуральные числа, начиная с 0 (до 2^64 - 1, а потом заново).
+/** Implements a repository for the system table Numbers.
+  * The table contains the only column number UInt64.
+  * From this table, you can read all natural numbers, starting from 0 (to 2^64 - 1, and then again).
   */
 class StorageSystemNumbers : private ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
 {

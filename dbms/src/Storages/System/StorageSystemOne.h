@@ -10,10 +10,10 @@ namespace DB
 class Context;
 
 
-/** Реализует хранилище для системной таблицы One.
-  * Таблица содержит единственный столбец dummy UInt8 и единственную строку со значением 0.
-  * Используется, если в запросе не указана таблица.
-  * Аналог таблицы DUAL в Oracle и MySQL.
+/** Implements storage for the system table One.
+  * The table contains a single column of dummy UInt8 and a single row with a value of 0.
+  * Used when the table is not specified in the query.
+  * Analog of the DUAL table in Oracle and MySQL.
   */
 class StorageSystemOne : private ext::shared_ptr_helper<StorageSystemOne>, public IStorage
 {

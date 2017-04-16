@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** Позволяет получить табличную функцию по ее имени.
+/** Lets you get a table function by its name.
   */
 class TableFunctionFactory
 {

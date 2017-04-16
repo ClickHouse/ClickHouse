@@ -11,8 +11,8 @@
 namespace DB
 {
 
-/** При записи, ничего не делает.
-  * При чтении, возвращает пустоту.
+/** When writing, does nothing.
+  * When reading, returns nothing.
   */
 class StorageNull : private ext::shared_ptr_helper<StorageNull>, public IStorage
 {

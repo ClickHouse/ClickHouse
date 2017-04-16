@@ -13,9 +13,9 @@
 namespace DB
 {
 
-/** Для реализации функциональности "кворумная запись".
-  * Информация о том, на каких репликах появился вставленный кусок данных,
-  *  и на скольких репликах он должен быть.
+/** To implement the functionality of the "quorum write".
+  * Information about which replicas the inserted part of data appeared on,
+  *  and on how many replicas it should be.
   */
 struct ReplicatedMergeTreeQuorumEntry
 {
