@@ -126,8 +126,8 @@ class IAggregateFunctionHelper : public IAggregateFunction
 protected:
     using Data = T;
 
-    static Data & data(AggregateDataPtr place)                 { return *reinterpret_cast<Data*>(place); }
-    static const Data & data(ConstAggregateDataPtr place)     { return *reinterpret_cast<const Data*>(place); }
+    static Data & data(AggregateDataPtr place)            { return *reinterpret_cast<Data*>(place); }
+    static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
 public:
     void create(AggregateDataPtr place) const override
