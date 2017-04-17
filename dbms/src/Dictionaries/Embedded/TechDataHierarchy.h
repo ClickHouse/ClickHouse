@@ -1,12 +1,12 @@
 #pragma once
 
 #include <common/singleton.h>
-#include <common/Common.h>
+#include <common/Types.h>
 
 
-/** @brief Класс, позволяющий узнавать, принадлежит ли поисковая система или операционная система
-  * другой поисковой или операционной системе, соответственно.
-  * Информацию об иерархии регионов загружает из БД.
+/** @brief Class that lets you know if a search engine or operating system belongs
+  * another search engine or operating system, respectively.
+  * Information about the hierarchy of regions is downloaded from the database.
   */
 class TechDataHierarchy
 {
@@ -21,7 +21,7 @@ public:
     static bool isConfigured();
 
 
-    /// Отношение "принадлежит".
+    /// The "belongs" relation.
     bool isOSIn(UInt8 lhs, UInt8 rhs) const
     {
         while (lhs != rhs && os_parent[lhs])
@@ -50,7 +50,7 @@ public:
     }
 
 
-    /// К самому верхнему предку.
+    /// To the topmost ancestor.
     UInt8 OSToMostAncestor(UInt8 x) const
     {
         while (os_parent[x])

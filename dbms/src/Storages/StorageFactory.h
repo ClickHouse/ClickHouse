@@ -10,7 +10,7 @@ namespace DB
 class Context;
 
 
-/** Позволяет создать таблицу по имени движка.
+/** Allows you to create a table by the name of the engine.
   */
 class StorageFactory : public Singleton<StorageFactory>
 {

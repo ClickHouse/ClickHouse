@@ -6,8 +6,8 @@
 namespace DB
 {
 
-/** Реализует часть интерфейса IDataType, общую для всяких чисел
-  * - ввод и вывод в текстовом виде.
+/** Implements part of the IDataType interface, common to all numbers
+  * - input and output in text form.
   */
 template <typename T>
 class DataTypeNumberBase : public IDataType

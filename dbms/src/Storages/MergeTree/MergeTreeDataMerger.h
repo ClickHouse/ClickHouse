@@ -13,7 +13,7 @@ class MergeProgressCallback;
 struct ReshardingJob;
 
 
-/** Умеет выбирать куски для слияния и сливать их.
+/** Can select the parts to merge and merge them.
   */
 class MergeTreeDataMerger
 {
@@ -36,12 +36,12 @@ public:
       */
     size_t getMaxPartsSizeForMerge(size_t pool_size, size_t pool_used);
 
-    /** Выбирает, какие куски слить. Использует кучу эвристик.
+    /** Selects which parts to merge. Uses a lot of heuristics.
       *
-      * can_merge - функция, определяющая, можно ли объединить пару соседних кусков.
-      *  Эта функция должна координировать слияния со вставками и другими слияниями, обеспечивая, что:
-      *  - Куски, между которыми еще может появиться новый кусок, нельзя сливать. См. METR-7001.
-      *  - Кусок, который уже сливается с кем-то в одном месте, нельзя начать сливать в кем-то другим в другом месте.
+      * can_merge - a function that determines if it is possible to merge a pair of adjacent parts.
+      *  This function must coordinate merge with inserts and other merges, ensuring that
+      *  - Parts between which another part can still appear can not be merged. Refer to METR-7001.
+      *  - A part that already merges with something in one place, you can not start to merge into something else in another place.
       */
     bool selectPartsToMerge(
         MergeTreeData::DataPartsVector & what,
@@ -50,8 +50,8 @@ public:
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge);
 
-    /** Выбрать для слияния все куски в заданной партиции, если возможно.
-      * final - выбирать для слияния даже единственный кусок - то есть, позволять мерджить один кусок "сам с собой".
+    /** Select all the parts in the specified partition for merge, if possible.
+      * final - choose to merge even a single part - that is, allow to measure one part "with itself".
       */
     bool selectAllPartsToMergeWithinPartition(
         MergeTreeData::DataPartsVector & what,
@@ -61,15 +61,15 @@ public:
         DayNum_t partition,
         bool final);
 
-    /** Сливает куски.
-      * Если reservation != nullptr, то и дело уменьшает размер зарезервированного места
-      *  приблизительно пропорционально количеству уже выписанных данных.
+    /** Merge the parts.
+      * If `reservation != nullptr`, now and then reduces the size of the reserved space
+      *  is approximately proportional to the amount of data already written.
       *
-      * Создаёт и возвращает временный кусок.
-      * Чтобы закончить мердж, вызовите функцию renameTemporaryMergedPart.
+      * Creates and returns a temporary part.
+      * To end the merge, call the function renameTemporaryMergedPart.
       *
-      * time_of_merge - время, когда мердж был назначен.
-      * Важно при использовании ReplicatedGraphiteMergeTree для обеспечения одинакового мерджа на репликах.
+      * time_of_merge - the time when the merge was assigned.
+      * Important when using ReplicatedGraphiteMergeTree to provide the same merge on replicas.
       */
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
         MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeListEntry & merge_entry,
@@ -81,17 +81,17 @@ public:
         const String & merged_name,
         MergeTreeData::Transaction * out_transaction = nullptr);
 
-    /** Перешардирует заданную партицию.
+    /** Reshards the specified partition.
       */
     MergeTreeData::PerShardDataParts reshardPartition(
         const ReshardingJob & job,
         DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
 
-    /// Примерное количество места на диске, нужное для мерджа. С запасом.
+    /// The approximate amount of disk space needed for merge. With a surplus.
     static size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);
 
 private:
-    /** Выбрать все куски принадлежащие одной партиции.
+    /** Select all parts belonging to the same partition.
       */
     MergeTreeData::DataPartsVector selectAllPartsFromPartition(DayNum_t partition);
 
@@ -145,7 +145,7 @@ private:
 
     Logger * log;
 
-    /// Когда в последний раз писали в лог, что место на диске кончилось (чтобы не писать об этом слишком часто).
+    /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;
 
     CancellationHook cancellation_hook;

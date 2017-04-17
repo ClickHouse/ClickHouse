@@ -2,7 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Core/Types.h>
-#include <mysqlxx/Manip.h>
+#include <iomanip>
 
 
 namespace DB
@@ -24,7 +24,7 @@ protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        settings.ostr << settings.nl_or_ws << indent_str << mysqlxx::quote << path << " WEIGHT " << weight;
+        settings.ostr << settings.nl_or_ws << indent_str << std::quoted(path, '\'') << " WEIGHT " << weight;
     }
 };
 

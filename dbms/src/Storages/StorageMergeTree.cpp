@@ -12,6 +12,7 @@
 #include <Interpreters/PartLog.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
@@ -401,6 +402,51 @@ bool StorageMergeTree::mergeTask()
     }
 }
 
+void StorageMergeTree::dropColumnFromPartition(ASTPtr query, const Field & partition, const Field & column_name, const Settings &)
+{
+    /// Asks to complete merges and does not allow them to start.
+    /// This protects against "revival" of data for a removed partition after completion of merge.
+    auto merge_blocker = merger.cancel();
+    /// Waits for completion of merge and does not start new ones.
+    auto lock = lockForAlter();
+
+    DayNum_t month = MergeTreeData::getMonthDayNum(partition);
+    MergeTreeData::DataParts parts = data.getDataParts();
+
+    std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
+
+    AlterCommand alter_command;
+    alter_command.type = AlterCommand::DROP_COLUMN;
+    alter_command.column_name = get<String>(column_name);
+
+    auto new_columns = data.getColumnsListNonMaterialized();
+    auto new_materialized_columns = data.materialized_columns;
+    auto new_alias_columns = data.alias_columns;
+    auto new_column_defaults = data.column_defaults;
+
+    alter_command.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
+
+    auto columns_for_parts = new_columns;
+    columns_for_parts.insert(std::end(columns_for_parts),
+        std::begin(new_materialized_columns), std::end(new_materialized_columns));
+
+    for (const auto & part : parts)
+    {
+        if (part->month != month)
+            continue;
+
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_expr_ast, false))
+            transactions.push_back(std::move(transaction));
+
+        LOG_DEBUG(log, "Removing column " << get<String>(column_name) << " from part " << part->name);
+    }
+
+    if (transactions.empty())
+        return;
+
+    for (auto & transaction : transactions)
+        transaction->commit();
+}
 
 void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings)
 {
@@ -487,7 +533,7 @@ void StorageMergeTree::attachPartition(ASTPtr query, const Field & field, bool u
         LOG_INFO(log, "Finished attaching part");
     }
 
-    /// New parts with other data may appear in place of deleted pieces.
+    /// New parts with other data may appear in place of deleted parts.
     context.resetCaches();
 }
 

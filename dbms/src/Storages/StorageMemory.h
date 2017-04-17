@@ -15,10 +15,10 @@ namespace DB
 class StorageMemory;
 
 
-/** Реализует хранилище в оперативке.
-  * Подходит для временных данных.
-  * В нём не поддерживаются ключи.
-  * Данные хранятся в виде набора блоков и никуда дополнительно не сохраняются.
+/** Implements storage in the RAM.
+  * Suitable for temporary data.
+  * It does not support keys.
+  * Data is stored as a set of blocks and is not stored anywhere else.
   */
 class StorageMemory : private ext::shared_ptr_helper<StorageMemory>, public IStorage
 {
@@ -63,7 +63,7 @@ private:
     String name;
     NamesAndTypesListPtr columns;
 
-    /// Сами данные. list - чтобы при вставке в конец, существующие итераторы не инвалидировались.
+    /// The data itself. `list` - so that when inserted to the end, the existing iterators are not invalidated.
     BlocksList data;
 
     std::mutex mutex;

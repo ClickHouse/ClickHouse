@@ -9,8 +9,8 @@ namespace DB
 class Cluster;
 class Context;
 
-/// Узнать имена и типы столбцов таблицы на первом попавшемся сервере кластера.
-/// Используется для реализации табличной функции remote и других.
+/// Find the names and types of the table columns on any server in the cluster.
+/// Used to implement the `remote` table function and others.
 NamesAndTypesList getStructureOfRemoteTable(
     const Cluster & cluster,
     const std::string & database,

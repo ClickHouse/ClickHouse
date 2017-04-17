@@ -1,5 +1,7 @@
+#if USE_MYSQL
 #include <mysql/mysql.h>
 #include <mysql/mysqld_error.h>
+#endif
 #include <mysqlxx/Pool.h>
 
 #include <Poco/Util/Application.h>
@@ -15,7 +17,9 @@ void Pool::Entry::incrementRefCount()
     if (!data)
         return;
     ++data->ref_count;
+#if USE_MYSQL
     mysql_thread_init();
+#endif
 }
 
 void Pool::Entry::decrementRefCount()
@@ -23,7 +27,9 @@ void Pool::Entry::decrementRefCount()
     if (!data)
         return;
     --data->ref_count;
+#if USE_MYSQL
     mysql_thread_end();
+#endif
 }
 
 
@@ -180,6 +186,7 @@ void Pool::initialize()
 
 Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
 {
+#if USE_MYSQL
     Poco::Util::Application & app = Poco::Util::Application::instance();
 
     std::unique_ptr<Connection> conn(new Connection);
@@ -218,6 +225,9 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
     auto * connection = conn.release();
     connections.push_back(connection);
     return connection;
+#else
+    throw std::logic_error{"Mysql support not compiled"};
+#endif
 }
 
 }

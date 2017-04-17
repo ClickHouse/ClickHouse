@@ -11,9 +11,9 @@ class MergeTreePartChecker
 public:
     struct Settings
     {
-        bool verbose = false; /// Пишет в stderr прогресс и ошибки, и не останавливается при первой ошибке.
-        bool require_checksums = false; /// Требует, чтобы был columns.txt.
-        bool require_column_files = false; /// Требует, чтобы для всех столбцов из columns.txt были файлы.
+        bool verbose = false; /// Writes progress and errors to stderr, and does not stop at the first error.
+        bool require_checksums = false; /// Requires column.txt to be.
+        bool require_column_files = false; /// Requires that all columns from columns.txt have files.
         size_t index_granularity = 8192;
 
         Settings & setVerbose(bool verbose_) { verbose = verbose_; return *this; }
@@ -22,16 +22,16 @@ public:
         Settings & setIndexGranularity(size_t index_granularity_) { index_granularity = index_granularity_; return *this; }
     };
 
-    /** Полностью проверяет данные кусочка:
-      *  - Вычисляет контрольные суммы и сравнивает с checksums.txt.
-      *  - Для массивов и строк проверяет соответствие размеров и количества данных.
-      *  - Проверяет правильность засечек.
-      * Бросает исключение, если кусок испорчен или если проверить не получилось (TODO: можно попробовать разделить эти случаи).
+    /** Completely checks the part data
+      *  - Calculates checksums and compares them with checksums.txt.
+      * - For arrays and strings, checks the correspondence of the size and amount of data.
+      * - Checks the correctness of marks.
+      * Throws an exception if the piece is corrupted or if the check fails (TODO: you can try to separate these cases).
       */
     static void checkDataPart(
         String path,
         const Settings & settings,
-        const DataTypes & primary_key_data_types,    /// Проверять первичный ключ. Если не надо - передайте пустой массив.
+        const DataTypes & primary_key_data_types,    /// Check the primary key. If it is not necessary, pass an empty array.
         MergeTreeData::DataPart::Checksums * out_checksums = nullptr,
         std::atomic<bool> * is_cancelled = nullptr);
 };

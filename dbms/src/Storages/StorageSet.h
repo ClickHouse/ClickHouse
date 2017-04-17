@@ -12,7 +12,7 @@ class Set;
 using SetPtr = std::shared_ptr<Set>;
 
 
-/** Общая часть StorageSet и StorageJoin.
+/** Common part of StorageSet and StorageJoin.
   */
 class StorageSetOrJoinBase : private ext::shared_ptr_helper<StorageSetOrJoinBase>, public IStorage
 {
@@ -40,24 +40,24 @@ protected:
     String name;
     NamesAndTypesListPtr columns;
 
-    UInt64 increment = 0;    /// Для имён файлов бэкапа.
+    UInt64 increment = 0;    /// For the backup file names.
 
-    /// Восстановление из бэкапа.
+    /// Restore from backup.
     void restore();
 
 private:
     void restoreFromFile(const String & file_path);
 
-    /// Вставить блок в состояние.
+    /// Insert the block into the state.
     virtual void insertBlock(const Block & block) = 0;
     virtual size_t getSize() const = 0;
 };
 
 
-/** Позволяет сохранить множество для последующего использования в правой части оператора IN.
-  * При вставке в таблицу, данные будут вставлены в множество,
-  *  а также записаны в файл-бэкап, для восстановления после перезапуска.
-  * Чтение из таблицы напрямую невозможно - возможно лишь указание в правой части оператора IN.
+/** Lets you save the set for later use on the right side of the IN statement.
+  * When inserted into a table, the data will be inserted into the set,
+  *  and also written to a file-backup, for recovery after a restart.
+  * Reading from the table is not possible directly - it is possible to specify only the right part of the IN statement.
   */
 class StorageSet : private ext::shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
 {
@@ -77,7 +77,7 @@ public:
 
     String getName() const override { return "Set"; }
 
-    /// Получить доступ к внутренностям.
+    /// Access the insides.
     SetPtr & getSet() { return set; }
 
 private:

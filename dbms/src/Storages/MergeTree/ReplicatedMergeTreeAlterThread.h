@@ -12,10 +12,10 @@ namespace DB
 class StorageReplicatedMergeTree;
 
 
-/** Следит за изменением структуры таблицы в ZooKeeper и выполняет необходимые преобразования.
+/** Keeps track of changing the table structure in ZooKeeper and performs the necessary conversions.
   *
-  * NOTE Это не имеет отношения к манипуляциям с партициями,
-  *  которые обрабатываются через очередь репликации.
+  * NOTE This has nothing to do with manipulating partitions,
+  *  which are processed through the replication queue.
   */
 class ReplicatedMergeTreeAlterThread
 {

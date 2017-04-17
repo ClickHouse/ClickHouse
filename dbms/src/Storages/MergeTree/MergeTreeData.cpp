@@ -1016,9 +1016,9 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     /// Apply the expression and write the result to temporary files.
     if (expression)
     {
-        MarkRanges ranges(1, MarkRange(0, part->size));
-        BlockInputStreamPtr part_in = std::make_shared<MergeTreeBlockInputStream>(full_path + part->name + '/',
-            DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges,
+        MarkRanges ranges{MarkRange(0, part->size)};
+        BlockInputStreamPtr part_in = std::make_shared<MergeTreeBlockInputStream>(
+            *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, expression->getRequiredColumns(), ranges,
             false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         ExpressionBlockInputStream in(part_in, expression);

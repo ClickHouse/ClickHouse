@@ -18,23 +18,23 @@ namespace DB
 class Context;
 
 
-/** При вставке, буферизует данные в оперативке, пока не превышены некоторые пороги.
-  * Когда пороги превышены - сбрасывает данные в другую таблицу.
-  * При чтении, читает как из своих буферов, так и из подчинённой таблицы.
+/** During insertion, buffers the data in the RAM until certain thresholds are exceeded.
+  * When thresholds are exceeded, flushes the data to another table.
+  * When reading, it reads both from its buffers and from the subordinate table.
   *
-  * Буфер представляет собой набор из num_shards блоков.
-  * При записи, выбирается номер блока по остатку от деления ThreadNumber на num_shards (или один из других),
-  *  и в соответствующий блок добавляются строчки.
-  * При использовании блока, он блокируется некоторым mutex-ом. Если при записи, соответствующий блок уже занят
-  *  - пробуем заблокировать следующий по кругу блок, и так не более num_shards раз (далее блокируемся).
-  * Пороги проверяются при вставке, а также, периодически, в фоновом потоке (чтобы реализовать пороги по времени).
-  * Пороги действуют независимо для каждого shard-а. Каждый shard может быть сброшен независимо от других.
-  * Если в таблицу вставляется блок, который сам по себе превышает max-пороги, то он записывается сразу в подчинённую таблицу без буферизации.
-  * Пороги могут быть превышены. Например, если max_rows = 1 000 000, в буфере уже было 500 000 строк,
-  *  и добавляется кусок из 800 000 строк, то в буфере окажется 1 300 000 строк, и затем такой блок будет записан в подчинённую таблицу
+  * The buffer is a set of num_shards blocks.
+  * When writing, select the block number by the remainder of the `ThreadNumber` division by `num_shards` (or one of the others),
+  *  and add rows to the corresponding block.
+  * When using a block, it is blocked by some mutex. If during write the corresponding block is already occupied
+  *  - try to block the next block clockwise, and so no more than `num_shards` times (further blocked).
+  * Thresholds are checked on insertion, and, periodically, in the background thread (to implement time thresholds).
+  * Thresholds act independently for each shard. Each shard can be flushed independently of the others.
+  * If a block is inserted into the table, which itself exceeds the max-thresholds, it is written directly to the subordinate table without buffering.
+  * Thresholds can be exceeded. For example, if max_rows = 1 000 000, the buffer already had 500 000 rows,
+  *  and a part of 800,000 lines is added, then there will be 1 300 000 rows in the buffer, and then such a block will be written to the subordinate table
   *
-  * При уничтожении таблицы типа Buffer и при завершении работы, все данные сбрасываются.
-  * Данные в буфере не реплицируются, не логгируются на диск, не индексируются. При грубом перезапуске сервера, данные пропадают.
+  * When you destroy a Buffer type table and when you quit, all data is discarded.
+  * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
 class StorageBuffer : private ext::shared_ptr_helper<StorageBuffer>, public IStorage
 {
@@ -43,16 +43,16 @@ friend class BufferBlockInputStream;
 friend class BufferBlockOutputStream;
 
 public:
-    /// Пороги.
+    /// Thresholds.
     struct Thresholds
     {
-        time_t time;    /// Количество секунд от момента вставки первой строчки в блок.
-        size_t rows;    /// Количество строк в блоке.
-        size_t bytes;    /// Количество (несжатых) байт в блоке.
+        time_t time;    /// The number of seconds from the insertion of the first row into the block.
+        size_t rows;    /// The number of rows in the block.
+        size_t bytes;   /// The number of (uncompressed) bytes in the block.
     };
 
-    /** num_shards - уровень внутреннего параллелизма (количество независимых буферов)
-      * Буфер сбрасывается, если превышены все минимальные пороги или хотя бы один из максимальных.
+    /** num_shards - the level of internal parallelism (the number of independent buffers)
+      * The buffer is reset if all minimum thresholds or at least one of the maximum thresholds are exceeded.
       */
     static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_,
         const NamesAndTypesList & materialized_columns_,
@@ -78,7 +78,7 @@ public:
 
     BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 
-    /// Сбрасывает все буферы в подчинённую таблицу.
+    /// Resets all buffers to the subordinate table.
     void shutdown() override;
     bool optimize(const String & partition, bool final, const Settings & settings) override;
 
@@ -90,7 +90,7 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool supportsParallelReplicas() const override { return true; }
 
-    /// Структура подчинённой таблицы не проверяется и не изменяется.
+    /// The structure of the subordinate table is not checked and does not change.
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
 private:
@@ -106,7 +106,7 @@ private:
         std::mutex mutex;
     };
 
-    /// Имеется num_shards независимых буферов.
+    /// There are `num_shards` of independent buffers.
     const size_t num_shards;
     std::vector<Buffer> buffers;
 
@@ -115,12 +115,12 @@ private:
 
     const String destination_database;
     const String destination_table;
-    bool no_destination;    /// Если задано - не записывать данные из буфера, а просто опустошать буфер.
+    bool no_destination;    /// If set, do not write data from the buffer, but simply empty the buffer.
 
     Poco::Logger * log;
 
     Poco::Event shutdown_event;
-    /// Выполняет сброс данных по таймауту.
+    /// Resets data by timeout.
     std::thread flush_thread;
 
     StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
@@ -132,12 +132,12 @@ private:
         const String & destination_database_, const String & destination_table_);
 
     void flushAllBuffers(bool check_thresholds = true);
-    /// Сбросить буфер. Если выставлено check_thresholds - сбрасывает только если превышены пороги.
+    /// Reset the buffer. If check_thresholds is set - resets only if thresholds are exceeded.
     void flushBuffer(Buffer & buffer, bool check_thresholds);
     bool checkThresholds(const Buffer & buffer, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
     bool checkThresholdsImpl(size_t rows, size_t bytes, time_t time_passed) const;
 
-    /// Аргумент table передаётся, так как иногда вычисляется заранее. Он должен соответствовать destination-у.
+    /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
     void flushThread();

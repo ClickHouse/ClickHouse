@@ -5,22 +5,22 @@
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
 
-/// Общая функциональность для нескольких разных движков баз данных.
+/// General functionality for several different database engines.
 
 namespace DB
 {
 
 
-/** Получить строку с определением таблицы на основе запроса CREATE.
-  * Она представляет собой запрос ATTACH, который можно выполнить для создания таблицы, находясь в нужной БД.
-  * См. реализацию.
+/** Get the row with the table definition based on the CREATE query.
+  * It is an ATTACH query that you can execute to create a table from the correspondent database.
+  * See the implementation.
   */
 String getTableDefinitionFromCreateQuery(const ASTPtr & query);
 
 
-/** Создать таблицу по её определению, без использования InterpreterCreateQuery.
-  *  (InterpreterCreateQuery обладает более сложной функциональностью, и его нельзя использовать, если БД ещё не создана)
-  * Возвращает имя таблицы и саму таблицу.
+/** Create a table by its definition, without using InterpreterCreateQuery.
+  *  (InterpreterCreateQuery has more complex functionality, and it can not be used if the database has not been created yet)
+  * Returns the table name and the table itself.
   */
 std::pair<String, StoragePtr> createTableFromDefinition(
     const String & definition,

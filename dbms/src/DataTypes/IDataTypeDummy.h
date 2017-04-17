@@ -6,10 +6,10 @@
 namespace DB
 {
 
-/** Базовые класс для типов данных, которые не поддерживают сериализацию и десериализацию,
-  *  а возникают лишь в качестве промежуточного результата вычислений.
+/** The base class for data types that do not support serialization and deserialization,
+  *  but arise only as an intermediate result of the calculations.
   *
-  * То есть, этот класс используется всего лишь чтобы отличить соответствующий тип данных от других.
+  * That is, this class is used just to distinguish the corresponding data type from the others.
   */
 class IDataTypeDummy : public IDataType
 {

@@ -12,7 +12,7 @@ class Context;
 namespace RemoteDiskSpaceMonitor
 {
 
-/** Сервис для получения информации о свободном месте на диске.
+/** Service to get information about free disk space.
   */
 class Service final : public InterserverIOEndpoint
 {
@@ -27,7 +27,7 @@ private:
     const Context & context;
 };
 
-/** Клиент для получения информации о свободном месте на удалённом диске.
+/** Client to get information about free space on a remote disk.
   */
 class Client final
 {

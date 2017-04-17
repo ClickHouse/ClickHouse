@@ -248,7 +248,7 @@ public:
         return summary.back().mean;
     }
 
-    /** Get multiple quantiles (`size` pieces).
+    /** Get multiple quantiles (`size` parts).
       * levels - an array of levels of the desired quantiles. They are in a random order.
       * levels_permutation - array-permutation levels. The i-th position will be the index of the i-th ascending level in the `levels` array.
       * result - the array where the results are added, in order of `levels`,

@@ -1073,10 +1073,10 @@ private:
         std::cerr << DISABLE_LINE_WRAPPING << message.rdbuf();
 
         /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
-        size_t total_rows_corrected = std::max(progress.rows, progress.total_rows);
-
-        if (total_rows_corrected > 0)
+        if (progress.total_rows > 0)
         {
+            size_t total_rows_corrected = std::max(progress.rows, progress.total_rows);
+
             /// To avoid flicker, display progress bar only if .5 seconds have passed since query execution start
             ///  and the query is less than halfway done.
 

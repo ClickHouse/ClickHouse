@@ -17,7 +17,7 @@ class IFunction;
 using FunctionPtr = std::shared_ptr<IFunction>;
 
 
-/** Диапазон с открытыми или закрытыми концами; возможно, неограниченный.
+/** Range with open or closed ends; Perhaps unlimited.
   */
 struct Range
 {
@@ -26,21 +26,21 @@ private:
     static bool less(const Field & lhs, const Field & rhs);
 
 public:
-    Field left;                /// левая граница, если есть
-    Field right;            /// правая граница, если есть
-    bool left_bounded = false;        /// ограничен ли слева
-    bool right_bounded = false;     /// ограничен ли справа
-    bool left_included = false;     /// включает левую границу, если есть
-    bool right_included = false;    /// включает правую границу, если есть
+    Field left;                       /// the left border, if any
+    Field right;                      /// the right border, if any
+    bool left_bounded = false;        /// limited to the left
+    bool right_bounded = false;       /// limited to the right
+    bool left_included = false;       /// includes the left border, if any
+    bool right_included = false;      /// includes the right border, if any
 
-    /// Всё множество.
+    /// The whole set.
     Range() {}
 
-    /// Одна точка.
+    /// One point.
     Range(const Field & point)
         : left(point), right(point), left_bounded(true), right_bounded(true), left_included(true), right_included(true) {}
 
-    /// Ограниченный с двух сторон диапазон.
+    /// A bounded two-sided range.
     Range(const Field & left_, bool left_included_, const Field & right_, bool right_included_)
         : left(left_), right(right_),
         left_bounded(true), right_bounded(true),
@@ -69,9 +69,9 @@ public:
         return r;
     }
 
-    /** Оптимизировать диапазон. Если у него есть открытая граница и тип Field "неплотный"
-      * - то преобразовать её в закрытую, сузив на единицу.
-      * То есть, например, превратить (0,2) в [1].
+    /** Optimize the range. If it has an open boundary and the Field type is "loose"
+      * - then convert it to closed, narrowing by one.
+      * That is, for example, turn (0,2) into [1].
       */
     void shrinkToIncludedIfPossible()
     {
@@ -110,13 +110,13 @@ public:
                 || ((!left_included || !right_included) && !less(left, right)));
     }
 
-    /// x входит в range
+    /// x contained in the range
     bool contains(const Field & x) const
     {
         return !leftThan(x) && !rightThan(x);
     }
 
-    /// x находится левее
+    /// x is to the left
     bool rightThan(const Field & x) const
     {
         return (left_bounded
@@ -124,7 +124,7 @@ public:
             : false);
     }
 
-    /// x находится правее
+    /// x is to the right
     bool leftThan(const Field & x) const
     {
         return (right_bounded
@@ -134,7 +134,7 @@ public:
 
     bool intersectsRange(const Range & r) const
     {
-        /// r левее меня.
+        /// r to the left of me.
         if (r.right_bounded
             && left_bounded
             && (less(r.right, left)
@@ -142,11 +142,11 @@ public:
                     && equals(r.right, left))))
             return false;
 
-        /// r правее меня.
+        /// r to the right of me.
         if (r.left_bounded
             && right_bounded
             && (less(right, r.left)                            /// ...} {...
-                || ((!right_included || !r.left_included)    /// ...)[...  или ...](...
+                || ((!right_included || !r.left_included)    /// ...) [... or ...] (...
                     && equals(r.left, right))))
             return false;
 
@@ -155,7 +155,7 @@ public:
 
     bool containsRange(const Range & r) const
     {
-        /// r начинается левее меня.
+        /// r starts to the left of me.
         if (left_bounded
             && (!r.left_bounded
                 || less(r.left, left)
@@ -164,7 +164,7 @@ public:
                     && equals(r.left, left))))
             return false;
 
-        /// r заканчивается правее меня.
+        /// r ends right of me.
         if (right_bounded
             && (!r.right_bounded
                 || less(right, r.right)
@@ -190,59 +190,59 @@ public:
 class ASTSet;
 
 
-/** Условие на индекс.
+/** Condition on the index.
   *
-  * Состоит из условий на принадлежность ключа всевозможным диапазонам или множествам,
-  *  а также логических связок AND/OR/NOT над этими условиями.
+  * Consists of the conditions for the key belonging to all possible ranges or sets,
+  *  as well as logical links AND/OR/NOT above these conditions.
   *
-  * Составляет reverse polish notation от этих условий
-  *  и умеет вычислять (интерпретировать) её выполнимость над диапазонами ключа.
+  * Constructs a reverse polish notation from these conditions
+  *  and can calculate (interpret) its feasibility over key ranges.
   */
 class PKCondition
 {
 public:
-    /// Не учитывает секцию SAMPLE. all_columns - набор всех столбцов таблицы.
+    /// Does not include the SAMPLE section. all_columns - the set of all columns of the table.
     PKCondition(ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr,
         const Block & pk_sample_block);
 
-    /// Выполнимо ли условие в диапазоне ключей.
-    /// left_pk и right_pk должны содержать все поля из sort_descr в соответствующем порядке.
-    /// data_types - типы столбцов первичного ключа.
+    /// Whether the condition is feasible in the key range.
+    /// left_pk and right_pk must contain all fields in the sort_descr in the appropriate order.
+    /// data_types - the types of the primary key columns.
     bool mayBeTrueInRange(size_t used_key_size, const Field * left_pk, const Field * right_pk, const DataTypes & data_types) const;
 
-    /// Выполнимо ли условие в полубесконечном (не ограниченном справа) диапазоне ключей.
-    /// left_pk должен содержать все поля из sort_descr в соответствующем порядке.
+    /// Is the condition valid in a semi-infinite (not limited to the right) key range.
+    /// left_pk must contain all the fields in the sort_descr in the appropriate order.
     bool mayBeTrueAfter(size_t used_key_size, const Field * left_pk, const DataTypes & data_types) const;
 
-    /// Проверяет, что индекс не может быть использован.
+    /// Checks that the index can not be used.
     bool alwaysUnknownOrTrue() const;
 
-    /// Получить максимальный номер используемого в условии элемента первичного ключа.
+    /// Get the maximum number of the primary key element used in the condition.
     size_t getMaxKeyColumn() const;
 
-    /// Наложить дополнительное условие: значение в столбце column должно быть в диапазоне range.
-    /// Возвращает, есть ли такой столбец в первичном ключе.
+    /// Impose an additional condition: the value in the column column must be in the `range` range.
+    /// Returns whether there is such a column in the primary key.
     bool addCondition(const String & column, const Range & range);
 
     String toString() const;
 
 
-    /// Выражение хранится в виде обратной польской строки (Reverse Polish Notation).
+    /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
     {
         enum Function
         {
-            /// Атомы логического выражения.
+            /// Atoms of a Boolean expression.
             FUNCTION_IN_RANGE,
             FUNCTION_NOT_IN_RANGE,
             FUNCTION_IN_SET,
             FUNCTION_NOT_IN_SET,
-            FUNCTION_UNKNOWN, /// Может принимать любое значение.
-            /// Операторы логического выражения.
+            FUNCTION_UNKNOWN, /// Can take any value.
+            /// Operators of the logical expression.
             FUNCTION_NOT,
             FUNCTION_AND,
             FUNCTION_OR,
-            /// Константы
+            /// Constants
             ALWAYS_FALSE,
             ALWAYS_TRUE,
         };
@@ -257,18 +257,18 @@ public:
 
         Function function = FUNCTION_UNKNOWN;
 
-        /// Для FUNCTION_IN_RANGE и FUNCTION_NOT_IN_RANGE.
+        /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range;
         size_t key_column;
-        /// Для FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
+        /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         ASTPtr in_function;
 
-        /** Цепочка возможно-монотонных функций.
-          * Если столбец первичного ключа завёрнут в функции, которые могут быть монотонными в некоторых диапазонах значений
-          * (например: -toFloat64(toDayOfWeek(date))), то здесь будут расположены функции: toDayOfWeek, toFloat64, negate.
+        /** A chain of possibly monotone functions.
+          * If the primary key column is wrapped in functions that can be monotonous in some value ranges
+          * (for example: -toFloat64(toDayOfWeek(date))), then here the functions will be located: toDayOfWeek, toFloat64, negate.
           */
         using MonotonicFunctionsChain = std::vector<FunctionPtr>;
-        mutable MonotonicFunctionsChain monotonic_functions_chain;    /// Выполнение функции не нарушает константность.
+        mutable MonotonicFunctionsChain monotonic_functions_chain;    /// The function execution does not violate the constancy.
     };
 
     static Block getBlockWithConstants(

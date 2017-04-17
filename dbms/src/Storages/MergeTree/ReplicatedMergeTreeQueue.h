@@ -33,7 +33,7 @@ private:
         }
     };
 
-    /// Для вычисления min_unprocessed_insert_time, max_processed_insert_time, по которым вычисляется отставание реплик.
+    /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
 
@@ -41,8 +41,8 @@ private:
     String replica_path;
     String logger_name;
 
-    /** Очередь того, что нужно сделать на этой реплике, чтобы всех догнать. Берется из ZooKeeper (/replicas/me/queue/).
-      * В ZK записи в хронологическом порядке. Здесь - не обязательно.
+    /** The queue of what you need to do on this line to catch up. It is taken from ZooKeeper (/replicas/me/queue/).
+      * In ZK records in chronological order. Here it is not necessary.
       */
     Queue queue;
 
@@ -52,51 +52,51 @@ private:
 
     time_t last_queue_update = 0;
 
-    /// Куски, которые появятся в результате действий, выполняемых прямо сейчас фоновыми потоками (этих действий нет в очереди).
-    /// Используется, чтобы не выполнять в тот же момент другие действия с этими кусками.
+    /// parts that will appear as a result of actions performed right now by background threads (these actions are not in the queue).
+    /// Used to not perform other actions at the same time with these parts.
     StringSet future_parts;
 
-    /// На доступ к queue, future_parts, ...
+    /// To access the queue, future_parts, ...
     std::mutex mutex;
 
-    /// Обеспечивает только один одновременный вызов pullLogsToQueue.
+    /// Provides only one simultaneous call to pullLogsToQueue.
     std::mutex pull_logs_to_queue_mutex;
 
-    /** Каким будет множество активных кусков после выполнения всей текущей очереди - добавления новых кусков и выполнения слияний.
-      * Используется, чтобы определять, какие мерджи уже были назначены:
-      *  - если в этом множестве есть кусок, то мерджи более мелких кусков внутри его диапазона не делаются.
-      * Дополнительно, сюда также добавляются специальные элементы, чтобы явно запретить мерджи в некотором диапазоне (см. disableMergesInRange).
-      * Это множество защищено своим mutex-ом.
+    /** What will be the set of active parts after running the entire current queue - adding new parts and performing merges.
+      * Used to determine which merges have already been assigned:
+      * - if there is a part in this set, then the smaller parts inside its range are not made.
+      * Additionally, special elements are also added here to explicitly disallow the merge in a certain range (see disableMergesInRange).
+      * This set is protected by its mutex.
       */
     ActiveDataPartSet virtual_parts;
 
     Logger * log = nullptr;
 
 
-    /// Положить набор (уже существующих) кусков в virtual_parts.
+    /// Put a set of (already existing) parts in virtual_parts.
     void initVirtualParts(const MergeTreeData::DataParts & parts);
 
-    /// Загрузить (инициализировать) очередь из ZooKeeper (/replicas/me/queue/).
+    /// Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
     void load(zkutil::ZooKeeperPtr zookeeper);
 
     void insertUnlocked(LogEntryPtr & entry);
 
     void remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
-    /** Можно ли сейчас попробовать выполнить это действие. Если нет, нужно оставить его в очереди и попробовать выполнить другое.
-      * Вызывается под queue_mutex.
+    /** Can I now try this action. If not, you need to leave it in the queue and try another one.
+      * Called under queue_mutex.
       */
     bool shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason, MergeTreeDataMerger & merger, MergeTreeData & data);
 
-    /// После удаления элемента очереди, обновить времена insert-ов в оперативке. Выполняется под queue_mutex.
-    /// Возвращает информацию, какие времена изменились - эту информацию можно передать в updateTimesInZooKeeper.
+    /// After removing the queue element, update the insertion times in the RAM. Running under queue_mutex.
+    /// Returns information about what times have changed - this information can be passed to updateTimesInZooKeeper.
     void updateTimesOnRemoval(const LogEntryPtr & entry, bool & min_unprocessed_insert_time_changed, bool & max_processed_insert_time_changed);
 
-    /// Обновить времена insert-ов в ZooKeeper.
+    /// Update the insertion times in ZooKeeper.
     void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper, bool min_unprocessed_insert_time_changed, bool max_processed_insert_time_changed);
 
 
-    /// Помечает элемент очереди как выполняющийся.
+    /// Marks the element of the queue as running.
     class CurrentlyExecuting
     {
     private:
@@ -105,7 +105,7 @@ private:
 
         friend class ReplicatedMergeTreeQueue;
 
-        /// Создаётся только в функции selectEntryToProcess. Вызывается под mutex-ом.
+        /// Created only in the selectEntryToProcess function. It is called under mutex.
         CurrentlyExecuting(ReplicatedMergeTreeQueue::LogEntryPtr & entry, ReplicatedMergeTreeQueue & queue);
     public:
         ~CurrentlyExecuting();
@@ -117,55 +117,55 @@ public:
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
         const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);
 
-    /** Вставить действие в конец очереди.
-      * Для восстановления битых кусков во время работы.
-      * Не вставляет само действие в ZK (сделайте это самостоятельно).
+    /** Paste action to the end of the queue.
+      * To restore broken parts during operation.
+      * Do not insert the action itself into ZK (do it yourself).
       */
     void insert(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
-    /** Удалить действие с указанным куском (в качестве new_part_name) из очереди.
-      * Вызывается для невыполнимых действий в очереди - старых потерянных кусков.
+    /** Delete the action with the specified part (as new_part_name) from the queue.
+      * Called for unreachable actions in the queue - old lost parts.
       */
     bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
 
-    /** Скопировать новые записи из общего лога в очередь этой реплики. Установить log_pointer в соответствующее значение.
-      * Если next_update_event != nullptr, вызовет это событие, когда в логе появятся новые записи.
-      * Возвращает true, если новые записи были.
+    /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
+      * If next_update_event != nullptr, will call this event when new entries appear in the log.
+      * Returns true if new entries have been.
       */
     bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
 
-    /** Удалить из очереди действия с кусками, покрываемыми part_name (из ZK и из оперативки).
-      * А также дождаться завершения их выполнения, если они сейчас выполняются.
+    /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
+      * And also wait for the completion of their execution, if they are now being executed.
       */
     void removeGetsAndMergesInRange(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
 
-    /** В случае, когда для выполнения мерджа в part_name недостаёт кусков
-      * - переместить действия со сливаемыми кусками в конец очереди
-      * (чтобы раньше скачать готовый смердженный кусок с другой реплики).
+    /** In the case where there are not enough parts to perform the merge in part_name
+      * - move actions with merged parts to the end of the queue
+      * (in order to download a already merged part from another replica).
       */
     StringSet moveSiblingPartsForMergeToEndOfQueue(const String & part_name);
 
-    /** Выбрать следующее действие для обработки.
-      * merger используется только чтобы проверить, не приостановлены ли мерджи.
+    /** Select the next action to process.
+      * merger is used only to check if the merges is not suspended.
       */
     using SelectedEntry = std::pair<ReplicatedMergeTreeQueue::LogEntryPtr, std::unique_ptr<CurrentlyExecuting>>;
     SelectedEntry selectEntryToProcess(MergeTreeDataMerger & merger, MergeTreeData & data);
 
-    /** Выполнить функцию func для обработки действия.
-      * При этом, на время выполнения, отметить элемент очереди как выполняющийся
-      *  (добавить в future_parts и другое).
-      * Если в процессе обработки было исключение - сохраняет его в entry.
-      * Возвращает true, если в процессе обработки не было исключений.
+    /** Execute `func` function to handle the action.
+      * In this case, at runtime, mark the queue element as running
+      *  (add into future_parts and more).
+      * If there was an exception during processing, it saves it in `entry`.
+      * Returns true if there were no exceptions during the processing.
       */
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
-    /// Будет ли кусок в будущем слит в более крупный (или мерджи кусков в данном диапазоне запрещены)?
+    /// Will a part in the future be merged into a larger part (or merges of parts in this range are prohibited)?
     bool partWillBeMergedOrMergesDisabled(const String & part_name) const;
 
-    /// Запретить слияния в указанном диапазоне.
+    /// Prohibit merges in the specified range.
     void disableMergesInRange(const String & part_name);
 
-    /// Посчитать количество слияний в очереди.
+    /// Count the number of merges in the queue.
     size_t countMerges();
 
     struct Status
@@ -182,21 +182,21 @@ public:
         UInt32 last_queue_update;
     };
 
-    /// Получить информацию об очереди.
+    /// Get information about the queue.
     Status getStatus();
 
-    /// Получить данные элементов очереди.
+    /// Get the data of the queue elements.
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
     void getEntries(LogEntriesData & res);
 
-    /// Получить информацию о временах insert-ов.
+    /// Get information about the insertion times.
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;
 };
 
 
-/** Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
-  * Поддерживаются также отрицательные числа - для них имя ноды выглядит несколько глупо
-  *  и не соответствует никакой автоинкрементной ноде в ZK.
+/** Convert a number to a string in the format of the suffixes of auto-incremental nodes in ZooKeeper.
+  * Negative numbers are also supported - for them the name of the node looks somewhat silly
+  *  and does not match any auto-incremented node in ZK.
   */
 String padIndex(Int64 index);
 

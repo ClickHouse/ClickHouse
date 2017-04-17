@@ -26,7 +26,7 @@ using ShardedBlocksWithDateIntervals = std::list<ShardedBlockWithDateInterval>;
 
 struct ReshardingJob;
 
-/** Создаёт новые шардированные куски с данными.
+/** Creates new shard parts of data.
   */
 class MergeTreeSharder final
 {
@@ -35,10 +35,10 @@ public:
     MergeTreeSharder(const MergeTreeSharder &) = delete;
     MergeTreeSharder & operator=(const MergeTreeSharder &) = delete;
 
-    /** Разбивает блок на блоки по ключу шардирования, каждый из которых
-      * нужно записать в отдельный кусок. Работает детерминированно: если
-      * отдать на вход такой же блок, на выходе получатся такие же блоки в
-      * таком же порядке.
+    /** Breaks the block into blocks by the sharding key, each of which
+      * must be written to a separate part. It works deterministically: if
+      * give the same block to the input, the output will be the same blocks in the
+      * in the same order.
       */
     ShardedBlocksWithDateIntervals shardBlock(const Block & block);
 

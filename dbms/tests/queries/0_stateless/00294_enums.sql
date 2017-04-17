@@ -17,7 +17,7 @@ alter table test.enums modify column e Enum8('world' = 2, 'hello' = 1, '!' = 3);
 desc table test.enums;
 
 insert into test.enums (e, sign, letter) values ('!', 'plus', 'b');
-select * from test.enums;
+select * from test.enums ORDER BY _part;
 
 -- expand `e` and `sign` from Enum8 to Enum16 without changing values, change values of `letter` without changing type
 alter table test.enums
@@ -26,7 +26,7 @@ alter table test.enums
 	modify column letter Enum16('a' = 0, 'b' = 1, 'c' = 2, 'no letter' = -256);
 desc table test.enums;
 
-select * from test.enums;
+select * from test.enums ORDER BY _part;
 
 alter table test.enums
 	modify column e Enum8('world' = 2, 'hello' = 1, '!' = 3),
@@ -35,7 +35,7 @@ alter table test.enums
 desc table test.enums;
 
 insert into test.enums (letter, e) values ('c', 'world');
-select * from test.enums;
+select * from test.enums ORDER BY _part;
 
 drop table test.enums;
 

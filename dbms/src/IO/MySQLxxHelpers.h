@@ -53,6 +53,8 @@ namespace mysqlxx
     {
         throw Poco::Exception("Cannot unquote Tuple with mysqlxx::unquote.");
     }
+
+    template <> inline VisitID_t Value::get<VisitID_t>() const { return VisitID_t(getUInt()); }
 }
 
 
@@ -95,6 +97,13 @@ inline void writeQuoted(const mysqlxx::Null<T> & x,        WriteBuffer & buf)
         writeCString("NULL", buf);
     else
         writeText(static_cast<const T &>(x), buf);
+}
+
+
+template <typename T>
+inline Field toField(const mysqlxx::Null<T> & x)
+{
+    return x.isNull() ? Field(Null()) : toField(static_cast<const T &>(x));
 }
 
 }
