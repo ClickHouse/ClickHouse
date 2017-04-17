@@ -27,8 +27,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             for (const String & s : parts_to_merge)
                 out << s << '\n';
             out << "into\n" << new_part_name;
-            if (deduplicate)
-                out << "deduplicate\n";
+            out << "\ndeduplicate: " << deduplicate;
             break;
 
         case DROP_RANGE:
@@ -101,10 +100,8 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
             parts_to_merge.push_back(s);
         }
         in >> new_part_name;
-        std::string flag;
-        in >> flag;
-        if (flag == "deduplicate")
-            deduplicate = true;
+        if (format_version >= 4)
+            in >> "\ndeduplicate: " >> deduplicate;
     }
     else if (type_str == "drop" || type_str == "detach")
     {

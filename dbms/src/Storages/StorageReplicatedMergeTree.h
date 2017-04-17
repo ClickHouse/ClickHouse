@@ -425,6 +425,7 @@ private:
     bool createLogEntryToMergeParts(
         const MergeTreeData::DataPartsVector & parts,
         const String & merged_name,
+        bool deduplicate,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
 
     /// Обмен кусками.
