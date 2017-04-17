@@ -389,7 +389,7 @@ bool StorageMergeTree::mergeTask()
     try
     {
         size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
-        return merge(aio_threshold, false /*aggressive*/, {} /*partition*/, false /*final*/, false /*deduplicate*/); //TODO: yurial deduplicate
+        return merge(aio_threshold, false /*aggressive*/, {} /*partition*/, false /*final*/, false /*deduplicate*/); ///TODO: read deduplicate option from table config
     }
     catch (Exception & e)
     {
