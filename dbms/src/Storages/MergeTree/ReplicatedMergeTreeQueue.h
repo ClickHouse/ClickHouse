@@ -57,7 +57,7 @@ private:
     StringSet future_parts;
 
     /// To access the queue, future_parts, ...
-    std::mutex mutex;
+    mutable std::mutex mutex;
 
     /// Provides only one simultaneous call to pullLogsToQueue.
     std::mutex pull_logs_to_queue_mutex;

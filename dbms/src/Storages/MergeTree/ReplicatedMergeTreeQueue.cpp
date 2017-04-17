@@ -718,6 +718,7 @@ size_t ReplicatedMergeTreeQueue::countMerges()
 
 void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const
 {
+    std::lock_guard<std::mutex> lock(mutex);
     out_min_unprocessed_insert_time = min_unprocessed_insert_time;
     out_max_processed_insert_time = max_processed_insert_time;
 }
