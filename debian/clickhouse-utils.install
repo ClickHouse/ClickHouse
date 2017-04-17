@@ -1,1 +1,2 @@
 usr/bin/clickhouse-compressor
+usr/bin/clickhouse-zookeeper-cli
