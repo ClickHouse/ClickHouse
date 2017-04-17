@@ -142,9 +142,7 @@ void Connection::receiveHello()
     {
         /// Close connection, to not stay in unsynchronised state.
         disconnect();
-
-        throw NetException("Unexpected packet from server " + getDescription() + " (expected Hello or Exception, got "
-            + String(Protocol::Server::toString(packet_type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+        throwUnexpectedPacket(packet_type, "Hello or Exception");
     }
 }
 
@@ -205,28 +203,28 @@ void Connection::forceConnected()
     }
 }
 
-struct PingTimeoutSetter
+struct TimeoutSetter
 {
-    PingTimeoutSetter(Poco::Net::StreamSocket & socket_, const Poco::Timespan & ping_timeout_)
-    : socket(socket_), ping_timeout(ping_timeout_)
+    TimeoutSetter(Poco::Net::StreamSocket & socket_, const Poco::Timespan & timeout_)
+        : socket(socket_), timeout(timeout_)
     {
         old_send_timeout = socket.getSendTimeout();
         old_receive_timeout = socket.getReceiveTimeout();
 
-        if (old_send_timeout > ping_timeout)
-            socket.setSendTimeout(ping_timeout);
-        if (old_receive_timeout > ping_timeout)
-            socket.setReceiveTimeout(ping_timeout);
+        if (old_send_timeout > timeout)
+            socket.setSendTimeout(timeout);
+        if (old_receive_timeout > timeout)
+            socket.setReceiveTimeout(timeout);
     }
 
-    ~PingTimeoutSetter()
+    ~TimeoutSetter()
     {
         socket.setSendTimeout(old_send_timeout);
         socket.setReceiveTimeout(old_receive_timeout);
     }
 
     Poco::Net::StreamSocket & socket;
-    Poco::Timespan ping_timeout;
+    Poco::Timespan timeout;
     Poco::Timespan old_send_timeout;
     Poco::Timespan old_receive_timeout;
 };
@@ -235,7 +233,7 @@ bool Connection::ping()
 {
     // LOG_TRACE(log_wrapper.get(), "Ping");
 
-    PingTimeoutSetter timeout_setter(socket, ping_timeout);
+    TimeoutSetter timeout_setter(socket, sync_request_timeout);
     try
     {
         UInt64 pong = 0;
@@ -259,11 +257,7 @@ bool Connection::ping()
         }
 
         if (pong != Protocol::Server::Pong)
-        {
-            throw Exception("Unexpected packet from server " + getDescription() + " (expected Pong, got "
-                + String(Protocol::Server::toString(pong)) + ")",
-                ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
-        }
+            throwUnexpectedPacket(pong, "Pong");
     }
     catch (const Poco::Exception & e)
     {
@@ -272,6 +266,30 @@ bool Connection::ping()
     }
 
     return true;
+}
+
+TablesStatusResponse Connection::getTablesStatus(const TablesStatusRequest & request)
+{
+    if (!connected)
+        connect();
+
+    TimeoutSetter timeout_setter(socket, sync_request_timeout);
+
+    writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
+    request.write(*out, server_revision);
+    out->next();
+
+    UInt64 response_type = 0;
+    readVarUInt(response_type, *in);
+
+    if (response_type == Protocol::Server::Exception)
+        receiveException()->rethrow();
+    else if (response_type != Protocol::Server::TablesStatusResponse)
+        throwUnexpectedPacket(response_type, "TablesStatusResponse");
+
+    TablesStatusResponse response;
+    response.read(*in, server_revision);
+    return response;
 }
 
 
@@ -283,9 +301,10 @@ void Connection::sendQuery(
     const ClientInfo * client_info,
     bool with_pending_data)
 {
-    network_compression_method = settings ? settings->network_compression_method.value : CompressionMethod::LZ4;
+    if (!connected)
+        connect();
 
-    forceConnected();
+    network_compression_method = settings ? settings->network_compression_method.value : CompressionMethod::LZ4;
 
     query_id = query_id_;
 
@@ -607,6 +626,14 @@ void Connection::fillBlockExtraInfo(BlockExtraInfo & info) const
     info.resolved_address = resolved_address.toString();
     info.port = port;
     info.user = user;
+}
+
+void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected) const
+{
+    throw NetException(
+            "Unexpected packet from server " + getDescription() + " (expected " + expected
+            + ", got " + String(Protocol::Server::toString(packet_type)) + ")",
+            ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 }
 
 }
