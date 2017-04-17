@@ -19,12 +19,16 @@ add_definitions(
     -fno-builtin-pvalloc
 )
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 3.9)
+    add_definitions( -Wno-dynamic-exception-spec )
+endif()
+
 if(CMAKE_SYSTEM MATCHES "FreeBSD" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-	add_definitions(-Wno-unused-but-set-variable)
+    add_definitions(-Wno-unused-but-set-variable)
 endif()
 
 if(CMAKE_SYSTEM MATCHES "FreeBSD")
-	add_definitions(-D_GNU_SOURCE)
+    add_definitions(-D_GNU_SOURCE)
 endif()
 
 include_directories (include src)
