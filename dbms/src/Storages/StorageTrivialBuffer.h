@@ -15,35 +15,30 @@ namespace DB
 
 class Context;
 
-/** При вставке буферизует входящие блоки, пока не превышены некоторые пороги.
-  * Когда пороги превышены - отправляет блоки в другую таблицу в том же порядке,
-  * в котором они пришли в данную таблицу.
+/** Stores incoming blocks until some thresholds are exceeded, then sends
+  * them to the table it looks into in the same order they came to the buffer.
   *
-  * Пороги проверяются при вставке, а также, периодически, в фоновом потоке
-  * (чтобы реализовать пороги по времени).
-  * Если в таблицу вставляется блок, который сам по себе превышает max-пороги, то он
-  * записывается сразу в подчинённую таблицу без буферизации.
-  * Пороги могут быть превышены. Например, если max_rows = 1 000 000, в буфере уже было
-  * 500 000 строк, и добавляется кусок из 800 000 строк, то в буфере окажется 1 300 000 строк,
-  * и затем такой блок будет записан в подчинённую таблицу
+  * Thresolds are checked during insert and in background thread (to control
+  * time thresholds).
+  * If inserted block exceedes max limits, buffer is flushed and then the incoming
+  * block is appended to buffer.
   *
-  * При уничтожении таблицы типа TrivialBuffer и при завершении работы, все данные сбрасываются.
-  * Данные в буфере не реплицируются, не логгируются на диск, не индексируются. При грубом
-  * перезапуске сервера, данные пропадают.
+  * Destroying TrivialBuffer or shutting down lead to the buffer flushing.
+  * The data in the buffer is not replicated, logged or stored. After hard reset of the
+  * server, the data is lost.
   */
-class TrivialStorageBuffer : private ext::shared_ptr_helper<TrivialStorageBuffer>, public IStorage
+class StorageTrivialBuffer : private ext::shared_ptr_helper<StorageTrivialBuffer>, public IStorage
 {
-friend class ext::shared_ptr_helper<TrivialStorageBuffer>;
+friend class ext::shared_ptr_helper<StorageTrivialBuffer>;
 friend class TrivialBufferBlockInputStream;
 friend class TrivialBufferBlockOutputStream;
 
 public:
-    /// Пороги.
     struct Thresholds
     {
-        time_t time;    /// Количество секунд от момента вставки первой строчки в блок.
-        size_t rows;    /// Количество строк в блоке.
-        size_t bytes;    /// Количество (несжатых) байт в блоке.
+        time_t time;    /// Seconds after insertion of first block.
+        size_t rows;    /// Number of rows in buffer.
+        size_t bytes;    /// Number of bytes (incompressed) in buffer.
     };
 
     static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_,
@@ -75,7 +70,7 @@ public:
     bool checkThresholdsImpl(const size_t rows, const size_t bytes,
                 const time_t time_passed) const;
 
-    /// Сбрасывает все буферы в подчинённую таблицу.
+    /// Writes all the blocks in buffer into the destination table.
     void shutdown() override;
     bool optimize(const String & partition, bool final, const Settings & settings) override;
 
@@ -88,7 +83,7 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool supportsParallelReplicas() const override { return true; }
 
-    /// Структура подчинённой таблицы не проверяется и не изменяется.
+    /// Does not check or alter the structure of dependent table.
     void alter(const AlterCommands & params, const String & database_name,
             const String & table_name, const Context & context) override;
 
@@ -108,25 +103,25 @@ private:
     const size_t num_blocks_to_deduplicate;
     using HashType = UInt64;
     using DeduplicationBuffer = std::unordered_set<HashType>;
-    /// Вставка хэшей новый блоков идет в current_hashes, lookup - в
-    /// обоих set'ах. Когда current_hashes переполняется, current сбрасывается
-    /// в previous, а в current создается новый set.
+    /// We insert new blocks' hashes into 'current_hashes' and perform lookup
+    /// into both sets. If 'current_hashes' is overflowed, it flushes into
+    /// into 'previous_hashes', and new set is created for 'current'.
     std::unique_ptr<DeduplicationBuffer> current_hashes, previous_hashes;
     const Thresholds min_thresholds;
     const Thresholds max_thresholds;
 
     const String destination_database;
     const String destination_table;
-    /// Если задано - не записывать данные из буфера, а просто опустошать буфер.
+    /// If set, forces to clean out buffer, not write to destination table.
     bool no_destination;
 
     Poco::Logger * log;
 
     Poco::Event shutdown_event;
-    /// Выполняет сброс данных по таймауту.
+    /// Executes flushing by the time thresholds.
     std::thread flush_thread;
 
-    TrivialStorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
+    StorageTrivialBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
@@ -135,12 +130,12 @@ private:
         const String & destination_database_, const String & destination_table_);
 
     void addBlock(const Block & block);
-    /// Аргумент table передаётся, так как иногда вычисляется заранее. Он должен
-    /// соответствовать destination-у.
+    /// Parameter 'table' is passed because it's sometimes pre-computed. It should
+    /// conform the 'destination_table'.
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
 
-    void flush(bool check_thresholds = true);
+    void flush(bool check_thresholds = true, bool is_called_from_background = false);
     void flushThread();
 };
 
