@@ -7,14 +7,14 @@
 #include <Core/StringRef.h>
 
 
-/** Класс, позволяющий узнавать по id региона его текстовое название на одном из поддерживаемых языков: ru, en, ua, by, kz, tr.
+/** A class that allows you to recognize by region id its text name in one of the supported languages: ru, en, ua, by, kz, tr.
   *
-  * Информацию об именах регионов загружает из текстовых файлов с названиями следующего формата:
+  * Information about region names loads from text files with the following format names:
   *     regions_names_xx.txt,
-  * где xx - одно из двух буквенных обозначений следующих поддерживаемых языков:
+  * where xx is one of the two letters of the following supported languages:
   *     ru, en, ua, by, kz, tr.
   *
-  * Умеет, по запросу, обновлять данные.
+  * Can on request update the data.
   */
 class RegionsNames
 {
@@ -65,7 +65,7 @@ private:
     using StringRefsForLanguageID = std::vector<StringRefs>;
 
 public:
-    /** Перезагружает, при необходимости, имена регионов.
+    /** Reboot, if necessary, the names of regions.
       */
     void reload();
     void reload(const std::string & directory);
@@ -112,9 +112,9 @@ private:
 
     ModificationTimes file_modification_times = ModificationTimes(SUPPORTED_LANGUAGES_COUNT);
 
-    /// Байты имен для каждого языка, уложенные подряд, разделенные нулями
+    /// Bytes of names for each language, laid out in a row, separated by zeros
     CharsForLanguageID chars = CharsForLanguageID(SUPPORTED_LANGUAGES_COUNT);
 
-    /// Отображение для каждого языка из id региона в указатель на диапазон байт имени
+    /// Mapping for each language from the region id into a pointer to the byte range of the name
     StringRefsForLanguageID names_refs = StringRefsForLanguageID(SUPPORTED_LANGUAGES_COUNT);
 };

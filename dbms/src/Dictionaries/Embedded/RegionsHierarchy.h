@@ -13,9 +13,9 @@
 #define REGION_TYPE_CONTINENT 1
 
 
-/** Класс, позволяющий узнавать, принадлежит ли регион с одним RegionID региону с другим RegionID.
-  * Информацию об иерархии регионов загружает из текстового файла.
-  * Умеет, по запросу, обновлять данные.
+/** A class that lets you know if a region belongs to one RegionID region with another RegionID.
+  * Information about the hierarchy of regions is downloaded from a text file.
+  * Can on request update the data.
   */
 class RegionsHierarchy : private boost::noncopyable
 {
@@ -27,34 +27,34 @@ private:
     using RegionDepth = UInt8;
     using RegionPopulation = UInt32;
 
-    /// отношение parent; 0, если родителей нет - обычная lookup таблица.
+    /// Relationship parent; 0, if there are no parents, the usual lookup table.
     using RegionParents = std::vector<RegionID>;
-    /// тип региона
+    /// type of region
     using RegionTypes = std::vector<RegionType>;
-    /// глубина в дереве, начиная от страны (страна: 1, корень: 0)
+    /// depth in the tree, starting from the country (country: 1, root: 0)
     using RegionDepths = std::vector<RegionDepth>;
-    /// население региона. Если больше 2^32 - 1, то приравнивается к этому максимуму.
+    /// population of the region. If more than 2 ^ 32 - 1, then it is equated to this maximum.
     using RegionPopulations = std::vector<RegionPopulation>;
 
-    /// регион -> родительский регион
+    /// region -> parent region
     RegionParents parents;
-    /// регион -> город, включающий его или 0, если такого нет
+    /// region -> city, including it or 0, if there is none
     RegionParents city;
-    /// регион -> страна, включающая его или 0, если такого нет
+    /// region -> country including it or 0, if there is none
     RegionParents country;
-    /// регион -> область, включающая его или 0, если такой нет
+    /// region -> area that includes it or 0, if not
     RegionParents area;
-    /// регион -> округ, включающий его или 0, если такого нет
+    /// region -> district, including it or 0, if there is none
     RegionParents district;
-    /// регион -> континет (первый при подъёме по иерархии регионов), включающий его или 0, если такого нет
+    /// region -> the continent (the first when climbing in the hierarchy of regions), including it or 0, if there is none
     RegionParents continent;
-    /// регион -> континет (последний при подъёме по иерархии регионов), включающий его или 0, если такого нет
+    /// region -> the continent (the latter when you climb the hierarchy of regions), including it or 0, if there is none
     RegionParents top_continent;
 
-    /// регион -> население или 0, если неизвестно.
+    /// region -> population or 0, if unknown.
     RegionPopulations populations;
 
-    /// регион - глубина в дереве
+    /// region - depth in the tree
     RegionDepths depths;
 
     /// path to file with data
@@ -64,7 +64,7 @@ public:
     RegionsHierarchy();
     RegionsHierarchy(const std::string & path_);
 
-    /// Перезагружает, при необходимости, иерархию регионов. Непотокобезопасно.
+    /// Reloads, if necessary, the hierarchy of regions. Not threadsafe.
     void reload();
 
 

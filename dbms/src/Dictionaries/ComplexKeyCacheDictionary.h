@@ -83,8 +83,8 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    /// Во всех функциях ниже, key_columns должны быть полноценными (не константными) столбцами.
-    /// См. требование в IDataType.h для функций текстовой сериализации.
+    /// In all functions below, key_columns must be full (non-constant) columns.
+    /// See the requirement in IDataType.h for text-serialization functions.
 #define DECLARE(TYPE)\
     void get##TYPE(\
         const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\

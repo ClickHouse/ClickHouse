@@ -10,8 +10,8 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<IDataType>;
 
 
-/** Для заданного значения Field возвращает минимальный тип данных, позволяющий хранить значение этого типа.
-  * В случае, если Field - массив, конвертирует все элементы к общему типу.
+/** For a given value, Field returns the minimum data type that allows this value to be stored.
+  * In case Field is an array, converts all elements to a common type.
   */
 class FieldToDataType : public StaticVisitor<DataTypePtr>
 {
