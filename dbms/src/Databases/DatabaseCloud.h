@@ -10,45 +10,45 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-/** Позволяет создавать "облачные таблицы".
-  * Список таких таблиц хранится в ZooKeeper.
-  * Все серверы, ссылающиеся на один путь в ZooKeeper, видят один и тот же список таблиц.
-  * CREATE, DROP, RENAME атомарны.
+/** Allows you to create "cloud tables".
+  * A list of such tables is stored in ZooKeeper.
+  * All servers that refer to the same path in ZooKeeper see the same list of tables.
+  * CREATE, DROP, RENAME are atomic.
   *
-  * Для БД задаётся уровень репликации N.
-  * При записи в "облачную" таблицу, некоторым образом выбирается N живых серверов в разных датацентрах,
-  *  на каждом из них создаётся локальная таблица, и в них производится запись.
+  * The replication level N is set for the database.
+  * When writing to a cloud table, N live servers are selected in some way in different datacenters,
+  *  on each of them a local table is created, and data is written to them.
   *
-  * Движок имеет параметры: Cloud(zookeeper_path, replication_factor, datacenter_name)
-  * Пример: Cloud('/clickhouse/clouds/production/', 3, 'FIN')
+  * The engine has the parameters: Cloud(zookeeper_path, replication_factor, datacenter_name)
+  * Example: Cloud('/clickhouse/clouds/production/', 3, 'FIN')
   *
-  * Структура в ZooKeeper:
+  * Structure in ZooKeeper:
   *
-  * cloud_path                   - путь к "облаку"; может существовать несколько разных независимых облаков
-        /table_definitions       - множество уникальных определений таблиц, чтобы не писать их много раз для большого количества таблиц
-            /hash128 -> sql      - отображение: хэш от определения таблицы (идентификатор) -> само определение таблицы в виде CREATE запроса
-        /tables                  - список таблиц
-            /database_name       - имя базы данных
+  * cloud_path                   - the path to the "cloud"; There may be several different independent clouds
+        /table_definitions       - set of unique table definitions so you do not write them many times for a large number of tables
+            /hash128 -> sql      - mapping: hash from table definition (identifier) ​​-> table definition itself as CREATE query
+        /tables                  - list of tables
+            /database_name       - name of the database
                 /name_hash_mod -> compressed_table_list
-                                 - список таблиц сделан двухуровневым, чтобы уменьшить количество узлов в ZooKeeper при наличии большого количества таблиц
-                                 - узлы создаются для каждого остатка от деления хэша от имени таблицы, например, на 4096
-                                 - и в каждом узле хранится список таблиц (имя таблицы, имя локальной таблицы, хэш от структуры, список хостов) в сжатом виде
-        /local_tables            - список локальных таблиц, чтобы по имени локальной таблицы можно было определить её структуру
+                                 - the list of tables is made two-level to reduce the number of nodes in ZooKeeper if there are a large number of tables
+                                 - nodes are created for each remainder of the hash partition from the table name, for example, to 4096
+                                 - and each node stores a list of tables (table name, local table name, hash from structure, hosts list) in a compressed form
+        /local_tables            - a list of local tables so that by the name of the local table you can determine its structure
             /database_name
                 /name_hash_mod -> compressed_table_list
-                                 - список пар (хэш от имени таблицы, хэш от структуры) в сжатом виде
-        /locality_keys           - сериализованный список ключей локальности в порядке их появления
-                                 - ключ локальности - произвольная строка
-                                 - движок БД определяет серверы для расположения данных таким образом,
-                                   чтобы, при одинаковом множестве живых серверов,
-                                   одному ключу локальности соответствовала одна группа из N серверов для расположения данных.
-        /nodes                   - список серверов, на которых зарегистрированы облачные БД с таким путём в ZK
-            /hostname            - имя хоста
-        TODO    /alive           - эфемерная нода для предварительной проверки живости
-                /datacenter      - имя датацентра
+                                 - list of pairs (hash from the table name, hash from the structure) in a compressed form
+        /locality_keys           - a serialized list of locality keys in the order in which they appear
+                                 - locality key - an arbitrary string
+                                 - the database engine defines the servers for the data location in such a way,
+                                   that, with the same set of live servers,
+                                   one locality key corresponds to one group of N servers for the data location.
+        /nodes                   - the list of servers on which cloud databases are registered with the same path in ZK
+            /hostname            - hostname
+        TODO    /alive           - an ephemeral node for pre-testing liveliness
+                /datacenter      - the name of the data center
         TODO    /disk_space
 
-  * К одному облаку может относиться несколько БД, названных по-разному. Например, БД hits и visits могут относиться к одному облаку.
+  * For one cloud there may be more than one database named differently. For example, DB `hits` and `visits` can belong to the same cloud.
   */
 class DatabaseCloud : public IDatabase
 {
@@ -65,11 +65,11 @@ private:
 
     Context & context;
 
-    /** Локальные таблицы - это таблицы, находящиеся непосредственно на локальном сервере.
-      * Они хранят данные облачных таблиц: облачная таблица представлена несколькими локальными таблицами на разных серверах.
-      * Эти таблицы не видны пользователю при перечислении таблиц, хотя доступны при обращении по имени.
-      * Имя локальных таблиц имеет специальную форму, например, начинаться на _local, чтобы они не путались с облачными таблицами.
-      * Локальные таблицы загружаются лениво, при первом обращении.
+    /** Local tables are tables that are located directly on the local server.
+      * They store the data of the cloud tables: the cloud table is represented by several local tables on different servers.
+      * These tables are not visible to the user when listing tables, although they are available when referring by name.
+      * The name of the local tables has a special form, for example, start with _local so that they do not get confused with the cloud tables.
+      * Local tables are loaded lazily, on first access.
       */
     Tables local_tables_cache;
     mutable std::mutex local_tables_mutex;
@@ -131,19 +131,19 @@ public:
 private:
     void createZookeeperNodes();
 
-    /// Получить имя узла, в котором будет храниться часть списка таблиц. (Список таблиц является двухуровневым.)
+    /// Get the name of the node in which the part of the list of tables will be stored. (The list of tables is two-level.)
     String getNameOfNodeWithTables(const String & table_name) const;
 
-    /// Хэшировать имя таблицы вместе с именем БД.
+    /// Hash the table name along with the database name.
     Hash getTableHash(const String & table_name) const;
 
-    /// Определения таблиц хранятся косвенным образом и адресуются своим хэшом. Вычислить хэш.
+    /// Table definitions are stored indirectly and addressed by its hash. Calculate the hash.
     Hash getHashForTableDefinition(const String & definition) const;
 
-    /// Пойти в ZooKeeper и по хэшу получить определение таблицы.
+    /// Go to ZooKeeper and get a table definition by hash.
     String getTableDefinitionFromHash(Hash hash) const;
 
-    /// Определить серверы, на которых будут храниться данные таблицы.
+    /// Define the servers on which the table data will be stored.
     std::vector<String> selectHostsForTable(const String & locality_key) const;
 };
 
