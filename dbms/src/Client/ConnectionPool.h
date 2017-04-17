@@ -19,6 +19,19 @@ namespace DB
   *        connection->sendQuery("SELECT 'Hello, world!' AS world");
   *    }
   */
+
+
+/// Specifies how many connections to return from ConnectionPoolWithFailover::getMany() method.
+enum class PoolMode
+{
+    /// Return exactly one connection.
+    GET_ONE = 0,
+    /// Return a number of connections, this number being determined by max_parallel_replicas setting.
+    GET_MANY,
+    /// Return a connection from each nested pool.
+    GET_ALL
+};
+
 class IConnectionPool : private boost::noncopyable
 {
 public:

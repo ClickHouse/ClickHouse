@@ -295,7 +295,7 @@ private:
     void execute(ConnectionPool::Entry & connection, Query & query)
     {
         Stopwatch watch;
-        RemoteBlockInputStream stream(connection, query, &settings, nullptr, Tables(), query_processing_stage);
+        RemoteBlockInputStream stream(*connection, query, &settings, nullptr, Tables(), query_processing_stage);
 
         Progress progress;
         stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });

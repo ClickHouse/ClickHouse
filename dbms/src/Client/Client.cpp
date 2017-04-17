@@ -623,6 +623,8 @@ private:
         /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
         const ASTInsertQuery * insert = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
 
+        connection->forceConnected();
+
         if (insert && !insert->select)
             processInsertQuery();
         else
