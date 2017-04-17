@@ -8,7 +8,6 @@ add_definitions(
     -Wno-deprecated-declarations
     -Wno-unused-function
     -Wno-unused-private-field
-    -Wno-dynamic-exception-spec
     -fno-builtin-malloc
     -fno-builtin-free
     -fno-builtin-realloc
