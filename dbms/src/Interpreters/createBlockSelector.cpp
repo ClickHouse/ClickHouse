@@ -53,7 +53,7 @@ IColumn::Selector createBlockSelector(
 }
 
 
-/// Explicit instantinations to avoid code bloat in headers.
+/// Explicit instantiations to avoid code bloat in headers.
 template IColumn::Selector createBlockSelector<UInt8>(const IColumn & column, size_t num_shards, const std::vector<size_t> & slots);
 template IColumn::Selector createBlockSelector<UInt16>(const IColumn & column, size_t num_shards, const std::vector<size_t> & slots);
 template IColumn::Selector createBlockSelector<UInt32>(const IColumn & column, size_t num_shards, const std::vector<size_t> & slots);

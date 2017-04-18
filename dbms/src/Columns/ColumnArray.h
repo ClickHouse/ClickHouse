@@ -102,12 +102,20 @@ private:
       */
     ColumnPtr replicateConst(const Offsets_t & replicate_offsets) const;
 
+    /** The following is done by simply replicating of nested columns.
+      */
+    ColumnPtr replicateTuple(const Offsets_t & replicate_offsets) const;
+    ColumnPtr replicateNullable(const Offsets_t & replicate_offsets) const;
+    ColumnPtr replicateGeneric(const Offsets_t & replicate_offsets) const;
+
 
     /// Specializations for the filter function.
     template <typename T>
     ColumnPtr filterNumber(const Filter & filt, ssize_t result_size_hint) const;
 
     ColumnPtr filterString(const Filter & filt, ssize_t result_size_hint) const;
+    ColumnPtr filterTuple(const Filter & filt, ssize_t result_size_hint) const;
+    ColumnPtr filterNullable(const Filter & filt, ssize_t result_size_hint) const;
     ColumnPtr filterGeneric(const Filter & filt, ssize_t result_size_hint) const;
 };
 
