@@ -54,7 +54,7 @@ protected:
             << (detach ? "DETACH TABLE " : "DROP TABLE ")
             << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "")
             << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table)
-            << (!cluster.empty() ? " ON CLUSTER " + backQuoteIfNeed(cluster) + " " : "");
+            << (!cluster.empty() ? " ON CLUSTER " + backQuoteIfNeed(cluster) : "");
     }
 };
 

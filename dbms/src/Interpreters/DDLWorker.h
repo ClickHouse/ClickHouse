@@ -25,23 +25,8 @@ public:
     DDLWorker(const std::string & zk_root_dir, Context & context_);
     ~DDLWorker();
 
-    void enqueueQuery(DDLLogEntry & entry);
-
-    /// Returns root/ path in ZooKeeper
-    std::string getRoot() const
-    {
-        return root_dir;
-    }
-
-    std::string getMastersDir() const
-    {
-        return root_dir + "/masters";
-    }
-
-    std::string getCurrentMasterDir() const
-    {
-        return getMastersDir() + "/" + getHostName();
-    }
+    /// Push query into DDL query, return path to created node
+    String enqueueQuery(DDLLogEntry & entry);
 
     std::string getHostName() const
     {
@@ -65,18 +50,19 @@ private:
 
     std::string hostname;
     std::string root_dir;       /// common dir with queue of queries
-    std::string assign_dir;     /// dir with tasks assigned to the server
     std::string master_dir;     /// dir with queries was initiated by the server
 
     std::string last_processed_node_name;
 
     std::shared_ptr<zkutil::ZooKeeper> zookeeper;
-    std::shared_ptr<Poco::Event> queue_updated;
+    std::shared_ptr<Poco::Event> event_queue_updated;
 
     std::atomic<bool> stop_flag;
     std::condition_variable cond_var;
     std::mutex lock;
     std::thread thread;
+
+    friend class DDLQueryStatusInputSream;
 };
 
 }

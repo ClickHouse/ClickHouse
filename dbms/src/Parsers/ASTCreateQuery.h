@@ -95,8 +95,8 @@ protected:
                     << what << " "
                     << (if_not_exists ? "IF NOT EXISTS " : "")
                 << (settings.hilite ? hilite_none : "")
-                << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table) << " "
-                << (!cluster.empty() ? "ON CLUSTER " + backQuoteIfNeed(cluster) + " " : "");
+                << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table)
+                << (!cluster.empty() ? " ON CLUSTER " + backQuoteIfNeed(cluster) + " " : "");
         }
 
         if (!as_table.empty())

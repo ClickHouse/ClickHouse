@@ -52,9 +52,9 @@ struct DDLLogEntry
 
             writeChar(CURRENT_VERSION, wb);
             wb << "\n";
-            wb << "query: " << double_quote << query << "\n";
-            wb << "hosts: " << double_quote << hosts << "\n";
-            wb << "initiator: " << double_quote << initiator << "\n";
+            wb << "query: " << query << "\n";
+            wb << "hosts: " << hosts << "\n";
+            wb << "initiator: " << initiator << "\n";
         }
 
         return res;
@@ -70,9 +70,9 @@ struct DDLLogEntry
             throw Exception("Unknown DDLLogEntry format version: " + version, ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
         rb >> "\n";
-        rb >> "query: " >> double_quote >> query >> "\n";
-        rb >> "hosts: " >> double_quote >> hosts >> "\n";
-        rb >> "initiator: " >> double_quote >> initiator >> "\n";
+        rb >> "query: " >> query >> "\n";
+        rb >> "hosts: " >> hosts >> "\n";
+        rb >> "initiator: " >> initiator >> "\n";
 
         assertEOF(rb);
     }
@@ -87,7 +87,6 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_)
         root_dir.resize(root_dir.size() - 1);
 
     hostname = getFQDNOrHostName() + ':' + DB::toString(context.getTCPPort());
-    master_dir = getMastersDir() + hostname;
 
     zookeeper = context.getZooKeeper();
     event_queue_updated = std::make_shared<Poco::Event>();
@@ -99,21 +98,22 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_)
 DDLWorker::~DDLWorker()
 {
     stop_flag = true;
-    cond_var.notify_one();
+    //cond_var.notify_one();
+    event_queue_updated->set();
     thread.join();
 }
 
 
 void DDLWorker::processTasks()
 {
-    Strings queue_nodes;
-    int code = zookeeper->tryGetChildren(root_dir, queue_nodes, nullptr, event_queue_updated);
-    if (code != ZNONODE)
-        throw zkutil::KeeperException(code);
+    LOG_DEBUG(log, "processTasks");
+    zookeeper->createAncestors(root_dir + "/");
 
-    /// Threre are no tasks
-    if (code == ZNONODE || queue_nodes.empty())
+    Strings queue_nodes = zookeeper->getChildren(root_dir, nullptr, event_queue_updated);
+    if (queue_nodes.empty())
         return;
+
+    LOG_DEBUG(log, "fetched " << queue_nodes.size() << " nodes");
 
     bool server_startup = last_processed_node_name.empty();
 
@@ -125,19 +125,24 @@ void DDLWorker::processTasks()
     for (auto it = begin_node; it != queue_nodes.end(); ++it)
     {
         String node_data, node_name = *it, node_path = root_dir + "/" + node_name;
-        code = zookeeper->tryGet(node_path, node_data);
+        LOG_DEBUG(log, "Fetching node " << node_path);
+        if (!zookeeper->tryGet(node_path, node_data))
+        {
+            /// It is Ok that node could be deleted just now. It means that there are no current host in node's host list.
+            continue;
+        }
 
-        /// It is Ok that node could be deleted just now. It means that there are no current host in node's host list.
-        if (code != ZNONODE)
-            throw zkutil::KeeperException(code);
+        LOG_DEBUG(log, "Fetched data for node " << node_name);
 
         DDLLogEntry node;
         node.parse(node_data);
 
         bool host_in_hostlist = std::find(node.hosts.cbegin(), node.hosts.cend(), hostname) != node.hosts.cend();
 
-        bool already_processed = !zookeeper->exists(node_path + "/failed/" + hostname)
-                                 && !zookeeper->exists(node_path + "/sucess/" + hostname);
+        bool already_processed = zookeeper->exists(node_path + "/failed/" + hostname)
+                                 || zookeeper->exists(node_path + "/sucess/" + hostname);
+
+        LOG_DEBUG(log, "node " << node_name << ", " << node.query << " status: " << host_in_hostlist << " " << already_processed);
 
         if (!server_startup && already_processed)
         {
@@ -187,16 +192,24 @@ void DDLWorker::createStatusDirs(const std::string & node_path)
 
 bool DDLWorker::processTask(const DDLLogEntry & node, const std::string & node_name)
 {
+    LOG_DEBUG(log, "Process " << node_name << " node, query " << node.query);
+
     String node_path = root_dir + "/" + node_name;
     createStatusDirs(node_path);
 
+    LOG_DEBUG(log, "Created status dirs");
+
     String active_flag_path = node_path + "/active/" + hostname;
     zookeeper->create(active_flag_path, "", zkutil::CreateMode::Ephemeral);
+
+    LOG_DEBUG(log, "Created active flag");
 
     /// At the end we will delete active flag and ...
     zkutil::Ops ops;
     auto acl = zookeeper->getDefaultACL();
     ops.emplace_back(std::make_unique<zkutil::Op::Remove>(active_flag_path, -1));
+
+    LOG_DEBUG(log, "Executing query: " << node.query);
 
     try
     {
@@ -215,25 +228,31 @@ bool DDLWorker::processTask(const DDLLogEntry & node, const std::string & node_n
         return false;
     }
 
+    LOG_DEBUG(log, "Executed query: " << node.query);
+
     /// ... and create sucess flag
     String fail_flag_path = node_path + "/sucess/" + hostname;
     ops.emplace_back(std::make_unique<zkutil::Op::Create>(fail_flag_path, "", acl, zkutil::CreateMode::Persistent));
     zookeeper->multi(ops);
 
+    LOG_DEBUG(log, "Removed flags");
+
     return true;
 }
 
 
-void DDLWorker::enqueueQuery(DDLLogEntry & entry)
+String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 {
     if (entry.hosts.empty())
-        return;
+        return {};
 
-    String query_path_prefix = getRoot() + "/query-";
+    String query_path_prefix = root_dir + "/query-";
     zookeeper->createAncestors(query_path_prefix);
 
     String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
     createStatusDirs(node_path);
+
+    return node_path;
 }
 
 
@@ -241,8 +260,12 @@ void DDLWorker::run()
 {
     using namespace std::chrono_literals;
 
+    LOG_DEBUG(log, "Started DDLWorker thread");
+
     while (!stop_flag)
     {
+        LOG_DEBUG(log, "Begin tasks processing");
+
         try
         {
             processTasks();
@@ -255,63 +278,136 @@ void DDLWorker::run()
         //std::unique_lock<std::mutex> g(lock);
         //cond_var.wait_for(g, 10s);
 
+        LOG_DEBUG(log, "Waiting watch");
         event_queue_updated->wait();
     }
 }
 
 
-class DDLQueryStatusInputSream : IProfilingBlockInputStream
+class DDLQueryStatusInputSream : public IProfilingBlockInputStream
 {
+public:
+    DDLQueryStatusInputSream(const String & zk_node_path, Context & context, size_t num_hosts)
+    : node_path(zk_node_path), context(context)
+    {
+        sample = Block{
+            {std::make_shared<DataTypeString>(),    "host"},
+            {std::make_shared<DataTypeUInt64>(),    "status"},
+            {std::make_shared<DataTypeString>(),    "error"},
+            {std::make_shared<DataTypeUInt64>(),    "num_hosts_remaining"},
+            {std::make_shared<DataTypeUInt64>(),    "num_hosts_active"},
+        };
 
+        setTotalRowsApprox(num_hosts);
+    }
+
+    String getName() const override
+    {
+        return "DDLQueryStatusInputSream";
+    }
+
+    String getID() const override
+    {
+        return "DDLQueryStatusInputSream(" + node_path + ")";
+    }
+
+    Block readImpl() override
+    {
+        Block res;
+        if (num_hosts_finished >= total_rows_approx)
+            return res;
+
+        auto zookeeper = context.getZooKeeper();
+        size_t try_number = 0;
+
+        while(res.rows() == 0)
+        {
+            if (is_cancelled)
+                return res;
+
+            if (num_hosts_finished != 0 || try_number != 0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100 * std::min(100LU, try_number + 1)));
+
+            /// The node was deleted while we was sleeping.
+            if (!zookeeper->exists(node_path))
+                return res;
+
+            Strings active_hosts = zookeeper->getChildren(node_path + "/active");
+            Strings new_sucess_hosts = getDiffAndUpdate(sucess_hosts_set, zookeeper->getChildren(node_path + "/sucess"));
+            Strings new_failed_hosts = getDiffAndUpdate(failed_hosts_set, zookeeper->getChildren(node_path + "/failed"));
+
+            Strings new_hosts = new_sucess_hosts;
+            new_hosts.insert(new_hosts.end(), new_failed_hosts.cbegin(), new_failed_hosts.cend());
+            ++try_number;
+
+            if (new_hosts.empty())
+                continue;
+
+            res = sample.cloneEmpty();
+            for (size_t i = 0; i < new_hosts.size(); ++i)
+            {
+                bool fail = i >= new_sucess_hosts.size();
+                res.getByName("host").column->insert(new_hosts[i]);
+                res.getByName("status").column->insert(static_cast<UInt64>(fail));
+                res.getByName("error").column->insert(fail ? zookeeper->get(node_path + "/failed/" + new_hosts[i]) : String{});
+                res.getByName("num_hosts_remaining").column->insert(total_rows_approx - (++num_hosts_finished));
+                res.getByName("num_hosts_active").column->insert(active_hosts.size());
+            }
+        }
+
+        return res;
+    }
+
+    static Strings getDiffAndUpdate(NameSet & prev, const Strings & cur_list)
+    {
+        Strings diff;
+        for (const String & elem : cur_list)
+        {
+            if (!prev.count(elem))
+                diff.emplace_back(elem);
+        }
+
+        prev.insert(diff.cbegin(), diff.cend());
+        return diff;
+    }
+
+    ~DDLQueryStatusInputSream() override = default;
+
+    Block sample;
+
+private:
+    String node_path;
+    Context & context;
+
+    NameSet sucess_hosts_set;
+    NameSet failed_hosts_set;
+    size_t num_hosts_finished = 0;
 };
 
 
 BlockIO executeDDLQueryOnCluster(const String & query, const String & cluster_name, Context & context)
 {
     ClusterPtr cluster = context.getCluster(cluster_name);
-    Cluster::AddressesWithFailover shards = cluster->getShardsWithFailoverAddresses();
-
-    Array hosts_names_failed, hosts_errors, hosts_names_pending;
-    size_t num_hosts_total = 0;
-    size_t num_hosts_finished_successfully = 0;
-
     DDLWorker & ddl_worker = context.getDDLWorker();
 
     DDLLogEntry entry;
     entry.query = query;
     entry.initiator = ddl_worker.getHostName();
 
+    Cluster::AddressesWithFailover shards = cluster->getShardsWithFailoverAddresses();
     for (const auto & shard : shards)
         for (const auto & addr : shard)
             entry.hosts.emplace_back(addr.toString());
 
-    ddl_worker.enqueueQuery(entry);
-
-
-    auto aray_of_strings = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-    Block block{
-        {std::make_shared<DataTypeUInt64>(),    "num_hosts_total"},
-        {std::make_shared<DataTypeUInt64>(),    "num_hosts_finished_successfully"},
-        {std::make_shared<DataTypeUInt64>(),    "num_hosts_finished_unsuccessfully"},
-        {std::make_shared<DataTypeUInt64>(),    "num_hosts_pending"},
-        {aray_of_strings->clone(),              "hosts_finished_unsuccessfully"},
-        {aray_of_strings->clone(),              "hosts_finished_unsuccessfully_errors"},
-        {aray_of_strings->clone(),              "hosts_pending"}
-    };
-
-    size_t num_hosts_finished = num_hosts_total;
-    size_t num_hosts_finished_unsuccessfully = num_hosts_finished - num_hosts_finished_successfully;
-    block.getByName("num_hosts_total").column->insert(num_hosts_total);
-    block.getByName("num_hosts_finished_successfully").column->insert(num_hosts_finished_successfully);
-    block.getByName("num_hosts_finished_unsuccessfully").column->insert(num_hosts_finished_unsuccessfully);
-    block.getByName("num_hosts_pending").column->insert(0LU);
-    block.getByName("hosts_finished_unsuccessfully").column->insert(hosts_names_failed);
-    block.getByName("hosts_finished_unsuccessfully_errors").column->insert(hosts_errors);
-    block.getByName("hosts_pending").column->insert(hosts_names_pending);
+    String node_path = ddl_worker.enqueueQuery(entry);
 
     BlockIO io;
-    io.in_sample = block.cloneEmpty();
-    io.in = std::make_shared<OneBlockInputStream>(block);
+    if (node_path.empty())
+        return io;
+
+    auto stream = std::make_shared<DDLQueryStatusInputSream>(node_path, context, entry.hosts.size());
+    io.in_sample = stream->sample.cloneEmpty();
+    io.in = std::move(stream);
     return io;
 }
 
