@@ -9,8 +9,14 @@ if (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY)
 else ()
     set (USE_INTERNAL_POCO_LIBRARY 1)
     set (Poco_MongoDB_FOUND 1)
-    set (Poco_DataODBC_FOUND 1)
-    set (Poco_NetSSL_FOUND 1)
+
+    if(ODBC_INCLUDE_DIRECTORIES)
+        set(Poco_DataODBC_FOUND 1)
+    endif()
+
+    if(OPENSSL_FOUND)
+        set (Poco_NetSSL_FOUND 1)
+    endif()
     set (Poco_INCLUDE_DIRS
         "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Foundation/include/"
         "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Util/include/"
