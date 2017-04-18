@@ -90,6 +90,9 @@ public:
     void applyNullMap(const ColumnUInt8 & map);
     void applyNegatedNullMap(const ColumnUInt8 & map);
 
+    /// Check that size of null map equals to size of nested column.
+    void checkConsistency() const;
+
 private:
     ColumnPtr nested_column;
     ColumnPtr null_map;

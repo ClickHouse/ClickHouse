@@ -133,7 +133,7 @@ public:
 
     BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 
-    bool optimize(const String & partition, bool final, const Settings & settings) override;
+    bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override;
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
@@ -425,6 +425,7 @@ private:
     bool createLogEntryToMergeParts(
         const MergeTreeData::DataPartsVector & parts,
         const String & merged_name,
+        bool deduplicate,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
 
     /// Exchange parts.

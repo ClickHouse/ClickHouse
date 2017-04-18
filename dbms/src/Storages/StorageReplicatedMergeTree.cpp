@@ -1160,7 +1160,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
             Stopwatch stopwatch;
 
             auto part = merger.mergePartsToTemporaryPart(
-                parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get());
+                parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
 
             zkutil::Ops ops;
 
@@ -1758,6 +1758,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
     setThreadName("ReplMTMergeSel");
     LOG_DEBUG(log, "Merge selecting thread started");
 
+    bool deduplicate = false; /// TODO: read deduplicate option from table config
     bool need_pull = true;
 
     MemoizedPartsThatCouldBeMerged memoized_parts_that_could_be_merged;
@@ -1808,7 +1809,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
                         parts, merged_name, false,
                         max_parts_size_for_merge,
                         can_merge)
-                    && createLogEntryToMergeParts(parts, merged_name))
+                    && createLogEntryToMergeParts(parts, merged_name, deduplicate))
                 {
                     success = true;
                     need_pull = true;
@@ -1832,7 +1833,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 
 bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
-    const MergeTreeData::DataPartsVector & parts, const String & merged_name, ReplicatedMergeTreeLogEntryData * out_log_entry)
+    const MergeTreeData::DataPartsVector & parts, const String & merged_name, bool deduplicate, ReplicatedMergeTreeLogEntryData * out_log_entry)
 {
     auto zookeeper = getZooKeeper();
 
@@ -1861,6 +1862,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
     entry.type = LogEntry::MERGE_PARTS;
     entry.source_replica = replica_name;
     entry.new_part_name = merged_name;
+    entry.deduplicate = deduplicate;
     entry.create_time = time(0);
 
     for (const auto & part : parts)
@@ -2400,7 +2402,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query, const Setti
 }
 
 
-bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, const Settings & settings)
+bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
 {
     /// If there is nonreplicated data, then merge them first.
     if (unreplicated_data)
@@ -2420,7 +2422,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
             Stopwatch stopwatch;
 
             auto new_part = unreplicated_merger->mergePartsToTemporaryPart(
-                parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io, time(0));
+                parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io, time(0), nullptr /*disk_reservation*/, deduplicate);
 
             unreplicated_merger->renameMergedTemporaryPart(parts, new_part, merged_name, nullptr);
 
@@ -2496,7 +2498,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
         if (!selected)
             return false;
 
-        if (!createLogEntryToMergeParts(parts, merged_name, &merge_entry))
+        if (!createLogEntryToMergeParts(parts, merged_name, deduplicate, &merge_entry))
             return false;
     }
 

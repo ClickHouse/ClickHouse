@@ -20,6 +20,7 @@ DataTypeNullable::DataTypeNullable(DataTypePtr nested_data_type_)
 void DataTypeNullable::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
+    col.checkConsistency();
     nested_data_type->serializeBinaryBulk(*col.getNestedColumn(), ostr, offset, limit);
 }
 
