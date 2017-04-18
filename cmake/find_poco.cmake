@@ -7,7 +7,10 @@ endif ()
 if (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY)
     include_directories (${Poco_INCLUDE_DIRS})
 else ()
+
     set (USE_INTERNAL_POCO_LIBRARY 1)
+
+    include (${ClickHouse_SOURCE_DIR}/contrib/libpoco/cmake/FindODBC.cmake)
 
     list (APPEND Poco_INCLUDE_DIRS
         "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Foundation/include/"
@@ -23,7 +26,7 @@ else ()
         list (APPEND Poco_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/libpoco/MongoDB/include/")
     endif ()
 
-    if (ODBC_INCLUDE_DIRECTORIES)
+    if (ODBC_FOUND)
         set (Poco_DataODBC_FOUND 1)
         set (Poco_DataODBC_LIBRARY PocoDataODBC)
         list (APPEND Poco_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/ODBC/include/")

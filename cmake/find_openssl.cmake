@@ -16,8 +16,7 @@ if (NOT OPENSSL_FOUND)
 endif ()
 
 if (OPENSSL_FOUND)
-    message (STATUS "Using openssl: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")
     include_directories (${OPENSSL_INCLUDE_DIR})
-else ()
-    message (FATAL_ERROR "Need openssl for build. debian tip: sudo apt install libssl-dev")
 endif ()
+
+message (STATUS "Using openssl=${OPENSSL_FOUND}: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")
