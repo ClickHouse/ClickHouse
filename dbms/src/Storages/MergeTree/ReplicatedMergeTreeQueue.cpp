@@ -454,7 +454,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeDataMerger & merger,
     MergeTreeData & data)
 {
-    /// mutex has already been captured. The function is called only from `selectEntryToProcess`.
+    /// mutex has already been acquired. The function is called only from `selectEntryToProcess`.
 
     if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
     {
