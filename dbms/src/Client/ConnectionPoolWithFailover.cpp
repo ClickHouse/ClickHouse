@@ -139,6 +139,7 @@ ConnectionPoolWithFailover::tryGetEntry(
         if (!table_to_check || !max_allowed_delay || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
             result.entry->forceConnected();
+            result.is_up_to_date = true;
             return result;
         }
 
@@ -162,7 +163,9 @@ ConnectionPoolWithFailover::tryGetEntry(
                 max_delay = std::max(max_delay, status.absolute_delay);
         }
 
-        if (max_delay >= max_allowed_delay)
+        if (max_delay < max_allowed_delay)
+            result.is_up_to_date = true;
+        else
         {
             result.is_up_to_date = false;
             result.staleness = max_delay;

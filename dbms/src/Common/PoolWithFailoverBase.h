@@ -68,10 +68,10 @@ public:
     struct TryResult
     {
         TryResult() = default;
-        explicit TryResult(Entry entry_) : entry(std::move(entry)) {}
+        explicit TryResult(Entry entry_) : entry(std::move(entry)), is_up_to_date(true) {}
 
         Entry entry;
-        bool is_up_to_date = true; /// If true, the entry is a connection to up-to-date replica.
+        bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica.
         double staleness = 0.0; /// Helps choosing the "least stale" option when all replicas are stale.
     };
 
@@ -224,6 +224,12 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 "All connection tries failed. Log: \n\n" + fail_messages + "\n",
                 DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
 
+    try_results.erase(
+            std::remove_if(
+                    try_results.begin(), try_results.end(),
+                    [](const TryResult & r) { return r.entry.isNull(); }),
+            try_results.end());
+
     std::vector<Entry> entries;
 
     if (up_to_date_count >= min_entries)
@@ -237,11 +243,6 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     }
     else if (fallback_to_stale_replicas)
     {
-        try_results.erase(
-                std::remove_if(
-                        try_results.begin(), try_results.end(),
-                        [](const TryResult & r) { return r.entry.isNull(); }),
-                try_results.end());
         std::stable_sort(
                 try_results.begin(), try_results.end(),
                 [](const TryResult & left, const TryResult & right)
