@@ -1759,16 +1759,19 @@ public:
 
             char * begin = reinterpret_cast<char *>(&out_vec[0]);
             char * pos = begin;
-            const char * pos_in = reinterpret_cast<const char *>(&in_vec[0]);
+
+            ColumnString::Offset_t current_in_offset = 0;
 
             for (size_t i = 0; i < size; ++i)
             {
+                const char * pos_in = reinterpret_cast<const char *>(&in_vec[current_in_offset]);
                 size_t current_size = strlen(pos_in);
                 memcpySmallAllowReadWriteOverflow15(pos, pos_in, current_size);
                 pos += current_size;
                 *pos = '\0';
-                out_offsets[i] = ++pos - begin;
-                pos_in += in_offsets[i];
+                ++pos;
+                out_offsets[i] = pos - begin;
+                current_in_offset = in_offsets[i];
             }
             out_vec.resize(pos - begin);
 

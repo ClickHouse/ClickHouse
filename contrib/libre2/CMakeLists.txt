@@ -18,12 +18,10 @@ set (re2_sources
 	./re2/re2.cc
 	./re2/prog.cc
 	./re2/unicode_casefold.cc
-	./util/test.cc
 	./util/strutil.cc
 	./util/stringpiece.cc
 	./util/hash.cc
 	./util/arena.cc
-	./util/benchmark.cc
 	./util/valgrind.cc
 	./util/pcre.cc
 	./util/stringprintf.cc

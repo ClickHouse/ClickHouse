@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
+    extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
 }
 
 
@@ -446,6 +447,14 @@ void ColumnNullable::applyNegatedNullMap(const ColumnUInt8 & map)
 void ColumnNullable::applyNullMap(const ColumnNullable & other)
 {
     applyNullMap(other.getNullMapConcreteColumn());
+}
+
+
+void ColumnNullable::checkConsistency() const
+{
+    if (null_map->size() != nested_column->size())
+        throw Exception("Logical error: Sizes of nested column and null map of Nullable column are not equal",
+            ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
 }
 
 }

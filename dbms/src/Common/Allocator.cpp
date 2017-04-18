@@ -155,6 +155,6 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
 }
 
 
-/// Explicit template instantinations.
+/// Explicit template instantiations.
 template class Allocator<true>;
 template class Allocator<false>;

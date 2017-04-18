@@ -3,6 +3,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 
 #include <Common/Exception.h>
@@ -374,17 +376,19 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
 
 ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    if (typeid_cast<const ColumnUInt8 *>(data.get()))        return filterNumber<UInt8>(filt, result_size_hint);
-    if (typeid_cast<const ColumnUInt16 *>(data.get()))        return filterNumber<UInt16>(filt, result_size_hint);
-    if (typeid_cast<const ColumnUInt32 *>(data.get()))        return filterNumber<UInt32>(filt, result_size_hint);
-    if (typeid_cast<const ColumnUInt64 *>(data.get()))        return filterNumber<UInt64>(filt, result_size_hint);
-    if (typeid_cast<const ColumnInt8 *>(data.get()))        return filterNumber<Int8>(filt, result_size_hint);
-    if (typeid_cast<const ColumnInt16 *>(data.get()))        return filterNumber<Int16>(filt, result_size_hint);
-    if (typeid_cast<const ColumnInt32 *>(data.get()))        return filterNumber<Int32>(filt, result_size_hint);
-    if (typeid_cast<const ColumnInt64 *>(data.get()))        return filterNumber<Int64>(filt, result_size_hint);
-    if (typeid_cast<const ColumnFloat32 *>(data.get()))        return filterNumber<Float32>(filt, result_size_hint);
-    if (typeid_cast<const ColumnFloat64 *>(data.get()))        return filterNumber<Float64>(filt, result_size_hint);
-    if (typeid_cast<const ColumnString *>(data.get()))        return filterString(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt8 *>(data.get()))      return filterNumber<UInt8>(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt16 *>(data.get()))     return filterNumber<UInt16>(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt32 *>(data.get()))     return filterNumber<UInt32>(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt64 *>(data.get()))     return filterNumber<UInt64>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt8 *>(data.get()))       return filterNumber<Int8>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt16 *>(data.get()))      return filterNumber<Int16>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt32 *>(data.get()))      return filterNumber<Int32>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt64 *>(data.get()))      return filterNumber<Int64>(filt, result_size_hint);
+    if (typeid_cast<const ColumnFloat32 *>(data.get()))    return filterNumber<Float32>(filt, result_size_hint);
+    if (typeid_cast<const ColumnFloat64 *>(data.get()))    return filterNumber<Float64>(filt, result_size_hint);
+    if (typeid_cast<const ColumnString *>(data.get()))     return filterString(filt, result_size_hint);
+    if (typeid_cast<const ColumnTuple *>(data.get()))      return filterTuple(filt, result_size_hint);
+    if (typeid_cast<const ColumnNullable *>(data.get()))   return filterNullable(filt, result_size_hint);
     return filterGeneric(filt, result_size_hint);
 }
 
@@ -516,6 +520,56 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
     return res;
 }
 
+ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint) const
+{
+    if (getOffsets().size() == 0)
+        return std::make_shared<ColumnArray>(data);
+
+    const ColumnNullable & nullable_elems = static_cast<const ColumnNullable &>(*data);
+
+    auto array_of_nested = std::make_shared<ColumnArray>(nullable_elems.getNestedColumn(), offsets);
+    auto filtered_array_of_nested_owner = array_of_nested->filter(filt, result_size_hint);
+    auto & filtered_array_of_nested = static_cast<ColumnArray &>(*filtered_array_of_nested_owner);
+    auto & filtered_offsets = filtered_array_of_nested.getOffsetsColumn();
+
+    auto res_null_map = std::make_shared<ColumnUInt8>();
+    auto res = std::make_shared<ColumnArray>(
+        std::make_shared<ColumnNullable>(
+            filtered_array_of_nested.getDataPtr(),
+            res_null_map),
+        filtered_offsets);
+
+    filterArraysImplOnlyData(nullable_elems.getNullMap(), getOffsets(), res_null_map->getData(), filt, result_size_hint);
+    return res;
+}
+
+ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint) const
+{
+    if (getOffsets().size() == 0)
+        return std::make_shared<ColumnArray>(data);
+
+    const ColumnTuple & tuple = static_cast<const ColumnTuple &>(*data);
+
+    /// Make temporary arrays for each components of Tuple, then filter and collect back.
+
+    size_t tuple_size = tuple.getColumns().size();
+
+    if (tuple_size == 0)
+        throw Exception("Logical error: empty tuple", ErrorCodes::LOGICAL_ERROR);
+
+    Columns temporary_arrays(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsColumn()).filter(filt, result_size_hint);
+
+    Block tuple_block = tuple.getData().cloneEmpty();
+    for (size_t i = 0; i < tuple_size; ++i)
+        tuple_block.getByPosition(i).column = static_cast<ColumnArray &>(*temporary_arrays[i]).getDataPtr();
+
+    return std::make_shared<ColumnArray>(
+        std::make_shared<ColumnTuple>(tuple_block),
+        static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsColumn());
+}
+
 
 ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
 {
@@ -584,22 +638,21 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_h
 
 ColumnPtr ColumnArray::replicate(const Offsets_t & replicate_offsets) const
 {
-    /// It does not work out in general case.
-
-    if (typeid_cast<const ColumnUInt8 *>(data.get()))        return replicateNumber<UInt8>(replicate_offsets);
-    if (typeid_cast<const ColumnUInt16 *>(data.get()))        return replicateNumber<UInt16>(replicate_offsets);
-    if (typeid_cast<const ColumnUInt32 *>(data.get()))        return replicateNumber<UInt32>(replicate_offsets);
-    if (typeid_cast<const ColumnUInt64 *>(data.get()))        return replicateNumber<UInt64>(replicate_offsets);
-    if (typeid_cast<const ColumnInt8 *>(data.get()))        return replicateNumber<Int8>(replicate_offsets);
-    if (typeid_cast<const ColumnInt16 *>(data.get()))        return replicateNumber<Int16>(replicate_offsets);
-    if (typeid_cast<const ColumnInt32 *>(data.get()))        return replicateNumber<Int32>(replicate_offsets);
-    if (typeid_cast<const ColumnInt64 *>(data.get()))        return replicateNumber<Int64>(replicate_offsets);
-    if (typeid_cast<const ColumnFloat32 *>(data.get()))        return replicateNumber<Float32>(replicate_offsets);
-    if (typeid_cast<const ColumnFloat64 *>(data.get()))        return replicateNumber<Float64>(replicate_offsets);
-    if (typeid_cast<const ColumnString *>(data.get()))        return replicateString(replicate_offsets);
-    if (dynamic_cast<const IColumnConst *>(data.get()))        return replicateConst(replicate_offsets);
-
-    throw Exception("Replication of column " + getName() + " is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+    if (typeid_cast<const ColumnUInt8 *>(data.get()))     return replicateNumber<UInt8>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt16 *>(data.get()))    return replicateNumber<UInt16>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt32 *>(data.get()))    return replicateNumber<UInt32>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt64 *>(data.get()))    return replicateNumber<UInt64>(replicate_offsets);
+    if (typeid_cast<const ColumnInt8 *>(data.get()))      return replicateNumber<Int8>(replicate_offsets);
+    if (typeid_cast<const ColumnInt16 *>(data.get()))     return replicateNumber<Int16>(replicate_offsets);
+    if (typeid_cast<const ColumnInt32 *>(data.get()))     return replicateNumber<Int32>(replicate_offsets);
+    if (typeid_cast<const ColumnInt64 *>(data.get()))     return replicateNumber<Int64>(replicate_offsets);
+    if (typeid_cast<const ColumnFloat32 *>(data.get()))   return replicateNumber<Float32>(replicate_offsets);
+    if (typeid_cast<const ColumnFloat64 *>(data.get()))   return replicateNumber<Float64>(replicate_offsets);
+    if (typeid_cast<const ColumnString *>(data.get()))    return replicateString(replicate_offsets);
+    if (dynamic_cast<const IColumnConst *>(data.get()))   return replicateConst(replicate_offsets);
+    if (typeid_cast<const ColumnNullable *>(data.get()))  return replicateNullable(replicate_offsets);
+    if (typeid_cast<const ColumnTuple *>(data.get()))     return replicateTuple(replicate_offsets);
+    return replicateGeneric(replicate_offsets);
 }
 
 
@@ -762,6 +815,76 @@ ColumnPtr ColumnArray::replicateConst(const Offsets_t & replicate_offsets) const
     }
 
     return std::make_shared<ColumnArray>(getData().cloneResized(current_new_offset), res_column_offsets);
+}
+
+
+ColumnPtr ColumnArray::replicateGeneric(const Offsets_t & replicate_offsets) const
+{
+    size_t col_size = size();
+    if (col_size != replicate_offsets.size())
+        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    ColumnPtr res = cloneEmpty();
+    ColumnArray & res_concrete = static_cast<ColumnArray &>(*res);
+
+    if (0 == col_size)
+        return res;
+
+    IColumn::Offset_t prev_offset = 0;
+    const auto & offsets_data = getOffsets();
+    for (size_t i = 0; i < col_size; ++i)
+    {
+        size_t size_to_replicate = offsets_data[i] - prev_offset;
+        prev_offset = offsets_data[i];
+
+        for (size_t j = 0; j < size_to_replicate; ++j)
+            res_concrete.insertFrom(*this, i);
+    }
+
+    return res;
+}
+
+
+ColumnPtr ColumnArray::replicateNullable(const Offsets_t & replicate_offsets) const
+{
+    const ColumnNullable & nullable = static_cast<const ColumnNullable &>(*data);
+
+    /// Make temporary arrays for each components of Nullable. Then replicate them independently and collect back to result.
+    /// NOTE Offsets are calculated twice and it is redundant.
+
+    auto array_of_nested = ColumnArray(nullable.getNestedColumn(), getOffsetsColumn()).replicate(replicate_offsets);
+    auto array_of_null_map = ColumnArray(nullable.getNullMapColumn(), getOffsetsColumn()).replicate(replicate_offsets);
+
+    return std::make_shared<ColumnArray>(
+        std::make_shared<ColumnNullable>(
+            static_cast<ColumnArray &>(*array_of_nested).getDataPtr(),
+            static_cast<ColumnArray &>(*array_of_null_map).getDataPtr()),
+        static_cast<ColumnArray &>(*array_of_nested).getOffsetsColumn());
+}
+
+
+ColumnPtr ColumnArray::replicateTuple(const Offsets_t & replicate_offsets) const
+{
+    const ColumnTuple & tuple = static_cast<const ColumnTuple &>(*data);
+
+    /// Make temporary arrays for each components of Tuple. In the same way as for Nullable.
+
+    size_t tuple_size = tuple.getColumns().size();
+
+    if (tuple_size == 0)
+        throw Exception("Logical error: empty tuple", ErrorCodes::LOGICAL_ERROR);
+
+    Columns temporary_arrays(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsColumn()).replicate(replicate_offsets);
+
+    Block tuple_block = tuple.getData().cloneEmpty();
+    for (size_t i = 0; i < tuple_size; ++i)
+        tuple_block.getByPosition(i).column = static_cast<ColumnArray &>(*temporary_arrays[i]).getDataPtr();
+
+    return std::make_shared<ColumnArray>(
+        std::make_shared<ColumnTuple>(tuple_block),
+        static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsColumn());
 }
 
 

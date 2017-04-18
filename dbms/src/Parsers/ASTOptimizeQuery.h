@@ -19,12 +19,14 @@ public:
     String partition;
     /// Может быть указан флаг - производить оптимизацию "до конца" вместо одного шага.
     bool final;
+    /// Do deduplicate (default: false)
+    bool deduplicate;
 
     ASTOptimizeQuery() = default;
     ASTOptimizeQuery(const StringRange range_) : IAST(range_) {}
 
     /** Получить текст, который идентифицирует этот элемент. */
-    String getID() const override { return "OptimizeQuery_" + database + "_" + table + "_" + partition + "_" + (final ? "final" : ""); };
+    String getID() const override { return "OptimizeQuery_" + database + "_" + table + "_" + partition + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : ""); };
 
     ASTPtr clone() const override { return std::make_shared<ASTOptimizeQuery>(*this); }
 
@@ -40,6 +42,9 @@ protected:
 
         if (final)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FINAL" << (settings.hilite ? hilite_none : "");
+
+        if (deduplicate)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " DEDUPLICATE" << (settings.hilite ? hilite_none : "");
     }
 };
 
