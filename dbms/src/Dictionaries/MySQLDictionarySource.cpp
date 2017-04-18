@@ -1,3 +1,6 @@
+#include <Common/config.h>
+#if USE_MYSQL
+
 #include <common/logger_useful.h>
 
 #include <Dictionaries/MySQLDictionarySource.h>
@@ -161,3 +164,5 @@ LocalDateTime MySQLDictionarySource::getLastModification() const
 
 
 }
+
+#endif

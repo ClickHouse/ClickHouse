@@ -1,3 +1,6 @@
+#include <Common/config.h>
+#if USE_MYSQL
+
 #include <Dictionaries/MySQLBlockInputStream.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
@@ -98,3 +101,5 @@ Block MySQLBlockInputStream::readImpl()
 }
 
 }
+
+#endif
