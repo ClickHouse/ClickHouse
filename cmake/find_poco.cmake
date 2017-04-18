@@ -24,7 +24,11 @@ else ()
     if (OPENSSL_FOUND)
         set (Poco_NetSSL_FOUND 1)
         set (Poco_NetSSL_LIBRARY PocoNetSSL)
-        list (APPEND Poco_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/libpoco/NetSSL_OpenSSL/include/")
+        set (Poco_Crypto_LIBRARY PocoCrypto)
+        list (APPEND Poco_INCLUDE_DIRS
+            "${ClickHouse_SOURCE_DIR}/contrib/libpoco/NetSSL_OpenSSL/include/"
+            "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Crypto/include/"
+        )
     endif ()
 
     list (APPEND Poco_INCLUDE_DIRS
@@ -32,7 +36,6 @@ else ()
         "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Util/include/"
         "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Net/include/"
         "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/include/"
-        "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Crypto/include/"
         "${ClickHouse_SOURCE_DIR}/contrib/libpoco/XML/include/"
     )
 
@@ -44,7 +47,6 @@ else ()
     set (Poco_Util_LIBRARY PocoUtil)
     set (Poco_Net_LIBRARY PocoNet)
     set (Poco_Data_LIBRARY PocoData)
-    set (Poco_Crypto_LIBRARY PocoCrypto)
     set (Poco_XML_LIBRARY PocoXML)
     include_directories (BEFORE ${Poco_INCLUDE_DIRS})
 endif ()
