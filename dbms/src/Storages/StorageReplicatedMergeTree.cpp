@@ -104,6 +104,7 @@ namespace ErrorCodes
     extern const int METADATA_MISMATCH;
     extern const int RESHARDING_NULLABLE_SHARDING_KEY;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
+    extern const int TOO_MUCH_FETCHES;
 }
 
 
@@ -1256,7 +1257,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
         static std::atomic_uint total_fetches {0};
         if (total_fetches >= data.settings.replicated_max_parallel_fetches)
         {
-            return false;
+            throw Exception("Too much total fetches from replicas, maximum: " + toString(data.settings.replicated_max_parallel_fetches),
+                ErrorCodes::TOO_MUCH_FETCHES);
         }
 
         ++total_fetches;
@@ -1264,12 +1266,12 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
         if (current_table_fetches >= data.settings.replicated_max_parallel_fetches_for_table)
         {
-            return false;
+            throw Exception("Too much fetches from replicas for table, maximum: " + toString(data.settings.replicated_max_parallel_fetches),
+                ErrorCodes::TOO_MUCH_FETCHES);
         }
 
         ++current_table_fetches;
         SCOPE_EXIT({--current_table_fetches;});
-
 
         if (replica.empty() && entry.type == LogEntry::ATTACH_PART)
         {
@@ -1423,14 +1425,11 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 if (!fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
                     return false;
             }
-            catch (const Exception & e)
+            catch (Exception & e)
             {
                 /// No stacktrace, just log message
                 if (e.code() == ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
-                {
-                    LOG_INFO(log, "Too busy replica. Will try later. " << e.message());
-                    return false;
-                }
+                    e.addMessage("Too busy replica. Will try later.");
                 throw;
             }
 
