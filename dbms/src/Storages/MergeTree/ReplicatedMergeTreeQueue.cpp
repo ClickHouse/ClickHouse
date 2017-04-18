@@ -468,8 +468,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             return false;
 
             /** When the corresponding action is completed, then `shouldExecuteLogEntry` next time, will succeed,
-              *  and queue element will be processed. Immediately in the `executeLogEntry` function it will be found that we already have a part,
-              ,
+              *  and queue element will be processed.
+              * Immediately in the `executeLogEntry` function it will be found that we already have a part,
               *  and queue element will be immediately treated as processed.
               */
         }
