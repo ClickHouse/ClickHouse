@@ -9,6 +9,14 @@ if (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY)
 else ()
     set (USE_INTERNAL_POCO_LIBRARY 1)
 
+    list (APPEND Poco_INCLUDE_DIRS
+        "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Foundation/include/"
+        "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Util/include/"
+        "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Net/include/"
+        "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/include/"
+        "${ClickHouse_SOURCE_DIR}/contrib/libpoco/XML/include/"
+    )
+
     if (POCO_ENABLE_MONGODB)
         set (Poco_MongoDB_FOUND 1)
         set (Poco_MongoDB_LIBRARY PocoMongoDB)
@@ -31,16 +39,11 @@ else ()
         )
     endif ()
 
-    list (APPEND Poco_INCLUDE_DIRS
-        "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Foundation/include/"
-        "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Util/include/"
-        "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Net/include/"
-        "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/include/"
-        "${ClickHouse_SOURCE_DIR}/contrib/libpoco/XML/include/"
-    )
-
     if (USE_STATIC_LIBRARIES AND USE_INTERNAL_ZLIB_LIBRARY)
-        set (Poco_INCLUDE_DIRS ${Poco_INCLUDE_DIRS} "${ClickHouse_SOURCE_DIR}/contrib/libzlib-ng/" "${ClickHouse_BINARY_DIR}/contrib/libzlib-ng/")
+        list (APPEND Poco_INCLUDE_DIRS
+            "${ClickHouse_SOURCE_DIR}/contrib/libzlib-ng/"
+            "${ClickHouse_BINARY_DIR}/contrib/libzlib-ng/"
+        )
     endif ()
 
     set (Poco_Foundation_LIBRARY PocoFoundation)
