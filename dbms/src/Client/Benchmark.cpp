@@ -228,7 +228,7 @@ private:
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
 
         for (size_t i = 0; i < concurrency; ++i)
-            pool.schedule(std::bind(&Benchmark::thread, this, connections.IConnectionPool::get()));
+            pool.schedule(std::bind(&Benchmark::thread, this, connections.get()));
 
         InterruptListener interrupt_listener;
         info_per_interval.watch.restart();

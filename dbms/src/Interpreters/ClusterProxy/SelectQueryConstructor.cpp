@@ -38,8 +38,9 @@ BlockInputStreamPtr SelectQueryConstructor::createLocal(ASTPtr query_ast, const 
     return std::make_shared<MaterializingBlockInputStream>(stream);
 }
 
-BlockInputStreamPtr SelectQueryConstructor::createRemote(ConnectionPoolPtr & pool, const std::string & query,
-    const Settings & settings, ThrottlerPtr throttler, const Context & context)
+BlockInputStreamPtr SelectQueryConstructor::createRemote(
+        const ConnectionPoolWithFailoverPtr & pool, const std::string & query,
+        const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
     auto stream = std::make_shared<RemoteBlockInputStream>(pool, query, &settings, throttler, external_tables, processed_stage, context);
     stream->setPoolMode(pool_mode);
@@ -47,10 +48,11 @@ BlockInputStreamPtr SelectQueryConstructor::createRemote(ConnectionPoolPtr & poo
     return stream;
 }
 
-BlockInputStreamPtr SelectQueryConstructor::createRemote(ConnectionPoolsPtr & pools, const std::string & query,
-    const Settings & settings, ThrottlerPtr throttler, const Context & context)
+BlockInputStreamPtr SelectQueryConstructor::createRemote(
+        ConnectionPoolWithFailoverPtrs && pools, const std::string & query,
+        const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
-    auto stream = std::make_shared<RemoteBlockInputStream>(pools, query, &settings, throttler, external_tables, processed_stage, context);
+    auto stream = std::make_shared<RemoteBlockInputStream>(std::move(pools), query, &settings, throttler, external_tables, processed_stage, context);
     stream->setPoolMode(pool_mode);
     stream->setMainTable(main_table);
     return stream;

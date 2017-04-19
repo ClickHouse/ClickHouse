@@ -17,11 +17,11 @@ namespace DB
 {
 
 ConnectionPoolWithFailover::ConnectionPoolWithFailover(
-        ConnectionPools & nested_pools_,
+        ConnectionPoolPtrs nested_pools_,
         LoadBalancing load_balancing,
         size_t max_tries_,
         time_t decrease_error_period_)
-    : Base(nested_pools_, max_tries_, decrease_error_period_, &Logger::get("ConnectionPoolWithFailover"))
+    : Base(std::move(nested_pools_), max_tries_, decrease_error_period_, &Logger::get("ConnectionPoolWithFailover"))
     , default_load_balancing(load_balancing)
 {
     const std::string & local_hostname = getFQDNOrHostName();
@@ -41,21 +41,30 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
     }
 }
 
-IConnectionPool::Entry ConnectionPoolWithFailover::doGet(const Settings * settings)
+IConnectionPool::Entry ConnectionPoolWithFailover::get(const Settings * settings)
 {
     Base::TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
         return tryGetEntry(pool, fail_message, settings);
     };
 
-    /// NOTE: Not using Base::get() here because empty Entry can be returned if settings.skip_unavailable_shards is true.
-    std::vector<Entry> entries = getManyImpl(settings, PoolMode::GET_ONE, try_get_entry);
-    if (entries.empty())
-        return Entry();
-    return entries[0];
+    Base::GetPriorityFunc get_priority;
+    switch (settings ? LoadBalancing(settings->load_balancing) : default_load_balancing)
+    {
+    case LoadBalancing::NEAREST_HOSTNAME:
+        get_priority = [&](size_t i) { return hostname_differences[i]; };
+        break;
+    case LoadBalancing::IN_ORDER:
+        get_priority = [](size_t i) { return i; };
+        break;
+    case LoadBalancing::RANDOM:
+        break;
+    }
+
+    return Base::get(try_get_entry, get_priority);
 }
 
-std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::doGetMany(const Settings * settings, PoolMode pool_mode)
+std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const Settings * settings, PoolMode pool_mode)
 {
     Base::TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
@@ -94,8 +103,7 @@ std::vector<ConnectionPool::Entry> ConnectionPoolWithFailover::getManyImpl(
         throw DB::Exception("Unknown pool allocation mode", DB::ErrorCodes::LOGICAL_ERROR);
 
     Base::GetPriorityFunc get_priority;
-    LoadBalancing load_balancing = settings ? LoadBalancing(settings->load_balancing) : default_load_balancing;
-    switch (load_balancing)
+    switch (settings ? LoadBalancing(settings->load_balancing) : default_load_balancing)
     {
     case LoadBalancing::NEAREST_HOSTNAME:
         get_priority = [&](size_t i) { return hostname_differences[i]; };
@@ -104,10 +112,7 @@ std::vector<ConnectionPool::Entry> ConnectionPoolWithFailover::getManyImpl(
         get_priority = [](size_t i) { return i; };
         break;
     case LoadBalancing::RANDOM:
-        get_priority = GetPriorityFunc();
         break;
-    default:
-        throw Exception("Unknown load_balancing_mode: " + toString(static_cast<int>(load_balancing)), ErrorCodes::LOGICAL_ERROR);
     }
 
     bool fallback_to_stale_replicas = settings ? bool(settings->fallback_to_stale_replicas_for_distributed_queries) : true;

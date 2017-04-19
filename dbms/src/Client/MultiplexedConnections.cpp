@@ -1,5 +1,4 @@
 #include <Client/MultiplexedConnections.h>
-#include <Client/ConnectionPoolWithFailover.h>
 
 namespace DB
 {
@@ -40,13 +39,10 @@ MultiplexedConnections::MultiplexedConnections(Connection * connection_, const S
 }
 
 MultiplexedConnections::MultiplexedConnections(
-        IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_,
+        ConnectionPoolWithFailover & pool_, const Settings * settings_, ThrottlerPtr throttler_,
         bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table)
     : settings(settings_), throttler(throttler_), pool_mode(pool_mode_)
 {
-    if (pool_ == nullptr)
-        throw Exception("Invalid pool specified", ErrorCodes::LOGICAL_ERROR);
-
     initFromShard(pool_, main_table);
     registerShards();
 
@@ -57,7 +53,7 @@ MultiplexedConnections::MultiplexedConnections(
 }
 
 MultiplexedConnections::MultiplexedConnections(
-        ConnectionPools & pools_, const Settings * settings_, ThrottlerPtr throttler_,
+        const ConnectionPoolWithFailoverPtrs & pools_, const Settings * settings_, ThrottlerPtr throttler_,
         bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table)
     : settings(settings_), throttler(throttler_), pool_mode(pool_mode_)
 {
@@ -68,7 +64,7 @@ MultiplexedConnections::MultiplexedConnections(
     {
         if (!pool)
             throw Exception("Invalid pool specified", ErrorCodes::LOGICAL_ERROR);
-        initFromShard(pool.get(), main_table);
+        initFromShard(*pool, main_table);
     }
 
     registerShards();
@@ -280,18 +276,13 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return os.str();
 }
 
-void MultiplexedConnections::initFromShard(IConnectionPool * pool, const QualifiedTableName * main_table)
+void MultiplexedConnections::initFromShard(ConnectionPoolWithFailover & pool, const QualifiedTableName * main_table)
 {
     std::vector<IConnectionPool::Entry> entries;
-    auto * pool_with_failover = dynamic_cast<ConnectionPoolWithFailover *>(pool);
-    if (main_table && pool_with_failover)
-        entries = pool_with_failover->getManyChecked(settings, pool_mode, *main_table);
+    if (main_table)
+        entries = pool.getManyChecked(settings, pool_mode, *main_table);
     else
-    {
-        entries = pool->getMany(settings, pool_mode);
-        for (auto & entry: entries)
-            entry->forceConnected();
-    }
+        entries = pool.getMany(settings, pool_mode);
 
     /// If getMany() did not allocate connections and did not throw exceptions, this means that
     /// `skip_unavailable_shards` was set. Then just return.

@@ -25,7 +25,7 @@ RemoteBlockInputStream::RemoteBlockInputStream(Connection & connection_, const S
     init(settings_);
 }
 
-RemoteBlockInputStream::RemoteBlockInputStream(ConnectionPoolPtr & pool_, const String & query_,
+RemoteBlockInputStream::RemoteBlockInputStream(const ConnectionPoolWithFailoverPtr & pool_, const String & query_,
     const Settings * settings_, ThrottlerPtr throttler_, const Tables & external_tables_,
     QueryProcessingStage::Enum stage_, const Context & context_)
     : pool(pool_), query(query_), throttler(throttler_), external_tables(external_tables_),
@@ -34,10 +34,10 @@ RemoteBlockInputStream::RemoteBlockInputStream(ConnectionPoolPtr & pool_, const 
     init(settings_);
 }
 
-RemoteBlockInputStream::RemoteBlockInputStream(ConnectionPoolsPtr & pools_, const String & query_,
+RemoteBlockInputStream::RemoteBlockInputStream(ConnectionPoolWithFailoverPtrs && pools_, const String & query_,
     const Settings * settings_, ThrottlerPtr throttler_, const Tables & external_tables_,
     QueryProcessingStage::Enum stage_, const Context & context_)
-    : pools(pools_), query(query_), throttler(throttler_), external_tables(external_tables_),
+    : pools(std::move(pools_)), query(query_), throttler(throttler_), external_tables(external_tables_),
     stage(stage_), context(context_)
 {
     init(settings_);
@@ -231,11 +231,11 @@ void RemoteBlockInputStream::createMultiplexedConnections()
                 connection, multiplexed_connections_settings, throttler);
     else if (pool != nullptr)
         multiplexed_connections = std::make_unique<MultiplexedConnections>(
-                pool.get(), multiplexed_connections_settings, throttler,
+                *pool, multiplexed_connections_settings, throttler,
                 append_extra_info, pool_mode, main_table_ptr);
-    else if (pools != nullptr)
+    else if (!pools.empty())
         multiplexed_connections = std::make_unique<MultiplexedConnections>(
-                *pools, multiplexed_connections_settings, throttler,
+                pools, multiplexed_connections_settings, throttler,
                 append_extra_info, pool_mode, main_table_ptr);
     else
         throw Exception("Internal error", ErrorCodes::LOGICAL_ERROR);

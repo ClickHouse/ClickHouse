@@ -2,7 +2,7 @@
 
 #include <Common/Throttler.h>
 #include <Client/Connection.h>
-#include <Client/ConnectionPool.h>
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Poco/ScopedLock.h>
 #include <mutex>
 
@@ -27,7 +27,7 @@ public:
       * If the get_all_replicas flag is set, all connections are selected.
       */
     MultiplexedConnections(
-            IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_,
+            ConnectionPoolWithFailover & pool_, const Settings * settings_, ThrottlerPtr throttler_,
             bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table = nullptr);
 
     /** Accepts pools, one for each shard, from which one will need to get one or more connections.
@@ -35,7 +35,7 @@ public:
       * If the do_broadcast flag is set, all connections are received.
       */
     MultiplexedConnections(
-            ConnectionPools & pools_, const Settings * settings_, ThrottlerPtr throttler_,
+            const ConnectionPoolWithFailoverPtrs & pools_, const Settings * settings_, ThrottlerPtr throttler_,
             bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table = nullptr);
 
     /// Send all content of external tables to replicas.
@@ -106,7 +106,7 @@ private:
     using ShardStates = std::vector<ShardState>;
 
 private:
-    void initFromShard(IConnectionPool * pool, const QualifiedTableName * main_table);
+    void initFromShard(ConnectionPoolWithFailover & pool, const QualifiedTableName * main_table);
 
     void registerShards();
 

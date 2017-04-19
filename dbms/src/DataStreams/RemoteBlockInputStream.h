@@ -27,13 +27,13 @@ public:
         const Context & context_ = getDefaultContext());
 
     /// Takes a pool and gets one or several connections from it
-    RemoteBlockInputStream(ConnectionPoolPtr & pool_, const String & query_, const Settings * settings_,
+    RemoteBlockInputStream(const ConnectionPoolWithFailoverPtr & pool_, const String & query_, const Settings * settings_,
         ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         const Context & context_ = getDefaultContext());
 
     /// Takes a pool for each shard and gets one or several connections from it
-    RemoteBlockInputStream(ConnectionPoolsPtr & pools_, const String & query_, const Settings * settings_,
+    RemoteBlockInputStream(ConnectionPoolWithFailoverPtrs && pools_, const String & query_, const Settings * settings_,
         ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         const Context & context_ = getDefaultContext());
@@ -109,10 +109,10 @@ private:
     Connection * connection = nullptr;
 
     /// One shard's connections pool
-    ConnectionPoolPtr pool = nullptr;
+    ConnectionPoolWithFailoverPtr pool = nullptr;
 
     /// Connections pools of one or several shards
-    ConnectionPoolsPtr pools;
+    ConnectionPoolWithFailoverPtrs pools;
 
     std::unique_ptr<MultiplexedConnections> multiplexed_connections;
 

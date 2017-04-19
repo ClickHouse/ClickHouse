@@ -23,31 +23,42 @@ namespace ErrorCodes
   *
   * Note: if one of the nested pools is blocked due to overflow, then this pool will also be blocked.
   */
+
+/// Specifies how many connections to return from ConnectionPoolWithFailover::getMany() method.
+enum class PoolMode
+{
+    /// Return exactly one connection.
+    GET_ONE = 0,
+    /// Return a number of connections, this number being determined by max_parallel_replicas setting.
+    GET_MANY,
+    /// Return a connection from each nested pool.
+    GET_ALL
+};
+
 class ConnectionPoolWithFailover : public IConnectionPool, private PoolWithFailoverBase<IConnectionPool>
 {
 public:
     ConnectionPoolWithFailover(
-            ConnectionPools & nested_pools_,
+            ConnectionPoolPtrs nested_pools_,
             LoadBalancing load_balancing,
             size_t max_tries_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
             time_t decrease_error_period_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD);
 
     using Entry = IConnectionPool::Entry;
 
+    /** Allocates connection to work. */
+    Entry get(const Settings * settings = nullptr) override; /// From IConnectionPool
+
+    /** Allocates up to the specified number of connections to work.
+      * Connections provide access to different replicas of one shard.
+      */
+    std::vector<Entry> getMany(const Settings * settings, PoolMode pool_mode);
+
     std::vector<Entry> getManyChecked(
             const Settings * settings, PoolMode pool_mode, const QualifiedTableName & table_to_check);
 
 private:
     using Base = PoolWithFailoverBase<IConnectionPool>;
-
-    /** Allocates connection to work. */
-    Entry doGet(const Settings * settings) override; /// From IConnectionPool
-
-    /** Allocates up to the specified number of connections to work.
-      * Connections provide access to different replicas of one shard.
-      */
-    std::vector<Entry> doGetMany(const Settings * settings, PoolMode pool_mode) override; /// From IConnectionPool
-
 
     std::vector<Entry> getManyImpl(
             const Settings * settings,
@@ -65,5 +76,7 @@ private:
     LoadBalancing default_load_balancing;
 };
 
+using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
+using ConnectionPoolWithFailoverPtrs = std::vector<ConnectionPoolWithFailoverPtr>;
 
 }
