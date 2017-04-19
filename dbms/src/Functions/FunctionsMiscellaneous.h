@@ -11,6 +11,7 @@
 
 namespace DB
 {
+
 class FunctionTuple : public IFunction
 {
 public:
@@ -67,8 +68,14 @@ public:
         return 2;
     }
 
+    bool hasSpecialSupportForNulls() const override
+    {
+        return true;
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
+
 }
