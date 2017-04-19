@@ -2,6 +2,18 @@
 
 #include <type_traits>
 #include <typeinfo>
+#include <string>
+
+#include <Common/Exception.h>
+
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int BAD_CAST;
+    }
+}
 
 
 /** Проверяет совпадение типа путём сравнения typeid-ов.
@@ -14,7 +26,8 @@ typename std::enable_if<std::is_reference<To>::value, To>::type typeid_cast(From
     if (typeid(from) == typeid(To))
         return static_cast<To>(from);
     else
-        throw std::bad_cast();
+        throw DB::Exception("Bad cast from type " + std::string(typeid(from).name) + " to " + std::string(typeid(To).name),
+            DB::ErrorCodes::BAD_CAST);
 }
 
 template <typename To, typename From>
