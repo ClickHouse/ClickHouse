@@ -6,54 +6,92 @@ CONTROL=debian/control
 CHLOG=debian/changelog
 CHDATE=$(LC_ALL=C date -R | sed -e 's/,/\\,/g') # Replace comma to '\,'
 
-# Build a package with configuration files for Yandex.Metrika.
-BUILD_PACKAGE_FOR_METRIKA=$([ -f 'private/Server/metrika/config.xml' ] && echo 'yes')
+DEBUILD_NOSIGN_OPTIONS="-us -uc"
 
 while [[ $1 == --* ]]
 do
-	# Don't sign packages, don't upload, don't create tags.
-	if [[ $1 == '--standalone' ]]
-	then
-		STANDALONE='yes'
-		DEBUILD_NOSIGN_OPTIONS="-us -uc"
-		shift
-	elif [[ $1 == '--test' ]]
-	then
-		STANDALONE='yes'
-		TEST='yes'
-		DEBUILD_NOSIGN_OPTIONS="-us -uc"
-		shift
-	elif [[ $1 == '--ignore-deps' ]]
-	then
-		DEBUILD_NODEPS_OPTIONS="-d"
-		shift
-	elif [[ $1 == '--version' ]]
-	then
-		gen_revision_author
-		git push
-		exit 0
-	else
-		echo "Unknown option $1"
-		exit 2
-	fi
+    # Don't sign packages, don't upload, don't create tags.
+    #if [[ $1 == '--standalone' ]]; then
+    #   STANDALONE='yes'
+    #   DEBUILD_NOSIGN_OPTIONS="-us -uc"
+    #   shift
+    if [[ $1 == '--test' ]]; then
+    #   STANDALONE='yes'
+        TEST='yes'
+    #   DEBUILD_NOSIGN_OPTIONS="-us -uc"
+        shift
+    elif [[ $1 == '--ignore-deps' ]]; then
+        DEBUILD_NODEPS_OPTIONS="-d"
+        shift
+    elif [[ $1 == '--version' ]]; then
+        gen_revision_author
+        git push
+        exit 0
+    else
+        echo "Unknown option $1"
+        exit 2
+    fi
 done
 
-if [[ $TEST != 'yes' ]]
-then
-	# now incrementing done in external release scripts via --version
-	get_revision_author
-else
-	REVISION=99999
+if [ -z "$REVISION" ] ; then
+    if [[ $TEST != 'yes' ]]; then
+        # now incrementing done in external release scripts via --version
+        get_revision_author
+    else
+        REVISION=99999
+    fi
 fi
 
 echo -e "\nCurrent revision is $REVISION"
+export REVISION=$REVISION
+
+if $FOR_TESTS; then
+    # если этот пакет собирается для тестирования, линкуем c debug версией libtcmalloc
+    CMAKE_BUILD_TYPE=Debug
+
+    # если LIBTCMALLOC выключен, собраем без профайлинга
+    if $DISABLE_LIBTCMALLOC ; then
+        # для тестирования, с valgrid - без libtcmalloc
+        LIBTCMALLOC_OPTS="-DENABLE_LIBTCMALLOC=0"
+        CMAKE_BUILD_TYPE=''
+    else
+        # для тестирования, без valgrind - линкуем с debug версией libtcmalloc
+        LIBTCMALLOC_OPTS="-DDEBUG_LIBTCMALLOC=1"
+    fi
+else
+    # устанавливаем в пустое значение, чтобы взялось по умолчанию из CMakeList.txt
+    CMAKE_BUILD_TYPE=''
+
+    # если LIBTCMALLOC выключен, собраем без профайлинга
+    if $DISABLE_LIBTCMALLOC ; then
+        # релиз, с valgrid - без libtcmalloc
+        LIBTCMALLOC_OPTS="-DENABLE_LIBTCMALLOC=0"
+    else
+        # релиз, без valgrind - линкуем с debug версией libtcmalloc
+        LIBTCMALLOC_OPTS="-DDEBUG_LIBTCMALLOC=0"
+    fi
+fi
+
+# Если собираем с санитайзером, правим конфигурацию
+if [ -n "$SANITIZER" ] ; then
+    CMAKE_BUILD_TYPE=$SANITIZER
+
+    REVISION=${REVISION}-${SANITIZER,,}
+
+    # todo: нужно ли отключить libtcmalloc?
+    LIBTCMALLOC_OPTS="-DENABLE_LIBTCMALLOC=0"
+    # GLIBC_COMPATIBILITY отключен по умолчанию
+fi
+
+CMAKE_FLAGS_ADD+=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE"
 
 gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG"
 
 # Build (only binary packages).
-debuild -eDEB_BUILD_OPTIONS=parallel=`nproc || grep -c ^processor /proc/cpuinfo` -e DEB_CC -e DEB_CXX -e CMAKE_FLAGS_ADD -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+debuild -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=`nproc || grep -c ^processor /proc/cpuinfo` -e DEB_CC -e DEB_CXX -e CMAKE_FLAGS_ADD="$CMAKE_FLAGS_ADD" -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 
-if [[ $STANDALONE != 'yes' ]]
-then
-	upload_debs "$REVISION"
-fi
+# nobody use it?
+#if [[ $STANDALONE != 'yes' ]]
+#then
+#   upload_debs "$REVISION"
+#fi
