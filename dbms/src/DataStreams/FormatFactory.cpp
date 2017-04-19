@@ -175,7 +175,7 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
     else if (name == "TSKV")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TSKVRowOutputStream>(buf, sample));
     else if (name == "ODBCDriver")
-        return std::make_shared<ODBCDriverBlockOutputStream>(buf);
+        return std::make_shared<ODBCDriverBlockOutputStream>(buf, sample);
     else if (name == "Null")
         return std::make_shared<NullBlockOutputStream>();
     else

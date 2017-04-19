@@ -6,6 +6,7 @@
 #include <Dictionaries/Embedded/RegionsNames.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
+#include <Common/config.h>
 
 
 namespace DB
@@ -56,8 +57,10 @@ bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error)
 
     bool was_exception = false;
 
+#if USE_MYSQL
     if (!reloadDictionary<TechDataHierarchy>(tech_data_hierarchy, throw_on_error))
         was_exception = true;
+#endif
 
     if (!reloadDictionary<RegionsHierarchies>(regions_hierarchies, throw_on_error))
         was_exception = true;

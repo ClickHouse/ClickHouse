@@ -5,16 +5,6 @@
 
 struct UCollator;
 
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int UNSUPPORTED_COLLATION_LOCALE;
-        extern const int COLLATION_COMPARISON_FAILED;
-    }
-}
-
-
 class Collator : private boost::noncopyable
 {
 public:

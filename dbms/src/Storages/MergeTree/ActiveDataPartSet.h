@@ -1,9 +1,9 @@
 #pragma once
 #include <mutex>
-#include <Poco/RegularExpression.h>
 #include <common/DateLUT.h>
 #include <Core/Types.h>
 #include <set>
+
 
 namespace DB
 {
@@ -69,10 +69,12 @@ public:
     static String getPartName(DayNum_t left_date, DayNum_t right_date, Int64 left_id, Int64 right_id, UInt64 level);
 
     /// Returns true if the directory name matches the format of the directory name of the parts
-    static bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec * out_matches = nullptr);
+    static bool isPartDirectory(const String & dir_name);
+
+    static bool parsePartNameImpl(const String & dir_name, Part * part);
 
     /// Put data in DataPart from the name of the part.
-    static void parsePartName(const String & file_name, Part & part, const Poco::RegularExpression::MatchVec * matches = nullptr);
+    static void parsePartName(const String & dir_name, Part & part);
 
     static bool contains(const String & outer_part_name, const String & inner_part_name);
 

@@ -832,6 +832,8 @@ struct ReplaceStringImpl
         }
     }
 
+    /// Note: this function converts fixed-length strings to variable-length strings
+    ///       and each variable-length string should ends with zero byte.
     static void vector_fixed(const ColumnString::Chars_t & data,
         size_t n,
         const std::string & needle,
@@ -844,9 +846,9 @@ struct ReplaceStringImpl
         const UInt8 * end = pos + data.size();
 
         ColumnString::Offset_t res_offset = 0;
-        size_t size = data.size() / n;
+        size_t count = data.size() / n;
         res_data.reserve(data.size());
-        res_offsets.resize(size);
+        res_offsets.resize(count);
 
         /// The current index in the string array.
         size_t i = 0;
@@ -858,33 +860,45 @@ struct ReplaceStringImpl
         {
             const UInt8 * match = searcher.search(pos, end - pos);
 
-            /// Copy the data without changing
-            res_data.resize(res_data.size() + (match - pos));
-            memcpy(&res_data[res_offset], pos, match - pos);
+#define COPY_REST_OF_CURRENT_STRING() \
+    do { \
+        const size_t len = begin + n * (i + 1) - pos; \
+        res_data.resize(res_data.size() + len + 1); \
+        memcpy(&res_data[res_offset], pos, len); \
+        res_offset += len; \
+        res_data[res_offset++] = 0; \
+        res_offsets[i] = res_offset; \
+        pos = begin + n * (i + 1); \
+        ++i; \
+    } while (false)
 
-            /// Let's determine which index it belongs to.
-            while (i < size && begin + n * (i + 1) <= match)
+            /// Copy skipped strings without any changes but
+            /// add zero byte to the end of each string.
+            while (i < count && begin + n * (i + 1) <= match)
             {
-                res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos) + 1;
-                ++i;
+                COPY_REST_OF_CURRENT_STRING();
             }
-            res_offset += (match - pos);
 
             /// If you have reached the end, it's time to stop
-            if (i == size)
+            if (i == count)
                 break;
+
+            /// Copy unchanged part of current string.
+            res_data.resize(res_data.size() + (match - pos));
+            memcpy(&res_data[res_offset], pos, match - pos);
+            res_offset += (match - pos);
 
             /// Is it true that this line no longer needs to perform conversions.
             bool can_finish_current_string = false;
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (match + needle.size() - 1 < begin + n * (i + 1))
+            if (match + needle.size() <= begin + n * (i + 1))
             {
                 res_data.resize(res_data.size() + replacement.size());
                 memcpy(&res_data[res_offset], replacement.data(), replacement.size());
                 res_offset += replacement.size();
                 pos = match + needle.size();
-                if (replace_one)
+                if (replace_one || pos == begin + n * (i + 1))
                     can_finish_current_string = true;
             }
             else
@@ -895,17 +909,9 @@ struct ReplaceStringImpl
 
             if (can_finish_current_string)
             {
-                res_data.resize(res_data.size() + (begin + n * (i + 1) - pos));
-                memcpy(&res_data[res_offset], pos, (begin + n * (i + 1) - pos));
-                res_offset += (begin + n * (i + 1) - pos);
-                res_offsets[i] = res_offset;
-                pos = begin + n * (i + 1);
+                COPY_REST_OF_CURRENT_STRING();
             }
-        }
-
-        if (i < size)
-        {
-            res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos) + 1;
+#undef COPY_REST_OF_CURRENT_STRING
         }
     }
 

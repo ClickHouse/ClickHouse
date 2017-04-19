@@ -73,7 +73,7 @@ public:
       */
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
         MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeListEntry & merge_entry,
-        size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
+        size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplication);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::DataPartsVector & parts,
@@ -137,7 +137,7 @@ public:
 private:
 
     MergeAlgorithm chooseMergeAlgorithm(const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
-        size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, MergedRowSources & rows_sources_to_alloc) const;
+        size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, MergedRowSources & rows_sources_to_alloc, bool deduplicate) const;
 
 private:
     MergeTreeData & data;

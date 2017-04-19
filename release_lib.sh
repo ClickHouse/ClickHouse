@@ -15,16 +15,18 @@ function gen_revision_author {
 
     if [[ $STANDALONE != 'yes' ]]
     then
-        git fetch --tags
 
-        # Создадим номер ревизии и попытаемся залить на сервер.
-        succeeded=0
-        attempts=0
-        max_attempts=20
-        while [ $succeeded -eq 0 ] && [ $attempts -le $max_attempts ]
-        do
-            REVISION=$(($REVISION + 1))
-            attempts=$(($attempts + 1))
+        REVISION=$(($REVISION + 1))
+
+        auto_message="Auto version update to"
+        git_log_grep=`git log --oneline --max-count=1 | grep "$auto_message"`
+        if [ "$git_log_grep" == "" ]; then
+            git fetch --tags
+
+            git_describe=`git describe`
+            sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g;s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
+            git commit -m "$auto_message [$REVISION]" dbms/cmake/version.cmake
+            #git push
 
             tag="v1.1.$REVISION-testing"
 
@@ -36,28 +38,11 @@ function gen_revision_author {
                 if [ $? -ne 0 ]
                 then
                     git tag -d "$tag"
-                else
-                    succeeded=1
+                    echo "Fail to create tag"
+                    exit 1
                 fi
             fi
-        done
 
-        if [ $succeeded -eq 0 ]
-        then
-            echo "Fail to create tag"
-            exit 1
-        fi
-
-        auto_message="Auto version update to"
-        git_log_grep=`git log --oneline --max-count=1 | grep "$auto_message"`
-        if [ "$git_log_grep" == "" ]; then
-            git_describe=`git describe`
-            sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g;s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
-            git commit -m "$auto_message [$REVISION]" dbms/cmake/version.cmake
-            #git push
-            tag="v1.1.$REVISION-testing"
-            git tag --force -a "$tag" -m "$tag"
-            git push --force origin "$tag"
         else
             REVISION=$(get_revision)
             echo reusing old version $REVISION

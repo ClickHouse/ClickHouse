@@ -1337,28 +1337,6 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
-
-private:
-    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result);
-
-    template <typename T>
-    bool executeNumber(
-        const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-        IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets,
-        const ColumnNullable * nullable_col,
-        ColumnNullable * nullable_res_col);
-
-    bool executeFixedString(
-        const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-        IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets,
-        const ColumnNullable * nullable_col,
-        ColumnNullable * nullable_res_col);
-
-    bool executeString(
-        const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
-        IColumn & res_data_col, ColumnArray::Offsets_t & res_array_offsets,
-        const ColumnNullable * nullable_col,
-        ColumnNullable * nullable_res_col);
 };
 
 

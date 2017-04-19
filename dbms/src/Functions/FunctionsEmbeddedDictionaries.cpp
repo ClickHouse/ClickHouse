@@ -13,15 +13,18 @@ void registerFunctionsEmbeddedDictionaries(FunctionFactory & factory)
     factory.registerFunction<FunctionRegionToContinent>();
     factory.registerFunction<FunctionRegionToTopContinent>();
     factory.registerFunction<FunctionRegionToPopulation>();
+    factory.registerFunction<FunctionRegionIn>();
+    factory.registerFunction<FunctionRegionHierarchy>();
+    factory.registerFunction<FunctionRegionToName>();
+
+#if USE_MYSQL
     factory.registerFunction<FunctionOSToRoot>();
     factory.registerFunction<FunctionSEToRoot>();
-    factory.registerFunction<FunctionRegionIn>();
     factory.registerFunction<FunctionOSIn>();
     factory.registerFunction<FunctionSEIn>();
-    factory.registerFunction<FunctionRegionHierarchy>();
     factory.registerFunction<FunctionOSHierarchy>();
     factory.registerFunction<FunctionSEHierarchy>();
-    factory.registerFunction<FunctionRegionToName>();
+#endif
 }
 
 }

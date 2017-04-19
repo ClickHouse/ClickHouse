@@ -174,7 +174,6 @@ debian/clickhouse-benchmark/
 debian/clickhouse-client/
 debian/clickhouse-server-base/
 debian/clickhouse-server-common/
-debian/clickhouse-server-metrika/
 debian/files
 
 dbms/src/Server/data/*
