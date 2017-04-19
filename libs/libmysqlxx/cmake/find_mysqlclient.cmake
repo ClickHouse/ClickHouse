@@ -37,6 +37,7 @@ if (ENABLE_MYSQL)
 
     if (MYSQL_FOUND)
         set(USE_MYSQL 1)
+        set(MYSQLXX_LIBRARY mysqlxx)
     endif ()
 endif ()
 
