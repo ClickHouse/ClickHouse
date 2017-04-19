@@ -75,8 +75,12 @@ public:
         double staleness = 0.0; /// Helps choosing the "least stale" option when all replicas are stale.
     };
 
+    /// This functor must be provided by a client. It must perform a single try that takes a connection
+    /// from the provided pool and checks that it is good.
     using TryGetEntryFunc = std::function<TryResult(NestedPool & pool, std::string & fail_message)>;
 
+    /// The client can provide this functor to affect load balancing - the index of a pool is passed to
+    /// this functor. The pools with lower result value will be tried first.
     using GetPriorityFunc = std::function<size_t(size_t index)>;
 
     /// Returns a single connection.
@@ -152,6 +156,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         size_t error_count = 0;
     };
 
+    /// Sort the pools into order in which they will be tried (based on respective PoolStates).
     std::vector<ShuffledPool> shuffled_pools;
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
@@ -163,11 +168,13 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 return PoolState::compare(*lhs.state, *rhs.state);
             });
 
+    /// We will try to get a connection from each pool until a connection is produced or max_tries is reached.
     std::vector<TryResult> try_results(shuffled_pools.size());
     size_t entries_count = 0;
     size_t up_to_date_count = 0;
     size_t failed_pools_count = 0;
 
+    /// At exit update shared error counts with error counts occured during this call.
     SCOPE_EXIT(
     {
         std::lock_guard<std::mutex> lock(pool_states_mutex);
@@ -181,8 +188,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     {
         for (size_t i = 0; i < shuffled_pools.size(); ++i)
         {
-            if (up_to_date_count >= max_entries
-                || entries_count + failed_pools_count >= nested_pools.size())
+            if (up_to_date_count >= max_entries /// Already enough good entries.
+                || entries_count + failed_pools_count >= nested_pools.size()) /// No more good entries will be produced.
             {
                 finished = true;
                 break;
@@ -234,6 +241,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 
     if (up_to_date_count >= min_entries)
     {
+        /// There is enough up-to-date entries.
         entries.reserve(up_to_date_count);
         for (const TryResult & result: try_results)
         {
@@ -243,6 +251,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     }
     else if (fallback_to_stale_replicas)
     {
+        /// There is not enough up-to-date entries but we are allowed to return stale entries.
+        /// Gather all up-to-date ones and least-bad stale ones.
         std::stable_sort(
                 try_results.begin(), try_results.end(),
                 [](const TryResult & left, const TryResult & right)

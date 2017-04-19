@@ -43,12 +43,12 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
 
 IConnectionPool::Entry ConnectionPoolWithFailover::get(const Settings * settings)
 {
-    Base::TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
+    TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
         return tryGetEntry(pool, fail_message, settings);
     };
 
-    Base::GetPriorityFunc get_priority;
+    GetPriorityFunc get_priority;
     switch (settings ? LoadBalancing(settings->load_balancing) : default_load_balancing)
     {
     case LoadBalancing::NEAREST_HOSTNAME:
@@ -66,7 +66,7 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const Settings * settings
 
 std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const Settings * settings, PoolMode pool_mode)
 {
-    Base::TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
+    TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
         return tryGetEntry(pool, fail_message, settings);
     };
@@ -76,7 +76,7 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const Se
 std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getManyChecked(
         const Settings * settings, PoolMode pool_mode, const QualifiedTableName & table_to_check)
 {
-    Base::TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
+    TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
         return tryGetEntry(pool, fail_message, settings, &table_to_check);
     };
@@ -86,7 +86,7 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getManyChecked(
 std::vector<ConnectionPool::Entry> ConnectionPoolWithFailover::getManyImpl(
         const Settings * settings,
         PoolMode pool_mode,
-        const Base::TryGetEntryFunc & try_get_entry)
+        const TryGetEntryFunc & try_get_entry)
 {
     size_t min_entries = (settings && settings->skip_unavailable_shards) ? 0 : 1;
     size_t max_entries;
@@ -102,7 +102,7 @@ std::vector<ConnectionPool::Entry> ConnectionPoolWithFailover::getManyImpl(
     else
         throw DB::Exception("Unknown pool allocation mode", DB::ErrorCodes::LOGICAL_ERROR);
 
-    Base::GetPriorityFunc get_priority;
+    GetPriorityFunc get_priority;
     switch (settings ? LoadBalancing(settings->load_balancing) : default_load_balancing)
     {
     case LoadBalancing::NEAREST_HOSTNAME:
@@ -120,7 +120,7 @@ std::vector<ConnectionPool::Entry> ConnectionPoolWithFailover::getManyImpl(
     return Base::getMany(min_entries, max_entries, try_get_entry, get_priority, fallback_to_stale_replicas);
 }
 
-ConnectionPoolWithFailover::Base::TryResult
+ConnectionPoolWithFailover::TryResult
 ConnectionPoolWithFailover::tryGetEntry(
         IConnectionPool & pool,
         std::string & fail_message,

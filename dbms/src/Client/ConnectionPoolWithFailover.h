@@ -54,18 +54,24 @@ public:
       */
     std::vector<Entry> getMany(const Settings * settings, PoolMode pool_mode);
 
+    /// The same as getMany(), but check that replication delay for table_to_check is acceptable.
+    /// Delay threshold is taken from settings.
     std::vector<Entry> getManyChecked(
             const Settings * settings, PoolMode pool_mode, const QualifiedTableName & table_to_check);
 
 private:
     using Base = PoolWithFailoverBase<IConnectionPool>;
 
+    /// Get the values of relevant settings and call Base::getMany()
     std::vector<Entry> getManyImpl(
             const Settings * settings,
             PoolMode pool_mode,
-            const Base::TryGetEntryFunc & try_get_entry);
+            const TryGetEntryFunc & try_get_entry);
 
-    Base::TryResult tryGetEntry(
+    /// Try to get a connection from the pool and check that it is good.
+    /// If table_to_check is not null and the check is enabled in settings, check that replication delay
+    /// for this table is not too large.
+    TryResult tryGetEntry(
             IConnectionPool & pool,
             std::string & fail_message,
             const Settings * settings,
