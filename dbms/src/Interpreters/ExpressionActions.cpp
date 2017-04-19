@@ -251,6 +251,8 @@ void ExpressionAction::prepare(Block & sample_block)
 
         case JOIN:
         {
+            /// TODO join_use_nulls setting
+
             for (const auto & col : columns_added_by_join)
                 sample_block.insert(ColumnWithTypeAndName(nullptr, col.type, col.name));
 
