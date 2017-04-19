@@ -16,7 +16,12 @@
 #include <Dictionaries/Embedded/RegionsHierarchy.h>
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
+
+#include <Common/config.h>
+
+#if USE_MYSQL
 #include <Dictionaries/Embedded/TechDataHierarchy.h>
+#endif
 
 
 namespace DB
@@ -80,6 +85,19 @@ struct RegionToPopulationImpl
     static UInt32 apply(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.getPopulation(x); }
 };
 
+struct RegionInImpl
+{
+    static bool apply(UInt32 x, UInt32 y, const RegionsHierarchy & hierarchy) { return hierarchy.in(x, y); }
+};
+
+struct RegionHierarchyImpl
+{
+    static UInt32 toParent(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.toParent(x); }
+};
+
+
+#if USE_MYSQL
+
 struct OSToRootImpl
 {
     static UInt8 apply(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.OSToMostAncestor(x); }
@@ -88,11 +106,6 @@ struct OSToRootImpl
 struct SEToRootImpl
 {
     static UInt8 apply(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.SEToMostAncestor(x); }
-};
-
-struct RegionInImpl
-{
-    static bool apply(UInt32 x, UInt32 y, const RegionsHierarchy & hierarchy) { return hierarchy.in(x, y); }
 };
 
 struct OSInImpl
@@ -105,11 +118,6 @@ struct SEInImpl
     static bool apply(UInt32 x, UInt32 y, const TechDataHierarchy & hierarchy) { return hierarchy.isSEIn(x, y); }
 };
 
-struct RegionHierarchyImpl
-{
-    static UInt32 toParent(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.toParent(x); }
-};
-
 struct OSHierarchyImpl
 {
     static UInt8 toParent(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.OSToParent(x); }
@@ -119,6 +127,8 @@ struct SEHierarchyImpl
 {
     static UInt8 toParent(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.SEToParent(x); }
 };
+
+#endif
 
 
 /** Вспомогательная вещь, позволяющая достать из словаря конкретный словарь, соответствующий точке зрения
@@ -499,20 +509,24 @@ public:
 struct NameRegionToCity                { static constexpr auto name = "regionToCity"; };
 struct NameRegionToArea                { static constexpr auto name = "regionToArea"; };
 struct NameRegionToDistrict            { static constexpr auto name = "regionToDistrict"; };
-struct NameRegionToCountry            { static constexpr auto name = "regionToCountry"; };
-struct NameRegionToContinent        { static constexpr auto name = "regionToContinent"; };
+struct NameRegionToCountry             { static constexpr auto name = "regionToCountry"; };
+struct NameRegionToContinent           { static constexpr auto name = "regionToContinent"; };
 struct NameRegionToTopContinent        { static constexpr auto name = "regionToTopContinent"; };
-struct NameRegionToPopulation        { static constexpr auto name = "regionToPopulation"; };
+struct NameRegionToPopulation          { static constexpr auto name = "regionToPopulation"; };
+struct NameRegionHierarchy             { static constexpr auto name = "regionHierarchy"; };
+struct NameRegionIn                    { static constexpr auto name = "regionIn"; };
+
+
+#if USE_MYSQL
+
 struct NameOSToRoot                    { static constexpr auto name = "OSToRoot"; };
 struct NameSEToRoot                    { static constexpr auto name = "SEToRoot"; };
-
-struct NameRegionIn                    { static constexpr auto name = "regionIn"; };
 struct NameOSIn                        { static constexpr auto name = "OSIn"; };
 struct NameSEIn                        { static constexpr auto name = "SEIn"; };
+struct NameOSHierarchy                 { static constexpr auto name = "OSHierarchy"; };
+struct NameSEHierarchy                 { static constexpr auto name = "SEHierarchy"; };
 
-struct NameRegionHierarchy            { static constexpr auto name = "regionHierarchy"; };
-struct NameOSHierarchy                { static constexpr auto name = "OSHierarchy"; };
-struct NameSEHierarchy                { static constexpr auto name = "SEHierarchy"; };
+#endif
 
 
 struct FunctionRegionToCity :
@@ -578,6 +592,27 @@ struct FunctionRegionToPopulation :
     }
 };
 
+struct FunctionRegionIn :
+    public FunctionIsInWithDictionary<UInt32, RegionInImpl, RegionsHierarchyGetter,    NameRegionIn>
+{
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
+    }
+};
+
+struct FunctionRegionHierarchy :
+    public FunctionHierarchyWithDictionary<UInt32, RegionHierarchyImpl, RegionsHierarchyGetter, NameRegionHierarchy>
+{
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
+    }
+};
+
+
+#if USE_MYSQL
+
 struct FunctionOSToRoot :
     public FunctionTransformWithDictionary<UInt8, OSToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSToRoot>
 {
@@ -593,15 +628,6 @@ struct FunctionSEToRoot :
     static FunctionPtr create(const Context & context)
     {
         return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
-    }
-};
-
-struct FunctionRegionIn :
-    public FunctionIsInWithDictionary<UInt32, RegionInImpl, RegionsHierarchyGetter,    NameRegionIn>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
     }
 };
 
@@ -623,15 +649,6 @@ struct FunctionSEIn :
     }
 };
 
-struct FunctionRegionHierarchy :
-    public FunctionHierarchyWithDictionary<UInt32, RegionHierarchyImpl, RegionsHierarchyGetter, NameRegionHierarchy>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
-    }
-};
-
 struct FunctionOSHierarchy :
     public FunctionHierarchyWithDictionary<UInt8, OSHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSHierarchy>
 {
@@ -649,6 +666,8 @@ struct FunctionSEHierarchy :
         return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
     }
 };
+
+#endif
 
 
 /// Преобразует числовой идентификатор региона в имя на заданном языке, используя словарь.

@@ -1,6 +1,5 @@
-#if USE_MYSQL
 #include <mysql/mysql.h>
-#endif
+
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/StoreQueryResult.h>
 
@@ -10,7 +9,6 @@ namespace mysqlxx
 
 StoreQueryResult::StoreQueryResult(MYSQL_RES * res_, Connection * conn_, const Query * query_) : ResultBase(res_, conn_, query_)
 {
-#if USE_MYSQL
     UInt64 rows = mysql_num_rows(res);
     UInt32 fields = getNumFields();
     reserve(rows);
@@ -24,7 +22,6 @@ StoreQueryResult::StoreQueryResult(MYSQL_RES * res_, Connection * conn_, const Q
         push_back(Row(row, this, &lengths[i * fields]));
     }
     checkError(conn->getDriver());
-#endif
 }
 
 }

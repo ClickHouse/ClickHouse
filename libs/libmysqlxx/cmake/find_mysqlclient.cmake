@@ -1,4 +1,4 @@
-option (ENABLE_MYSQL "Enable Mysql" ON)
+option (ENABLE_MYSQL "Enable MySQL" ON)
 
 if (ENABLE_MYSQL)
 
@@ -35,6 +35,10 @@ if (ENABLE_MYSQL)
         include_directories (${MYSQL_INCLUDE_DIR})
     endif ()
 
+    if (MYSQL_FOUND)
+        set(USE_MYSQL 1)
+        set(MYSQLXX_LIBRARY mysqlxx)
+    endif ()
 endif ()
 
 message (STATUS "Using mysqlclient=${MYSQL_FOUND}: ${MYSQL_INCLUDE_DIR} : ${MYSQLCLIENT_LIB}; static=${STATIC_MYSQLCLIENT_LIB}")

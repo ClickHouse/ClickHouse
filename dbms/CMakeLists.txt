@@ -145,7 +145,7 @@ endif()
 target_link_libraries (dbms
     common
     zkutil
-    mysqlxx
+    ${MYSQLXX_LIBRARY}
     cityhash farmhash metrohash
     ${LZ4_LIBRARY}
     ${ZSTD_LIBRARY}

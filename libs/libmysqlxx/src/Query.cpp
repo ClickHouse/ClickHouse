@@ -1,6 +1,5 @@
-#if USE_MYSQL
 #include <mysql/mysql.h>
-#endif
+
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Query.h>
 
@@ -10,10 +9,8 @@ namespace mysqlxx
 
 Query::Query(Connection * conn_, const std::string & query_string) : std::ostream(0), conn(conn_)
 {
-#if USE_MYSQL
     /// Важно в случае, если Query используется не из того же потока, что Connection.
     mysql_thread_init();
-#endif
 
     init(&query_buf);
 
@@ -28,10 +25,8 @@ Query::Query(Connection * conn_, const std::string & query_string) : std::ostrea
 
 Query::Query(const Query & other) : std::ostream(0), conn(other.conn)
 {
-#if USE_MYSQL
     /// Важно в случае, если Query используется не из того же потока, что Connection.
     mysql_thread_init();
-#endif
 
     init(&query_buf);
     imbue(std::locale::classic());
@@ -52,9 +47,7 @@ Query & Query::operator= (const Query & other)
 
 Query::~Query()
 {
-#if USE_MYSQL
     mysql_thread_end();
-#endif
 }
 
 void Query::reset()
@@ -67,38 +60,28 @@ void Query::reset()
 void Query::executeImpl()
 {
     std::string query_string = query_buf.str();
-#if USE_MYSQL
     if (mysql_real_query(conn->getDriver(), query_string.data(), query_string.size()))
         throw BadQuery(errorMessage(conn->getDriver()), mysql_errno(conn->getDriver()));
-#endif
 }
 
 UseQueryResult Query::use()
 {
     executeImpl();
-#if USE_MYSQL
     MYSQL_RES * res = mysql_use_result(conn->getDriver());
     if (!res)
         onError(conn->getDriver());
 
     return UseQueryResult(res, conn, this);
-#else
-    throw std::logic_error{"Mysql support not compiled"};
-#endif
 }
 
 StoreQueryResult Query::store()
 {
     executeImpl();
-#if USE_MYSQL
     MYSQL_RES * res = mysql_store_result(conn->getDriver());
     if (!res)
         checkError(conn->getDriver());
 
     return StoreQueryResult(res, conn, this);
-#else
-    throw std::logic_error{"Mysql support not compiled"};
-#endif
 }
 
 void Query::execute()
@@ -108,11 +91,7 @@ void Query::execute()
 
 UInt64 Query::insertID()
 {
-#if USE_MYSQL
     return mysql_insert_id(conn->getDriver());
-#else
-    throw std::logic_error{"Mysql support not compiled"};
-#endif
 }
 
 }
