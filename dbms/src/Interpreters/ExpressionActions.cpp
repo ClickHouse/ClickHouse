@@ -372,7 +372,10 @@ void ExpressionAction::execute(Block & block) const
                 }
 
                 any_array_ptr = non_empty_array_columns.begin()->second;
-                any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
+                if (auto converted = any_array_ptr->convertToFullColumnIfConst())
+                    any_array_ptr = converted;
+
+                any_array = &typeid_cast<const ColumnArray &>(*any_array_ptr);
             }
 
             size_t columns = block.columns();
