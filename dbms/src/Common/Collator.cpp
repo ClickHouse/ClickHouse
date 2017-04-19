@@ -8,6 +8,8 @@
     #endif
     #include <unicode/ucol.h>
     #pragma GCC diagnostic pop
+#else
+    #pragma GCC diagnostic ignored "-Wunused-private-field"
 #endif
 
 #include <Common/Exception.h>
