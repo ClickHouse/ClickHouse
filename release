@@ -56,9 +56,11 @@ if $FOR_TESTS; then
         # для тестирования, с valgrid - без libtcmalloc
         LIBTCMALLOC_OPTS="-DENABLE_LIBTCMALLOC=0"
         CMAKE_BUILD_TYPE=''
+        VERSION_POSTFIX+=-valgrind
     else
         # для тестирования, без valgrind - линкуем с debug версией libtcmalloc
         LIBTCMALLOC_OPTS="-DDEBUG_LIBTCMALLOC=1"
+        VERSION_POSTFIX+=-debug
     fi
 else
     # если LIBTCMALLOC выключен, собраем без профайлинга
