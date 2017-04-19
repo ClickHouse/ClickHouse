@@ -1,6 +1,9 @@
 #!/bin/bash
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release_lib.sh"
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+cd $CURDIR;
+
+source "./release_lib.sh"
 
 CONTROL=debian/control
 CHLOG=debian/changelog
@@ -19,6 +22,7 @@ do
     #   STANDALONE='yes'
         TEST='yes'
     #   DEBUILD_NOSIGN_OPTIONS="-us -uc"
+        VERSION_POSTFIX+=-test
         shift
     elif [[ $1 == '--ignore-deps' ]]; then
         DEBUILD_NODEPS_OPTIONS="-d"
@@ -34,17 +38,15 @@ do
 done
 
 if [ -z "$REVISION" ] ; then
-    if [[ $TEST != 'yes' ]]; then
-        # now incrementing done in external release scripts via --version
+#    if [[ $TEST != 'yes' ]]; then
+#        # now incrementing done in external release scripts via --version
         get_revision_author
-    else
-        REVISION=99999
-    fi
+#    else
+#        REVISION=99999
+#    fi
 fi
 
-echo -e "\nCurrent revision is $REVISION"
-export REVISION=$REVISION
-
+# Dont use me!:
 if $FOR_TESTS; then
     # если этот пакет собирается для тестирования, линкуем c debug версией libtcmalloc
     CMAKE_BUILD_TYPE=Debug
@@ -54,14 +56,13 @@ if $FOR_TESTS; then
         # для тестирования, с valgrid - без libtcmalloc
         LIBTCMALLOC_OPTS="-DENABLE_LIBTCMALLOC=0"
         CMAKE_BUILD_TYPE=''
+        VERSION_POSTFIX+=-valgrind
     else
         # для тестирования, без valgrind - линкуем с debug версией libtcmalloc
         LIBTCMALLOC_OPTS="-DDEBUG_LIBTCMALLOC=1"
+        VERSION_POSTFIX+=-debug
     fi
 else
-    # устанавливаем в пустое значение, чтобы взялось по умолчанию из CMakeList.txt
-    CMAKE_BUILD_TYPE=''
-
     # если LIBTCMALLOC выключен, собраем без профайлинга
     if $DISABLE_LIBTCMALLOC ; then
         # релиз, с valgrid - без libtcmalloc
@@ -72,23 +73,37 @@ else
     fi
 fi
 
+
 # Если собираем с санитайзером, правим конфигурацию
 if [ -n "$SANITIZER" ] ; then
     CMAKE_BUILD_TYPE=$SANITIZER
-
-    REVISION=${REVISION}-${SANITIZER,,}
-
+    VERSION_POSTFIX+=-${SANITIZER,,}
     # todo: нужно ли отключить libtcmalloc?
     LIBTCMALLOC_OPTS="-DENABLE_LIBTCMALLOC=0"
     # GLIBC_COMPATIBILITY отключен по умолчанию
+elif [[ $BUILD_TYPE == 'valgrind' ]]; then
+    LIBTCMALLOC_OPTS="-DENABLE_LIBTCMALLOC=0"
+    VERSION_POSTFIX+=-$BUILD_TYPE
+elif [[ $BUILD_TYPE == 'debug' ]]; then
+    CMAKE_BUILD_TYPE=Debug
+    LIBTCMALLOC_OPTS="-DDEBUG_LIBTCMALLOC=1"
+    VERSION_POSTFIX+=-$BUILD_TYPE
+fi
+
+if [ -z "$THREAD_COUNT" ] ; then
+    THREAD_COUNT=`nproc || grep -c ^processor /proc/cpuinfo`
 fi
 
 CMAKE_FLAGS_ADD+=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE"
 
+REVISION+=$VERSION_POSTFIX
+echo -e "\nCurrent revision is $REVISION"
+#export REVISION=$REVISION
+
 gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG"
 
 # Build (only binary packages).
-debuild -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=`nproc || grep -c ^processor /proc/cpuinfo` -e DEB_CC -e DEB_CXX -e CMAKE_FLAGS_ADD="$CMAKE_FLAGS_ADD" -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+debuild -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT -e DEB_CC -e DEB_CXX -e CMAKE_FLAGS_ADD="$CMAKE_FLAGS_ADD" -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 
 # nobody use it?
 #if [[ $STANDALONE != 'yes' ]]
