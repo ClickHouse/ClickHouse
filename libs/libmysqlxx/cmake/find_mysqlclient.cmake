@@ -42,6 +42,6 @@ endif ()
 
 if (USE_MYSQL)
     message (STATUS "Using mysqlclient=${MYSQL_FOUND}: ${MYSQL_INCLUDE_DIR} : ${MYSQLCLIENT_LIB}; static=${STATIC_MYSQLCLIENT_LIB}")
-else
+else ()
     message (STATUS "Build without mysqlclient (support for MYSQL dictionary source will be disabled)")
 endif ()

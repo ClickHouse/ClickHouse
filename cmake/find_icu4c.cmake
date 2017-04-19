@@ -16,6 +16,6 @@ endif ()
 
 if (USE_ICU)
     message (STATUS "Using icu=${USE_ICU}: ${ICU_INCLUDE_DIR} : ${ICU_LIBS}")
-else
+else ()
     message (STATUS "Build without ICU (support for collations and charset conversion functions will be disabled)")
 endif ()
