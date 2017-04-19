@@ -1,3 +1,6 @@
+#include <Common/config.h>
+#if USE_ICU
+
 #include <Functions/IFunction.h>
 #include <Functions/ObjectPool.h>
 #include <Functions/FunctionFactory.h>
@@ -216,3 +219,14 @@ void registerFunctionsCharset(FunctionFactory & factory)
 }
 
 }
+
+#else
+
+namespace DB
+{
+    class FunctionFactory;
+    void registerFunctionsCharset(FunctionFactory & factory) {}
+}
+
+
+#endif

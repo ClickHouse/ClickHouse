@@ -105,12 +105,12 @@ cd ..
 sudo apt-get install subversion
 mkdir llvm
 cd llvm
-svn co http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_390/final llvm
+svn co http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_400/final llvm
 cd llvm/tools
-svn co http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_390/final clang
+svn co http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_400/final clang
 cd ..
 cd projects/
-svn co http://llvm.org/svn/llvm-project/compiler-rt/tags/RELEASE_390/final compiler-rt
+svn co http://llvm.org/svn/llvm-project/compiler-rt/tags/RELEASE_400/final compiler-rt
 cd ../..
 mkdir build
 cd build/

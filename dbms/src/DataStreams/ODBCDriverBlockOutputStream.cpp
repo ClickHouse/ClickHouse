@@ -7,8 +7,11 @@
 namespace DB
 {
 
-ODBCDriverBlockOutputStream::ODBCDriverBlockOutputStream(WriteBuffer & out_)
-    : out(out_) {}
+ODBCDriverBlockOutputStream::ODBCDriverBlockOutputStream(WriteBuffer & out_, const Block & sample_)
+    : out(out_)
+    , sample(sample_)
+{
+}
 
 void ODBCDriverBlockOutputStream::flush()
 {
@@ -17,28 +20,10 @@ void ODBCDriverBlockOutputStream::flush()
 
 void ODBCDriverBlockOutputStream::write(const Block & block)
 {
-    size_t rows = block.rows();
-    size_t columns = block.columns();
-
-    /// Header.
-    if (is_first)
-    {
-        is_first = false;
-
-        /// Number of columns.
-        writeVarUInt(columns, out);
-
-        /// Names and types of columns.
-        for (size_t j = 0; j < columns; ++j)
-        {
-            const ColumnWithTypeAndName & col = block.getByPosition(j);
-
-            writeStringBinary(col.name, out);
-            writeStringBinary(col.type->getName(), out);
-        }
-    }
-
+    const size_t rows = block.rows();
+    const size_t columns = block.columns();
     String text_value;
+
     for (size_t i = 0; i < rows; ++i)
     {
         for (size_t j = 0; j < columns; ++j)
@@ -53,6 +38,23 @@ void ODBCDriverBlockOutputStream::write(const Block & block)
 
             writeStringBinary(text_value, out);
         }
+    }
+}
+
+void ODBCDriverBlockOutputStream::writePrefix()
+{
+    const size_t columns = sample.columns();
+
+    /// Number of columns.
+    writeVarUInt(columns, out);
+
+    /// Names and types of columns.
+    for (size_t i = 0; i < columns; ++i)
+    {
+        const ColumnWithTypeAndName & col = sample.getByPosition(i);
+
+        writeStringBinary(col.name, out);
+        writeStringBinary(col.type->getName(), out);
     }
 }
 

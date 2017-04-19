@@ -4,7 +4,6 @@
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 #include <Core/Field.h>
-#include <mysqlxx/Null.h>
 
 
 /// This is for Yandex.Metrica code.

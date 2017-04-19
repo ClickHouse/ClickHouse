@@ -306,16 +306,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     DataPartsVector broken_parts_to_detach;
     size_t suspicious_broken_parts = 0;
 
-    Poco::RegularExpression::MatchVec matches;
     for (const String & file_name : part_file_names)
     {
-        if (!ActiveDataPartSet::isPartDirectory(file_name, &matches))
+        MutableDataPartPtr part = std::make_shared<DataPart>(*this);
+        if (!ActiveDataPartSet::parsePartNameImpl(file_name, part.get()))
             continue;
 
-        MutableDataPartPtr part = std::make_shared<DataPart>(*this);
-        ActiveDataPartSet::parsePartName(file_name, *part, &matches);
         part->name = file_name;
-
         bool broken = false;
 
         try
@@ -365,10 +362,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 {
                     if (contained_name == file_name)
                         continue;
-                    if (!ActiveDataPartSet::isPartDirectory(contained_name, &matches))
-                        continue;
+
                     DataPart contained_part(*this);
-                    ActiveDataPartSet::parsePartName(contained_name, contained_part, &matches);
+                    if (!ActiveDataPartSet::parsePartNameImpl(contained_name, &contained_part))
+                        continue;
+
                     if (part->contains(contained_part))
                     {
                         LOG_ERROR(log, "Found part " << full_path + contained_name);

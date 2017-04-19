@@ -65,7 +65,7 @@ namespace
 
         ResultOffsetsBuilder(IColumn::Offsets_t * res_offsets_) : res_offsets(*res_offsets_) {}
 
-        void reserve(size_t result_size_hint, size_t src_size)
+        void reserve(ssize_t result_size_hint, size_t src_size)
         {
             res_offsets.reserve(result_size_hint > 0 ? result_size_hint : src_size);
         }
@@ -108,7 +108,7 @@ namespace
     struct NoResultOffsetsBuilder
     {
         NoResultOffsetsBuilder(IColumn::Offsets_t * res_offsets_) {}
-        void reserve(size_t result_size_hint, size_t src_size) {}
+        void reserve(ssize_t result_size_hint, size_t src_size) {}
         void insertOne(size_t array_size) {}
 
         template <size_t SIMD_BYTES>

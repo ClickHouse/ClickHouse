@@ -1918,9 +1918,334 @@ DataTypePtr FunctionEmptyArrayToSingle::getReturnTypeImpl(const DataTypes & argu
     return arguments[0]->clone();
 }
 
+
+namespace
+{
+    namespace FunctionEmptyArrayToSingleImpl
+    {
+        bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
+        {
+            if (const ColumnConstArray * const_array = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[0]).column.get()))
+            {
+                if (const_array->getData().empty())
+                {
+                    auto nested_type = typeid_cast<const DataTypeArray &>(*block.safeGetByPosition(arguments[0]).type).getNestedType();
+
+                    block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(
+                        block.rows(),
+                        Array{nested_type->getDefault()},
+                        nested_type->clone());
+                }
+                else
+                    block.safeGetByPosition(result).column = block.safeGetByPosition(arguments[0]).column;
+
+                return true;
+            }
+            else
+                return false;
+        }
+
+        template <typename T, bool nullable>
+        bool executeNumber(
+            const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
+            IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets,
+            const NullMap * src_null_map,
+            NullMap * res_null_map)
+        {
+            if (const ColumnVector<T> * src_data_concrete = typeid_cast<const ColumnVector<T> *>(&src_data))
+            {
+                const PaddedPODArray<T> & src_data = src_data_concrete->getData();
+
+                auto concrete_res_data = typeid_cast<ColumnVector<T> *>(&res_data_col);
+                if (concrete_res_data == nullptr)
+                    throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+
+                PaddedPODArray<T> & res_data = concrete_res_data->getData();
+                size_t size = src_offsets.size();
+                res_offsets.resize(size);
+                res_data.reserve(src_data.size());
+
+                if (nullable)
+                    res_null_map->reserve(src_null_map->size());
+
+                ColumnArray::Offset_t src_prev_offset = 0;
+                ColumnArray::Offset_t res_prev_offset = 0;
+
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if (src_offsets[i] != src_prev_offset)
+                    {
+                        size_t size_to_write = src_offsets[i] - src_prev_offset;
+                        res_data.resize(res_prev_offset + size_to_write);
+                        memcpy(&res_data[res_prev_offset], &src_data[src_prev_offset], size_to_write * sizeof(T));
+
+                        if (nullable)
+                        {
+                            res_null_map->resize(res_prev_offset + size_to_write);
+                            memcpy(&(*res_null_map)[res_prev_offset], &(*src_null_map)[src_prev_offset], size_to_write);
+                        }
+
+                        res_prev_offset += size_to_write;
+                        res_offsets[i] = res_prev_offset;
+                    }
+                    else
+                    {
+                        res_data.push_back(T());
+                        ++res_prev_offset;
+                        res_offsets[i] = res_prev_offset;
+
+                        if (nullable)
+                            res_null_map->push_back(1); /// Push NULL.
+                    }
+
+                    src_prev_offset = src_offsets[i];
+                }
+
+                return true;
+            }
+            else
+                return false;
+        }
+
+
+        template <bool nullable>
+        bool executeFixedString(
+            const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
+            IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets,
+            const NullMap * src_null_map,
+            NullMap * res_null_map)
+        {
+            if (const ColumnFixedString * src_data_concrete = typeid_cast<const ColumnFixedString *>(&src_data))
+            {
+                const size_t n = src_data_concrete->getN();
+                const ColumnFixedString::Chars_t & src_data = src_data_concrete->getChars();
+
+                auto concrete_res_data = typeid_cast<ColumnFixedString *>(&res_data_col);
+                if (concrete_res_data == nullptr)
+                    throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+
+                ColumnFixedString::Chars_t & res_data = concrete_res_data->getChars();
+                size_t size = src_offsets.size();
+                res_offsets.resize(size);
+                res_data.reserve(src_data.size());
+
+                if (nullable)
+                    res_null_map->reserve(src_null_map->size());
+
+                ColumnArray::Offset_t src_prev_offset = 0;
+                ColumnArray::Offset_t res_prev_offset = 0;
+
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if (src_offsets[i] != src_prev_offset)
+                    {
+                        size_t size_to_write = src_offsets[i] - src_prev_offset;
+                        size_t prev_res_data_size = res_data.size();
+                        res_data.resize(prev_res_data_size + size_to_write * n);
+                        memcpy(&res_data[prev_res_data_size], &src_data[src_prev_offset * n], size_to_write * n);
+
+                        if (nullable)
+                        {
+                            res_null_map->resize(res_prev_offset + size_to_write);
+                            memcpy(&(*res_null_map)[res_prev_offset], &(*src_null_map)[src_prev_offset], size_to_write);
+                        }
+
+                        res_prev_offset += size_to_write;
+                        res_offsets[i] = res_prev_offset;
+                    }
+                    else
+                    {
+                        size_t prev_res_data_size = res_data.size();
+                        res_data.resize(prev_res_data_size + n);
+                        memset(&res_data[prev_res_data_size], 0, n);
+                        ++res_prev_offset;
+                        res_offsets[i] = res_prev_offset;
+
+                        if (nullable)
+                            res_null_map->push_back(1);
+                    }
+
+                    src_prev_offset = src_offsets[i];
+                }
+
+                return true;
+            }
+            else
+                return false;
+        }
+
+
+        template <bool nullable>
+        bool executeString(
+            const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
+            IColumn & res_data_col, ColumnArray::Offsets_t & res_array_offsets,
+            const NullMap * src_null_map,
+            NullMap * res_null_map)
+        {
+            if (const ColumnString * src_data_concrete = typeid_cast<const ColumnString *>(&src_data))
+            {
+                const ColumnString::Offsets_t & src_string_offsets = src_data_concrete->getOffsets();
+
+                auto concrete_res_string_offsets = typeid_cast<ColumnString *>(&res_data_col);
+                if (concrete_res_string_offsets == nullptr)
+                    throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+                ColumnString::Offsets_t & res_string_offsets = concrete_res_string_offsets->getOffsets();
+
+                const ColumnString::Chars_t & src_data = src_data_concrete->getChars();
+
+                auto concrete_res_data = typeid_cast<ColumnString *>(&res_data_col);
+                if (concrete_res_data == nullptr)
+                    throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+                ColumnString::Chars_t & res_data = concrete_res_data->getChars();
+
+                size_t size = src_array_offsets.size();
+                res_array_offsets.resize(size);
+                res_string_offsets.reserve(src_string_offsets.size());
+                res_data.reserve(src_data.size());
+
+                if (nullable)
+                    res_null_map->reserve(src_null_map->size());
+
+                ColumnArray::Offset_t src_array_prev_offset = 0;
+                ColumnArray::Offset_t res_array_prev_offset = 0;
+
+                ColumnString::Offset_t src_string_prev_offset = 0;
+                ColumnString::Offset_t res_string_prev_offset = 0;
+
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if (src_array_offsets[i] != src_array_prev_offset)
+                    {
+                        size_t array_size = src_array_offsets[i] - src_array_prev_offset;
+
+                        size_t bytes_to_copy = 0;
+                        size_t from_string_prev_offset_local = src_string_prev_offset;
+                        for (size_t j = 0; j < array_size; ++j)
+                        {
+                            size_t string_size = src_string_offsets[src_array_prev_offset + j] - from_string_prev_offset_local;
+
+                            res_string_prev_offset += string_size;
+                            res_string_offsets.push_back(res_string_prev_offset);
+
+                            from_string_prev_offset_local += string_size;
+                            bytes_to_copy += string_size;
+                        }
+
+                        size_t res_data_old_size = res_data.size();
+                        res_data.resize(res_data_old_size + bytes_to_copy);
+                        memcpy(&res_data[res_data_old_size], &src_data[src_string_prev_offset], bytes_to_copy);
+
+                        if (nullable)
+                        {
+                            res_null_map->resize(res_array_prev_offset + array_size);
+                            memcpy(&(*res_null_map)[res_array_prev_offset], &(*src_null_map)[src_array_prev_offset], array_size);
+                        }
+
+                        res_array_prev_offset += array_size;
+                        res_array_offsets[i] = res_array_prev_offset;
+                    }
+                    else
+                    {
+                        res_data.push_back(0);  /// An empty string, including zero at the end.
+
+                        if (nullable)
+                            res_null_map->push_back(1);
+
+                        ++res_string_prev_offset;
+                        res_string_offsets.push_back(res_string_prev_offset);
+
+                        ++res_array_prev_offset;
+                        res_array_offsets[i] = res_array_prev_offset;
+                    }
+
+                    src_array_prev_offset = src_array_offsets[i];
+
+                    if (src_array_prev_offset)
+                        src_string_prev_offset = src_string_offsets[src_array_prev_offset - 1];
+                }
+
+                return true;
+            }
+            else
+                return false;
+        }
+
+
+        template <bool nullable>
+        void executeGeneric(
+            const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
+            IColumn & res_data, ColumnArray::Offsets_t & res_offsets,
+            const NullMap * src_null_map,
+            NullMap * res_null_map)
+        {
+            size_t size = src_offsets.size();
+            res_offsets.resize(size);
+            res_data.reserve(src_data.size());
+
+            if (nullable)
+                res_null_map->reserve(src_null_map->size());
+
+            ColumnArray::Offset_t src_prev_offset = 0;
+            ColumnArray::Offset_t res_prev_offset = 0;
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                if (src_offsets[i] != src_prev_offset)
+                {
+                    size_t size_to_write = src_offsets[i] - src_prev_offset;
+                    res_data.insertRangeFrom(src_data, src_prev_offset, size_to_write);
+
+                    if (nullable)
+                    {
+                        res_null_map->resize(res_prev_offset + size_to_write);
+                        memcpy(&(*res_null_map)[res_prev_offset], &(*src_null_map)[src_prev_offset], size_to_write);
+                    }
+
+                    res_prev_offset += size_to_write;
+                    res_offsets[i] = res_prev_offset;
+                }
+                else
+                {
+                    res_data.insertDefault();
+                    ++res_prev_offset;
+                    res_offsets[i] = res_prev_offset;
+
+                    if (nullable)
+                        res_null_map->push_back(1);
+                }
+
+                src_prev_offset = src_offsets[i];
+            }
+        }
+
+
+        template <bool nullable>
+        void executeDispatch(
+            const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
+            IColumn & res_data_col, ColumnArray::Offsets_t & res_array_offsets,
+            const NullMap * src_null_map,
+            NullMap * res_null_map)
+        {
+            if (!( executeNumber<UInt8, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+                || executeNumber<UInt16, nullable> (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+                || executeNumber<UInt32, nullable> (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+                || executeNumber<UInt64, nullable> (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+                || executeNumber<Int8, nullable>   (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+                || executeNumber<Int16, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+                || executeNumber<Int32, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+                || executeNumber<Int64, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+                || executeNumber<Float32, nullable>(src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+                || executeNumber<Float64, nullable>(src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+                || executeString<nullable>         (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+                || executeFixedString<nullable>    (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)))
+                executeGeneric<nullable>           (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map);
+        }
+    }
+}
+
 void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    if (executeConst(block, arguments, result))
+    if (FunctionEmptyArrayToSingleImpl::executeConst(block, arguments, result))
         return;
 
     const ColumnArray * array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
@@ -1937,19 +2262,22 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
     IColumn & res_data = res.getData();
     ColumnArray::Offsets_t & res_offsets = res.getOffsets();
 
-    const ColumnNullable * nullable_col = nullptr;
-    ColumnNullable * nullable_res_col = nullptr;
+    const NullMap * src_null_map = nullptr;
+    NullMap * res_null_map = nullptr;
 
     const IColumn * inner_col;
     IColumn * inner_res_col;
 
-    if (src_data.isNullable())
+    bool nullable = src_data.isNullable();
+    if (nullable)
     {
-        nullable_col = static_cast<const ColumnNullable *>(&src_data);
+        auto nullable_col = static_cast<const ColumnNullable *>(&src_data);
         inner_col = nullable_col->getNestedColumn().get();
+        src_null_map = &nullable_col->getNullMap();
 
-        nullable_res_col = static_cast<ColumnNullable *>(&res_data);
+        auto nullable_res_col = static_cast<ColumnNullable *>(&res_data);
         inner_res_col = nullable_res_col->getNestedColumn().get();
+        res_null_map = &nullable_res_col->getNullMap();
     }
     else
     {
@@ -1957,237 +2285,12 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
         inner_res_col = &res_data;
     }
 
-    if (!(    executeNumber<UInt8>    (*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        ||    executeNumber<UInt16>    (*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        ||    executeNumber<UInt32>    (*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        ||    executeNumber<UInt64>    (*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        ||    executeNumber<Int8>        (*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        ||    executeNumber<Int16>    (*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        ||    executeNumber<Int32>    (*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        ||    executeNumber<Int64>    (*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        ||    executeNumber<Float32>    (*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        ||    executeNumber<Float64>    (*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        ||    executeString            (*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        ||    executeFixedString        (*inner_col, src_offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)))
-        throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
-            + " of first argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
-}
-
-bool FunctionEmptyArrayToSingle::executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
-{
-    if (const ColumnConstArray * const_array = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[0]).column.get()))
-    {
-        if (const_array->getData().empty())
-        {
-            auto nested_type = typeid_cast<const DataTypeArray &>(*block.safeGetByPosition(arguments[0]).type).getNestedType();
-
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(
-                block.rows(),
-                Array{nested_type->getDefault()},
-                nested_type->clone());
-        }
-        else
-            block.safeGetByPosition(result).column = block.safeGetByPosition(arguments[0]).column;
-
-        return true;
-    }
+    if (nullable)
+        FunctionEmptyArrayToSingleImpl::executeDispatch<true>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map);
     else
-        return false;
+        FunctionEmptyArrayToSingleImpl::executeDispatch<false>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map);
 }
 
-template <typename T>
-bool FunctionEmptyArrayToSingle::executeNumber(
-    const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-    IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets,
-    const ColumnNullable * nullable_col,
-    ColumnNullable * nullable_res_col)
-{
-    if (const ColumnVector<T> * src_data_concrete = typeid_cast<const ColumnVector<T> *>(&src_data))
-    {
-        const PaddedPODArray<T> & src_data = src_data_concrete->getData();
-
-        auto concrete_res_data = typeid_cast<ColumnVector<T> *>(&res_data_col);
-        if (concrete_res_data == nullptr)
-            throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-
-        PaddedPODArray<T> & res_data = concrete_res_data->getData();
-        size_t size = src_offsets.size();
-        res_offsets.resize(size);
-        res_data.reserve(src_data.size());
-
-        if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
-            nullable_res_col->getNullMapColumn() = nullable_col->getNullMapColumn();
-
-        ColumnArray::Offset_t src_prev_offset = 0;
-        ColumnArray::Offset_t res_prev_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (src_offsets[i] != src_prev_offset)
-            {
-                size_t size_to_write = src_offsets[i] - src_prev_offset;
-                size_t prev_res_data_size = res_data.size();
-                res_data.resize(prev_res_data_size + size_to_write);
-                memcpy(&res_data[prev_res_data_size], &src_data[src_prev_offset], size_to_write * sizeof(T));
-                res_prev_offset += size_to_write;
-                res_offsets[i] = res_prev_offset;
-            }
-            else
-            {
-                res_data.push_back(T());
-                ++res_prev_offset;
-                res_offsets[i] = res_prev_offset;
-            }
-
-            src_prev_offset = src_offsets[i];
-        }
-
-        return true;
-    }
-    else
-        return false;
-}
-
-bool FunctionEmptyArrayToSingle::executeFixedString(
-    const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-    IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets,
-    const ColumnNullable * nullable_col,
-    ColumnNullable * nullable_res_col)
-{
-    if (const ColumnFixedString * src_data_concrete = typeid_cast<const ColumnFixedString *>(&src_data))
-    {
-        const size_t n = src_data_concrete->getN();
-        const ColumnFixedString::Chars_t & src_data = src_data_concrete->getChars();
-
-        auto concrete_res_data = typeid_cast<ColumnFixedString *>(&res_data_col);
-        if (concrete_res_data == nullptr)
-            throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-
-        ColumnFixedString::Chars_t & res_data = concrete_res_data->getChars();
-        size_t size = src_offsets.size();
-        res_offsets.resize(size);
-        res_data.reserve(src_data.size());
-
-        if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
-            nullable_res_col->getNullMapColumn() = nullable_col->getNullMapColumn();
-
-        ColumnArray::Offset_t src_prev_offset = 0;
-        ColumnArray::Offset_t res_prev_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (src_offsets[i] != src_prev_offset)
-            {
-                size_t size_to_write = src_offsets[i] - src_prev_offset;
-                size_t prev_res_data_size = res_data.size();
-                res_data.resize(prev_res_data_size + size_to_write * n);
-                memcpy(&res_data[prev_res_data_size], &src_data[src_prev_offset], size_to_write * n);
-                res_prev_offset += size_to_write;
-                res_offsets[i] = res_prev_offset;
-            }
-            else
-            {
-                size_t prev_res_data_size = res_data.size();
-                res_data.resize(prev_res_data_size + n);
-                memset(&res_data[prev_res_data_size], 0, n);
-                ++res_prev_offset;
-                res_offsets[i] = res_prev_offset;
-            }
-
-            src_prev_offset = src_offsets[i];
-        }
-
-        return true;
-    }
-    else
-        return false;
-}
-
-bool FunctionEmptyArrayToSingle::executeString(
-    const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
-    IColumn & res_data_col, ColumnArray::Offsets_t & res_array_offsets,
-    const ColumnNullable * nullable_col,
-    ColumnNullable * nullable_res_col)
-{
-    if (const ColumnString * src_data_concrete = typeid_cast<const ColumnString *>(&src_data))
-    {
-        const ColumnString::Offsets_t & src_string_offsets = src_data_concrete->getOffsets();
-
-        auto concrete_res_string_offsets = typeid_cast<ColumnString *>(&res_data_col);
-        if (concrete_res_string_offsets == nullptr)
-            throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-        ColumnString::Offsets_t & res_string_offsets = concrete_res_string_offsets->getOffsets();
-
-        const ColumnString::Chars_t & src_data = src_data_concrete->getChars();
-
-        auto concrete_res_data = typeid_cast<ColumnString *>(&res_data_col);
-        if (concrete_res_data == nullptr)
-            throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-        ColumnString::Chars_t & res_data = concrete_res_data->getChars();
-
-        size_t size = src_array_offsets.size();
-        res_array_offsets.resize(size);
-        res_string_offsets.reserve(src_string_offsets.size());
-        res_data.reserve(src_data.size());
-
-        if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
-            nullable_res_col->getNullMapColumn() = nullable_col->getNullMapColumn();
-
-        ColumnArray::Offset_t src_array_prev_offset = 0;
-        ColumnArray::Offset_t res_array_prev_offset = 0;
-
-        ColumnString::Offset_t src_string_prev_offset = 0;
-        ColumnString::Offset_t res_string_prev_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (src_array_offsets[i] != src_array_prev_offset)
-            {
-                size_t array_size = src_array_offsets[i] - src_array_prev_offset;
-
-                size_t bytes_to_copy = 0;
-                size_t from_string_prev_offset_local = src_string_prev_offset;
-                for (size_t j = 0; j < array_size; ++j)
-                {
-                    size_t string_size = src_string_offsets[src_array_prev_offset + j] - from_string_prev_offset_local;
-
-                    res_string_prev_offset += string_size;
-                    res_string_offsets.push_back(res_string_prev_offset);
-
-                    from_string_prev_offset_local += string_size;
-                    bytes_to_copy += string_size;
-                }
-
-                size_t res_data_old_size = res_data.size();
-                res_data.resize(res_data_old_size + bytes_to_copy);
-                memcpy(&res_data[res_data_old_size], &src_data[src_string_prev_offset], bytes_to_copy);
-
-                res_array_prev_offset += array_size;
-                res_array_offsets[i] = res_array_prev_offset;
-            }
-            else
-            {
-                res_data.push_back(0);  /// An empty string, including zero at the end.
-
-                ++res_string_prev_offset;
-                res_string_offsets.push_back(res_string_prev_offset);
-
-                ++res_array_prev_offset;
-                res_array_offsets[i] = res_array_prev_offset;
-            }
-
-            src_array_prev_offset = src_array_offsets[i];
-
-            if (src_array_prev_offset)
-                src_string_prev_offset = src_string_offsets[src_array_prev_offset - 1];
-        }
-
-        return true;
-    }
-    else
-        return false;
-}
 
 /// Implementation of FunctionRange.
 

@@ -22,7 +22,6 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
-include_directories (${ODBC_INCLUDE_DIRECTORIES})
 include_directories (${ClickHouse_BINARY_DIR}/dbms/src)
 
 if (NOT NO_WERROR)
@@ -146,7 +145,7 @@ endif()
 target_link_libraries (dbms
     common
     zkutil
-    mysqlxx
+    ${MYSQLXX_LIBRARY}
     cityhash farmhash metrohash
     ${LZ4_LIBRARY}
     ${ZSTD_LIBRARY}
