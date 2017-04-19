@@ -20,7 +20,7 @@ else ()
         "${ClickHouse_SOURCE_DIR}/contrib/libpoco/XML/include/"
     )
 
-    if (POCO_ENABLE_MONGODB)
+    if (NOT DEFINED POCO_ENABLE_MONGODB OR POCO_ENABLE_MONGODB)
         set (Poco_MongoDB_FOUND 1)
         set (Poco_MongoDB_LIBRARY PocoMongoDB)
         list (APPEND Poco_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/libpoco/MongoDB/include/")
