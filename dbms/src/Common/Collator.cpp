@@ -1,18 +1,34 @@
 #include <Common/Collator.h>
 
-#pragma GCC diagnostic push
-#ifdef __APPLE__
-#pragma GCC diagnostic ignored "-Wold-style-cast"
+#include <Common/config.h>
+#if USE_ICU
+    #pragma GCC diagnostic push
+    #ifdef __APPLE__
+    #pragma GCC diagnostic ignored "-Wold-style-cast"
+    #endif
+    #include <unicode/ucol.h>
+    #pragma GCC diagnostic pop
 #endif
-#include <unicode/ucol.h>
-#pragma GCC diagnostic pop
 
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/String.h>
 
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int UNSUPPORTED_COLLATION_LOCALE;
+        extern const int COLLATION_COMPARISON_FAILED;
+        extern const int SUPPORT_IS_DISABLED;
+    }
+}
+
+
 Collator::Collator(const std::string & locale_) : locale(Poco::toLower(locale_))
 {
+#if USE_ICU
     UErrorCode status = U_ZERO_ERROR;
 
     collator = ucol_open(locale.c_str(), &status);
@@ -21,15 +37,22 @@ Collator::Collator(const std::string & locale_) : locale(Poco::toLower(locale_))
         ucol_close(collator);
         throw DB::Exception("Unsupported collation locale: " + locale, DB::ErrorCodes::UNSUPPORTED_COLLATION_LOCALE);
     }
+#else
+    throw DB::Exception("Collations support is disabled, because ClickHouse was built without ICU library", DB::ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
 }
+
 
 Collator::~Collator()
 {
+#if USE_ICU
     ucol_close(collator);
+#endif
 }
 
 int Collator::compare(const char * str1, size_t length1, const char * str2, size_t length2) const
 {
+#if USE_ICU
     UCharIterator iter1, iter2;
     uiter_setUTF8(&iter1, str1, length1);
     uiter_setUTF8(&iter2, str2, length2);
@@ -47,6 +70,9 @@ int Collator::compare(const char * str1, size_t length1, const char * str2, size
      *     UCOL_LESS = -1
      */
     return compare_result;
+#else
+    return 0;
+#endif
 }
 
 const std::string & Collator::getLocale() const
