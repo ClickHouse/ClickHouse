@@ -39,8 +39,8 @@ private:
 
     void createStatusDirs(const std::string & node_name);
 
-    void processQueries();
-    bool processQuery(const std::string & task);
+    /// Checks and cleanups queue's nodes
+    void cleanupQueue(const Strings * node_names_to_check = nullptr);
 
     void run();
 
@@ -61,6 +61,10 @@ private:
     std::condition_variable cond_var;
     std::mutex lock;
     std::thread thread;
+
+    size_t last_cleanup_time_seconds = 0;
+    static constexpr size_t node_max_lifetime_seconds = 10; // 7 * 24 * 60 * 60;
+    static constexpr size_t cleanup_after_seconds = 10;
 
     friend class DDLQueryStatusInputSream;
 };
