@@ -9,10 +9,13 @@ if (ENABLE_ICU)
     set (ICU_LIBS ${ICUI18N} ${ICUUC} ${ICUDATA})
 
     find_path (ICU_INCLUDE_DIR NAMES unicode/unistr.h PATHS ${ICU_INCLUDE_PATHS})
-    message (STATUS "Using icu: ${ICU_INCLUDE_DIR} : ${ICU_LIBS}")
     include_directories (${ICU_INCLUDE_DIR})
 
     set(USE_ICU 1)
 endif ()
 
-message (STATUS "Using icu=${USE_ICU}: ${ICU_INCLUDE_DIR} : ${ICU_LIBS}")
+if (USE_ICU)
+    message (STATUS "Using icu=${USE_ICU}: ${ICU_INCLUDE_DIR} : ${ICU_LIBS}")
+else
+    message (STATUS "Build without ICU (support for collations and charset conversion functions will be disabled)")
+endif ()
