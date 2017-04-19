@@ -1,7 +1,6 @@
 option (ENABLE_MYSQL "Enable MySQL" ON)
 
 if (ENABLE_MYSQL)
-
     set (MYSQL_LIB_PATHS
         "/usr/local/opt/mysql/lib"
         "/usr/local/lib/mysql/"
@@ -12,15 +11,13 @@ if (ENABLE_MYSQL)
         "/usr/lib/mysql"
         "/usr/lib64/mysql"
         "/lib/mysql"
-        "/lib64/mysql"
-    )
+        "/lib64/mysql")
 
     set (MYSQL_INCLUDE_PATHS
         "/usr/local/opt/mysql/include"
         "/usr/mysql/include/mysql"
         "/usr/local/include/mysql"
-        "/usr/include/mysql"
-    )
+        "/usr/include/mysql")
 
     find_path (MYSQL_INCLUDE_DIR NAMES mysql/mysql.h PATHS ${MYSQL_INCLUDE_PATHS})
 
@@ -38,7 +35,13 @@ if (ENABLE_MYSQL)
     if (MYSQL_FOUND)
         set(USE_MYSQL 1)
         set(MYSQLXX_LIBRARY mysqlxx)
+    else ()
+
     endif ()
 endif ()
 
-message (STATUS "Using mysqlclient=${MYSQL_FOUND}: ${MYSQL_INCLUDE_DIR} : ${MYSQLCLIENT_LIB}; static=${STATIC_MYSQLCLIENT_LIB}")
+if (USE_MYSQL)
+    message (STATUS "Using mysqlclient=${MYSQL_FOUND}: ${MYSQL_INCLUDE_DIR} : ${MYSQLCLIENT_LIB}; static=${STATIC_MYSQLCLIENT_LIB}")
+else ()
+    message (STATUS "Build without mysqlclient (support for MYSQL dictionary source will be disabled)")
+endif ()
