@@ -37,7 +37,7 @@ namespace ProfileEvents
 /// Number of tries for a single pool is limited by max_tries parameter.
 /// The client can set nested pool priority by passing a GetPriority functor.
 ///
-/// NOTE: if one of the nested pool blocks because of overflow, this pool will also block.
+/// NOTE: if one of the nested pools blocks because it is empty, this pool will also block.
 ///
 /// The client must provide a TryGetEntryFunc functor, which should perform a single try to get a connection from a nested pool.
 /// This functor can also check if the connection satisfies some eligibility criterion (e.g. check if
@@ -257,11 +257,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 try_results.begin(), try_results.end(),
                 [](const TryResult & left, const TryResult & right)
                 {
-                    if (left.is_up_to_date)
-                        return true;
-                    if (right.is_up_to_date)
-                        return false;
-                    return left.staleness < right.staleness;
+                    return std::forward_as_tuple(!left.is_up_to_date, left.staleness)
+                        < std::forward_as_tuple(!right.is_up_to_date, right.staleness);
                 });
 
         size_t size = std::min(try_results.size(), max_entries);

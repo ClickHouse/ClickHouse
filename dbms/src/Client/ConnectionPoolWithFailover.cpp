@@ -175,7 +175,7 @@ ConnectionPoolWithFailover::tryGetEntry(
             result.is_up_to_date = false;
             result.staleness = max_delay;
 
-            LOG_WARNING(
+            LOG_TRACE(
                     log, "Connection " << result.entry->getDescription() << " has unacceptable replica delay "
                     << "for table " << table_to_check->database << "." << table_to_check->table
                     << ": "  << max_delay);
@@ -188,7 +188,7 @@ ConnectionPoolWithFailover::tryGetEntry(
             && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
             throw;
 
-        fail_message = "Code: " + std::to_string(e.code()) + ", e.displayText() = " + e.displayText() + ", e.what() = " + e.what();
+        fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);
 
         if (!result.entry.isNull())
         {

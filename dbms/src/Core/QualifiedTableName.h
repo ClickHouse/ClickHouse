@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <tuple>
 #include <Common/SipHash.h>
 
 namespace DB
@@ -18,9 +19,7 @@ struct QualifiedTableName
 
     bool operator<(const QualifiedTableName & other) const
     {
-        if (database == other.database)
-            return table < other.table;
-        return database < other.database;
+        return std::forward_as_tuple(database, table) < std::forward_as_tuple(other.database, other.table);
     }
 
     UInt64 hash() const
@@ -39,8 +38,8 @@ namespace std
 
 template<> struct hash<DB::QualifiedTableName>
 {
-    typedef DB::QualifiedTableName argument_type;
-    typedef std::size_t result_type;
+    using argument_type = DB::QualifiedTableName;
+    using result_type = size_t;
 
     result_type operator()(const argument_type & qualified_table) const
     {

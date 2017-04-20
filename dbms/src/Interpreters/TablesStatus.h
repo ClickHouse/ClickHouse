@@ -9,13 +9,25 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
 class ReadBuffer;
 class WriteBuffer;
 
+
+/// The following are request-response messages for TablesStatus request of the client-server protocol.
+/// Client can ask for about a set of tables and the server will respond with the following information for each table:
+/// - Is the table Replicated?
+/// - If yes, replication delay for that table.
+
 struct TableStatus
 {
-    bool is_replicated;
-    UInt32 absolute_delay;
+    bool is_replicated = false;
+    UInt32 absolute_delay = 0;
 
     void write(WriteBuffer & out) const;
     void read(ReadBuffer & in);
