@@ -294,11 +294,11 @@ private:
         decltype(pos) max_parsed_pos{};
         Expected expected;
 
-        const auto throw_exception = [&] (const std::string & msg) {
+        const auto throw_exception = [&] (const std::string & msg)
+        {
             throw Exception{
                 msg + " '" + std::string(pos, end) + "' at position " + std::to_string(pos - begin),
-                ErrorCodes::SYNTAX_ERROR
-            };
+                ErrorCodes::SYNTAX_ERROR};
         };
 
         while (pos < end)
