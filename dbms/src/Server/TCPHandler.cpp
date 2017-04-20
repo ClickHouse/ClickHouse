@@ -373,8 +373,11 @@ void TCPHandler::processTablesStatusRequest()
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
     {
+        StoragePtr table = connection_context.tryGetTable(table_name.database, table_name.table);
+        if (!table)
+            continue;
+
         TableStatus status;
-        StoragePtr table = connection_context.getTable(table_name.database, table_name.table);
         if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
         {
             status.is_replicated = true;

@@ -63,8 +63,9 @@
     M(ZooKeeperMulti) \
     M(ZooKeeperExceptions) \
     \
-    M(DistributedConnectionStaleReplica) \
     M(DistributedConnectionFailTry) \
+    M(DistributedConnectionMissingTable) \
+    M(DistributedConnectionStaleReplica) \
     M(DistributedConnectionFailAtAll) \
     \
     M(CompileAttempt) \

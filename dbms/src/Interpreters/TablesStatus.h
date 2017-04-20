@@ -23,6 +23,8 @@ class WriteBuffer;
 /// Client can ask for about a set of tables and the server will respond with the following information for each table:
 /// - Is the table Replicated?
 /// - If yes, replication delay for that table.
+///
+/// For nonexistent tables there will be no TableStatus entry in the response.
 
 struct TableStatus
 {

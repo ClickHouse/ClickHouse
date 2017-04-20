@@ -68,9 +68,25 @@ public:
     struct TryResult
     {
         TryResult() = default;
-        explicit TryResult(Entry entry_) : entry(std::move(entry)), is_up_to_date(true) {}
+
+        explicit TryResult(Entry entry_)
+            : entry(std::move(entry))
+            , is_usable(true)
+            , is_up_to_date(true)
+        {
+        }
+
+        void reset()
+        {
+            entry = Entry();
+            is_usable = false;
+            is_up_to_date = false;
+            staleness = 0.0;
+        }
 
         Entry entry;
+        bool is_usable = false; /// If false, the entry is unusable for current request
+                                /// (but may be usable for other requests, so error counts are not incremented)
         bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica.
         double staleness = 0.0; /// Helps choosing the "least stale" option when all replicas are stale.
     };
@@ -171,6 +187,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     /// We will try to get a connection from each pool until a connection is produced or max_tries is reached.
     std::vector<TryResult> try_results(shuffled_pools.size());
     size_t entries_count = 0;
+    size_t usable_count = 0;
     size_t up_to_date_count = 0;
     size_t failed_pools_count = 0;
 
@@ -202,19 +219,26 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 
             std::string fail_message;
             result = try_get_entry(*shuffled_pool.pool, fail_message);
+
+            if (!fail_message.empty())
+                fail_messages += fail_message + '\n';
+
             if (!result.entry.isNull())
             {
                 ++entries_count;
-                if (result.is_up_to_date)
-                    ++up_to_date_count;
+                if (result.is_usable)
+                {
+                    ++usable_count;
+                    if (result.is_up_to_date)
+                        ++up_to_date_count;
+                }
             }
             else
             {
-                ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
-                fail_messages += fail_message + '\n';
-
                 LOG_WARNING(log, "Connection failed at try №"
                             << (shuffled_pool.error_count + 1) << ", reason: " << fail_message);
+                ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
+
                 ++shuffled_pool.error_count;
 
                 if (shuffled_pool.error_count >= max_tries)
@@ -226,7 +250,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         }
     }
 
-    if (entries_count < min_entries)
+    if (usable_count < min_entries)
         throw DB::NetException(
                 "All connection tries failed. Log: \n\n" + fail_messages + "\n",
                 DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
@@ -234,7 +258,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     try_results.erase(
             std::remove_if(
                     try_results.begin(), try_results.end(),
-                    [](const TryResult & r) { return r.entry.isNull(); }),
+                    [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; }),
             try_results.end());
 
     std::vector<Entry> entries;

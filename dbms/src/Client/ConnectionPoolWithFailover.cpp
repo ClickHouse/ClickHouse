@@ -10,6 +10,7 @@
 
 namespace ProfileEvents
 {
+    extern const Event DistributedConnectionMissingTable;
     extern const Event DistributedConnectionStaleReplica;
 }
 
@@ -132,53 +133,60 @@ ConnectionPoolWithFailover::tryGetEntry(
     {
         result.entry = pool.get(settings);
 
-        UInt64 max_allowed_delay = settings ? UInt64(settings->max_replica_delay_for_distributed_queries) : 0;
-
         String server_name;
         UInt64 server_version_major;
         UInt64 server_version_minor;
         UInt64 server_revision;
-        if (table_to_check && max_allowed_delay)
+        if (table_to_check)
             result.entry->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
 
-        if (!table_to_check || !max_allowed_delay || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
+        if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
             result.entry->forceConnected();
+            result.is_usable = true;
             result.is_up_to_date = true;
             return result;
         }
 
-        /// Only the delay of the remote table of the corresponding Distributed table is taken into account.
-        /// TODO: calculate delay for joined tables also.
+        /// Only status of the remote table corresponding to the Distributed table is taken into account.
+        /// TODO: request status for joined tables also.
         TablesStatusRequest status_request;
-        status_request.tables = { *table_to_check };
+        status_request.tables.emplace(*table_to_check);
 
-        auto status_response = result.entry->getTablesStatus(status_request);
-        if (status_response.table_states_by_id.size() != status_request.tables.size())
-            throw Exception(
-                    "Bad TablesStatus response (from " + result.entry->getDescription() + ")",
-                    ErrorCodes::LOGICAL_ERROR);
-
-        UInt32 max_delay = 0;
-        for (const auto & kv: status_response.table_states_by_id)
+        TablesStatusResponse status_response = result.entry->getTablesStatus(status_request);
+        auto table_status_it = status_response.table_states_by_id.find(*table_to_check);
+        if (table_status_it == status_response.table_states_by_id.end())
         {
-            const TableStatus & status = kv.second;
+            fail_message = "There is no table " + table_to_check->database + "." + table_to_check->table
+                + " on server: " + result.entry->getDescription();
+            LOG_WARNING(log, fail_message);
+            ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
 
-            if (status.is_replicated)
-                max_delay = std::max(max_delay, status.absolute_delay);
+            return result;
         }
 
-        if (max_delay < max_allowed_delay)
+        result.is_usable = true;
+
+        UInt64 max_allowed_delay = settings ? UInt64(settings->max_replica_delay_for_distributed_queries) : 0;
+        if (!max_allowed_delay)
+        {
+            result.is_up_to_date = true;
+            return result;
+        }
+
+        UInt32 delay = table_status_it->second.absolute_delay;
+
+        if (delay < max_allowed_delay)
             result.is_up_to_date = true;
         else
         {
             result.is_up_to_date = false;
-            result.staleness = max_delay;
+            result.staleness = delay;
 
             LOG_TRACE(
-                    log, "Connection " << result.entry->getDescription() << " has unacceptable replica delay "
+                    log, "Server " << result.entry->getDescription() << " has unacceptable replica delay "
                     << "for table " << table_to_check->database << "." << table_to_check->table
-                    << ": "  << max_delay);
+                    << ": "  << delay);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
         }
     }
@@ -193,7 +201,7 @@ ConnectionPoolWithFailover::tryGetEntry(
         if (!result.entry.isNull())
         {
             result.entry->disconnect();
-            result.entry = Entry();
+            result.reset();
         }
     }
     return result;
