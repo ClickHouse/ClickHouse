@@ -44,14 +44,9 @@ function gen_revision_author {
         auto_message="Auto version update to"
         git_log_grep=`git log --oneline --max-count=1 | grep "$auto_message"`
         if [ "$git_log_grep" == "" ]; then
-
-            git_describe=`git describe`
-            sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g;s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
-            git commit -m "$auto_message [$REVISION]" dbms/cmake/version.cmake
-            #git push
-
             tag="$VERSION_PREFIX$REVISION$VERSION_POSTFIX"
 
+            # First tag for correct git describe
             echo -e "\nTrying to create tag: $tag"
             if git tag -a "$tag" -m "$tag"
             then
@@ -64,6 +59,15 @@ function gen_revision_author {
                     exit 1
                 fi
             fi
+
+            git_describe=`git describe`
+            sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g;s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
+            git commit -m "$auto_message [$REVISION]" dbms/cmake/version.cmake
+            #git push
+
+            # Second tag for correct version information in version.cmake inside tag
+            git tag --force -a "$tag" -m "$tag"
+            git push --force origin "$tag"
 
         else
             REVISION=$(get_revision)
