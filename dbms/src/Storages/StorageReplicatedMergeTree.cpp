@@ -1255,7 +1255,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
         String replica = findReplicaHavingCoveringPart(entry.new_part_name, true, covering_part);
 
         static std::atomic_uint total_fetches {0};
-        if (total_fetches >= data.settings.replicated_max_parallel_fetches)
+        if (data.settings.replicated_max_parallel_fetches && total_fetches >= data.settings.replicated_max_parallel_fetches)
         {
             throw Exception("Too much total fetches from replicas, maximum: " + toString(data.settings.replicated_max_parallel_fetches),
                 ErrorCodes::TOO_MUCH_FETCHES);
@@ -1264,7 +1264,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
         ++total_fetches;
         SCOPE_EXIT({--total_fetches;});
 
-        if (current_table_fetches >= data.settings.replicated_max_parallel_fetches_for_table)
+        if (data.settings.replicated_max_parallel_fetches_for_table && current_table_fetches >= data.settings.replicated_max_parallel_fetches_for_table)
         {
             throw Exception("Too much fetches from replicas for table, maximum: " + toString(data.settings.replicated_max_parallel_fetches_for_table),
                 ErrorCodes::TOO_MUCH_FETCHES);

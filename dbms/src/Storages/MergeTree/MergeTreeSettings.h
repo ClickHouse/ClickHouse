@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Core/Defines.h>
 #include <Core/Types.h>
 
 
