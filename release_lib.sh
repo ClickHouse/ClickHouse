@@ -37,7 +37,7 @@ function gen_revision_author {
             fi
         done
         if [ $succeeded -eq 0 ]; then
-            echo "Fail to create tag for revision up to $REVISION"
+            echo "Fail to create revision up to $REVISION"
             exit 1
         fi
 
