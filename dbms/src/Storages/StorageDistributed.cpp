@@ -200,7 +200,8 @@ BlockInputStreams StorageDistributed::read(
     //bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
     bool enable_shard_multiplexing = false;
 
-    ClusterProxy::SelectQueryConstructor select_query_constructor{processed_stage, external_tables};
+    ClusterProxy::SelectQueryConstructor select_query_constructor(
+            processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
 
     return ClusterProxy::Query{select_query_constructor, cluster, modified_query_ast,
         context, settings, enable_shard_multiplexing}.execute();

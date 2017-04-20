@@ -13,17 +13,23 @@ namespace ClusterProxy
 class SelectQueryConstructor final : public IQueryConstructor
 {
 public:
-    SelectQueryConstructor(const QueryProcessingStage::Enum & processed_stage, const Tables & external_tables);
+    SelectQueryConstructor(
+            QueryProcessingStage::Enum processed_stage,
+            QualifiedTableName main_table,
+            const Tables & external_tables);
 
     BlockInputStreamPtr createLocal(ASTPtr query_ast, const Context & context, const Cluster::Address & address) override;
-    BlockInputStreamPtr createRemote(ConnectionPoolPtr & pool, const std::string & query,
-        const Settings & settings, ThrottlerPtr throttler, const Context & context) override;
-    BlockInputStreamPtr createRemote(ConnectionPoolsPtr & pools, const std::string & query,
-        const Settings & settings, ThrottlerPtr throttler, const Context & context) override;
+    BlockInputStreamPtr createRemote(
+            const ConnectionPoolWithFailoverPtr & pool, const std::string & query,
+            const Settings & settings, ThrottlerPtr throttler, const Context & context) override;
+    BlockInputStreamPtr createRemote(
+            ConnectionPoolWithFailoverPtrs && pools, const std::string & query,
+            const Settings & settings, ThrottlerPtr throttler, const Context & context) override;
     PoolMode getPoolMode() const override;
 
 private:
-    const QueryProcessingStage::Enum & processed_stage;
+    QueryProcessingStage::Enum processed_stage;
+    QualifiedTableName main_table;
     const Tables & external_tables;
 };
 

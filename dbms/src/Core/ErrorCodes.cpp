@@ -371,6 +371,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT = 366;
     extern const int TOO_MUCH_FETCHES = 367;
     extern const int BAD_CAST = 368;
+    extern const int ALL_REPLICAS_ARE_STALE = 369;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

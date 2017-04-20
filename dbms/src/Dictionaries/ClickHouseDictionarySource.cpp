@@ -18,13 +18,23 @@ namespace ErrorCodes
 }
 
 
-static const size_t max_connections = 16;
+static const size_t MAX_CONNECTIONS = 16;
+
+static ConnectionPoolWithFailoverPtr createPool(
+        const std::string & host, UInt16 port, const std::string & db, const std::string & user, const std::string & password)
+{
+    ConnectionPoolPtrs pools;
+    pools.emplace_back(std::make_shared<ConnectionPool>(
+            MAX_CONNECTIONS, host, port, db, user, password, "ClickHouseDictionarySource"));
+    return std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM);
+}
 
 
-ClickHouseDictionarySource::ClickHouseDictionarySource(const DictionaryStructure & dict_struct_,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    const Block & sample_block, Context & context)
+ClickHouseDictionarySource::ClickHouseDictionarySource(
+        const DictionaryStructure & dict_struct_,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const Block & sample_block, Context & context)
     : dict_struct{dict_struct_},
         host{config.getString(config_prefix + ".host")},
         port(config.getInt(config_prefix + ".port")),
@@ -36,10 +46,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const DictionaryStructure
         query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
         sample_block{sample_block}, context(context),
         is_local{isLocalAddress({ host, port })},
-        pool{is_local ? nullptr : std::make_shared<ConnectionPool>(
-            max_connections, host, port, db, user, password,
-            "ClickHouseDictionarySource")
-        },
+        pool{is_local ? nullptr : createPool(host, port, db, user, password)},
         load_all_query{query_builder.composeLoadAllQuery()}
 {}
 
@@ -52,9 +59,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
         query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
         sample_block{other.sample_block}, context(other.context),
         is_local{other.is_local},
-        pool{is_local ? nullptr : std::make_shared<ConnectionPool>(
-            max_connections, host, port, db, user, password,
-            "ClickHouseDictionarySource")},
+        pool{is_local ? nullptr : createPool(host, port, db, user, password)},
         load_all_query{other.load_all_query}
 {}
 

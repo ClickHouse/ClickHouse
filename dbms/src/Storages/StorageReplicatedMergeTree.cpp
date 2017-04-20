@@ -1567,9 +1567,11 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 
     while (!shutdown_called)
     {
+        last_queue_update_attempt_time.store(time(nullptr));
         try
         {
             pullLogsToQueue(queue_updating_event);
+            last_successful_queue_update_attempt_time.store(time(nullptr));
             queue_updating_event->wait();
         }
         catch (const zkutil::KeeperException & e)
@@ -3202,6 +3204,8 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
     res.is_session_expired = !zookeeper || zookeeper->expired();
 
     res.queue = queue.getStatus();
+    res.absolute_delay = getAbsoluteDelay(); /// NOTE: may be slightly inconsistent with queue status.
+
     res.parts_to_check = part_check_thread.size();
 
     res.zookeeper_path = zookeeper_path;
@@ -3250,24 +3254,52 @@ void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica
     queue.getEntries(res);
 }
 
+time_t StorageReplicatedMergeTree::getAbsoluteDelay() const
+{
+    time_t min_unprocessed_insert_time = 0;
+    time_t max_processed_insert_time = 0;
+    queue.getInsertTimes(min_unprocessed_insert_time, max_processed_insert_time);
+
+    /// Load in reverse order to preserve consistency (successful update time must be after update start time).
+    /// Probably doesn't matter because pullLogsToQueue() acts as a barrier.
+    time_t successful_queue_update_time = last_successful_queue_update_attempt_time.load();
+    time_t queue_update_time = last_queue_update_attempt_time.load();
+
+    time_t current_time = time(nullptr);
+
+    if (!queue_update_time)
+    {
+        /// We have not even tried to update queue yet (perhaps replica is readonly).
+        /// As we have no info about the current state of replication log, return effectively infinite delay.
+        return current_time;
+    }
+    else if (min_unprocessed_insert_time)
+    {
+        /// There are some unprocessed insert entries in queue.
+        return (current_time > min_unprocessed_insert_time) ? (current_time - min_unprocessed_insert_time) : 0;
+    }
+    else if (queue_update_time > successful_queue_update_time)
+    {
+        /// Queue is empty, but there are some in-flight or failed queue update attempts
+        /// (likely because of problems with connecting to ZooKeeper).
+        /// Return the time passed since last attempt.
+        return (current_time > queue_update_time) ? (current_time - queue_update_time) : 0;
+    }
+    else
+    {
+        /// Everything is up-to-date.
+        return 0;
+    }
+}
 
 void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay)
 {
     assertNotReadonly();
 
-    /** Absolute delay - the lag of the current replica from real time.
-      */
+    time_t current_time = time(nullptr);
 
-    time_t min_unprocessed_insert_time = 0;
-    time_t max_processed_insert_time = 0;
-    queue.getInsertTimes(min_unprocessed_insert_time, max_processed_insert_time);
-
-    time_t current_time = time(0);
-    out_absolute_delay = 0;
+    out_absolute_delay = getAbsoluteDelay();
     out_relative_delay = 0;
-
-    if (min_unprocessed_insert_time)
-        out_absolute_delay = current_time - min_unprocessed_insert_time;
 
     /** Relative delay is the maximum difference of absolute delay from any other replica,
       *  (if this replica lags behind any other live replica, or zero, otherwise).
@@ -3319,8 +3351,13 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 
     if (have_replica_with_nothing_unprocessed)
         out_relative_delay = out_absolute_delay;
-    else if (max_replicas_unprocessed_insert_time > min_unprocessed_insert_time)
-        out_relative_delay = max_replicas_unprocessed_insert_time - min_unprocessed_insert_time;
+    else
+    {
+        max_replicas_unprocessed_insert_time = std::min(current_time, max_replicas_unprocessed_insert_time);
+        time_t min_replicas_delay = current_time - max_replicas_unprocessed_insert_time;
+        if (out_absolute_delay > min_replicas_delay)
+            out_relative_delay = out_absolute_delay - min_replicas_delay;
+    }
 }
 
 

@@ -17,6 +17,7 @@
 #include <DataStreams/BlockStreamProfileInfo.h>
 
 #include <Interpreters/Settings.h>
+#include <Interpreters/TablesStatus.h>
 
 #include <atomic>
 
@@ -46,7 +47,6 @@ using Connections = std::vector<ConnectionPtr>;
   */
 class Connection : private boost::noncopyable
 {
-    friend class ParallelReplicas;
     friend class MultiplexedConnections;
 
 public:
@@ -57,14 +57,14 @@ public:
         Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
         Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
         Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
-        Poco::Timespan ping_timeout_ = Poco::Timespan(DBMS_DEFAULT_PING_TIMEOUT_SEC, 0))
+        Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
         host(host_), port(port_), default_database(default_database_),
         user(user_), password(password_), resolved_address(host, port),
         client_name(client_name_),
         compression(compression_),
         connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
-        ping_timeout(ping_timeout_),
+        sync_request_timeout(sync_request_timeout_),
         log_wrapper(*this)
     {
         /// Don't connect immediately, only on first need.
@@ -83,7 +83,7 @@ public:
         Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
         Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
         Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
-        Poco::Timespan ping_timeout_ = Poco::Timespan(DBMS_DEFAULT_PING_TIMEOUT_SEC, 0))
+        Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
         host(host_), port(port_),
         default_database(default_database_),
@@ -92,7 +92,7 @@ public:
         client_name(client_name_),
         compression(compression_),
         connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
-        ping_timeout(ping_timeout_),
+        sync_request_timeout(sync_request_timeout_),
         log_wrapper(*this)
     {
         /// Don't connect immediately, only on first need.
@@ -169,6 +169,8 @@ public:
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected();
 
+    TablesStatusResponse getTablesStatus(const TablesStatusRequest & request);
+
     /** Disconnect.
       * This may be used, if connection is left in unsynchronised state
       *  (when someone continues to wait for something) after an exception.
@@ -226,7 +228,7 @@ private:
     Poco::Timespan connect_timeout;
     Poco::Timespan receive_timeout;
     Poco::Timespan send_timeout;
-    Poco::Timespan ping_timeout;
+    Poco::Timespan sync_request_timeout;
 
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
@@ -271,6 +273,8 @@ private:
     BlockStreamProfileInfo receiveProfileInfo();
 
     void initBlockInput();
+
+    void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
 };
 
 }

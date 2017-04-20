@@ -78,11 +78,9 @@ BlockInputStreams Query::execute()
     size_t pools_per_thread = (thread_count > 0) ? (remote_count / thread_count) : 0;
     size_t remainder = (thread_count > 0) ? (remote_count % thread_count) : 0;
 
-    ConnectionPoolsPtr pools;
-    bool do_init = true;
+    ConnectionPoolWithFailoverPtrs pools;
 
     /// Loop over shards.
-
     size_t current_thread = 0;
     for (const auto & shard_info : cluster->getShardsInfo())
     {
@@ -121,17 +119,11 @@ BlockInputStreams Query::execute()
             }
             else
             {
-                if (do_init)
+                pools.push_back(shard_info.pool);
+                if (pools.size() == actual_pools_per_thread)
                 {
-                    pools = std::shared_ptr<ConnectionPools>();
-                    do_init = false;
-                }
-
-                pools->push_back(shard_info.pool);
-                if (pools->size() == actual_pools_per_thread)
-                {
-                    res.emplace_back(query_constructor.createRemote(pools, query, new_settings, throttler, context));
-                    do_init = true;
+                    res.emplace_back(query_constructor.createRemote(std::move(pools), query, new_settings, throttler, context));
+                    pools = ConnectionPoolWithFailoverPtrs();
                     ++current_thread;
                 }
             }
