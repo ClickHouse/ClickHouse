@@ -69,6 +69,5 @@ Description: Various utilities for clickhouse analytics db
  .
  This package provides:
  .
-   - benchmark utility
    - compressor
-
+   - zookeeper client
