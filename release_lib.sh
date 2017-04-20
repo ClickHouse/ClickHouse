@@ -48,7 +48,15 @@ function gen_revision_author {
 
             # First tag for correct git describe
             echo -e "\nTrying to create tag: $tag"
-            if git tag -a "$tag" -m "$tag"
+            git tag -a "$tag" -m "$tag"
+
+            git_describe=`git describe`
+            sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g;s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
+            git commit -m "$auto_message [$REVISION]" dbms/cmake/version.cmake
+            #git push
+
+            # Second tag for correct version information in version.cmake inside tag
+            if git tag --force -a "$tag" -m "$tag"
             then
                 echo -e "\nTrying to push tag to origin: $tag"
                 git push origin "$tag"
@@ -59,15 +67,6 @@ function gen_revision_author {
                     exit 1
                 fi
             fi
-
-            git_describe=`git describe`
-            sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g;s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
-            git commit -m "$auto_message [$REVISION]" dbms/cmake/version.cmake
-            #git push
-
-            # Second tag for correct version information in version.cmake inside tag
-            git tag --force -a "$tag" -m "$tag"
-            git push --force origin "$tag"
 
         else
             REVISION=$(get_revision)
