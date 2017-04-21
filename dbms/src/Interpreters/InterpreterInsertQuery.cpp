@@ -8,6 +8,7 @@
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 #include <DataStreams/NullableAdapterBlockInputStream.h>
+#include <DataStreams/CastEnumBlockInputStream.h>
 #include <DataStreams/copyData.h>
 
 #include <Parsers/ASTInsertQuery.h>
@@ -121,7 +122,9 @@ BlockIO InterpreterInsertQuery::execute()
         res.in_sample = interpreter_select.getSampleBlock();
 
         res.in = interpreter_select.execute().in;
+
         res.in = std::make_shared<NullableAdapterBlockInputStream>(res.in, res.in_sample, res.out_sample);
+        res.in = std::make_shared<CastEnumBlockInputStream>(res.in, res.in_sample, res.out_sample);
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out);
     }
 
