@@ -104,7 +104,8 @@ void NullableAdapterBlockInputStream::buildActions(
     actions.reserve(in_size);
     rename.reserve(in_size);
 
-    for (size_t i = 0; i < in_size; ++i) {
+    for (size_t i = 0; i < in_size; ++i)
+    {
         const auto & in_elem  = in_sample.getByPosition(i);
         const auto & out_elem = out_sample.getByPosition(i);
 
