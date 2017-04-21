@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
