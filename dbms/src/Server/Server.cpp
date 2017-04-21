@@ -38,6 +38,8 @@
 #include <Poco/Net/SecureServerSocket.h>
 #endif
 
+#include <Functions/registerFunctions.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -208,6 +210,8 @@ std::string Server::getDefaultCorePath() const
 int Server::main(const std::vector<std::string> & args)
 {
     Logger * log = &logger();
+
+    registerFunctions();
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
