@@ -1,9 +1,7 @@
 #include <Interpreters/DDLWorker.h>
 
-#include <Parsers/parseQuery.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -35,6 +33,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int UNFINISHED;
 }
 
 
@@ -180,7 +179,7 @@ void DDLWorker::cleanupQueue(const Strings * node_names_to_check)
     constexpr size_t zookeeper_time_resolution = 1000;
 
     // Too early to check
-    if (!last_cleanup_time_seconds && current_time_seconds < last_cleanup_time_seconds + 10)
+    if (last_cleanup_time_seconds && current_time_seconds < last_cleanup_time_seconds + cleanup_after_seconds)
         return;
 
     last_cleanup_time_seconds = current_time_seconds;
@@ -326,7 +325,7 @@ void DDLWorker::run()
 
         try
         {
-            processTasks();
+            cleanupQueue();
         }
         catch (...)
         {
@@ -335,7 +334,7 @@ void DDLWorker::run()
 
         try
         {
-            cleanupQueue();
+            processTasks();
         }
         catch (...)
         {
@@ -394,15 +393,18 @@ public:
                 return res;
 
             if (num_hosts_finished != 0 || try_number != 0)
-                std::this_thread::sleep_for(std::chrono::milliseconds(100 * std::min(100LU, try_number + 1)));
+                std::this_thread::sleep_for(std::chrono::milliseconds(50 * std::min(20LU, try_number + 1)));
 
-            /// The node was deleted while we was sleeping.
+            /// TODO: add /lock node somewhere
             if (!zookeeper->exists(node_path))
-                return res;
+            {
+                throw Exception("Cannot provide query execution status. The query's node " + node_path
+                                + " had been deleted by cleaner since it was finished (or its lifetime is expired)",
+                                ErrorCodes::UNFINISHED);
+            }
 
-            Strings active_hosts = zookeeper->getChildren(node_path + "/active");
-            Strings new_sucess_hosts = getDiffAndUpdate(sucess_hosts_set, zookeeper->getChildren(node_path + "/sucess"));
-            Strings new_failed_hosts = getDiffAndUpdate(failed_hosts_set, zookeeper->getChildren(node_path + "/failed"));
+            Strings new_sucess_hosts = getNewAndUpdate(sucess_hosts_set, getChildrenAllowNoNode(zookeeper, node_path + "/sucess"));
+            Strings new_failed_hosts = getNewAndUpdate(failed_hosts_set, getChildrenAllowNoNode(zookeeper, node_path + "/failed"));
 
             Strings new_hosts = new_sucess_hosts;
             new_hosts.insert(new_hosts.end(), new_failed_hosts.cbegin(), new_failed_hosts.cend());
@@ -410,6 +412,8 @@ public:
 
             if (new_hosts.empty())
                 continue;
+
+            Strings cur_active_hosts = getChildrenAllowNoNode(zookeeper, node_path + "/active");
 
             res = sample.cloneEmpty();
             for (size_t i = 0; i < new_hosts.size(); ++i)
@@ -419,14 +423,23 @@ public:
                 res.getByName("status").column->insert(static_cast<UInt64>(fail));
                 res.getByName("error").column->insert(fail ? zookeeper->get(node_path + "/failed/" + new_hosts[i]) : String{});
                 res.getByName("num_hosts_remaining").column->insert(total_rows_approx - (++num_hosts_finished));
-                res.getByName("num_hosts_active").column->insert(active_hosts.size());
+                res.getByName("num_hosts_active").column->insert(cur_active_hosts.size());
             }
         }
 
         return res;
     }
 
-    static Strings getDiffAndUpdate(NameSet & prev, const Strings & cur_list)
+    static Strings getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path)
+    {
+        Strings res;
+        int code = zookeeper->tryGetChildren(node_path, res);
+        if (code != ZOK && code != ZNONODE)
+            throw zkutil::KeeperException(code, node_path);
+        return res;
+    }
+
+    static Strings getNewAndUpdate(NameSet & prev, const Strings & cur_list)
     {
         Strings diff;
         for (const String & elem : cur_list)
@@ -455,13 +468,16 @@ private:
 };
 
 
-BlockIO executeDDLQueryOnCluster(const String & query, const String & cluster_name, Context & context)
+BlockIO executeDDLQueryOnCluster(const ASTQueryWithOnCluster & query, Context & context)
 {
-    ClusterPtr cluster = context.getCluster(cluster_name);
+    ClusterPtr cluster = context.getCluster(query.cluster);
     DDLWorker & ddl_worker = context.getDDLWorker();
 
+    /// Do we really should use that database for each server?
+    String query_str = query.getRewrittenQueryWithoutOnCluster(context.getCurrentDatabase());
+
     DDLLogEntry entry;
-    entry.query = query;
+    entry.query = query_str;
     entry.initiator = ddl_worker.getHostName();
 
     Cluster::AddressesWithFailover shards = cluster->getShardsWithFailoverAddresses();

@@ -13,7 +13,8 @@
 namespace DB
 {
 
-BlockIO executeDDLQueryOnCluster(const String & query, const String & cluster_name, Context & context);
+class ASTQueryWithOnCluster;
+BlockIO executeDDLQueryOnCluster(const ASTQueryWithOnCluster & query, Context & context);
 
 
 struct DDLLogEntry;
@@ -25,7 +26,7 @@ public:
     DDLWorker(const std::string & zk_root_dir, Context & context_);
     ~DDLWorker();
 
-    /// Push query into DDL query, return path to created node
+    /// Pushes query into DDL queue, returns path to created node
     String enqueueQuery(DDLLogEntry & entry);
 
     std::string getHostName() const

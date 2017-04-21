@@ -173,8 +173,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     ASTPtr inner_storage;
     ASTPtr as_database;
     ASTPtr as_table;
-    ASTPtr cluster;
     ASTPtr select;
+    String cluster_str;
     bool attach = false;
     bool if_not_exists = false;
     bool is_view = false;
@@ -247,17 +247,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
         if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!ParserString{"CLUSTER", true, true}.ignore(pos, end, max_parsed_pos, expected))
+            if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
                 return false;
-
-            ws.ignore(pos, end);
-
-            if (!name_p.parse(pos, end, cluster, max_parsed_pos, expected))
-                return false;
-
-            ws.ignore(pos, end);
         }
 
         /// List of columns.
@@ -419,8 +410,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
         query->database = typeid_cast<ASTIdentifier &>(*database).name;
     if (table)
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
-    if (cluster)
-        query->cluster = typeid_cast<ASTIdentifier &>(*cluster).name;
+    query->cluster = cluster_str;
     if (inner_storage)
         query->inner_storage = inner_storage;
 

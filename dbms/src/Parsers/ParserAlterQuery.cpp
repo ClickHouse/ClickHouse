@@ -53,6 +53,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 
     ASTPtr table;
     ASTPtr database;
+    String cluster_str;
     ASTPtr col_type;
     ASTPtr col_after;
     ASTPtr col_drop;
@@ -85,6 +86,14 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
     {
         table = database;
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
+    }
+
+    ws.ignore(pos, end);
+
+    if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+            return false;
     }
 
     bool parsing_finished = false;
@@ -374,6 +383,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
     while (!parsing_finished);
 
     query->range = StringRange(begin, end);
+    query->cluster = cluster_str;
     node = query;
 
     return true;

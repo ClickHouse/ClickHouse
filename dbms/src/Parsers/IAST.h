@@ -163,7 +163,7 @@ public:
 
     void writeAlias(const String & name, std::ostream & s, bool hilite) const;
 
-protected:
+public:
     /// For syntax highlighting.
     static const char * hilite_keyword;
     static const char * hilite_identifier;
@@ -177,7 +177,11 @@ private:
 };
 
 
+<<<<<<< HEAD
 /// Quota the identifier with backquotes, if required.
+=======
+/// Surrounds an identifier by back quotes if it is necessary.
+>>>>>>> Parsers refactoring. [#CLICKHOUSE-5]
 String backQuoteIfNeed(const String & x);
 
 

@@ -1,24 +1,25 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 
 
 namespace DB
 {
 
-/** ALTER query
+/** ALTER query:
  *  ALTER TABLE [db.]name_type
  *      ADD COLUMN col_name type [AFTER col_after],
- *         DROP COLUMN col_drop [FROM PARTITION partition],
- *         MODIFY COLUMN col_name type,
- *         DROP PARTITION partition
- *        RESHARD [COPY] PARTITION partition
- *            TO '/path/to/zookeeper/table' [WEIGHT w], ...
- *             USING expression
- *            [COORDINATE WITH 'coordinator_id']
+ *      DROP COLUMN col_drop [FROM PARTITION partition],
+ *      MODIFY COLUMN col_name type,
+ *      DROP PARTITION partition,
+ *      RESHARD [COPY] PARTITION partition
+ *          TO '/path/to/zookeeper/table' [WEIGHT w], ...
+ *              USING expression
+ *              [COORDINATE WITH 'coordinator_id']
  */
 
-class ASTAlterQuery : public IAST
+class ASTAlterQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     enum ParameterType
@@ -100,6 +101,8 @@ public:
     String getID() const override;
 
     ASTPtr clone() const override;
+
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database = {}) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

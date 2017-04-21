@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTDDLQueryWithOnCluster.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 
 namespace DB
 {
@@ -9,7 +9,7 @@ namespace DB
 
 /** DROP query
   */
-class ASTDropQuery : public IAST, public ASTDDLQueryWithOnCluster
+class ASTDropQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     bool detach{false};    /// DETACH query, not DROP.
@@ -53,8 +53,8 @@ protected:
         settings.ostr << (settings.hilite ? hilite_keyword : "")
             << (detach ? "DETACH TABLE " : "DROP TABLE ")
             << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "")
-            << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table)
-            << (!cluster.empty() ? " ON CLUSTER " + backQuoteIfNeed(cluster) : "");
+            << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+        formatOnCluster(settings);
     }
 };
 

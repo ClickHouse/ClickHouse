@@ -56,8 +56,7 @@ public:
 
 private:
     void createDatabase(ASTCreateQuery & create);
-    BlockIO createTableOnServer(ASTCreateQuery & create);
-    BlockIO createTableOnCluster(ASTCreateQuery & create);
+    BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns of table and return it.
     ColumnsInfo setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
