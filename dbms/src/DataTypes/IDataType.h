@@ -43,6 +43,9 @@ public:
     /// relevant for it? True for numbers. False for Date and DateTime types.
     virtual bool behavesAsNumber() const { return false; }
 
+    /// If this data type cannot appear in table declaration - only for intermediate values of calculations.
+    virtual bool notForTables() const { return false; }
+
     virtual DataTypePtr clone() const = 0;
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.

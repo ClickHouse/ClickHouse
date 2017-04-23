@@ -51,6 +51,7 @@ namespace ErrorCodes
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int TYPE_MISMATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
 }
 
 
@@ -224,6 +225,15 @@ static void setGraphitePatternsFromConfig(const Context & context,
 }
 
 
+/// Some types are only for intermediate values of expressions and cannot be used in tables.
+static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
+{
+    for (const auto & elem : names_and_types)
+        if (elem.type->notForTables())
+            throw Exception("Data type " + elem.type->getName() + " cannot be used in tables", ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES);
+}
+
+
 StoragePtr StorageFactory::get(
     const String & name,
     const String & data_path,
@@ -239,6 +249,10 @@ StoragePtr StorageFactory::get(
     bool attach,
     bool has_force_restore_data_flag) const
 {
+    checkAllTypesAreAllowedInTable(*columns);
+    checkAllTypesAreAllowedInTable(materialized_columns);
+    checkAllTypesAreAllowedInTable(alias_columns);
+
     if (name == "Log")
     {
         return StorageLog::create(
