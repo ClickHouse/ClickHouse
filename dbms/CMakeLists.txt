@@ -173,9 +173,13 @@ if (Poco_NetSSL_FOUND)
     target_link_libraries (dbms ${Poco_NetSSL_LIBRARY})
 endif()
 
+target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
+
+if (USE_ICU)
+    target_link_libraries (dbms ${ICU_LIBS})
+endif ()
+
 target_link_libraries (dbms
-    ${Poco_Foundation_LIBRARY}
-    ${ICU_LIBS}
     ${PLATFORM_LIBS}
     ${CMAKE_DL_LIBS}
     ${LTDL_LIB}
