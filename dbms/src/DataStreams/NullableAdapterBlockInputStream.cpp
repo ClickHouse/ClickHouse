@@ -1,6 +1,7 @@
 #include <DataStreams/NullableAdapterBlockInputStream.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataStreams/isConvertableTypes.h>
 
 namespace DB
 {
@@ -11,13 +12,6 @@ namespace ErrorCodes
 extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
 extern const int TYPE_MISMATCH;
 
-}
-
-static DataTypePtr removeNullable(DataTypePtr type)
-{
-    while (type->isNullable())
-        type = typeid_cast<DataTypeNullable *>(type.get())->getNestedType();
-    return type;
 }
 
 NullableAdapterBlockInputStream::NullableAdapterBlockInputStream(
@@ -109,7 +103,7 @@ void NullableAdapterBlockInputStream::buildActions(
         const auto & in_elem  = in_sample.getByPosition(i);
         const auto & out_elem = out_sample.getByPosition(i);
 
-        if (removeNullable(in_elem.type)->getName() == removeNullable(out_elem.type)->getName())
+        if (isConvertableTypes(in_elem.type, out_elem.type))
         {
             bool is_in_nullable = in_elem.type->isNullable();
             bool is_out_nullable = out_elem.type->isNullable();
