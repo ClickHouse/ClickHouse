@@ -5,7 +5,7 @@
 #include <emmintrin.h>
 #endif
 
-#include <common/Common.h>
+#include <common/Types.h>
 #include <Poco/NumberParser.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 

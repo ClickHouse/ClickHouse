@@ -10,7 +10,7 @@ namespace DB
 class Context;
 
 
-/** Реализует системную таблицу metrics, которая позволяет получить информацию о работе сервера.
+/** Implements `metrics` system table, which provides information about the operation of the server.
     */
 class StorageSystemMetrics : private ext::shared_ptr_helper<StorageSystemMetrics>, public IStorage
 {

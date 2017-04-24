@@ -10,7 +10,7 @@ namespace DB
 class Context;
 
 
-/** Реализует системную таблицу replicas, которая позволяет получить информацию о статусе реплицируемых таблиц.
+/** Implements `replicas` system table, which provides information about the status of the replicated tables.
   */
 class StorageSystemReplicas : private ext::shared_ptr_helper<StorageSystemReplicas>, public IStorage
 {

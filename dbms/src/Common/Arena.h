@@ -132,6 +132,7 @@ public:
     /** Begin or expand allocation of contiguous piece of memory.
       * 'begin' - current begin of piece of memory, if it need to be expanded, or nullptr, if it need to be started.
       * If there is no space in chunk to expand current piece of memory - then copy all piece to new chunk and change value of 'begin'.
+      * NOTE This method is usable only for latest allocation. For earlier allocations, see 'realloc' method.
       */
     char * allocContinue(size_t size, char const *& begin)
     {
@@ -152,6 +153,15 @@ public:
         if (!begin)
             begin = res;
 
+        return res;
+    }
+
+    /// NOTE Old memory region is wasted.
+    char * realloc(const char * old_data, size_t old_size, size_t new_size)
+    {
+        char * res = alloc(new_size);
+        if (old_data)
+            memcpy(res, old_data, old_size);
         return res;
     }
 

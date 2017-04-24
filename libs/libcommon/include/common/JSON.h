@@ -3,7 +3,7 @@
 #include <typeinfo>
 #include <Poco/Exception.h>
 #include <Core/StringRef.h>
-#include <common/Common.h>
+#include <common/Types.h>
 
 
 /** Очень простой класс для чтения JSON (или его кусочков).

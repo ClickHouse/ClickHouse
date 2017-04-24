@@ -69,6 +69,7 @@ public:
 
     String getID() const override;
 
+    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 

@@ -1,4 +1,5 @@
 #include <mysql/mysql.h>
+
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Query.h>
 

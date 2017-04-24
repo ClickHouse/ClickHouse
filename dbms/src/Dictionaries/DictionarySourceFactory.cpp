@@ -23,6 +23,9 @@
     #include <Poco/Data/ODBC/Connector.h>
     #include <Dictionaries/ODBCDictionarySource.h>
 #endif
+#if USE_MYSQL
+    #include <Dictionaries/MySQLDictionarySource.h>
+#endif
 
 
 
@@ -115,7 +118,12 @@ DictionarySourcePtr DictionarySourceFactory::create(
     }
     else if ("mysql" == source_type)
     {
+#if USE_MYSQL
         return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block);
+#else
+        throw Exception{"Dictionary source of type `mysql` disabled because ClickHouse built without mysql support.",
+            ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
     }
     else if ("clickhouse" == source_type)
     {

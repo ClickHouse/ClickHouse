@@ -42,8 +42,9 @@ BlockInputStreamPtr DescribeQueryConstructor::createLocal(ASTPtr query_ast, cons
     return std::make_shared<BlockExtraInfoInputStream>(materialized_stream, toBlockExtraInfo(address));
 }
 
-BlockInputStreamPtr DescribeQueryConstructor::createRemote(ConnectionPoolPtr & pool, const std::string & query,
-    const Settings & settings, ThrottlerPtr throttler, const Context & context)
+BlockInputStreamPtr DescribeQueryConstructor::createRemote(
+        const ConnectionPoolWithFailoverPtr & pool, const std::string & query,
+        const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
     auto stream = std::make_shared<RemoteBlockInputStream>(pool, query, &settings, throttler);
     stream->setPoolMode(pool_mode);
@@ -51,10 +52,11 @@ BlockInputStreamPtr DescribeQueryConstructor::createRemote(ConnectionPoolPtr & p
     return stream;
 }
 
-BlockInputStreamPtr DescribeQueryConstructor::createRemote(ConnectionPoolsPtr & pools, const std::string & query,
-    const Settings & settings, ThrottlerPtr throttler, const Context & context)
+BlockInputStreamPtr DescribeQueryConstructor::createRemote(
+        ConnectionPoolWithFailoverPtrs && pools, const std::string & query,
+        const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
-    auto stream =  std::make_shared<RemoteBlockInputStream>(pools, query, &settings, throttler);
+    auto stream =  std::make_shared<RemoteBlockInputStream>(std::move(pools), query, &settings, throttler);
     stream->setPoolMode(pool_mode);
     stream->appendExtraInfo();
     return stream;

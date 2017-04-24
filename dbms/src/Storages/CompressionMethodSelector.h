@@ -15,19 +15,19 @@ namespace ErrorCodes
 }
 
 
-/** Позволяет выбрать метод сжатия по указанным в конфигурационном файле условиям.
-  * Конфиг выглядит примерно так:
+/** Allows you to select the compression method for the conditions specified in the configuration file.
+  * The config looks like this
 
     <compression>
 
-        <!-- Набор вариантов. Варианты проверяются подряд. Побеждает последний сработавший вариант. Если ни один не сработал, то используется lz4. -->
+        <!-- Set of options. Options are checked in a row. The last worked option wins. If none has worked, then lz4 is used. -->
         <case>
 
-            <!-- Условия. Должны сработать одновременно все. Часть условий могут быть не указаны. -->
-            <min_part_size>10000000000</min_part_size>        <!-- Минимальный размер куска в байтах. -->
-            <min_part_size_ratio>0.01</min_part_size_ratio>    <!-- Минимальный размер куска относительно всех данных таблицы. -->
+            <!-- Conditions. All must be satisfied simultaneously. Some conditions may not be specified. -->
+            <min_part_size>10000000000</min_part_size>         <!-- The minimum size of a part in bytes. -->
+            <min_part_size_ratio>0.01</min_part_size_ratio>    <!-- The minimum size of the part relative to all the data in the table. -->
 
-            <!-- Какой метод сжатия выбрать. -->
+            <! - Which compression method to choose. ->
             <method>zstd</method>
         </case>
 
@@ -57,7 +57,7 @@ private:
 
         Element(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
         {
-            min_part_size = parse<size_t>(config.getString(config_prefix + ".min_part_size", "0"));
+            min_part_size = config.getUInt64(config_prefix + ".min_part_size", 0);
             min_part_size_ratio = config.getDouble(config_prefix + ".min_part_size_ratio", 0);
 
             setMethod(config.getString(config_prefix + ".method"));
@@ -73,7 +73,7 @@ private:
     std::vector<Element> elements;
 
 public:
-    CompressionMethodSelector() {}    /// Всегда возвращает метод по-умолчанию.
+    CompressionMethodSelector() {}    /// Always returns the default method.
 
     CompressionMethodSelector(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
     {

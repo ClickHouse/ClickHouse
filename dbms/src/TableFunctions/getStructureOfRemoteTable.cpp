@@ -34,11 +34,8 @@ NamesAndTypesList getStructureOfRemoteTable(
     if (shard_info.isLocal())
         return context.getTable(database, table)->getColumnsList();
 
-    ConnectionPoolPtr pool = shard_info.pool;
-
-    BlockInputStreamPtr input =
-        std::make_shared<RemoteBlockInputStream>(
-            pool, query, &settings, nullptr,
+    BlockInputStreamPtr input = std::make_shared<RemoteBlockInputStream>(
+            shard_info.pool, query, &settings, nullptr,
             Tables(), QueryProcessingStage::Complete, context);
     input->readPrefix();
 

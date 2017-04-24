@@ -14,7 +14,7 @@ class StorageReplicatedMergeTree;
 namespace ShardedPartitionUploader
 {
 
-/** Сервис для получения кусков из партиции таблицы *MergeTree.
+/** Service for retrieving parts from the partitions of the *MergeTree table.
   */
 class Service final : public InterserverIOEndpoint
 {
@@ -31,7 +31,7 @@ private:
     Logger * log = &Logger::get("ShardedPartitionUploader::Service");
 };
 
-/** Клиент для отправления кусков из партиции таблицы *MergeTree.
+/** Client for sending parts from the partition of the *MergeTree table.
   */
 class Client final
 {

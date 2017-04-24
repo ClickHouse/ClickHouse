@@ -14,24 +14,24 @@ class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 
 
-/** Интерфейс для табличных функций.
+/** Interface for table functions.
   *
-  * Табличные функции не имеют отношения к другим функциям.
-  * Табличная функция может быть указана в секции FROM вместо [db.]table
-  * Табличная функция возвращает временный объект StoragePtr, который используется для выполнения запроса.
+  * Table functions are not relevant to other functions.
+  * The table function can be specified in the FROM section instead of the [db.]Table
+  * The table function returns a temporary StoragePtr object that is used to execute the query.
   *
-  * Пример:
+  * Example:
   * SELECT count() FROM remote('example01-01-1', merge, hits)
-  * - пойти на example01-01-1, в БД merge, таблицу hits.
+  * - go to `example01-01-1`, in `merge` database, `hits` table.
   */
 
 class ITableFunction
 {
 public:
-    /// Получить основное имя функции.
+    /// Get the main function name.
     virtual std::string getName() const = 0;
 
-    /// Создать storage в соответствии с запросом
+    /// Create storage according to the query
     virtual StoragePtr execute(ASTPtr ast_function, Context & context) const = 0;
 
     virtual ~ITableFunction() {};

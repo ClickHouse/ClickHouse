@@ -15,67 +15,67 @@ namespace DB
 
 class Context;
 
-/** Описание таблицы.
-  * Не thread safe. См. IStorage::lockStructure().
+/** Description of the table.
+  * Do not thread safe. See IStorage::lockStructure ().
   */
 class ITableDeclaration
 {
 public:
-    /** Имя таблицы.
+    /** The name of the table.
       */
     virtual std::string getTableName() const = 0;
 
-    /** Получить список имён и типов столбцов таблицы, только невиртуальные.
+    /** Get a list of names and table column types, only non-virtual.
       */
     NamesAndTypesList getColumnsList() const;
     const NamesAndTypesList & getColumnsListNonMaterialized() const { return getColumnsListImpl(); }
 
-    /** Получить список имён столбцов таблицы, только невиртуальные.
+    /** Get a list of column table names, only non-virtual.
       */
     virtual Names getColumnNamesList() const;
 
-    /** Получить описание реального (невиртуального) столбца по его имени.
+    /** Get a description of the real (non-virtual) column by its name.
       */
     virtual NameAndTypePair getRealColumn(const String & column_name) const;
 
-    /** Присутствует ли реальный (невиртуальный) столбец с таким именем.
+    /** Is there a real (non-virtual) column with that name.
       */
     virtual bool hasRealColumn(const String & column_name) const;
 
     NameAndTypePair getMaterializedColumn(const String & column_name) const;
     bool hasMaterializedColumn(const String & column_name) const;
 
-    /** Получить описание любого столбца по его имени.
+    /** Get a description of any column by its name.
       */
     virtual NameAndTypePair getColumn(const String & column_name) const;
 
-    /** Присутствует ли столбец с таким именем.
+    /** Is there a column with that name.
       */
     virtual bool hasColumn(const String & column_name) const;
 
     const DataTypePtr getDataTypeByName(const String & column_name) const;
 
-    /** То же самое, но в виде блока-образца.
+    /** The same, but in the form of a block-sample.
       */
     Block getSampleBlock() const;
     Block getSampleBlockNonMaterialized() const;
 
-    /** Проверить, что все запрошенные имена есть в таблице и заданы корректно.
-      * (список имён не пустой и имена не повторяются)
+    /** Verify that all the requested names are in the table and are set correctly.
+      * (the list of names is not empty and the names do not repeat)
       */
     void check(const Names & column_names) const;
 
-    /** Проверить, что все запрошенные имена есть в таблице и имеют правильные типы.
+    /** Check that all the requested names are in the table and have the correct types.
       */
     void check(const NamesAndTypesList & columns) const;
 
-    /** Проверить, что все имена из пересечения names и columns есть в таблице и имеют одинаковые типы.
+    /** Check that all names from the intersection of `names` and `columns` are in the table and have the same types.
       */
     void check(const NamesAndTypesList & columns, const Names & column_names) const;
 
-    /** Проверить, что блок с данными для записи содержит все столбцы таблицы с правильными типами,
-      *  содержит только столбцы таблицы, и все столбцы различны.
-      * Если need_all, еще проверяет, что все столбцы таблицы есть в блоке.
+    /** Check that the data block for the record contains all the columns of the table with the correct types,
+      *  contains only the columns of the table, and all the columns are different.
+      * If need_all, still checks that all the columns of the table are in the block.
       */
     void check(const Block & block, bool need_all = false) const;
 

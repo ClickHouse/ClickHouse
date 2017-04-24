@@ -21,22 +21,22 @@ namespace ErrorCodes
 }
 
 
-/** Смещение до каждой некоторой пачки значений.
-  * Эти пачки имеют одинаковый размер в разных столбцах.
-  * Они нужны, чтобы можно было читать данные в несколько потоков.
+/** Offsets to every single set of values.
+  * These sets are the same size in different columns.
+  * They are needed so that you can read the data in several threads.
   */
 struct Mark
 {
-    size_t rows;    /// Сколько строк содержится в этой пачке и всех предыдущих.
-    size_t offset;    /// Смещение до пачки в сжатом файле.
+    size_t rows;    /// How many lines are contained in this set and all previous ones.
+    size_t offset;  /// The offset to the set in the compressed file.
 };
 
 using Marks = std::vector<Mark>;
 
 
-/** Реализует хранилище, подходящее для логов.
-  * Ключи не поддерживаются.
-  * Данные хранятся в сжатом виде.
+/** Implements a repository that is suitable for logs.
+  * Keys are not supported.
+  * The data is stored in a compressed form.
   */
 class StorageLog : private ext::shared_ptr_helper<StorageLog>, public IStorage
 {
@@ -45,9 +45,9 @@ friend class LogBlockInputStream;
 friend class LogBlockOutputStream;
 
 public:
-    /** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
-      *  (корректность имён и путей не проверяется)
-      *  состоящую из указанных столбцов; создать файлы, если их нет.
+    /** hook the table with the appropriate name, along the appropriate path (with / at the end),
+      *  (the correctness of names and paths is not verified)
+      *  consisting of the specified columns; Create files if they do not exist.
       */
     static StoragePtr create(
         const std::string & path_,
@@ -82,11 +82,11 @@ public:
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
-    /// Данные столбца
+    /// Column data
     struct ColumnData
     {
-        /// Задает номер столбца в файле с засечками.
-        /// Не обязательно совпадает с номером столбца среди столбцов таблицы: здесь нумеруются также столбцы с длинами массивов.
+        /// Specifies the column number in the marks file.
+        /// Does not necessarily match the column number among the columns of the table: columns with lengths of arrays are also numbered here.
         size_t column_index;
 
         Poco::File data_file;
@@ -112,12 +112,12 @@ protected:
         const ColumnDefaults & column_defaults_,
         size_t max_compress_block_size_);
 
-    /// Прочитать файлы с засечками, если они ещё не прочитаны.
-    /// Делается лениво, чтобы при большом количестве таблиц, сервер быстро стартовал.
-    /// Нельзя вызывать с залоченным на запись rwlock.
+    /// Read marks files if they are not already read.
+    /// It is done lazily, so that with a large number of tables, the server starts quickly.
+    /// You can not call with a write locked `rwlock`.
     void loadMarks();
 
-    /// Можно вызывать при любом состоянии rwlock.
+    /// Can be called with any state of `rwlock`.
     size_t marksCount();
 
     BlockInputStreams read(
@@ -143,7 +143,7 @@ private:
 
     void loadMarksImpl(bool load_null_marks);
 
-    /// Порядок добавления файлов не должен меняться: он соответствует порядку столбцов в файле с засечками.
+    /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
     void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 
     bool loaded_marks;
@@ -157,12 +157,12 @@ protected:
     FileChecker file_checker;
 
 private:
-    /** Для обычных столбцов, в засечках указано количество строчек в блоке.
-      * Для столбцов-массивов и вложенных структур, есть более одной группы засечек, соответствующих разным файлам:
-      *  - для внутренностей (файла name.bin) - указано суммарное количество элементов массивов в блоке,
-      *  - для размеров массивов (файла name.size0.bin) - указано количество строчек (самих целых массивов) в блоке.
+    /** For normal columns, the number of rows in the block is specified in the marks.
+      * For array columns and nested structures, there are more than one group of marks that correspond to different files
+      *  - for insides (file name.bin) - the total number of array elements in the block is specified,
+      *  - for array sizes (file name.size0.bin) - the number of rows (the whole arrays themselves) in the block is specified.
       *
-      * Вернуть первую попавшуюся группу засечек, в которых указано количество строчек, а не внутренностей массивов.
+      * Return the first group of marks that contain the number of rows, but not the internals of the arrays.
       */
     const Marks & getMarksWithRealRowCount() const;
 

@@ -49,6 +49,7 @@ void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDebug(AggregateFunctionFactory & factory);
 
 AggregateFunctionPtr createAggregateFunctionArray(AggregateFunctionPtr & nested);
+AggregateFunctionPtr createAggregateFunctionForEach(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionState(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionMerge(AggregateFunctionPtr & nested);
@@ -219,7 +220,24 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
         return createAggregateFunctionArray(nested);
     }
 
-    throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+	if ((recursion_level <= 3) && endsWith(name, "ForEach"))
+	{
+		/// For functions like aggForEach, where 'agg' is the name of another aggregate function
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		DataTypes nested_arguments;
+		if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(&*argument_types[0]))
+			nested_arguments.push_back(array->getNestedType());
+		else
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		/// + 3, so that no other modifier can stay before ForEach. Note that the modifiers Array and ForEach are mutually exclusive.
+		AggregateFunctionPtr nested = get(trimRight(name, "ForEach"), nested_arguments, recursion_level + 3);
+		return createAggregateFunctionForEach(nested);
+	}
+
+	throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 }
 
 
@@ -258,7 +276,13 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
         return isAggregateFunctionName(trimRight(name, "Array"), recursion_level + 3);
     }
 
-    return false;
+	if ((recursion_level <= 3) && endsWith(name, "ForEach"))
+	{
+        /// + 3, so that no other modifier can go before `ForEach`
+		return isAggregateFunctionName(trimRight(name, "ForEach"), recursion_level + 3);
+	}
+
+	return false;
 }
 
 }

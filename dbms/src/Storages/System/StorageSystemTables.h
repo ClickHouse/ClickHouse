@@ -10,7 +10,7 @@ namespace DB
 class Context;
 
 
-/** Реализует системную таблицу tables, которая позволяет получить информацию о всех таблицах.
+/** Implements the system table `tables`, which allows you to get information about all tables.
   */
 class StorageSystemTables : private ext::shared_ptr_helper<StorageSystemTables>, public IStorage
 {

@@ -10,7 +10,7 @@ namespace DB
 class Context;
 
 
-/** Реализует системную таблицу processes, которая позволяет получить информацию о запросах, исполняющихся в данный момент.
+/** Implements `processes` system table, which allows you to get information about the queries that are currently executing.
   */
 class StorageSystemProcesses : private ext::shared_ptr_helper<StorageSystemProcesses>, public IStorage
 {

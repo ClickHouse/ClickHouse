@@ -8,7 +8,7 @@ add_executable(analyze_columns analyze_columns.cpp)
 target_link_libraries(analyze_columns dbms storages_system)
 
 add_executable(type_and_constant_inference type_and_constant_inference.cpp)
-target_link_libraries(type_and_constant_inference dbms storages_system)
+target_link_libraries(type_and_constant_inference storages_system clickhouse_functions dbms)
 
 add_executable(analyze_result_of_query analyze_result_of_query.cpp)
 target_link_libraries(analyze_result_of_query dbms storages_system)

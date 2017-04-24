@@ -19,4 +19,11 @@ void filterArraysImpl(
     PaddedPODArray<T> & res_elems, IColumn::Offsets_t & res_offsets,
     const IColumn::Filter & filt, ssize_t result_size_hint);
 
+/// Same as above, but not fills res_offsets.
+template <typename T>
+void filterArraysImplOnlyData(
+    const PaddedPODArray<T> & src_elems, const IColumn::Offsets_t & src_offsets,
+    PaddedPODArray<T> & res_elems,
+    const IColumn::Filter & filt, ssize_t result_size_hint);
+
 }

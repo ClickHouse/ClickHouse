@@ -1548,7 +1548,7 @@ private:
                     /// which contains only one row whose value is 0.
                     tmp_block = block;
                     auto & elem = tmp_block.getByPosition(arguments[0]);
-                    elem.column = std::make_shared<ColumnUInt8>(1, 0);
+                    elem.column = std::make_shared<ColumnUInt8>(block.rows(), 0);
                     elem.type = std::make_shared<DataTypeUInt8>();
                 }
                 else

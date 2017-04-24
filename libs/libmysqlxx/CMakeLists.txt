@@ -1,6 +1,3 @@
-
-include (cmake/find_mysqlclient.cmake)
-
 include_directories (include)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libcommon/include)
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
@@ -36,7 +33,7 @@ add_library (mysqlxx
 
 set(PLATFORM_LIBS ${CMAKE_DL_LIBS})
 
-if (USE_STATIC_LIBRARIES)
+if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
     set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)
     add_custom_command (
         OUTPUT ${MYSQLCLIENT_LIB}

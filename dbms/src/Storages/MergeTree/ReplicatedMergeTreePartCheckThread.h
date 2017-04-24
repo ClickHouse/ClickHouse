@@ -18,19 +18,19 @@ namespace DB
 class StorageReplicatedMergeTree;
 
 
-/** Проверяет целостность кусков, запрошенных для проверки.
+/** Checks the integrity of the parts requested for validation.
   *
-  * Определяет лишние куски и убирает их из рабочего набора.
-  * Находит отсутствующие куски и добавляет их для скачивания с реплик.
-  * Проверяет целостность данных и, в случае нарушения,
-  *  убирает кусок из рабочего набора и добавляет для скачивания с реплик.
+  * Identifies the extra parts and removes them from the working set.
+  * Find the missing parts and add them for download from replicas.
+  * Checks the integrity of the data and, in the event of a violation,
+  *  removes a part from the working set and adds it for download from replicas.
   */
 class ReplicatedMergeTreePartCheckThread
 {
 public:
     ReplicatedMergeTreePartCheckThread(StorageReplicatedMergeTree & storage_);
 
-    /// Разбор очереди для проверки осуществляется в фоновом потоке, который нужно сначала запустить.
+    /// Processing of the queue to be checked is done in the background thread, which you must first start.
     void start();
     void stop();
 
@@ -58,11 +58,11 @@ public:
 
     TemporarilyStop temporarilyStop() { return TemporarilyStop(this); }
 
-    /// Добавить кусок (для которого есть подозрения, что он отсутствует, повреждён или не нужен) в очередь для проверки.
-    /// delay_to_check_seconds - проверять не раньше чем через указанное количество секунд.
+    /// Add a part (for which there are suspicions that it is missing, damaged or not needed) in the queue for check.
+    /// delay_to_check_seconds - check no sooner than the specified number of seconds.
     void enqueuePart(const String & name, time_t delay_to_check_seconds = 0);
 
-    /// Получить количество кусков в очереди для проверки.
+    /// Get the number of parts in the queue for check.
     size_t size() const;
 
     ~ReplicatedMergeTreePartCheckThread()
@@ -80,12 +80,12 @@ private:
     Logger * log;
 
     using StringSet = std::set<String>;
-    using PartToCheck = std::pair<String, time_t>;    /// Имя куска и минимальное время для проверки (или ноль, если не важно).
+    using PartToCheck = std::pair<String, time_t>;    /// The name of the part and the minimum time to check (or zero, if not important).
     using PartsToCheckQueue = std::list<PartToCheck>;
 
-    /** Куски, для которых нужно проверить одно из двух:
-      *  - Если кусок у нас есть, сверить, его данные с его контрольными суммами, а их с ZooKeeper.
-      *  - Если куска у нас нет, проверить, есть ли он (или покрывающий его кусок) хоть у кого-то.
+    /** Parts for which you want to check one of two:
+      *  - If we have the part, check, its data with its checksums, and them with ZooKeeper.
+      *  - If we do not have a part, check to see if it (or the part covering it) exists anywhere.
       */
 
     StringSet parts_set;

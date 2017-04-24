@@ -196,7 +196,7 @@ ColumnPtr DataTypeNumberBase<T>::createConstColumn(size_t size, const Field & fi
 }
 
 
-/// Explicit template instantinations - to avoid code bloat in headers.
+/// Explicit template instantiations - to avoid code bloat in headers.
 template class DataTypeNumberBase<UInt8>;
 template class DataTypeNumberBase<UInt16>;
 template class DataTypeNumberBase<UInt32>;

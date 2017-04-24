@@ -98,11 +98,11 @@ struct HashTableCell
 ///    HashTableCell(const value_type & value_, const State & state) : key(value_) {}
 
     /// Получить то, что будет value_type контейнера.
-    value_type & getValue()                { return key; }
+    value_type & getValue()             { return key; }
     const value_type & getValue() const { return key; }
 
     /// Получить ключ.
-    static Key & getKey(value_type & value)    { return value; }
+    static Key & getKey(value_type & value)             { return value; }
     static const Key & getKey(const value_type & value) { return value; }
 
     /// Равны ли ключи у ячеек.
@@ -155,10 +155,10 @@ struct HashTableGrower
     UInt8 size_degree = initial_size_degree;
 
     /// Размер хэш-таблицы в ячейках.
-    size_t bufSize() const                { return 1 << size_degree; }
+    size_t bufSize() const               { return 1 << size_degree; }
 
-    size_t maxFill() const                { return 1 << (size_degree - 1); }
-    size_t mask() const                    { return bufSize() - 1; }
+    size_t maxFill() const               { return 1 << (size_degree - 1); }
+    size_t mask() const                  { return bufSize() - 1; }
 
     /// Из значения хэш-функции получить номер ячейки в хэш-таблице.
     size_t place(size_t x) const         { return x & mask(); }
@@ -200,7 +200,7 @@ struct HashTableGrower
 template <size_t key_bits>
 struct HashTableFixedGrower
 {
-    size_t bufSize() const                { return 1 << key_bits; }
+    size_t bufSize() const               { return 1 << key_bits; }
     size_t place(size_t x) const         { return x; }
     /// Тут можно было бы написать __builtin_unreachable(), но компилятор не до конца всё оптимизирует, и получается менее эффективно.
     size_t next(size_t pos) const        { return pos + 1; }
@@ -221,15 +221,15 @@ struct ZeroValueStorage<true, Cell>
 {
 private:
     bool has_zero = false;
-    char zero_value_storage[sizeof(Cell)] __attribute__((__aligned__(__alignof__(Cell))));    /// Кусок памяти для элемента с ключём 0.
+    typename std::aligned_storage<sizeof(Cell), alignof(Cell)>::type zero_value_storage; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }
     void setHasZero() { has_zero = true; }
     void clearHasZero() { has_zero = false; }
 
-    Cell * zeroValue()              { return reinterpret_cast<Cell*>(zero_value_storage); }
-    const Cell * zeroValue() const     { return reinterpret_cast<const Cell*>(zero_value_storage); }
+    Cell * zeroValue()              { return reinterpret_cast<Cell*>(&zero_value_storage); }
+    const Cell * zeroValue() const  { return reinterpret_cast<const Cell*>(&zero_value_storage); }
 };
 
 template <typename Cell>
@@ -240,7 +240,7 @@ struct ZeroValueStorage<false, Cell>
     void clearHasZero() {}
 
     Cell * zeroValue()              { return nullptr; }
-    const Cell * zeroValue() const     { return nullptr; }
+    const Cell * zeroValue() const  { return nullptr; }
 };
 
 
@@ -416,7 +416,7 @@ protected:
 
     void destroyElements()
     {
-        if (!__has_trivial_destructor(Cell))
+        if (!std::is_trivially_destructible<Cell>::value)
             for (iterator it = begin(); it != end(); ++it)
                 it.ptr->~Cell();
     }
@@ -605,10 +605,10 @@ public:
 
 
 protected:
-    const_iterator iteratorTo(const Cell * ptr) const     { return const_iterator(this, ptr); }
-    iterator iteratorTo(Cell * ptr)                     { return iterator(this, ptr); }
-    const_iterator iteratorToZero() const     { return iteratorTo(this->zeroValue()); }
-    iterator iteratorToZero()                 { return iteratorTo(this->zeroValue()); }
+    const_iterator iteratorTo(const Cell * ptr) const { return const_iterator(this, ptr); }
+    iterator iteratorTo(Cell * ptr)                   { return iterator(this, ptr); }
+    const_iterator iteratorToZero() const             { return iteratorTo(this->zeroValue()); }
+    iterator iteratorToZero()                         { return iteratorTo(this->zeroValue()); }
 
 
     /// Если ключ нулевой - вставить его в специальное место и вернуть true.

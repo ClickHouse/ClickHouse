@@ -32,7 +32,7 @@ enum class AttributeUnderlyingType
 };
 
 
-/** Для неявных преобразований в функциях dictGet.
+/** For implicit conversions in dictGet functions.
   */
 bool isAttributeTypeConvertibleTo(AttributeUnderlyingType from, AttributeUnderlyingType to);
 

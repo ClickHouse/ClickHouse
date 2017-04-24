@@ -26,16 +26,16 @@ namespace ErrorCodes
 }
 
 
-/// Запись о том, что нужно сделать. Только данные (их можно копировать).
+/// Record about what needs to be done. Only data (you can copy them).
 struct ReplicatedMergeTreeLogEntryData
 {
     enum Type
     {
-        EMPTY,         /// Не используется.
-        GET_PART,    /// Получить кусок с другой реплики.
-        MERGE_PARTS, /// Слить куски.
-        DROP_RANGE,  /// Удалить куски в указанном месяце в указанном диапазоне номеров.
-        ATTACH_PART, /// Перенести кусок из директории detached или unreplicated.
+        EMPTY,         /// Not used.
+        GET_PART,      /// Get the part from another replica.
+        MERGE_PARTS,   /// Merge the parts.
+        DROP_RANGE,    /// Delete the parts in the specified month in the specified number range.
+        ATTACH_PART,  /// Move a part from the `detached` or `unreplicated` directory.
     };
 
     String typeToString() const
@@ -58,38 +58,39 @@ struct ReplicatedMergeTreeLogEntryData
     String znode_name;
 
     Type type = EMPTY;
-    String source_replica; /// Пустая строка значит, что эта запись была добавлена сразу в очередь, а не скопирована из лога.
+    String source_replica; /// Empty string means that this entry was added to the queue immediately, and not copied from the log.
 
-    /// Имя куска, получающегося в результате.
-    /// Для DROP_RANGE имя несуществующего куска. Нужно удалить все куски, покрытые им.
+    /// The name of resulting part.
+    /// For DROP_RANGE, the name of a non-existent part. You need to remove all the parts covered by it.
     String new_part_name;
-    String block_id;    /// Для кусков нулевого уровня - идентификатор блока для дедупликации (имя ноды в /blocks/).
+    String block_id;    /// For parts of level zero, the block identifier for deduplication (node ​​name in /blocks /).
 
     Strings parts_to_merge;
+    bool deduplicate = false; /// Do deduplicate on merge
 
-    /// Для DROP_RANGE, true значит, что куски нужно не удалить, а перенести в директорию detached.
+    /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
 
-    /// Для ATTACH_PART имя куска в директории detached или unreplicated.
+    /// For ATTACH_PART, the name of the part in the `detached` or `unreplicated` directory.
     String source_part_name;
-    /// Нужно переносить из директории unreplicated, а не detached.
+    /// Must be moved from the `unreplicated` directory, not `detached`.
     bool attach_unreplicated = false;
 
-    /// Доступ под queue_mutex, см. ReplicatedMergeTreeQueue.
-    bool currently_executing = false;    /// Выполняется ли действие сейчас.
-    /// Эти несколько полей имеют лишь информационный характер (для просмотра пользователем с помощью системных таблиц).
-    /// Доступ под queue_mutex, см. ReplicatedMergeTreeQueue.
-    size_t num_tries = 0;                /// Количество попыток выполнить действие (с момента старта сервера; включая выполняющееся).
-    std::exception_ptr exception;        /// Последний эксепшен, в случае безуспешной попытки выполнить действие.
-    time_t last_attempt_time = 0;        /// Время начала последней попытки выполнить действие.
-    size_t num_postponed = 0;            /// Количество раз, когда действие было отложено.
-    String postpone_reason;                /// Причина, по которой действие было отложено, если оно отложено.
-    time_t last_postpone_time = 0;        /// Время последнего раза, когда действие было отложено.
+    /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
+    bool currently_executing = false;    /// Whether the action is executing now.
+    /// These several fields are informational only (for viewing by the user using system tables).
+    /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
+    size_t num_tries = 0;                 /// The number of attempts to perform the action (since the server started, including the running one).
+    std::exception_ptr exception;         /// The last exception, in the case of an unsuccessful attempt to perform the action.
+    time_t last_attempt_time = 0;         /// The time at which the last attempt was attempted to complete the action.
+    size_t num_postponed = 0;             /// The number of times the action was postponed.
+    String postpone_reason;               /// The reason why the action was postponed, if it was postponed.
+    time_t last_postpone_time = 0;        /// The time of the last time the action was postponed.
 
-    /// Время создания или время копирования из общего лога в очередь конкретной реплики.
+    /// Creation time or the time to copy from the general log to the queue of a particular replica.
     time_t create_time = 0;
 
-    /// Величина кворума (для GET_PART) - ненулевое значение при включенной кворумной записи.
+    /// The quorum value (for GET_PART) is a non-zero value when the quorum write is enabled.
     size_t quorum = 0;
 };
 
@@ -98,7 +99,7 @@ struct ReplicatedMergeTreeLogEntry : ReplicatedMergeTreeLogEntryData
 {
     using Ptr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
 
-    std::condition_variable execution_complete; /// Пробуждается когда currently_executing становится false.
+    std::condition_variable execution_complete; /// Awake when currently_executing becomes false.
 
     static Ptr parse(const String & s, const Stat & stat);
 };

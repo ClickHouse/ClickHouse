@@ -24,12 +24,12 @@ namespace ErrorCodes
 template <typename Counter>
 void QuotaValues<Counter>::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
 {
-    queries         = parse<UInt64>(config.getString(config_elem + ".queries",         "0"));
-    errors             = parse<UInt64>(config.getString(config_elem + ".errors",         "0"));
-    result_rows     = parse<UInt64>(config.getString(config_elem + ".result_rows",    "0"));
-    result_bytes     = parse<UInt64>(config.getString(config_elem + ".result_bytes",    "0"));
-    read_rows         = parse<UInt64>(config.getString(config_elem + ".read_rows",     "0"));
-    read_bytes         = parse<UInt64>(config.getString(config_elem + ".read_bytes",     "0"));
+    queries             = config.getUInt64(config_elem + ".queries",        0);
+    errors              = config.getUInt64(config_elem + ".errors",         0);
+    result_rows         = config.getUInt64(config_elem + ".result_rows",    0);
+    result_bytes        = config.getUInt64(config_elem + ".result_bytes",   0);
+    read_rows           = config.getUInt64(config_elem + ".read_rows",      0);
+    read_bytes          = config.getUInt64(config_elem + ".read_bytes",     0);
     execution_time_usec = config.getUInt64(config_elem + ".execution_time", 0) * 1000000ULL;
 }
 
@@ -250,6 +250,8 @@ void Quota::loadFromConfig(const String & config_elem, const String & name_, Poc
         quota_for_keys.clear();
     }
 
+    ignore_key_if_not_keyed = config.has(config_elem + ".ignore_key_if_not_keyed");
+
     QuotaForIntervals new_max(name, {});
     new_max.initFromConfig(config_elem, config, rng);
     if (!(new_max == max))
@@ -262,7 +264,7 @@ void Quota::loadFromConfig(const String & config_elem, const String & name_, Poc
 
 QuotaForIntervalsPtr Quota::get(const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip)
 {
-    if (!quota_key.empty() && (!is_keyed || keyed_by_ip))
+    if (!quota_key.empty() && !ignore_key_if_not_keyed && (!is_keyed || keyed_by_ip))
         throw Exception("Quota " + name + " (for user " + user_name + ") doesn't allow client supplied keys.",
             ErrorCodes::QUOTA_DOESNT_ALLOW_KEYS);
 

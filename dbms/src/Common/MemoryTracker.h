@@ -1,7 +1,7 @@
 #pragma once
 
 #include <atomic>
-#include <common/Common.h>
+#include <common/Types.h>
 #include <Common/CurrentMetrics.h>
 
 

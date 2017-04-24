@@ -6,6 +6,7 @@
 #include <Poco/File.h>
 #include <ext/scope_guard.hpp>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/HTTPRequest.h>
 
 
 namespace CurrentMetrics
@@ -54,8 +55,8 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
     static std::atomic_uint total_sends {0};
 
-    if (total_sends >= data.settings.replicated_max_parallel_sends
-        || data.current_table_sends >= data.settings.replicated_max_parallel_sends_for_table)
+    if ((data.settings.replicated_max_parallel_sends && total_sends >= data.settings.replicated_max_parallel_sends)
+        || (data.settings.replicated_max_parallel_sends_for_table && data.current_table_sends >= data.settings.replicated_max_parallel_sends_for_table))
     {
         response.setStatus(std::to_string(HTTP_TOO_MANY_REQUESTS));
         response.setReason("Too many concurrent fetches, try again later");
@@ -207,7 +208,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
     }
     );
 
-    ReadWriteBufferFromHTTP in(uri);
+    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
 
     String full_part_name = String(to_detached ? "detached/" : "") + "tmp_" + part_name;
     String part_path = data.getFullPath() + full_part_name + "/";

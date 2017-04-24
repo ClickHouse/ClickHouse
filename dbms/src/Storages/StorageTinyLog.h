@@ -14,8 +14,8 @@
 namespace DB
 {
 
-/** Реализует хранилище, подходящее для маленьких кусочков лога.
-  * Отличается от StorageLog отсутствием файлов с засечками.
+/** Implements a repository that is suitable for small pieces of the log.
+  * It differs from StorageLog in the absence of mark files.
   */
 class StorageTinyLog : private ext::shared_ptr_helper<StorageTinyLog>, public IStorage
 {
@@ -24,10 +24,10 @@ friend class TinyLogBlockInputStream;
 friend class TinyLogBlockOutputStream;
 
 public:
-    /** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
-      *  (корректность имён и путей не проверяется)
-      *  состоящую из указанных столбцов.
-      * Если не указано attach - создать директорию, если её нет.
+    /** hook the table with the appropriate name, along the appropriate path (with / at the end),
+      *  (the correctness of names and paths is not verified)
+      *  consisting of the specified columns.
+      * If not specified `attach` - create a directory if it does not exist.
       */
     static StoragePtr create(
         const std::string & path_,
@@ -61,7 +61,7 @@ public:
 
     bool checkData() const override;
 
-    /// Данные столбца
+    /// Column data
     struct ColumnData
     {
         Poco::File data_file;

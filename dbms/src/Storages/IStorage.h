@@ -44,11 +44,11 @@ using WeightedZooKeeperPaths = std::vector<WeightedZooKeeperPath>;
 
 
 
-/** Не дает изменять описание таблицы (в том числе переименовывать и удалять таблицу).
-  * Если в течение какой-то операции структура таблицы должна оставаться неизменной, нужно держать такой лок на все ее время.
-  * Например, нужно держать такой лок на время всего запроса SELECT или INSERT и на все время слияния набора кусков
-  *  (но между выбором кусков для слияния и их слиянием структура таблицы может измениться).
-  * NOTE: Это лок на "чтение" описания таблицы. Чтобы изменить описание таблицы, нужно взять TableStructureWriteLock.
+/** Does not allow changing the table description (including rename and delete the table).
+  * If during any operation the table structure should remain unchanged, you need to hold such a lock for all of its time.
+  * For example, you need to hold such a lock for the duration of the entire SELECT or INSERT query and for the whole time the merge of the set of parts
+  *  (but between the selection of parts for the merge and their merging, the table structure can change).
+  * NOTE: This is a lock to "read" the table's description. To change the table description, you need to take the TableStructureWriteLock.
   */
 class TableStructureReadLock
 {
@@ -56,7 +56,7 @@ private:
     friend class IStorage;
 
     StoragePtr storage;
-    /// Порядок важен.
+    /// Order is important.
     std::experimental::optional<Poco::ScopedReadRWLock> data_lock;
     std::experimental::optional<Poco::ScopedReadRWLock> structure_lock;
 
@@ -72,39 +72,39 @@ using TableDataWriteLockPtr = std::unique_ptr<Poco::ScopedWriteRWLock>;
 using TableFullWriteLockPtr = std::pair<TableDataWriteLockPtr, TableStructureWriteLockPtr>;
 
 
-/** Хранилище. Отвечает за:
-  * - хранение данных таблицы;
-  * - определение, в каком файле (или не файле) хранятся данные;
-  * - поиск данных и обновление данных;
-  * - структура хранения данных (сжатие, etc.)
-  * - конкуррентный доступ к данным (блокировки, etc.)
+/** Storage. Responsible for
+  * - storage of the table data;
+  * - the definition in which file (or not the file) the data is stored;
+  * - search for data and update data;
+  * - data storage structure (compression, etc.)
+  * - concurrent access to data (locks, etc.)
   */
 class IStorage : public std::enable_shared_from_this<IStorage>, private boost::noncopyable, public ITableDeclaration
 {
 public:
-    /// Основное имя типа таблицы (например, StorageMergeTree).
+    /// The main name of the table type (for example, StorageMergeTree).
     virtual std::string getName() const = 0;
 
-    /** Возвращает true, если хранилище получает данные с удалённого сервера или серверов. */
+    /** Returns true if the store receives data from a remote server or servers. */
     virtual bool isRemote() const { return false; }
 
-    /** Возвращает true, если хранилище поддерживает запросы с секцией SAMPLE. */
+    /** Returns true if the storage supports queries with the SAMPLE section. */
     virtual bool supportsSampling() const { return false; }
 
-    /** Возвращает true, если хранилище поддерживает запросы с секцией FINAL. */
+    /** Returns true if the storage supports queries with the FINAL section. */
     virtual bool supportsFinal() const { return false; }
 
-    /** Возвращает true, если хранилище поддерживает запросы с секцией PREWHERE. */
+    /** Returns true if the storage supports queries with the PREWHERE section. */
     virtual bool supportsPrewhere() const { return false; }
 
-    /** Возвращает true, если хранилище поддерживает несколько реплик. */
+    /** Returns true if the storage supports multiple replicas. */
     virtual bool supportsParallelReplicas() const { return false; }
 
-    /** Не дает изменять структуру или имя таблицы.
-      * Если в рамках этого лока будут изменены данные в таблице, нужно указать will_modify_data=true.
-      * Это возьмет дополнительный лок, не позволяющий начать ALTER MODIFY.
+    /** Does not allow you to change the structure or name of the table.
+      * If you change the data in the table, you will need to specify will_modify_data = true.
+      * This will take an extra lock that does not allow starting ALTER MODIFY.
       *
-      * WARNING: Вызывать методы из ITableDeclaration нужно под такой блокировкой. Без нее они не thread safe.
+      * WARNING: You need to call methods from ITableDeclaration under such a lock. Without it, they are not thread safe.
       * WARNING: To avoid deadlocks, this method must not be called under lock of Context.
       */
     TableStructureReadLockPtr lockStructure(bool will_modify_data)
@@ -115,20 +115,20 @@ public:
         return res;
     }
 
-    /** Не дает читать структуру таблицы. Берется для ALTER, RENAME и DROP.
+    /** Does not allow reading the table structure. It is taken for ALTER, RENAME and DROP.
       */
     TableFullWriteLockPtr lockForAlter()
     {
-        /// Порядок вычисления важен.
+        /// The calculation order is important.
         auto data_lock = lockDataForAlter();
         auto structure_lock = lockStructureForAlter();
 
         return {std::move(data_lock), std::move(structure_lock)};
     }
 
-    /** Не дает изменять данные в таблице. (Более того, не дает посмотреть на структуру таблицы с намерением изменить данные).
-      * Берется на время записи временных данных в ALTER MODIFY.
-      * Под этим локом можно брать lockStructureForAlter(), чтобы изменить структуру таблицы.
+    /** Does not allow changing the data in the table. (Moreover, does not give a look at the structure of the table with the intention to change the data).
+      * It is taken during write temporary data in ALTER MODIFY.
+      * Under this lock, you can take lockStructureForAlter() to change the structure of the table.
       */
     TableDataWriteLockPtr lockDataForAlter()
     {
@@ -147,24 +147,24 @@ public:
     }
 
 
-    /** Читать набор столбцов из таблицы.
-      * Принимает список столбцов, которых нужно прочитать, а также описание запроса,
-      *  из которого может быть извлечена информация о том, каким способом извлекать данные
-      *  (индексы, блокировки и т. п.)
-      * Возвращает поток с помощью которого можно последовательно читать данные
-      *  или несколько потоков для параллельного чтения данных.
-      * Также в processed_stage записывается, до какой стадии запрос был обработан.
-      * (Обычно функция только читает столбцы из списка, но в других случаях,
-      *  например, запрос может быть частично обработан на удалённом сервере.)
+    /** Read a set of columns from the table.
+      * Accepts a list of columns to read, as well as a description of the query,
+      *  from which information can be extracted about how to retrieve data
+      *  (indexes, locks, etc.)
+      * Returns a stream with which you can read data sequentially
+      *  or multiple streams for parallel data reading.
+      * The into `processed_stage` info is also written to what stage the request was processed.
+      * (Normally, the function only reads the columns from the list, but in other cases,
+      *  for example, the request can be partially processed on a remote server.)
       *
-      * settings - настройки на один запрос.
-      * Обычно Storage не заботится об этих настройках, так как они применяются в интерпретаторе.
-      * Но, например, при распределённой обработке запроса, настройки передаются на удалённый сервер.
+      * settings - settings for one query.
+      * Usually Storage does not care about these settings, since they are used in the interpreter.
+      * But, for example, for distributed query processing, the settings are passed to the remote server.
       *
-      * threads - рекомендация, сколько потоков возвращать,
-      *  если хранилище может возвращать разное количество потоков.
+      * threads - a recommendation, how many threads to return,
+      *  if the storage can return a different number of threads.
       *
-      * Гарантируется, что структура таблицы не изменится за время жизни возвращенных потоков (то есть не будет ALTER, RENAME и DROP).
+      * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
       */
     virtual BlockInputStreams read(
         const Names & column_names,
@@ -178,11 +178,11 @@ public:
         throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Пишет данные в таблицу.
-      * Принимает описание запроса, в котором может содержаться информация о методе записи данных.
-      * Возвращает объект, с помощью которого можно последовательно писать данные.
+    /** Writes the data to a table.
+      * Receives a description of the query, which can contain information about the data write method.
+      * Returns an object by which you can write data sequentially.
       *
-      * Гарантируется, что структура таблицы не изменится за время жизни возвращенных потоков (то есть не будет ALTER, RENAME и DROP).
+      * It is guaranteed that the table structure will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
       */
     virtual BlockOutputStreamPtr write(
         ASTPtr query,
@@ -191,59 +191,65 @@ public:
         throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Удалить данные таблицы. Вызывается перед удалением директории с данными.
-      * Если не требуется никаких действий, кроме удаления директории с данными, этот метод можно оставить пустым.
+    /** Delete the table data. Called before deleting the directory with the data.
+      * If you do not need any action other than deleting the directory with data, you can leave this method blank.
       */
     virtual void drop() {}
 
-    /** Переименовать таблицу.
-      * Переименование имени в файле с метаданными, имени в списке таблиц в оперативке, осуществляется отдельно.
-      * В этой функции нужно переименовать директорию с данными, если она есть.
-      * Вызывается при заблокированной на запись структуре таблицы.
+    /** Rename the table.
+      * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
+      * In this function, you need to rename the directory with the data, if any.
+      * Called when the table structure is locked for write.
       */
     virtual void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
     {
         throw Exception("Method rename is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** ALTER таблицы в виде изменения столбцов, не затрагивающий изменение Storage или его параметров.
-      * Этот метод должен полностью выполнить запрос ALTER, самостоятельно заботясь о блокировках.
-      * Для обновления метаданных таблицы на диске этот метод должен вызвать InterpreterAlterQuery::updateMetadata.
+    /** ALTER tables in the form of column changes that do not affect the change to Storage or its parameters.
+      * This method must fully execute the ALTER query, taking care of the locks itself.
+      * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata.
       */
     virtual void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
     {
         throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Выполнить запрос (DROP|DETACH) PARTITION.
+    /** Execute DROP COLUMN ... FROM PARTITION query witch drops column from given partition. */
+    virtual void dropColumnFromPartition(ASTPtr query, const Field & partition, const Field & column_name, const Settings & settings)
+    {
+        throw Exception("Method dropColumnFromPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /** Run the query (DROP|DETACH) PARTITION.
       */
     virtual void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings)
     {
         throw Exception("Method dropPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Выполнить запрос ATTACH [UNREPLICATED] (PART|PARTITION).
+    /** Run the ATTACH request [UNREPLICATED] (PART|PARTITION).
       */
     virtual void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings)
     {
         throw Exception("Method attachPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Выполнить запрос FETCH PARTITION.
+    /** Run the FETCH PARTITION query.
       */
     virtual void fetchPartition(const Field & partition, const String & from, const Settings & settings)
     {
         throw Exception("Method fetchPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Выполнить запрос FREEZE PARTITION. То есть, создать локальный бэкап (снэпшот) данных с помощью функции localBackup (см. localBackup.h)
+    /** Run the FREEZE PARTITION request. That is, create a local backup (snapshot) of data using the `localBackup` function (see localBackup.h)
       */
     virtual void freezePartition(const Field & partition, const String & with_name, const Settings & settings)
     {
         throw Exception("Method freezePartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Выполнить запрос RESHARD PARTITION.
+    /** Run the RESHARD PARTITION query.
       */
     virtual void reshardPartitions(ASTPtr query, const String & database_name,
         const Field & first_partition, const Field & last_partition,
@@ -254,18 +260,18 @@ public:
         throw Exception("Method reshardPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.
-      * Возвращает - была ли выполнена какая-либо работа.
+    /** Perform any background work. For example, combining parts in a MergeTree type table.
+      * Returns whether any work has been done.
       */
-    virtual bool optimize(const String & partition, bool final, const Settings & settings)
+    virtual bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Если при уничтожении объекта надо сделать какую-то сложную работу - сделать её заранее.
-      * Например, если таблица содержит какие-нибудь потоки для фоновой работы - попросить их завершиться и дождаться завершения.
-      * По-умолчанию - ничего не делать.
-      * Может вызываться одновременно из разных потоков, даже после вызова drop().
+    /** If you have to do some complicated work when destroying an object - do it in advance.
+      * For example, if the table contains any threads for background work - ask them to complete and wait for completion.
+      * By default, do nothing.
+      * Can be called simultaneously from different threads, even after a call to drop().
       */
     virtual void shutdown() {}
 
@@ -289,25 +295,25 @@ protected:
 private:
     friend class TableStructureReadLock;
 
-    /// Брать следующие два лока всегда нужно в этом порядке.
+    /// You always need to take the next two locks in this order.
 
-    /** Берется на чтение на все время запроса INSERT и на все время слияния кусков (для MergeTree).
-      * Берется на запись на все время ALTER MODIFY.
+    /** It is taken for read for the entire INSERT query and the entire merge of the parts (for MergeTree).
+      * It is taken for write for the entire time ALTER MODIFY.
       *
-      * Формально:
-      * Ввзятие на запись гарантирует, что:
-      *  1) данные в таблице не изменится, пока лок жив,
-      *  2) все изменения данных после отпускания лока будут основаны на структуре таблицы на момент после отпускания лока.
-      * Нужно брать на чтение на все время операции, изменяющей данные.
+      * Formally:
+      * Taking a write lock ensures that:
+      *  1) the data in the table will not change while the lock is alive,
+      *  2) all changes to the data after releasing the lock will be based on the structure of the table at the time after the lock was released.
+      * You need to take for read for the entire time of the operation that changes the data.
       */
     mutable Poco::RWLock data_lock;
 
-    /** Лок для множества столбцов и пути к таблице. Берется на запись в RENAME, ALTER (для ALTER MODIFY ненадолго) и DROP.
-      * Берется на чтение на все время SELECT, INSERT и слияния кусков (для MergeTree).
+    /** Lock for multiple columns and path to table. It is taken for write at RENAME, ALTER (for ALTER MODIFY for a while) and DROP.
+      * It is taken for read for the whole time of SELECT, INSERT and merge parts (for MergeTree).
       *
-      * Взятие этого лока на запись - строго более "сильная" операция, чем взятие parts_writing_lock на запись.
-      * То есть, если этот лок взят на запись, о parts_writing_lock можно не заботиться.
-      * parts_writing_lock нужен только для случаев, когда не хочется брать table_structure_lock надолго (ALTER MODIFY).
+      * Taking this lock for writing is a strictly "stronger" operation than taking parts_writing_lock for write record.
+      * That is, if this lock is taken for write, you should not worry about `parts_writing_lock`.
+      * parts_writing_lock is only needed for cases when you do not want to take `table_structure_lock` for long operations (ALTER MODIFY).
       */
     mutable Poco::RWLock structure_lock;
 };
@@ -315,7 +321,7 @@ private:
 using StorageVector = std::vector<StoragePtr>;
 using StorageList = std::list<StoragePtr>;
 
-/// имя таблицы -> таблица
+/// table name -> table
 using Tables = std::map<String, StoragePtr>;
 
 }

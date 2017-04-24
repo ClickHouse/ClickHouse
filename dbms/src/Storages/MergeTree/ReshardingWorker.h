@@ -73,7 +73,7 @@ public:
     UInt64 subscribe(const std::string & coordinator_id, const std::string & query);
     /// Cancel the aforementionned subscription.
     void unsubscribe(const std::string & coordinator_id);
-    /// Увеличить количество партиций входящих в одну распределённую задачу. Вызывается с исполнителя.
+    /// Increase the number of partitions included in one distributed task. Called from the executor.
     void addPartitions(const std::string & coordinator_id, const PartitionList & partition_list);
     /// Rearrange partitions into two categories: coordinated job, uncoordinated job.
     /// Returns an iterator to the beginning of the list of uncoordinated jobs.
@@ -196,9 +196,9 @@ private:
     /// Perform one job.
     void perform(const std::string & job_descriptor, const std::string & job_name);
 
-    /// Разбить куски входящие в партицию на несколько, согласно ключу шардирования.
-    /// Оновременно перегруппировать эти куски по шардам и слить куски в каждой группе.
-    /// При завершении этого процесса создаётся новая партиция для каждого шарда.
+    /// Split the parts of the partition into several, according to the sharding key.
+    /// Simultaneously regroup these parts by shards and merge the parts in each group.
+    /// When this process is completed, a new partition is created for each shard.
     void createShardedPartitions();
 
     /// Upload all the partitions resulting from source partition resharding to their

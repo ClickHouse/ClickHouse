@@ -38,14 +38,12 @@ MultiplexedConnections::MultiplexedConnections(Connection * connection_, const S
         throw Exception("Invalid set of connections", ErrorCodes::LOGICAL_ERROR);
 }
 
-MultiplexedConnections::MultiplexedConnections(IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_,
-    bool append_extra_info, PoolMode pool_mode_)
+MultiplexedConnections::MultiplexedConnections(
+        ConnectionPoolWithFailover & pool_, const Settings * settings_, ThrottlerPtr throttler_,
+        bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table)
     : settings(settings_), throttler(throttler_), pool_mode(pool_mode_)
 {
-    if (pool_ == nullptr)
-        throw Exception("Invalid pool specified", ErrorCodes::LOGICAL_ERROR);
-
-    initFromShard(pool_);
+    initFromShard(pool_, main_table);
     registerShards();
 
     supports_parallel_execution = active_connection_total_count > 1;
@@ -54,8 +52,9 @@ MultiplexedConnections::MultiplexedConnections(IConnectionPool * pool_, const Se
         block_extra_info = std::make_unique<BlockExtraInfo>();
 }
 
-MultiplexedConnections::MultiplexedConnections(ConnectionPools & pools_, const Settings * settings_, ThrottlerPtr throttler_,
-    bool append_extra_info, PoolMode pool_mode_)
+MultiplexedConnections::MultiplexedConnections(
+        const ConnectionPoolWithFailoverPtrs & pools_, const Settings * settings_, ThrottlerPtr throttler_,
+        bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table)
     : settings(settings_), throttler(throttler_), pool_mode(pool_mode_)
 {
     if (pools_.empty())
@@ -65,7 +64,7 @@ MultiplexedConnections::MultiplexedConnections(ConnectionPools & pools_, const S
     {
         if (!pool)
             throw Exception("Invalid pool specified", ErrorCodes::LOGICAL_ERROR);
-        initFromShard(pool.get());
+        initFromShard(*pool, main_table);
     }
 
     registerShards();
@@ -277,9 +276,13 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return os.str();
 }
 
-void MultiplexedConnections::initFromShard(IConnectionPool * pool)
+void MultiplexedConnections::initFromShard(ConnectionPoolWithFailover & pool, const QualifiedTableName * main_table)
 {
-    auto entries = pool->getMany(settings, pool_mode);
+    std::vector<IConnectionPool::Entry> entries;
+    if (main_table)
+        entries = pool.getManyChecked(settings, pool_mode, *main_table);
+    else
+        entries = pool.getMany(settings, pool_mode);
 
     /// If getMany() did not allocate connections and did not throw exceptions, this means that
     /// `skip_unavailable_shards` was set. Then just return.

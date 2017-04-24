@@ -91,7 +91,6 @@ protected:
 
 public:
 
-
     ProcessListElement(
         const String & query_,
         const ClientInfo & client_info_,
@@ -135,14 +134,14 @@ public:
         ProcessInfo res;
 
         res.query             = query;
-        res.client_info     = client_info;
-        res.elapsed_seconds = watch.elapsedSeconds();
+        res.client_info       = client_info;
+        res.elapsed_seconds   = watch.elapsedSeconds();
         res.read_rows         = progress_in.rows;
         res.read_bytes        = progress_in.bytes;
         res.total_rows        = progress_in.total_rows;
-        res.written_rows    = progress_out.rows;
-        res.written_bytes    = progress_out.bytes;
-        res.memory_usage     = memory_tracker.get();
+        res.written_rows      = progress_out.rows;
+        res.written_bytes     = progress_out.bytes;
+        res.memory_usage      = memory_tracker.get();
 
         return res;
     }

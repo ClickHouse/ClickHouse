@@ -1,5 +1,6 @@
 #include <mysql/mysql.h>
 #include <mysql/mysqld_error.h>
+
 #include <mysqlxx/Pool.h>
 
 #include <Poco/Util/Application.h>

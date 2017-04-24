@@ -54,6 +54,3 @@ target_link_libraries (thread_pool dbms)
 
 add_executable (array_cache array_cache.cpp)
 target_link_libraries (array_cache dbms)
-
-add_executable (allocator_stress allocator_stress.cpp)
-target_link_libraries (allocator_stress dbms)

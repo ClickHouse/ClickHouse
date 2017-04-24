@@ -22,8 +22,18 @@ MemoryTracker::~MemoryTracker()
     if (peak)
         logPeakMemoryUsage();
 
-    if (amount && !next)
-        CurrentMetrics::sub(metric, amount);
+    /** This is needed for next memory tracker to be consistent with sum of all referring memory trackers.
+      *
+      * Sometimes, memory tracker could be destroyed before memory was freed, and on destruction, amount > 0.
+      * For example, a query could allocate some data and leave it in cache.
+      *
+      * If memory will be freed outside of context of this memory tracker,
+      *  but in context of one of the 'next' memory trackers,
+      *  then memory usage of 'next' memory trackers will be underestimated,
+      *  because amount will be decreased twice (first - here, second - when real 'free' happens).
+      */
+    if (amount)
+        free(amount);
 }
 
 
@@ -86,12 +96,22 @@ void MemoryTracker::alloc(Int64 size)
 
 void MemoryTracker::free(Int64 size)
 {
-    amount -= size;
+    /** Sometimes, query could free some data, that was allocated outside of query context.
+      * Example: cache eviction.
+      * To avoid negative memory usage, we "saturate" amount.
+      * Memory usage will be calculated with some error.
+      */
+    Int64 size_to_subtract = size;
+    if (size_to_subtract > amount)
+        size_to_subtract = amount;
+
+    amount -= size_to_subtract;
+    /// NOTE above code is not atomic. It's easy to fix.
 
     if (next)
         next->free(size);
     else
-        CurrentMetrics::sub(metric, size);
+        CurrentMetrics::sub(metric, size_to_subtract);
 }
 
 

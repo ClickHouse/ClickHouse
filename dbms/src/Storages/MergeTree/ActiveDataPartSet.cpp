@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 
 
 namespace DB
@@ -141,50 +142,67 @@ String ActiveDataPartSet::getPartName(DayNum_t left_date, DayNum_t right_date, I
 }
 
 
-bool ActiveDataPartSet::isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec * out_matches)
+bool ActiveDataPartSet::isPartDirectory(const String & dir_name)
 {
-    Poco::RegularExpression::MatchVec matches;
-    static Poco::RegularExpression file_name_regexp("^(\\d{8})_(\\d{8})_(-?\\d+)_(-?\\d+)_(\\d+)");
-    bool res = (file_name_regexp.match(dir_name, 0, matches) && 6 == matches.size());
-    if (out_matches)
-        *out_matches = matches;
-    return res;
+    return parsePartNameImpl(dir_name, nullptr);
 }
 
-
-void ActiveDataPartSet::parsePartName(const String & file_name, Part & part, const Poco::RegularExpression::MatchVec * matches_p)
+bool ActiveDataPartSet::parsePartNameImpl(const String & dir_name, Part * part)
 {
-    Poco::RegularExpression::MatchVec match_vec;
-    if (!matches_p)
+    UInt32 min_yyyymmdd = 0;
+    UInt32 max_yyyymmdd = 0;
+    Int64 min_block_num = 0;
+    Int64 max_block_num = 0;
+    UInt32 level = 0;
+
+    ReadBufferFromString in(dir_name);
+
+    if (!tryReadIntText(min_yyyymmdd, in)
+        || !checkChar('_', in)
+        || !tryReadIntText(max_yyyymmdd, in)
+        || !checkChar('_', in)
+        || !tryReadIntText(min_block_num, in)
+        || !checkChar('_', in)
+        || !tryReadIntText(max_block_num, in)
+        || !checkChar('_', in)
+        || !tryReadIntText(level, in)
+        || !in.eof())
     {
-        if (!isPartDirectory(file_name, &match_vec))
-            throw Exception("Unexpected part name: " + file_name, ErrorCodes::BAD_DATA_PART_NAME);
-        matches_p = &match_vec;
+        return false;
     }
 
-    const Poco::RegularExpression::MatchVec & matches = *matches_p;
+    if (part)
+    {
+        const auto & date_lut = DateLUT::instance();
 
-    const auto & date_lut = DateLUT::instance();
+        part->left_date = date_lut.YYYYMMDDToDayNum(min_yyyymmdd);
+        part->right_date = date_lut.YYYYMMDDToDayNum(max_yyyymmdd);
+        part->left = min_block_num;
+        part->right = max_block_num;
+        part->level = level;
 
-    part.left_date = date_lut.YYYYMMDDToDayNum(parse<UInt32>(file_name.substr(matches[1].offset, matches[1].length)));
-    part.right_date = date_lut.YYYYMMDDToDayNum(parse<UInt32>(file_name.substr(matches[2].offset, matches[2].length)));
-    part.left = parse<Int64>(file_name.substr(matches[3].offset, matches[3].length));
-    part.right = parse<Int64>(file_name.substr(matches[4].offset, matches[4].length));
-    part.level = parse<UInt32>(file_name.substr(matches[5].offset, matches[5].length));
+        DayNum_t left_month = date_lut.toFirstDayNumOfMonth(part->left_date);
+        DayNum_t right_month = date_lut.toFirstDayNumOfMonth(part->right_date);
 
-    DayNum_t left_month = date_lut.toFirstDayNumOfMonth(part.left_date);
-    DayNum_t right_month = date_lut.toFirstDayNumOfMonth(part.right_date);
+        if (left_month != right_month)
+            throw Exception("Part name " + dir_name + " contains different months", ErrorCodes::BAD_DATA_PART_NAME);
 
-    if (left_month != right_month)
-        throw Exception("Part name " + file_name + " contains different months", ErrorCodes::BAD_DATA_PART_NAME);
+        part->month = left_month;
+    }
 
-    part.month = left_month;
+    return true;
 }
 
+void ActiveDataPartSet::parsePartName(const String & dir_name, Part & part)
+{
+    if (!parsePartNameImpl(dir_name, &part))
+        throw Exception("Unexpected part name: " + dir_name, ErrorCodes::BAD_DATA_PART_NAME);
+}
 
 bool ActiveDataPartSet::contains(const String & outer_part_name, const String & inner_part_name)
 {
-    Part outer, inner;
+    Part outer;
+    Part inner;
     parsePartName(outer_part_name, outer);
     parsePartName(inner_part_name, inner);
     return outer.contains(inner);

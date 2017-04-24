@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/Common.h>
+#include <common/Types.h>
 #include <Common/HyperLogLogBiasEstimator.h>
 #include <Common/CompactArray.h>
 #include <Common/HashTable/Hash.h>
@@ -24,18 +24,18 @@ namespace ErrorCodes
 }
 
 
-/// Настройка типа знаменателя.
+/// Sets denominator type.
 enum class DenominatorMode
 {
-    Compact,        /// Компактный знаменатель
-    StableIfBig,    /// Устойчивый знаменатель (в случае больших хранилищ, иначе Compact)
-    ExactType        /// Знаменатель заданного простого типа
+    Compact,        /// Compact denominator.
+    StableIfBig,    /// Stable denominator falling back to Compact if rank storage is not big enough.
+    ExactType       /// Denominator of specified exact type.
 };
 
 namespace details
 {
 
-/// Look-up table логарифмов от целых чисел для использования в HyperLogLogCounter.
+/// Look-up table of logarithms for integer numbers, used in HyperLogLogCounter.
 template<UInt8 K>
 struct LogLUT
 {
@@ -66,10 +66,8 @@ template<> struct MinCounterTypeHelper<1>    { using Type = UInt16; };
 template<> struct MinCounterTypeHelper<2>    { using Type = UInt32; };
 template<> struct MinCounterTypeHelper<3>    { using Type = UInt64; };
 
-/// Вспомогательная структура для автоматического определения
-/// минимального размера типа счетчика в зависимости от максимального значения.
-/// Используется там, где нужна максимальная экономия памяти,
-/// например, в HyperLogLogCounter
+/// Auxiliary structure for automatic determining minimum size of counter's type depending on its maximum value.
+/// Used in HyperLogLogCounter in order to spend memory efficiently.
 template<UInt64 MaxValue> struct MinCounterType
 {
     typedef typename MinCounterTypeHelper<
@@ -79,8 +77,7 @@ template<UInt64 MaxValue> struct MinCounterType
         >::Type Type;
 };
 
-/** Знаменатель формулы алгоритма HyperLogLog
-  */
+/// Denominator of expression for HyperLogLog algorithm.
 template<UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
     DenominatorMode denominator_mode, typename Enable = void>
 class __attribute__ ((packed)) Denominator;
@@ -88,7 +85,7 @@ class __attribute__ ((packed)) Denominator;
 namespace
 {
 
-/// Возвращает true, если хранилище для рангов большое.
+/// Returns true if rank storage is big.
 constexpr bool isBigRankStore(UInt8 precision)
 {
     return precision >= 12;
@@ -96,8 +93,7 @@ constexpr bool isBigRankStore(UInt8 precision)
 
 }
 
-/** Тип употребляемый для вычисления знаменателя.
-  */
+/// Used to deduce denominator type depending on options provided.
 template <typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode, typename Enable = void>
 struct IntermediateDenominator;
 
@@ -119,10 +115,9 @@ struct IntermediateDenominator<HashValueType, DenominatorType, DenominatorMode::
     using Type = DenominatorType;
 };
 
-/** "Лёгкая" реализация знаменателя формулы HyperLogLog.
-  * Занимает минимальный объём памяти, зато вычисления могут быть неустойчивы.
-  * Подходит, когда хранилище для рангов небольшое.
-  */
+/// "Lightweight" implementation of expression's denominator for HyperLogLog algorithm.
+/// Uses minimum amount of memory, but estimates may be unstable.
+/// Satisfiable when rank storage is small enough.
 template<UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
     DenominatorMode denominator_mode>
 class __attribute__ ((packed)) Denominator<precision, max_rank, HashValueType, DenominatorType,
@@ -164,10 +159,9 @@ private:
     T denominator;
 };
 
-/** "Тяжёлая" версия знаменателя формулы HyperLogLog.
-  * Занимает больший объём памяти, чем лёгкая версия, зато вычисления всегда устойчивы.
-  * Подходит, когда хранилище для рангов довольно большое.
-  */
+/// Fully-functional version of expression's denominator for HyperLogLog algorithm.
+/// Spends more space that lightweight version. Estimates will always be stable.
+/// Used when rank storage is big.
 template<UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
     DenominatorMode denominator_mode>
 class __attribute__ ((packed)) Denominator<precision, max_rank, HashValueType, DenominatorType,
@@ -212,8 +206,7 @@ private:
     UInt32 rank_count[size] = { 0 };
 };
 
-/** Число хвостовых (младших) нулей.
-  */
+/// Number of trailing zeros.
 template <typename T>
 struct TrailingZerosCounter;
 
@@ -235,8 +228,7 @@ struct TrailingZerosCounter<UInt64>
     }
 };
 
-/** Размер счётчика ранга в битах.
-  */
+/// Size of counter's rank in bits.
 template <typename T>
 struct RankWidth;
 
@@ -260,26 +252,24 @@ struct RankWidth<UInt64>
 
 }
 
-/** Поведение класса HyperLogLogCounter.
-  */
+/// Sets behavior of HyperLogLog class.
 enum class HyperLogLogMode
 {
-    Raw,            /// Применить алгоритм HyperLogLog без исправления погрешности
-    LinearCounting, /// Исправить погрешность по алгоритму LinearCounting
-    BiasCorrected,  /// Исправить погрешность по алгоритму HyperLogLog++
-    FullFeatured    /// Исправить погрешность по алгоритму LinearCounting или HyperLogLog++
+    Raw,            /// No error correction.
+    LinearCounting, /// LinearCounting error correction.
+    BiasCorrected,  /// HyperLogLog++ error correction.
+    FullFeatured    /// LinearCounting or HyperLogLog++ error correction (depending).
 };
 
-/** Подсчёт уникальных значений алгоритмом HyperLogLog.
-  *
-  * Теоретическая относительная погрешность ~1.04 / sqrt(2^precision)
-  * precision - длина префикса хэш-функции для индекса (число ячеек M = 2^precision)
-  * Рекомендуемые значения precision: 3..20
-  *
-  * Источник: "HyperLogLog: The analysis of a near-optimal cardinality estimation algorithm"
-  * (P. Flajolet et al., AOFA '07: Proceedings of the 2007 International Conference on Analysis
-  * of Algorithms)
-  */
+/// Estimation of number of unique values using HyperLogLog algorithm.
+///
+/// Theoretical relative error is ~1.04 / sqrt(2^precision), where
+/// precision is size of prefix of hash-function used for indexing (number of buckets M = 2^precision).
+/// Recommended values for precision are: 3..20.
+///
+/// Source: "HyperLogLog: The analysis of a near-optimal cardinality estimation algorithm"
+/// (P. Flajolet et al., AOFA '07: Proceedings of the 2007 International Conference on Analysis
+/// of Algorithms).
 template <
     UInt8 precision,
     typename Hash = IntHash32<UInt64>,
@@ -291,9 +281,10 @@ template <
 class __attribute__ ((packed)) HyperLogLogCounter : private Hash
 {
 private:
-    /// Число ячеек.
+    /// Number of buckets.
     static constexpr size_t bucket_count = 1ULL << precision;
-    /// Размер счётчика ранга в битах.
+
+    /// Size of counter's rank in bits.
     static constexpr UInt8 rank_width = details::RankWidth<HashValueType>::get();
 
 private:
@@ -305,19 +296,18 @@ public:
     {
         HashValueType hash = getHash(value);
 
-        /// Разбиваем хэш-значение на два подзначения. Первое из них является номером ячейки
-        /// в хранилище для рангов (rank_storage), а со второго вычисляем ранг.
+        /// Divide hash to two sub-values. First is bucket number, second will be used to calculate rank.
         HashValueType bucket = extractBitSequence(hash, 0, precision);
         HashValueType tail = extractBitSequence(hash, precision, sizeof(HashValueType) * 8);
         UInt8 rank = calculateRank(tail);
 
-        /// Обновляем максимальный ранг для текущей ячейки.
+        /// Update maximum rank for current bucket.
         update(bucket, rank);
     }
 
     UInt32 size() const
     {
-        /// Нормализующий коэффициент, входящий в среднее гармоническое.
+        /// Normalizing factor for harmonic mean.
         static constexpr double alpha_m =
             bucket_count == 2     ? 0.351 :
             bucket_count == 4  ? 0.532 :
@@ -326,10 +316,8 @@ public:
             bucket_count == 32 ? 0.697 :
             bucket_count == 64 ? 0.709 : 0.7213 / (1 + 1.079 / bucket_count);
 
-        /** Среднее гармоническое по всем корзинам из величин 2^rank равно:
-          *  bucket_count / ∑ 2^-rank_i.
-          * Величина ∑ 2^-rank_i - это denominator.
-          */
+        /// Harmonic mean for all buckets of 2^rank values is: bucket_count / ∑ 2^-rank_i,
+        /// where ∑ 2^-rank_i - is denominator.
 
         double raw_estimate = alpha_m * bucket_count * bucket_count / denominator.get();
 
@@ -372,7 +360,7 @@ public:
         out.write(reinterpret_cast<const char *>(this), sizeof(*this));
     }
 
-    /// Запись и чтение в текстовом виде неэффективно (зато совместимо с OLAPServer-ом и Metrage).
+    /// Read and write in text mode is suboptimal (but compatible with OLAPServer and Metrage).
     void readText(DB::ReadBuffer & in)
     {
         rank_store.readText(in);
@@ -405,13 +393,13 @@ public:
     }
 
 private:
-    /// Извлечь подмножество битов [begin, end[.
+    /// Extract subset of bits in [begin, end[ range.
     inline HashValueType extractBitSequence(HashValueType val, UInt8 begin, UInt8 end) const
     {
         return (val >> begin) & ((1ULL << (end - begin)) - 1);
     }
 
-    /// Ранг = число хвостовых (младших) нулей + 1
+    /// Rank is number of trailing zeros.
     inline UInt8 calculateRank(HashValueType val) const
     {
         if (unlikely(val == 0))
@@ -430,7 +418,7 @@ private:
         return Hash::operator()(key);
     }
 
-    /// Обновить максимальный ранг для заданной ячейки.
+    /// Update maximum rank for current bucket.
     void update(HashValueType bucket, UInt8 rank)
     {
         typename RankStore::Locus content = rank_store[bucket];
@@ -479,7 +467,7 @@ private:
         {
             if (raw_estimate <= (2.5 * bucket_count))
             {
-                /// Поправка в случае маленкой оценки.
+                /// Correction in case of small estimate.
                 fixed_estimate = applyLinearCorrection(raw_estimate);
             }
             else
@@ -497,9 +485,8 @@ private:
         return fixed_estimate;
     }
 
-    /// Поправка из алгоритма HyperLogLog++.
-    /// Источник: "HyperLogLog in Practice: Algorithmic Engineering of a State of The Art
-    /// Cardinality Estimation Algorithm".
+    /// Correction used in HyperLogLog++ algorithm.
+    /// Source: "HyperLogLog in Practice: Algorithmic Engineering of a State of The Art Cardinality Estimation Algorithm"
     /// (S. Heule et al., Proceedings of the EDBT 2013 Conference).
     inline double applyBiasCorrection(double raw_estimate) const
     {
@@ -513,9 +500,9 @@ private:
         return fixed_estimate;
     }
 
-    /// Подсчет уникальных значений по алгоритму LinearCounting.
-    /// Источник: "A Linear-time Probabilistic Counting Algorithm for Database Applications"
-    /// (Whang et al., ACM Trans. Database Syst., pp. 208-229, 1990)
+    /// Calculation of unique values using LinearCounting algorithm.
+    /// Source: "A Linear-time Probabilistic Counting Algorithm for Database Applications"
+    /// (Whang et al., ACM Trans. Database Syst., pp. 208-229, 1990).
     inline double applyLinearCorrection(double raw_estimate) const
     {
         double fixed_estimate;
@@ -529,28 +516,28 @@ private:
     }
 
 private:
-    /// Максимальный ранг.
+    /// Maximum rank.
     static constexpr int max_rank = sizeof(HashValueType) * 8 - precision + 1;
 
-    /// Хранилище для рангов.
+    /// Rank storage.
     RankStore rank_store;
 
-    /// Знаменатель формулы алгоритма HyperLogLog.
+    /// Expression's denominator for HyperLogLog algorithm.
     using DenominatorCalculatorType = details::Denominator<precision, max_rank, HashValueType, DenominatorType, denominator_mode>;
     DenominatorCalculatorType denominator{bucket_count};
 
-    /// Число нулей в хранилище для рангов.
+    /// Number of zeros in rank storage.
     using ZerosCounterType = typename details::MinCounterType<bucket_count>::Type;
     ZerosCounterType zeros = bucket_count;
 
     static details::LogLUT<precision> log_lut;
 
-    /// Проверки.
+    /// Checks.
     static_assert(precision < (sizeof(HashValueType) * 8), "Invalid parameter value");
 };
 
 
-/// Определения статических переменных, нужные во время линковки.
+/// Declaration of static variables for linker.
 template
 <
     UInt8 precision,
@@ -573,8 +560,8 @@ details::LogLUT<precision> HyperLogLogCounter
 >::log_lut;
 
 
-/// Для Metrage, используется лёгкая реализация знаменателя формулы HyperLogLog,
-/// чтобы формат сериализации не изменился.
+/// Lightweight implementation of expression's denominator is used in Metrage.
+/// Serialization format must not be changed.
 using HLL12 = HyperLogLogCounter<
     12,
     IntHash32<UInt64>,

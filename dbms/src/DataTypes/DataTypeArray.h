@@ -11,11 +11,11 @@ namespace DB
 class DataTypeArray final : public IDataType
 {
 private:
-    /// Расширенный тип элементов массивов.
+    /// Extended type of array elements.
     DataTypeTraits::EnrichedDataTypePtr enriched_nested;
-    /// Тип элементов массивов.
+    /// The type of array elements.
     DataTypePtr nested;
-    /// Тип смещений.
+    /// Type of offsets.
     DataTypePtr offsets;
 
 public:
@@ -54,25 +54,25 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
-    /** Потоковая сериализация массивов устроена по-особенному:
-      * - записываются/читаются элементы, уложенные подряд, без размеров массивов;
-      * - размеры записываются/читаются в отдельный столбец,
-      *   и о записи/чтении размеров должна позаботиться вызывающая сторона.
-      * Это нужно, так как при реализации вложенных структур, несколько массивов могут иметь общие размеры.
+    /** Streaming serialization of arrays is arranged in a special way:
+      * - elements placed in a row are written/read without array sizes;
+      * - the sizes are written/read in a separate column,
+      *   and the caller must take care of writing/reading the sizes.
+      * This is necessary, because when implementing nested structures, several arrays can have common sizes.
       */
 
-    /** Записать только значения, без размеров. Вызывающая сторона также должна куда-нибудь записать смещения. */
+    /** Write only values, without dimensions. The caller also needs to record the offsets somewhere. */
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
 
-    /** Прочитать только значения, без размеров.
-      * При этом, в column уже заранее должны быть считаны все размеры.
+    /** Read only values, without dimensions.
+      * In this case, all the sizes must already be read in the column beforehand.
       */
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
-    /** Записать размеры. */
+    /** Write the dimensions. */
     void serializeOffsets(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
 
-    /** Прочитать размеры. Вызывайте этот метод перед чтением значений. */
+    /** Read the dimensions. Call this method before reading the values. */
     void deserializeOffsets(IColumn & column, ReadBuffer & istr, size_t limit) const;
 
     ColumnPtr createColumn() const override;

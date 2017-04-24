@@ -65,7 +65,7 @@ protected:
     void addStream(const String & path, const String & name, const IDataType & type, size_t estimated_size,
         size_t level, const String & filename, bool skip_offsets);
 
-    /// Записать данные одного столбца.
+    /// Write data of one column.
     void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns,
         size_t level, bool skip_offsets);
 
@@ -73,7 +73,7 @@ protected:
 
     ColumnStreams column_streams;
 
-    /// Смещение до первой строчки блока, для которой надо записать индекс.
+    /// The offset to the first row of the block for which you want to write the index.
     size_t index_offset = 0;
 
     size_t min_compress_block_size;
@@ -90,8 +90,8 @@ private:
 };
 
 
-/** Для записи одного куска.
-  * Данные относятся к одному месяцу, и пишутся в один кускок.
+/** To write one part.
+  * The data refers to one month, and are written in one part.
   */
 class MergedBlockOutputStream : public IMergedBlockOutputStream
 {
@@ -112,11 +112,11 @@ public:
 
     std::string getPartPath() const;
 
-    /// Если данные заранее отсортированы.
+    /// If the data is pre-sorted.
     void write(const Block & block) override;
 
-    /** Если данные не отсортированы, но мы заранее вычислили перестановку, после которой они станут сортированными.
-      * Этот метод используется для экономии оперативки, так как не нужно держать одновременно два блока - исходный и отсортированный.
+    /** If the data is not sorted, but we have previously calculated the permutation, after which they will be sorted.
+      * This method is used to save RAM, since you do not need to keep two blocks at once - the original one and the sorted one.
       */
     void writeWithPermutation(const Block & block, const IColumn::Permutation * permutation);
 
@@ -130,14 +130,14 @@ public:
 
     MergeTreeData::DataPart::Index & getIndex();
 
-    /// Сколько засечек уже записано.
+    /// How many marks are already written.
     size_t marksCount();
 
 private:
     void init();
 
-    /** Если задана permutation, то переставляет значения в столбцах при записи.
-      * Это нужно, чтобы не держать целый блок в оперативке для его сортировки.
+    /** If `permutation` is given, it rearranges the values ​​in the columns when writing.
+      * This is necessary to not keep the whole block in the RAM to sort it.
       */
     void writeImpl(const Block & block, const IColumn::Permutation * permutation);
 
@@ -153,7 +153,7 @@ private:
 };
 
 
-/// Записывает только те, столбцы, что лежат в block
+/// Writes only those columns that are in `block`
 class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream
 {
 public:

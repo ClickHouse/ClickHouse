@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
+    extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
 }
 
 
@@ -37,6 +38,15 @@ ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
 
     if (null_map->isConst())
         throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
+}
+
+
+size_t ColumnNullable::sizeOfField() const
+{
+    if (nested_column->isFixed())
+        return getNullMapConcreteColumn().sizeOfField() + nested_column->sizeOfField();
+
+    throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD);
 }
 
 
@@ -437,6 +447,14 @@ void ColumnNullable::applyNegatedNullMap(const ColumnUInt8 & map)
 void ColumnNullable::applyNullMap(const ColumnNullable & other)
 {
     applyNullMap(other.getNullMapConcreteColumn());
+}
+
+
+void ColumnNullable::checkConsistency() const
+{
+    if (null_map->size() != nested_column->size())
+        throw Exception("Logical error: Sizes of nested column and null map of Nullable column are not equal",
+            ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
 }
 
 }

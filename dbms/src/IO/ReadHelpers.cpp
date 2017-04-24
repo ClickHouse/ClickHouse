@@ -1,12 +1,11 @@
-#include <sstream>
-
-#include <mysqlxx/Manip.h>
-
 #include <Core/Defines.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
-#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <common/find_first_symbols.h>
+
 
 namespace DB
 {
@@ -22,15 +21,18 @@ namespace ErrorCodes
 
 static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
-    std::stringstream message;
-    message <<  "Cannot parse input: expected " << mysqlxx::escape << s;
+    std::string message;
+    {
+        WriteBufferFromString out(message);
+        out <<  "Cannot parse input: expected " << escape << s;
 
-    if (buf.eof())
-        message << " at end of stream.";
-    else
-        message << " before: " << mysqlxx::escape << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
+        if (buf.eof())
+            out << " at end of stream.";
+        else
+            out << " before: " << escape << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
+    }
 
-    throw Exception(message.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+    throw Exception(message, ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }
 
 
@@ -685,25 +687,28 @@ void readException(Exception & e, ReadBuffer & buf, const String & additional_me
     readBinary(stack_trace, buf);
     readBinary(has_nested, buf);
 
-    std::stringstream message_stream;
+    std::string new_message;
+    {
+        WriteBufferFromString out(new_message);
 
-    if (!additional_message.empty())
-        message_stream << additional_message << ". ";
+        if (!additional_message.empty())
+            out << additional_message << ". ";
 
-    if (name != "DB::Exception")
-        message_stream << name << ". ";
+        if (name != "DB::Exception")
+            out << name << ". ";
 
-    message_stream << message
-        << ". Stack trace:\n\n" << stack_trace;
+        out << message
+            << ". Stack trace:\n\n" << stack_trace;
+    }
 
     if (has_nested)
     {
         Exception nested;
         readException(nested, buf);
-        e = Exception(message_stream.str(), nested, code);
+        e = Exception(new_message, nested, code);
     }
     else
-        e = Exception(message_stream.str(), code);
+        e = Exception(new_message, code);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)

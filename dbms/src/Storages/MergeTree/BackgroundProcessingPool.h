@@ -15,11 +15,11 @@
 namespace DB
 {
 
-/** Используя фиксированное количество потоков, выполнять произвольное количество задач в бесконечном цикле.
-  * При этом, одна задача может выполняться одновременно из разных потоков.
-  * Предназначена для задач, выполняющих постоянную фоновую работу (например, слияния).
-  * Задача - функция, возвращающая bool - сделала ли она какую-либо работу.
-  * Если не сделала, то в следующий раз будет выполнена позже.
+/** Using a fixed number of threads, perform an arbitrary number of tasks in an infinite loop.
+  * In this case, one task can run simultaneously from different threads.
+  * Designed for tasks that perform continuous background work (for example, merge).
+  * `Task` is a function that returns a bool - did it do any work.
+  * If not, then the next time will be done later.
   */
 class BackgroundProcessingPool
 {

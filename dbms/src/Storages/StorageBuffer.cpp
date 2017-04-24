@@ -121,7 +121,7 @@ protected:
     }
 
 private:
-    NameSet column_names;
+    Names column_names;
     StorageBuffer::Buffer & buffer;
     bool has_been_read = false;
 };
@@ -362,7 +362,7 @@ void StorageBuffer::shutdown()
 
     try
     {
-        optimize({}, {}, context.getSettings());
+        optimize({} /*partition*/, false /*final*/, false /*deduplicate*/, context.getSettings());
     }
     catch (...)
     {
@@ -381,13 +381,16 @@ void StorageBuffer::shutdown()
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool StorageBuffer::optimize(const String & partition, bool final, const Settings & settings)
+bool StorageBuffer::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
 {
     if (!partition.empty())
         throw Exception("Partition cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
 
     if (final)
         throw Exception("FINAL cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
+
+    if (deduplicate)
+        throw Exception("DEDUPLICATE cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
 
     flushAllBuffers(false);
     return true;
@@ -608,7 +611,7 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
     auto lock = lockStructureForAlter();
 
     /// So that no blocks of the old structure remain.
-    optimize({}, {}, context.getSettings());
+    optimize({} /*partition*/, false /*final*/, false /*deduplicate*/, context.getSettings());
 
     params.apply(*columns, materialized_columns, alias_columns, column_defaults);
 
