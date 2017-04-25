@@ -373,6 +373,7 @@ namespace ErrorCodes
     extern const int BAD_CAST = 368;
     extern const int ALL_REPLICAS_ARE_STALE = 369;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES = 370;
+    extern const int INCONSISTENT_CLUSTER_DEFINITION = 371;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

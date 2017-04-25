@@ -39,10 +39,10 @@ public:
         auto res = std::make_shared<ASTCreateQuery>(*this);
         res->children.clear();
 
-        if (columns)     { res->columns = columns->clone();     res->children.push_back(res->columns); }
-        if (storage)     { res->storage = storage->clone();     res->children.push_back(res->storage); }
-        if (select)     { res->select = select->clone();     res->children.push_back(res->select); }
-        if (inner_storage)     { res->inner_storage = inner_storage->clone();     res->children.push_back(res->inner_storage); }
+        if (columns)        { res->columns = columns->clone();              res->children.push_back(res->columns); }
+        if (storage)        { res->storage = storage->clone();              res->children.push_back(res->storage); }
+        if (select)         { res->select = select->clone();                res->children.push_back(res->select); }
+        if (inner_storage)  { res->inner_storage = inner_storage->clone();  res->children.push_back(res->inner_storage); }
 
         return res;
     }
@@ -71,6 +71,7 @@ protected:
                 << (if_not_exists ? "IF NOT EXISTS " : "")
                 << (settings.hilite ? hilite_none : "")
                 << backQuoteIfNeed(database);
+            formatOnCluster(settings);
 
             if (storage)
             {

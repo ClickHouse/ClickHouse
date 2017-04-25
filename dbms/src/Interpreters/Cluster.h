@@ -72,11 +72,13 @@ public:
         bool isLocal() const { return !local_addresses.empty(); }
         bool hasRemoteConnections() const { return pool != nullptr; }
         size_t getLocalNodeCount() const { return local_addresses.size(); }
+        bool hasInternalReplication() const { return dir_names.size() == 1; }
 
     public:
-        /// contains names of directories for asynchronous write to StorageDistributed
+        /// Contains names of directories for asynchronous write to StorageDistributed
         std::vector<std::string> dir_names;
-        UInt32 shard_num;    /// Номер шарда, начиная с 1.
+        /// Number of the shard, the indexation begins with 1
+        UInt32 shard_num;
         int weight;
         Addresses local_addresses;
         ConnectionPoolWithFailoverPtr pool;

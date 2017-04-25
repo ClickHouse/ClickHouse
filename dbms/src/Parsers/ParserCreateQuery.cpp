@@ -217,6 +217,14 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
         ws.ignore(pos, end);
 
+        if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+                return false;
+        }
+
+        ws.ignore(pos, end);
+
         engine_p.parse(pos, end, storage, max_parsed_pos, expected);
     }
     else if (s_table.ignore(pos, end, max_parsed_pos, expected))
@@ -250,6 +258,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
                 return false;
         }
+
+        ws.ignore(pos, end);
 
         /// List of columns.
         if (s_lparen.ignore(pos, end, max_parsed_pos, expected))

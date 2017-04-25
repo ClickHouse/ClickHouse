@@ -38,7 +38,7 @@ BlockIO InterpreterRenameQuery::execute()
     ASTRenameQuery & rename = typeid_cast<ASTRenameQuery &>(*query_ptr);
 
     if (!rename.cluster.empty())
-        return executeDDLQueryOnCluster(rename, context);
+        return executeDDLQueryOnCluster(query_ptr, context);
 
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();

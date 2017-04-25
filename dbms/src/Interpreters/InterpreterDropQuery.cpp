@@ -31,7 +31,7 @@ BlockIO InterpreterDropQuery::execute()
     ASTDropQuery & drop = typeid_cast<ASTDropQuery &>(*query_ptr);
 
     if (!drop.cluster.empty())
-        return executeDDLQueryOnCluster(drop, context);
+        return executeDDLQueryOnCluster(query_ptr, context);
 
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
