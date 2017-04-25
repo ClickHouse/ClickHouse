@@ -21,6 +21,7 @@
 #include <common/ErrorHandlers.h>
 #include <common/ApplicationServerExt.h>
 #include "StatusFile.h"
+#include <Functions/registerFunctions.h>
 
 
 namespace DB
@@ -263,6 +264,8 @@ try
     Poco::ErrorHandler::set(&error_handler);
 
     /// Don't initilaize DateLUT
+
+    registerFunctions();
 
     /// Maybe useless
     if (config().has("macros"))

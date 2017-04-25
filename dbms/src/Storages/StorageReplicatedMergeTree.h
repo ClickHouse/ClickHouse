@@ -177,6 +177,7 @@ public:
         Int32 columns_version;
         UInt64 log_max_index;
         UInt64 log_pointer;
+        UInt64 absolute_delay;
         UInt8 total_replicas;
         UInt8 active_replicas;
     };
@@ -187,6 +188,12 @@ public:
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
     void getQueue(LogEntriesData & res, String & replica_name);
 
+    /// Get replica delay relative to current time.
+    time_t getAbsoluteDelay() const;
+
+    /// If the absolute delay is greater than min_relative_delay_to_yield_leadership,
+    /// will also calculate the difference from the unprocessed time of the best replica.
+    /// NOTE: Will communicate to ZooKeeper to calculate relative delay.
     void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay);
 
     /// Add a part to the queue of parts whose data you want to check in the background thread.
@@ -238,6 +245,8 @@ private:
       * In ZK entries in chronological order. Here it is not necessary.
       */
     ReplicatedMergeTreeQueue queue;
+    std::atomic<time_t> last_queue_update_attempt_time{0};
+    std::atomic<time_t> last_successful_queue_update_attempt_time{0};
 
     /** /replicas/me/is_active.
       */

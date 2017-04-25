@@ -3,7 +3,7 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
-#include <Client/ConnectionPool.h>
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <memory>
 
@@ -55,7 +55,7 @@ private:
     Block sample_block;
     Context & context;
     const bool is_local;
-    ConnectionPoolPtr pool;
+    ConnectionPoolWithFailoverPtr pool;
     const std::string load_all_query;
 };
 

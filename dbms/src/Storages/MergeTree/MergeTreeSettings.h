@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Core/Defines.h>
 #include <Core/Types.h>
 
 
@@ -79,11 +80,11 @@ struct MergeTreeSettings
     size_t replicated_max_missing_active_parts = 20;
 
     /// Limit parallel fetches
-    size_t replicated_max_parallel_fetches = 4;
-    size_t replicated_max_parallel_fetches_for_table = 2;
+    size_t replicated_max_parallel_fetches = 0;
+    size_t replicated_max_parallel_fetches_for_table = 0;
     /// Limit parallel sends
-    size_t replicated_max_parallel_sends = 4;
-    size_t replicated_max_parallel_sends_for_table = 2;
+    size_t replicated_max_parallel_sends = 0;
+    size_t replicated_max_parallel_sends_for_table = 0;
 
     /// If ration of wrong parts to total number of parts is less than this - allow to start anyway.
     double replicated_max_ratio_of_wrong_parts = 0.05;

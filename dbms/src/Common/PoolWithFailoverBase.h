@@ -2,19 +2,24 @@
 
 #include <time.h>
 #include <cstdlib>
+#include <climits>
 #include <random>
+#include <common/Types.h>
+#include <ext/scope_guard.hpp>
+#include <Core/Types.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/NetException.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
-#include <Interpreters/Settings.h>
+
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int ALL_REPLICAS_ARE_STALE;
     extern const int LOGICAL_ERROR;
 }
 }
@@ -25,61 +30,18 @@ namespace ProfileEvents
     extern const Event DistributedConnectionFailAtAll;
 }
 
-
-namespace
-{
-    /** Класс, который употребляется для того, чтобы оптимизировать выделение
-      * нескольких ресурсов в PoolWithFailoverBase. Проверки границ не проводятся,
-      * потому что мы предполагаем, что PoolWithFailoverBase делает все нужные
-      * проверки.
-      */
-    class ResourceTracker
-    {
-    public:
-        ResourceTracker(size_t s)
-        : handles(s), unallocated_size(s)
-        {
-            size_t i = 0;
-            for (auto & index : handles)
-            {
-                index = i;
-                ++i;
-            }
-        }
-
-        size_t getHandle(size_t i) const
-        {
-            return handles[i];
-        }
-
-        size_t getUnallocatedSize() const
-        {
-            return unallocated_size;
-        }
-
-        void markAsAllocated(size_t i)
-        {
-            std::swap(handles[i], handles[unallocated_size - 1]);
-            --unallocated_size;
-        }
-
-    private:
-        std::vector<size_t> handles;
-        size_t unallocated_size;
-    };
-}
-
-/** Класс, от которого можно унаследоваться и получить пул с отказоустойчивостью. Используется для пулов соединений с реплицированной БД.
-  * Инициализируется несколькими другими PoolBase-ами.
-  * При получении соединения, пытается создать или выбрать живое соединение из какого-нибудь пула,
-  *  перебирая их в некотором порядке, используя не более указанного количества попыток.
-  * Пулы перебираются в порядке лексикографического возрастания тройки (приоритет, число ошибок, случайное число).
-  *
-  * Замечание: если один из вложенных пулов заблокируется из-за переполнения, то этот пул тоже заблокируется.
-  *
-  * Наследник должен предоставить метод, достающий соединение из вложенного пула.
-  * Еще наследник можнет назначать приоритеты вложенным пулам.
-  */
+/// This class provides a pool with fault tolerance. It is used for pooling of connections to replicated DB.
+/// Initialized by several PoolBase objects.
+/// When a connection is requested, tries to create or choose an alive connection from one of the nested pools.
+/// Pools are tried in the order consistent with lexicographical order of (error count, priority, random number) tuples.
+/// Number of tries for a single pool is limited by max_tries parameter.
+/// The client can set nested pool priority by passing a GetPriority functor.
+///
+/// NOTE: if one of the nested pools blocks because it is empty, this pool will also block.
+///
+/// The client must provide a TryGetEntryFunc functor, which should perform a single try to get a connection from a nested pool.
+/// This functor can also check if the connection satisfies some eligibility criterion (e.g. check if
+/// the replica is up-to-date).
 
 template <typename TNestedPool>
 class PoolWithFailoverBase : private boost::noncopyable
@@ -90,260 +52,334 @@ public:
     using Entry = typename NestedPool::Entry;
     using NestedPools = std::vector<NestedPoolPtr>;
 
-    virtual ~PoolWithFailoverBase() {}
-
-    PoolWithFailoverBase(NestedPools & nested_pools_,
-        size_t max_tries_,
-        time_t decrease_error_period_,
-        Logger * log_)
-       : nested_pools(nested_pools_.begin(), nested_pools_.end(), decrease_error_period_), max_tries(max_tries_),
-       log(log_)
+    PoolWithFailoverBase(
+            NestedPools nested_pools_,
+            size_t max_tries_,
+            time_t decrease_error_period_,
+            Logger * log_)
+        : nested_pools(std::move(nested_pools_))
+        , max_tries(max_tries_)
+        , decrease_error_period(decrease_error_period_)
+        , shared_pool_states(nested_pools.size())
+        , log(log_)
     {
     }
 
-    /** Выделяет соединение для работы. */
-    Entry get(const DB::Settings * settings)
+    struct TryResult
     {
+        TryResult() = default;
+
+        explicit TryResult(Entry entry_)
+            : entry(std::move(entry))
+            , is_usable(true)
+            , is_up_to_date(true)
+        {
+        }
+
+        void reset()
+        {
+            entry = Entry();
+            is_usable = false;
+            is_up_to_date = false;
+            staleness = 0.0;
+        }
+
         Entry entry;
-        std::stringstream fail_messages;
+        bool is_usable = false; /// If false, the entry is unusable for current request
+                                /// (but may be usable for other requests, so error counts are not incremented)
+        bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica.
+        double staleness = 0.0; /// Helps choosing the "least stale" option when all replicas are stale.
+    };
 
-        bool skip_unavailable = settings ? UInt64(settings->skip_unavailable_shards) : false;
+    /// This functor must be provided by a client. It must perform a single try that takes a connection
+    /// from the provided pool and checks that it is good.
+    using TryGetEntryFunc = std::function<TryResult(NestedPool & pool, std::string & fail_message)>;
 
-        if (getResource(entry, fail_messages, nullptr, settings))
-            return entry;
-        else if (!skip_unavailable)
-            throw DB::NetException("All connection tries failed. Log: \n\n" + fail_messages.str() + "\n", DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
-        else
-            return {};
-    }
+    /// The client can provide this functor to affect load balancing - the index of a pool is passed to
+    /// this functor. The pools with lower result value will be tried first.
+    using GetPriorityFunc = std::function<size_t(size_t index)>;
 
-    void reportError(const Entry & entry)
-    {
-        for (auto & pool : nested_pools)
-        {
-            if (pool.pool->contains(entry))
-            {
-                ++pool.state.error_count;
-                return;
-            }
-        }
-        throw DB::Exception("Can't find pool to report error.");
-    }
+    /// Returns a single connection.
+    Entry get(const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority = GetPriorityFunc());
 
-    /** Выделяет до указанного количества соединений для работы
-      * Соединения предоставляют доступ к разным репликам одного шарда.
-      */
-    std::vector<Entry> getMany(const DB::Settings * settings, PoolMode pool_mode)
-    {
-        ResourceTracker resource_tracker{nested_pools.size()};
 
-        UInt64 max_connections;
-        if (pool_mode == PoolMode::GET_ALL)
-            max_connections = nested_pools.size();
-        else if (pool_mode == PoolMode::GET_ONE)
-            max_connections = 1;
-        else if (pool_mode == PoolMode::GET_MANY)
-            max_connections = settings ? UInt64(settings->max_parallel_replicas) : 1;
-        else
-            throw DB::Exception("Unknown pool allocation mode", DB::ErrorCodes::LOGICAL_ERROR);
+    /// Returns at least min_entries and at most max_entries connections (at most one connection per nested pool).
+    /// The method will throw if it is unable to get min_entries alive connections or
+    /// if fallback_to_stale_replicas is false and it is unable to get min_entries connections to up-to-date replicas.
+    std::vector<Entry> getMany(
+            size_t min_entries, size_t max_entries,
+            const TryGetEntryFunc & try_get_entry,
+            const GetPriorityFunc & get_priority = GetPriorityFunc(),
+            bool fallback_to_stale_replicas = true);
 
-        bool skip_unavailable = settings ? UInt64(settings->skip_unavailable_shards) : false;
-
-        std::vector<Entry> connections;
-        connections.reserve(max_connections);
-
-        for (UInt64 i = 0; i < max_connections; ++i)
-        {
-            Entry entry;
-            std::stringstream fail_messages;
-
-            if (getResource(entry, fail_messages, &resource_tracker, settings))
-                connections.push_back(entry);
-            else if ((pool_mode == PoolMode::GET_ALL) || ((i == 0) && !skip_unavailable))
-                throw DB::NetException("All connection tries failed. Log: \n\n" + fail_messages.str() + "\n", DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
-            else
-                break;
-        }
-
-        return connections;
-    }
+    void reportError(const Entry & entry);
 
 protected:
-    struct PoolWithErrorCount
-    {
-    public:
-        PoolWithErrorCount(const NestedPoolPtr & pool_) : pool(pool_) {}
+    struct PoolState;
 
-        void randomize()
-        {
-            state.random = rng();
-        }
+    using PoolStates = std::vector<PoolState>;
 
-    public:
-        struct State
-        {
-            static bool compare(const State & lhs, const State & rhs)
-            {
-                return std::forward_as_tuple(lhs.priority, lhs.error_count.load(std::memory_order_relaxed), lhs.random)
-                    < std::forward_as_tuple(rhs.priority, rhs.error_count.load(std::memory_order_relaxed), rhs.random);
-            }
+    /// This function returns a copy of pool states to avoid race conditions when modifying shared pool states.
+    PoolStates updatePoolStates();
 
-            Int64 priority {0};
-            std::atomic<UInt64> error_count {0};
-            UInt32 random {0};
+    NestedPools nested_pools;
 
-            State() {}
+    const size_t max_tries;
 
-            State(const State & other)
-                : priority(other.priority),
-                error_count(other.error_count.load(std::memory_order_relaxed)),
-                random(other.random) {}
-        };
+    const time_t decrease_error_period;
 
-    public:
-        NestedPoolPtr pool;
-        State state;
-        std::minstd_rand rng = std::minstd_rand(randomSeed());
-    };
+    std::mutex pool_states_mutex;
+    PoolStates shared_pool_states;
+    /// The time when error counts were last decreased.
+    time_t last_error_decrease_time = 0;
 
-    using States = std::vector<typename PoolWithErrorCount::State>;
-
-    class PoolsWithErrorCount : public std::vector<PoolWithErrorCount>
-    {
-    public:
-        PoolsWithErrorCount(typename NestedPools::iterator begin_, typename NestedPools::iterator end_,
-                            time_t decrease_error_period_)
-            : std::vector<PoolWithErrorCount>(begin_, end_),
-            decrease_error_period(decrease_error_period_)
-        {
-        }
-
-        /// Эта функция возвращает собственную копию состояния каждого пула, чтобы не возникло
-        /// состояния гонки при выделении соединений.
-        States update()
-        {
-            States states;
-            states.reserve(this->size());
-
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-
-                for (auto & pool : *this)
-                    pool.randomize();
-
-                /// Каждые N секунд уменьшаем количество ошибок в 2 раза
-                time_t current_time = time(0);
-
-                if (last_decrease_time)
-                {
-                    time_t delta = current_time - last_decrease_time;
-
-                    if (delta >= 0)
-                    {
-                        /// Каждые decrease_error_period секунд, делим количество ошибок на два.
-                        size_t shift_amount = delta / decrease_error_period;
-                        /// обновляем время, не чаще раз в период
-                        /// в противном случае при частых вызовах счетчик никогда не будет уменьшаться
-                        if (shift_amount)
-                            last_decrease_time = current_time;
-
-                        if (shift_amount >= sizeof(UInt64))
-                        {
-                            for (auto & pool : *this)
-                                pool.state.error_count = 0;
-                        }
-                        else if (shift_amount)
-                        {
-                            for (auto & pool : *this)
-                                pool.state.error_count.store(
-                                    pool.state.error_count.load(std::memory_order_relaxed) >> shift_amount,
-                                    std::memory_order_relaxed);
-                        }
-                    }
-                }
-                else
-                    last_decrease_time = current_time;
-
-                for (auto & pool : *this)
-                    states.push_back(pool.state);
-            }
-
-            return states;
-        }
-
-    private:
-        /// Время, когда последний раз уменьшался счётчик ошибок.
-        time_t last_decrease_time = 0;
-        time_t decrease_error_period;
-        std::mutex mutex;
-    };
-
-    PoolsWithErrorCount nested_pools;
-    size_t max_tries;
     Logger * log;
+};
 
-    virtual bool tryGet(NestedPoolPtr pool, const DB::Settings * settings, Entry & out_entry, std::stringstream & fail_message) = 0;
+template<typename TNestedPool>
+typename TNestedPool::Entry
+PoolWithFailoverBase<TNestedPool>::get(const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
+{
+    std::vector<Entry> entries = getMany(1, 1, try_get_entry, get_priority);
+    if (entries.empty() || entries[0].isNull())
+        throw DB::Exception(
+                "PoolWithFailoverBase::getMany() returned less than min_entries entries.",
+                DB::ErrorCodes::LOGICAL_ERROR);
+    return entries[0];
+}
 
-
-private:
-    /** Выделяет соединение из одной реплики для работы. */
-    bool getResource(Entry & entry, std::stringstream & fail_messages, ResourceTracker * resource_tracker, const DB::Settings * settings)
+template<typename TNestedPool>
+std::vector<typename TNestedPool::Entry>
+PoolWithFailoverBase<TNestedPool>::getMany(
+        size_t min_entries, size_t max_entries,
+        const TryGetEntryFunc & try_get_entry,
+        const GetPriorityFunc & get_priority,
+        bool fallback_to_stale_replicas)
+{
+    /// Update random numbers and error counts.
+    PoolStates pool_states = updatePoolStates();
+    if (get_priority)
     {
-        /// Обновление случайных чисел, а также счётчиков ошибок.
-        States states = nested_pools.update();
+        for (size_t i = 0; i < pool_states.size(); ++i)
+            pool_states[i].priority = get_priority(i);
+    }
 
-        struct IndexedPoolWithErrorCount
-        {
-            PoolWithErrorCount * pool;
-            typename PoolWithErrorCount::State * state;
-            size_t index;
-        };
+    struct ShuffledPool
+    {
+        NestedPool * pool;
+        const PoolState * state;
+        size_t index;
+        size_t error_count = 0;
+    };
 
-        using PoolPtrs = std::vector<IndexedPoolWithErrorCount>;
-
-        size_t pools_size = resource_tracker ? resource_tracker->getUnallocatedSize() : nested_pools.size();
-        PoolPtrs pool_ptrs(pools_size);
-
-        for (size_t i = 0; i < pools_size; ++i)
-        {
-            auto & record = pool_ptrs[i];
-            size_t pool_index = resource_tracker ? resource_tracker->getHandle(i) : i;
-            record.pool = &nested_pools[pool_index];
-            record.state = &states[pool_index];
-            record.index = i;
-        }
-
-        std::sort(pool_ptrs.begin(), pool_ptrs.end(),
-            [](const IndexedPoolWithErrorCount & lhs, const IndexedPoolWithErrorCount & rhs)
+    /// Sort the pools into order in which they will be tried (based on respective PoolStates).
+    std::vector<ShuffledPool> shuffled_pools;
+    shuffled_pools.reserve(nested_pools.size());
+    for (size_t i = 0; i < nested_pools.size(); ++i)
+        shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, 0});
+    std::sort(
+            shuffled_pools.begin(), shuffled_pools.end(),
+            [](const ShuffledPool & lhs, const ShuffledPool & rhs)
             {
-                return PoolWithErrorCount::State::compare(*(lhs.state), *(rhs.state));
+                return PoolState::compare(*lhs.state, *rhs.state);
             });
 
-        for (size_t try_no = 0; try_no < max_tries; ++try_no)
+    /// We will try to get a connection from each pool until a connection is produced or max_tries is reached.
+    std::vector<TryResult> try_results(shuffled_pools.size());
+    size_t entries_count = 0;
+    size_t usable_count = 0;
+    size_t up_to_date_count = 0;
+    size_t failed_pools_count = 0;
+
+    /// At exit update shared error counts with error counts occured during this call.
+    SCOPE_EXIT(
+    {
+        std::lock_guard<std::mutex> lock(pool_states_mutex);
+        for (const ShuffledPool & pool: shuffled_pools)
+            shared_pool_states[pool.index].error_count += pool.error_count;
+    });
+
+    std::string fail_messages;
+    bool finished = false;
+    while (!finished)
+    {
+        for (size_t i = 0; i < shuffled_pools.size(); ++i)
         {
-            for (size_t i = 0; i < pools_size; ++i)
+            if (up_to_date_count >= max_entries /// Already enough good entries.
+                || entries_count + failed_pools_count >= nested_pools.size()) /// No more good entries will be produced.
             {
-                std::stringstream fail_message;
+                finished = true;
+                break;
+            }
 
-                if (tryGet(pool_ptrs[i].pool->pool, settings, entry, fail_message))
+            ShuffledPool & shuffled_pool = shuffled_pools[i];
+            TryResult & result = try_results[i];
+            if (shuffled_pool.error_count >= max_tries || !result.entry.isNull())
+                continue;
+
+            std::string fail_message;
+            result = try_get_entry(*shuffled_pool.pool, fail_message);
+
+            if (!fail_message.empty())
+                fail_messages += fail_message + '\n';
+
+            if (!result.entry.isNull())
+            {
+                ++entries_count;
+                if (result.is_usable)
                 {
-                    if (resource_tracker)
-                        resource_tracker->markAsAllocated(pool_ptrs[i].index);
-                    return true;
+                    ++usable_count;
+                    if (result.is_up_to_date)
+                        ++up_to_date_count;
                 }
-
+            }
+            else
+            {
+                LOG_WARNING(log, "Connection failed at try №"
+                            << (shuffled_pool.error_count + 1) << ", reason: " << fail_message);
                 ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
-                LOG_WARNING(log, "Connection failed at try №"
-                    << (try_no + 1) << ", reason: " << fail_message.str());
+                ++shuffled_pool.error_count;
 
-                fail_messages << fail_message.str() << std::endl;
-
-                ++pool_ptrs[i].pool->state.error_count;
+                if (shuffled_pool.error_count >= max_tries)
+                {
+                    ++failed_pools_count;
+                    ProfileEvents::increment(ProfileEvents::DistributedConnectionFailAtAll);
+                }
             }
         }
-
-        ProfileEvents::increment(ProfileEvents::DistributedConnectionFailAtAll);
-        return false;
     }
+
+    if (usable_count < min_entries)
+        throw DB::NetException(
+                "All connection tries failed. Log: \n\n" + fail_messages + "\n",
+                DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
+
+    try_results.erase(
+            std::remove_if(
+                    try_results.begin(), try_results.end(),
+                    [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; }),
+            try_results.end());
+
+    std::vector<Entry> entries;
+
+    if (up_to_date_count >= min_entries)
+    {
+        /// There is enough up-to-date entries.
+        entries.reserve(up_to_date_count);
+        for (const TryResult & result: try_results)
+        {
+            if (result.is_up_to_date)
+                entries.push_back(result.entry);
+        }
+    }
+    else if (fallback_to_stale_replicas)
+    {
+        /// There is not enough up-to-date entries but we are allowed to return stale entries.
+        /// Gather all up-to-date ones and least-bad stale ones.
+        std::stable_sort(
+                try_results.begin(), try_results.end(),
+                [](const TryResult & left, const TryResult & right)
+                {
+                    return std::forward_as_tuple(!left.is_up_to_date, left.staleness)
+                        < std::forward_as_tuple(!right.is_up_to_date, right.staleness);
+                });
+
+        size_t size = std::min(try_results.size(), max_entries);
+        entries.reserve(size);
+        for (size_t i = 0; i < size; ++i)
+            entries.push_back(try_results[i].entry);
+    }
+    else
+        throw DB::Exception(
+                "Could not find enough connections to up-to-date replicas. Got: " + std::to_string(up_to_date_count)
+                + ", needed: " + std::to_string(min_entries),
+                DB::ErrorCodes::ALL_REPLICAS_ARE_STALE);
+
+    return entries;
+}
+
+template<typename TNestedPool>
+void PoolWithFailoverBase<TNestedPool>::reportError(const Entry & entry)
+{
+    for (size_t i = 0; i < nested_pools.size(); ++i)
+    {
+        if (nested_pools[i]->contains(entry))
+        {
+            std::lock_guard<std::mutex> lock(pool_states_mutex);
+            ++shared_pool_states[i].error_count;
+            return;
+        }
+    }
+    throw DB::Exception("Can't find pool to report error.");
+}
+
+template<typename TNestedPool>
+struct PoolWithFailoverBase<TNestedPool>::PoolState
+{
+    UInt64 error_count = 0;
+    Int64 priority = 0;
+    UInt32 random = 0;
+
+    void randomize()
+    {
+        random = rng();
+    }
+
+    static bool compare(const PoolState & lhs, const PoolState & rhs)
+    {
+        return std::forward_as_tuple(lhs.error_count, lhs.priority, lhs.random)
+            < std::forward_as_tuple(rhs.error_count, rhs.priority, rhs.random);
+    }
+
+private:
+    std::minstd_rand rng = std::minstd_rand(randomSeed());
 };
+
+template<typename TNestedPool>
+typename PoolWithFailoverBase<TNestedPool>::PoolStates
+PoolWithFailoverBase<TNestedPool>::updatePoolStates()
+{
+    PoolStates result;
+    result.reserve(nested_pools.size());
+
+    {
+        std::lock_guard<std::mutex> lock(pool_states_mutex);
+
+        for (auto & state : shared_pool_states)
+            state.randomize();
+
+        time_t current_time = time(0);
+
+        if (last_error_decrease_time)
+        {
+            time_t delta = current_time - last_error_decrease_time;
+
+            if (delta >= 0)
+            {
+                /// Divide error counts by 2 every decrease_error_period seconds.
+                size_t shift_amount = delta / decrease_error_period;
+                /// Update time but don't do it more often than once a period.
+                /// Else if the function is called often enough, error count will never decrease.
+                if (shift_amount)
+                    last_error_decrease_time = current_time;
+
+                if (shift_amount >= sizeof(UInt64) * CHAR_BIT)
+                {
+                    for (auto & state : shared_pool_states)
+                        state.error_count = 0;
+                }
+                else if (shift_amount)
+                {
+                    for (auto & state : shared_pool_states)
+                        state.error_count >>= shift_amount;
+                }
+            }
+        }
+        else
+            last_error_decrease_time = current_time;
+
+        result.assign(shared_pool_states.begin(), shared_pool_states.end());
+    }
+    return result;
+}

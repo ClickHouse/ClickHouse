@@ -45,6 +45,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/NetException.h>
 #include <common/readline_use.h>
+#include <Functions/registerFunctions.h>
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
@@ -188,6 +189,8 @@ private:
             context.setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_LIMITS(EXTRACT_LIMIT)
 #undef EXTRACT_LIMIT
+
+        registerFunctions();
     }
 
 
@@ -622,6 +625,8 @@ private:
         const ASTUseQuery * use_query = typeid_cast<const ASTUseQuery *>(&*parsed_query);
         /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
         const ASTInsertQuery * insert = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
+
+        connection->forceConnected();
 
         if (insert && !insert->select)
             processInsertQuery();

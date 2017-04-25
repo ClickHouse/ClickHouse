@@ -2,7 +2,7 @@
 
 #include <Common/Throttler.h>
 #include <Client/Connection.h>
-#include <Client/ConnectionPool.h>
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Poco/ScopedLock.h>
 #include <mutex>
 
@@ -26,15 +26,17 @@ public:
       * If the append_extra_info flag is set, additional information appended to each received block.
       * If the get_all_replicas flag is set, all connections are selected.
       */
-    MultiplexedConnections(IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_,
-        bool append_extra_info = false, PoolMode pool_mode_ = PoolMode::GET_MANY);
+    MultiplexedConnections(
+            ConnectionPoolWithFailover & pool_, const Settings * settings_, ThrottlerPtr throttler_,
+            bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table = nullptr);
 
     /** Accepts pools, one for each shard, from which one will need to get one or more connections.
       * If the append_extra_info flag is set, additional information appended to each received block.
       * If the do_broadcast flag is set, all connections are received.
       */
-    MultiplexedConnections(ConnectionPools & pools_, const Settings * settings_, ThrottlerPtr throttler_,
-        bool append_extra_info = false, PoolMode pool_mode_ = PoolMode::GET_MANY);
+    MultiplexedConnections(
+            const ConnectionPoolWithFailoverPtrs & pools_, const Settings * settings_, ThrottlerPtr throttler_,
+            bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table = nullptr);
 
     /// Send all content of external tables to replicas.
     void sendExternalTablesData(std::vector<ExternalTablesData> & data);
@@ -47,7 +49,7 @@ public:
         const ClientInfo * client_info = nullptr,
         bool with_pending_data = false);
 
-    /// Get package from any replica.
+    /// Get packet from any replica.
     Connection::Packet receivePacket();
 
     /// Get information about the last received package.
@@ -104,18 +106,17 @@ private:
     using ShardStates = std::vector<ShardState>;
 
 private:
-    void initFromShard(IConnectionPool * pool);
+    void initFromShard(ConnectionPoolWithFailover & pool, const QualifiedTableName * main_table);
 
-    /// Register shards.
     void registerShards();
 
     /// Register replicas of one shard.
     void registerReplicas(size_t index_begin, size_t index_end, ShardState & shard_state);
 
-    /// Interval version of `receivePacket` function without blocking.
+    /// Internal version of `receivePacket` function without locking.
     Connection::Packet receivePacketUnlocked();
 
-    /// Interval version of `dumpAddresses` function without blocking.
+    /// Internal version of `dumpAddresses` function without locking.
     std::string dumpAddressesUnlocked() const;
 
     /// Get a replica where you can read the data.
@@ -150,9 +151,9 @@ private:
     size_t active_connection_total_count = 0;
     /// The query is run in parallel on multiple replicas.
     bool supports_parallel_execution;
-    /// Send the request
+
     bool sent_query = false;
-    /// Cancel request
+
     bool cancelled = false;
 
     PoolMode pool_mode = PoolMode::GET_MANY;

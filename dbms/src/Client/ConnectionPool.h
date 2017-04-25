@@ -19,6 +19,7 @@ namespace DB
   *        connection->sendQuery("SELECT 'Hello, world!' AS world");
   *    }
   */
+
 class IConnectionPool : private boost::noncopyable
 {
 public:
@@ -28,39 +29,15 @@ public:
     virtual ~IConnectionPool() {}
 
     /** Selects the connection to work. */
-    Entry get(const Settings * settings = nullptr)
-    {
-        return doGet(settings);
-    }
-
-    /** Allocates up to the specified number of connections to work.
-      * Connections provide access to different replicas of one shard.
-      * If `get_all` flag is set, all connections are taken.
-      * Throws an exception if no connections can be selected.
-      */
-    std::vector<Entry> getMany(const Settings * settings = nullptr,
-        PoolMode pool_mode = PoolMode::GET_MANY)
-    {
-        return doGetMany(settings, pool_mode);
-    }
-
-protected:
-    virtual Entry doGet(const Settings * settings) = 0;
-
-    virtual std::vector<Entry> doGetMany(const Settings * settings, PoolMode pool_mode)
-    {
-        return std::vector<Entry>{ get(settings) };
-    }
+    virtual Entry get(const Settings * settings = nullptr) = 0;
 };
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
-using ConnectionPools = std::vector<ConnectionPoolPtr>;
-using ConnectionPoolsPtr = std::shared_ptr<ConnectionPools>;
-
+using ConnectionPoolPtrs = std::vector<ConnectionPoolPtr>;
 
 /** A common connection pool, without fault tolerance.
   */
-class ConnectionPool : public PoolBase<Connection>, public IConnectionPool
+class ConnectionPool : public IConnectionPool, private PoolBase<Connection>
 {
 public:
     using Entry = IConnectionPool::Entry;
@@ -100,6 +77,14 @@ public:
     {
     }
 
+    Entry get(const Settings * settings = nullptr) override
+    {
+        if (settings)
+            return Base::get(settings->queue_max_wait_ms.totalMilliseconds());
+        else
+            return Base::get(-1);
+    }
+
     const std::string & getHost() const
     {
         return host;
@@ -114,15 +99,6 @@ protected:
             default_database, user, password,
             client_name, compression,
             connect_timeout, receive_timeout, send_timeout);
-    }
-
-private:
-    Entry doGet(const Settings * settings) override
-    {
-        if (settings)
-            return Base::get(settings->queue_max_wait_ms.totalMilliseconds());
-        else
-            return Base::get(-1);
     }
 
 private:
