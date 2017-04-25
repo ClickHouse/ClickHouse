@@ -9,7 +9,7 @@ namespace DB
 
 static DataTypePtr removeNullable(const DataTypePtr & type)
 {
-    while (type->isNullable())
+    if (type->isNullable())
         return typeid_cast<DataTypeNullable *>(type.get())->getNestedType();
     return type;
 }
