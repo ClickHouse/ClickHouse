@@ -80,8 +80,8 @@ public:
       */
     void add(const LogElement & element)
     {
-        /// We could lock here in case of queue overflow. Maybe better to throw an exception or even don't do logging in that case.
-        queue.push({false, element});
+        /// Without try we could lock here in case of queue overflow.
+        queue.tryPush({false, element}, 1000);
     }
 
 private:
@@ -237,15 +237,18 @@ void SystemLog<LogElement>::flush()
 
         io.out->writePrefix();
         io.out->write(block);
+
+        /// writeSuffix will write to this queue - it cause deadlock if queue full - so clear before write
+        data.clear();
         io.out->writeSuffix();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// In case of exception, also clean accumulated data - to avoid locking.
+        data.clear();
     }
 
-    /// In case of exception, also clean accumulated data - to avoid locking.
-    data.clear();
 }
 
 
