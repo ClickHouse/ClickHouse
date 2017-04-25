@@ -44,7 +44,9 @@ Block CastEnumBlockInputStream::readImpl()
             const auto & type = static_cast<const IDataTypeEnum *>(enum_types[i]->type.get());
             ColumnPtr new_column = type->createColumn();
 
-            for (size_t j = 0; j < elem.column->size(); ++j)
+            size_t column_size = elem.column->size();
+            new_column->reserve(column_size);
+            for (size_t j = 0; j < column_size; ++j)
                 new_column->insert(type->castToValue((*elem.column)[j]));
 
             res.insert({
