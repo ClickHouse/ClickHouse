@@ -81,7 +81,8 @@ public:
     void add(const LogElement & element)
     {
         /// Without try we could lock here in case of queue overflow.
-        queue.tryPush({false, element}, 1000);
+        if (!queue.tryPush({false, element}, 1000))
+            LOG_ERROR(log, "SystemLog queue overloaded, loosing record " << element.name());
     }
 
 private:
