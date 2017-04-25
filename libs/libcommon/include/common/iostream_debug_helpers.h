@@ -135,7 +135,7 @@ std::ostream & operator<<(std::ostream & stream, const std::chrono::time_point<c
 template <class T>
 std::ostream & operator<<(std::ostream & stream, const std::shared_ptr<T> & what)
 {
-    stream << "std::shared_ptr{use_count=" << what.use_count() << ", ";
+    stream << "std::shared_ptr(use_count = " << what.use_count() << ") {";
     if (what)
         stream << *what;
     else
