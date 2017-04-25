@@ -7,7 +7,7 @@
 namespace DB
 {
 
-static DataTypePtr removeNullable(DataTypePtr type)
+static DataTypePtr removeNullable(const DataTypePtr & type)
 {
     while (type->isNullable())
         type = typeid_cast<DataTypeNullable *>(type.get())->getNestedType();
@@ -19,16 +19,16 @@ bool isConvertableTypes(const DataTypePtr & from, const DataTypePtr & to)
     auto from_nn = removeNullable(from);
     auto to_nn   = removeNullable(to);
 
-    if ( dynamic_cast<IDataTypeEnum*>(to_nn.get()) &&
-        !dynamic_cast<IDataTypeEnum*>(from_nn.get()))
+    if ( dynamic_cast<const IDataTypeEnum *>(to_nn.get()) &&
+        !dynamic_cast<const IDataTypeEnum *>(from_nn.get()))
     {
-        if (dynamic_cast<DataTypeString*>(from_nn.get()))
+        if (typeid_cast<const DataTypeString *>(from_nn.get()))
             return true;
         if (from_nn->isNumeric())
             return true;
     }
 
-    return from_nn->getName() == to_nn->getName();
+    return from_nn->equals(*to_nn);
 }
 
 }

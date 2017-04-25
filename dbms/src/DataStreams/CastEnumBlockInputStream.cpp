@@ -15,13 +15,13 @@ CastEnumBlockInputStream::CastEnumBlockInputStream(
 
 String CastEnumBlockInputStream::getName() const
 {
-    return "CastEnumBlockInputStream";
+    return "CastEnum";
 }
 
 String CastEnumBlockInputStream::getID() const
 {
     std::stringstream res;
-    res << "CastEnumBlockInputStream(" << children.back()->getID() << ")";
+    res << "CastEnum(" << children.back()->getID() << ")";
     return res.str();
 }
 
@@ -41,7 +41,7 @@ Block CastEnumBlockInputStream::readImpl()
 
         if (bool(enum_types[i]))
         {
-            const auto & type = static_cast<const IDataTypeEnum*>(enum_types[i]->type.get());
+            const auto & type = static_cast<const IDataTypeEnum *>(enum_types[i]->type.get());
             ColumnPtr new_column = type->createColumn();
 
             for (size_t j = 0; j < elem.column->size(); ++j)
@@ -50,8 +50,7 @@ Block CastEnumBlockInputStream::readImpl()
             res.insert({
                 new_column,
                 enum_types[i]->type,
-                enum_types[i]->name}
-            );
+                enum_types[i]->name});
         }
         else
         {
@@ -65,6 +64,7 @@ Block CastEnumBlockInputStream::readImpl()
 void CastEnumBlockInputStream::collectEnums(const Block & in_sample, const Block & out_sample)
 {
     size_t in_size = in_sample.columns();
+    enum_types.resize(in_size);
     for (size_t i = 0; i < in_size; ++i)
     {
         const auto & in_elem  = in_sample.getByPosition(i);
@@ -74,11 +74,7 @@ void CastEnumBlockInputStream::collectEnums(const Block & in_sample, const Block
         if ( dynamic_cast<IDataTypeEnum*>(out_elem.type.get()) &&
             !dynamic_cast<IDataTypeEnum*>(in_elem.type.get()))
         {
-            enum_types.push_back(NameAndTypePair(out_elem.name, out_elem.type));
-        }
-        else
-        {
-            enum_types.push_back(std::experimental::nullopt);
+            enum_types[i] = NameAndTypePair(out_elem.name, out_elem.type);
         }
     }
 }
