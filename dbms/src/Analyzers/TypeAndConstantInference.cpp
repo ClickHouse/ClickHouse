@@ -125,6 +125,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
     ASTFunction * function = static_cast<ASTFunction *>(ast.get());
 
     /// Special case for lambda functions. Lambda function has special return type "Expression".
+    /// We first create info with Expression of unspecified arguments, and will specify them later.
     if (function->name == "lambda")
     {
         size_t number_of_lambda_parameters = AnalyzeLambdas::extractLambdaParameters(function->arguments->children.at(0)).size();
@@ -229,8 +230,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
     TypeAndConstantInference::ExpressionInfo expression_info;
     expression_info.node = ast;
     expression_info.function = function_ptr;
-    std::vector<ExpressionAction> unused_prerequisites;
-    function_ptr->getReturnTypeAndPrerequisites(columns_for_analysis, expression_info.data_type, unused_prerequisites);
+    expression_info.data_type = function_ptr->getReturnType(argument_types);
 
     if (all_consts && function_ptr->isSuitableForConstantFolding())
     {
@@ -384,6 +384,11 @@ void processHigherOrderFunction(const String & column_name,
             /// Now dive into.
 
             processImpl(lambda->arguments->children[1], context, aliases, columns, info, lambdas);
+
+            /// Update Expression type (expression signature).
+
+            info.at(lambda->getColumnName()).data_type = std::make_shared<DataTypeExpression>(
+                lambda_argument_types, info.at(lambda->arguments->children[1]->getColumnName()).data_type);
         }
     }
 }
