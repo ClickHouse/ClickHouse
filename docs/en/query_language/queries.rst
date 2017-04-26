@@ -1,18 +1,18 @@
-Запросы
+Queries
 -------
 
 CREATE DATABASE
 ~~~~~~~~~~~~~~~
-Создание базы данных db_name
+Creates the 'db_name' database.
 ::
     CREATE DATABASE [IF NOT EXISTS] db_name
 
-``База данных`` - это просто директория для таблиц.
-Если написано ``IF NOT EXISTS``, то запрос не будет возвращать ошибку, если база данных уже существует.
+A database is just a directory for tables.
+If "IF NOT EXISTS" is included, the query won't return an error if the database already exists.
 
 CREATE TABLE
 ~~~~~~~~~~~~
-Запрос ``CREATE TABLE`` может иметь несколько форм.
+The ``CREATE TABLE`` query can have several forms.
 ::
     CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name
     (
@@ -21,233 +21,233 @@ CREATE TABLE
         ...
     ) ENGINE = engine
 
-Создаёт таблицу с именем name в БД db или текущей БД, если db не указана, со структурой, указанной в скобках, и движком engine.
-Структура таблицы представляет список описаний столбцов. Индексы, если поддерживаются движком, указываются в качестве параметров для движка таблицы.
+Creates a table named 'name' in the 'db' database or the current database if 'db' is not set, with the structure specified in brackets and the 'engine' engine. The structure of the table is a list of column descriptions. If indexes are supported by the engine, they are indicated as parameters for the table engine.
 
-Описание столбца, это ``name type``, в простейшем случае. Пример: ``RegionID UInt32``.
-Также могут быть указаны выражения для значений по умолчанию - смотрите ниже.
+A column description is ``name type`` in the simplest case. For example: ``RegionID UInt32``.
+Expressions can also be defined for default values (see below).
 ::
     CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
 
-Создаёт таблицу с такой же структурой, как другая таблица. Можно указать другой движок для таблицы. Если движок не указан, то будет выбран такой же движок, как у таблицы ``db2.name2``.
+Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the 'db2.name2' table.
 ::
     CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 
-Создаёт таблицу со структурой, как результат запроса ``SELECT``, с движком engine, и заполняет её данными из SELECT-а.
+Creates a table with a structure like the result of the ``SELECT`` query, with the 'engine' engine, and fills it with data from SELECT.
 
-Во всех случаях, если указано ``IF NOT EXISTS``, то запрос не будет возвращать ошибку, если таблица уже существует. В этом случае, запрос будет ничего не делать.
+In all cases, if IF NOT EXISTS is specified, the query won't return an error if the table already exists. In this case, the query won't do anything.
 
-Значения по умолчанию
+Default values
 """""""""""""""""""""
-В описании столбца, может быть указано выражение для значения по умолчанию, одного из следующих видов:
+The column description can specify an expression for a default value, in one of the following ways:
 ``DEFAULT expr``, ``MATERIALIZED expr``, ``ALIAS expr``.
-Пример: ``URLDomain String DEFAULT domain(URL)``.
+Example: ``URLDomain String DEFAULT domain(URL)``.
 
-Если выражение для значения по умолчанию не указано, то в качестве значений по умолчанию будут использоваться нули для чисел, пустые строки для строк, пустые массивы для массивов, а также ``0000-00-00`` для дат и ``0000-00-00 00:00:00`` для дат с временем. NULL-ы не поддерживаются.
+If an expression for the default value is not defined, the default values will be set to zeros for numbers, empty strings for strings, empty arrays for arrays, and 0000-00-00 for dates or 0000-00-00 00:00:00 for dates with time. NULLs are not supported.
 
-В случае, если указано выражение по умолчанию, то указание типа столбца не обязательно. При отсутствии явно указанного типа, будет использован тип выражения по умолчанию. Пример: ``EventDate DEFAULT toDate(EventTime)`` - для столбца EventDate будет использован тип Date.
+If the default expression is defined, the column type is optional. If there isn't an explicitly defined type, the default expression type is used. Example: ``EventDate DEFAULT toDate(EventTime)`` - the 'Date' type will be used for the 'EventDate' column.
 
-При наличии явно указанного типа данных и выражения по умолчанию, это выражение будет приводиться к указанному типу с использованием функций приведения типа. Пример: ``Hits UInt32 DEFAULT 0`` - имеет такой же смысл, как ``Hits UInt32 DEFAULT toUInt32(0)``.
+If the data type and default expression are defined explicitly, this expression will be cast to the specified type using type casting functions. Example: ``Hits UInt32 DEFAULT 0`` means the same thing as ``Hits UInt32 DEFAULT toUInt32(0)``.
 
-В качестве выражения для умолчания, может быть указано произвольное выражение от констант и столбцов таблицы. При создании и изменении структуры таблицы, проверяется, что выражения не содержат циклов. При INSERT-е проверяется разрешимость выражений - что все столбцы, из которых их можно вычислить, переданы.
+Default expressions may be defined as an arbitrary expression from table constants and columns. When creating and changing the table structure, it checks that expressions don't contain loops. For INSERT, it checks that expressions are resolvable - that all columns they can be calculated from have been passed.
 
 ``DEFAULT expr``
 
-Обычное значение по умолчанию. Если в запросе INSERT не указан соответствующий столбец, то он будет заполнен путём вычисления соответствующего выражения.
+Normal default value. If the INSERT query doesn't specify the corresponding column, it will be filled in by computing the corresponding expression.
 
 ``MATERIALIZED expr``
 
-Материализованное выражение. Такой столбец не может быть указан при INSERT-е, то есть, он всегда вычисляется.
-При INSERT-е без указания списка столбцов, такие столбцы не рассматриваются.
-Также этот столбец не подставляется при использовании звёздочки в запросе SELECT - чтобы сохранить инвариант, что дамп, полученный путём SELECT *, можно вставить обратно в таблицу INSERT-ом без указания списка столбцов.
+Materialized expression. Such a column can't be specified for INSERT, because it is always calculated.
+For an INSERT without a list of columns, these columns are not considered.
+In addition, this column is not substituted when using an asterisk in a SELECT query. This is to preserve the invariant that the dump obtained using SELECT * can be inserted back into the table using INSERT without specifying the list of columns.
 
 ``ALIAS expr``
 
-Синоним. Такой столбец вообще не хранится в таблице.
-Его значения не могут быть вставлены в таблицу, он не подставляется при использовании звёздочки в запросе SELECT.
-Он может быть использован в SELECT-ах - в таком случае, во время разбора запроса, алиас раскрывается.
+Synonym. Such a column isn't stored in the table at all.
+Its values can't be inserted in a table, and it is not substituted when using an asterisk in a SELECT query.
+It can be used in SELECTs if the alias is expanded during query parsing.
 
-При добавлении новых столбцов с помощью запроса ALTER, старые данные для этих столбцов не записываются. Вместо этого, при чтении старых данных, для которых отсутствуют значения новых столбцов, выполняется вычисление выражений по умолчанию налету. При этом, если выполнение выражения требует использования других столбцов, не указанных в запросе, то эти столбцы будут дополнительно прочитаны, но только для тех блоков данных, для которых это необходимо.
+When using the ALTER query to add new columns, old data for these columns is not written. Instead, when reading old data that does not have values for the new columns, expressions are computed on the fly by default. However, if running the expressions requires different columns that are not indicated in the query, these columns will additionally be read, but only for the blocks of data that need it.
 
-Если добавить в таблицу новый столбец, а через некоторое время изменить его выражение по умолчанию, то используемые значения для старых данных (для данных, где значения не хранились на диске) поменяются. Также заметим, что при выполнении фоновых слияний, данные для столбцов, отсутствующих в одном из сливаемых кусков, записываются в объединённый кусок.
+If you add a new column to a table but later change its default expression, the values used for old data will change (for data where values were not stored on the disk). Note that when running background merges, data for columns that are missing in one of the merging parts is written to the merged part.
 
-Отсутствует возможность задать значения по умолчанию для элементов вложенных структур данных.
+It is not possible to set default values for elements in nested data structures.
 
-Временные таблицы
+Temporary tables
 """""""""""""""""
-Во всех случаях, если указано ``TEMPORARY``, то будет создана временная таблица. Временные таблицы обладают следующими особенностями:
-- временные таблицы исчезают после завершения сессии; в том числе, при обрыве соединения;
-- временная таблица создаётся с движком Memory; все остальные движки таблиц не поддерживаются;
-- для временной таблицы нет возможности указать БД: она создаётся вне баз данных;
-- если временная таблица имеет то же имя, что и некоторая другая, то, при упоминании в запросе без указания БД, будет использована временная таблица;
-- при распределённой обработке запроса, используемые в запросе временные таблицы, передаются на удалённые серверы.
+In all cases, if TEMPORARY is specified, a temporary table will be created. Temporary tables have the following characteristics:
+- Temporary tables disappear when the session ends, including if the connection is lost.
+- A temporary table is created with the Memory engine. The other table engines are not supported.
+- The DB can't be specified for a temporary table. It is created outside of databases.
+- If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
+- For distributed query processing, temporary tables used in a query are passed to remote servers.
 
-В большинстве случаев, временные таблицы создаются не вручную, а при использовании внешних данных для запроса, или при распределённом ``(GLOBAL) IN``. Подробнее см. соответствующие разделы
+In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed (GLOBAL) IN. For more information, see the appropriate sections.
 
 CREATE VIEW
 ~~~~~~~~~~~~
 ``CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [ENGINE = engine] [POPULATE] AS SELECT ...``
 
-Создаёт представление. Представления бывают двух видов - обычные и материализованные (MATERIALIZED).
+Creates a view. There are two types of views: normal and MATERIALIZED.
 
-Обычные представления не хранят никаких данных, а всего лишь производят чтение из другой таблицы. То есть, обычное представление - не более чем сохранённый запрос. При чтении из представления, этот сохранённый запрос, используется в качестве подзапроса в секции FROM.
+Normal views don't store any data, but just perform a read from another table. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the FROM clause.
 
-Для примера, пусть вы создали представление:
+As an example, assume you've created a view:
 ::
     CREATE VIEW view AS SELECT ...
-и написали запрос:
+and written a query:
 ::
     SELECT a, b, c FROM view
-Этот запрос полностью эквивалентен использованию подзапроса:
+    
+This query is fully equivalent to using the subquery:
 ::
     SELECT a, b, c FROM (SELECT ...)
 
-Материализованные (MATERIALIZED) представления хранят данные, преобразованные соответствующим запросом SELECT.
+Materialized views store data transformed by the corresponding SELECT query.
 
-При создании материализованного представления, можно указать ENGINE - движок таблицы для хранения данных. По умолчанию, будет использован тот же движок, что и у таблицы, из которой делается запрос SELECT.
+When creating a materialized view, you can specify ENGINE - the table engine for storing data. By default, it uses the same engine as for the table that the SELECT query is made from.
 
-Материализованное представление устроено следующим образом: при вставке данных в таблицу, указанную в SELECT-е, кусок вставляемых данных преобразуется этим запросом SELECT, и полученный результат вставляется в представление.
+A materialized view is arranged as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
 
-Если указано POPULATE, то при создании представления, в него будут вставлены имеющиеся данные таблицы, как если бы был сделан запрос ``CREATE TABLE ... AS SELECT ...`` . Иначе, представление будет содержать только данные, вставляемые в таблицу после создания представления. Не рекомендуется использовать POPULATE, так как вставляемые в таблицу данные во время создания представления, не попадут в него.
+If you specify POPULATE, the existing table data is inserted in the view when creating it, as if making a CREATE TABLE ... AS SELECT ... query. Otherwise, the query contains only the data inserted in the table after creating the view. We don't recommend using POPULATE, since data inserted in the table during the view creation will not be inserted in it.
 
-Запрос ``SELECT`` может содержать ``DISTINCT``, ``GROUP BY``, ``ORDER BY``, ``LIMIT``... Следует иметь ввиду, что соответствующие преобразования будут выполняться независимо, на каждый блок вставляемых данных. Например, при наличии ``GROUP BY``, данные будут агрегироваться при вставке, но только в рамках одной пачки вставляемых данных. Далее, данные не будут доагрегированы. Исключение - использование ENGINE, производящего агрегацию данных самостоятельно, например, ``SummingMergeTree``.
+The SELECT query can contain DISTINCT, GROUP BY, ORDER BY, LIMIT ... Note that the corresponding conversions are performed independently on each block of inserted data. For example, if GROUP BY is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won't be further aggregated. The exception is when using an ENGINE that independently performs data aggregation, such as SummingMergeTree.
 
-Недоработано выполнение запросов ``ALTER`` над материализованными представлениями, поэтому они могут быть неудобными для использования.
+The execution of ALTER queries on materialized views has not been fully developed, so they might be inconvenient.
 
-Представления выглядят так же, как обычные таблицы. Например, они перечисляются в результате запроса ``SHOW TABLES``.
+Views look the same as normal tables. For example, they are listed in the result of the SHOW TABLES query.
 
-Отсутствует отдельный запрос для удаления представлений. Чтобы удалить представление, следует использовать ``DROP TABLE``.
+There isn't a separate query for deleting views. To delete a view, use DROP TABLE.
 
 ATTACH
 ~~~~~~
-Запрос полностью аналогичен запросу ``CREATE``, но
-- вместо слова ``CREATE`` используется слово ``ATTACH``;
-- запрос не создаёт данные на диске, а предполагает, что данные уже лежат в соответствующих местах, и всего лишь добавляет информацию о таблице в сервер.
-После выполнения запроса ATTACH, сервер будет знать о существовании таблицы.
+The query is exactly the same as CREATE, except
+- The word ATTACH is used instead of CREATE.
+- The query doesn't create data on the disk, but assumes that data is already in the appropriate places, and just adds information about the table to the server.
+After executing an ATTACH query, the server will know about the existence of the table.
 
-Этот запрос используется при старте сервера. Сервер хранит метаданные таблиц в виде файлов с запросами ``ATTACH``, которые он просто исполняет при запуске (за исключением системных таблиц, создание которых явно вписано в сервер).
+This query is used when starting the server. The server stores table metadata as files with ATTACH queries, which it simply runs at launch (with the exception of system tables, which are explicitly created on the server).
 
 DROP
 ~~~~
-Запрос имеет два вида: ``DROP DATABASE`` и ``DROP TABLE``.
+This query has two types: ``DROP DATABASE`` and ``DROP TABLE``.
 ::
     DROP DATABASE [IF EXISTS] db
 
-Удаляет все таблицы внутри базы данных db, а затем саму базу данных db.
-Если указано ``IF EXISTS`` - не выдавать ошибку, если база данных не существует.
+Deletes all tables inside the 'db' database, then deletes the 'db' database itself.
+If IF EXISTS is specified, it doesn't return an error if the database doesn't exist.
 ::
     DROP TABLE [IF EXISTS] [db.]name
 
-Удаляет таблицу.
-Если указано ``IF EXISTS`` - не выдавать ошибку, если таблица не существует или база данных не существует.
+Deletes the table.
+If IF EXISTS is specified, it doesn't return an error if the table doesn't exist or the database doesn't exist.
 
 DETACH
 ~~~~~~
-Удаляет из сервера информацию о таблице `name`. Сервер перестаёт знать о существовании таблицы.
+Deletes information about the table from the server. The server stops knowing about the table's existence.
 ::
     DETACH TABLE [IF EXISTS] [db.]name
 
-Но ни данные, ни метаданные таблицы не удаляются. При следующем запуске сервера, сервер прочитает метаданные и снова узнает о таблице.
-Также, "отцепленную" таблицу можно прицепить заново запросом ``ATTACH`` (за исключением системных таблиц, для которых метаданные не хранятся).
+This does not delete the table's data or metadata. On the next server launch, the server will read the metadata and find out about the table again. Similarly, a "detached" table can be re-attached using the ATTACH query (with the exception of system tables, which do not have metadata stored for them).
 
-Запроса ``DETACH DATABASE`` нет.
+There is no DETACH DATABASE query.
 
 RENAME
 ~~~~~~
-Переименовывает одну или несколько таблиц.
+Renames one or more tables.
 ::
     RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ...
 
-Все таблицы переименовываются под глобальной блокировкой. Переименовывание таблицы является лёгкой операцией. Если вы указали после TO другую базу данных, то таблица будет перенесена в эту базу данных. При этом, директории с базами данных должны быть расположены в одной файловой системе (иначе возвращается ошибка).
-
+ All tables are renamed under global locking. Renaming tables is a light operation. If you indicated another database after TO, the table will be moved to this database. However, the directories with databases must reside in the same file system (otherwise, an error is returned).
+ 
 ALTER
 ~~~~~
-Запрос ``ALTER`` поддерживается только для таблиц типа ``*MergeTree``, а также ``Merge`` и ``Distributed``. Запрос имеет несколько вариантов.
+The ALTER query is only supported for *MergeTree type tables, as well as for Merge and Distributed types. The query has several variations.
 
-Манипуляции со столбцами
+Column manipulations
 """"""""""""""""""""""""
-Изменение структуры таблицы.
+Lets you change the table structure. 
 ::
     ALTER TABLE [db].name ADD|DROP|MODIFY COLUMN ...
 
-В запросе указывается список из одного или более действий через запятую.
-Каждое действие - операция над столбцом.
+In the query, specify a list of one or more comma-separated actions. Each action is an operation on a column.
 
-Существуют следующие действия:
+The following actions are supported:
 ::
     ADD COLUMN name [type] [default_expr] [AFTER name_after]
 
-Добавляет в таблицу новый столбец с именем name, типом type и выражением для умолчания ``default_expr`` (смотрите раздел "Значения по умолчанию"). Если указано ``AFTER name_after`` (имя другого столбца), то столбец добавляется (в список столбцов таблицы) после указанного. Иначе, столбец добавляется в конец таблицы. Внимательный читатель может заметить, что отсутствует возможность добавить столбец в начало таблицы. Для цепочки действий, name_after может быть именем столбца, который добавляется в одном из предыдущих действий.
+Adds a new column to the table with the specified name, type, and default expression (see the section "Default expressions"). If you specify 'AFTER name_after' (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, 'name_after' can be the name of a column that is added in one of the previous actions.
 
-Добавление столбца всего лишь меняет структуру таблицы, и не производит никаких действий с данными - соответствующие данные не появляются на диске после ALTER-а. При чтении из таблицы, если для какого-либо столбца отсутствуют данные, то он заполняется значениями по умолчанию (выполняя выражение по умолчанию, если такое есть, или нулями, пустыми строками). Также, столбец появляется на диске при слиянии кусков данных (см. MergeTree).
+Adding a column just changes the table structure, without performing any actions with data. The data doesn't appear on the disk after ALTER. If the data is missing for a column when reading from the table, it is filled in with default values (by performing the default expression if there is one, or using zeros or empty strings). The column appears on the disk after merging data parts (see MergeTree).
 
-Такая схема позволяет добиться мгновенной работы запроса ALTER и отсутствия необходимости увеличивать объём старых данных.
+This approach allows us to complete the ALTER query instantly, without increasing the volume of old data.
 
 .. code-block:: sql
 
     DROP COLUMN name
 
-Удаляет столбец с именем name.
-Удаляет данные из файловой системы. Так как это представляет собой удаление целых файлов, запрос выполняется почти мгновенно.
+Deletes the column with the name 'name'.
+
+Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
 .. code-block:: sql
 
     MODIFY COLUMN name [type] [default_expr]
 
-Изменяет тип столбца name на type и/или выражение для умолчания на default_expr. При изменении типа, значения преобразуются так, как если бы к ним была применена функция toType.
+Changes the 'name' column's type to 'type' and/or the default expression to 'default_expr'. When changing the type, values are converted as if the 'toType' function were applied to them.
 
-Если изменяется только выражение для умолчания, то запрос не делает никакой сложной работы и выполняется мгновенно.
+If only the default expression is changed, the query doesn't do anything complex, and is completed almost instantly.
 
-Изменение типа столбца - это единственное действие, которое выполняет сложную работу - меняет содержимое файлов с данными. Для больших таблиц, выполнение может занять длительное время.
+Changing the column type is the only complex action - it changes the contents of files with data. For large tables, this may take a long time.
 
-Выполнение производится в несколько стадий:
-- подготовка временных (новых) файлов с изменёнными данными;
-- переименование старых файлов;
-- переименование временных (новых) файлов в старые;
-- удаление старых файлов.
+There are several stages of execution:
+- Preparing temporary (new) files with modified data.
+- Renaming old files.
+- Renaming the temporary (new) files to the old names.
+- Deleting the old files.
 
-Из них, длительной является только первая стадия. Если на этой стадии возникнет сбой, то данные не поменяются.
-Если на одной из следующих стадий возникнет сбой, то данные будет можно восстановить вручную. За исключением случаев, когда старые файлы удалены из файловой системы, а данные для новых файлов не доехали на диск и потеряны.
+Only the first stage takes time. If there is a failure at this stage, the data is not changed.
+If there is a failure during one of the successive stages, data can be restored manually. The exception is if the old files were deleted from the file system but the data for the new files did not get written to the disk and was lost.
 
-Не поддерживается изменение типа столбца у массивов и вложенных структур данных.
+There is no support for changing the column type in arrays and nested data structures.
 
-Запрос ``ALTER`` позволяет создавать и удалять отдельные элементы (столбцы) вложенных структур данных, но не вложенные структуры данных целиком. Для добавления вложенной структуры данных, вы можете добавить столбцы с именем вида ``name.nested_name`` и типом ``Array(T)`` - вложенная структура данных полностью эквивалентна нескольким столбцам-массивам с именем, имеющим одинаковый префикс до точки.
+The ALTER query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like 'name.nested_name' and the type 'Array(T)'. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 
-Отсутствует возможность удалять столбцы, входящие в первичный ключ или ключ для сэмплирования (в общем, входящие в выражение ``ENGINE``). Изменение типа у столбцов, входящих в первичный ключ возможно только в том случае, если это изменение не приводит к изменению данных (например, разрешено добавление значения в Enum или изменение типа с ``DateTime`` на ``UInt32``).
+There is no support for deleting of columns in the primary key or the sampling key (columns that are in the ENGINE expression). Changing the type of columns in the primary key is allowed only if such change doesn't entail changing the actual data (e.g. adding the value to an Enum or changing the type from DateTime to UInt32 is allowed).
 
-Если возможностей запроса ``ALTER`` не хватает для нужного изменения таблицы, вы можете создать новую таблицу, скопировать туда данные с помощью запроса ``INSERT SELECT``, затем поменять таблицы местами с помощью запроса ``RENAME``, и удалить старую таблицу.
+If the ALTER query is not sufficient for making the table changes you need, you can create a new table, copy the data to it using the INSERT SELECT query, then switch the tables using the RENAME query and delete the old table.
 
-Запрос ``ALTER`` блокирует все чтения и записи для таблицы. То есть, если на момент запроса ``ALTER``, выполнялся долгий ``SELECT``, то запрос ``ALTER`` сначала дождётся его выполнения. И в это время, все новые запросы к той же таблице, будут ждать, пока завершится этот ``ALTER``.
+The ALTER query blocks all reads and writes for the table. In other words, if a long SELECT is running at the time of the ALTER query, the ALTER query will wait for the SELECT to complete. At the same time, all new queries to the same table will wait while this ALTER is running.
 
-Для таблиц, которые не хранят данные самостоятельно (типа ``Merge`` и ``Distributed``), ``ALTER`` всего лишь меняет структуру таблицы, но не меняет структуру подчинённых таблиц. Для примера, при ALTER-е таблицы типа ``Distributed``, вам также потребуется выполнить запрос ``ALTER`` для таблиц на всех удалённых серверах.
+For tables that don't store data themselves (Merge and Distributed), ALTER just changes the table structure, and does not change the structure of subordinate tables. For example, when running ALTER for a Distributed table, you will also need to run ALTER for the tables on all remote servers.
 
-Запрос ``ALTER`` на изменение столбцов реплицируется. Соответствующие инструкции сохраняются в ZooKeeper, и затем каждая реплика их применяет. Все запросы ``ALTER`` выполняются в одном и том же порядке. Запрос ждёт выполнения соответствующих действий на всех репликах. Но при этом, запрос на изменение столбцов в реплицируемой таблице можно прервать, и все действия будут осуществлены асинхронно.
+The ALTER query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All ALTER queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
-Манипуляции с партициями и кусками
+Manipulations with partitions and parts
 """"""""""""""""""""""""""""""""""
-Работает только для таблиц семейства ``MergeTree``. Существуют следующие виды операций:
+Only works for tables in the MergeTree family. The following operations are available:
 
-* ``DETACH PARTITION`` - перенести партицию в директорию detached и забыть про неё.
-* ``DROP PARTITION`` - удалить партицию.
-* ``ATTACH PART|PARTITION`` - добавить в таблицу новый кусок или партицию из директории ``detached``.
-* ``FREEZE PARTITION`` - создать бэкап партиции.
-* ``FETCH PARTITION`` - скачать партицию с другого сервера.
+* ``DETACH PARTITION`` - Move a partition to the 'detached' directory and forget it.
+* ``DROP PARTITION`` - Delete a partition.
+* ``ATTACH PART|PARTITION`` - Add a new part or partition from the 'detached' directory to the table.
+* ``FREEZE PARTITION`` - Create a backup of a partition.
+* ``FETCH PARTITION`` - Download a partition from another server.
 
-Ниже будет рассмотрен каждый вид запроса по-отдельности.
+Each type of query is covered separately below.
 
-Партицией (partition) в таблице называются данные за один календарный месяц. Это определяется значениями ключа-даты, указанной в параметрах движка таблицы. Данные за каждый месяц хранятся отдельно, чтобы упростить всевозможные манипуляции с этими данными.
+A partition in a table is data for a single calendar month. This is determined by the values of the date key specified in the table engine parameters. Each month's data is stored separately in order to simplify manipulations with this data.
 
-Куском (part) в таблице называется часть данных одной партиции, отсортированная по первичному ключу.
+A "part" in the table is part of the data from a single partition, sorted by the primary key.
 
-Чтобы посмотреть набор кусков и партиций таблицы, можно воспользоваться системной таблицей ``system.parts``:
+You can use the ``system.parts`` table to view the set of table parts and partitions:
 ::
     SELECT * FROM system.parts WHERE active
 
-``active`` - учитывать только активные куски. Неактивными являются, например, исходные куски оставшиеся после слияния в более крупный кусок - такие куски удаляются приблизительно через 10 минут после слияния.
+``active`` - Only count active parts. Inactive parts are, for example, source parts remaining after merging to a larger part - these parts are deleted approximately 10 minutes after merging.
 
-Другой способ посмотреть набор кусков и партиций - зайти в директорию с данными таблицы.
-Директория с данными - ``/var/lib/clickhouse/data/database/table/``,
-где ``/var/lib/clickhouse/`` - путь к данным ClickHouse, database - имя базы данных, table - имя таблицы. Пример:
+Another way to view a set of parts and partitions is to go into the directory with table data.
+The directory with data is
+/var/lib/clickhouse/data/database/table/,
+where /var/lib/clickhouse/ is the path to ClickHouse data, 'database' is the database name, and 'table' is the table name. Example:
 ::
     $ ls -l /var/lib/clickhouse/data/test/visits/
     total 48
@@ -256,110 +256,106 @@ ALTER
     drwxrwxrwx 2 clickhouse clickhouse  4096 мая   13 02:55 detached
     -rw-rw-rw- 1 clickhouse clickhouse     2 мая   13 02:58 increment.txt
 
-Здесь ``20140317_20140323_2_2_0``, ``20140317_20140323_4_4_0`` - директории кусков.
+Here ``20140317_20140323_2_2_0``, ``20140317_20140323_4_4_0`` - are directories of parts.
 
-Рассмотрим по порядку имя первого куска: ``20140317_20140323_2_2_0``.
- * ``20140317`` - минимальная дата данных куска
- * ``20140323`` - максимальная дата данных куска .. |br| raw:: html
- * ``2`` - минимальный номер блока данных .. |br| raw:: html
- * ``2`` - максимальный номер блока данных .. |br| raw:: html
- * ``0`` - уровень куска - глубина дерева слияний, которыми он образован
+Let's look at the name of the first part: ``20140317_20140323_2_2_0``.
+ * ``20140317`` - minimum date of part data
+ * ``20140323`` - maximum date of part data .. |br| raw:: html
+ * ``2`` - minimum number of the data block .. |br| raw:: html
+ * ``2`` - maximum number of the data block .. |br| raw:: html
+ * ``0`` - part level - depth of the merge tree that formed it
 
-Каждый кусок относится к одной партиции и содержит данные только за один месяц.
-``201403`` - имя партиции. Партиция представляет собой набор кусков за один месяц.
+Each part corresponds to a single partition and contains data for a single month.
+201403 - The partition name. A partition is a set of parts for a single month.
 
-При работающем сервере, нельзя вручную изменять набор кусков или их данные на файловой системе, так как сервер не будет об этом знать.
-Для нереплицируемых таблиц, вы можете это делать при остановленном сервере, хотя это не рекомендуется.
-Для реплицируемых таблиц, набор кусков нельзя менять в любом случае.
+On an operating server, you can't manually change the set of parts or their data on the file system, since the server won't know about it. For non-replicated tables, you can do this when the server is stopped, but we don't recommended it. For replicated tables, the set of parts can't be changed in any case.
 
-Директория ``detached`` содержит куски, не используемые сервером - отцепленные от таблицы с помощью запроса ``ALTER ... DETACH``. Также в эту директорию переносятся куски, признанные повреждёнными, вместо их удаления. Вы можете в любое время добавлять, удалять, модифицировать данные в директории detached - сервер не будет об этом знать, пока вы не сделаете запрос ``ALTER TABLE ... ATTACH``.
+The 'detached' directory contains parts that are not used by the server - detached from the table using the ALTER ... DETACH query. Parts that are damaged are also moved to this directory, instead of deleting them. You can add, delete, or modify the data in the 'detached' directory at any time - the server won't know about this until you make the ALTER TABLE ... ATTACH query.
 ::
 ALTER TABLE [db.]table DETACH PARTITION 'name'
 
-Перенести все данные для партиции с именем name в директорию detached и забыть про них.
-Имя партиции указывается в формате YYYYMM. Оно может быть указано в одинарных кавычках или без них.
+Move all data for partitions named 'name' to the 'detached' directory and forget about them.
+The partition name is specified in YYYYMM format. It can be indicated in single quotes or without them.
 
-После того, как запрос будет выполнен, вы можете самостоятельно сделать что угодно с данными в директории detached, например, удалить их из файловой системы, или ничего не делать.
+After the query is executed, you can do whatever you want with the data in the 'detached' directory — delete it from the file system, or just leave it.
 
-Запрос реплицируется - данные будут перенесены в директорию detached и забыты на всех репликах. Запрос может быть отправлен только на реплику-лидер. Вы можете узнать, является ли реплика лидером, сделав SELECT в системную таблицу system.replicas. Или, проще, вы можете выполнить запрос на всех репликах, и на всех кроме одной, он кинет исключение.
+The query is replicated - data will be moved to the 'detached' directory and forgotten on all replicas. The query can only be sent to a leader replica. To find out if a replica is a leader, perform SELECT to the 'system.replicas' system table. Alternatively, it is easier to make a query on all replicas, and all except one will throw an exception.
 ::
     ALTER TABLE [db.]table DROP PARTITION 'name'
 
-Аналогично операции ``DETACH``. Удалить данные из таблицы. Куски с данными будут помечены как неактивные и будут полностью удалены примерно через 10 минут. Запрос реплицируется - данные будут удалены на всех репликах.
+Similar to the DETACH operation. Deletes data from the table. Data parts will be tagged as inactive and will be completely deleted in approximately 10 minutes. The query is replicated - data will be deleted on all replicas.
 ::
     ALTER TABLE [db.]table ATTACH PARTITION|PART 'name'
 
-Добавить данные в таблицу из директории detached.
+Adds data to the table from the 'detached' directory.
 
-Существует возможность добавить данные для целой партиции (PARTITION) или отдельный кусок (PART). В случае PART, укажите полное имя куска в одинарных кавычках.
+It is possible to add data for an entire partition or a separate part. For a part, specify the full name of the part in single quotes.
 
-Запрос реплицируется. Каждая реплика проверяет, если ли данные в директории detached. Если данные есть - проверяет их целостность, проверяет их соответствие данным на сервере-инициаторе запроса, и если всё хорошо, то добавляет их. Если нет, то скачивает данные с реплики-инициатора запроса, или с другой реплики, на которой уже добавлены эти данные.
+The query is replicated. Each replica checks whether there is data in the 'detached' directory. If there is data, it checks the integrity, verifies that it matches the data on the server that initiated the query, and then adds it if everything is correct. If not, it downloads data from the query requestor replica, or from another replica where the data has already been added.
 
-То есть, вы можете разместить данные в директории detached на одной реплике и, с помощью запроса ALTER ... ATTACH добавить их в таблицу на всех репликах.
+So you can put data in the 'detached' directory on one replica, and use the ALTER ... ATTACH query to add it to the table on all replicas.
 ::
     ALTER TABLE [db.]table FREEZE PARTITION 'name'
 
-Создаёт локальный бэкап одной или нескольких партиций. В качестве имени может быть указано полное имя партиции (например, 201403) или его префикс (например, 2014) - тогда бэкап будет создан для всех соответствующих партиций.
+Creates a local backup of one or multiple partitions. The name can be the full name of the partition (for example, 201403), or its prefix (for example, 2014) - then the backup will be created for all the corresponding partitions.
 
-Запрос делает следующее: для снэпшота данных на момент его выполнения, создаёт hardlink-и на данные таблиц в директории ``/var/lib/clickhouse/shadow/N/...``
+The query does the following: for a data snapshot at the time of execution, it creates hardlinks to table data in the directory /var/lib/clickhouse/shadow/N/...
+/var/lib/clickhouse/ is the working ClickHouse directory from the config.
+N is the incremental number of the backup.
 
-``/var/lib/clickhouse/`` - рабочая директория ClickHouse из конфига.
-``N`` - инкрементальный номер бэкапа.
+``/var/lib/clickhouse/`` - working directory of ClickHouse from config file.
+``N`` - incremental number of backup.
 
-Структура директорий внутри бэкапа создаётся такой же, как внутри ``/var/lib/clickhouse/``.
-Также делает chmod всех файлов, запрещая запись в них.
+The same structure of directories is created inside the backup as inside  ``/var/lib/clickhouse/``.
+It also performs 'chmod' for all files, forbidding writes to them.
 
-Создание бэкапа происходит почти мгновенно (но сначала дожидается окончания выполняющихся в данный момент запросов к соответствующей таблице). Бэкап изначально не занимает места на диске. При дальнейшей работе системы, бэкап может отнимать место на диске, по мере модификации данных. Если бэкап делается для достаточно старых данных, то он не будет отнимать место на диске.
+The backup is created almost instantly (but first it waits for current queries to the corresponding table to finish running). At first, the backup doesn't take any space on the disk. As the system works, the backup can take disk space, as data is modified. If the backup is made for old enough data, it won't take space on the disk.
 
-После создания бэкапа, данные из ``/var/lib/clickhouse/shadow/`` можно скопировать на удалённый сервер и затем удалить на локальном сервере.
-Весь процесс бэкапа не требует остановки сервера.
+After creating the backup, data from ``/var/lib/clickhouse/shadow/`` can be copied to the remote server and then deleted on the local server. The entire backup process is performed without stopping the server.
 
-Запрос ``ALTER ... FREEZE PARTITION`` не реплицируется. То есть, локальный бэкап создаётся только на локальном сервере.
+The ``ALTER ... FREEZE PARTITION`` query is not replicated. A local backup is only created on the local server.
 
-В качестве альтернативного варианта, вы можете скопировать данные из директории ``/var/lib/clickhouse/data/database/table`` вручную.
-Но если это делать при запущенном сервере, то возможны race conditions при копировании директории с добавляющимися/изменяющимися файлами, и бэкап может быть неконсистентным. Этот вариант может использоваться, если сервер не запущен - тогда полученные данные будут такими же, как после запроса ``ALTER TABLE t FREEZE PARTITION``.
+As an alternative, you can manually copy data from the ``/var/lib/clickhouse/data/database/table directory``. But if you do this while the server is running, race conditions are possible when copying directories with files being added or changed, and the backup may be inconsistent. You can do this if the server isn't running - then the resulting data will be the same as after the ALTER TABLE t FREEZE PARTITION query.
 
-``ALTER TABLE ... FREEZE PARTITION`` копирует только данные, но не метаданные таблицы. Чтобы сделать бэкап метаданных таблицы, скопируйте файл  ``/var/lib/clickhouse/metadata/database/table.sql``
+``ALTER TABLE ... FREEZE PARTITION`` only copies data, not table metadata. To make a backup of table metadata, copy the file  ``/var/lib/clickhouse/metadata/database/table.sql``
 
-Для восстановления из бэкапа:
- * создайте таблицу, если её нет, с помощью запроса CREATE. Запрос можно взять из .sql файла (замените в нём ``ATTACH`` на ``CREATE``);
- * скопируйте данные из директории data/database/table/ внутри бэкапа в директорию ``/var/lib/clickhouse/data/database/table/detached/``
- * выполните запросы ``ALTER TABLE ... ATTACH PARTITION YYYYMM``, где ``YYYYMM`` - месяц, для каждого месяца.
+To restore from a backup:
+* Use the CREATE query to create the table if it doesn't exist. The query can be taken from an .sql file (replace ATTACH in it with CREATE).
+* Copy data from the ``data/database/table/`` directory inside the backup to the ``/var/lib/clickhouse/data/database/table/detached/`` directory.
+* Run ``ALTER TABLE ... ATTACH PARTITION YYYYMM``queries where ``YYYYMM`` is the month, for every month.
 
-Таким образом, данные из бэкапа будут добавлены в таблицу.
-Восстановление из бэкапа, так же, не требует остановки сервера.
+In this way, data from the backup will be added to the table.
+Restoring from a backup doesn't require stopping the server.
 
-Бэкапы и репликация
+Backups and replication
 """""""""""""""""""
-Репликация защищает от аппаратных сбоев. В случае, если на одной из реплик у вас исчезли все данные, то восстановление делается по инструкции в разделе "Восстановление после сбоя".
+Replication provides protection from device failures. If all data disappeared on one of your replicas, follow the instructions in the "Restoration after failure" section to restore it.
 
-Для защиты от аппаратных сбоев, обязательно используйте репликацию. Подробнее про репликацию написано в разделе "Репликация данных".
+For protection from device failures, you must use replication. For more information about replication, see the section "Data replication".
 
-Бэкапы защищают от человеческих ошибок (случайно удалили данные, удалили не те данные или не на том кластере, испортили данные).
-Для баз данных большого объёма, бывает затруднительно копировать бэкапы на удалённые серверы. В этих случаях, для защиты от человеческой ошибки, можно держать бэкап на том же сервере (он будет лежать в ``/var/lib/clickhouse/shadow/``).
+Backups protect against human error (accidentally deleting data, deleting the wrong data or in the wrong cluster, or corrupting data). For high-volume databases, it can be difficult to copy backups to remote servers. In such cases, to protect from human error, you can keep a backup on the same server (it will reside in /var/lib/clickhouse/shadow/).
 ::
   ALTER TABLE [db.]table FETCH PARTITION 'name' FROM 'path-in-zookeeper'
 
-Запрос работает только для реплицируемых таблиц.
+This query only works for replicatable tables.
 
-Скачивает указанную партицию с шарда, путь в ``ZooKeeper`` к которому указан в секции ``FROM`` и помещает в директорию ``detached`` указанной таблицы.
+It downloads the specified partition from the shard that has its ZooKeeper path specified in the FROM clause, then puts it in the 'detached' directory for the specified table.
 
-Не смотря на то, что запрос называется ``ALTER TABLE``, он не изменяет структуру таблицы, и не изменяет сразу доступные данные в таблице.
+Although the query is called ALTER TABLE, it does not change the table structure, and does not immediately change the data available in the table.
 
-Данные помещаются в директорию ``detached``, и их можно прикрепить с помощью запроса ``ALTER TABLE ... ATTACH``.
+Data is placed in the 'detached' directory. You can use the ALTER TABLE ... ATTACH query to attach the data.
 
-В секции ``FROM`` указывается путь в ``ZooKeeper``. Например, ``/clickhouse/tables/01-01/visits``.
-Перед скачиванием проверяется существование партиции и совпадение структуры таблицы. Автоматически выбирается наиболее актуальная реплика среди живых реплик.
+The path to ZooKeeper is specified in the FROM clause. For example, ``/clickhouse/tables/01-01/visits``.
+Before downloading, the system checks that the partition exists and the table structure matches. The most appropriate replica is selected automatically from the healthy replicas.
 
-Запрос ``ALTER ... FETCH PARTITION`` не реплицируется. То есть, партиция будет скачана в директорию detached только на локальном сервере. Заметим, что если вы после этого добавите данные в таблицу с помощью запроса ``ALTER TABLE ... ATTACH``, то данные будут добавлены на всех репликах (на одной из реплик будут добавлены из директории detached, а на других - загружены с соседних реплик).
+The ALTER ... FETCH PARTITION query is not replicated. The partition will be downloaded to the 'detached' directory only on the local server. Note that if after this you use the ALTER TABLE ... ATTACH query to add data to the table, the data will be added on all replicas (on one of the replicas it will be added from the 'detached' directory, and on the rest it will be loaded from neighboring replicas).
 
-Синхронность запросов ALTER
+Synchronicity of ALTER queries
 """""""""""""""""""""""""""
+For non-replicatable tables, all ALTER queries are performed synchronously. For replicatable tables, the query just adds instructions for the appropriate actions to ZooKeeper, and the actions themselves are performed as soon as possible. However, the query can wait for these actions to be completed on all the replicas.
 
-Для нереплицируемых таблиц, все запросы ``ALTER`` выполняются синхронно. Для реплицируемых таблиц, запрос всего лишь добавляет инструкцию по соответствующим действиям в ``ZooKeeper``, а сами действия осуществляются при первой возможности. Но при этом, запрос может ждать завершения выполнения этих действий на всех репликах.
-
-Для запросов ``ALTER ... ATTACH|DETACH|DROP`` можно настроить ожидание, с помощью настройки ``replication_alter_partitions_sync``.
-Возможные значения: ``0`` - не ждать, ``1`` - ждать выполнения только у себя (по умолчанию), ``2`` - ждать всех.
+For ``ALTER ... ATTACH|DETACH|DROP`` queries, you can use the ``'replication_alter_partitions_sync'`` setting to set up waiting.
+Possible values: 0 - do not wait, 1 - wait for own completion (default), 2 - wait for all.
 
 SHOW DATABASES
 ~~~~~~~~~~~~~~
@@ -368,10 +364,9 @@ SHOW DATABASES
 
     SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 
-Выводит список всех баз данных.
-Запрос полностью аналогичен запросу ``SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]``.
-
-Смотрите также раздел "Форматы".
+Prints a list of all databases.
+This query is identical to the query ``SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]``
+See the section "Formats".
 
 SHOW TABLES
 ~~~~~~~~~~~
@@ -380,12 +375,13 @@ SHOW TABLES
 
     SHOW TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
 
-Выводит список таблиц
- * из текущей БД или из БД db, если указано FROM db;
- * всех, или имя которых соответствует шаблону pattern, если указано LIKE 'pattern';
+Outputs a list of
+* tables from the current database, or from the 'db' database if "FROM db" is specified.
+* all tables, or tables whose name matches the pattern, if "LIKE 'pattern'" is specified.
 
-Запрос полностью аналогичен запросу: ``SELECT name FROM system.tables WHERE database = 'db' [AND name LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]``
-Смотрите также раздел "Оператор LIKE".
+The query is identical to the query  SELECT name FROM system.tables
+WHERE database = 'db' [AND name LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
+See the section "LIKE operator".
 
 SHOW PROCESSLIST
 ~~~~~~~~~~~~~~~~
@@ -394,27 +390,27 @@ SHOW PROCESSLIST
 
     SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 
-Выводит список запросов, выполняющихся в данный момент времени, кроме запросов ``SHOW PROCESSLIST``.
+Outputs a list of queries currently being processed, other than SHOW PROCESSLIST queries.
 
-Выдаёт таблицу, содержащую столбцы:
+Prints a table containing the columns:
 
-**user** - пользователь, под которым был задан запрос. Следует иметь ввиду, что при распределённой обработке запроса на удалённые серверы запросы отправляются под пользователем default. И SHOW PROCESSLIST показывает имя пользователя для конкретного запроса, а не для запроса, который данный запрос инициировал.
+**user** is the user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the 'default' user. SHOW PROCESSLIST shows the username for a specific query, not for a query that this query initiated.
 
-**address** - имя хоста, с которого был отправлен запрос. При распределённой обработке запроса на удалённых серверах — это имя хоста-инициатора запроса. Чтобы проследить, откуда был задан распределённый запрос изначально, следует смотреть SHOW PROCESSLIST на сервере-инициаторе запроса.
+**address** is the name of the host that the query was sent from. For distributed processing, on remote servers, this is the name of the query requestor host. To track where a distributed query was originally made from, look at SHOW PROCESSLIST on the query requestor server.
 
-**elapsed** - время выполнения запроса, в секундах. Запросы выводятся упорядоченными по убыванию времени выполнения.
+**elapsed** - The execution time, in seconds. Queries are output in order of decreasing execution time.
 
-**rows_read**, **bytes_read** - сколько было прочитано строк, байт несжатых данных при обработке запроса. При распределённой обработке запроса суммируются данные со всех удалённых серверов. Именно эти данные используются для ограничений и квот.
+**rows_read**, **bytes_read** - How many rows and bytes of uncompressed data were read when processing the query. For distributed processing, data is totaled from all the remote servers. This is the data used for restrictions and quotas.
 
-**memory_usage** - текущее потребление оперативки в байтах. Смотрите настройку max_memory_usage.
+**memory_usage** - Current RAM usage in bytes. See the setting 'max_memory_usage'.
 
-**query** - сам запрос. В запросах INSERT данные для вставки не выводятся.
+**query** - The query itself. In INSERT queries, the data for insertion is not output.
 
-**query_id** - идентификатор запроса. Непустой, только если был явно задан пользователем. При распределённой обработке запроса идентификатор запроса не передаётся на удалённые серверы.
+**query_id** - The query identifier. Non-empty only if it was explicitly defined by the user. For distributed processing, the query ID is not passed to remote servers.
 
-Запрос полностью аналогичен запросу: ``SELECT * FROM system.processes [INTO OUTFILE filename] [FORMAT format]``.
+This query is exactly the same as: SELECT * FROM system.processes [INTO OUTFILE filename] [FORMAT format].
 
-Полезный совет (выполните в консоли):
+Tip (execute in the console):
 ``watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"``
 
 SHOW CREATE TABLE
@@ -424,7 +420,7 @@ SHOW CREATE TABLE
 
     SHOW CREATE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
-Возвращает один столбец statement типа ``String``, содержащий одно значение - запрос ``CREATE``, с помощью которого создана указанная таблица.
+Returns a single String-type 'statement' column, which contains a single value - the CREATE query used for creating the specified table.
 
 DESCRIBE TABLE
 ~~~~~~~~~~~~~~
@@ -433,9 +429,9 @@ DESCRIBE TABLE
 
     DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
-Возвращает два столбца: ``name``, ``type`` типа ``String``, в которых описаны имена и типы столбцов указанной таблицы.
+Returns two String-type columns: 'name' and 'type', which indicate the names and types of columns in the specified table.
 
-Вложенные структуры данных выводятся в "развёрнутом" виде. То есть, каждый столбец - по отдельности, с именем через точку.
+Nested data structures are output in "expanded" format. Each column is shown separately, with the name after a dot.
 
 EXISTS
 ~~~~~~
@@ -444,7 +440,7 @@ EXISTS
 
     EXISTS TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 
-Возвращает один столбец типа ``UInt8``, содержащий одно значение - ``0``, если таблицы или БД не существует и ``1``, если таблица в указанной БД существует.
+Returns a single UInt8-type column, which contains the single value 0 if the table or database doesn't exist, or 1 if the table exists in the specified database.
 
 USE
 ~~~
@@ -453,9 +449,9 @@ USE
 
    USE db
 
-Позволяет установить текущую базу данных для сессии.
-Текущая база данных используется для поиска таблиц, если база данных не указана в запросе явно через точку перед именем таблицы.
-При использовании HTTP протокола, запрос не может быть выполнен, так как понятия сессии не существует.
+Lets you set the current database for the session.
+The current database is used for searching for tables if the database is not explicitly defined in the query with a dot before the table name.
+This query can't be made when using the HTTP protocol, since there is no concept of a session.
 
 SET
 ~~~
@@ -464,14 +460,13 @@ SET
 
     SET [GLOBAL] param = value
 
-Позволяет установить настройку ``param`` в значение ``value``. Также можно одним запросом установить все настройки из заданного профиля настроек - для этого, укажите в качестве имени настройки profile. Подробнее смотри раздел "Настройки".
-Настройка устанавливается на сессию, или на сервер (глобально), если указано ``GLOBAL``.
-При установке глобальной настройки, настройка на все уже запущенные сессии, включая текущую сессию, не устанавливается, а будет использована только для новых сессий.
+Lets you set the 'param' setting to 'value'. You can also make all the settings from the specified settings profile in a single query. To do this, specify 'profile' as the setting name. For more information, see the section "Settings". The setting is made for the session, or for the server (globally) if GLOBAL is specified.
+When making a global setting, the setting is not applied to sessions already running, including the current session. It will only be used for new sessions.
 
-Настройки, заданные с помощью ``SET GLOBAL`` имеют меньший приоритет по сравнению с настройками, указанными в профиле пользователя, в конфигурационном файле. То есть, переопределить такие настройки с помощью ``SET GLOBAL`` невозможно.
+Settings made using SET GLOBAL have a lower priority compared with settings made in the config file in the user profile. In other words, user settings can't be overridden by SET GLOBAL.
 
-При перезапуске сервера, теряются глобальные настройки, установленные с помощью ``SET GLOBAL``.
-Установить настройки, которые переживут перезапуск сервера, можно только с помощью конфигурационного файла сервера. (Это не может быть сделано с помощью запроса ``SET``.)
+When the server is restarted, global settings made using SET GLOBAL are lost.
+To make settings that persist after a server restart, you can only use the server's config file. (This can't be done using a SET query.)
 
 OPTIMIZE
 ~~~~~~~~
@@ -480,21 +475,21 @@ OPTIMIZE
 
     OPTIMIZE TABLE [db.]name [PARTITION partition] [FINAL]
 
-Просит движок таблицы сделать что-нибудь, что может привести к более оптимальной работе.
-Поддерживается только движками ``*MergeTree``, в котором выполнение этого запроса инициирует внеочередное слияние кусков данных.
-Если указан ``PARTITION``, то оптимизация будет производиться только для указаной партиции.
-Если указан ``FINAL``, то оптимизация будет производиться даже когда все данные уже лежат в одном куске.
+Asks the table engine to do something for optimization.
+Supported only by *MergeTree engines, in which this query initializes a non-scheduled merge of data parts.
+If ``PARTITION`` is specified, then only specified partition will be optimized.
+If ``FINAL`` is specified, then optimization will be performed even if data inside the partition already optimized (i. e. all data is in single part).
 
 INSERT
 ~~~~~~
-Запрос имеет несколько вариантов.
+This query has several variations.
 
 .. code-block:: sql
 
     INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 
-Вставляет в таблицу table строчки с перечисленными значениями.
-Запрос полностью аналогичен запросу вида:
+Inserts rows with the listed values in the 'table' table. 
+This query is exactly the same as:
 
 .. code-block:: sql
 
@@ -504,10 +499,10 @@ INSERT
 
     INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format ...
 
-Вставка данных в произвольном указанном формате.
-Сами данные идут после format, после всех пробельных символов до первого перевода строки, если он есть, включая его, или после всех пробельных символов, если переводов строки нет. Рекомендуется писать данные начиная со следующей строки (это важно, если данные начинаются с пробельных символов).
+Inserts data in any specified format.
+The data itself comes after 'format', after all space symbols up to the first line break if there is one and including it, or after all space symbols if there isn't a line break. We recommend writing data starting from the next line (this is important if the data starts with space characters).
 
-Пример:
+Example:
 
 .. code-block:: sql
 
@@ -515,31 +510,32 @@ INSERT
     11  Hello, world!
     22  Qwerty
 
-Подробнее про форматы данных смотрите в разделе "Форматы".
-В разделе "Интерфейсы" описано, как можно вставлять данные отдельно от запроса, при использовании клиента командной строки или HTTP интерфейса.
+For more information about data formats, see the section "Formats". The "Interfaces" section describes how to insert data separately from the query when using the command-line client or the HTTP interface.
 
-В запросе может быть опционально указан список столбцов для вставки. В этом случае, в остальные столбцы записываются значения по умолчанию.
-Значения по умолчанию вычисляются из DEFAULT выражений, указанных в определении таблицы, или, если ``DEFAULT`` не прописан явно - используются нули, пустые строки. Если настройка ``strict_insert_defaults`` выставлена в 1, то все столбцы, для которых нет явных DEFAULT-ов, должны быть указаны в запросе.
+The query may optionally specify a list of columns for insertion. In this case, the default values are written to the other columns.
+Default values are calculated from DEFAULT expressions specified in table definitions, or, if the DEFAULT is not explicitly defined, zeros and empty strings are used. If the 'strict_insert_default' setting is set to 1, all the columns that do not have explicit DEFAULTS must be specified in the query.
 
 .. code-block:: sql
 
     INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 
-Вставка в таблицу результата запроса ``SELECT``.
-Имена и типы данных результата выполнения SELECT-а должны точно совпадать со структурой таблицы, в которую вставляются данные, или с указанным списком столбцов.
-Для изменения имён столбцов следует использовать синонимы (AS) в запросе ``SELECT``.
-Для изменения типов данных следует использовать функции преобразования типов (смотрите раздел "Функции").
+Inserts the result of the SELECT query into a table.
+The names and data types of the SELECT result must exactly match the table structure that data is inserted into, or the specified list of columns.
+To change column names, use synonyms (AS) in the SELECT query.
+To change data types, use type conversion functions (see the section "Functions").
 
-Ни один из форматов данных не позволяет использовать в качестве значений выражения.
-То есть, вы не можете написать ``INSERT INTO t VALUES (now(), 1 + 1, DEFAULT)``.
+None of the data formats allows using expressions as values.
+In other words, you can't write INSERT INTO t VALUES (now(), 1 + 1, DEFAULT).
 
-Не поддерживаются другие запросы на модификацию части данных: ``UPDATE``, ``DELETE``, ``REPLACE``, ``MERGE``, ``UPSERT``, ``INSERT UPDATE``.
-Впрочем, вы можете удалять старые данные с помощью запроса ``ALTER TABLE ... DROP PARTITION``.
+There is no support for other data part modification queries:
+UPDATE, DELETE, REPLACE, MERGE, UPSERT, INSERT UPDATE.
+However, you can delete old data using ALTER TABLE ... DROP PARTITION.
+
 
 SELECT
 ~~~~~~
 
-Его величество, запрос SELECT.
+His Highness, the SELECT query.
 
 .. code-block:: sql
 
@@ -558,42 +554,42 @@ SELECT
         [INTO OUTFILE filename]
         [FORMAT format]
 
-Все секции, кроме списка выражений сразу после SELECT, являются необязательными.
-Ниже секции будут описаны в порядке, почти соответствующем конвейеру выполнения запроса.
+All the clauses are optional, except for the required list of expressions immediately after SELECT.
+The clauses below are described in almost the same order as in the query execution conveyor.
 
-Если в запросе отсутствуют секции ``DISTINCT``, ``GROUP BY``, ``ORDER BY``, подзапросы в ``IN`` и ``JOIN``, то запрос будет обработан полностью потоково, с использованием O(1) количества оперативки.
-Иначе запрос может съесть много оперативки, если не указаны подходящие ограничения ``max_memory_usage``, ``max_rows_to_group_by``, ``max_rows_to_sort``, ``max_rows_in_distinct``, ``max_bytes_in_distinct``, ``max_rows_in_set``, ``max_bytes_in_set``, ``max_rows_in_join``, ``max_bytes_in_join``, ``max_bytes_before_external_sort``, ``max_bytes_before_external_group_by``. Подробнее смотрите в разделе "Настройки". Присутствует возможность использовать внешнюю сортировку (с сохранением временных данных на диск) и внешнюю агрегацию. ``Merge join`` в системе нет.
+If the query omits the DISTINCT, GROUP BY, and ORDER BY clauses and the IN and JOIN subqueries, the query will be completely stream processed, using O(1) amount of RAM.
+Otherwise, the query may consume too much RAM, if appropriate restrictions are not defined (max_memory_usage, max_rows_to_group_by, max_rows_to_sort, max_rows_in_distinct, max_bytes_in_distinct, max_rows_in_set, max_bytes_in_set, max_rows_in_join, max_bytes_in_join, max_bytes_before_external_sort, max_bytes_before_external_group_by). For more information, see the section "Settings". It is possible to use external sorting (saving temporary tables to a disk) and external aggregation. Merge join is not implemented.
 
-Секция FROM
+FROM clause
 """""""""""
 
-Если секция FROM отсутствует, то данные будут читаться из таблицы ``system.one``.
-Таблица system.one содержит ровно одну строку (то есть, эта таблица выполняет такую же роль, как таблица DUAL, которую можно найти в других СУБД).
+If the FROM clause is omitted, data will be read from the 'system.one' table.
+The 'system.one' table contains exactly one row (this table fulfills the same purpose as the DUAL table found in other DBMSs).
 
-В секции FROM указывается таблица, из которой будут читаться данные, либо подзапрос, либо табличная функция; дополнительно могут присутствовать ARRAY JOIN и обычный JOIN (смотрите ниже).
+The FROM clause specifies the table to read data from, or a subquery, or a table function; ARRAY JOIN and the regular JOIN may also be included (see below).
 
-Вместо таблицы, может быть указан подзапрос SELECT в скобках.
-В этом случае, конвейер обработки подзапроса будет встроен в конвейер обработки внешнего запроса.
-В отличие от стандартного SQL, после подзапроса не нужно указывать его синоним. Для совместимости, присутствует возможность написать AS name после подзапроса, но указанное имя нигде не используется.
+Instead of a table, the SELECT subquery may be specified in brackets. In this case, the subquery processing pipeline will be built into the processing pipeline of an external query.
+In contrast to standard SQL, a synonym does not need to be specified after a subquery. For compatibility, it is possible to write 'AS name' after a subquery, but the specified name isn't used anywhere.
 
-Вместо таблицы, может быть указана табличная функция. Подробнее смотрите раздел "Табличные функции".
+A table function may be specified instead of a table. For more information, see the section "Table functions".
 
-Для выполнения запроса, из соответствующей таблицы, вынимаются все столбцы, перечисленные в запросе. Из подзапросов выкидываются столбцы, не нужные для внешнего запроса.
-Если в запросе не перечислено ни одного столбца (например, SELECT count() FROM t), то из таблицы всё равно вынимается один какой-нибудь столбец (предпочитается самый маленький), для того, чтобы можно было хотя бы посчитать количество строк.
+To execute a query, all the columns listed in the query are extracted from the appropriate table. Any columns not needed for the external query are thrown out of the subqueries.
+If a query does not list any columns (for example, SELECT count() FROM t), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
 
-Модификатор FINAL может быть использован только при SELECT-е из таблицы типа CollapsingMergeTree. При указании FINAL, данные будут выбираться полностью "сколлапсированными". Стоит учитывать, что использование FINAL приводит к выбору кроме указанных в SELECT-е столбцов также столбцов, относящихся к первичному ключу. Также, запрос будет выполняться в один поток, и при выполнении запроса будет выполняться слияние данных. Это приводит к тому, что при использовании FINAL, запрос выполняется медленнее. В большинстве случаев, следует избегать использования FINAL. Подробнее смотрите раздел "Движок CollapsingMergeTree".
+The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree table. When you specify FINAL, data is selected fully "collapsed". Keep in mind that using FINAL leads to a selection that includes columns related to the primary key, in addition to the columns specified in the SELECT. Additionally, the query will be executed in a single stream, and data will be merged during query execution. This means that when using FINAL, the query is processed more slowly. In most cases, you should avoid using FINAL. For more information, see the section "CollapsingMergeTree engine".
 
-Секция SAMPLE
+SAMPLE clause
 """""""""""""
 
-Секция SAMPLE позволяет выполнить запрос приближённо. Приближённое выполнение запроса поддерживается только таблицами типа MergeTree*  и только если при создании таблицы было указано выражение, по которому производится выборка (смотрите раздел "Движок MergeTree").
+The SAMPLE clause allows for approximated query processing.
+Approximated query processing is only supported by MergeTree* type tables, and only if the sampling expression was specified during table creation (see the section "MergeTree engine").
 
-``SAMPLE`` имеет вид ``SAMPLE k``, где ``k`` - дробное число в интервале от 0 до 1, или ``SAMPLE n``, где n - достаточно большое целое число.
+SAMPLE has the format ``SAMPLE k``, where 'k' is a decimal number from 0 to 1, or ``SAMPLE n``, where 'n' is a sufficiently large integer.
 
-В первом случае, запрос будет выполнен по k-доле данных. Например, если указано ``SAMPLE 0.1``, то запрос будет выполнен по 10% данных.
-Во втором случае, запрос будет выполнен по выборке из не более n строк. Например, если указано ``SAMPLE 10000000``, то запрос будет выполнен по не более чем 10 000 000 строкам.
+In the first case, the query will be executed on 'k' percent of data. For example, ``SAMPLE 0.1`` runs the query on 10% of data.
+In the second case, the query will be executed on a sample of no more than 'n' rows. For example, ``SAMPLE 10000000`` runs the query on a maximum of 10,000,000 rows.
 
-Пример:
+Example:
 
 .. code-block:: sql
 
@@ -612,13 +608,13 @@ SELECT
     GROUP BY Title
     ORDER BY PageViews DESC LIMIT 1000
 
-В этом примере, запрос выполняется по выборке из 0.1 (10%) данных. Значения агрегатных функций не корректируются автоматически, поэтому для получения приближённого результата, значение count() вручную домножается на 10.
+In this example, the query is executed on a sample from 0.1 (10%) of data. Values of aggregate functions are not corrected automatically, so to get an approximate result, the value 'count()' is manually multiplied by 10.
 
-При использовании варианта вида ``SAMPLE 10000000``, нет информации, какая относительная доля данных была обработана, и на что следует домножить агрегатные функции, поэтому такой способ записи подходит не для всех случаев.
+When using something like ``SAMPLE 10000000``, there isn't any information about which relative percent of data was processed or what the aggregate functions should be multiplied by, so this method of writing is not always appropriate to the situation.
 
-Выборка с указанием относительного коэффициента является "согласованной": если рассмотреть все возможные данные, которые могли бы быть в таблице, то выборка (при использовании одного выражения сэмплирования, указанного при создании таблицы), с одинаковым коэффициентом, выбирает всегда одно и то же подмножество этих всевозможных данных. То есть, выборка из разных таблиц, на разных серверах, в разное время, делается одинаковым образом.
+A sample with a relative coefficient is "consistent": if we look at all possible data that could be in the table, a sample (when using a single sampling expression specified during table creation) with the same coefficient always selects the same subset of possible data. In other words, a sample from different tables on different servers at different times is made the same way.
 
-Например, выборка по идентификаторам посетителей, выберет из разных таблиц строки с одинаковым подмножеством всех возможных идентификаторов посетителей. Это позволяет использовать выборку в подзапросах в секции IN, а также при ручном сопоставлении результатов разных запросов с выборками.
+For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This allows using the sample in subqueries in the IN clause, as well as for manually correlating results of different queries with samples.
 
 Секция ARRAY JOIN
 """""""""""""""""

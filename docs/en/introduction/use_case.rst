@@ -1,14 +1,13 @@
-Использование в Яндекс.Метрике и других отделах Яндекса
+Usage in Yandex.Metrica and other Yandex services
 ------------------------------------------
 
-В Яндекс.Метрике ClickHouse используется для нескольких задач.
-Основная задача - построение отчётов в режиме онлайн по неагрегированным данным. Для решения этой задачи используется кластер из 374 серверов, хранящий более 20,3 триллионов строк в базе данных. Объём сжатых данных, без учёта дублирования и репликации, составляет около 2 ПБ. Объём несжатых данных (в формате tsv) составил бы, приблизительно, 17 ПБ.
+ClickHouse is used for multiple purposes in Yandex.Metrica. Its main task is to build reports in online mode using non-aggregated data. It uses a cluster of 374 servers, which store over 20.3 trillion rows in the database. The volume of compressed data, without counting duplication and replication, is about 2 PB. The volume of uncompressed data (in TSV format) would be approximately 17 PB.
 
-Также ClickHouse используется:
- * для хранения данных Вебвизора;
- * для обработки промежуточных данных;
- * для построения глобальных отчётов Аналитиками;
- * для выполнения запросов в целях отладки движка Метрики;
- * для анализа логов работы API и пользовательского интерфейса.
+ClickHouse is also used for:
+ * Storing WebVisor data.
+ * Processing intermediate data.
+ * Building global reports with Analytics.
+ * Running queries for debugging the Metrica engine.
+ * Analyzing logs from the API and the user interface.
 
-ClickHouse имеет более десятка инсталляций в других отделах Яндекса: в Вертикальных сервисах, Маркете, Директе, БК, Бизнес аналитике, Мобильной разработке, AdFox, Персональных сервисах и т п.
+ClickHouse has at least a dozen installations in other Yandex services: in search verticals, Market, Direct, business analytics, mobile development, AdFox, personal services, and others.

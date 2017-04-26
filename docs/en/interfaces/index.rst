@@ -1,7 +1,7 @@
-Интерфейсы
+Interfaces
 ==========
 
-Для изучения возможностей системы, загрузки данных в таблицы, ручных запросов, используйте программу clickhouse-client.
+To explore the system's capabilities, download data to tables, or make manual queries, use the clickhouse-client program.
 
 .. toctree::
     :glob:

@@ -1,4 +1,4 @@
-JDBC-драйвер
+JDBC driver
 ------------
 
-Для ClickHouse существует официальный JDBC драйвер. Смотрите `здесь <https://github.com/yandex/clickhouse-jdbc>`_ .
+There is official JDBC driver for ClickHouse. See `here <https://github.com/yandex/clickhouse-jdbc>`_ .

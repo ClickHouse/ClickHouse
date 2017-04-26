@@ -1,63 +1,62 @@
-Отличительные возможности ClickHouse
+Distinctive features of ClickHouse
 ===================================
 
-1. По-настоящему столбцовая СУБД.
+1. True column-oriented DBMS.
 ---------------------------------
-В по-настоящему столбцовой СУБД рядом со значениями не хранится никакого "мусора". Например, должны поддерживаться значения постоянной длины, чтобы не хранить рядом со значениями типа "число" их длины. Для примера, миллиард значений типа UInt8 должен действительно занимать в несжатом виде около 1GB, иначе это сильно ударит по эффективности использования CPU. Очень важно хранить данные компактно (без "мусора") в том числе в несжатом виде, так как скорость разжатия (использование CPU) зависит, в основном, от объёма несжатых данных.
+In a true column-oriented DBMS, there isn't any "garbage" stored with the values. For example, constant-length values must be supported, to avoid storing their length "number" next to the values. As an example, a billion UInt8-type values should actually consume around 1 GB uncompressed, or this will strongly affect the CPU use. It is very important to store data compactly (without any "garbage") even when uncompressed, since the speed of decompression (CPU usage) depends mainly on the volume of uncompressed data.
 
-Этот пункт пришлось выделить, так как существуют системы, которые могут хранить значения отдельных столбцов по отдельности, но не могут эффективно выполнять аналитические запросы в силу оптимизации под другой сценарий работы. Примеры: HBase, BigTable, Cassandra, HyperTable. В этих системах вы получите throughput в районе сотен тысяч строк в секунду, но не сотен миллионов строк в секунду.
+This is worth noting because there are systems that can store values of separate columns separately, but that can't effectively process analytical queries due to their optimization for other scenarios. Example are HBase, BigTable, Cassandra, and HyperTable. In these systems, you will get throughput around a hundred thousand rows per second, but not hundreds of millions of rows per second.
 
-Также стоит заметить, что ClickHouse является СУБД, а не одной базой данных. То есть, ClickHouse позволяет создавать таблицы и базы данных в runtime, загружать данные и выполнять запросы без переконфигурирования и перезапуска сервера.
+Also note that ClickHouse is a DBMS, not a single database. ClickHouse allows creating tables and databases in runtime, loading data, and running queries without reconfiguring and restarting the server.
 
-2. Сжатие данных.
+2. Data compression.
 -----------------
-Некоторые столбцовые СУБД (InfiniDB CE, MonetDB) не используют сжатие данных. Но сжатие данных действительно серьёзно увеличивает производительность.
+Some column-oriented DBMSs (InfiniDB CE and MonetDB) do not use data compression. However, data compression really improves performance.
 
-3. Хранение данных на диске.
+3. Disk storage of data.
 ----------------------------
-Многие столбцовые СУБД (SAP HANA, Google PowerDrill) могут работать только в оперативке. Но оперативки (даже на тысячах серверах) слишком мало для хранения всех хитов и визитов в Яндекс.Метрике.
+Many column-oriented DBMSs (SAP HANA, and Google PowerDrill) can only work in RAM. But even on thousands of servers, the RAM is too small for storing all the pageviews and sessions in Yandex.Metrica.
 
-4. Параллельная обработка запроса на многих процессорных ядрах.
+4. Parallel processing on multiple cores.
 ---------------------------------------------------------------
-Большие запросы естественным образом распараллеливаются.
+Large queries are parallelized in a natural way.
 
-5. Распределённая обработка запроса на многих серверах.
+5. Distributed processing on multiple servers.
 -----------------------------------------------
-Почти все перечисленные ранее столбцовые СУБД не поддерживают распределённую обработку запроса.
-В ClickHouse данные могут быть расположены на разных шардах. Каждый шард может представлять собой группу реплик, которые используются для отказоустойчивости. Запрос будет выполнен на всех шардах параллельно. Это делается прозрачно для пользователя.
+Almost none of the columnar DBMSs listed above have support for distributed processing.
+In ClickHouse, data can reside on different shards. Each shard can be a group of replicas that are used for fault tolerance. The query is processed on all the shards in parallel. This is transparent for the user.
 
-6. Поддержка SQL.
+6. SQL support.
 ---------------
-Если вы знаете, что такое стандартный SQL, то говорить о поддержке SQL всё-таки нельзя.
-Не поддерживаются NULL-ы. Все функции названы по-другому.
-Тем не менее, это - декларативный язык запросов на основе SQL и во многих случаях не отличимый от SQL.
-Поддерживаются JOIN-ы. Поддерживаются подзапросы в секциях FROM, IN, JOIN, а также скалярные подзапросы.
-Зависимые подзапросы не поддерживаются.
+If you are familiar with standard SQL, we can't really talk about SQL support.
+NULLs are not supported. All the functions have different names. However, this is a declarative query language based on SQL that can't be differentiated from SQL in many instances.
+JOINs are supported. Subqueries are supported in FROM, IN, JOIN clauses; and scalar subqueries.
+Correlated subqueries are not supported.
 
-7. Векторный движок.
+7. Vector engine.
 -----------------
-Данные не только хранятся по столбцам, но и обрабатываются по векторам - кусочкам столбцов. За счёт этого достигается высокая эффективность по CPU.
+Data is not only stored by columns, but is processed by vectors - parts of columns. This allows us to achieve high CPU performance.
 
-8. Обновление данных в реальном времени.
+8. Real-time data updates.
 -----------------------
-ClickHouse поддерживает таблицы с первичным ключом. Для того, чтобы можно было быстро выполнять запросы по диапазону первичного ключа, данные инкрементально сортируются с помощью merge дерева. За счёт этого, поддерживается постоянное добавление данных в таблицу. Блокировки при добавлении данных отсутствуют.
+ClickHouse supports primary key tables. In order to quickly perform queries on the range of the primary key, the data is sorted incrementally using the merge tree. Due to this, data can continually be added to the table. There is no locking when adding data.
 
-9. Наличие индексов.
+9. Indexes.
 -----------------
-Наличие первичного ключа позволяет, например, вынимать данные для конкретных клиентов (счётчиков Метрики), для заданного диапазона времени, с низкими задержками - менее десятков миллисекунд.
+Having a primary key allows, for example, extracting data for specific clients (Metrica counters) for a specific time range, with low latency less than several dozen milliseconds.
 
-10. Подходит для онлайн запросов.
+10. Suitable for online queries.
 ------------------
-Это позволяет использовать систему в качестве бэкенда для веб-интерфейса. Низкие задержки позволяют не откладывать выполнение запроса, а выполнять его в момент загрузки страницы интерфейса Яндекс.Метрики. То есть, в режиме онлайн.
+This lets us use the system as the back-end for a web interface. Low latency means queries can be processed without delay, while the Yandex.Metrica interface page is loading (in online mode).
 
-11. Поддержка приближённых вычислений.
+11. Support for approximated calculations.
 -----------------
 
-#. Система содержит агрегатные функции для приближённого вычисления количества различных значений, медианы и квантилей.
-#. Поддерживается возможность выполнить запрос на основе части (выборки) данных и получить приближённый результат. При этом, с диска будет считано пропорционально меньше данных.
-#. Поддерживается возможность выполнить агрегацию не для всех ключей, а для ограниченного количества первых попавшихся ключей. При выполнении некоторых условий на распределение ключей в данных, это позволяет получить достаточно точный результат с использованием меньшего количества ресурсов.
+#. The system contains aggregate functions for approximated calculation of the number of various values, medians, and quantiles.
+#. Supports running a query based on a part (sample) of data and getting an approximated result. In this case, proportionally less data is retrieved from the disk.
+#. Supports running an aggregation for a limited number of random keys, instead of for all keys. Under certain conditions for key distribution in the data, this provides a reasonably accurate result while using fewer resources.
 
-14. Репликация данных, поддержка целостности данных на репликах.
+14. Data replication and support for data integrity on replicas.
 -----------------
-Используется асинхронная multimaster репликация. После записи на любую доступную реплику, данные распространяются на все остальные реплики. Система поддерживает полную идентичность данных на разных репликах. Восстановление после сбоя осуществляется автоматически, а в сложных случаях - "по кнопке".
-Подробнее смотрите раздел "Репликация данных".
+Uses asynchronous multimaster replication. After being written to any available replica, data is distributed to all the remaining replicas. The system maintains identical data on different replicas. Data is restored automatically after a failure, or using a "button" for complex cases.
+For more information, see the section "Data replication".
