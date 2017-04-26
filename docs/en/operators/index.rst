@@ -1,100 +1,100 @@
-Операторы
+Operators
 =========
 
-Все операторы преобразуются в соответствующие функции на этапе парсинга запроса, с учётом их приоритетов и ассоциативности.
-Далее будут перечислены группы операторов в порядке их приоритета (чем выше, тем раньше оператор связывается со своими аргументами).
+All operators are transformed to the corresponding functions at the query parsing stage, in accordance with their precedence and associativity.
 
-Операторы доступа
+Access operators
 -----------------
 
-``a[N]`` - доступ к элементу массива, функция ``arrayElement(a, N)``.
+``a[N]`` - Access to an array element, arrayElement(a, N) function.
 
-``a.N`` - доступ к элементу кортежа, функция ``tupleElement(a, N)``.
+``a.N`` - Access to a tuple element, tupleElement(a, N) function.
 
-Оператор числового отрицания
+Numeric negation operator
 ----------------------------
 
-``-a`` - функция ``negate(a)``.
+``-a`` - negate(a) function
 
-Операторы умножения и деления
+Multiplication and division operators
 -----------------------------
 
-``a * b`` - функция ``multiply(a, b)``
+``a * b`` - multiply(a, b) function
 
-``a / b`` - функция ``divide(a, b)``
+``a / b`` - divide(a, b) function
 
-``a % b`` - функция ``modulo(a, b)``
+``a % b`` - modulo(a, b) function
 
-Операторы сложения и вычитания
+Addition and subtraction operators
 ------------------------------
 
-``a + b`` - функция ``plus(a, b)``
+``a + b`` - plus(a, b) function
 
-``a - b`` - функция ``minus(a, b)``
+``a - b`` - minus(a, b) function
 
-Операторы сравнения
+Comparison operators
 -------------------
 
-``a = b`` - функция ``equals(a, b)``
+``a = b`` - equals(a, b) function
 
-``a == b`` - функция ``equals(a, b)``
+``a == b`` - equals(a, b) function
 
-``a != b`` - функция ``notEquals(a, b)``
+``a != b`` - notEquals(a, b) function
 
-``a <> b`` - функция ``notEquals(a, b)``
+``a <> b`` - notEquals(a, b) function
 
-``a <= b`` - функция ``lessOrEquals(a, b)``
+``a <= b`` - lessOrEquals(a, b) function
 
-``a >= b`` - функция ``greaterOrEquals(a, b)``
+``a >= b`` - greaterOrEquals(a, b) function
 
-``a < b`` - функция ``less(a, b)``
+``a < b`` - less(a, b) function
 
-``a > b`` - функция ``greater(a, b)``
+``a > b`` - greater(a, b) function
 
-``a LIKE s`` - функция ``like(a, b)``
+``a LIKE s`` - like(a, b) function
 
-``a NOT LIKE s`` - функция ``notLike(a, b)``
+``a NOT LIKE s`` - notLike(a, b) function
 
-``a BETWEEN b AND c`` - равнозначно ``a >= b AND a <= c``
+``a BETWEEN b AND c`` - equivalent to a >= b AND a <= c
 
 
-Операторы для работы с множествами
+Operators for working with data sets
 ----------------------------------
 
-*Смотрите раздел "Операторы IN".*
+*See the section "IN operators".*
 
-``a IN ...`` - функция ``in(a, b)``
+``a IN ...`` - in(a, b) function
 
-``a NOT IN ...`` - функция ``notIn(a, b)``
+``a NOT IN ...`` - notIn(a, b) function
 
-``a GLOBAL IN ...`` - функция ``globalIn(a, b)``
+``a GLOBAL IN ...`` - globalIn(a, b) function
 
-``a GLOBAL NOT IN ...`` - функция ``globalNotIn(a, b)``
+``a GLOBAL NOT IN ...`` - globalNotIn(a, b) function
 
 
-Оператор логического отрицания
+
+Logical negation operator
 ------------------------------
 
-``NOT a`` - функция ``not(a)``
+``NOT a`` - ``not(a)`` function
 
 
-Оператор логического "И".
+Logical "AND" operator
 -------------------------
 
-``a AND b`` - функция ``and(a, b)``
+``a AND b`` - function ``and(a, b)``
 
 
-Оператор логического "ИЛИ".
+Logical "OR" operator
 ---------------------------
 
-``a OR b`` - функция ``or(a, b)``
+``a OR b`` - function ``or(a, b)``
 
-Условный оператор
+Conditional operator
 -----------------
 
-``a ? b : c`` - функция ``if(a, b, c)``
+``a ? b : c`` - function ``if(a, b, c)``
 
-Условное выражение
+Conditional expression
 ------------------
 
 .. code-block:: sql
@@ -105,34 +105,34 @@
       ELSE c
   END
 
-В случае указания x - функция transform(x, [a, ...], [b, ...], c). Иначе - multiIf(a, b, ..., c).
+If x is given - transform(x, [a, ...], [b, ...], c). Otherwise, multiIf(a, b, ..., c).
 
-Оператор склеивания строк
+String concatenation operator
 -------------------------
 
-``s1 || s2`` - функция ``concat(s1, s2)``
+``s1 || s2`` - concat(s1, s2) function
 
-Оператор создания лямбда-выражения
+Lambda creation operator
 ----------------------------------
 
-``x -> expr`` - функция ``lambda(x, expr)``
+``x -> expr`` - lambda(x, expr) function
 
-Следующие операторы не имеют приоритета, так как представляют собой скобки:
+The following operators do not have a priority, since they are brackets:
 
-Оператор создания массива
+Array creation operator
 --------------------------
 
-``[x1, ...]`` - функция ``array(x1, ...)``
+``[x1, ...]`` - array(x1, ...) function
 
-Оператор создания кортежа
+Tuple creation operator
 -------------------------
-``(x1, x2, ...)`` - функция ``tuple(x2, x2, ...)``
+``(x1, x2, ...)`` - tuple(x2, x2, ...) function
 
 
-Ассоциативность
+Associativity
 ----------------
 
-Все бинарные операторы имеют левую ассоциативность. Например, ``1 + 2 + 3`` преобразуется в ``plus(plus(1, 2), 3)``.
-Иногда это работает не так, как ожидается. Например, ``SELECT 4 > 3 > 2`` выдаст 0.
+All binary operators have left associativity. For example, ``'1 + 2 + 3'`` is transformed to ``'plus(plus(1, 2), 3)'``.
+Sometimes this doesn't work the way you expect. For example, ``'SELECT 4 > 3 > 2'`` results in ``0``.
 
-Для эффективности, реализованы функции ``and`` и ``or``, принимающие произвольное количество аргументов. Соответствующие цепочки операторов ``AND`` и ``OR``, преобразуются в один вызов этих функций.
+For efficiency, the 'and' and 'or' functions accept any number of arguments. The corresponding chains of AND and OR operators are transformed to a single call of these functions.
