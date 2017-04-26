@@ -1,4 +1,4 @@
 AggregateFunction(name, types_of_arguments...)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Промежуточное состояние агрегатной функции. Чтобы его получить, используются агрегатные функции с суффиксом -State. Подробнее смотрите в разделе "AggregatingMergeTree".
+The intermediate state of an aggregate function. To get it, use aggregate functions with the '-State' suffix. For more information, see "AggregatingMergeTree".

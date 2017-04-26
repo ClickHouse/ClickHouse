@@ -1,28 +1,28 @@
 Enum
 ----
 
-Enum8 или Enum16. Представляет собой конечное множество строковых значений, сохраняемых более эффективно, чем это делает тип данных ``String``. 
+Enum8 or Enum16. A set of enumerated string values that are stored as Int8 or Int16. 
 
-Пример:
+Example:
+
 ::
   Enum8('hello' = 1, 'world' = 2)
-- тип данных с двумя возможными значениями - 'hello' и 'world'.
+- This data type has two possible values - 'hello' and 'world'.
 
-Для каждого из значений прописывается число в диапазоне -128..127 для ``Enum8`` или в диапазоне -32768..32767 для ``Enum16``. Все строки должны быть разными, числа - тоже. Разрешена пустая строка. При указании такого типа (в определении таблицы), числа могут идти не подряд и в произвольном порядке. При этом, порядок не имеет значения.
+The numeric values must be within -128..127 for ``Enum8`` and -32768..32767 for ``Enum16``. Every member of the enum must also have different numbers. The empty string is a valid value. The numbers do not need to be sequential and can be in any order. The order does not matter.
 
-В оперативке столбец такого типа представлен так же, как ``Int8`` или ``Int16`` соответствующими числовыми значениями.
-При чтении в текстовом виде, парсит значение как строку и ищет соответствующую строку из множества значений Enum-а. Если не находит - кидается исключение.
-При записи в текстовом виде, записывает значение как соответствующую строку. Если в данных столбца есть мусор - числа не из допустимого множества, то кидается исключение. При чтении и записи в бинарном виде, оно осуществляется так же, как для типов данных Int8, Int16.
-Неявное значение по умолчанию - это значение с минимальным номером.
+In memory, the data is stored in the same way as the numeric types ``Int8`` and ``Int16``.
+When reading in text format, the string is read and the corresponding numeric value is looked up. An exception will be thrown if it is not found.
+When writing in text format, the stored number is looked up and the corresponding string is written out. An exception will be thrown if the number does not correspond to a known value.
+In binary format, the information is saved in the same way as ``Int8`` and ``Int16``.
+The implicit default value for an Enum is the value having the smallest numeric value.
 
-При ``ORDER BY``, ``GROUP BY``, ``IN``, ``DISTINCT`` и т. п., Enum-ы ведут себя так же, как соответствующие числа. Например, при ORDER BY они сортируются по числовым значениям. Функции сравнения на равенство и сравнения на отношение порядка двух Enum-ов работают с Enum-ами так же, как с числами.
+In ORDER BY, GROUP BY, IN, DISTINCT, etc. Enums behave like the numeric value. e.g. they will be sorted by the numeric value in an ``ORDER BY``. Equality and comparison operators behave like they do on the underlying numeric value.
 
-Сравнивать Enum с числом нельзя. Можно сравнивать Enum с константной строкой - при этом, для строки ищется соответствующее значение Enum-а; если не находится - кидается исключение. Поддерживается оператор IN, где слева стоит Enum, а справа - множество строк. В этом случае, строки рассматриваются как значения соответствующего Enum-а.
+Enum values cannot be compared to numbers, they must be compared to a string. If the string compared to is not a valid value for the Enum, an exception will be thrown. The ``IN`` operator is supported with the Enum on the left hand side and a set of strings on the right hand side.
 
-Большинство операций с числами и со строками не имеет смысла и не работают для Enum-ов: например, к Enum-у нельзя прибавить число.
-Для Enum-а естественным образом определяется функция ``toString``, которая возвращает его строковое значение.
+Most numeric and string operations are not defined for Enum values, e.g. adding a number to an Enum or concatenating a string to an Enum. However, the toString function can be used to convert the Enum to its string value. Enum values are also convertible to numeric types using the ``toT`` function where ``T`` is a numeric type. When ``T`` corresponds to the enum's underlying numeric type, this conversion is zero-cost.
 
-Также для Enum-а определяются функции ``toT``, где T - числовой тип. При совпадении T с типом столбца Enum-а, преобразование работает бесплатно.
-При ALTER, есть возможность бесплатно изменить тип Enum-а, если меняется только множество значений. При этом, можно добавлять новые значения; можно удалять старые значения (это безопасно только если они ни разу не использовались, так как это не проверяется). В качестве "защиты от дурака", нельзя менять числовые значения у имеющихся строк - в этом случае, кидается исключение.
+It is possible to add new members to the ``Enum`` using ``ALTER``. If the only change is to the set of values, the operation will be almost instant. It is also possible to remove members of the Enum using ALTER. Removing members is only safe if the removed value has never been used in the table. As a safeguard, changing the numeric value of a previously defined Enum member will throw an exception.
 
-При ALTER, есть возможность поменять Enum8 на Enum16 и обратно - так же, как можно поменять Int8 на Int16.
+Using ``ALTER``, it is possible to change an ``Enum8`` to an ``Enum16`` or vice versa - just like changing an ``Int8`` to ``Int16``.

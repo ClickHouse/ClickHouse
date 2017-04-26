@@ -1,14 +1,14 @@
 String
 ------
 
-Строки произвольной длины. Длина не ограничена. Значение может содержать произвольный набор байт, включая нулевые байты.
-Таким образом, тип String заменяет типы VARCHAR, BLOB, CLOB и т. п. из других СУБД.
+Strings of an arbitrary length. The length is not limited. The value can contain an arbitrary set of bytes, including null bytes.
+The String type replaces the types VARCHAR, BLOB, CLOB, and others from other DBMSs.
 
 
 Кодировки
 ~~~~~~~~~
 
-В ClickHouse нет понятия кодировок. Строки могут содержать произвольный набор байт, который хранится и выводится, как есть.
-Если вам нужно хранить тексты, рекомендуется использовать кодировку UTF-8. По крайней мере, если у вас терминал работает в кодировке UTF-8 (это рекомендуется), вы сможете читать и писать свои значения без каких-либо преобразований.
-Также, некоторые функции по работе со строками, имеют отдельные варианты, которые работают при допущении, что строка содержит набор байт, представляющий текст в кодировке UTF-8.
-Например, функция length вычисляет длину строки в байтах, а функция lengthUTF8 - длину строки в кодовых точках Unicode, при допущении, что значение в кодировке UTF-8.
+ClickHouse doesn't have the concept of encodings. Strings can contain an arbitrary set of bytes, which are stored and output as-is.
+If you need to store texts, we recommend using UTF-8 encoding. At the very least, if your terminal uses UTF-8 (as recommended), you can read and write your values without making conversions.
+Similarly, certain functions for working with strings have separate variations that work under the assumption that the string contains a set of bytes representing a UTF-8 encoded text.
+For example, the 'length' function calculates the string length in bytes, while the 'lengthUTF8' function calculates the string length in Unicode code points, assuming that the value is UTF-8 encoded.

@@ -1,4 +1,4 @@
 Expression
 ~~~~~~~~~~
 
-Используется для представления лямбда-выражений в функциях высшего порядка.
+Used for representing lambda expressions in high-order functions.
