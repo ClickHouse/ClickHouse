@@ -1,6 +1,6 @@
 merge
 -----
 
-``merge(db_name, 'tables_regexp')`` - создаёт временную таблицу типа Merge. Подробнее смотрите раздел "Движки таблиц, Merge".
+``merge(db_name, 'tables_regexp')`` creates a temporary Merge table. For more information, see the section "Table engines, Merge".
 
-Структура таблицы берётся из первой попавшейся таблицы, подходящей под регулярное выражение.
+The table structure is taken from the first table encountered that matches the regular expression.

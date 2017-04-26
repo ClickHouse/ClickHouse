@@ -1,9 +1,9 @@
-Табличные функции
+Table functions
 =================
 
-Табличные функции могут указываться в секции FROM вместо имени БД и таблицы.
-Табличные функции можно использовать только если не выставлена настройка readonly.
-Табличные функции не имеют отношения к другим функциям.
+Table functions can be specified in the FROM clause instead of the database and table names.
+Table functions can only be used if 'readonly' is not set.
+Table functions aren't related to other functions.
 
 .. toctree::
     :glob:
