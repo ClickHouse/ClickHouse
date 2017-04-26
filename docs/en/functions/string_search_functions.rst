@@ -1,51 +1,52 @@
-Функции поиска в строках
+Functions for searching strings
 ------------------------
-Во всех функциях, поиск регистрозависимый.
-Во всех функциях, подстрока для поиска или регулярное выражение, должно быть константой.
+The search is case-sensitive in all these functions.
+The search substring or regular expression must be a constant in all these functions.
 
 position(haystack, needle)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
-Поиск подстроки needle в строке haystack.
-Возвращает позицию (в байтах) найденной подстроки, начиная с 1, или 0, если подстрока не найдена.
-Есть также функция positionCaseInsensitive.
+Searches for the 'needle' substring in the 'haystack' string.
+Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
+There's also positionCaseInsensitive function.
 
 positionUTF8(haystack, needle)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Так же, как position, но позиция возвращается в кодовых точках Unicode. Работает при допущении, что строка содержит набор байт, представляющий текст в кодировке UTF-8. Если допущение не выполнено - то возвращает какой-нибудь результат (не кидает исключение).
-Есть также функция positionCaseInsensitiveUTF8.
+The same as 'position', but the position is returned in Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
+There's also positionCaseInsensitiveUTF8 function.
 
 match(haystack, pattern)
 ~~~~~~~~~~~~~~~~~~~~~~~~
-Проверка строки на соответствие регулярному выражению pattern. Регулярное выражение re2.
-Возвращает 0 (если не соответствует) или 1 (если соответствует).
+Checks whether the string matches the 'pattern' regular expression.
+The regular expression is re2.
+Returns 0 if it doesn't match, or 1 if it matches.
 
-Обратите внимание, что для экранирования в регулярном выражении, используется символ ``\`` (обратный слеш). Этот же символ используется для экранирования в строковых литералах. Поэтому, чтобы экранировать символ в регулярном выражении, необходимо написать в строковом литерале \\ (два обратных слеша).
+Note that the backslash symbol (``\``) is used for escaping in the regular expression. The same symbol is used for escaping in string literals. 
+So in order to escape the symbol in a regular expression, you must write two backslashes (``\\``) in a string literal.
 
-Регулярное выражение работает со строкой как с набором байт. Регулярное выражение не может содержать нулевые байты.
-Для шаблонов на поиск подстроки в строке, лучше используйте LIKE или position, так как они работают существенно быстрее.
+The regular expression works with the string as if it is a set of bytes.
+The regular expression can't contain null bytes.
+For patterns to search for substrings in a string, it is better to use LIKE or 'position', since they work much faster.
 
 extract(haystack, pattern)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
-Извлечение фрагмента строки по регулярному выражению. Если haystack не соответствует регулярному выражению pattern, то возвращается пустая строка. Если регулярное выражение не содержит subpattern-ов, то вынимается фрагмент, который подпадает под всё регулярное выражение. Иначе вынимается фрагмент, который подпадает под первый subpattern.
+Extracts a fragment of a string using a regular expression. If 'haystack' doesn't match the 'pattern' regex, an empty string is returned. If the regex doesn't contain subpatterns, it takes the fragment that matches the entire regex. Otherwise, it takes the fragment that matches the first subpattern.
 
 extractAll(haystack, pattern)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Извлечение всех фрагментов строки по регулярному выражению. Если haystack не соответствует регулярному выражению pattern, то возвращается пустая строка. Возвращается массив строк, состоящий из всех соответствий регулярному выражению. В остальном, поведение аналогично функции extract (по прежнему, вынимается первый subpattern, или всё выражение, если subpattern-а нет).
+Extracts all the fragments of a string using a regular expression. If 'haystack' doesn't match the 'pattern' regex, an empty string is returned. Returns an array of strings consisting of all matches to the regex. In general, the behavior is the same as the 'extract' function (it takes the first subpattern, or the entire expression if there isn't a subpattern).
 
 like(haystack, pattern), оператор haystack LIKE pattern
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Проверка строки на соответствие простому регулярному выражению.
-Регулярное выражение может содержать метасимволы ``%`` и ``_``.
+Checks whether a string matches a simple regular expression. The regular expression can contain the metasymbols ``%`` and ``_``.
 
-``%`` обозначает любое количество любых байт (в том числе, нулевое количество символов).
+``%`` indicates any quantity of any bytes (including zero characters).
 
-``_`` обозначает один любой байт.
+``_`` indicates any one byte.
 
-Для экранирования метасимволов, используется символ ``\`` (обратный слеш). Смотрите замечание об экранировании в описании функции match.
+Use the backslash (``\``) for escaping metasymbols. See the note on escaping in the description of the 'match' function.
 
-Для регулярных выражений вида ``%needle%`` действует более оптимальный код, который работает также быстро, как функция ``position``.
-Для остальных регулярных выражений, код аналогичен функции match.
+For regular expressions like%needle%, the code is more optimal and works as fast as the 'position' function. For other regular expressions, the code is the same as for the 'match' function.
 
 notLike(haystack, pattern), оператор haystack NOT LIKE pattern
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-То же, что like, но с отрицанием.
+The same thing as 'like', but negative.

@@ -1,39 +1,38 @@
-Функции округления
+Rounding functions
 ----------------
 
 floor(x[, N])
 ~~~~~~~
-Возвращает наибольшее круглое число, которое меньше или равно, чем x.
-Круглым называется число, кратное 1 / 10N или ближайшее к нему число соответствующего типа данных, если 1 / 10N не представимо точно.
-N - целочисленная константа, не обязательный параметр. По умолчанию - ноль, что означает - округлять до целого числа.
-N может быть отрицательным.
+Returns a rounder number that is less than or equal to 'x'.
+A round number is a multiple of 1 / 10N, or the nearest number of the appropriate data type ``if 1 / 10N`` isn't exact.
+'N' is an integer constant, optional parameter. By default it is zero, which means to round to an integer.
+'N' may be negative.
 
-Примеры: ``floor(123.45, 1) = 123.4, floor(123.45, -1) = 120.``
+Examples: ``floor(123.45, 1) = 123.4, floor(123.45, -1) = 120``.
 
-``x`` - любой числовой тип. Результат - число того же типа.
-Для целочисленных аргументов имеет смысл округление с отрицательным значением N (для неотрицательных N, функция ничего не делает).
-В случае переполнения при округлении (например, floor(-128, -1)), возвращается implementation specific результат.
+'x' is any numeric type. The result is a number of the same type.
+For integer arguments, it makes sense to round with a negative 'N' value (for non-negative 'N', the function doesn't do anything).
+If rounding causes overflow (for example, ``floor(-128, -1))``, an implementation-specific result is returned.
 
 ceil(x[, N])
 ~~~~~~
-Возвращает наименьшее круглое число, которое больше или равно, чем x.
-В остальном, аналогично функции floor, см. выше.
+Returns the smallest round number that is greater than or equal to 'x'. In every other way, it is the same as the 'floor' function (see above)..
 
 round(x[, N])
 ~~~~~~~
-Возвращает ближайшее к num круглое число, которое может быть меньше или больше или равно x.
-Если x находится посередине от ближайших круглых чисел, то возвращается какое-либо одно из них (implementation specific).
-Число -0. может считаться или не считаться круглым (implementation specific).
-В остальном, аналогично функциям floor и ceil, см. выше.
+Returns the round number nearest to 'num', which may be less than, greater than, or equal to 'x'.
+If 'x' is exactly in the middle between the nearest round numbers, one of them is returned (implementation-specific).
+The number '-0.' may or may not be considered round (implementation-specific).
+In every other way, this function is the same as 'floor' and 'ceil' described above.
 
 roundToExp2(num)
 ~~~~~~~~
-Принимает число. Если число меньше единицы - возвращает 0. Иначе округляет число вниз до ближайшей (целой неотрицательной) степени двух.
+Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to the nearest (whole non-negative) degree of two.
 
 roundDuration(num)
 ~~~~~~~~
-Принимает число. Если число меньше единицы - возвращает 0. Иначе округляет число вниз до чисел из набора: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. Эта функция специфична для Яндекс.Метрики и предназначена для реализации отчёта по длительности визита.
+Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to numbers from the set: 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000. This function is specific to Yandex.Metrica and used for implementing the report on session length.
 
 roundAge(num)
 ~~~~~~~
-Принимает число. Если число меньше 18 - возвращает 0. Иначе округляет число вниз до чисел из набора: 18, 25, 35, 45. Эта функция специфична для Яндекс.Метрики и предназначена для реализации отчёта по возрасту посетителей.
+Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to numbers from the set: 18, 25, 35, 45. This function is specific to Yandex.Metrica and used for implementing the report on user age.

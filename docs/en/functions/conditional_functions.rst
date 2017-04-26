@@ -1,7 +1,7 @@
-Условные функции
+Conditional functions
 -------------
 
 if(cond, then, else), оператор cond ? then : else
 ~~~~~~~~~~~~~~~~~
-Возвращает then, если cond != 0 или else, если cond = 0.
-cond должно иметь тип UInt8, а then и else должны иметь тип, для которого есть наименьший общий тип.
+Returns 'then' if 'cond != 0', or 'else' if 'cond = 0'.
+'cond' must be UInt 8, and 'then' and 'else' must be a type that has the smallest common type.

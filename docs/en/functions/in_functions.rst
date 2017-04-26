@@ -1,18 +1,18 @@
-Функции для реализации оператора IN.
+Functions for implementing the IN operator
 ---------------
 
 in, notIn, globalIn, globalNotIn
 ~~~~~~~~~~~~~
-Смотрите раздел "Операторы IN".
+See the section "IN operators".
 
 tuple(x, y, ...), оператор (x, y, ...)
 ~~~~~~~~~~~~~
-Функция, позволяющая сгруппировать несколько столбцов.
-Для столбцов, имеющих типы T1, T2, ... возвращает кортеж типа Tuple(T1, T2, ...), содержащий эти столбцы. Выполнение функции ничего не стоит.
-Кортежи обычно используются как промежуточное значение в качестве аргумента операторов IN, или для создания списка формальных параметров лямбда-функций. Кортежи не могут быть записаны в таблицу.
+A function that allows grouping multiple columns.
+For columns with the types T1, T2, ..., it returns a Tuple(T1, T2, ...) type tuple containing these columns. There is no cost to execute the function.
+Tuples are normally used as intermediate values for an argument of IN operators, or for creating a list of formal parameters of lambda functions. Tuples can't be written to a table.
 
 tupleElement(tuple, n), оператор x.N
 ~~~~~~~~~~~
-Функция, позволяющая достать столбец из кортежа.
-N - индекс столбца начиная с 1. N должно быть константой. N должно быть целым строго положительным числом не большим размера кортежа.
-Выполнение функции ничего не стоит.
+A function that allows getting columns from a tuple.
+'N' is the column index, starting from 1. 'N' must be a constant. 'N' must be a strict postive integer no greater than the size of the tuple.
+There is no cost to execute the function.

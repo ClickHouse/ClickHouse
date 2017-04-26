@@ -1,119 +1,119 @@
-Функции для работы со словарями Яндекс.Метрики
+Functions for working with Yandex.Metrica dictionaries
 ----------------
-Чтобы указанные ниже функции работали, в конфиге сервера должны быть указаны пути и адреса для получения всех словарей Яндекс.Метрики. Словари загружаются при первом вызове любой из этих функций. Если справочники не удаётся загрузить - будет выкинуто исключение.
+In order for the functions below to work, the server config must specify the paths and addresses for getting all the Yandex.Metrica dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can't be loaded, an exception is thrown.
 
-О том, как создать справочники, смотрите в разделе "Словари".
+For information about creating reference lists, see the section "Dictionaries".
 
-Множественные геобазы
+Multiple geobases
 ~~~~~~~~~
-ClickHouse поддерживает работу одновременно с несколькими альтернативными геобазами (иерархиями регионов), для того чтобы можно было поддержать разные точки зрения о принадлежности регионов странам.
+ClickHouse supports working with multiple alternative geobases (regional hierarchies) simultaneously, in order to support various perspectives on which countries certain regions belong to.
 
-В конфиге clickhouse-server указывается файл с иерархией регионов:
+The 'clickhouse-server' config specifies the file with the regional hierarchy:
 ``<path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>``
 
-Кроме указанного файла, рядом ищутся файлы, к имени которых (до расширения) добавлен символ _ и какой угодно суффикс.
-Например, также найдётся файл ``/opt/geo/regions_hierarchy_ua.txt``, если такой есть.
+Besides this file, it also searches for files nearby that have the _ symbol and any suffix appended to the name (before the file extension).
+For example, it will also find the file ``/opt/geo/regions_hierarchy_ua.txt``, if present.
 
-``ua`` называется ключом словаря. Для словаря без суффикса, ключ является пустой строкой.
+``ua`` is called the dictionary key. For a dictionary without a suffix, the key is an empty string.
 
-Все словари перезагружаются в рантайме (раз в количество секунд, заданное в конфигурационном параметре builtin_dictionaries_reload_interval, по умолчанию - раз в час), но перечень доступных словарей определяется один раз, при старте сервера.
+All the dictionaries are re-loaded in runtime (once every certain number of seconds, as defined in the builtin_dictionaries_reload_interval config parameter, or once an hour by default). However, the list of available dictionaries is defined one time, when the server starts.
 
-Во все функции по работе с регионами, в конце добавлен один необязательный аргумент - ключ словаря. Далее он обозначен как geobase.
-Пример:
+All functions for working with regions have an optional argument at the end - the dictionary key. It is indicated as the geobase.
+Example:
 ::
-  regionToCountry(RegionID) - использует словарь по умолчанию: /opt/geo/regions_hierarchy.txt;
-  regionToCountry(RegionID, '') - использует словарь по умолчанию: /opt/geo/regions_hierarchy.txt;
-  regionToCountry(RegionID, 'ua') - использует словарь для ключа ua: /opt/geo/regions_hierarchy_ua.txt;
+  regionToCountry(RegionID) - Uses the default dictionary: /opt/geo/regions_hierarchy.txt
+  regionToCountry(RegionID, '') - Uses the default dictionary: /opt/geo/regions_hierarchy.txt
+  regionToCountry(RegionID, 'ua') - Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
 
 regionToCity(id[, geobase])
 ~~~~~~~~
-Принимает число типа UInt32 - идентификатор региона из геобазы Яндекса. Если регион является городом или входит в некоторый город, то возвращает идентификатор региона - соответствующего города. Иначе возвращает 0.
+Accepts a UInt32 number - the region ID from the Yandex geobase. If this region is a city or part of a city, it returns the region ID for the appropriate city. Otherwise, returns 0.
 
 regionToArea(id[, geobase])
 ~~~~~~~~
-Переводит регион в область (тип в геобазе - 5). В остальном, аналогично функции regionToCity.
+Converts a region to an area (type 5 in the geobase). In every other way, this function is the same as 'regionToCity'.
 
 .. code-block:: sql
 
-  SELECT DISTINCT regionToName(regionToArea(toUInt32(number), 'ua'))
+  SELECT DISTINCT regionToName(regionToArea(toUInt32(number), 'ua'), 'en')
   FROM system.numbers
   LIMIT 15
-
-  ┌─regionToName(regionToArea(toUInt32(number), \'ua\'))─┐
-  │                                                      │
-  │ Москва и Московская область                          │
-  │ Санкт-Петербург и Ленинградская область              │
-  │ Белгородская область                                 │
-  │ Ивановская область                                   │
-  │ Калужская область                                    │
-  │ Костромская область                                  │
-  │ Курская область                                      │
-  │ Липецкая область                                     │
-  │ Орловская область                                    │
-  │ Рязанская область                                    │
-  │ Смоленская область                                   │
-  │ Тамбовская область                                   │
-  │ Тверская область                                     │
-  │ Тульская область                                     │
-  └──────────────────────────────────────────────────────┘
+  
+  ┌─regionToName(regionToArea(toUInt32(number), \'ua\'), \'en\')─┐
+  │                                                              │
+  │ Moscow and Moscow region                                     │
+  │ Saint-Petersburg and Leningradskaya oblast                   │
+  │ Belgorod District                                            │
+  │ Ivanovo district                                             │
+  │ Kaluga District                                              │
+  │ Kostroma District                                            │
+  │ Kursk District                                               │
+  │ Lipetsk District                                             │
+  │ Orel District                                                │
+  │ Ryazhan District                                             │
+  │ Smolensk District                                            │
+  │ Tambov District                                              │
+  │ Tver District                                                │
+  │ Tula District                                                │
+  └──────────────────────────────────────────────────────────────┘
 
 regionToDistrict(id[, geobase])
 ~~~~~~~~~
-Переводит регион в федеральный округ (тип в геобазе - 4). В остальном, аналогично функции regionToCity.
+Converts a region to a federal district (type 4 in the geobase). In every other way, this function is the same as 'regionToCity'.
 
 .. code-block:: sql
 
-  SELECT DISTINCT regionToName(regionToDistrict(toUInt32(number), 'ua'))
+  SELECT DISTINCT regionToName(regionToDistrict(toUInt32(number), 'ua'), 'en')
   FROM system.numbers
   LIMIT 15
-
-  ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'))─┐
-  │                                                          │
-  │ Центральный федеральный округ                            │
-  │ Северо-Западный федеральный округ                        │
-  │ Южный федеральный округ                                  │
-  │ Северо-Кавказский федеральный округ                      │
-  │ Приволжский федеральный округ                            │
-  │ Уральский федеральный округ                              │
-  │ Сибирский федеральный округ                              │
-  │ Дальневосточный федеральный округ                        │
-  │ Шотландия                                                │
-  │ Фарерские острова                                        │
-  │ Фламандский регион                                       │
-  │ Брюссельский столичный регион                            │
-  │ Валлония                                                 │
-  │ Федерация Боснии и Герцеговины                           │
-  └──────────────────────────────────────────────────────────┘
+  
+  ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'), \'en\')─┐
+  │                                                                  │
+  │ Central                                                          │
+  │ Northwest                                                        │
+  │ South                                                            │
+  │ North Kavkaz                                                     │
+  │ Volga Region                                                     │
+  │ Ural                                                             │
+  │ Siberian                                                         │
+  │ Far East                                                         │
+  │ Scotland                                                         │
+  │ Faroe Islands                                                    │
+  │ Flemish Region                                                   │
+  │ Brussels-Capital Region                                          │
+  │ Wallonia                                                         │
+  │ Federation of Bosnia and Herzegovina                             │
+  └──────────────────────────────────────────────────────────────────┘
 
 regionToCountry(id[, geobase])
 ~~~~~~~~~
-Переводит регион в страну. В остальном, аналогично функции regionToCity.
-Пример: ``regionToCountry(toUInt32(213)) = 225`` - преобразовали Москву (213) в Россию (225).
+Converts a region to a country. In every other way, this function is the same as 'regionToCity'.
+Example: ``regionToCountry(toUInt32(213)) = 225`` converts ``Moscow (213)`` to ``Russia (225)``.
 
 regionToContinent(id[, geobase])
 ~~~~~~~~~
-Переводит регион в континент. В остальном, аналогично функции regionToCity.
-Пример: ``regionToContinent(toUInt32(213)) = 10001`` - преобразовали Москву (213) в Евразию (10001).
+Converts a region to a continent. In every other way, this function is the same as 'regionToCity'.
+Example: ``regionToContinent(toUInt32(213)) = 10001`` converts Moscow (213) to Eurasia (10001).
 
 regionToPopulation(id[, geobase])
 ~~~~~~~~
-Получает население для региона.
-Население может быть прописано в файлах с геобазой. Смотрите в разделе "Встроенные словари".
-Если для региона не прописано население, возвращается 0.
-В геобазе Яндекса, население может быть прописано для дочерних регионов, но не прописано для родительских.
+Gets the population for a region.
+The population can be recorded in files with the geobase. See the section "External dictionaries".
+If the population is not recorded for the region, it returns 0.
+In the Yandex geobase, the population might be recorded for child regions, but not for parent regions..
 
 regionIn(lhs, rhs[, geobase])
 ~~~~~~~~~~
-Проверяет принадлежность региона lhs региону rhs. Возвращает число типа UInt8, равное 1, если принадлежит и 0, если не принадлежит.
-Отношение рефлексивное - любой регион принадлежит также самому себе.
+Checks whether a 'lhs' region belongs to a 'rhs' region. Returns a UInt8 number equal to 1 if it belongs, or 0 if it doesn't belong.
+The relationship is reflexive - any region also belongs to itself.
 
 regionHierarchy(id[, geobase])
 ~~~~~~~~~
-Принимает число типа UInt32 - идентификатор региона из геобазы Яндекса. Возвращает массив идентификаторов регионов, состоящий из переданного региона и всех родителей по цепочке.
-Пример: ``regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]``.
+ПAccepts a UInt32 number - the region ID from the Yandex geobase. Returns an array of region IDs consisting of the passed region and all parents along the chain.
+Example:  ``regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]``.
 
 regionToName(id[, lang])
 ~~~~~~~~
-Принимает число типа UInt32 - идентификатор региона из геобазы Яндекса. Вторым аргументом может быть передана строка - название языка. Поддерживаются языки ru, en, ua, uk, by, kz, tr. Если второй аргумент отсутствует - используется язык ru. Если язык не поддерживается - кидается исключение. Возвращает строку - название региона на соответствующем языке. Если региона с указанным идентификатором не существует - возвращается пустая строка.
+Accepts a UInt32 number - the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language 'ru' is used. If the language is not supported, an exception is thrown. Returns a string - the name of the region in the corresponding language. If the region with the specified ID doesn't exist, an empty string is returned.
 
-``ua`` и ``uk`` обозначают одно и то же - украинский язык.
+``ua`` and ``uk`` mean the same thing - Ukrainian.

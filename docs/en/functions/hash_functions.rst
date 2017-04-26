@@ -1,51 +1,50 @@
-Функции хэширования
+Hash functions
 -------------
-Функции хэширования могут использоваться для детерминированного псевдослучайного разбрасывания элементов.
+Hash functions can be used for deterministic pseudo-random shuffling of elements.
 
 
 halfMD5
 ~~~~~~
-Вычисляет MD5 от строки. Затем берёт первые 8 байт от хэша и интерпретирует их как UInt64 в big endian.
-Принимает аргумент типа String. Возвращает UInt64.
-Функция работает достаточно медленно (5 миллионов коротких строк в секунду на одном процессорном ядре).
-Если вам не нужен конкретно MD5, то используйте вместо этого функцию sipHash64.
+Calculates the MD5 from a string. Then it takes the first 8 bytes of the hash and interprets them as UInt64 in big endian.
+Accepts a String-type argument. Returns UInt64.
+This function works fairly slowly (5 million short strings per second per processor core).
+If you don't need MD5 in particular, use the 'sipHash64' function instead.
 
 MD5
 ~~~
-Вычисляет MD5 от строки и возвращает полученный набор байт в виде FixedString(16).
-Если вам не нужен конкретно MD5, а нужен неплохой криптографический 128-битный хэш, то используйте вместо этого функцию sipHash128.
-Если вы хотите получить такой же результат, как выдаёт утилита md5sum, напишите lower(hex(MD5(s))).
+Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
+If you don't need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the 'sipHash128' function instead.
+If you need the same result as gives 'md5sum' utility, write ``lower(hex(MD5(s)))``.
 
 sipHash64
 ~~~~~~~
-Вычисляет SipHash от строки.
-Принимает аргумент типа String. Возвращает UInt64.
-SipHash - криптографическая хэш-функция. Работает быстрее чем MD5 не менее чем в 3 раза.
-Подробнее смотрите по ссылке: https://131002.net/siphash/
+Calculates SipHash from a string.
+Accepts a String-type argument. Returns UInt64.
+SipHash is a cryptographic hash function. It works at least three times faster than MD5. For more information, see https://131002.net/siphash/
 
 sipHash128
 ~~~~~
-Вычисляет SipHash от строки.
-Принимает аргумент типа String. Возвращает FixedString(16).
-Отличается от sipHash64 тем, что финальный xor-folding состояния делается только до 128 бит.
+Calculates SipHash from a string.
+Accepts a String-type argument. Returns FixedString(16).
+Differs from sipHash64 in that the final xor-folding state is only done up to 128 bits.
 
 cityHash64
 ~~~~~
-Вычисляет CityHash64 от строки или похожую хэш-функцию для произвольного количества аргументов произвольного типа.
-Если аргумент имеет тип String, то используется CityHash. Это быстрая некриптографическая хэш-функция неплохого качества для строк.
-Если аргумент имеет другой тип, то используется implementation specific быстрая некриптографическая хэш-функция неплохого качества.
-Если передано несколько аргументов, то функция вычисляется по тем же правилам, с помощью комбинации по цепочке с использованием комбинатора из CityHash.
-Например, так вы можете вычислить чексумму всей таблицы с точностью до порядка строк: ``SELECT sum(cityHash64(*)) FROM table``.
+Calculates CityHash64 from a string or a similar hash function for any number of any type of arguments.
+For String-type arguments, CityHash is used. This is a fast non-cryptographic hash function for strings with decent quality.
+For other types of arguments, a decent implementation-specific fast non-cryptographic hash function is used.
+If multiple arguments are passed, the function is calculated using the same rules and chain combinations using the CityHash combinator.
+For example, you can compute the checksum of an entire table with accuracy up to the row order: ``SELECT sum(cityHash64(*)) FROM table``.
 
 intHash32
 ~~~~~
-Вычисляет 32-битный хэш-код от целого числа любого типа.
-Это сравнительно быстрая некриптографическая хэш-функция среднего качества для чисел.
+Calculates a 32-bit hash code from any type of integer.
+This is a relatively fast non-cryptographic hash function of average quality for numbers.
 
 intHash64
 ~~~~~
-Вычисляет 64-битный хэш-код от целого числа любого типа.
-Работает быстрее, чем intHash32. Качество среднее.
+Calculates a 64-bit hash code from any type of integer.
+It works faster than intHash32. Average quality.
 
 SHA1
 ~~~~
@@ -55,14 +54,16 @@ SHA224
 
 SHA256
 ~~~~~
-Вычисляет SHA-1, SHA-224, SHA-256 от строки и возвращает полученный набор байт в виде FixedString(20), FixedString(28), FixedString(32).
-Функция работает достаточно медленно (SHA-1 - примерно 5 миллионов коротких строк в секунду на одном процессорном ядре, SHA-224 и SHA-256 - примерно 2.2 миллионов).
-Рекомендуется использовать эти функции лишь в тех случаях, когда вам нужна конкретная хэш-функция и вы не можете её выбрать.
-Даже в этих случаях, рекомендуется применять функцию оффлайн - заранее вычисляя значения при вставке в таблицу, вместо того, чтобы применять её при SELECT-ах.
+Calculates SHA-1, SHA-224, or SHA-256 from a string and returns the resulting set of bytes as FixedString(20), FixedString(28), or FixedString(32).
+The function works fairly slowly (SHA-1 processes about 5 million short strings per second per processor core, while SHA-224 and SHA-256 process about 2.2 million).
+We recommend using this function only in cases when you need a specific hash function and you can't select it.
+Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in SELECTS.
 
 URLHash(url[, N])
 ~~~~~~~~
-Быстрая некриптографическая хэш-функция неплохого качества для строки, полученной из URL путём некоторой нормализации.
-``URLHash(s)`` - вычислить хэш от строки без одного завершающего символа ``/``, ``?`` или ``#`` на конце, если такой там есть.
-``URLHash(s, N)`` - вычислить хэш от строки до N-го уровня в иерархии URL, без одного завершающего символа ``/``, ``?`` или ``#`` на конце, если такой там есть.
-Уровни аналогичные URLHierarchy. Функция специфична для Яндекс.Метрики.
+A fast, decent-quality non-cryptographic hash function for a string obtained from a URL using some type of normalization.
+
+``URLHash(s)`` - Calculates a hash from a string without one of the trailing symbols ``/``,``?`` or ``#`` at the end, if present.
+
+``URL Hash(s, N)`` - Calculates a hash from a string up to the N level in the URL hierarchy, without one of the trailing symbols ``/``,``?`` or ``#`` at the end, if present.
+Levels are the same as in URLHierarchy. This function is specific to Yandex.Metrica.

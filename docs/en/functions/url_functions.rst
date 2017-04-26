@@ -1,78 +1,78 @@
-Функции для работы с URL
+Functions for working with URLs
 ------------------------
 
-Все функции работают не по RFC - то есть, максимально упрощены ради производительности.
+All these functions don't follow the RFC. They are maximally simplified for improved performance.
 
 Функции, извлекающие часть URL-а.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Если в URL-е нет ничего похожего, то возвращается пустая строка.
+If there isn't anything similar in a URL, an empty string is returned.
 
 protocol
 """"""""
-Возвращает протокол. Примеры: http, ftp, mailto, magnet...
+- Selects the protocol. Examples: http, ftp, mailto, magnet...
 
 domain
 """""""
-Возвращает домен.
+- Selects the domain.
 
 domainWithoutWWW
 """"""""""""
-Возвращает домен, удалив не более одного 'www.' с начала, если есть.
+- Selects the domain and removes no more than one 'www.' from the beginning of it, if present.
 
 topLevelDomain
 """""""""""
-Возвращает домен верхнего уровня. Пример: .ru.
+- Selects the top-level domain. Example: .ru.
 
 firstSignificantSubdomain
 """"""""""""""
-Возвращает "первый существенный поддомен". Это понятие является нестандартным и специфично для Яндекс.Метрики. Первый существенный поддомен - это домен второго уровня, если он не равен одному из com, net, org, co, или домен третьего уровня, иначе. Например, firstSignificantSubdomain('https://news.yandex.ru/') = 'yandex', firstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex'. Список "несущественных" доменов второго уровня и другие детали реализации могут изменяться в будущем.
+- Selects the "first significant subdomain". This is a non-standard concept specific to Yandex.Metrica. The first significant subdomain is a second-level domain if it is 'com', 'net', 'org', or 'co'. Otherwise, it is a third-level domain. For example, firstSignificantSubdomain('https://news.yandex.ru/') = 'yandex', firstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex'. The list of "insignificant" second-level domains and other implementation details may change in the future.
 
 cutToFirstSignificantSubdomain
 """"""""""""""""
-Возвращает часть домена, включающую поддомены верхнего уровня до "первого существенного поддомена" (см. выше). 
+- Selects the part of the domain that includes top-level subdomains up to the "first significant subdomain" (see the explanation above). 
 
-Например, ``cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'``.
+For example, ``cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'``.
 
 path
 """"
-Возвращает путь. Пример: ``/top/news.html`` Путь не включает в себя query string.
+- Selects the path. Example: /top/news.html The path does not include the query-string.
 
 pathFull
 """""""
-То же самое, но включая query string и fragment. Пример: /top/news.html?page=2#comments
+- The same as above, but including query-string and fragment. Example: /top/news.html?page=2#comments
 
 queryString
 """""""""
-Возвращает query-string. Пример: page=1&lr=213. query-string не включает в себя начальный знак вопроса, а также # и всё, что после #.
+- Selects the query-string. Example: page=1&lr=213. query-string does not include the first question mark, or # and everything that comes after #.
 
 fragment
 """"""
-Возвращает fragment identifier. fragment не включает в себя начальный символ решётки.
+- Selects the fragment identifier. fragment does not include the first number sign (#).
 
 queryStringAndFragment
 """""""""
-Возвращает query string и fragment identifier. Пример: страница=1#29390.
+- Selects the query-string and fragment identifier. Example: page=1#29390.
 
 extractURLParameter(URL, name)
 """""""""
-Возвращает значение параметра name в URL, если такой есть; или пустую строку, иначе; если параметров с таким именем много - вернуть первый попавшийся. Функция работает при допущении, что имя параметра закодировано в URL в точности таким же образом, что и в переданном аргументе.
+- Selects the value of the 'name' parameter in the URL, if present. Otherwise, selects an empty string. If there are many parameters with this name, it returns the first occurrence. This function works under the assumption that the parameter name is encoded in the URL in exactly the same way as in the argument passed.
 
 extractURLParameters(URL)
 """"""""""
-Возвращает массив строк вида name=value, соответствующих параметрам URL. Значения никак не декодируются.
+- Gets an array of name=value strings corresponding to the URL parameters. The values are not decoded in any way.
 
 extractURLParameterNames(URL)
 """"""""
-Возвращает массив строк вида name, соответствующих именам параметров URL. Значения никак не декодируются.
+- Gets an array of name=value strings corresponding to the names of URL parameters. The values are not decoded in any way.
 
 URLHierarchy(URL)
 """""""""
-Возвращает массив, содержащий URL, обрезанный с конца по символам /, ? в пути и query-string. Подряд идущие символы-разделители считаются за один. Резка производится в позиции после всех подряд идущих символов-разделителей. Пример:
+- Gets an array containing the URL trimmed to the ``/``, ``?`` characters in the path and query-string. Consecutive separator characters are counted as one. The cut is made in the position after all the consecutive separator characters. Example:
 
 URLPathHierarchy(URL)
 """"""""
-То же самое, но без протокола и хоста в результате. Элемент / (корень) не включается. Пример:
-Функция используется для реализации древовидных отчётов по URL в Яндекс.Метрике.
+- The same thing, but without the protocol and host in the result. The / element (root) is not included. Example:
+This function is used for implementing tree-view reports by URL in Yandex.Metrica.
 ::
   URLPathHierarchy('https://example.com/browse/CONV-6788') =
   [
@@ -82,8 +82,8 @@ URLPathHierarchy(URL)
 
 decodeURLComponent(URL)
 """""""""""
-Возвращает декодированный URL.
-Пример:
+Returns a URL-decoded URL.
+Example:
 
 .. code-block:: sql
 
@@ -93,26 +93,26 @@ decodeURLComponent(URL)
   │ http://127.0.0.1:8123/?query=SELECT 1; │
   └────────────────────────────────────────┘
   
-Функции, удаляющие часть из URL-а.
+Functions that remove part of a URL.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Если в URL-е нет ничего похожего, то URL остаётся без изменений.
+If the URL doesn't have anything similar, the URL remains unchanged.
 
 cutWWW
 """""
-Удаляет не более одного 'www.' с начала домена URL-а, если есть.
+Removes no more than one 'www.' from the beginning of the URL's domain, if present.
 
 cutQueryString
 """"""
-Удаляет query string. Знак вопроса тоже удаляется.
+Removes the query-string. The question mark is also removed..
 
 cutFragment
 """"""""
-Удаляет fragment identifier. Символ решётки тоже удаляется.
+Removes the fragment identifier. The number sign is also removed.
 
 cutQueryStringAndFragment
 """"""""""
-Удаляет query string и fragment identifier. Знак вопроса и символ решётки тоже удаляются.
+Removes the query-string and fragment identifier. The question mark and number sign are also removed.
 
 cutURLParameter(URL, name)
 """"""""""
-Удаляет параметр URL с именем name, если такой есть. Функция работает при допущении, что имя параметра закодировано в URL в точности таким же образом, что и в переданном аргументе.
+Removes the URL parameter named 'name', if present. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.

@@ -1,6 +1,6 @@
-Функции для работы с внешними словарями
+Functions for working with external dictionaries
 -------
-Подробнее смотрите в разделе "Внешние словари".
+For more information, see the section "External dictionaries".
 
 dictGetUInt8, dictGetUInt16, dictGetUInt32, dictGetUInt64
 ~~~~~~~~~
@@ -17,27 +17,27 @@ dictGetDate, dictGetDateTime
 dictGetString
 ~~~~~~
 ``dictGetT('dict_name', 'attr_name', id)``
-- получить из словаря dict_name значение атрибута attr_name по ключу id.
-``dict_name`` и ``attr_name`` - константные строки.
-``id`` должен иметь тип UInt64.
-Если ключа ``id`` нет в словаре - вернуть значение по умолчанию, заданное в описании словаря.
+- Gets the value of the 'attr_name' attribute from the 'dict_name' dictionary by the 'id' key.
+'dict_name' and 'attr_name' are constant strings.
+'id' must be UInt64.
+If the 'id' key is not in the dictionary, it returns the default value set in the dictionary definition.
 
 dictGetTOrDefault
 ~~~~~~~~
 ``dictGetT('dict_name', 'attr_name', id, default)``
-Аналогично функциям dictGetT, но значение по умолчанию берётся из последнего аргумента функции.
+Similar to the functions dictGetT, but the default value is taken from the last argument of the function.
 
 dictIsIn
 ~~~~~~
 ``dictIsIn('dict_name', child_id, ancestor_id)``
-- для иерархического словаря dict_name - узнать, находится ли ключ child_id внутри ancestor_id (или совпадает с ancestor_id). Возвращает UInt8.
+- For the 'dict_name' hierarchical dictionary, finds out whether the 'child_id' key is located inside 'ancestor_id' (or matches 'ancestor_id'). Returns UInt8.
 
 dictGetHierarchy
 ~~~~~~~~
 ``dictGetHierarchy('dict_name', id)``
-- для иерархического словаря dict_name - вернуть массив ключей словаря, начиная с id и продолжая цепочкой родительских элементов. Возвращает Array(UInt64).
+- For the 'dict_name' hierarchical dictionary, returns an array of dictionary keys starting from 'id' and continuing along the chain of parent elements. Returns Array(UInt64).
 
 dictHas
 ~~~~~~
 ``dictHas('dict_name', id)``
-- проверить наличие ключа в словаре. Возвращает значение типа UInt8, равное 0, если ключа нет и 1, если ключ есть.
+- check the presence of a key in the dictionary. Returns a value of type UInt8, equal to 0, if there is no key and 1 if there is a key.

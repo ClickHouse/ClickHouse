@@ -1,18 +1,19 @@
-Логические функции
+Logical functions
 ------------------
 
-Логические функции принимают любые числовые типы, а возвращают число типа UInt8, равное 0 или 1.
+Logical functions accept any numeric types, but return a UInt8 number equal to 0 or 1.
 
-Ноль в качестве аргумента считается "ложью", а любое ненулевое значение - "истиной".
+Zero as an argument is considered "false," while any non-zero value is considered "true"..
 
-and, оператор AND
+and, AND operator
 ~~~~~~~~~~~~~~~~~
 
-or, оператор OR
+or, OR operator
 ~~~~~~~~~~~~~~~
 
-not, оператор NOT
-~~~~~~~~~~~~~~~~~
+not, NOT operator
+~~~~~~~~~~~~~~~
 
 xor
-~~~
+~~~~~~~~~~~~~~~
+
