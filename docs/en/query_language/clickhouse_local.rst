@@ -1,4 +1,4 @@
-Программа clickhouse-local
+clickhouse-local
 --------------------------
 
-Программа ``clickhouse-local`` позволяет выполнять быструю обработку локальных файлов, хранящих таблицы, не прибегая к развертыванию и настройке clickhouse-server ...
+Application ``clickhouse-local`` can fast processing of local files that store tables without resorting to deployment and configuration clickhouse-server ...
