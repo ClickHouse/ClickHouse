@@ -2,7 +2,7 @@
 
 #include <string>
 #include <DataStreams/IBlockOutputStream.h>
-
+#include <Core/Block.h>
 
 namespace DB
 {
