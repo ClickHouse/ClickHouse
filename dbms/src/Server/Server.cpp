@@ -550,12 +550,13 @@ int Server::main(const std::vector<std::string> & args)
                 LOG_INFO(log, "Listening interserver: " + interserver_address.toString());
             }
 
-            } catch (const std::exception & e) {
+            } catch (const Poco::Net::NetException & e) {
                 if (try_listen)
                     LOG_ERROR(log, "Listen [" << listen_host << "] :" << e.what());
                 else
                     throw;
             }
+
         }
 
         if (servers.empty())
