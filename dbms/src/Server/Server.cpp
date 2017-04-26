@@ -443,10 +443,12 @@ int Server::main(const std::vector<std::string> & args)
             listen_hosts.emplace_back(config().getString(key));
         }
 
+        bool try_listen = false;
         if (listen_hosts.empty())
         {
             listen_hosts.emplace_back("::1");
             listen_hosts.emplace_back("127.0.0.1");
+            try_listen = true;
         }
 
         auto make_socket_address = [&](const std::string & host, std::uint16_t port) {
@@ -479,7 +481,7 @@ int Server::main(const std::vector<std::string> & args)
         for (const auto & listen_host : listen_hosts)
         {
             /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
-
+            try {
             /// HTTP
             if (config().has("http_port"))
             {
@@ -547,7 +549,17 @@ int Server::main(const std::vector<std::string> & args)
 
                 LOG_INFO(log, "Listening interserver: " + interserver_address.toString());
             }
+
+            } catch (const std::exception & e) {
+                if (try_listen)
+                    LOG_ERROR(log, "Listen [" << listen_host << "] :" << e.what());
+                else
+                    throw;
+            }
         }
+
+        if (servers.empty())
+             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
         for (auto & server : servers)
             server->start();
