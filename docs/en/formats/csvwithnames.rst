@@ -1,4 +1,4 @@
 CSVWithNames
 ------------
 
-Выводит также заголовок, аналогично ``TabSeparatedWithNames``.
+Also contains header, similar to ``TabSeparatedWithNames``.

@@ -1,18 +1,18 @@
 PrettyNoEscapes
 ---------------
 
-Отличается от Pretty тем, что не используются ANSI-escape последовательности. Это нужно для отображения этого формата в браузере, а также при использовании утилиты командной строки watch. 
+Differs from Pretty in that ANSI-escape sequences aren't used. This is necessary for displaying this format in a browser, as well as for using the 'watch' command-line utility.
 
-Пример:
+Example:
 ::
   watch -n1 "clickhouse-client --query='SELECT * FROM system.events FORMAT PrettyCompactNoEscapes'"
 
-Для отображения в браузере, вы можете использовать HTTP интерфейс.
+You can use the HTTP interface for displaying in the browser.
 
 PrettyCompactNoEscapes
 ----------------------
-Аналогично.
+The same.
 
 PrettySpaceNoEscapes
 --------------------
-Аналогично.
+The same.

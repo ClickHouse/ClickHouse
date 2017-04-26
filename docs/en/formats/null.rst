@@ -1,5 +1,4 @@
 Null
 ----
 
-Ничего не выводит. При этом, запрос обрабатывается, а при использовании клиента командной строки, данные ещё и передаются на клиент. Используется для тестов, в том числе, тестов производительности.
-Очевидно, формат подходит только для вывода, но не для парсинга.
+Nothing is output. However, the query is processed, and when using the command-line client, data is transmitted to the client. This is used for tests, including productivity testing. Obviously, this format is only appropriate for outputting a query result, not for parsing.

@@ -1,8 +1,8 @@
 TabSeparatedWithNames
 ---------------------
 
-Отличается от формата ``TabSeparated`` тем, что в первой строке пишутся имена столбцов.
-При парсинге, первая строка полностью игнорируется: вы не можете использовать имена столбцов, чтобы указать их порядок расположения, или чтобы проверить их корректность.
-(Поддержка обработки заголовка при парсинге может быть добавлена в будущем.)
+Differs from the TabSeparated format in that the column names are output in the first row.
+For parsing, the first row is completely ignored. You can't use column names to determine their position or to check their correctness.
+(Support for using header while parsing could be added in future.)
 
-Этот формат также доступен под именем ``TSVWithNames``.
+It's also available as ``TSVWithNames``.

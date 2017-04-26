@@ -1,19 +1,23 @@
 JSONEachRow
 -----------
 
-Выводит данные в виде отдельных JSON объектов для каждой строки (newline delimited JSON).
+If put in SELECT query, displays data in newline delimited JSON (JSON objects separated by \\n character) format.
+If put in INSERT query, expects this kind of data as input.
 ::
   {"SearchPhrase":"","count()":"8267016"}
-  {"SearchPhrase":"интерьер ванной комнаты","count()":"2166"}
-  {"SearchPhrase":"яндекс","count()":"1655"}
-  {"SearchPhrase":"весна 2014 мода","count()":"1549"}
-  {"SearchPhrase":"фриформ фото","count()":"1480"}
-  {"SearchPhrase":"анджелина джоли","count()":"1245"}
-  {"SearchPhrase":"омск","count()":"1112"}
-  {"SearchPhrase":"фото собак разных пород","count()":"1091"}
-  {"SearchPhrase":"дизайн штор","count()":"1064"}
-  {"SearchPhrase":"баку","count()":"1000"}
+  {"SearchPhrase":"bathroom interior","count()":"2166"}
+  {"SearchPhrase":"yandex","count()":"1655"}
+  {"SearchPhrase":"spring 2014 fashion","count()":"1549"}
+  {"SearchPhrase":"free-form photo","count()":"1480"}
+  {"SearchPhrase":"Angelina Jolie","count()":"1245"}
+  {"SearchPhrase":"omsk","count()":"1112"}
+  {"SearchPhrase":"photos of dog breeds","count()":"1091"}
+  {"SearchPhrase":"curtain design","count()":"1064"}
+  {"SearchPhrase":"baku","count()":"1000"}
 
-В отличие от формата JSON, нет замены невалидных UTF-8 последовательностей. В строках может выводиться произвольный набор байт. Это сделано для того, чтобы данные форматировались без потери информации. Экранирование значений осуществляется аналогично формату JSON.
+Unlike JSON format, there are no replacements of invalid UTF-8 sequences. There can be arbitrary amount of bytes in a line.
+This is done in order to avoid data loss during formatting. Values are displayed analogous to JSON format.
 
-При парсинге, поддерживается расположение значений разных столбцов в произвольном порядке. Допустимо отсутствие некоторых значений - тогда они воспринимаются как равные значениям по умолчанию. При этом, в качестве значений по умолчанию используются нули, пустые строки и не поддерживаются сложные значения по умолчанию, которые могут быть заданы в таблице. Пропускаются пробельные символы между элементами. После объектов может быть расположена запятая, которая игнорируется. Объекты не обязательно должны быть разделены переводами строк.
+In INSERT queries JSON data can be supplied with arbitrary order of columns (JSON key-value pairs). It is also possible to omit values in which case the default value of the column is inserted. N.B. when using JSONEachRow format, complex default values are not supported, so when omitting a column its value will be zeros or empty string depending on its type.
+
+Space characters between JSON objects are skipped. Between objects there can be a comma which is ignored. Newline character is not a mandatory separator for objects.

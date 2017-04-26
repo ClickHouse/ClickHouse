@@ -1,7 +1,7 @@
 TabSeparatedWithNamesAndTypes
 -----------------------------
 
-Отличается от формата ``TabSeparated`` тем, что в первой строке пишутся имена столбцов, а во второй - типы столбцов.
-При парсинге, первая и вторая строка полностью игнорируется.
+Differs from the ``TabSeparated`` format in that the column names are output to the first row, while the column types are in the second row.
+For parsing, the first and second rows are completely ignored.
 
-Этот формат также доступен под именем ``TSVWithNamesAndTypes``.
+It's also available as ``TSVWithNamesAndTypes``.

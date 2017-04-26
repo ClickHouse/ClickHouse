@@ -1,4 +1,4 @@
 PrettySpace
 -----------
 
-Отличается от ``PrettyCompact`` тем, что вместо сетки используется пустое пространство (пробелы).
+Differs from ``PrettyCompact`` in that whitespace (space characters) is used instead of the grid.
