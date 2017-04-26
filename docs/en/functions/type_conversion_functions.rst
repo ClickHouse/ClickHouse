@@ -1,4 +1,4 @@
-Функции преобразования типов
+Type conversion functions
 ----------------------------
 
 toUInt8, toUInt16, toUInt32, toUInt64
@@ -18,26 +18,25 @@ toDate, toDateTime
 
 toString
 ~~~~~~~~
-Функции преобразования между числами, строками (но не фиксированными строками), датами и датами-с-временем.
-Все эти функции принимают один аргумент.
+Functions for converting between numbers, strings (but not fixed strings), dates, and dates with times. All these functions accept one argument.
 
-При преобразовании в строку или из строки, производится форматирование или парсинг значения по тем же правилам, что и для формата TabSeparated (и почти всех остальных текстовых форматов). Если распарсить строку не удаётся - кидается исключение и выполнение запроса прерывается.
+When converting to or from a string, the value is formatted or parsed using the same rules as for the TabSeparated format (and almost all other text formats). If the string can't be parsed, an exception is thrown and the request is canceled.
 
-При преобразовании даты в число или наоборот, дате соответствует число дней от начала unix эпохи.
-При преобразовании даты-с-временем в число или наоборот, дате-с-временем соответствует число секунд от начала unix эпохи.
+When converting dates to numbers or vice versa, the date corresponds to the number of days since the beginning of the Unix epoch.
+When converting dates with times to numbers or vice versa, the date with time corresponds to the number of seconds since the beginning of the Unix epoch.
 
-Форматы даты и даты-с-временем для функций toDate/toDateTime определены следующим образом:
+Formats of date and date with time for toDate/toDateTime functions are defined as follows:
 ::
   YYYY-MM-DD
   YYYY-MM-DD hh:mm:ss
 
-В качестве исключения, если делается преобразование из числа типа UInt32, Int32, UInt64, Int64 в Date, и если число больше или равно 65536, то число рассматривается как unix timestamp (а не как число дней) и округляется до даты. Это позволяет поддержать распространённый случай, когда пишут toDate(unix_timestamp), что иначе было бы ошибкой и требовало бы написания более громоздкого toDate(toDateTime(unix_timestamp))
+As an exception, if converting from UInt32, Int32, UInt64, or Int64 type numbers to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing 'toDate(unix_timestamp)', which otherwise would be an error and would require writing the more cumbersome 'toDate(toDateTime(unix_timestamp))'.
 
-Преобразование между датой и датой-с-временем производится естественным образом: добавлением нулевого времени или отбрасыванием времени.
+Conversion between a date and date with time is performed the natural way: by adding a null time or dropping the time.
 
-Преобразование между числовыми типами производится по тем же правилам, что и присваивание между разными числовыми типами в C++.
+Conversion between numeric types uses the same rules as assignments between different numeric types in C++.
 
-Дополнительно, функция toString от аргумента типа DateTime может принимать второй аргумент String - имя тайм-зоны. Пример: ``Asia/Yekaterinburg`` В этом случае, форматирование времени производится согласно указанной тайм-зоне.
+To do transformations on DateTime in given time zone, pass second argument with time zone name:
 
 .. code-block:: sql
 
@@ -49,18 +48,23 @@ toString
   │ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
   └─────────────────────┴─────────────────────┘
 
-Также смотрите функцию ``toUnixTimestamp``.
+To format DateTime in given time zone:
+::
+  toString(now(), 'Asia/Yekaterinburg')
+  
+To get unix timestamp for string with datetime in specified time zone:
+::
+  toUnixTimestamp('2000-01-01 00:00:00', 'Asia/Yekaterinburg')
 
 toFixedString(s, N)
 ~~~~~~~~~~~~~~~~~~~~
-Преобразует аргумент типа String в тип FixedString(N) (строку фиксированной длины N). N должно быть константой.
-Если строка имеет меньше байт, чем N, то она дополняется нулевыми байтами справа. Если строка имеет больше байт, чем N - кидается исключение.
+Converts a String type argument to a FixedString(N) type (a string with fixed length N). N must be a constant. If the string has fewer bytes than N, it is passed with null bytes to the right. If the string has more bytes than N, an exception is thrown.
 
 toStringCutToZero(s)
 ~~~~~~~~~~~~~~~~~~~~
-Принимает аргумент типа String или FixedString. Возвращает String, вырезая содержимое строки до первого найденного нулевого байта.
+Accepts a String or FixedString argument. Returns a String that is cut to a first null byte occurrence.
 
-Пример:
+Example:
 
 .. code-block:: sql
 
@@ -87,18 +91,18 @@ reinterpretAsFloat32, reinterpretAsFloat64
 
 reinterpretAsDate, reinterpretAsDateTime
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Функции принимают строку и интерпретируют байты, расположенные в начале строки, как число в host order (little endian). Если строка имеет недостаточную длину, то функции работают так, как будто строка дополнена необходимым количеством нулевых байт. Если строка длиннее, чем нужно, то лишние байты игнорируются. Дата интерпретируется, как число дней с начала unix-эпохи, а дата-с-временем - как число секунд с начала unix-эпохи.
+These functions accept a string and interpret the bytes placed at the beginning of the string as a number in host order (little endian). If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. A date is interpreted as the number of days since the beginning of the Unix Epoch, and a date with time is interpreted as the number of seconds since the beginning of the Unix Epoch.
 
 reinterpretAsString
 ~~~~~~~~~~~~~~~~~~~
-Функция принимает число или дату или дату-с-временем и возвращает строку, содержащую байты, представляющие соответствующее значение в host order (little endian). При этом, отбрасываются нулевые байты с конца. Например, значение 255 типа UInt32 будет строкой длины 1 байт.
+This function accepts a number or date or date with time, and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
 
 CAST(x, t)
 ~~~~~~~~~~
-Преобразует x в тип данных t.
-Поддерживается также синтаксис CAST(x AS t).
+Casts x to the t data type.
+The syntax ``CAST(x AS t)`` is also supported.
 
-Пример:
+Example:
 
 .. code-block:: sql
 
@@ -113,4 +117,4 @@ CAST(x, t)
   │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │
   └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
 
-Преобразование в FixedString(N) работает только для аргументов типа String или FixedString(N).
+Casting to FixedString(N) works only for String and FixedString(N).

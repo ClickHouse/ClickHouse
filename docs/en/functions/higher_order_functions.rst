@@ -1,27 +1,27 @@
-Функции высшего порядка
+Higher-order functions
 -----------------------
 
-Оператор ->, функция lambda(params, expr)
+-> operator, lambda(params, expr) function
 ~~~~~~~~~~~~~~
-Позволяет описать лямбда-функцию для передачи в функцию высшего порядка. Слева от стрелочки стоит формальный параметр - произвольный идентификатор, или несколько формальных параметров - произвольные идентификаторы в кортеже. Справа от стрелочки стоит выражение, в котором могут использоваться эти формальные параметры, а также любые столбцы таблицы.
+Allows describing a lambda function for passing to a higher-order function. The left side of the arrow has a formal parameter - any ID, or multiple formal parameters - any IDs in a tuple. The right side of the arrow has an expression that can use these formal parameters, as well as any table columns.
 
-Примеры: ``x -> 2 * x, str -> str != Referer.``
+Examples:  ``x -> 2 * x, str -> str != Referer.``
 
-Функции высшего порядка, в качестве своего функционального аргумента могут принимать только лямбда-функции.
+Higher-order functions can only accept lambda functions as their functional argument.
 
-В функции высшего порядка может быть передана лямбда-функция, принимающая несколько аргументов. В этом случае, в функцию высшего порядка передаётся несколько массивов одинаковых длин, которым эти аргументы будут соответствовать.
+A lambda function that accepts multiple arguments can be passed to a higher-order function. In this case, the higher-order function is passed several arrays of identical length that these arguments will correspond to.
 
-Для всех функций кроме arrayMap, arrayFilter, первый аргумент (лямбда-функция) может отсутствовать. В этом случае, подразумевается тождественное отображение.
+For all functions other than 'arrayMap' and 'arrayFilter', the first argument (the lambda function) can be omitted. In this case, identical mapping is assumed.
 
 arrayMap(func, arr1, ...)
 ~~~~~~~~~~~~
-Вернуть массив, полученный из исходного применением функции func к каждому элементу массива arr.
+Returns an array obtained from the original application of the 'func' function to each element in the 'arr' array.
 
 arrayFilter(func, arr1, ...)
 ~~~~~~~~~~~~~
-Вернуть массив, содержащий только те элементы массива arr1, для которых функция func возвращает не 0.
+Returns an array containing only the elements in 'arr1' for which 'func' returns something other than 0.
 
-Примеры:
+Examples:
 
 .. code-block:: sql
 
@@ -44,24 +44,24 @@ arrayFilter(func, arr1, ...)
 
 arrayCount([func,] arr1, ...)
 ~~~~~~~~~
-Вернуть количество элементов массива arr, для которых функция func возвращает не 0. Если func не указана - вернуть количество ненулевых элементов массива.
+Returns the number of elements in 'arr' for which 'func' returns something other than 0. If 'func' is not specified, it returns the number of non-zero items in the array.
 
 arrayExists([func,] arr1, ...)
 ~~~~~~~~~~
-Вернуть 1, если существует хотя бы один элемент массива arr, для которого функция func возвращает не 0. Иначе вернуть 0.
+Returns 1 if there is at least one element in 'arr' for which 'func' returns something other than 0. Otherwise, it returns 0.
 
 arrayAll([func,] arr1, ...)
 ~~~~~~~~~
-Вернуть 1, если для всех элементов массива arr, функция func возвращает не 0. Иначе вернуть 0.
+Returns 1 if 'func' returns something other than 0 for all the elements in 'arr'. Otherwise, it returns 0.
 
 arraySum([func,] arr1, ...)
 ~~~~~~~~~~~
-Вернуть сумму значений функции func. Если функция не указана - просто вернуть сумму элементов массива.
+Returns the sum of the 'func' values. If the function is omitted, it just returns the sum of the array elements.
 
 arrayFirst(func, arr1, ...)
 ~~~~~~~~~
-Вернуть первый элемент массива arr1, для которого функция func возвращает не 0.
+Returns the first element in the 'arr1' array for which 'func' returns something other than 0.
 
 arrayFirstIndex(func, arr1, ...)
 ~~~~~~~
-Вернуть индекс первого элемента массива arr1, для которого функция func возвращает не 0.
+Returns the index of the first element in the 'arr1' array for which 'func' returns something other than 0.

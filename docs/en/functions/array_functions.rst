@@ -1,23 +1,23 @@
-Функции по работе с массивами
+Functions for working with arrays
 -----------------------------
 
 empty
 ~~~~~
-Возвращает 1 для пустого массива, и 0 для непустого массива.
-Тип результата - UInt8.
-Функция также работает для строк.
+Returns 1 for an empty array, or 0 for a non-empty array.
+The result type is UInt8.
+The function also works for strings.
 
 notEmpty
 ~~~~~~~~
-Возвращает 0 для пустого массива, и 1 для непустого массива.
-Тип результата - UInt8.
-Функция также работает для строк.
+Returns 0 for an empty array, or 1 for a non-empty array.
+The result type is UInt8.
+The function also works for strings.
 
 length
 ~~~~~~
-Возвращает количество элементов в массиве.
-Тип результата - UInt64.
-Функция также работает для строк.
+Returns the number of items in the array.
+The result type is UInt64.
+The function also works for strings.
 
 emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64
 ~~~~~~~~~~~~~~
@@ -33,53 +33,53 @@ emptyArrayDate, emptyArrayDateTime
 
 emptyArrayString
 ~~~~~~~~~~~~
-Принимает ноль аргументов и возвращает пустой массив соответствующего типа.
+Accepts zero arguments and returns an empty array of the appropriate type.
 
 emptyArrayToSingle
 ~~~~~~~~~~~~~~
-Принимает пустой массив и возвращает массив из одного элемента, равного значению по умолчанию.
+Accepts an empty array as argument and returns an array of one element equal to the default value.
 
 range(N)
 ~~~~~~~
-Возвращает массив чисел от 0 до N-1.
-На всякий случай, если на блок данных, создаются массивы суммарной длины больше 100 000 000 элементов, то кидается исключение.
+Returns an array of numbers from 0 to N-1.
+Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
 
 array(x1, ...), оператор [x1, ...]
 ~~~~~~~~~~~~
-Создаёт массив из аргументов функции.
-Аргументы должны быть константами и иметь типы, для которых есть наименьший общий тип. Должен быть передан хотя бы один аргумент, так как иначе непонятно, какого типа создавать массив. То есть, с помощью этой функции невозможно создать пустой массив (для этого используйте функции emptyArray*, описанные выше).
-Возвращает результат типа Array(T), где T - наименьший общий тип от переданных аргументов.
+Creates an array from the function arguments.
+The arguments must be constants and have types that have the smallest common type. At least one argument must be passed, because otherwise it isn't clear which type of array to create. That is, you can't use this function to create an empty array (to do that, use the 'emptyArray*' function described above).
+Returns an 'Array(T)' type result, where 'T' is the smallest common type out of the passed arguments.
 
 arrayElement(arr, n), оператор arr[n]
 ~~~~~~~~~~~~
-Достаёт элемент с индексом n из массива arr.
-n должен быть любым целочисленным типом.
-Индексы в массиве начинаются с единицы.
-Поддерживаются отрицательные индексы - в этом случае, будет выбран соответствующий по номеру элемент с конца. Например, arr[-1] - последний элемент массива.
+Get the element with the index 'n' from the array 'arr'.
+'n' should be any integer type.
+Indexes in an array begin from one.
+Negative indexes are supported - in this case, it selects the corresponding element numbered from the end. For example, 'arr[-1]' is the last item in the array.
 
-Если индекс выходит за границы массива, то
-- если оба аргумента - константы, то кидается исключение;
-- иначе, возвращается некоторое значение по умолчанию (0 для чисел, пустая строка для строк и т. п.).
+If the index goes beyond the array bounds:
+- if both arguments are constants, an exception is thrown.
+- otherwise, a default value is returned (0 for numbers, an empty string for strings, etc.).
 
 has(arr, elem)
 ~~~~~~~~~~~
-Проверяет наличие элемента elem в массиве arr.
-Возвращает 0, если элемента в массиве нет, или 1, если есть.
-elem должен быть константой.
+Checks whether the 'arr' array has the 'elem' element.
+Returns 0 if the the element is not in the array, or 1 if it is.
+'elem' must be a constant.
 
 indexOf(arr, x)
 ~~~~~~~~~~
-Возвращает индекс элемента x (начиная с 1), если он есть в массиве, или 0, если его нет.
+Returns the index of the 'x' element (starting from 1) if it is in the array, or 0 if it is not.
 
 countEqual(arr, x)
 ~~~~~~~~
-Возвращает количество элементов массива, равных x. Эквивалентно arrayCount(elem -> elem = x, arr).
+Returns the number of elements in the array equal to 'x'. Equivalent to ``arrayCount(elem -> elem = x, arr)``.
 
 arrayEnumerate(arr)
 ~~~~~~~~~
-Возвращает массив [1, 2, 3, ..., length(arr)]
+Returns the array ``[1, 2, 3, ..., length(arr)]``
 
-Эта функция обычно используется совместно с ARRAY JOIN. Она позволяет, после применения ARRAY JOIN, посчитать что-либо только один раз для каждого массива. Пример:
+This function is normally used together with ARRAY JOIN. It allows counting something just once for each array after applying ARRAY JOIN. Example:
 
 .. code-block:: sql
 
@@ -97,7 +97,7 @@ arrayEnumerate(arr)
   │   95606 │ 31406 │
   └─────────┴───────┘
 
-В этом примере, Reaches - число достижений целей (строк, получившихся после применения ARRAY JOIN), а Hits - число хитов (строк, которые были до ARRAY JOIN). В данном случае, тот же результат можно получить проще:
+In this example, Reaches is the number of conversions (the strings received after applying ARRAY JOIN), and Hits is the number of pageviews (strings before ARRAY JOIN). In this particular case, you can get the same result in an easier way:
 
 .. code-block:: sql
 
@@ -111,15 +111,14 @@ arrayEnumerate(arr)
   │   95606 │ 31406 │
   └─────────┴───────┘
 
-Также эта функция может быть использована в функциях высшего порядка. Например, с её помощью можно достать индексы массива для элементов, удовлетворяющих некоторому условию.
+This function can also be used in higher-order functions. For example, you can use it to get array indexes for elements that match a condition.
 
 arrayEnumerateUniq(arr, ...)
 ~~~~~~~~~~
-Возвращает массив, такого же размера, как исходный, где для каждого элемента указано, какой он по счету среди элементов с таким же значением.
-Например: arrayEnumerateUniq([10, 20, 10, 30]) = [1,  1,  2,  1].
+Returns an array the same size as the source array, indicating for each element what its position is among elements with the same value.
+For example: ``arrayEnumerateUniq([10, 20, 10, 30]) = [1,  1,  2,  1]``.
 
-Эта функция полезна при использовании ARRAY JOIN и агрегации по элементам массива. 
-Пример:
+This function is useful when using ARRAY JOIN and aggregation of array elements. Example:
 
 .. code-block:: sql
   
@@ -149,9 +148,11 @@ arrayEnumerateUniq(arr, ...)
   │ 3271094 │    2256 │    812 │
   └─────────┴─────────┴────────┘
 
-В этом примере, для каждого идентификатора цели, посчитано количество достижений целей (каждый элемент вложенной структуры данных Goals является достижением целей) и количество визитов. Если бы не было ARRAY JOIN, мы бы считали количество визитов как sum(Sign). Но в данном случае, строчки были размножены по вложенной структуре Goals, и чтобы после этого учесть каждый визит один раз, мы поставили условие на значение функции arrayEnumerateUniq(Goals.ID).
+In this example, each goal ID has a calculation of the number of conversions (each element in the Goals nested data structure is a goal that was reached, which we refer to as a conversion) and the number of sessions. 
+Without ARRAY JOIN, we would have counted the number of sessions as ``sum(Sign)``. But in this particular case, the rows were multiplied by the nested Goals structure, so in order to count each session one time after this, 
+we apply a condition to the value of the ``arrayEnumerateUniq(Goals.ID)`` function.
 
-Функция arrayEnumerateUniq может принимать несколько аргументов - массивов одинаковых размеров. В этом случае, уникальность считается для кортежей элементов на одинаковых позициях всех массивов.
+The arrayEnumerateUniq function can take multiple arrays of the same size as arguments. In this case, uniqueness is considered for tuples of elements in the same positions in all the arrays.
 
 .. code-block:: sql
   
@@ -161,15 +162,15 @@ arrayEnumerateUniq(arr, ...)
   │ [1,2,1,1,2,1] │
   └───────────────┘
 
-Это нужно при использовании ARRAY JOIN с вложенной структурой данных и затем агрегации по нескольким элементам этой структуры.
+This is necessary when using ARRAY JOIN with a nested data structure and further aggregation across multiple elements in this structure.
 
 arrayUniq(arr, ...)
 ~~~~~~~~~~~~~~~~~~~
-Если передан один аргумент, считает количество разных элементов в массиве.
-Если передано несколько аргументов, считает количество разных кортежей из элементов на соответствующих позициях в нескольких массивах.
+If a single array is passed, returns a number of unique elements in that array.
+If multiple arrays of the same size are passed as arguments to the function, returns a number of unique tuples of elements in the same positions in all the arrays.
 
-Если необходимо получить список уникальных элементов массива, можно воспользоваться arrayReduce('groupUniqArray', arr).
+If you need an array of the unique elements, you can use ``arrayReduce('groupUniqArray', arr)``.
 
 arrayJoin(arr)
 ~~~~~~~~
-Особенная функция. Смотрите раздел "Функция arrayJoin".
+A special function. See the section "arrayJoin function".

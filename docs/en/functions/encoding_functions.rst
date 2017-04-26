@@ -1,27 +1,31 @@
-Функции кодирования
+Encoding functions
 --------
 
 hex
 ~~~~~
-Принимает строку, число, дату или дату-с-временем. Возвращает строку, содержащую шестнадцатеричное представление аргумента. Используются заглавные буквы A-F. Не используются префиксы 0x и суффиксы h. Для строк просто все байты кодируются в виде двух шестнадцатеричных цифр. Числа выводятся в big endian ("человеческом") формате. Для чисел вырезаются старшие нули, но только по целым байтам. Например, hex(1) = '01'. Даты кодируются как число дней с начала unix-эпохи. Даты-с-временем кодируются как число секунд с начала unix-эпохи.
+Accepts a string, number, date, or date with time. Returns a string containing the argument's hexadecimal representation. Uses uppercase letters A-F. 
+Doesn't use ``0x`` prefixes or ``h`` suffixes. 
+For strings, all bytes are simply encoded as two hexadecimal numbers. Numbers are converted to big endian ("human readable") format. 
+For numbers, older zeros are trimmed, but only by entire bytes. 
+For example, ``hex(1) = '01'``. Dates are encoded as the number of days since the beginning of the Unix Epoch. Dates with times are encoded as the number of seconds since the beginning of the Unix Epoch.
 
 unhex(str)
 ~~~~~~~
-Принимает строку, содержащую произвольное количество шестнадцатеричных цифр, и возвращает строку, содержащую соответствующие байты. Поддерживаются как строчные, так и заглавные буквы A-F. Число шестнадцатеричных цифр не обязано быть чётным. Если оно нечётное - последняя цифра интерпретируется как младшая половинка байта 00-0F. Если строка-аргумент содержит что-либо кроме шестнадцатеричных цифр, то будет возвращён какой-либо implementation-defined результат (не кидается исключение).
-Если вы хотите преобразовать результат в число, то вы можете использовать функции reverse и reinterpretAsType.
+Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits doesn't have to be even. If it is odd, the last digit is interpreted as the younger half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn't thrown).
+If you want to convert the result to a number, you can use the functions 'reverse' and 'reinterpretAsType'
 
 UUIDStringToNum(str)
 ~~~~~~~
-Принимает строку, содержащую 36 символов в формате 123e4567-e89b-12d3-a456-426655440000, и возвращает в виде набора байт в FixedString(16).
+Accepts a string containing the UUID in the text format (``123e4567-e89b-12d3-a456-426655440000``). Returns a binary representation of the UUID in ``FixedString(16)``.
 
 UUIDNumToString(str)
 ~~~~~~~~
-Принимает значение типа FixedString(16). Возвращает строку из 36 символов в текстовом виде.
+Accepts a FixedString(16) value containing the UUID in the binary format. Returns a readable string containing the UUID in the text format.
 
 bitmaskToList(num)
 ~~~~~~~
-Принимает целое число. Возвращает строку, содержащую список степеней двойки, в сумме дающих исходное число; по возрастанию, в текстовом виде, через запятую, без пробелов.
+Accepts an integer. Returns a string containing the list of powers of two that total the source number when summed. They are comma-separated without spaces in text format, in ascending order.
 
 bitmaskToArray(num)
 ~~~~~~~~~
-Принимает целое число. Возвращает массив чисел типа UInt64, содержащий степени двойки, в сумме дающих исходное число; числа в массиве идут по возрастанию.
+Accepts an integer. Returns an array of UInt64 numbers containing the list of powers of two that total the source number when summed. Numbers in the array are in ascending order.

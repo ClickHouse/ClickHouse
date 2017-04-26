@@ -1,11 +1,10 @@
-Функции
+Functions
 =======
 
-Функции бывают как минимум* двух видов - обычные функции (называются просто, функциями) и агрегатные функции. Это совершенно разные вещи. Обычные функции работают так, как будто применяются к каждой строке по отдельности (для каждой строки, результат вычисления функции не зависит от других строк). Агрегатные функции аккумулируют множество значений из разных строк (то есть, зависят от целого множества строк).
+There are at least* two types of functions - regular functions (they are just called "functions") and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function doesn't depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).
 
-В этом разделе речь пойдёт об обычных функциях. Для агрегатных функций, смотрите раздел "Агрегатные функции".
-
-*\* - есть ещё третий вид функций, к которым относится функция arrayJoin; также можно отдельно иметь ввиду табличные функции.*
+In this section we discuss regular functions. For aggregate functions, see the section "Aggregate functions".
+* - There is a third type of function that the 'arrayJoin' function belongs to; table functions can also be mentioned separately.
 
 
 
@@ -16,61 +15,57 @@
     */index
 
 
-Строгая типизация
+Strong typing
 ~~~~~~~~~~~~~~~~~
+In contrast to standard SQL, ClickHouse has strong typing. In other words, it doesn't make implicit conversions between types. Each function works for a specific set of types. This means that sometimes you need to use type conversion functions.
 
-В ClickHouse, в отличие от стандартного SQL, типизация является строгой. То есть, не производится неявных преобразований между типами. Все функции работают для определённого набора типов. Это значит, что иногда вам придётся использовать функции преобразования типов.
-
-Склейка одинаковых выражений
+Common subexpression elimination
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+All expressions in a query that have the same AST (the same record or same result of syntactic parsing) are considered to have identical values. Such expressions are concatenated and executed once. Identical subqueries are also eliminated this way.
 
-Все выражения в запросе, имеющие одинаковые AST (одинаковую запись или одинаковый результат синтаксического разбора), считаются имеющими одинаковые значения. Такие выражения склеиваются и исполняются один раз. Одинаковые подзапросы тоже склеиваются.
-
-Типы результата
+Types of results
 ~~~~~~~~~~~~~~~
+All functions return a single return as the result (not several values, and not zero values). The type of result is usually defined only by the types of arguments, not by the values. Exceptions are the tupleElement function (the a.N operator), and the toFixedString function.
 
-Все функции возвращают одно (не несколько, не ноль) значение в качестве результата. Тип результата обычно определяется только типами аргументов, но не значениями аргументов. Исключение - функция tupleElement (оператор a.N), а также функция toFixedString.
-
-Константы
+Constants
 ~~~~~~~~~
+For simplicity, certain functions can only work with constants for some arguments. For example, the right argument of the LIKE operator must be a constant.
+Almost all functions return a constant for constant arguments. The exception is functions that generate random numbers.
+The 'now' function returns different values for queries that were run at different times, but the result is considered a constant, since constancy is only important within a single query.
+A constant expression is also considered a constant (for example, the right half of the LIKE operator can be constructed from multiple constants).
 
-Для простоты, некоторые функции могут работать только с константами в качестве некоторых аргументов. Например, правый аргумент оператора LIKE должен быть константой.
-Почти все функции возвращают константу для константных аргументов. Исключение - функции генерации случайных чисел.
-Функция now возвращает разные значения для запросов, выполненных в разное время, но результат считается константой, так как константность важна лишь в пределах одного запроса.
-Константное выражение также считается константой (например, правую часть оператора LIKE можно сконструировать из нескольких констант).
+Functions can be implemented in different ways for constant and non-constant arguments (different code is executed). But the results for a constant and for a true column containing only the same value should match each other.
 
-Функции могут быть по-разному реализованы для константных и не константных аргументов (выполняется разный код). Но результат работы для константы и полноценного столбца, содержащего только одно такое же значение, должен совпадать.
-
-Неизменяемость
+Immutability
 ~~~~~~~~~~~~~~
 
-Функции не могут поменять значения своих аргументов - любые изменения возвращаются в качестве результата. Соответственно, от порядка записи функций в запросе, результат вычислений отдельных функций не зависит.
+Functions can't change the values of their arguments - any changes are returned as the result. Thus, the result of calculating separate functions does not depend on the order in which the functions are written in the query.
 
 
-Обработка ошибок
+Error handling
 ~~~~~~~~~~~~~~~~
 
-Некоторые функции могут кидать исключения в случае ошибочных данных. В этом случае, выполнение запроса прерывается, и текст ошибки выводится клиенту. При распределённой обработке запроса, при возникновении исключения на одном из серверов, на другие серверы пытается отправиться просьба тоже прервать выполнение запроса.
+Some functions might throw an exception if the data is invalid. In this case, the query is canceled and an error text is returned to the client. For distributed processing, when an exception occurs on one of the servers, the other servers also attempt to abort the query.
 
 
-Вычисление выражений-аргументов
+Evaluation of argument expressions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-В почти всех языках программирования, для некоторых операторов может не вычисляться один из аргументов. Обычно - для операторов ``&&``, ``||``, ``?:``.
-Но в ClickHouse, аргументы функций (операторов) вычисляются всегда. Это связано с тем, что вычисления производятся не по отдельности для каждой строки, а сразу для целых кусочков столбцов.
+In almost all programming languages, one of the arguments might not be evaluated for certain operators. This is usually for the operators ``&&``, ``||``, ``?:``.
+But in ClickHouse, arguments of functions (operators) are always evaluated. This is because entire parts of columns are evaluated at once, instead of calculating each row separately.
 
-Выполнение функций при распределённой обработке запроса
+Performing functions for distributed query processing
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-При распределённой обработке запроса, как можно большая часть стадий выполнения запроса производится на удалённых серверах, а оставшиеся стадии (слияние промежуточных результатов и всё, что дальше) - на сервере-инициаторе запроса.
+For distributed query processing, as many stages of query processing as possible are performed on remote servers, and the rest of the stages (merging intermediate results and everything after that) are performed on the requestor server.
 
-Это значит, что выполнение функций может производиться на разных серверах.
-Например, в запросе ``SELECT f(sum(g(x))) FROM distributed_table GROUP BY h(y),``
-- если ``distributed_table`` имеет хотя бы два шарда, то функции g и h выполняются на удалённых серверах, а функция f - на сервере-инициаторе запроса;
-- если ``distributed_table`` имеет только один шард, то все функции f, g, h выполняются на сервере этого шарда.
+This means that functions can be performed on different servers.
+For example, in the query ``SELECT f(sum(g(x))) FROM distributed_table GROUP BY h(y)``,
+- if distributed_table has at least two shards, the functions ``g`` and ``h`` are performed on remote servers, and the function ``f`` - is performed on the requestor server.
+- if distributed_table has only one shard, all the functions ``f``, ``g``, and ``h`` are performed on this shard's server.
 
-Обычно результат выполнения функции не зависит от того, на каком сервере её выполнить. Но иногда это довольно важно.
-Например, функции, работающие со словарями, будут использовать словарь, присутствующий на том сервере, на котором они выполняются.
-Другой пример - функция ``hostName`` вернёт имя сервера, на котором она выполняется, и это можно использовать для служебных целей - чтобы в запросе ``SELECT`` сделать ``GROUP BY`` по серверам.
+The result of a function usually doesn't depend on which server it is performed on. However, sometimes this is important.
+For example, functions that work with dictionaries use the dictionary that exists on the server they are running on.
+Another example is the hostName function, which returns the name of the server it is running on in order to make GROUP BY by servers in a SELECT query.
 
-Если функция в запросе выполняется на сервере-инициаторе запроса, а вам нужно, чтобы она выполнялась на удалённых серверах, вы можете обернуть её в агрегатную функцию any или добавить в ключ в ``GROUP BY``.
+If a function in a query is performed on the requestor server, but you need to perform it on remote servers, you can wrap it in an 'any' aggregate function or add it to a key in GROUP BY.

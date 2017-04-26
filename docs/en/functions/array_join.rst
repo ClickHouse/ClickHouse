@@ -1,19 +1,18 @@
-Функция arrayJoin
+arrayJoin function
 ---------------
-Это совсем необычная функция.
+This is a very unusual function.
 
-Обычные функции не изменяют множество строк, а лишь изменяют значения в каждой строке (map).
-Агрегатные функции выполняют свёртку множества строк (fold, reduce).
-Функция arrayJoin выполняет размножение каждой строки в множество строк (unfold).
+Normal functions don't change a set of rows, but just change the values in each row (map). Aggregate functions compress a set of rows (fold or reduce).
+The 'arrayJoin' function takes each row and generates a set of rows (unfold).
 
-Функция принимает в качестве аргумента массив, и размножает исходную строку в несколько строк - по числу элементов массива.
-Все значения в столбцах просто копируются, кроме значения в столбце с применением этой функции - он заменяется на соответствующее значение массива.
+This function takes an array as an argument, and propagates the source row to multiple rows for the number of elements in the array.
+All the values in columns are simply copied, except the values in the column where this function is applied - it is replaced with the corresponding array value.
 
-В запросе может быть использовано несколько функций ``arrayJoin``. В этом случае, соответствующее преобразование делается несколько раз.
+A query can use multiple 'arrayJoin' functions. In this case, the transformation is performed multiple times.
 
-Обратите внимание на синтаксис ARRAY JOIN в запросе SELECT, который предоставляет более широкие возможности.
+Note the ARRAY JOIN syntax in the SELECT query, which provides broader possibilities.
 
-Пример:
+Example:
 
 .. code-block:: sql
 

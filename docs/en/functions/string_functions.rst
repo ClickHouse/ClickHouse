@@ -1,76 +1,74 @@
-Функции для работы со строками
+Functions for working with strings
 ------------------------------
 
 empty
 ~~~~~
-Возвращает 1 для пустой строки, и 0 для непустой строки.
-Тип результата - UInt8.
-Строка считается непустой, если содержит хотя бы один байт, пусть даже это пробел или нулевой байт.
-Функция также работает для массивов.
+Returns 1 for an empty string or 0 for a non-empty string.
+The result type is UInt8.
+A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
+The function also works for arrays.
 
 notEmpty
 ~~~~~~~~
-Возвращает 0 для пустой строки, и 1 для непустой строки.
-Тип результата - UInt8.
-Функция также работает для массивов.
+Returns 0 for an empty string or 1 for a non-empty string.
+The result type is UInt8.
+The function also works for arrays.
 
 length
 ~~~~~~
-Возвращает длину строки в байтах (не символах, не кодовых точках).
-Тип результата - UInt64.
-Функция также работает для массивов.
+Returns the length of a string in bytes (not in characters, and not in code points).
+The result type is UInt64.
+The function also works for arrays.
 
 lengthUTF8
 ~~~~~~~~~~
-Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байт, являющийся текстом в кодировке UTF-8. Если допущение не выполнено - то возвращает какой-нибудь результат (не кидает исключение).
-Тип результата - UInt64.
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
+The result type is UInt64.
 
 lower
 ~~~~~~
-Переводит ASCII-символы латиницы в строке в нижний регистр.
+Converts ASCII Latin symbols in a string to lowercase.
 
 upper
 ~~~~~
-Переводит ASCII-символы латиницы в строке в верхний регистр.
+Converts ASCII Latin symbols in a string to uppercase.
 
 lowerUTF8
 ~~~~~~~~~
-Переводит строку в нижний регистр, при допущении, что строка содержит набор байт, представляющий текст в кодировке UTF-8.
-Не учитывает язык. То есть, для турецкого языка, результат может быть не совсем верным.
-Если длина UTF-8 последовательности байт различна для верхнего и нижнего регистра кодовой точки, то для этой кодовой точки, результат работы может быть некорректным.
-Если строка содержит набор байт, не являющийся UTF-8, то поведение не определено.
+Converts a string to lowercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn't detect the language. So for Turkish the result might not be exactly correct.
+If length of UTF-8 sequence is different for upper and lower case of code point, then result for that code point could be incorrect.
+If value contains invalid UTF-8, the behavior is unspecified.
 
 upperUTF8
 ~~~~~~~~~
-Переводит строку в верхний регистр, при допущении, что строка содержит набор байт, представляющий текст в кодировке UTF-8.
-Не учитывает язык. То есть, для турецкого языка, результат может быть не совсем верным.
-Если длина UTF-8 последовательности байт различна для верхнего и нижнего регистра кодовой точки, то для этой кодовой точки, результат работы может быть некорректным.
-Если строка содержит набор байт, не являющийся UTF-8, то поведение не определено.
+Converts a string to uppercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text. It doesn't detect the language. So for Turkish the result might not be exactly correct.
+If length of UTF-8 sequence is different for upper and lower case of code point, then result for that code point could be incorrect.
+If value contains invalid UTF-8, the behavior is unspecified.
 
 reverse
 ~~~~~~~
-Разворачивает строку (как последовательность байт).
+Reverses the string (as a sequence of bytes).
 
 reverseUTF8
 ~~~~~~~~~~~
-Разворачивает последовательность кодовых точек Unicode, при допущении, что строка содержит набор байт, представляющий текст в кодировке UTF-8. Иначе - что-то делает (не кидает исключение).
+Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it doesn't throw an exception).
 
 concat(s1, s2, ...)
 ~~~~~~~~~~~~~~~~~~~
-Склеивает строки, перечисленные в аргументах, без разделителей.
+Concatenates strings from the function arguments, without a separator.
 
 substring(s, offset, length)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Возвращает подстроку, начиная с байта по индексу offset, длины length байт. Индексация символов - начиная с единицы (как в стандартном SQL). Аргументы offset и length должны быть константами.
+Returns a substring starting with the byte from the 'offset' index that is 'length' bytes long. Character indexing starts from one (as in standard SQL). The 'offset' and 'length' arguments must be constants.
 
 substringUTF8(s, offset, length)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Так же, как substring, но для кодовых точек Unicode. Работает при допущении, что строка содержит набор байт, представляющий текст в кодировке UTF-8. Если допущение не выполнено - то возвращает какой-нибудь результат (не кидает исключение).
+The same as 'substring', but for Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
 
 appendTrailingCharIfAbsent(s, c)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Если строка s непустая и не содержит символ c на конце, то добавляет символ c в конец.
+If the ``s`` string is non-empty and does not contain the ``c`` character at the end, it appends the ``c`` character to the end.
 
 convertCharset(s, from, to)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Возвращает сконвертированную из кодировки from в кодировку to строку s.
+Returns a string with the data s (encoded as from charset) that was converted to the to charset.
