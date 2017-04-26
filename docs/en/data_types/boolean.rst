@@ -1,4 +1,4 @@
-Булевы значения
+Boolean
 ---------------
 
-Отдельного типа для булевых значений нет. Для них используется тип UInt8, в котором используются только значения 0 и 1.
+There is no separate type for boolean values. For them, the type UInt8 is used, in which only the values 0 and 1 are used.

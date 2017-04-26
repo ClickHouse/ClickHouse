@@ -1,5 +1,5 @@
 Array(T)
 --------
 
-Массив из элементов типа T. Типом T может быть любой тип, в том числе, массив.
-Многомерные массивы не рекомендуется использовать, так как их поддержка довольно слабая (например, многомерные массивы нельзя сохранить в таблицы с движком семейства MergeTree).
+Array of T-type items. The T type can be any type, including an array.
+We don't recommend using multidimensional arrays, because they are not well supported (for example, you can't store multidimensional arrays in tables with engines from MergeTree family).

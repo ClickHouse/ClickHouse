@@ -1,6 +1,6 @@
 Tuple(T1, T2, ...)
 ------------------
 
-Кортежи не могут быть записаны в таблицы (кроме таблиц типа Memory). Они используется для временной группировки столбцов. Столбцы могут группироваться при использовании выражения IN в запросе, а также для указания нескольких формальных параметров лямбда-функций. Подробнее смотрите раздел "Операторы IN", "Функции высшего порядка".
+Tuples can't be written to tables (other than Memory tables). They are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see "IN operators" and "Higher order functions".
 
-Кортежи могут быть выведены в результате выполнения запроса. В этом случае, в текстовых форматах кроме JSON*, значения выводятся в круглых скобках через запятую. В форматах JSON*, кортежи выводятся в виде массивов (в квадратных скобках).
+Tuples can be output as the result of running a query. In this case, for text formats other than JSON*, values are comma-separated in brackets. In JSON* formats, tuples are output as arrays (in square brackets).

@@ -1,10 +1,10 @@
 FixedString(N)
 --------------
 
-Строка фиксированной длины N байт (не символов, не кодовых точек). N должно быть строго положительным натуральным числом.
-При чтении сервером строки (например, при парсинге данных для INSERT), содержащей меньшее число байт, строка дополняется до N байт дописыванием нулевых байт справа.
-При чтении сервером строки, содержащей большее число байт, выдаётся сообщение об ошибке.
-При записи сервером строки (например, при выводе результата запроса SELECT), нулевые байты с конца строки не вырезаются, а выводятся.
-Обратите внимание, как это поведение отличается от поведения MySQL для типа CHAR (строки дополняются пробелами, пробелы перед выводом вырезаются).
+A fixed-length string of N bytes (not characters or code points). N must be a strictly positive natural number.
+When server reads a string (as an input passed in INSERT query, for example) that contains fewer bytes, the string is padded to N bytes by appending null bytes at the right.
+When server reads a string that contains more bytes, an error message is returned.
+When server writes a string (as an output of SELECT query, for example), null bytes are not trimmed off of the end of the string, but are output.
+Note that this behavior differs from MySQL behavior for the CHAR type (where strings are padded with spaces, and the spaces are removed for output).
 
-С типом FixedString(N) умеет работать меньше функций, чем с типом String - то есть, он менее удобен в использовании.
+Fewer functions can work with the FixedString(N) type than with String, so it is less convenient to use.

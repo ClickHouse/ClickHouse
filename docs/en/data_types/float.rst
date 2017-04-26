@@ -1,7 +1,7 @@
 Float32, Float64
 ----------------
 
-Числа с плавающей запятой, то же, что и float, double в языке C.
-В отличие от стандартного SQL, числа с плавающей запятой поддерживают inf, -inf, а также nan-ы.
-Смотрите замечание о сортировке nan-ов в разделе "Секция ORDER BY".
-Не рекомендуется хранить числа с плавающей запятой в таблицах.
+Floating-point numbers are just like 'float' and 'double' in the C language.
+In contrast to standard SQL, floating-point numbers support 'inf', '-inf', and even 'nan's.
+See the notes on sorting nans in "ORDER BY clause".
+We do not recommend storing floating-point numbers in tables.

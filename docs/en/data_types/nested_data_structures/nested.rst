@@ -1,9 +1,9 @@
 Nested(Name1 Type1, Name2 Type2, ...)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Вложенная структура данных - это как будто вложенная таблица. Параметры вложенной структуры данных - имена и типы столбцов, указываются так же, как в запроса CREATE. Каждой строке таблицы может соответствовать произвольное количество строк вложенной структуры данных.
+A nested data structure is like a nested table. The parameters of a nested data structure - the column names and types - are specified the same way as in a CREATE query. Each table row can correspond to any number of rows in a nested data structure.
 
-Пример:
+Example:
 
 .. code-block:: sql
 
@@ -28,13 +28,13 @@ Nested(Name1 Type1, Name2 Type2, ...)
       ...
   ) ENGINE = CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
 
-В этом примере объявлена вложенная структура данных ``Goals``, содержащая данные о достижении целей. Каждой строке таблицы visits может соответствовать от нуля до произвольного количества достижений целей.
+This example declares the 'Goals' nested data structure, which contains data about conversions (goals reached). Each row in the 'visits' table can correspond to zero or any number of conversions.
 
-Поддерживается только один уровень вложенности. Столбцы вложенных структур, содержащие массивы, эквивалентны многомерным массивам, поэтому их поддержка ограничена (не поддерживается хранение таких столбцов в таблицах с движком семейства MergeTree).
+Only a single nesting level is supported. Nested structure columns with array type are equivalent to multidimensional arrays and thus their support is limited (storing such columns in tables with engines from MergeTree family is not supported).
 
-В большинстве случаев, при работе с вложенной структурой данных, указываются отдельные её столбцы. Для этого, имена столбцов указываются через точку. Эти столбцы представляют собой массивы соответствующих типов. Все столбцы-массивы одной вложенной структуры данных имеют одинаковые длины.
+In most cases, when working with a nested data structure, its individual columns are specified. To do this, the column names are separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
 
-Пример:
+Example:
 
 .. code-block:: sql
 
@@ -58,9 +58,9 @@ Nested(Name1 Type1, Name2 Type2, ...)
   │ [1073752,591325,591325,591325] │ ['2014-03-17 13:28:33','2014-03-17 13:30:26','2014-03-17 18:51:21','2014-03-17 18:51:45'] │
   └────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
 
-Проще всего понимать вложенную структуру данных, как набор из нескольких столбцов-массивов одинаковых длин.
+It is easiest to think of a nested data structure as a set of multiple column arrays of the same length.
 
-Единственное место, где в запросе SELECT можно указать имя целой вложенной структуры данных, а не отдельных столбцов - секция ARRAY JOIN. Подробнее см. раздел "Секция ARRAY JOIN". Пример:
+The only place where a SELECT query can specify the name of an entire nested data structure instead of individual columns is the ARRAY JOIN clause. For more information, see "ARRAY JOIN clause". Example:
 
 .. code-block:: sql
 
@@ -85,10 +85,10 @@ Nested(Name1 Type1, Name2 Type2, ...)
   │ 1073752 │ 2014-03-17 11:37:06 │
   └─────────┴─────────────────────┘
 
-Вы не можете сделать SELECT целой вложенной структуры данных. Можно лишь явно перечислить отдельные столбцы - её составляющие.
+You can't perform SELECT for an entire nested data structure. You can only explicitly list individual columns that are part of it.
 
-При запросе INSERT, вы должны передать все составляющие столбцы-массивы вложенной структуры данных по-отдельности (как если бы это были отдельные столбцы-массивы). При вставке проверяется, что они имеют одинаковые длины.
+For an INSERT query, you should pass all the component column arrays of a nested data structure separately (as if they were individual column arrays). During insertion, the system checks that they have the same length.
 
-При запросе DESCRIBE, столбцы вложенной структуры данных перечисляются так же по отдельности.
+For a DESCRIBE query, the columns in a nested data structure are listed separately in the same way.
 
-Работоспособность запроса ALTER для элементов вложенных структур данных, является сильно ограниченной.
+The ALTER query is very limited for elements in a nested data structure.
