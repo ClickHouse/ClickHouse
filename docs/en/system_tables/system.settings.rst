@@ -1,16 +1,15 @@
 system.settings
 ---------------
 
-Содержит информацию о настройках, используемых в данный момент.
-То есть, используемых для выполнения запроса, с помощью которого вы читаете из таблицы system.settings.
+Contains information about settings that are currently in use (i.e. used for executing the query you are using to read from the system.settings table).
 
-Столбцы:
+Columns:
 ::
-  name String   - имя настройки
-  value String  - значение настройки
-  changed UInt8 - была ли настройка явно задана в конфиге или изменена явным образом
+  name String   - Setting name.
+  value String  - Setting value.
+  changed UInt8 - Whether the setting was explicitly defined in the config or explicitly changed.
 
-Пример:
+Example:
 
 .. code-block:: sql
 

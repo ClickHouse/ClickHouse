@@ -1,23 +1,23 @@
 system.processes
 ----------------
 
-Эта системная таблица используется для реализации запроса ``SHOW PROCESSLIST``.
-Столбцы:
+This system table is used for implementing the ``SHOW PROCESSLIST`` query.
+Columns:
 ::
-  user String              - имя пользователя, который задал запрос. При распределённой обработке запроса, относится к пользователю, с помощью которого сервер-инициатор запроса отправил запрос на данный сервер, а не к имени пользователя, который задал распределённый запрос на сервер-инициатор запроса.
-  
-  address String           - IP-адрес, с которого задан запрос. При распределённой обработке запроса, аналогично.
-  
-  elapsed Float64          - время в секундах, прошедшее от начала выполнения запроса.
-  
-  rows_read UInt64         - количество прочитанных из таблиц строк. При распределённой обработке запроса, на сервере-инициаторе запроса, представляет собой сумму по всем удалённым серверам.
-  
-  bytes_read UInt64        - количество прочитанных из таблиц байт, в несжатом виде. При распределённой обработке запроса, на сервере-инициаторе запроса, представляет собой сумму по всем удалённым серверам.
-  
-  total_rows_approx UInt64 - приблизительная оценка общего количества строк, которые должны быть прочитаны. При распределённой обработке запроса, на сервере-инициаторе запроса, представляет собой сумму по всем удалённым серверам. Может обновляться в процессе выполнения запроса, когда становятся известны новые источники для обработки.
-  
-  memory_usage UInt64      - потребление памяти запросом. Может не учитывать некоторые виды выделенной памяти.
-  
-  query String             - текст запроса. В случае INSERT - без данных для INSERT-а.
-  
-  query_id String          - идентификатор запроса, если был задан.
+  user String              - Name of the user who made the request. For distributed query processing, this is the user who helped the requestor server send the query to this server, not the user who made the distributed request on the requestor server.
+
+  address String           - The IP address the request was made from. The same for distributed processing.
+
+  elapsed Float64          - The time in seconds since request execution started.
+
+  rows_read UInt64         - The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
+
+  bytes_read UInt64        - The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
+
+  total_rows_approx UInt64 - The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
+
+  memory_usage UInt64      - How much memory the request uses. It might not include some types of dedicated memory.
+
+  query String             - The query text. For INSERT, it doesn't include the data to insert.
+
+  query_id String          - Query ID, if defined.

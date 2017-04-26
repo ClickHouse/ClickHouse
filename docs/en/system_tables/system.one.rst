@@ -1,6 +1,6 @@
 system.one
 ----------
 
-Таблица содержит одну строку с одним столбцом dummy типа UInt8, содержащим значение 0.
-Эта таблица используется, если в SELECT запросе не указана секция FROM.
-То есть, это - аналог таблицы DUAL, которую можно найти в других СУБД.
+This table contains a single row with a single 'dummy' UInt8 column containing the value 0.
+This table is used if a SELECT query doesn't specify the FROM clause.
+This is similar to the DUAL table found in other DBMSs.

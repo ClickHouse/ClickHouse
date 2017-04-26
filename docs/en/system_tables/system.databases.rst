@@ -1,6 +1,6 @@
 system.databases
 ----------------
 
-Таблица содержит один столбец name типа String - имя базы данных.
-Для каждой базы данных, о которой знает сервер, будет присутствовать соответствующая запись в таблице.
-Эта системная таблица используется для реализации запроса ``SHOW DATABASES``.
+This table contains a single String column called 'name' - the name of a database.
+Each database that the server knows about has a corresponding entry in the table.
+This system table is used for implementing the ``SHOW DATABASES`` query.

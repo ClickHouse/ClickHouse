@@ -1,22 +1,22 @@
 system.dictionaries
 -------------------
 
-Содержит информацию о внешних словарях.
+Contains information about external dictionaries.
 
-Столбцы:
+Columns:
 ::
-  name String                   - имя словаря
-  type String                   - тип словаря: Flat, Hashed, Cache
-  origin String                 - путь к конфигурационному файлу, в котором описан словарь
-  attribute.names Array(String) - массив имён атрибутов, предоставляемых словарём
-  attribute.types Array(String) - соответствующий массив типов атрибутов, предоставляемых словарём
-  has_hierarchy UInt8           - является ли словарь иерархическим
-  bytes_allocated UInt64        - количество оперативной памяти, которое использует словарь
-  hit_rate Float64              - для cache-словарей - доля использований, для которых значение было в кэше
-  element_count UInt64          - количество хранящихся в словаре элементов
-  load_factor Float64           - доля заполненности словаря (для hashed словаря - доля заполнения хэш-таблицы)
-  creation_time DateTime        - время создания или последней успешной перезагрузки словаря
-  last_exception String         - текст ошибки, возникшей при создании или перезагрузке словаря, если словарь не удалось создать
-  source String                 - текст, описывающий источник данных для словаря
+  name String                   - Dictionary name.
+  type String                   - Dictionary type: Flat, Hashed, Cache.
+  origin String                 - Path to the config file where the dictionary is described.
+  attribute.names Array(String) - Array of attribute names provided by the dictionary.
+  attribute.types Array(String) - Corresponding array of attribute types provided by the dictionary.
+  has_hierarchy UInt8           - Whether the dictionary is hierarchical.
+  bytes_allocated UInt64        - The amount of RAM used by the dictionary.
+  hit_rate Float64              - For cache dictionaries, the percent of usage for which the value was in the cache.
+  element_count UInt64          - The number of items stored in the dictionary.
+  load_factor Float64           - The filled percentage of the dictionary (for a hashed dictionary, it is the filled percentage of the hash table).
+  creation_time DateTime        - Time spent for the creation or last successful reload of the dictionary.
+  last_exception String         - Text of an error that occurred when creating or reloading the dictionary, if the dictionary couldn't be created.
+  source String                 - Text describing the data source for the dictionary.
 
-Заметим, что количество оперативной памяти, которое использует словарь, не является пропорциональным количеству элементов, хранящихся в словаре. Так, для flat и cached словарей, все ячейки памяти выделяются заранее, независимо от реальной заполненности словаря.
+Note that the amount of memory used by the dictionary is not proportional to the number of items stored in it. So for flat and cached dictionaries, all the memory cells are pre-assigned, regardless of how full the dictionary actually is.

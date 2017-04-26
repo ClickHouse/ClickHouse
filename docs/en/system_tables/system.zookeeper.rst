@@ -1,31 +1,31 @@
 system.zookeeper
 ----------------
 
-Позволяет читать данные из ZooKeeper кластера, описанного в конфигурации.
-В запросе обязательно в секции WHERE должно присутствовать условие на равенство path - путь в ZooKeeper, для детей которого вы хотите получить данные.
+Allows reading data from the ZooKeeper cluster defined in the config.
+The query must have a 'path' equality condition in the WHERE clause. This is the path in ZooKeeper for the children that you want to get data for.
 
-Запрос ``SELECT * FROM system.zookeeper WHERE path = '/clickhouse'`` выведет данные по всем детям узла ``/clickhouse``.
-Чтобы вывести данные по всем узлам в корне, напишите path = '/'.
-Если узла, указанного в path не существует, то будет брошено исключение.
+Query SELECT * FROM system.zookeeper WHERE path = '/clickhouse' outputs data for all children on the /clickhouse node.
+To output data for all root nodes, write path = '/'.
+If the path specified in 'path' doesn't exist, an exception will be thrown.
 
-Столбцы:
+Columns:
 ::
-  name String          - имя узла
-  path String          - путь к узлу
-  value String         - значение узла
-  dataLength Int32     - размер значения
-  numChildren Int32    - количество детей
-  czxid Int64          - идентификатор транзакции, в которой узел был создан
-  mzxid Int64          - идентификатор транзакции, в которой узел был последний раз изменён
-  pzxid Int64          - идентификатор транзакции, последний раз удаливший или добавивший детей
-  ctime DateTime       - время создания узла
-  mtime DateTime       - время последней модификации узла
-  version Int32        - версия узла - количество раз, когда узел был изменён
-  cversion Int32       - количество добавлений или удалений детей
-  aversion Int32       - количество изменений ACL
-  ephemeralOwner Int64 - для эфемерных узлов - идентификатор сессии, которая владеет этим узлом
+  name String          - Name of the node.
+  path String          - Path to the node.
+  value String         - Value of the node.
+  dataLength Int32     - Size of the value.
+  numChildren Int32    - Number of children.
+  czxid Int64          - ID of the transaction that created the node.
+  mzxid Int64          - ID of the transaction that last changed the node.
+  pzxid Int64          - ID of the transaction that last added or removed children.
+  ctime DateTime       - Time of node creation.
+  mtime DateTime       - Time of the last node modification.
+  version Int32        - Node version - the number of times the node was changed.
+  cversion Int32       - Number of added or removed children.
+  aversion Int32       - Number of changes to ACL.
+  ephemeralOwner Int64 - For ephemeral nodes, the ID of the session that owns this node.
 
-Пример:
+Example:
 
 .. code-block:: sql
 
