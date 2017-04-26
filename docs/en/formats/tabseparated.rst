@@ -1,39 +1,39 @@
 TabSeparated
 ------------
 
-В TabSeparated формате данные пишутся по строкам. Каждая строчка содержит значения, разделённые табами. После каждого значения идёт таб, кроме последнего значения в строке, после которого идёт перевод строки. Везде подразумеваются исключительно unix-переводы строк. Последняя строка также обязана содержать перевод строки на конце. Значения пишутся в текстовом виде, без обрамляющих кавычек, с экранированием служебных символов.
+In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is follow by a tab, except the last value in the row, which is followed by a line break. Strictly Unix line breaks are assumed everywhere. The last row also must contain a line break at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
 
-Целые числа пишутся в десятичной форме. Числа могут содержать лишний символ "+" в начале (игнорируется при парсинге, а при форматировании не пишется). Неотрицательные числа не могут содержать знак отрицания. При чтении допустим парсинг пустой строки, как числа ноль, или (для знаковых типов) строки, состоящей из одного минуса, как числа ноль. Числа, не помещающиеся в соответствующий тип данных, могут парсится, как некоторое другое число, без сообщения об ошибке.
+Numbers are written in decimal form. Numbers may contain an extra "+" symbol at the beginning (but it is not recorded during an output). Non-negative numbers can't contain the negative sign. When parsing, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
 
-Числа с плавающей запятой пишутся в десятичной форме. При этом, десятичный разделитель - точка. Поддерживается экспоненциальная запись, а также inf, +inf, -inf, nan. Запись числа с плавающей запятой может начинаться или заканчиваться на десятичную точку.
-При форматировании возможна потеря точности чисел с плавающей запятой.
-При парсинге, допустимо чтение не обязательно наиболее близкого к десятичной записи машинно-представимого числа.
+Floating-point numbers are formatted in decimal form. The dot is used as the decimal separator. Exponential entries are supported, as are 'inf', '+inf', '-inf', and 'nan'. An entry of floating-point numbers may begin or end with a decimal point.
+During formatting, accuracy may be lost on floating-point numbers.
+During parsing, a result is not necessarily the nearest machine-representable number.
 
-Даты выводятся в формате YYYY-MM-DD, парсятся в том же формате, но с любыми символами в качестве разделителей.
-Даты-с-временем выводятся в формате YYYY-MM-DD hh:mm:ss, парсятся в том же формате, но с любыми символами в качестве разделителей.
-Всё это происходит в системном часовом поясе на момент старта клиента (если клиент занимается форматированием данных) или сервера. Для дат-с-временем не указывается, действует ли daylight saving time. То есть, если в дампе есть времена во время перевода стрелок назад, то дамп не соответствует данным однозначно, и при парсинге будет выбрано какое-либо из двух времён.
-При парсинге, некорректные даты и даты-с-временем могут парситься с естественным переполнением или как нулевые даты/даты-с-временем без сообщения об ошибке.
+Dates are formatted in YYYY-MM-DD format and parsed in the same format, but with any characters as separators.
+DateTimes are formatted in the format YYYY-MM-DD hh:mm:ss and parsed in the same format, but with any characters as separators.
+This all occurs in the system time zone at the time the client or server starts (depending on which one formats data). For DateTimes, daylight saving time is not specified. So if a dump has times during daylight saving time, the dump does not unequivocally match the data, and parsing will select one of the two times.
+During a parsing operation, incorrect dates and dates with times can be parsed with natural overflow or as null dates and times, without an error message.
 
-В качестве исключения, поддерживается также парсинг даты-с-временем в формате unix timestamp, если он состоит ровно из 10 десятичных цифр. Результат не зависит от часового пояса. Различение форматов YYYY-MM-DD hh:mm:ss и NNNNNNNNNN делается автоматически.
+As an exception, parsing DateTime is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. The result is not time zone-dependent. The formats ``YYYY-MM-DD hh:mm:ss`` and ``NNNNNNNNNN`` are differentiated automatically.
 
-Строки выводятся с экранированием спец-символов с помощью обратного слеша. При выводе, используются следующие escape-последовательности: ``\b``, ``\f``, ``\r``, ``\n``, ``\t``, ``\0``, ``\'``, ``\\``. При парсинге, также поддерживаются последовательности ``\a``, ``\v``, а также ``\xHH`` (hex escape-последовательности) и любые последовательности вида ``\c``, где ``c`` - любой символ - такие последовательности преобразуется в ``c``. Таким образом, при чтении поддерживаются форматы, где перевод строки может быть записан как ``\n`` и как ``\`` и перевод строки. Например, строка ``Hello world``, где между словами вместо пробела стоит перевод строки, может быть считана в любом из следующих вариантов:
+Strings are parsed and formatted with backslash-escaped special characters. The following escape sequences are used while formatting: ``\b``, ``\f``, ``\r``, ``\n``, ``\t``, ``\0``, ``\'``, and ``\\``. For parsing, also supported \a, \v and \xHH (hex escape sequence) and any sequences of the type \c where c is any character (these sequences are converted to c). This means that parsing supports formats where a line break can be written as \n or as \ and a line break. For example, the string 'Hello world' with a line break between the words instead of a space can be retrieved in any of the following variations:
 ::
   Hello\nworld
 
   Hello\
   world
 
-Второй вариант поддерживается, так как его использует MySQL при записи tab-separated дампа.
+The second variant is supported because MySQL uses it when writing tab-separated dumps.
 
-Минимальный набор символов, которых вам необходимо экранировать при передаче в TabSeparated формате: таб, перевод строки (LF) и обратный слеш.
+Only a small set of symbols are escaped. You can easily stumble onto a string value that your terminal will ruin in output.
 
-Экранируется лишь небольшой набор символов. Вы можете легко наткнуться на строковое значение, которое испортит ваш терминал при выводе в него.
+Minimum set of symbols that you must escape in TabSeparated format is tab, newline (LF) and backslash.
 
-Массивы форматируются в виде списка значений через запятую в квадратных скобках. Элементы массива - числа форматируются как обычно, а даты, даты-с-временем и строки - в одинарных кавычках с такими же правилами экранирования, как указано выше.
+Arrays are formatted as a list of comma-separated values in square brackets. Number items in the array are formatted as normally, but dates, dates with times, and strings are formatted in single quotes with the same escaping rules as above.
 
-Формат TabSeparated удобен для обработки данных произвольными программами и скриптами. Он используется по умолчанию в HTTP-интерфейсе, а также в batch-режиме клиента командной строки. Также формат позволяет переносить данные между разными СУБД. Например, вы можете получить дамп из MySQL и загрузить его в ClickHouse, или наоборот.
+The TabSeparated format is convenient for processing data using custom programs and scripts. It is used by default in the HTTP interface, and in the command-line client's batch mode. This format also allows transferring data between different DBMSs. For example, you can get a dump from MySQL and upload it to ClickHouse, or vice versa.
 
-Формат TabSeparated поддерживает вывод тотальных значений (при использовании WITH TOTALS) и экстремальных значений (при настройке extremes выставленной в 1). В этих случаях, после основных данных выводятся тотальные значения, и экстремальные значения. Основной результат, тотальные значения и экстремальные значения, отделяются друг от друга пустой строкой. Пример:
+The TabSeparated format supports outputting total values (when using WITH TOTALS) and extreme values (when 'extremes' is set to 1). In these cases, the total values and extremes are output after the main data. The main result, total values, and extremes are separated from each other by an empty line. Example:
 
 ``SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 
@@ -52,4 +52,4 @@ TabSeparated
   2014-03-17      1031592
   2014-03-23      1406958
 
-Этот формат также доступен под именем ``TSV``.
+It's also available as ``TSV``.

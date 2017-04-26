@@ -1,9 +1,9 @@
 JSONCompact
 -----------
 
-Отличается от JSON только тем, что строчки данных выводятся в массивах, а не в object-ах. 
+Differs from ``JSON`` only in that data rows are output in arrays, not in objects. 
 
-Пример:
+Example: 
 ::
   {
           "meta":
@@ -17,28 +17,28 @@ JSONCompact
                           "type": "UInt64"
                   }
           ],
-  
+
           "data":
           [
                   ["", "8267016"],
-                  ["интерьер ванной комнаты", "2166"],
-                  ["яндекс", "1655"],
-                  ["весна 2014 мода", "1549"],
-                  ["фриформ фото", "1480"]
+                  ["bath interiors", "2166"],
+                  ["yandex", "1655"],
+                  ["spring 2014 fashion", "1549"],
+                  ["freeform photo", "1480"]
           ],
-  
+
           "totals": ["","8873898"],
-  
+
           "extremes":
           {
                   "min": ["","1480"],
                   "max": ["","8267016"]
           },
-  
+
           "rows": 5,
   
           "rows_before_limit_at_least": 141137
   }
 
-Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
-Смотрите также формат ``JSONEachRow``.
+This format is only appropriate for outputting a query result, not for parsing.
+See ``JSONEachRow`` format for INSERT queries.

@@ -1,7 +1,7 @@
 JSON
 -----
 
-Выводит данные в формате JSON. Кроме таблицы с данными, также выводятся имена и типы столбцов, и некоторая дополнительная информация - общее количество выведенных строк, а также количество строк, которое могло бы быть выведено, если бы не было LIMIT-а. Пример:
+Outputs data in JSON format. Besides data tables, it also outputs column names and types, along with some additional information - the total number of output rows, and the number of rows that could have been output if there weren't a LIMIT. Example:
 
 .. code-block:: sql
 
@@ -69,16 +69,17 @@ JSON
           "rows_before_limit_at_least": 141137
   }
 
-JSON совместим с JavaScript. Для этого, дополнительно экранируются некоторые символы: символ прямого слеша ``/`` экранируется в виде ``\/``; альтернативные переводы строк ``U+2028``, ``U+2029``, на которых ломаются некоторые браузеры, экранируются в виде ``\uXXXX``-последовательностей. Экранируются ASCII control characters: backspace, form feed, line feed, carriage return, horizontal tab в виде ``\b``, ``\f``, ``\n``, ``\r``, ``\t`` соответственно, а также остальные байты из диапазона 00-1F с помощью ``\uXXXX``-последовательностей. Невалидные UTF-8 последовательности заменяются на replacement character � и, таким образом, выводимый текст будет состоять из валидных UTF-8 последовательностей. Числа типа UInt64 и Int64, для совместимости с JavaScript, по умолчанию выводятся в двойных кавычках, чтобы они выводились без кавычек можно установить конфигурационный параметр output_format_json_quote_64bit_integers равным 0.
+JSON is compatible with JavaScript. For this purpose, certain symbols are additionally escaped: the forward slash ``/`` is escaped as ``\/``; alternative line breaks ``U+2028`` and ``U+2029``, which don't work in some browsers, are escaped as \uXXXX-sequences. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab as ``\b``, ``\f``, ``\n``, ``\r``, and ``\t`` respectively, along with the rest of the bytes from the range 00-1F using \uXXXX-sequences. Invalid UTF-8 sequences are changed to the replacement character ``�`` and, thus, the output text will consist of valid UTF-8 sequences. UInt64 and Int64 numbers are output in double quotes for compatibility with JavaScript.
 
-``rows`` - общее количество выведенных строчек.
+``rows`` - The total number of output rows.
 
-``rows_before_limit_at_least`` - не менее скольких строчек получилось бы, если бы не было LIMIT-а. Выводится только если запрос содержит LIMIT.
-В случае, если запрос содержит GROUP BY, rows_before_limit_at_least - точное число строк, которое получилось бы, если бы не было LIMIT-а.
+``rows_before_limit_at_least`` - The minimal number of rows there would have been without a LIMIT. Output only if the query contains LIMIT.
 
-``totals`` - тотальные значения (при использовании WITH TOTALS).
+If the query contains GROUP BY, ``rows_before_limit_at_least`` is the exact number of rows there would have been without a LIMIT.
 
-``extremes`` - экстремальные значения (при настройке extremes, выставленной в 1).
+``totals`` - Total values (when using WITH TOTALS).
 
-Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
-Смотрите также формат JSONEachRow.
+``extremes`` - Extreme values (when extremes is set to 1).
+
+This format is only appropriate for outputting a query result, not for parsing.
+See JSONEachRow format for INSERT queries.

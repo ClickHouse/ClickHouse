@@ -1,5 +1,4 @@
 PrettyCompact
 -------------
 
-Отличается от ``Pretty`` тем, что не рисуется сетка между строками - результат более компактный.
-Этот формат используется по умолчанию в клиенте командной строки в интерактивном режиме.
+Differs from ``Pretty`` in that the grid is drawn between rows and the result is more compact. This format is used by default in the command-line client in interactive mode.

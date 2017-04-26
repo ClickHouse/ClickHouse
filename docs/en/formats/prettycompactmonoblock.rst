@@ -1,4 +1,4 @@
 PrettyCompactMonoBlock
 ----------------------
 
-Отличается от ``PrettyCompact`` тем, что строки (до 10 000 штук) буферизуются и затем выводятся в виде одной таблицы, а не по блокам.
+Differs from ``PrettyCompact`` in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
