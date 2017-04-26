@@ -1,7 +1,5 @@
 system.asynchronous_metrics
 ---------------------------
 
-Содержат метрики, используемые для профилирования и мониторинга.
-Обычно отражают количество событий, происходящих в данный момент в системе, или ресурсов, суммарно потребляемых системой.
-Пример: количество запросов типа SELECT, исполняемых в текущий момент; количество потребляемой памяти.
-``system.asynchronous_metrics`` и ``system.metrics`` отличаются набором и способом вычисления метрик.
+Like system.events, but show info about currently executing events or consuming resources.
+Example: The number of currently executing SELECT queries; memory consumption of the system.

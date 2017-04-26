@@ -1,5 +1,5 @@
 system.numbers_mt
 -----------------
 
-То же самое, что и system.numbers, но чтение распараллеливается. Числа могут возвращаться в произвольном порядке.
-Используется для тестов.
+The same as 'system.numbers' but reads are parallelized. The numbers can be returned in any order.
+Used for tests.

@@ -1,6 +1,6 @@
 system.events
 -------------
 
-Содержит информацию о количестве произошедших в системе событий, для профилирования и мониторинга.
-Пример: количество обработанных запросов типа SELECT.
-Столбцы: event String - имя события, value UInt64 - количество.
+Contains information about the number of events that have occurred in the system. This is used for profiling and monitoring purposes.
+Example: The number of processed SELECT queries.
+Columns: 'event String' - the event name, and 'value UInt64' - the quantity.

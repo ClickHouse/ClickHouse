@@ -1,12 +1,13 @@
 system.columns
 --------------
 
-Содержит информацию о столбцах всех таблиц.
-С помощью этой таблицы можно получить информацию аналогично запросу ``DESCRIBE TABLE``, но для многих таблиц сразу.
+Contains information about the columns in all tables.
+You can use this table to get information similar to ``DESCRIBE TABLE``, but for multiple tables at once.
 ::
-  database String           - имя базы данных, в которой находится таблица
-  table String              - имя таблицы
-  name String               - имя столбца
-  type String               - тип столбца
-  default_type String       - тип (DEFAULT, MATERIALIZED, ALIAS) выражения для значения по умолчанию, или пустая строка, если оно не описано
-  default_expression String - выражение для значения по умолчанию, или пустая строка, если оно не описано
+  database String           - Name of the database the table is located in.
+  table String              - Table name.
+  name String               - Column name.
+  type String               - Column type.
+  default_type String       - Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined.
+  default_expression String - Expression for the default value, or an empty string if it is not defined.
+

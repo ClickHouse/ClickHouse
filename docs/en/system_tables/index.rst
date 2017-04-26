@@ -1,11 +1,11 @@
-Системные таблицы
+System tables
 ==========
 
-Системные таблицы используются для реализации части функциональности системы, а также предоставляют доступ к информации о работе системы.
-Вы не можете удалить системную таблицу (хотя можете сделать DETACH).
-Для системных таблиц нет файлов с данными на диске и файлов с метаданными. Сервер создаёт все системные таблицы при старте.
-В системные таблицы нельзя записывать данные - можно только читать.
-Системные таблицы расположены в базе данных system.
+System tables are used for implementing part of the system's functionality, and for providing access to information about how the system is working.
+You can't delete a system table (but you can perform DETACH).
+System tables don't have files with data on the disk or files with metadata. The server creates all the system tables when it starts.
+System tables are read-only.
+System tables are located in the 'system' database.
 
 .. toctree::
     :glob:

@@ -1,6 +1,6 @@
 system.numbers
 --------------
 
-Таблица содержит один столбец с именем number типа UInt64, содержащим почти все натуральные числа, начиная с нуля.
-Эту таблицу можно использовать для тестов, а также если вам нужно сделать перебор.
-Чтения из этой таблицы не распараллеливаются.
+This table contains a single UInt64 column named 'number' that contains almost all the natural numbers starting from zero.
+You can use this table for tests, or if you need to do a brute force search.
+Reads from this table are not parallelized.

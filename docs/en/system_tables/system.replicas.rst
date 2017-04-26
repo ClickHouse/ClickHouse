@@ -1,10 +1,9 @@
 system.replicas
 ---------------
 
-Содержит информацию и статус для реплицируемых таблиц, расположенных на локальном сервере.
-Эту таблицу можно использовать для мониторинга. Таблица содержит по строчке для каждой Replicated*-таблицы.
+Contains information and status for replicated tables residing on the local server. This table can be used for monitoring. The table contains a row for every Replicated* table.
 
-Пример:
+Example:
 
 .. code-block:: sql
 
@@ -37,56 +36,50 @@ system.replicas
 
 Столбцы:
 ::
-  database:           имя БД
-  table:              имя таблицы
-  engine:             имя движка таблицы
-  
-  is_leader:          является ли реплика лидером
+  database:          Database name.
+  table:              Table name.
+  engine:             Table engine name.
 
-  В один момент времени, не более одной из реплик является лидером. Лидер отвечает за выбор фоновых слияний, которые следует произвести.
-  Замечу, что запись можно осуществлять на любую реплику (доступную и имеющую сессию в ZK), независимо от лидерства.
-  
-  is_readonly:        находится ли реплика в режиме "только для чтения"
-  Этот режим включается, если в конфиге нет секции с ZK; если при переинициализации сессии в ZK произошла неизвестная ошибка; во время переинициализации сессии с ZK.
-  
-  is_session_expired: истекла ли сессия с ZK.
-  В основном, то же самое, что и is_readonly.
-  
-  future_parts:       количество кусков с данными, которые появятся в результате INSERT-ов или слияний, которых ещё предстоит сделать
-  
-  parts_to_check:     количество кусков с данными в очереди на проверку
-  Кусок помещается в очередь на проверку, если есть подозрение, что он может быть битым.
-  
-  zookeeper_path:     путь к данным таблицы в ZK
-  replica_name:       имя реплики в ZK; разные реплики одной таблицы имеют разное имя
-  replica_path:       путь к данным реплики в ZK. То же самое, что конкатенация zookeeper_path/replicas/replica_path.
-  
-  columns_version:    номер версии структуры таблицы
-  Обозначает, сколько раз был сделан ALTER. Если на репликах разные версии, значит некоторые реплики сделали ещё не все ALTER-ы.
-  
-  queue_size:         размер очереди действий, которых предстоит сделать
-  К действиям относятся вставки блоков данных, слияния, и некоторые другие действия.
-  Как правило, совпадает с future_parts.
-  
-  inserts_in_queue:   количество вставок блоков данных, которых предстоит сделать
-  Обычно вставки должны быстро реплицироваться. Если величина большая - значит что-то не так.
-  
-  merges_in_queue:    количество слияний, которых предстоит сделать
-  Бывают длинные слияния - то есть, это значение может быть больше нуля продолжительное время.
+  is_leader:          Whether the replica is the leader.
+  Only one replica can be the leader at a time. The leader is responsible for selecting background merges to perform.
+  Note that writes can be performed to any replica that is available and has a session in ZK, regardless of whether it is a leader.
 
-  Следующие 4 столбца имеют ненулевое значение только если активна сессия с ZK.
-  
-  log_max_index:      максимальный номер записи в общем логе действий
-  log_pointer:        максимальный номер записи из общего лога действий, которую реплика скопировала в свою очередь для выполнения, плюс единица
-  Если log_pointer сильно меньше log_max_index, значит что-то не так.
-  
-  total_replicas:     общее число известных реплик этой таблицы
-  active_replicas:    число реплик этой таблицы, имеющих сессию в ZK; то есть, число работающих реплик
+  is_readonly:        Whether the replica is in read-only mode.
+  This mode is turned on if the config doesn't have sections with ZK, if an unknown error occurred when reinitializing sessions in ZK, and during session reinitialization in ZK.
 
-Если запрашивать все столбцы, то таблица может работать слегка медленно, так как на каждую строчку делается несколько чтений из ZK.
-Если не запрашивать последние 4 столбца (log_max_index, log_pointer, total_replicas, active_replicas), то таблица работает быстро.
+  is_session_expired: Whether the session with ZK has expired.
+  Basically the same as 'is_readonly'.
 
-Например, так можно проверить, что всё хорошо:
+  future_parts:       The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet.
+
+  parts_to_check:     The number of data parts in the queue for verification.
+  A part is put in the verification queue if there is suspicion that it might be damaged.
+
+  zookeeper_path:     Path to table data in ZK.
+  replica_name:       Replica name in ZK. Different replicas of the same table have different names.
+  replica_path:      Path to replica data in ZK. The same as concatenating 'zookeeper_path/replicas/replica_path'.
+
+  columns_version:    Version number of the table structure. Indicates how many times ALTER was performed. If replicas have different versions, it means some replicas haven't made all of the ALTERs yet.
+
+  queue_size:         Size of the queue for operations waiting to be performed. Operations include inserting blocks of data, merges, and certain other actions. It usually coincides with 'future_parts'.
+
+  inserts_in_queue:   Number of inserts of blocks of data that need to be made. Insertions are usually replicated fairly quickly. If this number is large, it means something is wrong.
+
+  merges_in_queue:    The number of merges waiting to be made. Sometimes merges are lengthy, so this value may be greater than one for a long time.
+
+  The next 4 columns have a non-zero value only where there is an active session with ZK.
+
+  log_max_index:      Maximum entry number in the log of general activity.
+  log_pointer:        Maximum entry number from the log of general activity that the replica copied to its queue for execution, plus one.
+  If log_pointer is much smaller than log_max_index, something is wrong.
+
+  total_replicas:     The total number of known replicas of this table.
+  active_replicas:    The number of replicas of this table that have a session in ZK (i.e., the number of functioning replicas).к
+
+If you request all the columns, the table may work a bit slowly, since several reads from ZK are made for each row.
+If you don't request the last 4 columns (log_max_index, log_pointer, total_replicas, active_replicas), the table works quickly.
+
+For example, you can check that everything is working correctly like this:
 
 .. code-block:: sql
 
@@ -118,4 +111,4 @@ system.replicas
       OR total_replicas < 2
       OR active_replicas < total_replicas
 
-Если этот запрос ничего не возвращает - значит всё хорошо.
+If this query doesn't return anything, it means that everything is fine.

@@ -1,14 +1,14 @@
 system.clusters
 ---------------
 
-Содержит информацию о доступных в конфигурационном файле кластерах и серверах, которые в них входят.
-Столбцы:
+Contains information about clusters available in the config file and the servers in them.
+Columns:
 ::
-  cluster String      - имя кластера
-  shard_num UInt32    - номер шарда в кластере, начиная с 1
-  shard_weight UInt32 - относительный вес шарда при записи данных
-  replica_num UInt32  - номер реплики в шарде, начиная с 1
-  host_name String    - имя хоста, как прописано в конфиге
-  host_address String - IP-адрес хоста, полученный из DNS
-  port UInt16         - порт, на который обращаться для соединения с сервером
-  user String         - имя пользователя, которого использовать для соединения с сервером
+  cluster String      - Cluster name.
+  shard_num UInt32    - Number of a shard in the cluster, starting from 1.
+  shard_weight UInt32 - Relative weight of a shard when writing data.
+  replica_num UInt32  - Number of a replica in the shard, starting from 1.
+  host_name String    - Host name as specified in the config.
+  host_address String - Host's IP address obtained from DNS.
+  port UInt16         - The port used to access the server.
+  user String         - The username to use for connecting to the server.

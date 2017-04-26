@@ -1,9 +1,9 @@
 system.functions
 ----------------
 
-Содержит информацию об обычных и агрегатных функциях.
+Contains information about normal and aggregate functions.
+Columns:
 
-Столбцы:
 ::
-  name String           - имя функции
-  is_aggregate UInt8    - является ли функция агрегатной
+  name String           - Function name.
+  is_aggregate UInt8    - Whether it is an aggregate function.

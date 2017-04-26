@@ -1,7 +1,7 @@
 system.tables
 -------------
 
-Таблица содержит столбцы database, name, engine типа String и столбец metadata_modification_time типа DateTime.
-Для каждой таблицы, о которой знает сервер, будет присутствовать соответствующая запись в таблице system.tables.
-Недоработка: Движки таблиц (engine) указаны без параметров.
-Эта системная таблица используется для реализации запросов SHOW TABLES.
+This table contains the String columns 'database', 'name', and 'engine' and DateTime column metadata_modification_time.
+Each table that the server knows about is entered in the 'system.tables' table.
+There is an issue: table engines are specified without parameters.
+This system table is used for implementing SHOW TABLES queries.
