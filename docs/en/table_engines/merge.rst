@@ -1,36 +1,35 @@
 Merge
 -----
 
-Движок Merge (не путайте с движком ``MergeTree``) не хранит данные самостоятельно, а позволяет читать одновременно из произвольного количества других таблиц.
-Чтение автоматически распараллеливается. Запись в таблицу не поддерживается. При чтении будут использованы индексы тех таблиц, из которых реально идёт чтение, если они существуют.
-Движок Merge принимает параметры: имя базы данных и регулярное выражение для таблиц. Пример:
+The Merge engine (not to be confused with MergeTree) does not store data itself, but allows reading from any number of other tables simultaneously.
+Reading is automatically parallelized. Writing to a table is not supported. When reading, the indexes of tables that are actually being read are used, if they exist.
+The Merge engine accepts parameters: the database name and a regular expression for tables. Example:
 ::
   Merge(hits, '^WatchLog')
 
-- данные будут читаться из таблиц в базе hits, имена которых соответствуют регулярному выражению '``^WatchLog``'.
+- Data will be read from the tables in the 'hits' database with names that match the regex ``'^WatchLog'``.
 
-Вместо имени базы данных может использоваться константное выражение, возвращающее строку. Например, ``currentDatabase()``.
+Instead of the database name, you can use a constant expression that returns a string. For example, ``currentDatabase()``.
 
-Регулярные выражения - re2 (как PCRE, но без особых извратов), регистрозависимые.
-Смотрите замечание об экранировании в регулярных выражениях в разделе "match".
+Regular expressions are re2 (similar to PCRE), case-sensitive. See the notes about escaping symbols in regular expressions in the "match" section.
 
-При выборе таблиц для чтения, сама Merge-таблица не будет выбрана, даже если попадает под регулярное выражение - чтобы не возникло циклов.
-Впрочем, вы можете создать две Merge-таблицы, которые будут пытаться бесконечно читать данные друг-друга. Этого делать не нужно.
+When selecting tables to read, the Merge table itself will not be selected, even if it matches the regex. This is to avoid loops.
+It is possible to create two Merge tables that will endlessly try to read each others' data. But don't do this.
 
-Типичный способ использования движка Merge - возможность работы с большим количеством таблиц типа TinyLog, как с одной.
+The typical way to use the Merge engine is for working with a large number of TinyLog tables as if with a single table.
 
-Виртуальные столбцы
+Virtual columns
 ~~~~~~~~~~~~~~~~~~~
 
-Виртуальные столбцы - столбцы, предоставляемые движком таблиц, независимо от определения таблицы. То есть, такие столбцы не указываются в CREATE TABLE, но доступны для SELECT-а.
+Virtual columns are columns that are provided by the table engine, regardless of the table definition. In other words, these columns are not specified in CREATE TABLE, but they are accessible for SELECT.
 
-Виртуальные столбцы отличаются от обычных следующими особенностями:
- - они не указываются в определении таблицы;
- - в них нельзя вставить данные при INSERT-е;
- - при INSERT-е без указания списка столбцов, виртуальные столбцы не учитываются;
- - они не выбираются при использовании звёздочки (``SELECT *``);
- - виртуальные столбцы не показываются в запросах ``SHOW CREATE TABLE`` и ``DESC TABLE``;
+Virtual columns differ from normal columns in the following ways:
+ - They are not specified in table definitions.
+ - Data can't be added to them with ``INSERT``.
+ - When using ``INSERT`` without specifying the list of columns, virtual columns are ignored.
+ - They are not selected when using the asterisk (``SELECT *``).
+ - Virtual columns are not shown in ``SHOW CREATE TABLE`` and ``DESC TABLE`` queries.
 
-Таблица типа Merge содержит виртуальный столбец _table типа String. (Если в таблице уже есть столбец _table, то виртуальный столбец называется _table1; если уже есть _table1, то _table2 и т. п.) Он содержит имя таблицы, из которой были прочитаны данные.
+A Merge table contains the virtual column **_table** of the String type. (If the table already has a '_table' column, the virtual column is named '_table1', and if it already has '_table1', it is named '_table2', and so on.) It contains the name of the table that data was read from.
 
-Если секция WHERE/PREWHERE содержит (в качестве одного из элементов конъюнкции или в качестве всего выражения) условия на столбец _table, не зависящие от других столбцов таблицы, то эти условия используются как индекс: условия выполняются над множеством имён таблиц, из которых нужно читать данные, и чтение будет производиться только из тех таблиц, для которых условия сработали.
+If the WHERE or PREWHERE clause contains conditions for the '_table' column that do not depend on other table columns (as one of the conjunction elements, or as an entire expression), these conditions are used as an index. The conditions are performed on a data set of table names to read data from, and the read operation will be performed from only those tables that the condition was triggered on.

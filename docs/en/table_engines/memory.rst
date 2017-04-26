@@ -1,11 +1,11 @@
 Memory
 ------
 
-Хранит данные в оперативке, в несжатом виде. Данные хранятся именно в таком виде, в каком они получаются при чтении. То есть, само чтение из этой таблицы полностью бесплатно.
-Конкуррентный доступ к данным синхронизируется. Блокировки короткие: чтения и записи не блокируют друг друга.
-Индексы не поддерживаются. Чтение распараллеливается.
-За счёт отсутствия чтения с диска, разжатия и десериализации данных, удаётся достичь максимальной производительности (выше 10 ГБ/сек.) на простых запросах. (Стоит заметить, что во многих случаях, производительность движка MergeTree, почти такая же высокая.)
-При перезапуске сервера, данные из таблицы исчезают и таблица становится пустой.
-Обычно, использование этого движка таблиц является неоправданным. Тем не менее, он может использоваться для тестов, а также в задачах, где важно достичь максимальной скорости на не очень большом количестве строк (примерно до 100 000 000).
+The Memory engine stores data in RAM, in uncompressed form. Data is stored in exactly the same form as it is received when read. In other words, reading from this table is completely free.
+Concurrent data access is synchronized. Locks are short: read and write operations don't block each other.
+Indexes are not supported. Reading is parallelized.
+Maximal productivity (over 10 GB/sec) is reached on simple queries, because there is no reading from the disk, decompressing, or deserializing data. (We should note that in many cases, the productivity of the MergeTree engine is almost as high.)
+When restarting a server, data disappears from the table and the table becomes empty.
+Normally, using this table engine is not justified. However, it can be used for tests, and for tasks where maximum speed is required on a relatively small number of rows (up to approximately 100,000,000).
 
-Движок Memory используется системой для временных таблиц - внешних данных запроса (смотрите раздел "Внешние данные для обработки запроса"), для реализации GLOBAL IN (смотрите раздел "Операторы IN").
+The Memory engine is used by the system for temporary tables with external query data (see the section "External data for processing a query"), and for implementing GLOBAL IN (see the section "IN operators").

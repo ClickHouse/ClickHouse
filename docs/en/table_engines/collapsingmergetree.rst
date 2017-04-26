@@ -1,35 +1,33 @@
 CollapsingMergeTree
 -------------------
 
-*Движок достаточно специфичен для Яндекс.Метрики.*
+This engine differs from MergeTree in that it allows automatic deletion, or "collapsing" certain pairs of rows when merging.
 
-Отличается от ``MergeTree`` тем, что позволяет автоматически удалять - "схлопывать" некоторые пары строк при слиянии.
+Yandex.Metrica has normal logs (such as hit logs) and change logs. Change logs are used for incrementally calculating statistics on data that is constantly changing. Examples are the log of session changes, or logs of changes to user histories. Sessions are constantly changing in Yandex.Metrica. For example, the number of hits per session increases. We refer to changes in any object as a pair (?old values, ?new values). Old values may be missing if the object was created. New values may be missing if the object was deleted. If the object was changed, but existed previously and was not deleted, both values are present. In the change log, one or two entries are made for each change. Each entry contains all the attributes that the object has, plus a special attribute for differentiating between the old and new values. When objects change, only the new entries are added to the change log, and the existing ones are not touched.
 
-В Яндекс.Метрике есть обычные логи (например, лог хитов) и логи изменений. Логи изменений используются, чтобы инкрементально считать статистику по постоянно меняющимся данным. Например - логи изменений визитов, логи изменений истории посетителей. Визиты в Яндекс.Метрике постоянно меняются - например, увеличивается количество хитов в визите. Изменением какого либо объекта будем называть пару (?старые значения, ?новые значения). Старые значения могут отсутствовать, если объект создался. Новые значения могут отсутствовать, если объект удалился. Если объект изменился, но был раньше и не удалился - присутствует оба значения. В лог изменений, для каждого изменения, пишется от одной до двух записей. Каждая запись содержит все те же атрибуты, что и сам объект, и ещё специальный атрибут, который позволяет отличить старые и новые значения. Видно, что при изменении объектов, в лог изменений лишь дописываются новые записи и не трогаются уже имеющиеся.
+The change log makes it possible to incrementally calculate almost any statistics. To do this, we need to consider "new" rows with a plus sign, and "old" rows with a minus sign. In other words, incremental calculation is possible for all statistics whose algebraic structure contains an operation for taking the inverse of an element. This is true of most statistics. We can also calculate "idempotent" statistics, such as the number of unique visitors, since the unique visitors are not deleted when making changes to sessions.
 
-Лог изменений позволяет инкрементально считать почти любую статистику. Для этого надо учитывать "новые" строки с положительным знаком, и "старые" строки с отрицательным знаком. То есть, возможно инкрементально считать все статистики, алгебраическая структура которых содержит операцию взятия обратного элемента. Большинство статистик именно такие. Также удаётся посчитать "идемпотентные" статистики, например, количество уникальных посетителей, так как при изменении визитов, уникальные посетители не удаляются.
+This is the main concept that allows Yandex.Metrica to work in real time.
 
-Это - основная идея, благодаря которой Яндекс.Метрика работает в реальном времени.
-
-CollapsingMergeTree принимает дополнительный параметр - имя столбца типа Int8, содержащего "знак" строки. Пример:
+CollapsingMergeTree accepts an additional parameter - the name of an Int8-type column that contains the row's "sign". Example:
 
 .. code-block:: sql
 
   CollapsingMergeTree(EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign)
 
-Здесь ``Sign`` - столбец, содержащий -1 для "старых" значений и 1 для "новых" значений.
+Here, 'Sign' is a column containing -1 for "old" values and 1 for "new" values.
 
-При слиянии, для каждой группы идущих подряд одинаковых значений первичного ключа (столбцов, по которым сортируются данные), остаётся не более одной строки со значением столбца sign_column = -1 ("отрицательной строки") и не более одной строки со значением столбца sign_column = 1 ("положительной строки"). То есть - производится схлопывание записей из лога изменений.
+When merging, each group of consecutive identical primary key values (columns for sorting data) is reduced to no more than one row with the column value 'sign_column = -1' (the "negative row") and no more than one row with the column value 'sign_column = 1' (the "positive row"). In other words, entries from the change log are collapsed.
 
-Если количество положительных и отрицательных строк совпадает - то пишет первую отрицательную и последнюю положительную строку.
-Если положительных на 1 больше, чем отрицательных - то пишет только последнюю положительную строку.
-Если отрицательных на 1 больше, чем положительных - то пишет только первую отрицательную строку.
-Иначе - логическая ошибка, и ни одна из таких строк не пишется. (Логическая ошибка может возникать, если случайно один кусок лога был вставлен более одного раза. Поэтому, об ошибке всего лишь пишется в лог сервера, и слияние продолжает работать.)
+If the number of positive and negative rows matches, the first negative row and the last positive row are written.
+If there is one more positive row than negative rows, only the last positive row is written.
+If there is one more negative row than positive rows, only the first negative row is written.
+Otherwise, there will be a logical error and none of the rows will be written. (A logical error can occur if the same section of the log was accidentally inserted more than once. The error is just recorded in the server log, and the merge continues.)
 
-Как видно, от схлопывания не должны меняться результаты расчётов статистик.
-Изменения постепенно схлопываются так что в конце-концов, для почти каждого объекта, остаются лишь его последние значения.
-По сравнению с MergeTree, движок CollapsingMergeTree позволяет в несколько раз уменьшить объём данных.
+Thus, collapsing should not change the results of calculating statistics.
+Changes are gradually collapsed so that in the end only the last value of almost every object is left.
+Compared to MergeTree, the CollapsingMergeTree engine allows a multifold reduction of data volume.
 
-Существует несколько способов получения полностью "схлопнутых" данных из таблицы типа ``CollapsingMergeTree``:
- #. Написать запрос с GROUP BY и агрегатными функциями, учитывающими знак. Например, чтобы посчитать количество, надо вместо count() написать sum(Sign); чтобы посчитать сумму чего-либо, надо вместо sum(x) написать sum(Sign * x) и т. п., а также добавить HAVING sum(Sign) > 0. Не все величины можно посчитать подобным образом. Например, агрегатные функции min, max не могут быть переписаны.
- #. Если необходимо вынимать данные без агрегации (например, проверить наличие строк, самые новые значения которых удовлетворяют некоторым условиям), можно использовать модификатор FINAL для секции FROM. Это вариант существенно менее эффективен.
+There are several ways to get completely "collapsed" data from a CollapsingMergeTree table:
+ #. Write a query with GROUP BY and aggregate functions that accounts for the sign. For example, to calculate quantity, write 'sum(Sign)' instead of 'count()'. To calculate the sum of something, write 'sum(Sign * x)' instead of 'sum(x)', and so on, and also add 'HAVING sum(Sign) > 0'. Not all amounts can be calculated this way. For example, the aggregate functions 'min' and 'max' can't be rewritten.
+ #. If you must extract data without aggregation (for example, to check whether rows are present whose newest values match certain conditions), you can use the FINAL modifier for the FROM clause. This approach is significantly less efficient.

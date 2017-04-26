@@ -1,56 +1,56 @@
 Buffer
 ------
 
-Буферизует записываемые данные в оперативке, периодически сбрасывая их в другую таблицу. При чтении, производится чтение данных одновременно из буфера и из другой таблицы.
+Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 ::
   Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
 
-Параметры движка:
-database, table - таблица, в которую сбрасывать данные. Вместо имени базы данных может использоваться константное выражение, возвращающее строку.
-num_layers - уровень параллелизма. Физически таблица будет представлена в виде num_layers независимых буферов. Рекомендуемое значение - 16.
-min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - условия для сброса данных из буфера.
+Engine parameters:
+database, table - The table to flush data to. Instead of the database name, you can use a constant expression that returns a string.
+num_layers - The level of parallelism. Physically, the table will be represented as 'num_layers' of independent buffers. The recommended value is 16.
+min_time, max_time, min_rows, max_rows, min_bytes, and max_bytes are conditions for flushing data from the buffer.
 
-Данные сбрасываются из буфера и записываются в таблицу назначения, если выполнены все min-условия или хотя бы одно max-условие.
-min_time, max_time - условие на время в секундах от момента первой записи в буфер;
-min_rows, max_rows - условие на количество строк в буфере;
-min_bytes, max_bytes - условие на количество байт в буфере.
+Data is flushed from the buffer and written to the destination table if all the 'min' conditions or at least one 'max' condition are met.
+min_time, max_time - Condition for the time in seconds from the moment of the first write to the buffer.
+min_rows, max_rows - Condition for the number of rows in the buffer.
+min_bytes, max_bytes - Condition for the number of bytes in the buffer.
 
-При записи, данные вставляются в случайный из num_layers буферов. Или, если размер куска вставляемых данных достаточно большой (больше max_rows или max_bytes), то он записывается в таблицу назначения минуя буфер.
+During the write operation, data is inserted to a 'num_layers' number of random buffers. Or, if the data part to insert is large enough (greater than 'max_rows' or 'max_bytes'), it is written directly to the destination table, omitting the buffer.
 
-Условия для сброса данных учитываются отдельно для каждого из num_layers буферов. Например, если num_layers = 16 и max_bytes = 100000000, то максимальный расход оперативки будет 1.6 GB.
+The conditions for flushing the data are calculated separately for each of the 'num_layers' buffers. For example, if num_layers = 16 and max_bytes = 100000000, the maximum RAM consumption is 1.6 GB.
 
-Пример:
+Example:
 ::
   CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 16, 10, 100, 10000, 1000000, 10000000, 100000000)
 
-Создаём таблицу merge.hits_buffer такой же структуры как merge.hits и движком Buffer. При записи в эту таблицу, данные буферизуются в оперативке и, в дальнейшем, записываются в таблицу merge.hits. Создаётся 16 буферов. Данные, имеющиеся в каждом из них будут сбрасываться, если прошло сто секунд, или записан миллион строк, или записано сто мегабайт данных; или если одновременно прошло десять секунд и записано десять тысяч строк и записано десять мегабайт данных. Для примера, если записана всего лишь одна строка, то через сто секунд она будет сброшена в любом случае. А если записано много строк, то они будут сброшены раньше.
+Creating a 'merge.hits_buffer' table with the same structure as 'merge.hits' and using the Buffer engine. When writing to this table, data is buffered in RAM and later written to the 'merge.hits' table. 16 buffers are created. The data in each of them is flushed if either 100 seconds have passed, or one million rows have been written, or 100 MB of data have been written; or if simultaneously 10 seconds have passed and 10,000 rows and 10 MB of data have been written. For example, if just one row has been written, after 100 seconds it will be flushed, no matter what. But if many rows have been written, the data will be flushed sooner.
 
-При остановке сервера, при DROP TABLE или DETACH TABLE, данные из буфера тоже сбрасываются в таблицу назначения.
+When the server is stopped, with DROP TABLE or DETACH TABLE, buffer data is also flushed to the destination table.
 
-В качестве имени базы данных и имени таблицы можно указать пустые строки в одинарных кавычках. Это обозначает отсутствие таблицы назначения. В таком случае, при достижении условий на сброс данных, буфер будет просто очищаться. Это может быть полезным, чтобы хранить в оперативке некоторое окно данных.
+You can set empty strings in single quotation marks for the database and table name. This indicates the absence of a destination table. In this case, when the data flush conditions are reached, the buffer is simply cleared. This may be useful for keeping a window of data in memory.
 
-При чтении из таблицы типа Buffer, будут обработаны данные, как находящиеся в буфере, так и данные из таблицы назначения (если такая есть).
-Но следует иметь ввиду, что таблица Buffer не поддерживает индекс. То есть, данные в буфере будут просканированы полностью, что может быть медленно для буферов большого размера. (Для данных в подчинённой таблице, будет использоваться тот индекс, который она поддерживает.)
+When reading from a Buffer table, data is processed both from the buffer and from the destination table (if there is one).
+Note that the Buffer tables does not support an index. In other words, data in the buffer is fully scanned, which might be slow for large buffers. (For data in a subordinate table, the index it supports will be used.)
 
-Если множество столбцов таблицы Buffer не совпадает с множеством столбцов подчинённой таблицы, то будут вставлено подмножество столбцов, которое присутствует в обеих таблицах.
+If the set of columns in the Buffer table doesn't match the set of columns in a subordinate table, a subset of columns that exist in both tables is inserted.
 
-Если у одного из столбцов таблицы Buffer и подчинённой таблицы не совпадает тип, то в лог сервера будет записано сообщение об ошибке и буфер будет очищен.
-То же самое происходит, если подчинённая таблица не существует в момент сброса буфера.
+If the types don't match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log and the buffer is cleared.
+The same thing happens if the subordinate table doesn't exist when the buffer is flushed.
 
-Если есть необходимость выполнить ALTER для подчинённой таблицы и для таблицы Buffer, то рекомендуется удалить таблицу Buffer, затем выполнить ALTER подчинённой таблицы, а затем создать таблицу Buffer заново.
+If you need to run ALTER for a subordinate table and the Buffer table, we recommend first deleting the Buffer table, running ALTER for the subordinate table, then creating the Buffer table again.
 
-При нештатном перезапуске сервера, данные, находящиеся в буфере, будут потеряны.
+If the server is restarted abnormally, the data in the buffer is lost.
 
-Для таблиц типа Buffer неправильно работают PREWHERE, FINAL и SAMPLE. Эти условия пробрасываются в таблицу назначения, но не используются для обработки данных в буфере. В связи с этим, рекомендуется использовать таблицу типа Buffer только для записи, а читать из таблицы назначения.
+PREWHERE, FINAL and SAMPLE do not work correctly for Buffer tables. These conditions are passed to the destination table, but are not used for processing data in the buffer. Because of this, we recommend only using the Buffer table for writing, while reading from the destination table.
 
-При добавлении данных в Buffer, один из буферов блокируется. Это приводит к задержкам, если одновременно делается чтение из таблицы.
+When adding data to a Buffer, one of the buffers is locked. This causes delays if a read operation is simultaneously being performed from the table.
 
-Данные, вставляемые в таблицу Buffer, попадают в подчинённую таблицу в порядке, возможно отличающимся от порядка вставки, и блоками, возможно отличающимися от вставленных блоков. В связи с этим, трудно корректно использовать таблицу типа Buffer для записи в CollapsingMergeTree. Чтобы избежать проблемы, можно выставить num_layers в 1.
+Data that is inserted to a Buffer table may end up in the subordinate table in a different order and in different blocks. Because of this, a Buffer table is difficult to use for writing to a CollapsingMergeTree correctly. To avoid problems, you can set 'num_layers' to 1.
 
-Если таблица назначения является реплицируемой, то при записи в таблицу Buffer будут потеряны некоторые ожидаемые свойства реплицируемых таблиц. Из-за произвольного изменения порядка строк и размеров блоков данных, перестаёт работать дедупликация данных, в результате чего исчезает возможность надёжной exactly once записи в реплицируемые таблицы.
+If the destination table is replicated, some expected characteristics of replicated tables are lost when writing to a Buffer table. The random changes to the order of rows and sizes of data parts cause data deduplication to quit working, which means it is not possible to have a reliable 'exactly once' write to replicated tables.
 
-В связи с этими недостатками, таблицы типа Buffer можно рекомендовать к применению лишь в очень редких случаях.
+Due to these disadvantages, we can only recommend using a Buffer table in rare cases.
 
-Таблицы типа Buffer используются в тех случаях, когда от большого количества серверов поступает слишком много INSERT-ов в единицу времени, и нет возможности заранее самостоятельно буферизовать данные перед вставкой, в результате чего, INSERT-ы не успевают выполняться.
+A Buffer table is used when too many INSERTs are received from a large number of servers over a unit of time and data can't be buffered before insertion, which means the INSERTs can't run fast enough.
 
-Заметим, что даже для таблиц типа Buffer не имеет смысла вставлять данные по одной строке, так как таким образом будет достигнута скорость всего лишь в несколько тысяч строк в секунду, тогда как при вставке более крупными блоками, достижимо более миллиона строк в секунду (смотрите раздел "Производительность").
+Note that it doesn't make sense to insert data one row at a time, even for Buffer tables. This will only produce a speed of a few thousand rows per second, while inserting larger blocks of data can produce over a million rows per second (see the section "Performance").

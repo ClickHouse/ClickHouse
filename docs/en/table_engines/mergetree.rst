@@ -1,41 +1,41 @@
 MergeTree
 ---------
 
-Движок MergeTree поддерживает индекс по первичному ключу и по дате, и обеспечивает возможность обновления данных в реальном времени.
-Это наиболее продвинутый движок таблиц в ClickHouse. Не путайте с движком Merge.
+The MergeTree engine supports an index by primary key and by date, and provides the possibility to update data in real time.
+This is the most advanced table engine in ClickHouse. Don't confuse it with the Merge engine.
 
-Движок принимает параметры: имя столбца типа Date, содержащего дату; выражение для семплирования (не обязательно); кортеж, определяющий первичный ключ таблицы; гранулированность индекса. Пример:
+The engine accepts parameters: the name of a Date type column containing the date, a sampling expression (optional), a tuple that defines the table's primary key, and the index granularity.
+Example:
 
-Пример без поддержки сэмплирования:
+Example without sampling support:
 ::
   MergeTree(EventDate, (CounterID, EventDate), 8192)
 
-Пример с поддержкой сэмплирования:
+Example with sampling support:
 ::
   MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)), 8192)
 
-В таблице типа MergeTree обязательно должен быть отдельный столбец, содержащий дату. В этом примере, это - столбец EventDate. Тип столбца с датой - обязательно Date (а не DateTime).
+A MergeTree type table must have a separate column containing the date. In this example, it is the 'EventDate' column. The type of the date column must be 'Date' (not 'DateTime').
 
-Первичным ключом может быть кортеж из произвольных выражений (обычно это просто кортеж столбцов) или одно выражение.
+The primary key may be a tuple from any expressions (usually this is just a tuple of columns), or a single expression.
 
-Выражение для сэмплирования (использовать не обязательно) - произвольное выражение. Оно должно также присутствовать в первичном ключе. В примере используется хэширование по идентификатору посетителя, чтобы псевдослучайно перемешать данные в таблице для каждого CounterID и EventDate. То есть, при использовании секции SAMPLE в запросе, вы получите равномерно-псевдослучайную выборку данных для подмножества посетителей.
+The sampling expression (optional) can be any expression. It must also be present in the primary key. The example uses a hash of user IDs to pseudo-randomly disperse data in the table for each CounterID and EventDate. In other words, when using the SAMPLE clause in a query, you get an evenly pseudo-random sample of data for a subset of users.
 
-Таблица реализована, как набор кусочков. Каждый кусочек сортирован по первичному ключу. Также, для каждого кусочка прописана минимальная и максимальная дата. При вставке в таблицу, создаётся новый сортированный кусочек. В фоне, периодически инициируется процесс слияния. При слиянии, выбирается несколько кусочков, обычно наименьших, и сливаются в один большой сортированный кусочек.
+The table is implemented as a set of parts. Each part is sorted by the primary key. In addition, each part has the minimum and maximum date assigned. When inserting in the table, a new sorted part is created. The merge process is periodically initiated in the background. When merging, several parts are selected, usually the smallest ones, and then merged into one large sorted part.
 
-То есть, при вставке в таблицу производится инкрементальная сортировка. Слияние реализовано таким образом, что таблица постоянно состоит из небольшого количества сортированных кусочков, а также само слияние делает не слишком много работы.
+In other words, incremental sorting occurs when inserting to the table. Merging is implemented so that the table always consists of a small number of sorted parts, and the merge itself doesn't do too much work.
 
-При вставке, данные относящиеся к разным месяцам, разбиваются на разные кусочки. Кусочки, соответствующие разным месяцам, никогда не объединяются. Это сделано, чтобы обеспечить локальность модификаций данных (для упрощения бэкапов).
+During insertion, data belonging to different months is separated into different parts. The parts that correspond to different months are never combined. The purpose of this is to provide local data modification (for ease in backups).
 
-Кусочки объединяются до некоторого предельного размера - чтобы не было слишком длительных слияний.
+Parts are combined up to a certain size threshold, so there aren't any merges that are too long.
 
-Для каждого кусочка также пишется индексный файл. Индексный файл содержит значение первичного ключа для каждой index_granularity строки таблицы. То есть, это - разреженный индекс сортированных данных.
+For each part, an index file is also written. The index file contains the primary key value for every 'index_granularity' row in the table. In other words, this is an abbreviated index of sorted data.
 
-Для столбцов также пишутся "засечки" каждую index_granularity строку, чтобы данные можно было читать в определённом диапазоне.
+For columns, "marks" are also written to each 'index_granularity' row so that data can be read in a specific range.
 
-При чтении из таблицы, запрос SELECT анализируется на предмет того, можно ли использовать индексы.
-Индекс может использоваться, если в секции WHERE/PREWHERE, в качестве одного из элементов конъюнкции, или целиком, есть выражение, представляющее операции сравнения на равенства, неравенства, а также IN над столбцами, входящими в первичный ключ / дату, а также логические связки над ними.
+When reading from a table, the SELECT query is analyzed for whether indexes can be used. An index can be used if the WHERE or PREWHERE clause has an expression (as one of the conjunction elements, or entirely) that represents an equality or inequality comparison operation, or if it has IN above columns that are in the primary key or date, or Boolean operators over them.
 
-Таким образом, обеспечивается возможность быстро выполнять запросы по одному или многим диапазонам первичного ключа. Например, в указанном примере, будут быстро работать запросы для конкретного счётчика; для конкретного счётчика и диапазона дат; для конкретного счётчика и даты, для нескольких счётчиков и диапазона дат и т. п.
+Thus, it is possible to quickly run queries on one or many ranges of the primary key. In the example given, queries will work quickly for a specific counter, for a specific counter and range of dates, for a specific counter and date, for multiple counters and a range of dates, and so on.
 
 .. code-block:: sql
 
@@ -43,22 +43,22 @@ MergeTree
   SELECT count() FROM table WHERE EventDate = toDate(now()) AND (CounterID = 34 OR CounterID = 42)
   SELECT count() FROM table WHERE ((EventDate >= toDate('2014-01-01') AND EventDate <= toDate('2014-01-31')) OR EventDate = toDate('2014-05-01')) AND CounterID IN (101500, 731962, 160656) AND (CounterID = 101500 OR EventDate != toDate('2014-05-01'))
 
-Во всех этих случаях будет использоваться индекс по дате и по первичному ключу. Видно, что индекс используется даже для достаточно сложных выражений. Чтение из таблицы организовано так, что использование индекса не может быть медленнее full scan-а.
+All of these cases will use the index by date and by primary key. The index is used even for complex expressions. Reading from the table is organized so that using the index can't be slower than a full scan.
 
-В этом примере, индекс не может использоваться:
+In this example, the index can't be used:
 
 .. code-block:: sql
 
   SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 
-Индекс по дате обеспечивает чтение только кусков, содержащих даты из нужного диапазона. При этом, кусок данных может содержать данные за многие даты (до целого месяца), а в пределах одного куска, данные лежат упорядоченными по первичному ключу, который может не содержать дату в качестве первого столбца. В связи с этим, при использовании запроса с указанием условия только на дату, но не на префикс первичного ключа, будет читаться данных больше, чем за одну дату.
+The index by date only allows reading those parts that contain dates from the desired range. However, a data part may contain data for many dates (up to an entire month), while within a single part the data is ordered by the primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
 
-Для конкуррентного доступа к таблице, используется мульти-версионность. То есть, при одновременном чтении и обновлении таблицы, данные будут читаться из набора кусочков, актуального на момент запроса. Длинных блокировок нет. Вставки никак не мешают чтениям.
+For concurrent table access, we use multi-versioning. In other words, when a table is simultaneously read and updated, data is read from a set of parts that is current at the time of the query. There are no lengthy locks. Inserts do not get in the way of read operations.
 
-Чтения из таблицы автоматически распараллеливаются.
+Reading from a table is automatically parallelized.
 
-Поддерживается запрос ``OPTIMIZE``, который вызывает один внеочередной шаг слияния.
+The OPTIMIZE query is supported, which calls an extra merge step.
 
-Вы можете использовать одну большую таблицу, постоянно добавляя в неё данные небольшими пачками - именно для этого предназначен движок MergeTree.
+You can use a single large table and continually add data to it in small chunks - this is what MergeTree is intended for.
 
-Для всех типов таблиц семейства MergeTree возможна репликация данных - смотрите раздел "Репликация данных".
+Data replication is possible for all types of tables in the MergeTree family (see the section "Data replication").

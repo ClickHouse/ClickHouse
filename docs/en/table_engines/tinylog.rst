@@ -1,18 +1,18 @@
 TinyLog
 -------
 
-Самый простой движок таблиц, который хранит данные на диске.
-Каждый столбец хранится в отдельном сжатом файле.
-При записи, данные дописываются в конец файлов.
+The simplest table engine, which stores data on a disk.
+Each column is stored in a separate compressed file.
+When writing, data is appended to the end of files.
 
-Конкуррентный доступ к данным никак не ограничивается:
- - если вы одновременно читаете из таблицы и в другом запросе пишете в неё, то чтение будет завершено с ошибкой;
- - если вы одновременно пишите в таблицу в нескольких запросах, то данные будут битыми.
- 
-Типичный способ использования этой таблицы - это write-once: сначала один раз только пишем данные, а потом сколько угодно читаем.
-Запросы выполняются в один поток. То есть, этот движок предназначен для сравнительно маленьких таблиц (рекомендуется до 1 000 000 строк).
-Этот движок таблиц имеет смысл использовать лишь в случае, если у вас есть много маленьких таблиц, так как он проще, чем движок Log (требуется открывать меньше файлов).
-Случай, когда у вас много маленьких таблиц, является гарантированно плохим по производительности, но может уже использоваться при работе с другой СУБД, и вам может оказаться удобнее перейти на использование таблиц типа TinyLog.
-**Индексы не поддерживаются.**
+Concurrent data access is not restricted in any way:
+ - If you are simultaneously reading from a table and writing to it in a different query, the read operation will complete with an error.
+ - If you are writing to a table in multiple queries simultaneously, the data will be broken.
 
-В Яндекс.Метрике таблицы типа TinyLog используются для промежуточных данных, обрабатываемых маленькими пачками.
+The typical way to use this table is write-once: first just write the data one time, then read it as many times as needed.
+Queries are executed in a single stream. In other words, this engine is intended for relatively small tables (recommended up to 1,000,000 rows).
+It makes sense to use this table engine if you have many small tables, since it is simpler than the Log engine (fewer files need to be opened).
+The situation when you have a large number of small tables guarantees poor productivity, but may already be used when working with another DBMS, and you may find it easier to switch to using TinyLog types of tables.
+Indexes are not supported.
+
+In Yandex.Metrica, TinyLog tables are used for intermediary data that is processed in small batches.

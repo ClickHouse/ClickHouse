@@ -1,15 +1,14 @@
 Join
 ----
 
-Представляет собой подготовленную структуру данных для JOIN-а, постоянно находящуюся в оперативке.
+A prepared data structure for JOIN that is always located in RAM.
 ::
   Join(ANY|ALL, LEFT|INNER, k1[, k2, ...])
 
-Параметры движка: ``ANY|ALL`` - строгость, ``LEFT|INNER`` - тип. 
-Эти параметры (задаются без кавычек) должны соответствовать тому JOIN-у, для которого будет использоваться таблица. k1, k2, ... - ключевые столбцы из секции USING, по которым будет делаться соединение.
+Engine parameters:  ``ANY``|``ALL`` - strictness, and ``LEFT``|``INNER`` - the type. These parameters are set without quotes and must match the JOIN that the table will be used for. k1, k2, ... are the key columns from the USING clause that the join will be made on.
 
-Таблица не может использоваться для GLOBAL JOIN-ов.
+The table can't be used for GLOBAL JOINs.
 
-В таблицу можно вставлять данные INSERT-ом, аналогично движку Set. В случае ANY, данные для дублирующихся ключей будут проигнорированы; в случае ALL - будут учитываться. Из таблицы нельзя, непосредственно, делать SELECT. Единственная возможность чтения - использование в качестве "правой" таблицы для JOIN.
+You can use INSERT to add data to the table, similar to the Set engine. For ANY, data for duplicated keys will be ignored. For ALL, it will be counted. You can't perform SELECT directly from the table. The only way to retrieve data is to use it as the "right-hand" table for JOIN.
 
-Хранение данных на диске аналогично движку Set.
+Storing data on the disk is the same as for the Set engine.

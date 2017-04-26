@@ -1,39 +1,40 @@
 SummingMergeTree
 ----------------
 
-Отличается от ``MergeTree`` тем, что суммирует данные при слиянии.
+This engine differs from ``MergeTree`` in that it totals data while merging.
 
 .. code-block:: sql
 
   SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192)
 
-Столбцы для суммирования заданы неявно. При слиянии, для всех строчек с одинаковым значением первичного ключа (в примере - OrderID, EventDate, BannerID, ...), производится суммирование значений в числовых столбцах, не входящих в первичный ключ.
+The columns to total are implicit. When merging, all rows with the same primary key value (in the example, OrderId, EventDate, BannerID, ...) have their values totaled in numeric columns that are not part of the primary key.
 
 .. code-block:: sql
 
   SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, (Shows, Clicks, Cost, ...))
 
-Явно заданные столбцы для суммирования (последний параметр - Shows, Clicks, Cost, ...). При слиянии, для всех строчек с одинаковым значением первичного ключа, производится суммирование значений в указанных столбцах. Указанные столбцы также должны быть числовыми и не входить в первичный ключ.
+The columns to total are set explicitly (the last parameter - Shows, Clicks, Cost, ...). When merging, all rows with the same primary key value have their values totaled in the specified columns. The specified columns also must be numeric and must not be part of the primary key.
 
-Если значения во всех таких столбцах оказались нулевыми, то строчка удаляется. (За исключением случаев, когда в куске данных не осталось бы ни одной строчки.)
+If the values were null in all of these columns, the row is deleted. (The exception is cases when the data part would not have any rows left in it.)
 
-Для остальных столбцов, не входящих в первичный ключ, при слиянии выбирается первое попавшееся значение.
+For the other rows that are not part of the primary key, the first value that occurs is selected when merging.
 
-При чтении, суммирование не делается само по себе. Если оно необходимо - напишите соответствующий GROUP BY.
+Summation is not performed for a read operation. If it is necessary, write the appropriate GROUP BY.
 
-Дополнительно, таблица может иметь вложенные структуры данных, которые обрабатываются особым образом.
-Если название вложенной таблицы заканчивается на Map и она содержит не менее двух столбцов, удовлетворяющих следующим критериям:
+In addition, a table can have nested data structures that are processed in a special way.
+If the name of a nested table ends in 'Map' and it contains at least two columns that meet the following criteria:
 
-* первый столбец - числовой ((U)IntN, Date, DateTime), назовем его условно key,
-* остальные столбцы - арифметические ((U)IntN, Float32/64), условно (values...), то такая вложенная таблица воспринимается как отображение key => (values...) и при слиянии ее строк выполняется слияние элементов двух множеств по key со сложением соответствующих (values...).
+ * for the first table, numeric ((U)IntN, Date, DateTime), we'll refer to it as 'key'
+ * for other tables, arithmetic ((U)IntN, Float32/64), we'll refer to it as '(values...)'
+then this nested table is interpreted as a mapping of key => (values...), and when merging its rows, the elements of two data sets are merged by 'key' with a summation of the corresponding (values...).
 
-Примеры:
+Examples:
 ::
   [(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]
   [(1, 100)] + [(1, 150)] -> [(1, 250)]
   [(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]
   [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 
-Для вложенных структур данных не нужно указывать её столбцы в качестве списка столбцов для суммирования.
+For nested data structures, you don't need to specify the columns as a list of columns for totaling.
 
-Этот движок таблиц разработан по просьбе БК, и является мало полезным. Помните, что при хранении лишь предагрегированных данных, вы теряете часть преимуществ системы.
+This table engine is not particularly useful. Remember that when saving just pre-aggregated data, you lose some of the system's advantages.
