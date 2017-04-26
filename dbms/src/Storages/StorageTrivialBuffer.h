@@ -2,11 +2,15 @@
 
 #include <mutex>
 #include <thread>
-#include <ext/shared_ptr_helper.hpp>
+
+#include <Common/SipHash.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <ext/shared_ptr_helper.hpp>
 #include <Poco/Event.h>
+#include <Storages/IStorage.h>
+
+#include <zkutil/ZooKeeper.h>
 
 namespace Poco { class Logger; }
 
@@ -46,6 +50,7 @@ public:
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_, size_t num_blocks_to_deduplicate_,
+        const String & path_in_zk_for_deduplication_,
         const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
         const String & destination_database_, const String & destination_table_);
 
@@ -87,6 +92,93 @@ public:
     void alter(const AlterCommands & params, const String & database_name,
             const String & table_name, const Context & context) override;
 
+    class ZookeeperDeduplicationController
+    {
+    public:
+        using HashType = String;
+
+        static HashType getHashFrom(SipHash & hash) { return std::to_string(hash.get64()); }
+
+        bool contains(HashType block_hash)
+        {
+            std::string res;
+            return zookeeper->tryGet(path_in_zk_for_deduplication + "/" + block_hash, res);
+        }
+
+        void insert(HashType block_hash)
+        {
+            std::vector<String> current_hashes;
+            if (zookeeper->tryGetChildren(path_in_zk_for_deduplication, current_hashes) == ZNONODE)
+            {
+                throw DB::Exception("No node \'" + path_in_zk_for_deduplication + "\' to control deduplication.");
+            }
+
+            // Cleanup zookeeper if needed.
+            if (current_hashes.size() >= 2*num_blocks_to_deduplicate)
+            {
+                using HashWithTimestamp = std::pair<String, time_t>;
+                std::vector<HashWithTimestamp> hashes_with_timestamps;
+                for (auto & hash : current_hashes)
+                {
+                    zkutil::Stat stat;
+                    String res;
+                    String path_in_zk = path_in_zk_for_deduplication + "/" + hash;
+                    if (!zookeeper->tryGet(path_in_zk, res, &stat))
+                    {
+                        throw DB::Exception("Seems like a race conditions between replics was found, path: " + path_in_zk);
+                    }
+                    hashes_with_timestamps.emplace_back(path_in_zk, stat.ctime);
+                }
+                // We do not need to sort all the hashes, only 'num_blocks_to_deduplicate' hashes
+                // with minimum creation time.
+                auto hashes_with_timestamps_end = hashes_with_timestamps.end();
+                if (hashes_with_timestamps.size() > num_blocks_to_deduplicate)
+                    hashes_with_timestamps_end = hashes_with_timestamps.begin() + num_blocks_to_deduplicate;
+                std::partial_sort(hashes_with_timestamps.begin(), hashes_with_timestamps_end, hashes_with_timestamps.end(),
+                    [] (const HashWithTimestamp & a, const HashWithTimestamp & b) -> bool
+                    {
+                        return a.second > b.second;
+                    }
+                );
+                zkutil::Ops nodes_to_remove;
+                for (auto it = hashes_with_timestamps.begin(); it != hashes_with_timestamps_end; ++it)
+                {
+                    nodes_to_remove.emplace_back(std::make_unique<zkutil::Op::Remove>(it->first, -1));
+                }
+                zookeeper->tryMulti(nodes_to_remove);
+            }
+
+            // Finally, inserting new node.
+            std::string path_for_insert = path_in_zk_for_deduplication + "/" + block_hash;
+            if (zookeeper->tryCreate(path_for_insert, {},
+                zkutil::CreateMode::Persistent) != ZOK)
+            {
+                throw DB::Exception("Cannot create node at path: " + path_for_insert);
+            }
+
+        }
+
+        void updateOnDeduplication(HashType block_hash)
+        {
+            zookeeper->createOrUpdate(path_in_zk_for_deduplication + "/" + block_hash,
+                                      {}, zkutil::CreateMode::Persistent);
+        }
+
+        ZookeeperDeduplicationController(size_t num_blocks_to_deduplicate_, zkutil::ZooKeeperPtr zookeeper_,
+                                     const std::string & path_in_zk_for_deduplication_)
+        : num_blocks_to_deduplicate(num_blocks_to_deduplicate_),
+        zookeeper(zookeeper_), path_in_zk_for_deduplication(path_in_zk_for_deduplication_)
+        { }
+
+    private:
+        using DeduplicationBuffer = std::unordered_set<HashType>;
+
+        size_t num_blocks_to_deduplicate;
+        zkutil::ZooKeeperPtr zookeeper;
+        const std::string path_in_zk_for_deduplication;
+    };
+
+
 private:
     String name;
     NamesAndTypesListPtr columns;
@@ -101,12 +193,10 @@ private:
     size_t current_bytes = 0;
     time_t first_write_time = 0;
     const size_t num_blocks_to_deduplicate;
-    using HashType = UInt64;
-    using DeduplicationBuffer = std::unordered_set<HashType>;
-    /// We insert new blocks' hashes into 'current_hashes' and perform lookup
-    /// into both sets. If 'current_hashes' is overflowed, it flushes into
-    /// into 'previous_hashes', and new set is created for 'current'.
-    std::unique_ptr<DeduplicationBuffer> current_hashes, previous_hashes;
+    const String path_in_zk_for_deduplication;
+    zkutil::ZooKeeperPtr zookeeper;
+    ZookeeperDeduplicationController deduplication_controller;
+
     const Thresholds min_thresholds;
     const Thresholds max_thresholds;
 
@@ -126,10 +216,12 @@ private:
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_, size_t num_blocks_to_deduplicate_,
+        const String & path_in_zk_for_deduplication_,
         const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
         const String & destination_database_, const String & destination_table_);
 
-    void addBlock(const Block & block);
+    template <typename DeduplicatioController>
+    void addBlock(const Block & block, DeduplicatioController & deduplication_controller);
     /// Parameter 'table' is passed because it's sometimes pre-computed. It should
     /// conform the 'destination_table'.
     void writeBlockToDestination(const Block & block, StoragePtr table);

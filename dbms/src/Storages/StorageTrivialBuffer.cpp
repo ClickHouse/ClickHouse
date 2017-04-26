@@ -1,16 +1,16 @@
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterAlterQuery.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
-#include <Databases/IDatabase.h>
 #include <Storages/StorageTrivialBuffer.h>
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Common/setThreadName.h>
+
+#include <Databases/IDatabase.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/SipHash.h>
 #include <common/logger_useful.h>
+#include <Common/setThreadName.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Poco/Ext/ThreadNumber.h>
 
 #include <ext/range.hpp>
@@ -48,12 +48,14 @@ StoragePtr StorageTrivialBuffer::create(const std::string & name_, NamesAndTypes
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     Context & context_, const size_t num_blocks_to_deduplicate_,
+    const String & path_in_zk_for_deduplication_,
     const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
     const String & destination_database_, const String & destination_table_)
 {
     return make_shared(
         name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
-        context_, num_blocks_to_deduplicate_, min_thresholds_, max_thresholds_,
+        context_, num_blocks_to_deduplicate_, path_in_zk_for_deduplication_,
+        min_thresholds_, max_thresholds_,
         destination_database_, destination_table_);
 }
 
@@ -63,19 +65,23 @@ StorageTrivialBuffer::StorageTrivialBuffer(const std::string & name_, NamesAndTy
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     Context & context_, const size_t num_blocks_to_deduplicate_,
+    const String & path_in_zk_for_deduplication_,
     const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
     const String & destination_database_, const String & destination_table_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
     name(name_), columns(columns_), context(context_),
     num_blocks_to_deduplicate(num_blocks_to_deduplicate_),
-    current_hashes(std::make_unique<DeduplicationBuffer>()),
-    previous_hashes(std::make_unique<DeduplicationBuffer>()),
+    path_in_zk_for_deduplication(path_in_zk_for_deduplication_),
+    zookeeper(context.getZooKeeper()),
+    deduplication_controller(num_blocks_to_deduplicate, zookeeper, path_in_zk_for_deduplication),
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
     destination_database(destination_database_), destination_table(destination_table_),
     no_destination(destination_database.empty() && destination_table.empty()),
     log(&Logger::get("TrivialBuffer (" + name + ")")),
     flush_thread(&StorageTrivialBuffer::flushThread, this)
 {
+    zookeeper->createAncestors(path_in_zk_for_deduplication);
+    zookeeper->createOrUpdate(path_in_zk_for_deduplication, {}, zkutil::CreateMode::Persistent);
 }
 
 class TrivialBufferBlockInputStream : public IProfilingBlockInputStream
@@ -181,22 +187,17 @@ BlockInputStreams StorageTrivialBuffer::read(
     return streams;
 }
 
-void StorageTrivialBuffer::addBlock(const Block & block)
+template <typename DeduplicatioController>
+void StorageTrivialBuffer::addBlock(const Block & block, DeduplicatioController & deduplication_controller)
 {
     SipHash hash;
     block.updateHash(hash);
-    HashType block_hash = hash.get64();
+    typename DeduplicatioController::HashType block_hash = DeduplicatioController::getHashFrom(hash);
 
     std::lock_guard<std::mutex> lock(mutex);
-    if (current_hashes->find(block_hash) == current_hashes->end()
-        && previous_hashes->find(block_hash) == previous_hashes->end())
+    if (!deduplication_controller.contains(block_hash))
     {
-        if (current_hashes->size() >= num_blocks_to_deduplicate / 2)
-        {
-            previous_hashes = std::move(current_hashes);
-            current_hashes = std::make_unique<DeduplicationBuffer>();
-        }
-        current_hashes->insert(block_hash);
+        deduplication_controller.insert(block_hash);
         current_rows += block.rows();
         current_bytes += block.bytes();
         data.push_back(block);
@@ -206,12 +207,7 @@ void StorageTrivialBuffer::addBlock(const Block & block)
     }
     else
     {
-        auto it = previous_hashes->find(block_hash);
-        if (it != previous_hashes->end())
-        {
-            current_hashes->insert(*it);
-            previous_hashes->erase(it);
-        }
+        deduplication_controller.updateOnDeduplication(block_hash);
     }
 }
 
@@ -357,7 +353,7 @@ public:
         if (!buffer.first_write_time)
             buffer.first_write_time = current_time;
 
-        buffer.addBlock(block);
+        buffer.addBlock/*<StorageTrivialBuffer::ZookeeperDeduplicationController>*/(block, buffer.deduplication_controller);
     }
 private:
     StorageTrivialBuffer & buffer;
