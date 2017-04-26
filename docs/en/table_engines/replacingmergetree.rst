@@ -1,18 +1,19 @@
 ReplacingMergeTree
 ------------------
 
-Движок таблиц отличается от ``MergeTree`` тем, что выполняет удаление дублирующихся записей с одинаковым значением первичного ключа.
+This engine differs from ``MergeTree`` in that it can deduplicate data by primary key while merging.
 
-Последний, необязательный параметр движка таблицы - столбец с "версией". При слиянии, для всех строк с одинаковым значением первичного ключа, оставляет только одну строку: если задан столбец версии - строку с максимальной версией, иначе - последнюю строку.
+For ReplacingMergeTree mode, last parameter is optional name of 'version' column. While merging, for all rows with same primary key, only one row is selected: last row, if version column was not specified, or last row with maximum version value, if specified.
 
-Столбец с версией должен иметь тип из семейства ``UInt``, либо ``Date`` или ``DateTime``.
+Version column must have type of UInt family or ``Date`` or ``DateTime``.
 
 .. code-block:: sql
 
   ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, ver)
 
-Обратите внимание, что дедупликация данных производится лишь во время слияний. Слияние происходят в фоне, в неизвестный момент времени, на который вы не можете ориентироваться. Некоторая часть данных может так и остаться необработанной. Хотя вы можете вызвать внеочередное слияние с помощью запроса OPTIMIZE, на это не стоит рассчитывать, так как запрос OPTIMIZE приводит к чтению и записи большого объёма данных.
+Please note, that data is deduplicated only while merging process. Merges are processed in background. Exact time of merge is unspecified and you could not rely on it. Some part of data could be not merged at all. While you could trigger extra merge with OPTIMIZE query, it is not recommended, as OPTIMIZE will read and write vast amount of data.
 
-Таким образом, ``ReplacingMergeTree`` подходит для фоновой чистки дублирующихся данных в целях экономии места, но не даёт гарантий отсутствия дубликатов.
+This table engine is suitable for background removal of duplicate data to save space, but not suitable to guarantee of deduplication.
 
-*Движок не используется в Яндекс.Метрике, но нашёл своё применение в других отделах Яндекса.*
+*Developed for special purposes of not Yandex.Metrica department.*
+

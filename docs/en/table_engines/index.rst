@@ -1,17 +1,16 @@
-Движки таблиц
+Table engines
 =============
 
-Движок таблицы (тип таблицы) определяет:
- - как и где хранятся данные - куда их писать и откуда читать;
- - какие запросы поддерживаются, и каким образом;
- - конкуррентный доступ к данным;
- - использование индексов, если есть;
- - возможно ли многопоточное выполнение запроса;
- - репликацию данных;
- - при чтении, движок обязан лишь достать нужный набор столбцов;
-   но в некоторых случаях, запрос может быть частично обработан в рамках движка таблицы.
+The table engine (type of table) determines:
+ - How and where data is stored - where to write it to, and where to read it from.
+ - Which queries are supported, and how.
+ - Concurrent data access.
+ - Use of indexes, if present.
+ - Whether multithreaded request execution is possible.
+ - Data replication.
+ - When reading data, the engine is only required to extract the necessary set of columns. However, in some cases, the query may be partially processed inside the table engine.
 
-Забегая вперёд, заметим, что для большинства серьёзных задач, следует использовать движки семейства MergeTree.
+Note that for most serious tasks, you should use engines from the MergeTree family.
 
 .. toctree::
     :glob:

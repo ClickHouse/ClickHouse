@@ -1,6 +1,6 @@
 Null
 ----
 
-При записи в таблицу типа Null, данные игнорируются. При чтении из таблицы типа Null, возвращается пустота.
+When writing to a Null table, data is ignored. When reading from a Null table, the response is empty.
 
-Тем не менее, есть возможность создать материализованное представление над таблицей типа Null. Тогда данные, записываемые в таблицу, будут попадать в представление.
+However, you can create a materialized view on a Null table, so the data written to the table will end up in the view.

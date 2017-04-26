@@ -1,31 +1,31 @@
 Distributed
 -----------
 
-**Движок Distributed не хранит данные самостоятельно**, а позволяет обрабатывать запросы распределённо, на нескольких серверах.
-Чтение автоматически распараллеливается. При чтении будут использованы индексы таблиц на удалённых серверах, если есть.
-Движок Distributed принимает параметры: имя кластера в конфигурационном файле сервера, имя удалённой базы данных, имя удалённой таблицы, а также (не обязательно) ключ шардирования.
-Пример:
+**The Distributed engine does not store data itself**, but allows distributed query processing on multiple servers.
+Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.
+The Distributed engine accepts parameters: the cluster name in the server's config file, the name of a remote database, the name of a remote table, and (optionally) a sharding key.
+Example:
 ::
   Distributed(logs, default, hits[, sharding_key])
 
-- данные будут читаться со всех серверов кластера logs, из таблицы default.hits, расположенной на каждом сервере кластера.
-Данные не только читаются, но и частично (настолько, насколько это возможно) обрабатываются на удалённых серверах.
-Например, при запросе с GROUP BY, данные будут агрегированы на удалённых серверах, промежуточные состояния агрегатных функций будут отправлены на запросивший сервер; затем данные будут доагрегированы.
+- Data will be read from all servers in the 'logs' cluster, from the 'default.hits' table located on every server in the cluster.
+Data is not only read, but is partially processed on the remote servers (to the extent that this is possible).
+For example, for a query with GROUP BY, data will be aggregated on remote servers, and the intermediate states of aggregate functions will be sent to the requestor server. Then data will be further aggregated.
 
-Вместо имени базы данных может использоваться константное выражение, возвращающее строку. Например, currentDatabase().
+Instead of the database name, you can use a constant expression that returns a string. For example, ``currentDatabase()``.
 
-logs - имя кластера в конфигурационном файле сервера.
+logs - The cluster name in the server's config file.
 
-Кластеры задаются следующим образом:
+Clusters are set like this:
 
 .. code-block:: xml
 
   <remote_servers>
       <logs>
           <shard>
-              <!-- Не обязательно. Вес шарда при записи данных. По умолчанию, 1. -->
+              <!-- Optional. Shard weight when writing data. By default, 1. -->
               <weight>1</weight>
-              <!-- Не обязательно. Записывать ли данные только на одну, любую из реплик. По умолчанию, false - записывать данные на все реплики. -->
+              <!-- Optional. Whether to write data to just one of the replicas. By default, false - write data to all of the replicas. -->
               <internal_replication>false</internal_replication>
               <replica>
                   <host>example01-01-1</host>
@@ -51,63 +51,61 @@ logs - имя кластера в конфигурационном файле с
       </logs>
   </remote_servers>
 
-Здесь задан кластер с именем logs, состоящий из двух шардов, каждый из которых состоит из двух реплик.
-Шардами называются серверы, содержащие разные части данных (чтобы прочитать все данные, нужно идти на все шарды).
-Репликами называются дублирующие серверы (чтобы прочитать данные, можно идти за данными на любую из реплик).
+Here a cluster is defined with the name 'logs' that consists of two shards, each of which contains two replicas. Shards refer to the servers that contain different parts of the data (in order to read all the data, you must access all the shards).
+Replicas are duplicating servers (in order to read all the data, you can access the data on any one of the replicas).
 
-В качестве параметров для каждого сервера указываются ``host``, ``port`` и, не обязательно, ``user``, ``password``:
- * ``host`` - адрес удалённого сервера. Может быть указан домен, или IPv4 или IPv6 адрес. В случае указания домена, при старте сервера делается DNS запрос, и результат запоминается на всё время работы сервера. Если DNS запрос неуспешен, то сервер не запускается. Если вы изменяете DNS-запись, перезапустите сервер.
- * ``port`` - TCP-порт для межсерверного взаимодействия (в конфиге - tcp_port, обычно 9000). Не перепутайте с http_port.
- * ``user`` - имя пользователя для соединения с удалённым сервером. по умолчанию - default. Этот пользователь должен иметь доступ для соединения с указанным сервером. Доступы настраиваются в файле users.xml, подробнее смотрите в разделе "Права доступа".
- * ``password`` - пароль для соединения с удалённым сервером, в открытом виде. по умолчанию - пустая строка.
+For each server, there are several parameters: mandatory: ``'host'``, ``'port'``, and optional: ``'user'``, ``'password'``.
+ * ``host`` - address of remote server. May be specified as domain name or IPv4 or IPv6 address. If you specify domain, server will perform DNS lookup at startup, and result will be cached till server shutdown. If DNS request is failed, server won't start. If you are changing DNS records, restart the server for new records to take effect.
+ * ``port`` - TCP-port for interserver communication (tcp_port in configuration file, usually 9000). Don't get confused with http_port.
+ * ``user`` - user name to connect to remote server. By default user is 'default'. This user must have access rights to connect to remote server. Access rights are managed in users.xml configuration file. For additional info, consider "Access rights" section.
+ * ``password`` - password to log in to remote server, in plaintext. Default is empty string.
 
-При указании реплик, для каждого из шардов, при чтении, будет выбрана одна из доступных реплик. Можно настроить алгоритм балансировки нагрузки (то есть, предпочтения, на какую из реплик идти) - см. настройку load_balancing.
-Если соединение с сервером не установлено, то будет произведена попытка соединения с небольшим таймаутом. Если соединиться не удалось, то будет выбрана следующая реплика, и так для всех реплик. Если попытка соединения для всех реплик не удалась, то будут снова произведены попытки соединения по кругу, и так несколько раз.
-Это работает в пользу отказоустойчивости, хотя и не обеспечивает полную отказоустойчивость: удалённый сервер может принять соединение, но не работать, или плохо работать.
+When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) - see the 'load_balancing' setting.
+If the connection with the server is not established, there will be an attempt to connect with a short timeout. If the connection failed, the next replica will be selected, and so on for all the replicas. If the connection attempt failed for all the replicas, the attempt will be repeated the same way, several times.
+This works in favor of resiliency, but does not provide complete fault tolerance: a remote server might accept the connection, but might not work, or work poorly.
 
-Можно указать от одного шарда (в таком случае, обработку запроса стоит называть удалённой, а не распределённой) до произвольного количества шардов. В каждом шарде можно указать от одной до произвольного числа реплик. Можно указать разное число реплик для каждого шарда.
+You can specify just one of the shards (in this case, query processing should be called remote, rather than distributed) or up to any number of shards. In each shard, you can specify from one to any number of replicas. You can specify a different number of replicas for each shard.
 
-Вы можете прописать сколько угодно кластеров в конфигурации.
+You can specify as many clusters as you wish in the configuration.
 
-Для просмотра имеющихся кластеров, вы можете использовать системную таблицу system.clusters.
+To view your clusters, use the 'system.clusters' table.
 
-Движок Distributed позволяет работать с кластером, как с локальным сервером. При этом, кластер является неэластичным: вы должны прописать его конфигурацию в конфигурационный файл сервера (лучше всех серверов кластера).
+The Distributed engine allows working with a cluster like a local server. However, the cluster is inextensible: you must write its configuration in the server config file (even better, for all the cluster's servers).
 
-Не поддерживаются Distributed таблицы, смотрящие на другие Distributed таблицы (за исключением случаев, когда у Distributed таблицы всего один шард). Вместо этого, сделайте так, чтобы Distributed таблица смотрела на "конечные" таблицы.
+There is no support for Distributed tables that look at other Distributed tables (except in cases when a Distributed table only has one shard). As an alternative, make the Distributed table look at the "final" tables.
 
-Как видно, движок Distributed требует прописывания кластера в конфигурационный файл; кластера из конфигурационного файла обновляются налету, без перезапуска сервера. Если вам необходимо каждый раз отправлять запрос на неизвестный набор шардов и реплик, вы можете не создавать Distributed таблицу, а воспользоваться табличной функцией remote. Смотрите раздел "Табличные функции".
+The Distributed engine requires writing clusters to the config file. Clusters from config are updated on the fly, it does not require server restart. If you need to send a query to an unknown set of shards and replicas each time, you don't need to create a Distributed table - use the 'remote' table function instead. See the section "Table functions".
 
-Есть два способа записывать данные на кластер:
+There are two methods for writing data to a cluster:
 
-Во первых, вы можете самостоятельно определять, на какие серверы какие данные записывать, и выполнять запись непосредственно на каждый шард. То есть, делать INSERT в те таблицы, на которые "смотрит" распределённая таблица.
-Это наиболее гибкое решение - вы можете использовать любую схему шардирования, которая может быть нетривиальной из-за требований предметной области.
-Также это является наиболее оптимальным решением, так как данные могут записываться на разные шарды полностью независимо.
+First, you can define which servers to write which data to, and perform the write directly on each shard. In other words, perform INSERT in the tables that the distributed table "looks at".
+This is the most flexible solution - you can use any sharding scheme, which could be non-trivial due to the requirements of the subject area.
+This is also the most optimal solution, since data can be written to different shards completely independently.
 
-Во вторых, вы можете делать INSERT в Distributed таблицу. В этом случае, таблица будет сама распределять вставляемые данные по серверам.
-Для того, чтобы писать в Distributed таблицу, у неё должен быть задан ключ шардирования (последний параметр). Также, если шард всего-лишь один, то запись работает и без указания ключа шардирования (так как в этом случае он не имеет смысла).
+Second, you can perform INSERT in a Distributed table. In this case, the table will distribute the inserted data across servers itself.
+In order to write to a Distributed table, it must have a sharding key set (the last parameter). In addition, if there is only one shard, the write operation works without specifying the sharding key, since it doesn't have any meaning in this case.
 
-У каждого шарда в конфигурационном файле может быть задан "вес" (weight). По умолчанию, вес равен единице. Данные будут распределяться по шардам в количестве, пропорциональном весу шарда. Например, если есть два шарда, и у первого выставлен вес 9, а у второго 10, то на первый будет отправляться 9 / 19 доля строк, а на второй - 10 / 19.
+Each shard can have a weight defined in the config file. By default, the weight is equal to one. Data is distributed across shards in the amount proportional to the shard weight. For example, if there are two shards and the first has a weight of 9 while the second has a weight of 10, the first will be sent 9 / 19 parts of the rows, and the second will be sent 10 / 19.
 
-У каждого шарда в конфигурационном файле может быть указан параметр internal_replication.
+Each shard can have the 'internal_replication' parameter defined in the config file.
 
-Если он выставлен в true, то для записи будет выбираться первая живая реплика и данные будут писаться на неё. Этот вариант следует использовать, если Distributed таблица "смотрит" на реплицируемые таблицы. То есть, если таблица, в которую будут записаны данные, будет сама заниматься их репликацией.
+If this parameter is set to 'true', the write operation selects the first healthy replica and writes data to it. Use this alternative if the Distributed table "looks at" replicated tables. In other words, if the table where data will be written is going to replicate them itself.
 
-Если он выставлен в false (по умолчанию), то данные будут записываться на все реплики. По сути, это означает, что Distributed таблица занимается репликацией данных самостоятельно. Это хуже, чем использование реплицируемых таблиц, так как не контролируется консистентность реплик, и они со временем будут содержать немного разные данные.
+If it is set to 'false' (the default), data is written to all replicas. In essence, this means that the Distributed table replicates data itself. This is worse than using replicated tables, because the consistency of replicas is not checked, and over time they will contain slightly different data.
 
-Для выбора шарда, на который отправляется строка данных, вычисляется выражение шардирования, и берётся его остаток от деления на суммарный вес шардов. Строка отправляется на шард, соответствующий полуинтервалу остатков от prev_weights до prev_weights + weight, где prev_weights - сумма весов шардов с меньшим номером, а weight - вес этого шарда. Например, если есть два шарда, и у первого выставлен вес 9, а у второго 10, то строка будет отправляться на первый шард для остатков из диапазона [0, 9), а на второй - для остатков из диапазона [10, 19).
+To select the shard that a row of data is sent to, the sharding expression is analyzed, and its remainder is taken from dividing it by the total weight of the shards. The row is sent to the shard that corresponds to the half-interval of the remainders from 'prev_weight' to 'prev_weights + weight', where 'prev_weights' is the total weight of the shards with the smallest number, and 'weight' is the weight of this shard. For example, if there are two shards, and the first has a weight of 9 while the second has a weight of 10, the row will be sent to the first shard for the remainders from the range [0, 9), and to the second for the remainders from the range [10, 19).
 
-Выражением шардирование может быть произвольное выражение от констант и столбцов таблицы, возвращающее целое число. Например, вы можете использовать выражение rand() для случайного распределения данных, или UserID - для распределения по остатку от деления идентификатора посетителя (тогда данные одного посетителя будут расположены на одном шарде, что упростит выполнение IN и JOIN по посетителям). Если распределение какого-либо столбца недостаточно равномерное, вы можете обернуть его в хэш функцию: intHash64(UserID).
+The sharding expression can be any expression from constants and table columns that returns an integer. For example, you can use the expression 'rand()' for random distribution of data, or 'UserID' for distribution by the remainder from dividing the user's ID (then the data of a single user will reside on a single shard, which simplifies running IN and JOIN by users). If one of the columns is not distributed evenly enough, you can wrap it in a hash function: intHash64(UserID).
 
-Простой остаток от деления является довольно ограниченным решением для шардирования и подходит не для всех случаев. Он подходит для среднего и большого объёма данных (десятки серверов), но не для очень больших объёмов данных (сотни серверов и больше). В последнем случае, лучше использовать схему шардирования, продиктованную требованиями предметной области, и не использовать возможность записи в Distributed таблицы.
+A simple remainder from division is a limited solution for sharding and isn't always appropriate. It works for medium and large volumes of data (dozens of servers), but not for very large volumes of data (hundreds of servers or more). In the latter case, use the sharding scheme required by the subject area, rather than using entries in Distributed tables.
 
-В случае использования реплицированных таблиц, есть возможность перешардировать данные - смотрите раздел "Перешардирование". Но во многих случаях лучше обойтись без этого. Запросы SELECT отправляются на все шарды, и работают независимо от того, каким образом данные распределены по шардам (они могут быть распределены полностью случайно). При добавлении нового шарда, можно не переносить на него старые данные, а записывать новые данные с большим весом - данные будут распределены слегка неравномерно, но запросы будут работать корректно и достаточно эффективно.
+When using Replicated tables, it is possible to reshard data - look at "Resharding" section. But in many cases, better to do without it. SELECT queries are sent to all the shards, and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you don't have to transfer the old data to it. You can write new data with a heavier weight - the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
 
-Беспокоиться о схеме шардирования имеет смысл в следующих случаях:
-- используются запросы, требующие соединение данных (IN, JOIN) по определённому ключу - тогда если данные шардированы по этому ключу, то можно использовать локальные IN, JOIN вместо GLOBAL IN, GLOBAL JOIN, что кардинально более эффективно.
-- используется большое количество серверов (сотни и больше) и большое количество маленьких запросов (запросы отдельных клиентов - сайтов, рекламодателей, партнёров) - тогда, для того, чтобы маленькие запросы не затрагивали весь кластер, имеет смысл располагать данные одного клиента на одном шарде, или (вариант, который используется в Яндекс.Метрике) сделать двухуровневое шардирование: разбить весь кластер на "слои", где слой может состоять из нескольких шардов; данные для одного клиента располагаются на одном слое, но в один слой можно по мере необходимости добавлять шарды, в рамках которых данные распределены произвольным образом; создаются распределённые таблицы на каждый слой и одна общая распределённая таблица для глобальных запросов.
+You should be concerned about the sharding scheme in the following cases:
+- Queries are used that require joining data (IN or JOIN) by a specific key. If data is sharded by this key, you can use local IN or JOIN instead of GLOBAL IN or GLOBAL JOIN, which is much more efficient.
+- A large number of servers is used (hundreds or more) with a large number of small queries (queries of individual clients - websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, as we've done in Yandex.Metrica, you can set up bi-level sharding: divide the entire cluster into "layers", where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. Distributed tables are created for each layer, and a single shared distributed table is created for global queries.
 
-Запись данных осуществляется полностью асинхронно. При INSERT-е в Distributed таблицу, блок данных всего лишь записывается в локальную файловую систему. Данные отправляются на удалённые серверы в фоне, при первой возможности. Вы должны проверять, успешно ли отправляются данные, проверяя список файлов (данные, ожидающие отправки) в директории таблицы: /var/lib/clickhouse/data/database/table/.
+Data is written asynchronously. For an INSERT to a Distributed table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory:
+/var/lib/clickhouse/data/database/table/.
 
-Если после INSERT-а в Distributed таблицу, сервер перестал существовать или был грубо перезапущен (например, в следствие аппаратного сбоя), то записанные данные могут быть потеряны. Если в директории таблицы обнаружен повреждённый кусок данных, то он переносится в поддиректорию broken и больше не используется.
-
-При выставлении опции max_parallel_replicas выполнение запроса распараллеливается по всем репликам внутри одного шарда. Подробнее смотрите раздел "Настройки, max_parallel_replicas".
+If the server ceased to exist or had a rough restart (for example, after a device failure) after an INSERT to a Distributed table, the inserted data might be lost. If a damaged data part is detected in the table directory, it is transferred to the 'broken' subdirectory and no longer used.

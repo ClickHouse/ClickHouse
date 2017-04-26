@@ -3,13 +3,13 @@
 
 .. code-block:: sql
 
-  ALTER TABLE t RESHARD [COPY] [PARTITION partition] TO описание кластера USING ключ шардирования
+  ALTER TABLE t RESHARD [COPY] [PARTITION partition] TO cluster description USING sharding key
 
-Запрос работает только для Replicated-таблиц и для Distributed-таблиц, смотрящих на Replicated-таблицы.
+Query works only for Replicated tables and for Distributed tables that are looking at Replicated tables.
 
-При выполнении, запрос сначала проверяет корректность запроса, наличие свободного места на серверах и кладёт в ZooKeeper по некоторому пути задачу, которую нужно сделать. Дальнейшее выполнение делается асинхронно.
+When executing, query first checks correctness of query, sufficiency of free space on nodes and writes to ZooKeeper at some path a task to to. Next work is done asynchronously.
 
-Для того, чтобы использовать перешардирование, в конфигурационном файле каждого сервера должен быть указан путь в ZooKeeper к очереди задач:
+For using resharding, you must specify path in ZooKeeper for task queue in configuration file:
 
 .. code-block:: xml
 
@@ -17,12 +17,12 @@
   	<task_queue_path>/clickhouse/task_queue</task_queue_path>
   </resharding>
 
-При выполнении запроса ``ALTER TABLE t RESHARD``, узел в ZooKeeper создаётся, если его не было.
+When running ``ALTER TABLE t RESHARD`` query, node in ZooKeeper is created if not exists.
 
-Описание кластера - список шардов с весами, на которые нужно перераспределить указанные данные.
-Шард указывается в виде адреса таблицы в ZooKeeper. Например, ``/clickhouse/tables/01-03/hits``
-Относительный вес шарда (не обязательно, по умолчанию, 1) может быть указан после ключевого слова WEIGHT.
-Пример:
+Cluster description is list of shards with weights to distribute the data.
+Shard is specified as address of table in ZooKeeper. Example: /clickhouse/tables/01-03/hits
+Relative weight of shard (optional, default is 1) could be specified after WEIGHT keyword.
+Example:
 
 .. code-block:: sql
 
@@ -35,32 +35,32 @@
   	'/clickhouse/tables/01-04/hits' WEIGHT 1
   USING UserID
 
-Ключ шардирования (в примере: ``UserID``) имеет такой же смысл, как для Distributed таблиц. Вы можете указать rand() в качестве ключа шардирования для случайного перераспределения данных.
+Sharding key (``UserID`` in example) has same semantic as for Distributed tables. You could specify ``rand()`` as sharding key for random distribution of data.
 
-При выполнении запроса, сразу проверяется:
- * совпадение структур таблиц локально и на всех указанных шардах.
- * наличие на локальном сервере свободного места в количестве, равном размеру партиции в байтах, с запасом в 10%.
- * наличие на всех репликах всех указанных шардов, кроме являющейся локальной, если такая есть, свободного места в количестве равном размеру партиции, домноженном на отношение веса шарда к суммарному весу, с запасом в 10%.
+When query is run, it checks:
+ * identity of table structure on all shards.
+ * availability of free space on local node in amount of partition size in bytes, with additional 10% reserve.
+ * availability of free space on all replicas of all specified shards, except local replica, if exists, in amount of patition size times ratio of shard weight to total weight of all shards, with additional 10% reserve.
 
-Далее, асинхронное выполнение задачи состоит из следующих шагов:
- #. Нарезка партиции на кусочки на локальном сервере.
-    Для этого делается слияние всех кусков, входящих в партицию и, одновременно, разбиение их на несколько, согласно ключу шардирования.
-    Результат складывается в директорию /reshard в директории с данными таблицы.
-    Исходные куски никак не модифицируются и весь процесс не влияет на рабочие данные таблицы.
+Next, asynchronous processing of query is of following steps:
+ #. Split patition to parts on local node.
+	It merges all parts forming a partition and in the same time, splits them to several, according sharding key.
+	Result is placed to /reshard directory in table data directory.
+	Source parts doesn't modified and all process doesn't intervent table working data set.
 
- #. Копирование всех кусков на удалённые серверы (на каждую реплику соответствующих шардов).
+ #. Copying all parts to remote nodes (to each replica of corresponding shard).
 
- #. Выполнение запроса ALTER TABLE t DROP PARTITION на локальном сервере, выполнение запросов ALTER TABLE t ATTACH PARTITION на всех шардах.
-    Замечание: это делается неатомарно. Есть момент времени, в течение которого пользователь может увидеть отсутствие данных партиции.
+ #. Execution of queries ``ALTER TABLE t DROP PARTITION`` on local node and ``ALTER TABLE t ATTACH PARTITION`` on all shards.
+	Note: this operation is not atomic. There are time point when user could see absence of data.
 
-    В случае указания в запросе слова COPY, исходные данные не удаляются. Это подходит для копирования данных с одного кластера на другой с одновременным изменением схемы шардирования.
+	When ``COPY`` keyword is specified, source data is not removed. It is suitable for copying data from one cluster to another with changing sharding scheme in same time.
 
- #. Удаление временных данных с локального сервера.
+ #. Removing temporary data from local node.
 
-При наличии нескольких запросов на перешардирование, соответствующие задачи будут делаться последовательно.
+When having multiple resharding queries, their tasks will be done sequentially.
 
-Указанный выше запрос предназначен для того, чтобы перешардировать одну партицию.
-Если не указать партицию в запросе, то в задачи на перешардирование будут добавлены все партиции. Пример:
+Query in example is to reshard single partition.
+If you don't specify partition in query, then tasks to reshard all partitions will be created. Example:
 
 .. code-block:: sql
   
@@ -68,14 +68,12 @@
   RESHARD
   TO ...
 
-В этом случае, последовательно вставляются задачи на перешардирование каждой партиции.
+When resharding Distributed tables, each shard will be resharded (corresponding query is sent to each shard).
 
-В случае перешардирования Distributed-таблицы, производится перешардирование каждого шарда (соответствующий запрос отправляется на каждый шард).
+You could reshard Distributed table to itself or to another table.
 
-Вы можете перешардировать Distributed-таблицу как в саму себя, так и в другую таблицу.
+Resharding is intended for "old" data: in case when during job, resharded partition was modified, task for that partition will be cancelled.
 
-Перешардирование предназначено для перераспределения "старых" данных: в случае, если во время работы, перешардируемая партиция была изменена, то перешардирование этой партиции отменяется.
+On each server, resharding is done in single thread. It is doing that way to not disturb normal query processing.
 
-На каждом сервере, перешардирование осуществляется в один поток, чтобы в процессе длительных операций перешардирования, не мешать другим задачам.
-
-По состоянию на июнь 2016, перешардирование находится в состоянии "бета": тестировалось лишь на небольшом объёме данных - до 5 ТБ.
+As of June 2016, resharding is in "beta" state: it was tested only for small data sets - up to 5 TB.

@@ -1,12 +1,12 @@
 AggregatingMergeTree
 --------------------
 
-Отличается от MergeTree тем, что при слиянии, выполняет объединение состояний агрегатных функций, хранимых в таблице, для строчек с одинаковым значением первичного ключа.
+This engine differs from ``MergeTree`` in that the merge combines the states of aggregate functions stored in the table for rows with the same primary key value.
 
-Чтобы это работало, используются: тип данных AggregateFunction, а также модификаторы -State и -Merge для агрегатных функций. Рассмотрим подробнее.
+In order for this to work, it uses the AggregateFunction data type and the -State and -Merge modifiers for aggregate functions. Let's examine it more closely.
 
-Существует тип данных AggregateFunction. Это параметрический тип данных. В качестве параметров передаются: имя агрегатной функции, затем типы её аргументов.
-Примеры:
+There is an AggregateFunction data type, which is a parametric data type. As parameters, the name of the aggregate function is passed, then the types of its arguments.
+Examples:
 
 .. code-block:: sql
 
@@ -17,18 +17,18 @@ AggregatingMergeTree
       column3 AggregateFunction(quantiles(0.5, 0.9), UInt64)
   ) ENGINE = ...
 
-Столбец такого типа хранит состояние агрегатной функции.
+This type of column stores the state of an aggregate function.
 
-Чтобы получить значение такого типа, следует использовать агрегатные функции с суффиксом ``State``.
-Пример: ``uniqState(UserID), quantilesState(0.5, 0.9)(SendTiming)`` - в отличие от соответствующих функций uniq, quantiles, такие функции возвращают не готовое значение, а состояние. То есть, значение типа AggregateFunction.
+To get this type of value, use aggregate functions with the 'State' suffix.
+Example: uniqState(UserID), quantilesState(0.5, 0.9)(SendTiming) - in contrast to the corresponding 'uniq' and 'quantiles' functions, these functions return the state, rather than the prepared value. In other words, they return an AggregateFunction type value.
 
-Значение типа AggregateFunction нельзя вывести в Pretty-форматах. В других форматах, значения такого типа выводятся в виде implementation-specific бинарных данных. То есть, значения типа AggregateFunction не предназначены для вывода, сохранения в дамп.
+An AggregateFunction type value can't be output in Pretty formats. In other formats, these types of values are output as implementation-specific binary data. The AggregateFunction type values are not intended for output or saving in a dump.
 
-Единственную полезную вещь, которую можно сделать со значениями типа AggregateFunction - это объединить состояния и получить результат, по сути - доагрегировать до конца. Для этого используются агрегатные функции с суффиксом Merge.
-Пример: ``uniqMerge(UserIDState), где UserIDState имеет тип AggregateFunction``.
+The only useful thing you can do with AggregateFunction type values is combine the states and get a result, which essentially means to finish aggregation. Aggregate functions with the 'Merge' suffix are used for this purpose.
+Example: uniqMerge(UserIDState), where UserIDState has the AggregateFunction type.
 
-То есть, агрегатная функция с суффиксом Merge берёт множество состояний, объединяет их, и возвращает готовый результат.
-Для примера, эти два запроса возвращают один и тот же результат:
+In other words, an aggregate function with the 'Merge' suffix takes a set of states, combines them, and returns the result.
+As an example, these two queries return the same result:
 
 .. code-block:: sql
 
@@ -36,16 +36,16 @@ AggregatingMergeTree
   
   SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
 
-Существует движок ``AggregatingMergeTree``. Он занимается тем, что при слияниях, выполняет объединение состояний агрегатных функций из разных строчек таблицы с одним значением первичного ключа.
+There is an AggregatingMergeTree engine. Its job during a merge is to combine the states of aggregate functions from different table rows with the same primary key value.
 
-В таблицу, содержащую столбцы типа AggregateFunction невозможно вставить строчку обычным запросом INSERT, так как невозможно явно указать значение типа AggregateFunction. Вместо этого, для вставки данных, следует использовать INSERT SELECT с агрегатными функциями -State.
+You can't use a normal INSERT to insert a row in a table containing AggregateFunction columns, because you can't explicitly define the AggregateFunction value. Instead, use INSERT SELECT with '-State' aggregate functions for inserting data.
 
-При SELECT-е из таблицы AggregatingMergeTree, используйте GROUP BY и агрегатные функции с модификатором -Merge, чтобы доагрегировать данные.
+With SELECT from an AggregatingMergeTree table, use GROUP BY and aggregate functions with the '-Merge' modifier in order to complete data aggregation.
 
-Таблицы типа AggregatingMergeTree могут использоваться для инкрементальной агрегации данных, в том числе, для агрегирующих материализованных представлений.
+You can use AggregatingMergeTree tables for incremental data aggregation, including for aggregated materialized views.
 
-Пример:
-Создаём материализованное представление типа AggregatingMergeTree, следящее за таблицей test.visits:
+Example:
+Creating a materialized AggregatingMergeTree view that tracks the 'test.visits' table:
 
 .. code-block:: sql
 
@@ -59,13 +59,13 @@ AggregatingMergeTree
   FROM test.visits
   GROUP BY CounterID, StartDate;
 
-Вставляем данные в таблицу test.visits. Данные будут также вставлены в представление, где они будут агрегированы:
+Inserting data in the 'test.visits' table. Data will also be inserted in the view, where it will be aggregated:
 
 .. code-block:: sql
 
   INSERT INTO test.visits ...
 
-Делаем SELECT из представления, используя GROUP BY, чтобы доагрегировать данные:
+Performing SELECT from the view using GROUP BY to finish data aggregation:
 
 .. code-block:: sql
 
@@ -77,6 +77,6 @@ AggregatingMergeTree
   GROUP BY StartDate
   ORDER BY StartDate;
   
-Вы можете создать такое материализованное представление и навесить на него обычное представление, выполняющее доагрегацию данных.
+You can create a materialized view like this and assign a normal view to it that finishes data aggregation.
 
-Заметим, что в большинстве случаев, использование ``AggregatingMergeTree`` является неоправданным, так как можно достаточно эффективно выполнять запросы по неагрегированным данных.
+Note that in most cases, using AggregatingMergeTree is not justified, since queries can be run efficiently enough on non-aggregated data.

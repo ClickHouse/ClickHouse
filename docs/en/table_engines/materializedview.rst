@@ -1,4 +1,4 @@
 MaterializedView
 -----------------
 
-Используется для реализации материализованных представлений (подробнее см. запрос ``CREATE MATERIALIZED VIEW``). Для хранения данных, использует другой движок, который был указан при создании представления. При чтении из таблицы, просто использует этот движок.
+Used for implementing materialized views (for more information, see ``CREATE MATERIALIZED VIEW``). For storing data, it uses a different engine that was specified when creating the view. When reading from a table, it just uses this engine.
