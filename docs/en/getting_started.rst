@@ -1,103 +1,100 @@
-Начало работы
+Getting started
 =============
     
-Системные требования
+System requirements
 -----------------
 
-Система некроссплатформенная. Требуется ОС Linux Ubuntu не более старая, чем Precise (12.04); архитектура x86_64 с поддержкой набора инструкций SSE 4.2.
-Для проверки наличия SSE 4.2, выполните:
+This is not a cross-platform system. It requires Linux Ubuntu Precise (12.04) or newer, x86_64 architecture with SSE 4.2 instruction set.
+To test for SSE 4.2 support, do:
 ::
     grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 
-Рекомендуется использовать Ubuntu Trusty или Ubuntu Xenial или Ubuntu Precise.
-Терминал должен работать в кодировке UTF-8 (как по умолчанию в Ubuntu).
+We recommend using Ubuntu Trusty or Ubuntu Xenial or Ubuntu Precise.
+The terminal must use UTF-8 encoding (the default in Ubuntu).
 
-Установка
+Installation
 -----------------
 
-В целях тестирования и разработки, система может быть установлена на один сервер или на рабочий компьютер.
+For testing and development, the system can be installed on a single server or on a desktop computer.
 
-Установка из пакетов
+Installing from packages
 ~~~~~~~~~~~~~~~~~~~~
 
-Пропишите в `/etc/apt/sources.list` (или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`) репозитории:
+In `/etc/apt/sources.list` (or in a separate `/etc/apt/sources.list.d/clickhouse.list` file), add the repository: 
 ::
     deb http://repo.yandex.ru/clickhouse/trusty stable main
 
-На других версиях Ubuntu, замените `trusty` на `xenial` или `precise`.
+For other Ubuntu versions, replace `trusty` to `xenial` or `precise`.
 
-Затем выполните:
+Then run:
 ::
     sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
     sudo apt-get update
     sudo apt-get install clickhouse-client clickhouse-server-common
     
-Также можно скачать и установить пакеты вручную, отсюда:
+You can also download and install packages manually from here:
 http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/,
 http://repo.yandex.ru/clickhouse/xenial/pool/main/c/clickhouse/,
 http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/.
 
-ClickHouse содержит настройки ограничения доступа. Они расположены в файле users.xml (рядом с config.xml).
-По умолчанию, разрешён доступ отовсюду для пользователя default без пароля. См. секцию users/default/networks.
-Подробнее смотрите в разделе "конфигурационные файлы".
+ClickHouse contains access restriction settings. They are located in the 'users.xml' file (next to 'config.xml').
+By default, access is allowed from everywhere for the default user without a password. See 'user/default/networks'. For more information, see the section "Configuration files".
 
-Установка из исходников
+Installing from source
 ~~~~~~~~~~~~~~~~~~~~~~~
-Для сборки воспользуйтесь инструкцией: build.md
+To build, follow the instructions in build.md (for Linux) or in build_osx.md (for Mac OS X).
 
-Вы можете собрать пакеты и установить их.
-Также вы можете использовать программы без установки пакетов.
+You can compile packages and install them. You can also use programs without installing packages.
 ::
-    Клиент: dbms/src/Client/
-    Сервер: dbms/src/Server/
+    Client: dbms/src/Client/
+    Server: dbms/src/Server/
 
-Для сервера создаёте директории с данными, например:
+For the server, create a catalog with data, such as:
 ::
     /opt/clickhouse/data/default/
     /opt/clickhouse/metadata/default/
     
-(Настраивается в конфиге сервера.)
-Сделайте chown под нужного пользователя.
+(Configured in the server config.)
+Run 'chown' for the desired user.
 
-Обратите внимание на путь к логам в конфиге сервера (src/dbms/src/Server/config.xml).
+Note the path to logs in the server config (src/dbms/src/Server/config.xml).
 
-Другие методы установки
+Other methods of installation
 ~~~~~~~~~~~~~~~~~~~~~~~
-Docker образ: https://hub.docker.com/r/yandex/clickhouse-server/
+The Docker image is located here: https://hub.docker.com/r/yandex/clickhouse-server/
 
-Gentoo overlay: https://github.com/kmeaw/clickhouse-overlay
+There is Gentoo overlay located here: https://github.com/kmeaw/clickhouse-overlay
 
 
-Запуск
+Launch
 -------
 
-Для запуска сервера (в качестве демона), выполните:
+To start the server (as a daemon), run:
 ::
     sudo service clickhouse-server start
     
-Смотрите логи в директории `/var/log/clickhouse-server/`
+View the logs in the catalog `/var/log/clickhouse-server/`
 
-Если сервер не стартует - проверьте правильность конфигурации в файле `/etc/clickhouse-server/config.xml`
+If the server doesn't start, check the configurations in the file `/etc/clickhouse-server/config.xml`
 
-Также можно запустить сервер из консоли:
+You can also launch the server from the console:
 ::
     clickhouse-server --config-file=/etc/clickhouse-server/config.xml
     
-При этом, лог будет выводиться в консоль - удобно для разработки.
-Если конфигурационный файл лежит в текущей директории, то указывать параметр --config-file не требуется - по умолчанию будет использован файл ./config.xml
+In this case, the log will be printed to the console, which is convenient during development. If the configuration file is in the current directory, you don't need to specify the '--config-file' parameter. By default, it uses './config.xml'.
 
-Соединиться с сервером можно с помощью клиента командной строки:
+You can use the command-line client to connect to the server:
 ::
     clickhouse-client
 
-Параметры по умолчанию обозначают - соединяться с localhost:9000, от имени пользователя default без пароля.
-Клиент может быть использован для соединения с удалённым сервером. Пример:
+The default parameters indicate connecting with localhost:9000 on behalf of the user 'default' without a password.
+The client can be used for connecting to a remote server. For example:
 ::
     clickhouse-client --host=example.com
     
-Подробнее смотри раздел "Клиент командной строки".
+For more information, see the section "Command-line client".
 
-Проверим работоспособность системы:
+Checking the system:
 ::
     milovidov@milovidov-Latitude-E6320:~/work/metrica/src/dbms/src/Client$ ./clickhouse-client
     ClickHouse client version 0.0.18749.
@@ -116,18 +113,18 @@ Gentoo overlay: https://github.com/kmeaw/clickhouse-overlay
     
     :)
 
-Поздравляю, система работает!
+Congratulations, it works!
 
-Тестовые данные
+Test data
 ---------------
-Если вы сотрудник Яндекса, вы можете воспользоваться тестовыми данными Яндекс.Метрики для изучения возможностей системы.
-Как загрузить тестовые данные, написано здесь.
+If you are Yandex employee, you can use Yandex.Metrica test data to explore the system's capabilities. You can find instructions for using the test data here.
 
-Если вы внешний пользователь системы, вы можете воспользоваться использовать общедоступные данные, способы загрузки которых указаны здесь.
+Otherwise, you could use one of available public datasets, described here.
 
-Если возникли вопросы
+
+If you have questions
 ---------------------
-Если вы являетесь сотрудником Яндекса, обращайтесь на внутреннюю рассылку по ClickHouse.
-Вы можете подписаться на эту рассылку, чтобы получать анонсы, быть в курсе нововведений, а также видеть вопросы, которые возникают у других пользователей.
+If you are Yandex employee, use internal ClickHouse maillist.
+You can subscribe to this list to get announcements, information on new developments, and questions that other users have.
 
-Иначе вы можете задавать вопросы на Stackoverflow или участвовать в обсуждениях на Google Groups. Также вы можете отправить приватное сообщение для разрабочиков по адресу clickhouse-feedback@yandex-team.com.
+Otherwise, you could ask questions on Stack Overflow; discuss in Google Groups; or send private message to developers to address clickhouse-feedback@yandex-team.com.

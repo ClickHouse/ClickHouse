@@ -1,6 +1,6 @@
-Особенности ClickHouse, которые могут считаться недостатками
+ClickHouse features that can be considered disadvantages
 ------------------------------------------------------------
 
-#. Отсутствие транзакций.
-#. Необходимо, чтобы результат выполнения запроса, в случае агрегации, помещался в оперативку на одном сервере. Объём исходных данных для запроса, при этом, может быть сколь угодно большим.
-#. Отсутствие полноценной реализации UPDATE/DELETE.
+#. No transactions.
+#. For aggregation, query results must fit in the RAM on a single server. However, the volume of source data for a query may be indefinitely large.
+#. Lack of full-fledged UPDATE/DELETE implementation.

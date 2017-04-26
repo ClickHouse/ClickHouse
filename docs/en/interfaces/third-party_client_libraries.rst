@@ -1,7 +1,7 @@
-Библиотеки от сторонних разработчиков
+Third-party client libraries
 --------------------------------------
 
-Существуют библиотеки для работы с ClickHouse для:
+There exist third-party client libraries for ClickHouse:
 
 * Python:
     - `infi.clickhouse_orm <https://github.com/Infinidat/infi.clickhouse_orm>`_
@@ -27,4 +27,4 @@
 * .NET
     - `ClickHouse-Net <https://github.com/killwort/ClickHouse-Net>`_
 
-Библиотеки не тестировались нами. Порядок перечисления произвольный.
+Libraries was not tested by us. Ordering is arbitrary.

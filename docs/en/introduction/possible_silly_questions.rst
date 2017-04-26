@@ -1,16 +1,19 @@
-Возможные глупые вопросы
+Possible silly questions
 -----------------------
 
-1. Почему бы не использовать системы типа map-reduce?
+1. Why not to use systems like map-reduce?
 """""""""""""""""""
 
-Системами типа map-reduce будем называть системы распределённых вычислений, в которых операция reduce сделана на основе распределённой сортировки. Таким образом, к ним относятся YAMR, Hadoop, YT.
+Systems like map-reduce are distributed computing systems, where the reduce phase is performed using distributed sorting.
+Regarding this aspect, map-reduce is similar to other systems like YAMR, Hadoop, YT.
 
-Такие системы не подходят для онлайн запросов в силу слишком большой latency. То есть, не могут быть использованы в качестве бэкенда для веб-интерфейса.
-Такие системы не подходят для обновления данных в реальном времени.
-Распределённая сортировка не является оптимальным способом выполнения операции reduce, если результат выполнения операции и все промежуточные результаты, при их наличии, помещаются в оперативку на одном сервере, как обычно бывает в запросах, выполняющихся в режиме онлайн. В таком случае, оптимальным способом выполнения операции reduce является хэш-таблица. Частым способом оптимизации map-reduce задач является предагрегация (частичный reduce) с использованием хэш-таблицы в оперативке. Эта оптимизация делается пользователем в ручном режиме.
-Распределённая сортировка является основной причиной тормозов при выполнении несложных map-reduce задач.
+These systems are not suitable for online queries because of latency, So they can't be used in backend-level for web interface.
+Systems like this also are not suitable for real-time updates.
+Distributed sorting is not optimal solution for reduce operations, if the result of the operation and all intermediate results, shall they exist, fit in operational memory of a single server, as usually happens in case of online analytical queries.
+In this case the optimal way to perform reduce operations is by using a hash-table. A common optimization method for map-reduce tasks is combine operation (partial reduce) which uses hash-tables in memory. This optimization is done by the user manually.
+Distributed sorting is the main reason for long latencies of simple map-reduce jobs.
 
-Системы типа map-reduce позволяют выполнять произвольный код на кластере. Но для OLAP задач лучше подходит декларативный язык запросов, который позволяет быстро проводить исследования. Для примера, для Hadoop существует Hive и Pig. Также смотрите Cloudera Impala, Shark (устаревший) для Spark а также Spark SQL, Presto, Apache Drill. Впрочем, производительность при выполнении таких задач является сильно неоптимальной по сравнению со специализированными системами, а сравнительно высокая latency не позволяет использовать эти системы в качестве бэкенда для веб-интерфейса.
+Systems similar to map-reduce enable running any code on the cluster. But for OLAP use-cases declarative query languages are better suited as they allow to carry out investigations faster. For example, for Hadoop there are Hive and Pig. There are others: Cloudera Impala, Shark (deprecated) and Spark SQL for Spark, Presto, Apache Drill.
+However, performance of such tasks is highly sub-optimal compared to the performance of specialized systems and relatively high latency does not allow the use of these systems as a backend for the web interface.
 
-YT позволяет хранить группы столбцов по отдельности. Но YT нельзя назвать по-настоящему столбцовой системой, так как в системе отсутствуют типы данных постоянной длины (чтобы можно было эффективно хранить числа без "мусора"), а также за счёт отсутствия векторного движка. Задачи в YT выполняются с помощью произвольного кода в режиме streaming, то есть, не могут быть достаточно оптимизированы (до сотен миллионов строк в секунду на один сервер). В YT в 2014-2016 годах находится в разработке функциональность "динамических сортированных таблиц" с использованием Merge Tree, строгой типизацией значений и языком запросов типа SQL. Динамические сортированные таблицы не подходят для OLAP задач, так как данные в них хранятся по строкам. Разработка языка запросов в YT всё ещё находится в зачаточной стадии, что не позволяет ориентироваться на эту функциональность. Разработчики YT рассматривают динамические сортированные таблицы для применения в OLTP и Key-Value сценариях работы.
+YT allows you to store separate groups of columns. But YT is not a truly columnar storage system, as the system has no fixed length data types (so you can efficiently store a number without "garbage"), and there is no vector engine. Tasks in YT are performed by arbitrary code in streaming mode, so can not be sufficiently optimized (up to hundreds of millions of lines per second per server). In 2014-2016 YT is to develop "dynamic table sorting" functionality  using Merge Tree, strongly typed values ​​and SQL-like language support. Dynamically sorted tables are not suited for OLAP tasks, since the data is stored in rows. Query language development in YT is still in incubating phase, which does not allow it to focus on this functionality. YT developers are considering dynamically sorted tables for use in OLTP and Key-Value scenarios.

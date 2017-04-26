@@ -1,102 +1,98 @@
-Синтаксис
+Syntax
 ---------
 
-В системе есть два вида парсеров: полноценный парсер SQL (recursive descent parser) и парсер форматов данных (быстрый потоковый парсер).
-Во всех случаях кроме запроса INSERT, используется только полноценный парсер SQL.
-В запросе INSERT используется оба парсера:
+There are two types of parsers in the system: a full SQL parser (a recursive descent parser), and a data format parser (a fast stream parser). In all cases except the INSERT query, only the full SQL parser is used.
+The INSERT query uses both parsers:
 ::
   INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
-Фрагмент ``INSERT INTO t VALUES`` парсится полноценным парсером, а данные ``(1, 'Hello, world'), (2, 'abc'), (3, 'def')`` - быстрым потоковым парсером.
-Данные могут иметь любой формат. При получении запроса, сервер заранее считывает в оперативку не более ``max_query_size`` байт запроса (по умолчанию, 1МБ), а всё остальное обрабатывается потоково.
-Таким образом, в системе нет проблем с большими INSERT запросами, как в MySQL.
+The ``INSERT INTO t VALUES`` fragment is parsed by the full parser, and the data ``(1, 'Hello, world'), (2, 'abc'), (3, 'def')`` is parsed by the fast stream parser.
+Data can have any format. When a query is received, the server calculates no more than 'max_query_size' bytes of the request in RAM (by default, 1 MB), and the rest is stream parsed. This means the system doesn't have problems with large INSERT queries, like MySQL does.
 
-При использовании формата Values в INSERT запросе может сложиться иллюзия, что данные парсятся также, как выражения в запросе SELECT, но это не так - формат Values гораздо более ограничен.
+When using the Values format in an ``INSERT`` query, it may seem that data is parsed the same as expressions in a SELECT query, but this is not true. The Values format is much more limited.
 
-Далее пойдёт речь о полноценном парсере. О парсерах форматов, смотри раздел "Форматы".
+Next we will cover the full parser. For more information about format parsers, see the section "Formats".
 
-Пробелы
+Spaces
 ~~~~~~~
-Между синтаксическими конструкциями (в том числе, в начале и конце запроса) может быть расположено произвольное количество пробельных символов. К пробельным символам относятся пробел, таб, перевод строки, CR, form feed.
+There may be any number of space symbols between syntactical constructions (including the beginning and end of a query). Space symbols include the space, tab, line break, CR, and form feed.
 
-Комментарии
+Comments
 ~~~~~~~~~~~
-Поддерживаются комментарии в SQL-стиле и C-стиле.
-Комментарии в SQL-стиле: от ``--`` до конца строки. Пробел после ``--`` может не ставиться.
-Комментарии в C-стиле: от ``/*`` до ``*/``. Такие комментарии могут быть многострочными. Пробелы тоже не обязательны.
+SQL-style and C-style comments are supported.
+SQL-style comments: from ``--`` to the end of the line. The space after ``--`` can be omitted.
+C-style comments: from ``/*`` to ``*/``. These comments can be multiline. Spaces are not required here, either.	
 
-Ключевые слова
+Keywords
 ~~~~~~~~~~~~~~
-Ключевые слова (например, ``SELECT``) регистронезависимы. Всё остальное (имена столбцов, функций и т. п.), в отличие от стандарта SQL, регистрозависимо. Ключевые слова не зарезервированы (а всего лишь парсятся как ключевые слова в соответствующем контексте).
+Keywords (such as SELECT) are not case-sensitive. Everything else (column names, functions, and so on), in contrast to standard SQL, is case-sensitive. Keywords are not reserved (they are just parsed as keywords in the corresponding context).
 
-Идентификаторы
+Identifiers
 ~~~~~~~~~~~~~~
-Идентификаторы (имена столбцов, функций, типов данных) могут быть квотированными или не квотированными.
-Не квотированные идентификаторы начинаются на букву латинского алфавита или подчёркивание; продолжаются на букву латинского алфавита или подчёркивание или цифру. Короче говоря, должны соответствовать регулярному выражению ``^[a-zA-Z_][0-9a-zA-Z_]*$``. Примеры: ``x, _1, X_y__Z123_.``
-Квотированные идентификаторы расположены в обратных кавычках ```id``` (также, как в MySQL), и могут обозначать произвольный (непустой) набор байт. При этом, внутри записи такого идентификатора, символы (например, символ обратной кавычки) могут экранироваться с помощью обратного слеша. Правила экранирования такие же, как в строковых литералах (см. ниже).
-Рекомендуется использовать идентификаторы, которые не нужно квотировать.
+Identifiers (column names, functions, and data types) can be quoted or non-quoted.
+Non-quoted identifiers start with a Latin letter or underscore, and continue with a Latin letter, underscore, or number. In other words, they must match the regex ``^[a-zA-Z_][0-9a-zA-Z_]*$``. Examples: ``x``, ``_1``, ``X_y__Z123_``.
+Quoted identifiers are placed in reversed quotation marks ```id``` (the same as in MySQL), and can indicate any set of bytes (non-empty). In addition, symbols (for example, the reverse quotation mark) inside this type of identifier can be backslash-escaped. Escaping rules are the same as for string literals (see below).
+We recommend using identifiers that do not need to be quoted.
 
-Литералы
+Literals
 ~~~~~~~~
-Бывают числовые, строковые и составные литералы.
+There are numeric literals, string literals, and compound literals.
 
-Числовые литералы
+Numeric literals
 """""""""""""""""
-Числовой литерал пытается распарситься:
-- сначала как 64-битное число без знака, с помощью функции strtoull;
-- если не получилось - то как 64-битное число со знаком, с помощью функции strtoll;
-- если не получилось - то как число с плавающей запятой, с помощью функции strtod;
-- иначе - ошибка.
+A numeric literal tries to be parsed:
+- first as a 64-bit signed number, using the 'strtoull' function.
+- if unsuccessful, as a 64-bit unsigned number, using the 'strtoll' function.
+- if unsuccessful, as a floating-point number using the 'strtod' function.
+- otherwise, an error is returned.
 
-Соответствующее значение будет иметь тип минимального размера, который вмещает значение.
-Например, 1 парсится как UInt8, а 256 - как UInt16. Подробнее смотрите "Типы данных".
+The corresponding value will have the smallest type that the value fits in.
+For example, 1 is parsed as UInt8, but 256 is parsed as UInt16. For more information, see "Data types".
 
-Примеры: ``1``, ``18446744073709551615``, ``0xDEADBEEF``, ``01``, ``0.1``, ``1e100``, ``-1e-100``, ``inf``, ``nan``.
+Examples: ``1``, ``18446744073709551615``, ``0xDEADBEEF``, ``01``, ``0.1``, ``1e100``, ``-1e-100``, ``inf``, ``nan``.
 
-Строковые литералы
+String literals
 """"""""""""""""""
-Поддерживаются только строковые литералы в одинарных кавычках. Символы внутри могут быть экранированы с помощью обратного слеша. Следующие escape-последовательности имеют соответствующее специальное значение: ``\b``, ``\f``, ``\r``, ``\n``, ``\t``, ``\0``, ``\a``, ``\v``, ``\xHH``. Во всех остальных случаях, последовательности вида ``\c``, где c - любой символ, преобразуется в c. Таким образом, могут быть использованы последовательности ``\'`` и ``\\``. Значение будет иметь тип String.
+Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have special meanings: ``\b``, ``\f``, ``\r``, ``\n``, ``\t``, ``\0``, ``\a``, ``\v``, ``\xHH``. In all other cases, escape sequences like \c, where c is any character, are transformed to c. This means that the sequences ``\'`` and ``\\`` can be used. The value will have the String type.
 
-Минимальный набор символов, которых вам необходимо экранировать в строковых литералах: ``'`` and ``\``.
+Minimum set of symbols that must be escaped in string literal is ``'`` and ``\``.
 
-Составные литералы
+Compound literals
 """"""""""""""""""
-Поддерживаются конструкции для массивов: ``[1, 2, 3]`` и кортежей: ``(1, 'Hello, world!', 2)``.
-На самом деле, это вовсе не литералы, а выражение с оператором создания массива и оператором создания кортежа, соответственно.
-Подробнее смотри в разделе "Операторы".
-Массив должен состоять хотя бы из одного элемента, а кортеж - хотя бы из двух.
-Кортежи носят служебное значение для использования в секции IN запроса SELECT. Кортежи могут быть получены в качестве результата запроса, но не могут быть сохранены в базу (за исключением таблиц типа Memory).
+Constructions are supported for arrays: ``[1, 2, 3]`` and tuples: ``(1, 'Hello, world!', 2)``.
+Actually, these are not literals, but expressions with the array creation operator and the tuple creation operator, respectively. For more information, see the section "Operators".
+An array must consist of at least one item, and a tuple must have at least two items.
+Tuples have a special purpose for use in the IN clause of a SELECT query. Tuples can be obtained as the result of a query, but they can't be saved to a database (with the exception of Memory-type tables).
 
-
-Функции
+Functions
 ~~~~~~~
-Функции записываются как идентификатор со списком аргументов (возможно, пустым) в скобках. В отличие от стандартного SQL, даже в случае пустого списка аргументов, скобки обязательны. Пример: ``now()``.
-Бывают обычные и агрегатные функции (смотрите раздел "Агрегатные функции"). Некоторые агрегатные функции могут содержать два списка аргументов в круглых скобках. Пример: ``quantile(0.9)(x)``. Такие агрегатные функции называются "параметрическими", а первый список аргументов называется "параметрами". Синтаксис агрегатных функций без параметров ничем не отличается от обычных функций.
+Functions are written like an identifier with a list of arguments (possibly empty) in brackets. In contrast to standard SQL, the brackets are required, even for an empty arguments list. Example: ``now()``.
+There are regular and aggregate functions (see the section "Aggregate functions"). Some aggregate functions can contain two lists of arguments in brackets. Example: ``quantile(0.9)(x)``. These aggregate functions are called "parametric" functions, and the arguments in the first list are called "parameters". The syntax of aggregate functions without parameters is the same as for regular functions.
 
-Операторы
+Operators
 ~~~~~~~~~
-Операторы преобразуются в соответствующие им функции во время парсинга запроса, с учётом их приоритета и ассоциативности.
-Например, выражение ``1 + 2 * 3 + 4`` преобразуется в ``plus(plus(1, multiply(2, 3)), 4)``.
-Подробнее смотрите раздел "Операторы" ниже.
+Operators are converted to their corresponding functions during query parsing, taking their priority and associativity into account.
+For example, the expression ``1 + 2 * 3 + 4`` is transformed to ``plus(plus(1, multiply(2, 3)), 4)``.
+For more information, see the section "Operators" below.
 
-Типы данных и движки таблиц
+Data types and database table engines
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Типы данных и движки таблиц в запросе ``CREATE`` записываются также, как идентификаторы или также как функции. То есть, могут содержать или не содержать список аргументов в круглых скобках. Подробнее смотрите разделы "Типы данных", "Движки таблиц", "CREATE".
+Data types and table engines in the ``CREATE`` query are written the same way as identifiers or functions. In other words, they may or may not contain an arguments list in brackets. For more information, see the sections "Data types," "Table engines," and "CREATE".
 
-Синонимы
+Synonyms
 ~~~~~~~~
-В запросе SELECT, в выражениях могут быть указаны синонимы с помощью ключевого слова AS. Слева от AS стоит любое выражение. Справа от AS стоит идентификатор - имя для синонима. В отличие от стандартного SQL, синонимы могут объявляться не только на верхнем уровне выражений:
+In the SELECT query, expressions can specify synonyms using the AS keyword. Any expression is placed to the left of AS. The identifier name for the synonym is placed to the right of AS. As opposed to standard SQL, synonyms are not only declared on the top level of expressions:
 ::
      SELECT (1 AS n) + 2, n
 
-В отличие от стандартного SQL, синонимы могут использоваться во всех секциях запроса, а не только ``SELECT``.
+In contrast to standard SQL, synonyms can be used in all parts of a query, not just ``SELECT``.
 
-Звёздочка
+Asterisk
 ~~~~~~~~~
-В запросе ``SELECT``, вместо выражения может стоять звёздочка. Подробнее смотрите раздел "SELECT".
+In a ``SELECT`` query, an asterisk can replace the expression. For more information, see the section "SELECT".
 
-Выражения
+Expressions
 ~~~~~~~~~
-Выражение представляет собой функцию, идентификатор, литерал, применение оператора, выражение в скобках, подзапрос, звёздочку; и может содержать синоним.
-Список выражений - одно выражение или несколько выражений через запятую.
-Функции и операторы, в свою очередь, в качестве аргументов, могут иметь произвольные выражения.
+An expression is a function, identifier, literal, application of an operator, expression in brackets, subquery, or asterisk. It can also contain a synonym.
+A list of expressions is one or more expressions separated by commas.
+Functions and operators, in turn, can have expressions as arguments.

@@ -1,4 +1,4 @@
-Родной интерфейс (TCP)
+Native interface (TCP)
 ----------------------
 
-Родной интерфейс используется в клиенте командной строки clickhouse-client, при межсерверном взаимодействии для распределённой обработки запроса, а также в программах на C++. Будет рассмотрен только клиент командной строки.
+The native interface is used in the "clickhouse-client" command-line client for interaction between servers with distributed query processing, and also in C++ programs. We will only cover the command-line client.
