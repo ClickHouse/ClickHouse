@@ -13,11 +13,11 @@
 namespace DB
 {
 
-class ASTQueryWithOnCluster;
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, Context & context);
-
-
+struct ASTAlterQuery;
 struct DDLLogEntry;
+
+
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, Context & context);
 
 
 class DDLWorker
@@ -36,7 +36,15 @@ public:
 
 private:
     void processTasks();
-    bool processTask(const DDLLogEntry & node, const std::string & node_path);
+
+    void processTask(const DDLLogEntry & node, const std::string & node_path);
+
+    void processTaskAlter(
+        const ASTAlterQuery * query_alter,
+        const String & rewritten_query,
+        const std::shared_ptr<Cluster> & cluster,
+        ssize_t shard_num,
+        const String & node_path);
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(const Strings * node_names_to_check = nullptr);
@@ -54,23 +62,29 @@ private:
     std::string host_name;
     UInt16 port;
 
-    std::string root_dir;       /// common dir with queue of queries
+    std::string queue_dir;      /// dir with queue of queries
     std::string master_dir;     /// dir with queries was initiated by the server
 
+    /// Used to omit already processed nodes;
     std::string last_processed_node_name;
 
-    std::shared_ptr<Poco::Event> event_queue_updated;
+    std::shared_ptr<zkutil::ZooKeeper> zookeeper;
 
+    /// Save state of executed task to avoid duplicate execution on ZK error
+    std::string current_node = {};
+    bool current_node_was_executed = false;
+    ExecutionStatus current_node_execution_status;
+
+    std::shared_ptr<Poco::Event> event_queue_updated;
     std::atomic<bool> stop_flag;
-    std::condition_variable cond_var;
-    std::mutex lock;
     std::thread thread;
 
     size_t last_cleanup_time_seconds = 0;
     static constexpr size_t node_max_lifetime_seconds = 60; // 7 * 24 * 60 * 60;
-    static constexpr size_t cleanup_after_seconds = 60;
+    static constexpr size_t cleanup_min_period_seconds = 60;
 
     friend class DDLQueryStatusInputSream;
 };
+
 
 }

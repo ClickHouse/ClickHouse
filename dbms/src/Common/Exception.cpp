@@ -7,6 +7,8 @@
 #include <common/logger_useful.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Common/Exception.h>
 
@@ -249,6 +251,28 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
     {
         return getCurrentExceptionMessage(with_stacktrace);
     }
+}
+
+
+std::string ExecutionStatus::serializeText() const
+{
+    std::string res;
+    {
+        WriteBufferFromString wb(res);
+        wb << code << "\n" << message;
+    }
+    return res;
+}
+
+void ExecutionStatus::deserializeText(const std::string & data)
+{
+    ReadBufferFromString rb(data);
+    rb >> code >> "\n" >> message;
+}
+
+ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message)
+{
+    return ExecutionStatus(getCurrentExceptionCode(), start_of_message + ": " + getCurrentExceptionMessage(false, true));
 }
 
 

@@ -79,6 +79,7 @@ void throwFromErrno(const std::string & s, int code = 0, int the_errno = errno);
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "");
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "");
 
+
 /** Prints current exception in canonical format.
   * with_stacktrace - prints stack trace for DB::Exception.
   * check_embedded_stacktrace - if DB::Exception has embedded stacktrace then
@@ -88,6 +89,26 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
 
 /// Returns error code from ErrorCodes
 int getCurrentExceptionCode();
+
+
+/// An execution status of any piece of code
+struct ExecutionStatus
+{
+    int code = 0;
+    std::string message;
+
+    ExecutionStatus() = default;
+
+    explicit ExecutionStatus(int return_code, const std::string & exception_message = "")
+    : code(return_code), message(exception_message) {}
+
+    static ExecutionStatus fromCurrentException(const std::string & start_of_message = "");
+
+    std::string serializeText() const;
+
+    void deserializeText(const std::string & data);
+};
+
 
 void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message = "");
 void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::string & start_of_message = "");

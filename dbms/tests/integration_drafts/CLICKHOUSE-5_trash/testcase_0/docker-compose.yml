@@ -1,0 +1,88 @@
+version: '2'
+services:
+    # ClickHouses
+    ch1:
+        hostname: ch1
+        environment:
+            SHARD: 1
+            REPLICA: 1
+        ports:
+            - "9001:9000"
+            - "8124:8123"
+        volumes:
+            # Use system clickhouse binary
+            # Use configs from the testcase dir
+            - /usr/bin/clickhouse:/usr/bin/clickhouse:ro
+            - ./conf.d:/etc/clickhouse-server/conf.d
+            - ./users.d:/etc/clickhouse-server/users.d
+        build: ../image
+
+    ch2:
+        hostname: ch2
+        environment:
+            SHARD: 1
+            REPLICA: 2
+        ports:
+            - "9002:9000"
+            - "8125:8123"
+        volumes:
+            - /usr/bin/clickhouse:/usr/bin/clickhouse:ro
+            - ./conf.d:/etc/clickhouse-server/conf.d
+            - ./users.d:/etc/clickhouse-server/users.d
+        build: ../image
+
+    ch3:
+        hostname: ch3
+        environment:
+            SHARD: 2
+            REPLICA: 1
+        ports:
+            - "9003:9000"
+            - "8126:8123"
+        volumes:
+            - /usr/bin/clickhouse:/usr/bin/clickhouse:ro
+            - ./conf.d:/etc/clickhouse-server/conf.d
+            - ./users.d:/etc/clickhouse-server/users.d
+        build: ../image
+
+    ch4:
+        hostname: ch4
+        environment:
+            SHARD: 2
+            REPLICA: 2
+        ports:
+            - "9004:9000"
+            - "8127:8123"
+        volumes:
+            - /usr/bin/clickhouse:/usr/bin/clickhouse:ro
+            - ./conf.d:/etc/clickhouse-server/conf.d
+            - ./users.d:/etc/clickhouse-server/users.d
+        build: ../image
+
+    # ZooKeepers
+    zoo1:
+        image: 31z4/zookeeper
+        restart: always
+        ports:
+            - 2182:2181
+        environment:
+            ZOO_MY_ID: 1
+            ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
+
+    zoo2:
+        image: 31z4/zookeeper
+        restart: always
+        ports:
+            - 2183:2181
+        environment:
+            ZOO_MY_ID: 2
+            ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
+
+    zoo3:
+        image: 31z4/zookeeper
+        restart: always
+        ports:
+            - 2184:2181
+        environment:
+            ZOO_MY_ID: 3
+            ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
