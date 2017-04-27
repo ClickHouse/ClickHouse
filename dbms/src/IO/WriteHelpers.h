@@ -368,7 +368,7 @@ inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
 /// То же самое, но обратные кавычки применяются только при наличии символов, не подходящих для идентификатора без обратных кавычек.
 inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
 {
-    if (s.empty() || !isWordCharASCII(s[0]))
+    if (s.empty() || !isValidIdentifierBegin(s[0]))
         writeBackQuotedString(s, buf);
     else
     {
