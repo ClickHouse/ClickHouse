@@ -216,7 +216,7 @@ void SystemLog<LogElement>::flush()
 {
     try
     {
-        LOG_TRACE(log, "Flushing query log");
+        LOG_TRACE(log, "Flushing system log");
 
         if (!is_prepared)    /// BTW, flush method is called from single thread.
             prepareTable();
@@ -224,6 +224,10 @@ void SystemLog<LogElement>::flush()
         Block block = LogElement::createBlock();
         for (const LogElement & elem : data)
             elem.appendToBlock(block);
+        
+        /// Clear queue early, because insertion to the table could lead to generation of more log entrites
+        ///  and pushing them to already full queue will lead to deadlock.
+        data.clear();
 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
@@ -238,9 +242,6 @@ void SystemLog<LogElement>::flush()
 
         io.out->writePrefix();
         io.out->write(block);
-
-        /// writeSuffix will write to this queue - it cause deadlock if queue full - so clear before write
-        data.clear();
         io.out->writeSuffix();
     }
     catch (...)
@@ -249,7 +250,6 @@ void SystemLog<LogElement>::flush()
         /// In case of exception, also clean accumulated data - to avoid locking.
         data.clear();
     }
-
 }
 
 
