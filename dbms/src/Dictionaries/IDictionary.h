@@ -2,6 +2,8 @@
 
 #include <Core/Field.h>
 #include <Core/StringRef.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <Dictionaries/IDictionarySource.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/PODArray.h>
 #include <memory>
@@ -52,6 +54,8 @@ struct IDictionaryBase
     virtual std::chrono::time_point<std::chrono::system_clock> getCreationTime() const = 0;
 
     virtual bool isInjective(const std::string & attribute_name) const = 0;
+
+    virtual BlockInputStreamPtr getBlockInputStream() const { return const_cast<IDictionarySource*>(getSource())->loadAll(); }
 
     virtual ~IDictionaryBase() = default;
 };

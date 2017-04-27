@@ -3,8 +3,10 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/CacheDictionary.h>
 #include <Storages/StorageDictionary.h>
 #include <Interpreters/Context.h>
+#include <common/logger_useful.h>
 
 namespace DB {
 
@@ -61,14 +63,13 @@ BlockInputStreams StorageDictionary::read(
     const unsigned threads)
 {
     processed_stage = QueryProcessingStage::FetchColumns;
-    IDictionarySource* source = const_cast<IDictionarySource*>(dictionary->getSource());
-    return BlockInputStreams{source->loadAll()};
+    return BlockInputStreams{dictionary->getBlockInputStream()};
 }
 
 void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary()
 {
     const DictionaryStructure & dictionaryStructure = dictionary->getStructure();
-    
+
     std::set<NameAndTypePair> dictionaryNamesAndTypes;
     for (const auto & attribute : dictionaryStructure.attributes) {
         dictionaryNamesAndTypes.insert(NameAndTypePair(attribute.name, attribute.type));

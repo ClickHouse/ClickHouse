@@ -1,6 +1,9 @@
 #include <functional>
+#include <sstream>
+#include <memory>
 #include <Columns/ColumnsNumber.h>
-#include <Dictionaries/CacheDictionary.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnString.h>
 #include <Common/BitHelpers.h>
 #include <Common/randomSeed.h>
 #include <Common/HashTable/Hash.h>
@@ -8,6 +11,9 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Dictionaries/CacheDictionary.h>
+#include <Dictionaries/DictionaryBlockInputStream.h>
 #include <ext/size.hpp>
 #include <ext/range.hpp>
 #include <ext/map.hpp>
@@ -945,5 +951,34 @@ CacheDictionary::Attribute & CacheDictionary::getAttribute(const std::string & a
 
     return attributes[it->second];
 }
+
+bool CacheDictionary::isEmptyCell(const UInt64 idx) const
+{
+    return (idx != zero_cell_idx && cells[idx].id == 0) || (cells[idx].data 
+        == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t()));
+}
+
+
+PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
+{
+    PaddedPODArray<Key> array;
+    for (size_t idx = 0; idx < cells.size(); ++idx)
+    {
+        auto& cell = cells[idx];
+        if (!isEmptyCell(idx))
+        {
+            array.push_back(cell.id);
+        }
+    }
+    return array;
+}
+
+
+BlockInputStreamPtr CacheDictionary::blockInputStreamFromCache() const
+{
+    auto block_input_stream = std::make_unique<DictionaryBlockInputStream<CacheDictionary, Key>>(*this, getCachedIds());
+    return BlockInputStreamPtr(std::move(block_input_stream));
+}
+
 
 }

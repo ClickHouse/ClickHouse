@@ -191,6 +191,8 @@ private:
         const AncestorType & ancestor_ids,
         PaddedPODArray<UInt8> & out) const;
 
+    PaddedPODArray<Key> getCachedIds() const;
+
     const std::string name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;

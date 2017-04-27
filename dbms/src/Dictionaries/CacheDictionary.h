@@ -16,6 +16,7 @@
 #include <tuple>
 #include <random>
 
+class A;
 
 namespace DB
 {
@@ -57,6 +58,10 @@ public:
     DictionaryPtr clone() const override { return std::make_unique<CacheDictionary>(*this); }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
+
+    BlockInputStreamPtr blockInputStreamFromCache() const;
+
+    BlockInputStreamPtr getBlockInputStream() const override { return blockInputStreamFromCache(); }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -207,6 +212,10 @@ private:
     void update(
         const std::vector<Key> & requested_ids, PresentIdHandler && on_cell_updated,
         AbsentIdHandler && on_id_not_found) const;
+
+    PaddedPODArray<Key> getCachedIds() const;
+
+    bool isEmptyCell(const UInt64 idx) const;
 
     UInt64 getCellIdx(const Key id) const;
 
