@@ -1,26 +1,21 @@
-Конфигурационные файлы
+Configuration files
 ======================
 
-Основной конфигурационный файл сервера - ``config.xml``. Он расположен в директории ``/etc/clickhouse-server/``.
+The main server config file is ``config.xml``. It resides in the ``/etc/clickhouse-server/`` directory.
 
-Отдельные настройки могут быть переопределены в файлах ``*.xml`` и ``*.conf`` из директорий ``conf.d`` и ``config.d`` рядом с конфигом.
+Certain settings can be overridden in the ``*.xml`` and ``*.conf`` files from the ``conf.d`` and ``config.d`` directories next to the config.
 
-У элементов этих конфигурационных файлов могут быть указаны атрибуты ``replace`` или ``remove``.
+The ``replace`` and ``remove`` attributes can be specified for the elements of these config files.
+If neither is specified, it combines the contents of elements recursively, replacing values of duplicate children.
+If ``replace`` is specified, it replaces the entire element with the specified one.
+If ``remove`` is specified, it deletes the element.
 
-Если ни один не указан - объединить содержимое элементов рекурсивно с заменой значений совпадающих детей.
+The config can also define "substitutions". If an element has the ``incl`` attribute, the corresponding substitution from the file will be used as the value. By default, the path to the file with substitutions is ``/etc/metrika.xml``. This can be changed in the config in the ``include_from`` element. The substitution values are specified in  ``/yandex/substitution_name`` elements of this file.
 
-Если указано ``replace`` - заменить весь элемент на указанный.
+You can also perform substitutions from ZooKeeper nodes. To do that add the ``from_zk="/path/to/node"`` attribute to a config element. Element contents will be substituted with the contents of the /path/to/node ZooKeeper node. The ZooKeeper node can contain a whole XML subtree, and it will be inserted as a child of the substituted node.
 
-Если указано ``remove`` - удалить элемент.
+The 'config.xml' file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the 'users_config' element. By default, it is 'users.xml'. If 'users_config' is omitted, the user settings, profiles, and quotas are specified directly in ``config.xml``. For ``users_config``, overrides and substitutions may also exist in files from the ``users_config.d`` directory (for example, ``users.d``).
 
-Также в конфиге могут быть указаны "подстановки". Если у элемента присутствует атрибут ``incl``, то в качестве значения будет использована соответствующая подстановка из файла. По умолчанию, путь к файлу с подстановками - ``/etc/metrika.xml``. Он может быть изменён в конфиге в элементе ``include_from``. Значения подстановок указываются в элементах ``/yandex/имя_подстановки`` этого файла.
+For each config file, the server also generates ``file-preprocessed.xml`` files on launch. These files contain all the completed substitutions and overrides, and they are intended for informational use. If ZooKeeper substitutions were used in a config file and the ZooKeeper is unavailable during server startup, the configuration is loaded from the respective preprocessed file.
 
-Подстановки могут также выполняться из ZooKeeper. Для этого укажите у элемента атрибут ``from_zk="/path/to/node"``. Значение элемента заменится на содержимое узла ``/path/to/node`` в ZooKeeper. В ZooKeeper-узел также можно положить целое XML-поддерево, оно будет целиком вставлено в исходный элемент.
-
-В ``config.xml`` может быть указан отдельный конфиг с настройками пользователей, профилей и квот. Относительный путь к нему указывается в элементе users_config. По умолчанию - ``users.xml``. Если ``users_config`` не указан, то настройки пользователей, профилей и квот, указываются непосредственно в ``config.xml``.
-
-Для ``users_config`` могут также существовать переопределения в файлах из директории ``users_config.d`` (например, ``users.d``) и подстановки.
-
-Для каждого конфигурационного файла, сервер при запуске генерирует также файлы ``file-preprocessed.xml``. Эти файлы содержат все выполненные подстановки и переопределения, и предназначены для информационных целей. Если в конфигурационных файлах были использованы ZooKeeper-подстановки, но при старте сервера ZooKeeper недоступен, то сервер загрузит конфигурацию из preprocessed-файла.
-
-Сервер следит за изменениями конфигурационных файлов, а также файлов и ZooKeeper-узлов, которые были использованы при выполнении подстановок и переопределений, и перезагружает настройки пользователей и кластеров на лету. То есть, можно изменять кластера, пользователей и их настройки без перезапуска сервера.
+The server tracks changes to config files and files and ZooKeeper nodes that were used for substitutions and overrides and reloads users and clusters configurations in runtime. That is, you can add or change users, clusters and their settings without relaunching the server.
