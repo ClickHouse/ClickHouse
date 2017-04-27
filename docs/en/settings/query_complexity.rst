@@ -1,174 +1,173 @@
-Ограничения на сложность запроса
+Restrictions on query complexity
 =====================
-Ограничения на сложность запроса - часть настроек.
-Используются, чтобы обеспечить более безопасное исполнение запросов из пользовательского интерфейса.
-Почти все ограничения действуют только на SELECT-ы.
-При распределённой обработке запроса, ограничения действуют на каждом сервере по-отдельности.
+Restrictions on query complexity are part of the settings.
+They are used in order to provide safer execution from the user interface.
+Almost all the restrictions only apply to SELECTs.
+For distributed query processing, restrictions are applied on each server separately.
 
-Ограничения вида "максимальное количество чего-нибудь" могут принимать значение 0, которое обозначает "не ограничено".
-Для большинства ограничений также присутствует настройка вида overflow_mode - что делать, когда ограничение превышено.
-Оно может принимать одно из двух значений: ``throw`` или ``break``; а для ограничения на агрегацию (group_by_overflow_mode) есть ещё значение ``any``.
+Restrictions on the "maximum amount of something" can take the value 0, which means "unrestricted".
+Most restrictions also have an 'overflow_mode' setting, meaning what to do when the limit is exceeded.
+It can take one of two values: 'throw' or 'break'. Restrictions on aggregation (``group_by_overflow_mode``) also have the value ``any``.
 
-``throw`` - кинуть исключение (по умолчанию).
+``throw`` - Throw an exception (default).
 
-``break`` - прервать выполнение запроса и вернуть неполный результат, как будто исходные данные закончились.
+``break`` - Stop executing the query and return the partial result, as if the source data ran out.
 
-``any (только для group_by_overflow_mode)`` - продолжить агрегацию по ключам, которые успели войти в набор, но не добавлять новые ключи в набор.
+``any`` (only for group_by_overflow_mode) - Continuing aggregation for the keys that got into the set, but don't add new keys to the set.
 
 readonly
 -------
-При значении 0 можно выполнять любые запросы.
-При значении 1 можно выполнять только запросы на чтение (например, SELECT и SHOW). Запросы на запись и изменение настроек (INSERT, SET) запрещены.
-При значении 2 можно выполнять запросы на чтение (SELECT, SHOW) и изменение настроек (SET).
+If set to 0, allows to run any queries.
+If set to 1, allows to run only queries that don't change data or settings (e.g. SELECT or SHOW). INSERT and SET are forbidden.
+If set to 2, allows to run queries that don't change data (SELECT, SHOW) and allows to change settings (SET).
 
-Включив режим readonly, вы уже не сможете выключить его в текущей сессии.
+After you set the read-only mode, you won't be able to disable it in the current session.
 
-При использовании метода GET HTTP интерфейса, автоматически выставляется readonly = 1. То есть, для запросов, модифицирующие данные, можно использовать только метод POST. Сам запрос при этом можно отправлять как в теле POST-а, так и в параметре URL.
+When using the GET method in the HTTP interface, 'readonly = 1' is set automatically. In other words, for queries that modify data, you can only use the POST method. You can send the query itself either in the POST body, or in the URL parameter.
 
 max_memory_usage
 --------------
-Максимальное количество потребляемой памяти при выполнении запроса на одном сервере. По умолчанию - 10 GB.
+The maximum amount of memory consumption when running a query on a single server. By default, 10 GB.
 
-Настройка не учитывает объём свободной памяти или общий объём памяти на машине.
-Ограничение действует на один запрос, в пределах одного сервера.
-Текущее потребление оперативки для каждого запроса можно посмотреть с помощью SHOW PROCESSLIST.
-Также отслеживается пиковое потребление оперативки для каждого запроса, и выводится в лог.
+The setting doesn't consider the volume of available memory or the total volume of memory on the machine.
+The restriction applies to a single query within a single server.
+You can use SHOW PROCESSLIST to see the current memory consumption for each query.
+In addition, the peak memory consumption is tracked for each query and written to the log.
 
-Некоторые случаи потребления оперативки не отслеживаются:
- * большие константы (например, очень длинная константная строка);
- * состояния некоторых агрегатных функций;
+Certain cases of memory consumption are not tracked:
+ * Large constants (for example, a very long string constant).
+ * The states of 'groupArray' aggregate functions, and also 'quantile' (it is tracked for 'quantileTiming').
 
-Потребление оперативки не полностью учитывается для состояний агрегатных функций min, max, any, anyLast, argMin, argMax от аргументов String и Array.
+Memory consumption is not fully considered for aggregate function states ``min``, ``max``, ``any``, ``anyLast``, ``argMin``, and ``argMax`` from String and Array arguments.
 
 max_rows_to_read
 ---------------
-Следующие ограничения могут проверяться на каждый блок (а не на каждую строку). То есть, ограничения могут быть немного нарушены.
-При выполнении запроса в несколько потоков, следующие ограничения действуют в каждом потоке по-отдельности.
+The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
+When running a query in multiple threads, the following restrictions apply to each thread separately.
 
-Максимальное количество строчек, которое можно прочитать из таблицы при выполнении запроса.
+Maximum number of rows that can be read from a table when running a query.
 
 max_bytes_to_read
 -------------
-Максимальное количество байт (несжатых данных), которое можно прочитать из таблицы при выполнении запроса.
+Maximum number of bytes (uncompressed data) that can be read from a table when running a query.
 
 read_overflow_mode
 -------------
-Что делать, когда количество прочитанных данных превысило одно из ограничений: throw или break. По умолчанию: throw.
+What to do when the volume of data read exceeds one of the limits: ``throw`` or ``break``. ``By default, throw``.
 
 max_rows_to_group_by
 -------------
-Максимальное количество уникальных ключей, получаемых в процессе агрегации. Позволяет ограничить потребление оперативки при агрегации.
+Maximum number of unique keys received from aggregation. This setting lets you limit memory consumption when aggregating.
 
 group_by_overflow_mode
 ---------------
-Что делать, когда количество уникальных ключей при агрегации превысило ограничение: throw, break или any. По умолчанию: throw.
-Использование значения any позволяет выполнить GROUP BY приближённо. Качество такого приближённого вычисления сильно зависит от статистических свойств данных.
+What to do when the number of unique keys for aggregation exceeds the limit: ``throw``, ``break``, or ``any``. ``By default, throw``.
+Using the 'any' value lets you run an approximation of GROUP BY. The quality of this approximation depends on the statistical nature of the data.
 
 max_rows_to_sort
 --------------
-Максимальное количество строк до сортировки. Позволяет ограничить потребление оперативки при сортировке.
+Maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
 
 max_bytes_to_sort
 -------------
-Максимальное количество байт до сортировки.
+Maximum number of bytes before sorting.
 
 sort_overflow_mode
 ------------
-Что делать, если количество строк, полученное перед сортировкой, превысило одно из ограничений: throw или break. По умолчанию: throw.
+What to do if the number of rows received before sorting exceeds one of the limits: ``throw`` or ``break``. ``By default, throw``.
 
 max_result_rows
 -------------
-Ограничение на количество строк результата. Проверяются также для подзапросов и на удалённых серверах при выполнении части распределённого запроса.
+Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 
 max_result_bytes
 -------------
-Ограничение на количество байт результата. Аналогично.
+Limit on the number of bytes in the result. The same as the previous setting.
 
 result_overflow_mode
 --------------
-Что делать, если объём результата превысил одно из ограничений: throw или break. По умолчанию: throw.
-Использование break по смыслу похоже на LIMIT.
+What to do if the volume of the result exceeds one of the limits: ``throw`` or ``break``. By default, throw.
+Using ``break`` is similar to using ``LIMIT``.
 
 max_execution_time
 --------------
-Максимальное время выполнения запроса в секундах.
-На данный момент не проверяется при одной из стадий сортировки а также при слиянии и финализации агрегатных функций.
+Maximum query execution time in seconds.
+At this time, it is not checked for one of the sorting stages, or when merging and finalizing aggregate functions.
 
 timeout_overflow_mode
 ---------------
-Что делать, если запрос выполняется дольше max_execution_time: throw или break. По умолчанию: throw.
+What to do if the query is run longer than ``max_execution_time``: ``throw`` or ``break``. ``By default, throw``.
 
 min_execution_speed
 --------------
-Минимальная скорость выполнения запроса в строчках в секунду. Проверяется на каждый блок данных по истечении timeout_before_checking_execution_speed. Если скорость выполнения запроса оказывается меньше, то кидается исключение.
+Minimal execution speed in rows per second. Checked on every data block when ``timeout_before_checking_execution_speed`` expires. If the execution speed is lower, an exception is thrown.
 
 timeout_before_checking_execution_speed
 ---------------
-Проверять, что скорость выполнения запроса не слишком низкая (не меньше min_execution_speed), после прошествия указанного времени в секундах.
+Checks that execution speed is not too slow (no less than ``min_execution_speed``), after the specified time in seconds has expired.
 
 max_columns_to_read
 --------------
-Максимальное количество столбцов, которых можно читать из таблицы в одном запросе. Если запрос требует чтения большего количества столбцов - кинуть исключение.
+Maximum number of columns that can be read from a table in a single query. If a query requires reading a greater number of columns, it throws an exception.
 
 max_temporary_columns
 ----------------
-Максимальное количество временных столбцов, которых необходимо одновременно держать в оперативке, в процессе выполнения запроса, включая константные столбцы. Если временных столбцов оказалось больше - кидается исключение.
+Maximum number of temporary columns that must be kept in RAM at the same time when running a query, including constant columns. If there are more temporary columns than this, it throws an exception.
 
 max_temporary_non_const_columns
 ---------------------
-То же самое, что и max_temporary_columns, но без учёта столбцов-констант.
-Стоит заметить, что столбцы-константы довольно часто образуются в процессе выполнения запроса, но расходуют примерно нулевое количество вычислительных ресурсов.
+The same thing as 'max_temporary_columns', but without counting constant columns.
+Note that constant columns are formed fairly often when running a query, but they require approximately zero computing resources.
 
 max_subquery_depth
 -------------
-Максимальная вложенность подзапросов. Если подзапросы более глубокие - кидается исключение. По умолчанию: 100.
+Maximum nesting depth of subqueries. If subqueries are deeper, an exception is thrown. ``By default, 100``.
 
 max_pipeline_depth
 -----------
-Максимальная глубина конвейера выполнения запроса. Соответствует количеству преобразований, которое проходит каждый блок данных в процессе выполнения запроса. Считается в пределах одного сервера. Если глубина конвейера больше - кидается исключение. По умолчанию: 1000.
+Maximum pipeline depth. Corresponds to the number of transformations that each data block goes through during query processing. Counted within the limits of a single server. If the pipeline depth is greater, an exception is thrown. By default, 1000.
 
 max_ast_depth
 -----------
-Максимальная вложенность синтаксического дерева запроса. Если превышена - кидается исключение.
-На данный момент, проверяются не во время парсинга а уже после парсинга запроса. То есть, во время парсинга может быть создано слишком глубокое синтаксическое дерево, но запрос не будет выполнен. По умолчанию: 1000.
+Maximum nesting depth of a query syntactic tree. If exceeded, an exception is thrown. At this time, it isn't checked during parsing, but only after parsing the query. That is, a syntactic tree that is too deep can be created during parsing, but the query will fail. By default, 1000.
 
 max_ast_elements
 -----------
-Максимальное количество элементов синтаксического дерева запроса. Если превышено - кидается исключение.
-Аналогично, проверяется уже после парсинга запроса. По умолчанию: 10 000.
+Maximum number of elements in a query syntactic tree. If exceeded, an exception is thrown.
+In the same way as the previous setting, it is checked only after parsing the query. ``By default, 10,000``.
 
 max_rows_in_set
 ----------
-Максимальное количество строчек для множества в секции IN, создаваемого из подзапроса.
+Maximum number of rows for a data set in the IN clause created from a subquery.
 
 max_bytes_in_set
 -----------
-Максимальное количество байт (несжатых данных), занимаемое множеством в секции IN, создаваемым из подзапроса.
+Maximum number of bytes (uncompressed data) used by a set in the IN clause created from a subquery.
 
 set_overflow_mode
 -----------
-Что делать, когда количество данных превысило одно из ограничений: throw или break. По умолчанию: throw.
+What to do when the amount of data exceeds one of the limits: ``throw`` or ``break``. ``By default, throw``.
 
 max_rows_in_distinct
 -----------
-Максимальное количество различных строчек при использовании DISTINCT.
+Maximum number of different rows when using DISTINCT.
 
 max_bytes_in_distinct
 --------------
-Максимальное количество байт, занимаемых хэш-таблицей, при использовании DISTINCT.
+Maximum number of bytes used by a hash table when using DISTINCT.
 
 distinct_overflow_mode
 ------------
-Что делать, когда количество данных превысило одно из ограничений: throw или break. По умолчанию: throw.
+What to do when the amount of data exceeds one of the limits: ``throw`` or ``break``. ``By default, throw``.
 
 max_rows_to_transfer
 -----------
-Максимальное количество строчек, которых можно передать на удалённый сервер или сохранить во временную таблицу, при использовании GLOBAL IN.
+Maximum number of rows that can be passed to a remote server or saved in a temporary table when using GLOBAL IN.
 
 max_bytes_to_transfer
 -----------
-Максимальное количество байт (несжатых данных), которых можно передать на удалённый сервер или сохранить во временную таблицу, при использовании GLOBAL IN.
+Maximum number of bytes (uncompressed data) that can be passed to a remote server or saved in a temporary table when using GLOBAL IN.
 
 transfer_overflow_mode
 ---------
-Что делать, когда количество данных превысило одно из ограничений: throw или break. По умолчанию: throw.
+What to do when the amount of data exceeds one of the limits: ``throw`` or ``break``. ``By default, throw``.

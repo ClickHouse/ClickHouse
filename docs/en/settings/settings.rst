@@ -1,70 +1,70 @@
 max_block_size
 --------------
-Данные в ClickHouse обрабатываются по блокам (наборам кусочков столбцов). Внутренние циклы обработки одного блока достаточно эффективны, но при этом существуют заметные издержки на каждый блок. max_block_size - это рекомендация, какого размера блоки (в количестве строк) загружать из таблицы. Размер блока должен быть не слишком маленьким, чтобы издержки на каждый блок оставались незаметными, и не слишком большим, чтобы запрос с LIMIT-ом, который завершается уже после первого блока, выполнялся быстро; чтобы не использовалось слишком много оперативки при вынимании большого количества столбцов в несколько потоков; чтобы оставалась хоть какая-нибудь кэш-локальность.
+In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. 'max_block_size' is a recommendation for what size of block (in number of rows) to load from tables. The block size shouldn't be too small, so that the expenditures on each block are still noticeable, but not too large, so that the query with LIMIT that is completed after the first block is processed quickly, so that too much memory isn't consumed when extracting a large number of columns in multiple threads, and so that at least some cache locality is preserved.
 
-По умолчанию - 65 536.
+By default, it is 65,536.
 
-Из таблицы не всегда загружаются блоки размера max_block_size. Если ясно, что нужно прочитать меньше данных, то будет считан блок меньшего размера.
+Blocks the size of 'max_block_size' are not always loaded from the table. If it is obvious that less data needs to be retrieved, a smaller block is processed.
 
 max_insert_block_size
 --------------------
-Формировать блоки указанного размера, при вставке в таблицу.
-Эта настройка действует только в тех случаях, когда сервер сам формирует такие блоки.
-Например, при INSERT-е через HTTP интерфейс, сервер парсит формат данных, и формирует блоки указанного размера.
-А при использовании clickhouse-client, клиент сам парсит данные, и настройка max_insert_block_size на сервере не влияет на размер вставляемых блоков.
-При использовании INSERT SELECT, настройка так же не имеет смысла, так как данные будут вставляться теми блоками, которые вышли после SELECT-а.
+The size of blocks to form for insertion into a table.
+This setting only applies in cases when the server forms the blocks.
+For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
+But when using clickhouse-client, the client parses the data itself, and the ``max_insert_block_size`` setting on the server doesn't affect the size of the inserted blocks.
+The setting also doesn't have a purpose when using INSERT SELECT, since data is inserted in the same blocks that are formed after SELECT.
 
-``По умолчанию - 1 048 576.``
+By default, it is 1,048,576.
 
-Это намного больше, чем max_block_size. Это сделано, потому что некоторые движки таблиц (*MergeTree) будут на каждый вставляемый блок формировать кусок данных на диске, что является довольно большой сущностью. Также, в таблицах типа *MergeTree, данные сортируются при вставке, и достаточно большой размер блока позволяет отсортировать больше данных в оперативке.
+This is slightly more than 'max_block_size'. The reason for this is because certain table engines (*MergeTree) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, *MergeTree tables sort data during insertion, and a large enough block size allows sorting more data in RAM.
 
 max_threads
 -----------
-Максимальное количество потоков обработки запроса
-- без учёта потоков для чтения данных с удалённых серверов (смотрите параметр max_distributed_connections).
+The maximum number of query processing threads
+- excluding threads for retrieving data from remote servers (see the ``max_distributed_connections`` parameter).
 
-Этот параметр относится к потокам, которые выполняют параллельно одни стадии конвейера выполнения запроса.
-Например, если чтение из таблицы, вычисление выражений с функциями, фильтрацию с помощью WHERE и предварительную агрегацию для GROUP BY можно делать параллельно с использованием как минимум max_threads потоков, то будет использовано max_threads потоков.
+This parameter applies to threads that perform the same stages of the query execution pipeline in parallel.
+For example, if reading from a table, evaluating expressions with functions, filtering with WHERE and pre-aggregating for GROUP BY can all be done in parallel using at least ``max_threads`` number of threads, then 'max_threads' are used.
 
-``По умолчанию - 8.``
+By default, ``8``.
 
-Если на сервере обычно исполняется менее одного запроса SELECT одновременно, то выставите этот параметр в значение чуть меньше количества реальных процессорных ядер.
+If less than one SELECT query is normally run on a server at a time, set this parameter to a value slightly less than the actual number of processor cores.
 
-Для запросов, которые быстро завершаются из-за LIMIT-а, имеет смысл выставить max_threads поменьше. Например, если нужное количество записей находится в каждом блоке, то при max_threads = 8 будет считано 8 блоков, хотя достаточно было прочитать один.
+For queries that are completed quickly because of a LIMIT, you can set a lower ``max_threads``. For example, if the necessary number of entries are located in every block and ``max_threads = 8``, 8 blocks are retrieved, although it would have been enough to read just one.
 
-Чем меньше ``max_threads``, тем меньше будет использоваться оперативки.
+The smaller the ``max_threads`` value, the less memory is consumed.
 
 max_compress_block_size
 -----------
-Максимальный размер блоков не сжатых данных перед сжатием при записи в таблицу. По умолчанию - 1 048 576 (1 MiB). При уменьшении размера, незначительно уменьшается коэффициент сжатия, незначительно возрастает скорость сжатия и разжатия за счёт кэш-локальности, и уменьшается потребление оперативки. Как правило, не имеет смысла менять эту настройку.
+The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, ``1,048,576 (1 MiB)``. If the size is reduced, the compression rate is significantly reduced, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced. There usually isn't any reason to change this setting.
 
-Не путайте блоки для сжатия (кусок памяти, состоящий из байт) и блоки для обработки запроса (пачка строк из таблицы).
+Don't confuse blocks for compression (a chunk of memory consisting of bytes) and blocks for query processing (a set of rows from a table).
 
 min_compress_block_size
 --------------
-Для таблиц типа *MergeTree. В целях уменьшения задержек при обработке запросов, блок сжимается при записи следующей засечки, если его размер не меньше min_compress_block_size. По умолчанию - 65 536.
+For *MergeTree tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least ``min_compress_block_size``. By default, 65,536.
 
-Реальный размер блока, если несжатых данных меньше max_compress_block_size, будет не меньше этого значения и не меньше объёма данных на одну засечку.
+The actual size of the block, if the uncompressed data less than ``max_compress_block_size`` is no less than this value and no less than the volume of data for one mark.
 
-Рассмотрим пример. Пусть index_granularity, указанная при создании таблицы - 8192.
+Let's look at an example. Assume that ``index_granularity`` was set to 8192 during table creation.
 
-Пусть мы записываем столбец типа UInt32 (4 байта на значение). При записи 8192 строк, будет всего 32 КБ данных. Так как min_compress_block_size = 65 536, сжатый блок будет сформирован на каждые две засечки.
+We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows, the total will be 32 KB of data. Since ``min_compress_block_size = 65,536``, a compressed block will be formed for every two marks.
 
-Пусть мы записываем столбец URL типа String (средний размер - 60 байт на значение). При записи 8192 строк, будет, в среднем, чуть меньше 500 КБ данных. Так как это больше 65 536 строк, то сжатый блок будет сформирован на каждую засечку. В этом случае, при чтении с диска данных из диапазона в одну засечку, не будет разжато лишних данных.
+We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won't be decompressed.
 
-Как правило, не имеет смысла менять эту настройку.
+There usually isn't any reason to change this setting.
 
 max_query_size
 -----------
-Максимальный кусок запроса, который будет считан в оперативку для разбора парсером языка SQL.
-Запрос INSERT также содержит данные для INSERT-а, которые обрабатываются отдельным, потоковым парсером (расходующим O(1) оперативки), и не учитываются в этом ограничении.
+The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
+The INSERT query also contains data for INSERT that is processed by a separate stream parser (that consumes O(1) RAM), which is not included in this restriction.
 
-``По умолчанию - 256 KiB.``
+``By default, 256 KiB.``
 
 interactive_delay
 -------------
-Интервал в микросекундах для проверки, не запрошена ли остановка выполнения запроса, и отправки прогресса.
-По умолчанию - 100 000 (проверять остановку запроса и отправлять прогресс десять раз в секунду).
+The interval in microseconds for checking whether request execution has been canceled and sending the progress.
+By default, 100,000 (check for canceling and send progress ten times per second).
 
 connect_timeout
 -----------
@@ -74,130 +74,135 @@ receive_timeout
 
 send_timeout
 ---------
-Таймауты в секундах на сокет, по которому идёт общение с клиентом.
-``По умолчанию - 10, 300, 300.``
+Timeouts in seconds on the socket used for communicating with the client.
+``By default, 10, 300, 300.``
 
 poll_interval
 ----------
-Блокироваться в цикле ожидания запроса в сервере на указанное количество секунд.
-``По умолчанию - 10.``
+Lock in a wait loop for the specified number of seconds.
+``By default, 10``.
 
 max_distributed_connections
 ----------------
-Максимальное количество одновременных соединений с удалёнными серверами при распределённой обработке одного запроса к одной таблице типа Distributed. Рекомендуется выставлять не меньше, чем количество серверов в кластере.
+The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
 
-``По умолчанию - 100.``
+``By default, 100.``
 
-Следующие параметры имеют значение только на момент создания таблицы типа Distributed (и при запуске сервера), поэтому их не имеет смысла менять в рантайме.
+The following parameters are only used when creating Distributed tables (and when launching a server), so there is no reason to change them at runtime.
 
 distributed_connections_pool_size
 -------------------
-Максимальное количество одновременных соединений с удалёнными серверами при распределённой обработке всех запросов к одной таблице типа Distributed. Рекомендуется выставлять не меньше, чем количество серверов в кластере.
+The maximum number of simultaneous connections with remote servers for distributed processing of all queries to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
 
-``По умолчанию - 128.``
+``By default, 128.``
 
 connect_timeout_with_failover_ms
 ----------------
-Таймаут в миллисекундах на соединение с удалённым сервером, для движка таблиц Distributed, если используются секции shard и replica в описании кластера.
-В случае неуспеха, делается несколько попыток соединений с разными репликами.
-``По умолчанию - 50.``
+The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the 'shard' and 'replica' sections are used in the cluster definition.
+If unsuccessful, several attempts are made to connect to various replicas.
+
+``By default, 50.``
 
 connections_with_failover_max_tries
 ----------------
-Максимальное количество попыток соединения с каждой репликой, для движка таблиц Distributed.
-``По умолчанию - 3``
+The maximum number of connection attempts with each replica, for the Distributed table engine.
+
+``By default, 3.``
 
 extremes
 -----
-Считать ли экстремальные значения (минимумы и максимумы по столбцам результата запроса). Принимает 0 или 1. По умолчанию - 0 (выключено).
-Подробнее смотрите раздел "Экстремальные значения".
+Whether to count extreme values (the minimums and maximums in columns of a query result).
+Accepts 0 or 1. By default, 0 (disabled).
+For more information, see the section "Extreme values".
 
 use_uncompressed_cache
 ----------
-Использовать ли кэш разжатых блоков. Принимает 0 или 1. По умолчанию - 0 (выключено).
-Кэш разжатых блоков (только для таблиц семейства MergeTree) позволяет существенно уменьшить задержки и увеличить пропускную способность при обработке большого количества коротких запросов. Включите эту настройку для пользователей, от которых идут частые короткие запросы. Также обратите внимание на конфигурационный параметр uncompressed_cache_size (настраивается только в конфигурационном файле) - размер кэша разжатых блоков. По умолчанию - 8 GiB. Кэш разжатых блоков заполняется по мере надобности; наиболее невостребованные данные автоматически удаляются.
+Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
+The uncompressed cache (only for tables in the MergeTree family) allows significantly reducing latency and increasing throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the ``uncompressed_cache_size`` configuration parameter (only set in the config file) - the size of uncompressed cache blocks. 
+By default, it is 8 GiB. The uncompressed cache is filled in as needed; the least-used data is automatically deleted.
 
-Для запросов, читающих хоть немного приличный объём данных (миллион строк и больше), кэш разжатых блоков автоматически выключается, чтобы оставить место для действительно мелких запросов. Поэтому, можно держать настройку use_uncompressed_cache всегда выставленной в 1.
+For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically in order to save space for truly small queries. So you can keep the ``use_uncompressed_cache`` setting always set to 1.
 
 replace_running_query
 -----------
-При использовании HTTP-интерфейса, может быть передан параметр query_id - произвольная строка, являющаяся идентификатором запроса.
-Если в этот момент, уже существует запрос от того же пользователя с тем же query_id, то поведение определяется параметром replace_running_query.
+When using the HTTP interface, the 'query_id' parameter can be passed. This is any string that serves as the query identifier.
+If a query from the same user with the same 'query_id' already exists at this time, the behavior depends on the 'replace_running_query' parameter.
 
-``0`` - (по умолчанию) кинуть исключение (не давать выполнить запрос, если запрос с таким же query_id уже выполняется);
+``0 (default)`` - Throw an exception (don't allow the query to run if a query with the same 'query_id' is already running).
+``1`` - Cancel the old query and start running the new one.
 
-``1`` - отменить старый запрос и начать выполнять новый.
-
-Эта настройка, выставленная в 1, используется в Яндекс.Метрике для реализации suggest-а значений для условий сегментации. После ввода очередного символа, если старый запрос ещё не выполнился, его следует отменить.
+Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn't finished yet, it should be canceled.
 
 load_balancing
 -----------
-На какие реплики (среди живых реплик) предпочитать отправлять запрос (при первой попытке) при распределённой обработке запроса.
+Which replicas (among healthy replicas) to preferably send a query to (on the first attempt) for distributed processing.
 
 random (по умолчанию)
 ~~~~~~~~~~~~~~~~
-Для каждой реплики считается количество ошибок. Запрос отправляется на реплику с минимальным числом ошибок, а если таких несколько, то на случайную из них.
-Недостатки: не учитывается близость серверов; если на репликах оказались разные данные, то вы будете получать так же разные данные.
+The number of errors is counted for each replica. The query is sent to the replica with the fewest errors, and if there are several of these, to any one of them.
+Disadvantages: Server proximity is not accounted for; if the replicas have different data, you will also get different data.
 
 nearest_hostname
 ~~~~~~~~~
-Для каждой реплики считается количество ошибок. Каждые 5 минут, число ошибок целочисленно делится на 2 - таким образом, обеспечивается расчёт числа ошибок за недавнее время с экспоненциальным сглаживанием. Если есть одна реплика с минимальным числом ошибок (то есть, на других репликах недавно были ошибки) - запрос отправляется на неё. Если есть несколько реплик с одинаковым минимальным числом ошибок, то запрос отправляется на реплику, имя хоста которой в конфигурационном файле минимально отличается от имени хоста сервера (по количеству отличающихся символов на одинаковых позициях, до минимальной длины обеих имён хостов).
+The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a host name that is most similar to the server's host name in the config file (for the number of different characters in identical positions, up to the minimum length of both host names).
 
-Для примера, example01-01-1 и example01-01-2.yandex.ru отличаются в одной позиции, а example01-01-1 и example01-02-2 - в двух.
-Этот способ может показаться несколько дурацким, но он не использует внешние данные о топологии сети, и не сравнивает IP-адреса, что было бы сложным для наших IPv6-адресов.
+As an example, example01-01-1 and example01-01-2.yandex.ru are different in one position, while example01-01-1 and example01-02-2 differ in two places.
+This method might seem a little stupid, but it doesn't use external data about network topology, and it doesn't compare IP addresses, which would be complicated for our IPv6 addresses.
 
-Таким образом, если есть равнозначные реплики, предпочитается ближайшая по имени.
-Также можно сделать предположение, что при отправке запроса на один и тот же сервер, в случае отсутствия сбоев, распределённый запрос будет идти тоже на одни и те же серверы. То есть, даже если на репликах расположены разные данные, запрос будет возвращать в основном одинаковые результаты.
+Thus, if there are equivalent replicas, the closest one by name is preferred.
+We can also assume that when sending a query to the same server, in the absence of failures, a distributed query will also go to the same servers. So even if different data is placed on the replicas, the query will return mostly the same results.
 
 in_order
 ~~~~~~~
-Реплики перебираются в таком порядке, в каком они указаны. Количество ошибок не имеет значения.
-Этот способ подходит для тех случаев, когда вы точно знаете, какая реплика предпочтительнее.
+Replicas are accessed in the same order as they are specified. The number of errors does not matter. This method is appropriate when you know exactly which replica is preferable.
 
 totals_mode
 -----------
-Каким образом вычислять TOTALS при наличии HAVING, а также при наличии max_rows_to_group_by и group_by_overflow_mode = 'any'.
-Смотрите раздел "Модификатор WITH TOTALS".
+How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.
+See the section "WITH TOTALS modifier".
 
 totals_auto_threshold
 --------------
-Порог для ``totals_mode = 'auto'``.
-Смотрите раздел "Модификатор WITH TOTALS".
+The threshold for ``totals_mode = 'auto'``.
+See the section "WITH TOTALS modifier".
 
 default_sample
 ----------
-Число с плавающей запятой от 0 до 1. По умолчанию - 1.
-Позволяет выставить коэффициент сэмплирования по умолчанию для всех запросов SELECT.
-(Для таблиц, не поддерживающих сэмплирование, будет кидаться исключение.)
-Если равно 1 - сэмплирование по умолчанию не делается.
+A floating-point number from 0 to 1. By default, 1.
+Allows setting a default sampling coefficient for all SELECT queries.
+(For tables that don't support sampling, an exception will be thrown.)
+If set to 1, default sampling is not performed.
 
 max_parallel_replicas
 ---------------
-Максимальное количество используемых реплик каждого шарда при выполнении запроса.
-Для консистентности (чтобы получить разные части одного и того же разбиения), эта опция работает только при заданном ключе сэмплирования.
-Отставание реплик не контролируется.
+The maximum number of replicas of each shard used when the query is executed.
+For consistency (to get different parts of the same partition), this option only works for the specified sampling key.
+The lag of the replicas is not controlled.
 
 compile
 -------
-Включить компиляцию запросов. По умолчанию - 0 (выключено).
+Enable query compilation. The default is 0 (disabled).
 
-Компиляция предусмотрена только для части конвейера обработки запроса - для первой стадии агрегации (GROUP BY).
-В случае, если эта часть конвейера была скомпилирована, запрос может работать быстрее, за счёт разворачивания коротких циклов и инлайнинга вызовов агрегатных функций. Максимальный прирост производительности (до четырёх раз в редких случаях) достигается на запросах с несколькими простыми агрегатными функциями. Как правило, прирост производительности незначителен. В очень редких случаях возможно замедление выполнения запроса.
+Compilation is provided for only part of the request processing pipeline - for the first aggregation step (GROUP BY).
+In the event that this part of the pipeline was compiled, the query can work faster, by deploying short loops and inlining the aggregate function calls. The maximum performance increase (up to four times in rare cases) is achieved on queries with several simple aggregate functions. Typically, the performance gain is negligible. In very rare cases, the request may be slowed down.
 
 min_count_to_compile
 ---------------
-После скольких раз, когда скомпилированный кусок кода мог пригодиться, выполнить его компиляцию. По умолчанию - 3.
-В случае, если значение равно нулю, то компиляция выполняется синхронно, и запрос будет ждать окончания процесса компиляции перед продолжением выполнения. Это можно использовать для тестирования, иначе используйте значения, начиная с 1. Как правило, компиляция занимает по времени около 5-10 секунд.
-В случае, если значение равно 1 или больше, компиляция выполняется асинхронно, в отдельном потоке. При готовности результата, он сразу же будет использован, в том числе, уже выполняющимися в данный момент запросами.
+After how many times, when the compiled piece of code could come in handy, perform its compilation. The default is 3.
+In case the value is zero, the compilation is executed synchronously, and the request will wait for the compilation process to finish before continuing. This can be used for testing, otherwise use values ​​starting with 1. Typically, compilation takes about 5-10 seconds.
+If the value is 1 or more, the compilation is performed asynchronously, in a separate thread. If the result is ready, it will be immediately used, including those already running at the moment requests.
 
-Скомпилированный код требуется для каждого разного сочетания используемых в запросе агрегатных функций и вида ключей в GROUP BY.
-Результаты компиляции сохраняются в директории build в виде .so файлов. Количество результатов компиляции не ограничено, так как они не занимают много места. При перезапуске сервера, старые результаты будут использованы, за исключением случая обновления сервера - тогда старые результаты удаляются.
+The compiled code is required for each different combination of aggregate functions used in the query and the type of keys in GROUP BY.
+The compilation results are saved in the build directory as .so files. The number of compilation results is unlimited, since they do not take up much space. When the server is restarted, the old results will be used, except for the server update - then the old results are deleted.
 
 input_format_skip_unknown_fields
 ----------------
-Если значение истинно, то при выполнении INSERT из входных данных пропускаются (не рассматриваются) колонки с неизвестными именами, иначе в данной ситуации будет сгенерировано исключение.
-Работает для форматов JSONEachRow и TSKV.
+If the parameter is true, INSERT operation will skip columns with unknown names from input.
+Otherwise, an exception will be generated, it is default behavior.
+The parameter works only for JSONEachRow and TSKV input formats.
 
 output_format_json_quote_64bit_integers
 -----------------
-Если значение истинно, то при использовании JSON* форматов UInt64 и Int64 числа выводятся в кавычках (из соображений совместимости с большинством реализаций JavaScript), иначе - без кавычек.
+If the parameter is true (default value), UInt64 and Int64 numbers are printed as quoted strings in all JSON output formats.
+Such behavior is compatible with most JavaScript interpreters that stores all numbers as double-precision floating point numbers.
+Otherwise, they are printed as regular numbers.

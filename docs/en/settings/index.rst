@@ -1,7 +1,7 @@
-Настройки
+Settings
 ==========
 
-Здесь будут рассмотрены настройки, которые можно задать с помощью запроса SET или в конфигурационном файле. Напомню, что эти настройки могут быть выставлены в пределах сессии или глобально. Настройки, которые можно задать только в конфигурационном файле сервера, здесь рассмотрены не будут.
+In this section, we review settings that you can make using a SET query or in a config file. Remember that these settings can be set for a session or globally. Settings that can only be made in the server config file are not covered here.
 
 .. toctree::
     :glob:
