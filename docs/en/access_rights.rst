@@ -1,54 +1,37 @@
-Права доступа
+Access rights
 =============
-Пользователи и права доступа настраиваются в конфиге пользователей. Обычно это ``users.xml``.
+Users and access rights are set up in the user config. This is usually ``users.xml``.
 
-Пользователи прописаны в секции users. Рассмотрим фрагмент файла ``users.xml``:
+Users are recorded in the ``users`` section. Let's look at part of the ``users.xml`` file:
 
 .. code-block:: xml
 
-  <!-- Пользователи и ACL. -->
+  <!-- Users and ACL. -->
   <users>
-      <!-- Если имя пользователя не указано, используется пользователь default. -->
+      <!-- If the username is not specified, the default user is used. -->
       <default>
-          <!-- Password could be specified in plaintext or in SHA256 (in hex format).
-  
-               If you want to specify password in plaintext (not recommended), place it in 'password' element.
-               Example: <password>qwerty</password>.
-               Password could be empty.
-  
-               If you want to specify SHA256, place it in 'password_sha256_hex' element.
-               Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
-  
-               How to generate decent password:
-               Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
-               In first line will be password and in second - corresponding SHA256.
-          -->
+          <!-- Password (in plaintext). May be empty. -->
           <password></password>
   
-          <!-- Список сетей, из которых разрешён доступ.
-              Каждый элемент списка имеет одну из следующих форм:
-              <ip> IP-адрес или маска подсети. Например, 222.111.222.3 или 10.0.0.1/8 или 2a02:6b8::3 или 2a02:6b8::3/64.
-              <host> Имя хоста. Например: example01. Для проверки делается DNS-запрос, и все полученные адреса сравниваются с адресом клиента.
-              <host_regexp> Регулярное выражение для имён хостов. Например, ^example\d\d-\d\d-\d\.yandex\.ru$
-                  Для проверки, для адреса клиента делается DNS PTR-запрос и к результату применяется регулярное выражение.
-                  Потом для результата PTR-запроса делается снова DNS-запрос, и все полученные адреса сравниваются с адресом клиента.
-                  Настоятельно рекомендуется, чтобы регулярное выражение заканчивалось на \.yandex\.ru$.
+          <!-- List of networks that access is allowed from. Each list item has one of the following forms:
+              <ip> IP address or subnet mask. For example, 222.111.222.3 or 10.0.0.1/8 or 2a02:6b8::3 or 2a02:6b8::3/64.
+              <host> Host name. Example: example01. A DNS query is made for verification, and all received address are compared to the client address.
+              <host_regexp> Regex for host names. For example, ^example\d\d-\d\d-\d\.yandex\.ru$
+                  A DNS PTR query is made to verify the client address and the regex is applied to the result.
+                  Then another DNS query is made for the result of the PTR query, and all received address are compared to the client address.
+                  We strongly recommend that the regex ends with \.yandex\.ru$. If you are installing ClickHouse independently, here you should specify:
+              <networks>
+                  <ip>::/0</ip>
+              </networks> -->
   
-              Если вы устанавливаете ClickHouse самостоятельно, укажите здесь:
-                  <networks>
-                          <ip>::/0</ip>
-                  </networks>
-          -->
           <networks incl="networks" />
-  
-          <!-- Профиль настроек, использующийся для пользователя. -->
+          <!-- Settings profile for the user. -->
           <profile>default</profile>
-  
-          <!-- Квота, использующаяся для пользователя. -->
+          <!-- Quota for the user. -->
           <quota>default</quota>
       </default>
   
-      <!-- Для запросов из пользовательского интерфейса Метрики через API для данных по отдельным счётчикам. -->
+      <!-- For queries from the user interface. -->
       <web>
           <password></password>
           <networks incl="networks" />
@@ -56,12 +39,12 @@
           <quota>default</quota>
       </web>
 
-Здесь видно объявление двух пользователей - ``default`` и ``web``. Пользователя web мы добавили самостоятельно.
-Пользователь default выбирается в случаях, когда имя пользователя не передаётся, поэтому такой пользователь должен присутствовать в конфигурационном файле обязательно. Также пользователь default используется при распределённой обработки запроса - система ходит на удалённые серверы под ним. Поэтому, у пользователя default должен быть пустой пароль и не должно быть выставлено существенных ограничений или квот - иначе распределённые запросы сломаются.
+Here we can see that two users are declared: ``default`` and ``web``. We added the ``web`` user ourselves.
+The ``default`` user is chosen in cases when the username is not passed, so this user must be present in the config file. The ``default`` user is also used for distributed query processing - the system accesses remote servers under this username. So the ``default`` user must have an empty password and must not have substantial restrictions or quotas - otherwise, distributed queries will fail.
 
-Пароль указывается либо в открытом виде (не рекомендуется), либо в виде SHA-256. Хэш не содержит соль. В связи с этим, не следует рассматривать такие пароли, как защиту от потенциального злоумышленника. Скорее, они нужны для защиты от сотрудников.
+The password is specified in plain text directly in the config. In this regard, you should not consider these passwords as providing security against potential malicious attacks. Rather, they are necessary for protection from Yandex employees.
 
-Указывается список сетей, из которых разрешён доступ. В этом примере, список сетей для обеих пользователей, загружается из отдельного файла (/etc/metrika.xml), содержащего подстановку networks. Вот его фрагмент:
+A list of networks is specified that access is allowed from. In this example, the list of networks for both users is loaded from a separate file (``/etc/metrika.xml``) containing the ``networks`` substitution. Here is a fragment of it:
 
 .. code-block:: xml
 
@@ -75,12 +58,12 @@
       </networks>
   </yandex>
 
-Можно было бы указать этот список сетей непосредственно в users.xml, или в файле в директории users.d (подробнее смотрите раздел "Конфигурационные файлы").
+We could have defined this list of networks directly in ``users.xml``, or in a file in the ``users.d`` directory (for more information, see the section "Configuration files").
 
-В конфиге приведён комментарий, указывающий, как можно открыть доступ отовсюду.
+The config includes comments explaining how to open access from everywhere.
 
-Для продакшен использования, указывайте только элементы вида ip (IP-адреса и их маски), так как использование host и host_regexp может вызывать лишние задержки.
+For use in production, only specify IP elements (IP addresses and their masks), since using ``host`` and ``host_regexp`` might cause extra latency.
 
-Далее указывается используемый профиль настроек пользователя (смотрите раздел "Профили настроек"). Вы можете указать профиль по умолчанию - default. Профиль может называться как угодно; один и тот же профиль может быть указан для разных пользователей. Наиболее важная вещь, которую вы можете прописать в профиле настроек - настройку readonly, равную 1, что обеспечивает доступ только на чтение.
+Next the user settings profile is specified (see the section "Settings profiles"). You can specify the default profile, ``default``. The profile can have any name. You can specify the same profile for different users. The most important thing you can write in the settings profile is ``readonly`` set to ``1``, which provides read-only access.
 
-Затем указывается используемая квота (смотрите раздел "Квоты"). Вы можете указать квоту по умолчанию - default. Она настроена в конфиге по умолчанию так, что только считает использование ресурсов, но никак их не ограничивает. Квота может называться как угодно; одна и та же квота может быть указана для разных пользователей - в этом случае, подсчёт использования ресурсов делается для каждого пользователя по отдельности.
+After this, the quota is defined (see the section "Quotas"). You can specify the default quota, ``default``. It is set in the config by default so that it only counts resource usage, but does not restrict it. The quota can have any name. You can specify the same quota for different users - in this case, resource usage is calculated for each user individually.
