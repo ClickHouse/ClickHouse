@@ -1,318 +1,284 @@
-Агрегатные функции
+Aggregate functions
 ==================
 
 count()
 -------
-Считает количество строк. Принимает ноль аргументов, возвращает UInt64.
-Не поддерживается синтаксис COUNT(DISTINCT x) - для этого есть отдельная агрегатная функция uniq.
+Counts the number of rows. Accepts zero arguments and returns UInt64.
+The syntax COUNT(DISTINCT x) is not supported. The separate 'uniq' aggregate function exists for this purpose.
 
-Запрос вида SELECT count() FROM table не оптимизируется, так как количество записей в таблице нигде не хранится отдельно - из таблицы будет выбран какой-нибудь достаточно маленький столбец, и будет посчитано количество значений в нём.
+A 'SELECT count() FROM table' query is not optimized, because the number of entries in the table is not stored separately. It will select some small column from the table and count the number of values in it.
 
 any(x)
 ------
-Выбирает первое попавшееся значение.
-Порядок выполнения запроса может быть произвольным и даже каждый раз разным, поэтому результат данной функции недетерминирован.
-Для получения детерминированного результата, можно использовать функции min или max вместо any.
+Selects the first encountered value.
+The query can be executed in any order and even in a different order each time, so the result of this function is indeterminate.
+To get a determinate result, you can use the 'min' or 'max' function instead of 'any'.
 
-В некоторых случаях, вы всё-таки можете рассчитывать на порядок выполнения запроса. Это - случаи, когда SELECT идёт из подзапроса, в котором используется ORDER BY.
+In some cases, you can rely on the order of execution. This applies to cases when SELECT comes from a subquery that uses ORDER BY.
 
-При наличии в запросе SELECT секции GROUP BY или хотя бы одной агрегатной функции, ClickHouse (в отличие от MySQL) требует, чтобы все выражения в секциях SELECT, HAVING, ORDER BY вычислялись из ключей или из агрегатных функций. То есть, каждый выбираемый из таблицы столбец, должен использоваться либо в ключах, либо внутри агрегатных функций. Чтобы получить поведение, как в MySQL, вы можете поместить остальные столбцы в агрегатную функцию any.
+When a SELECT query has the GROUP BY clause or at least one aggregate function, ClickHouse (in contrast to MySQL) requires that all expressions in the SELECT, HAVING, and ORDER BY clauses be calculated from keys or from aggregate functions. That is, each column selected from the table must be used either in keys, or inside aggregate functions. To get behavior like in MySQL, you can put the other columns in the 'any' aggregate function.
 
 anyLast(x)
 ----------
-Выбирает последнее попавшееся значение.
-Результат так же недетерминирован, как и для функции any.
+Selects the last value encountered.
+The result is just as indeterminate as for the 'any' function.
 
 min(x)
 ------
-Вычисляет минимум.
+Calculates the minimum.
 
 max(x)
 -----
-Вычисляет максимум.
+Calculates the maximum
 
 argMin(arg, val)
 ----------------
-Вычисляет значение arg при минимальном значении val. Если есть несколько разных значений arg для минимальных значений val, то выдаётся первое попавшееся из таких значений.
+Calculates the 'arg' value for a minimal 'val' value. If there are several different values of 'arg' for minimal values of 'val', the first of these values encountered is output.
 
 argMax(arg, val)
 ---------------
-Вычисляет значение arg при максимальном значении val. Если есть несколько разных значений arg для максимальных значений val, то выдаётся первое попавшееся из таких значений.
+Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
 
 sum(x)
 -------
-Вычисляет сумму.
-Работает только для чисел.
+Calculates the sum.
+Only works for numbers.
 
 avg(x)
 ------
-Вычисляет среднее.
-Работает только для чисел.
-Результат всегда - Float64.
+Calculates the average.
+Only works for numbers.
+The result is always Float64.
 
 uniq(x)
 --------
-Приближённо вычисляет количество различных значений аргумента. Работает для чисел, строк, дат, дат-с-временем, для нескольких аргументов и аргументов-кортежей.
+Calculates the approximate number of different values of the argument. Works for numbers, strings, dates, and dates with times.
 
-Используется алгоритм типа adaptive sampling: в качестве состояния вычислений используется выборка значений хэшей элементов, размером до 65 536.
-Алгоритм является очень точным для множеств небольшой кардинальности (до 65 536) и очень эффективным по CPU (при расчёте не слишком большого количества таких функций, использование uniq почти так же быстро, как использование других агрегатных функций).
+Uses an adaptive sampling algorithm: for the calculation state, it uses a sample of element hash values with a size up to 65535.
+Compared with the widely known HyperLogLog algorithm, this algorithm is less effective in terms of accuracy and memory consumption (even up to proportionality), but it is adaptive. This means that with fairly high accuracy, it consumes less memory during simultaneous computation of cardinality for a large number of data sets whose cardinality has power law distribution (i.e. in cases when most of the data sets are small). This algorithm is also very accurate for data sets with small cardinality (up to 65536) and very efficient on CPU (when computing not too many of these functions, using 'uniq' is almost as fast as using other aggregate functions).
 
-Результат детерминирован (не зависит от порядка выполнения запроса).
+There is no compensation for the bias of an estimate, so for large data sets the results are systematically deflated. This function is normally used for computing the number of unique visitors in Yandex.Metrica, so this bias does not play a role.
+
+The result is determinate (it doesn't depend on the order of query execution).
 
 uniqCombined(x)
 --------------
-Приближённо вычисляет количество различных значений аргумента. Работает для чисел, строк, дат, дат-с-временем, для нескольких аргументов и аргументов-кортежей.
+Approximately computes the number of different values ​​of the argument. Works for numbers, strings, dates, date-with-time, for several arguments and arguments-tuples.
 
-Используется комбинация трёх алгоритмов: массив, хэш-таблица и HyperLogLog с таблицей коррекции погрешности. Расход памяти в несколько раз меньше, чем у функции uniq, а точность в несколько раз выше. Скорость работы чуть ниже, чем у функции uniq, но иногда может быть даже выше - в случае распределённых запросов, в которых по сети передаётся большое количество состояний агрегации. Максимальный размер состояния составляет 96 KiB (HyperLogLog из 217 6-битовых ячеек).
+A combination of three algorithms is used: an array, a hash table and HyperLogLog with an error correction table. The memory consumption is several times smaller than the uniq function, and the accuracy is several times higher. The speed of operation is slightly lower than that of the uniq function, but sometimes it can be even higher - in the case of distributed requests, in which a large number of aggregation states are transmitted over the network. The maximum state size is 96 KiB (HyperLogLog of 217 6-bit cells).
 
-Результат детерминирован (не зависит от порядка выполнения запроса).
+The result is deterministic (it does not depend on the order of query execution).
 
-Функция uniqCombined является хорошим выбором по умолчанию для подсчёта количества различных значений.
+The uniqCombined function is a good default choice for calculating the number of different values.
 
 uniqHLL12(x)
 ------------
-Приближённо вычисляет количество различных значений аргумента, используя алгоритм HyperLogLog.
-Используется 212 5-битовых ячеек. Размер состояния чуть больше 2.5 КБ.
+Uses the HyperLogLog algorithm to approximate the number of different values of the argument. It uses 212 5-bit cells. The size of the state is slightly more than 2.5 KB.
 
-Результат детерминирован (не зависит от порядка выполнения запроса).
+The result is determinate (it doesn't depend on the order of query execution).
 
-В большинстве случаев, используйте функцию uniq или uniqCombined.
+In most cases, use the 'uniq' function. You should only use this function if you understand its advantages well.
 
 uniqExact(x)
 ------------
-Вычисляет количество различных значений аргумента, точно.
-Не стоит бояться приближённых расчётов. Поэтому, используйте лучше функцию uniq.
-Функцию uniqExact следует использовать, если вам точно нужен точный результат.
+Calculates the number of different values of the argument, exactly.
+There is no reason to fear approximations, so it's better to use the 'uniq' function.
+You should use the 'uniqExact' function if you definitely need an exact result.
 
-Функция uniqExact расходует больше оперативки, чем функция uniq, так как размер состояния неограниченно растёт по мере роста количества различных значений.
+The 'uniqExact' function uses more memory than the 'uniq' function, because the size of the state has unbounded growth as the number of different values increases.
 
 groupArray(x)
 ------------
-Составляет массив из значений аргумента.
-Значения в массив могут быть добавлены в любом (недетерминированном) порядке.
+Creates an array of argument values.
+Values can be added to the array in any (indeterminate) order.
 
-В некоторых случаях, вы всё-таки можете рассчитывать на порядок выполнения запроса. Это - случаи, когда SELECT идёт из подзапроса, в котором используется ORDER BY.
+In some cases, you can rely on the order of execution. This applies to cases when SELECT comes from a subquery that uses ORDER BY.
 
 groupUniqArray(x)
 -----------------
-Составляет массив из различных значений аргумента. Расход оперативки такой же, как у функции uniqExact.
+Creates an array from different argument values. Memory consumption is the same as for the 'uniqExact' function.
 
 quantile(level)(x)
 ------------------
-Приближённо вычисляет квантиль уровня level. level - константа, число с плавающей запятой от 0 до 1.
-Рекомендуется использовать значения level в диапазоне 0.01 .. 0.99.
-Не используйте значения level, равные 0 или 1 - для таких случаев есть функции min и max.
+Approximates the 'level' quantile. 'level' is a constant, a floating-point number from 0 to 1. We recommend using a 'level' value in the range of 0.01 .. 0.99.
+Don't use a 'level' value equal to 0 or 1 - use the 'min' and 'max' functions for these cases.
 
-В этой функции, равно как и во всех функциях для расчёта квантилей, параметр level может быть не указан. В таком случае, он принимается равным 0.5 - то есть, функция будет вычислять медиану.
+The algorithm is the same as for the 'median' function. Actually, 'quantile' and 'median' are internally the same function. You can use the 'quantile' function without parameters - in this case, it calculates the median, and you can use the 'median' function with parameters - in this case, it calculates the quantile of the set level.
 
-Работает для чисел, дат, дат-с-временем.
-Для чисел возвращает Float64, для дат - дату, для дат-с-временем - дату-с-временем.
-
-Используется reservoir sampling с размером резервуара до 8192.
-При необходимости, результат выдаётся с линейной аппроксимацией из двух соседних значений.
-Этот алгоритм обеспечивает весьма низкую точность расчёта. Смотрите также функции quantileTiming, quantileTDigest, quantileExact.
-
-Результат зависит от порядка выполнения запроса, и является недетерминированным.
-
-При использовании нескольких функций quantile (и аналогичных) с разными уровнями в запросе, внутренние состояния не объединяются (то есть, запрос работает менее эффективно, чем мог бы). В этом случае, используйте функцию quantiles (и аналогичные).
+When using multiple 'quantile' and 'median' functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the 'quantiles' function.
 
 quantileDeterministic(level)(x, determinator)
 --------------
-Работает аналогично функции quantile, но, в отличие от неё, результат является детерминированным и не зависит от порядка выполнения запроса.
+Calculates the quantile of 'level' using the same algorithm as the 'medianDeterministic' function.
 
-Для этого, функция принимает второй аргумент - "детерминатор". Это некоторое число, хэш от которого используется вместо генератора случайных чисел в алгоритме reservoir sampling. Для правильной работы функции, одно и то же значение детерминатора не должно встречаться слишком часто. В качестве детерминатора вы можете использовать идентификатор события, идентификатор посетителя и т. п.
-
-Не используйте эту функцию для рассчёта таймингов. Для этого есть более подходящая функции - quantileTiming.
 
 quantileTiming(level)(x)
 ---------------
-Вычисляет квантиль уровня level с фиксированной точностью.
-Работает для чисел. Предназначена для расчёта квантилей от времени загрузки страницы в миллисекундах.
-
-Если значение больше 30 000 (соответствует времени загрузки страницы большем 30 секундам.) - результат приравнивается к 30 000.
-
-Если всего значений не больше примерно 5670, то вычисление точное.
-
-Иначе:
- * если время меньше 1024 мс., то вычисление точное.
- * иначе вычисление идёт с округлением до числа, кратного 16 мс.
-
-При передаче в функцию отрицательных значений, поведение не определено.
-
-Возвращаемое значение имеет тип Float32. Когда в функцию не было передано ни одного значения (при использовании quantileTimingIf), возвращается nan. Это сделано, чтобы отличать такие случаи от нулей. Смотрите замечание о сортировке NaN-ов в разделе "Секция ORDER BY".
-
-Результат детерминирован (не зависит от порядка выполнения запроса).
-
-Для своей задачи (расчёт квантилей времени загрузки страниц), использование этой функции эффективнее и результат точнее, чем для функции quantile.
+Calculates the quantile of 'level' using the same algorithm as the 'medianTiming' function.
 
 quantileTimingWeighted(level)(x, weight)
 ---------------
-Отличается от функции medianTiming наличием второго аргумента - "веса". Вес - неотрицательное целое число.
-Результат считается так же, как если бы в функцию medianTiming значение x было передано weight количество раз.
+Calculates the quantile of 'level' using the same algorithm as the 'medianTimingWeighted' function.
 
 quantileExact(level)(x)
 ------------
-Вычисляет квантиль уровня level точно. Для этого, все переданные значения складываются в массив, который затем частично сортируется. Поэтому, функция потребляет O(n) памяти, где n - количество переданных значений. Впрочем, для случая маленького количества значений, функция весьма эффективна.
+Computes the level quantile exactly. To do this, all transferred values are added to an array, which is then partially sorted. Therefore, the function consumes O (n) memory, where n is the number of transferred values. However, for a small number of values, the function is very effective.
 
 quantileExactWeighted(level)(x, weight)
 ----------------
-Вычисляет квантиль уровня level точно. При этом, каждое значение учитывается с весом weight - как будто оно присутствует weight раз. Аргументы функции можно рассматривать как гистограммы, где значению x соответствует "столбик" гистограммы высоты weight, а саму функцию можно рассматривать как суммирование гистограмм.
+Computes the level quantile exactly. In this case, each value is taken into account with the weight weight - as if it is present weight once. The arguments of the function can be considered as histograms, where the value "x" corresponds to the "column" of the histogram of the height weight, and the function itself can be considered as the summation of histograms.
 
-В качестве алгоритма используется хэш-таблица. Из-за этого, в случае, если передаваемые значения часто повторяются, функция потребляет меньше оперативки, чем quantileExact. Вы можете использовать эту функцию вместо quantileExact, указав в качестве веса число 1.
+The algorithm is a hash table. Because of this, in case the transmitted values ​​are often repeated, the function consumes less RAM than the quantileExact. You can use this function instead of quantileExact, specifying the number 1 as the weight.
 
 quantileTDigest(level)(x)
 -------------
-Вычисляет квантиль уровня level приближённо, с использованием алгоритма t-digest. Максимальная погрешность составляет 1%. Расход памяти на состояние пропорционален логарифму от количества переданных значений.
+Computes the level quantile approximatively, using the t-digest algorithm. The maximum error is 1%. The memory consumption per state is proportional to the logarithm of the number of transmitted values.
 
-Производительность функции ниже quantile, quantileTiming. По соотношению размера состояния и точности, функция существенно лучше, чем quantile.
+The performance of the function is below quantile, quantileTiming. By the ratio of state size and accuracy, the function is significantly better than quantile.
 
-Результат зависит от порядка выполнения запроса, и является недетерминированным.
+The result depends on the order in which the query is executed, and is nondeterministic.
 
 median
 ------
-Для всех quantile-функций, также присутствуют соответствующие median-функции: median, medianDeterministic, medianTiming, medianTimingWeighted, medianExact, medianExactWeighted, medianTDigest. Они являются синонимами и их поведение ничем не отличается.
+Approximates the median. Also see the similar 'quantile' function.
+Works for numbers, dates, and dates with times.
+For numbers it returns Float64, for dates - a date, and for dates with times - a date with time.
+
+Uses reservoir sampling with a reservoir size up to 8192.
+If necessary, the result is output with linear approximation from the two neighboring values.
+This algorithm proved to be more practical than another well-known algorithm - QDigest.
+
+The result depends on the order of running the query, and is nondeterministic.
 
 quantiles(level1, level2, ...)(x)
 ---------------
-Для всех quantile-функций, также присутствуют соответствующие quantiles-функции: quantiles, quantilesDeterministic, quantilesTiming, quantilesTimingWeighted, quantilesExact, quantilesExactWeighted, quantilesTDigest. Эти функции за один проход вычисляют все квантили перечисленных уровней и возвращают массив вычисленных значений.
+Approximates quantiles of all specified levels.
+The result is an array containing the corresponding number of values.
 
 varSamp(x)
 --------
-Вычисляет величину Σ((x - x̅)2) / (n - 1), где n - размер выборки, x̅ - среднее значение x.
+Calculates the amount Σ((x - x̅)2) / (n - 1), where 'n' is the sample size and 'x̅' is the average value of 'x'.
 
-Она представляет собой несмещённую оценку дисперсии случайной величины, если переданные в функцию значения являются выборкой этой случайной величины.
+It represents an unbiased estimate of the variance of a random variable, if the values passed to the function are a sample of this random amount.
 
-Возвращает Float64. В случае, когда n <= 1, возвращается +∞.
+Returns Float64. If n <= 1, it returns +∞.
 
 varPop(x)
 ---------
-Вычисляет величину Σ((x - x̅)2) / n, где n - размер выборки, x̅ - среднее значение x.
+Calculates the amount Σ((x - x̅)2) / n, where 'n' is the sample size and 'x̅' is the average value of 'x'.
 
-То есть, дисперсию для множества значений. Возвращает Float64.
+In other words, dispersion for a set of values. Returns Float64.
 
 stddevSamp(x)
 -----------
-Результат равен квадратному корню от varSamp(x).
+The result is equal to the square root of 'varSamp(x)'.
 
 
 stddevPop(x)
 ---------
-Результат равен квадратному корню от varPop(x).
+The result is equal to the square root of 'varPop(x)'.
 
 
 covarSamp(x, y)
 ----------
-Вычисляет величину Σ((x - x̅)(y - y̅)) / (n - 1).
+Calculates the value of Σ((x - x̅)(y - y̅)) / (n - 1).
 
-Возвращает Float64. В случае, когда n <= 1, возвращается +∞.
+Returns Float64. If n <= 1, it returns +∞.
 
 covarPop(x, y)
 ----------
-Вычисляет величину Σ((x - x̅)(y - y̅)) / n.
+Calculates the value of Σ((x - x̅)(y - y̅)) / n.
 
 corr(x, y)
 ---------
-Вычисляет коэффициент корреляции Пирсона: Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)2) * Σ((y - y̅)2)).
+Calculates the Pearson correlation coefficient: Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)2) * Σ((y - y̅)2)).
 
-Параметрические агрегатные функции
+Parametric aggregate functions
 ================
-Некоторые агрегатные функции могут принимать не только столбцы-аргументы (по которым производится свёртка), но и набор параметров - констант для инициализации. Синтаксис - две пары круглых скобок вместо одной. Первая - для параметров, вторая - для аргументов.
+Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters - constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
 sequenceMatch(pattern)(time, cond1, cond2, ...)
 ------------
-Сопоставление с образцом для цепочки событий.
+Pattern matching for event chains.
 
-``pattern`` - строка, содержащая шаблон для сопоставления. Шаблон похож на регулярное выражение.
+'pattern' is a string containing a pattern to match. The pattern is similar to a regular expression.
+'time' is the event time of the DateTime type.
+'cond1, cond2 ...' are from one to 32 arguments of the UInt8 type that indicate whether an event condition was met.
 
-``time`` - время события, тип DateTime
+The function collects a sequence of events in RAM. Then it checks whether this sequence matches the pattern.
+It returns UInt8 - 0 if the pattern isn't matched, or 1 if it matches.
 
-``cond1``, ``cond2`` ... - от одного до 32 аргументов типа UInt8 - признаков, было ли выполнено некоторое условие для события.
+Example: sequenceMatch('(?1).*(?2)')(EventTime, URL LIKE '%company%', URL LIKE '%cart%')
+- whether there was a chain of events in which pages with the address in company were visited earlier than pages with the address in cart.
 
-Функция собирает в оперативке последовательность событий. Затем производит проверку на соответствие этой последовательности шаблону.
-Возвращает UInt8 - 0, если шаблон не подходит и 1, если шаблон подходит.
+This is a degenerate example. You could write it using other aggregate functions:
+minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
+However, there is no such solution for more complex situations.
 
-Пример: ``sequenceMatch('(?1).*(?2)')(EventTime, URL LIKE '%company%', URL LIKE '%cart%')``
+Pattern syntax:
+``(?1)`` - Reference to a condition (any number in place of 1).
+``.*`` - Any number of events.
+``(?t>=1800)`` - Time condition.
+Any quantity of any type of events is allowed over the specified time.
+The operators <, >, <= may be used instead of  >=.
+Any number may be specified in place of 1800.
 
-- была ли цепочка событий, в которой посещение страницы с адресом, содержащим company было раньше по времени посещения страницы с адресом, содержащим cart.
-
-Это вырожденный пример. Его можно записать с помощью других агрегатных функций:
-::
-  minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
-
-Но в более сложных случаях, такого решения нет.
-
-Синтаксис шаблонов:
-
-``(?1)`` - ссылка на условие (вместо 1 - любой номер);
-
-``.*`` - произвольное количество любых событий;
-
-``(?t>=1800)`` - условие на время;
-
-за указанное время допускается любое количество любых событий;
-
-вместо >= могут использоваться операторы <, >, <=;
-
-вместо 1800 может быть любое число;
-
-События, произошедшие в одну секунду, могут оказаться в цепочке в произвольном порядке. От этого может зависеть результат работы функции.
+Events that occur during the same second may be put in the chain in any order. This may affect the result of the function.
 
 sequenceCount(pattern)(time, cond1, cond2, ...)
 ------------------
-Аналогично функции sequenceMatch, но возвращает не факт наличия цепочки событий, а UInt64 - количество найденных цепочек.
-Цепочки ищутся без перекрытия. То есть, следующая цепочка может начаться только после окончания предыдущей.
+Similar to the sequenceMatch function, but it does not return the fact that there is a chain of events, and UInt64 is the number of strings found.
+Chains are searched without overlapping. That is, the following chain can start only after the end of the previous one.
 
 uniqUpTo(N)(x)
 -------------
-Вычисляет количество различных значений аргумента, если оно меньше или равно N.
-В случае, если количество различных значений аргумента больше N, возвращает N + 1.
+Calculates the number of different argument values, if it is less than or equal to N.
+If the number of different argument values is greater than N, it returns N + 1.
 
-Рекомендуется использовать для маленьких N - до 10. Максимальное значение N - 100.
+Recommended for use with small Ns, up to 10. The maximum N value is 100.
 
-Для состояния агрегатной функции используется количество оперативки равное 1 + N * размер одного значения байт.
-Для строк запоминается некриптографический хэш, имеющий размер 8 байт. То есть, для строк вычисление приближённое.
+For the state of an aggregate function, it uses the amount of memory equal to 1 + N * the size of one value of bytes.
+For strings, it stores a non-cryptographic hash of 8 bytes. That is, the calculation is approximated for strings.
 
-Функция также работает для нескольких аргументов.
+It works as fast as possible, except for cases when a large N value is used and the number of unique values is slightly less than N.
 
-Работает максимально быстро за исключением патологических случаев, когда используется большое значение N и количество уникальных значений чуть меньше N.
+Usage example:
+Problem: Generate a report that shows only keywords that produced at least 5 unique users.
+Solution: Write in the query ``GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5``
 
-Пример применения:
-::
-  Задача: показывать в отчёте только поисковые фразы, по которым было хотя бы 5 уникальных посетителей.
-  Решение: пишем в запросе GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
-
-Комбинаторы агрегатных функций
+Aggregate function combinators
 =======================
-К имени агрегатной функции может быть приписан некоторый суффикс. При этом, работа агрегатной функции некоторым образом модифицируется.
-Существуют комбинаторы If и Array. Смотрите разделы ниже.
+The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
+There are ``If`` and ``Array`` combinators. See the sections below.
 
-Комбинатор -If. Условные агрегатные функции
+-If combinator. Conditional aggregate functions
 ---------------------
-К имени любой агрегатной функции может быть приписан суффикс -If. В этом случае, агрегатная функция принимает ещё один дополнительный аргумент - условие (типа UInt8). Агрегатная функция будет обрабатывать только те строки, для которых условие сработало. Если условие ни разу не сработало - возвращается некоторое значение по умолчанию (обычно - нули, пустые строки).
+The suffix ``-If`` can be appended to the name of any aggregate function. In this case, the aggregate function accepts an extra argument - a condition (Uint8 type). The aggregate function processes only the rows that trigger the condition. If the condition was not triggered even once, it returns a default value (usually zeros or empty strings).
 
-Примеры: ``sumIf(column, cond)``, ``countIf(cond)``, ``avgIf(x, cond)``, ``quantilesTimingIf(level1, level2)(x, cond)``, ``argMinIf(arg, val, cond)`` и т. п.
+Examples: ``sumIf(column, cond)``, ``countIf(cond)``, ``avgIf(x, cond)``, ``quantilesTimingIf(level1, level2)(x, cond)``, ``argMinIf(arg, val, cond)`` and so on.
 
-С помощью условных агрегатных функций, вы можете вычислить агрегаты сразу для нескольких условий, не используя подзапросы и JOIN-ы.
-Например, в Яндекс.Метрике, условные агрегатные функции используются для реализации функциональности сравнения сегментов.
+You can use aggregate functions to calculate aggregates for multiple conditions at once, without using subqueries and JOINs.
+For example, in Yandex.Metrica, we use conditional aggregate functions for implementing segment comparison functionality.
 
-Комбинатор -Array. Агрегатные функции для аргументов-массивов
+-Array combinator. Aggregate functions for array arguments
 -----------------
-К имени любой агрегатной функции может быть приписан суффикс -Array. В этом случае, агрегатная функция вместо аргументов типов T принимает аргументы типов Array(T) (массивы). Если агрегатная функция принимает несколько аргументов, то это должны быть массивы одинаковых длин. При обработке массивов, агрегатная функция работает, как исходная агрегатная функция по всем элементам массивов.
+The -Array suffix can be appended to any aggregate function. In this case, the aggregate function takes arguments of the 'Array(T)' type (arrays) instead of 'T' type arguments. If the aggregate function accepts multiple arguments, this must be arrays of equal lengths. When processing arrays, the aggregate function works like the original aggregate function across all array elements.
 
-Пример 1: ``sumArray(arr)`` - просуммировать все элементы всех массивов arr. В данном примере можно было бы написать проще: ``sum(arraySum(arr))``.
+Example 1: ``sumArray(arr)`` - Totals all the elements of all 'arr' arrays. In this example, it could have been written more simply: sum(arraySum(arr)).
 
-Пример 2: ``uniqArray(arr)`` - посчитать количество уникальных элементов всех массивов arr. Это можно было бы сделать проще: ``uniq(arrayJoin(arr))``, но не всегда есть возможность добавить arrayJoin в запрос.
+Example 2: ``uniqArray(arr)`` - Count the number of unique elements in all 'arr' arrays. This could be done an easier way: ``uniq(arrayJoin(arr))``, but it's not always possible to add 'arrayJoin' to a query.
 
-Комбинаторы -If и -Array можно сочетать. При этом, должен сначала идти Array, а потом If. Примеры: uniqArrayIf(arr, cond),  quantilesTimingArrayIf(level1, level2)(arr, cond). Из-за такого порядка получается, что аргумент cond не должен быть массивом.
+The ``-If`` and ``-Array`` combinators can be used together. However, 'Array' must come first, then 'If'. 
+Examples: ``uniqArrayIf(arr, cond)``,  ``quantilesTimingArrayIf(level1, level2)(arr, cond)``. Due to this order, the 'cond' argument can't be an array.
 
-Комбинатор -State.
+-State combinator
 ------------
-В случае применения этого комбинатора, агрегатная функция возвращает не готовое значение (например, в случае функции uniq - количество уникальных значений), а промежуточное состояние агрегации (например, в случае функции uniq - хэш-таблицу для рассчёта количества уникальных значений), которое имеет тип AggregateFunction(...) и может использоваться для дальнейшей обработки или может быть сохранено в таблицу для последующей доагрегации - смотрите разделы "AggregatingMergeTree" и "функции для работы с промежуточными состояниями агрегации".
+If this combinator is used, the aggregate function returns a non-finished value (for example, in the case of the uniq function, the number of unique values), and the intermediate aggregation state (for example, in the case of the uniq function, a hash table for calculating the number of unique values) AggregateFunction (...) and can be used for further processing or can be stored in a table for subsequent pre-aggregation - see the sections "AggregatingMergeTree" and "functions for working with intermediate aggregation states".
 
-Комбинатор -Merge.
+-Merge combinator
 ------------
-В случае применения этого комбинатора, агрегатная функция будет принимать в качестве аргумента промежуточное состояние агрегации, доагрегировать (объединять вместе) эти состояния, и возвращать готовое значение.
+In the case of using this combinator, the aggregate function will take as an argument the intermediate state of aggregation, pre-aggregate (combine together) these states, and return the finished value.
 
-Комбинатор -MergeState.
+-MergeState combinator
 ----------------
-Выполняет слияние промежуточных состояний агрегации, аналогично комбинатору -Merge, но возвращает не готовое значение, а промежуточное состояние агрегации, аналогично комбинатору -State.
+Merges the intermediate aggregation states, similar to the -Merge combo, but returns a non-ready value, and an intermediate aggregation state, similar to the -State combinator.

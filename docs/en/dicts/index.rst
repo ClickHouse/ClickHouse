@@ -1,10 +1,9 @@
-Словари
+Dictionaries
 =======
 
-``Словарь`` - это отображение (ключ -> атрибуты), которое можно использовать в запросе в виде функций.
-Это можно рассматривать как более удобный и максимально эффективный вариант JOIN-а с таблицами-справочниками (dimension tables).
+A dictionary is a mapping (key -> attributes) that can be used in a query as functions. You can think of this as a more convenient and efficient type of JOIN with dimension tables.
 
-Существуют встроенные и подключаемые (внешние) словари.
+There are built-in (internal) and add-on (external) dictionaries.
 
 .. toctree::
     :glob:

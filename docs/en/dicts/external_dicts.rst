@@ -1,50 +1,48 @@
-Внешние словари
+External dictionaries
 ===============
 
-Существует возможность подключать свои собственные словари из различных источников данных.
-Источником данных для словаря может быть файл на локальной файловой системе, сервер ClickHouse, сервер MySQL, MongoDB или любой ODBC источник.
-Словарь может полностью храниться в оперативке и периодически обновляться, или быть частично закэшированным в оперативке и динамически подгружать отсутствующие значения.
+It is possible to add your own dictionaries from various data sources. The data source for a dictionary can be a file in the local file system, the ClickHouse server, or a MySQL server.
+A dictionary can be stored completely in RAM and updated regularly, or it can be partially cached in RAM and dynamically load missing values.
 
-Конфигурация внешних словарей находится в отдельном файле или файлах, указанных в конфигурационном параметре dictionaries_config.
-Этот параметр содержит абсолютный или относительный путь к файлу с конфигурацией словарей. Относительный путь - относительно директории с конфигурационным файлом сервера. Путь может содержать wildcard-ы * и ? - тогда рассматриваются все подходящие файлы. Пример: dictionaries/*.xml.
+The configuration of external dictionaries is in a separate file or files specified in the 'dictionaries_config' configuration parameter.
+This parameter contains the absolute or relative path to the file with the dictionary configuration. A relative path is relative to the directory with the server config file. The path can contain wildcards * and ?, in which case all matching files are found. Example: dictionaries/*.xml.
 
-Конфигурация словарей, а также множество файлов с конфигурацией, может обновляться без перезапуска сервера. Сервер проверяет обновления каждые 5 секунд. То есть, словари могут подключаться динамически.
+The dictionary configuration, as well as the set of files with the configuration, can be updated without restarting the server. The server checks updates every 5 seconds. This means that dictionaries can be enabled dynamically.
 
-Создание словарей может производиться при старте сервера или при первом использовании. Это определяется конфигурационном параметром dictionaries_lazy_load (в основном конфигурационном файле сервера). Параметр не обязателен, по умолчанию - true. Если true, то каждый словарь создаётся при первом использовании;  если словарь не удалось создать - вызов функции, использующей словарь, кидает исключение. Если false, то все словари создаются при старте сервера, и в случае ошибки, сервер завершает работу.
+Dictionaries can be created when starting the server, or at first use. This is defined by the 'dictionaries_lazy_load' parameter in the main server config file. This parameter is optional, 'true' by default. If set to 'true', each dictionary is created at first use. If dictionary creation failed, the function that was using the dictionary throws an exception. If 'false', all dictionaries are created when the server starts, and if there is an error, the server shuts down.
 
-Конфигурационный файл словарей имеет вид:
+The dictionary config file has the following format:
 
 .. code-block:: xml
 
   <dictionaries>
-      <comment>Не обязательный элемент с любым содержимым; полностью игнорируется.</comment>
-  
-      <!-- Можно задать произвольное количество разных словарей. -->
+      <comment>Optional element with any content; completely ignored.</comment>
+
+      <!--You can set any number of different dictionaries. -->
       <dictionary>
-          <!-- Имя словаря. Под этим именем словарь будет доступен для использования. -->
+          <!-- Dictionary name. The dictionary will be accessed for use by this name. -->
           <name>os</name>
   
-          <!-- Источник данных. -->
+          <!-- Data source. -->
           <source>
-  
-              <!-- Источник - файл на локальной файловой системе. -->
+              <!-- Source is a file in the local file system. -->
               <file>
-                  <!-- Путь на локальной файловой системе. -->
+                  <!-- Path on the local file system. -->
                   <path>/opt/dictionaries/os.tsv</path>
-                  <!-- С помощью какого формата понимать файл. -->
+                  <!-- Which format to use for reading the file. -->
                   <format>TabSeparated</format>
               </file>
-  
-              <!-- или источник - таблица на сервере MySQL.
+
+              <!-- or the source is a table on a MySQL server.
               <mysql>
-                  <!- - Эти параметры могут быть указаны как снаружи (общие для всех реплик), так и внутри конкретной реплики - ->
+                  <!- - These parameters can be specified outside (common for all replicas) or inside a specific replica - ->
                   <port>3306</port>
                   <user>clickhouse</user>
                   <password>qwerty</password>
-                  <!- - Можно указать от одной до произвольного количества реплик для отказоустойчивости. - ->
+                  <!- - Specify from one to any number of replicas for fault tolerance. - ->
                   <replica>
                       <host>example01-1</host>
-                      <priority>1</priority> <!- - Меньше значение - больше приоритет. - ->
+                      <priority>1</priority> <!- - The lower the value, the higher the priority. - ->
                   </replica>
                   <replica>
                       <host>example01-2</host>
@@ -54,8 +52,8 @@
                   <table>counters</table>
               </mysql>
               -->
-  
-              <!-- или источник - таблица на сервере ClickHouse.
+
+              <!-- or the source is a table on the ClickHouse server.
               <clickhouse>
                   <host>example01-01-1</host>
                   <port>9000</port>
@@ -64,120 +62,111 @@
                   <db>default</db>
                   <table>counters</table>
               </clickhouse>
-              <!- - Если адрес похож на localhost, то запрос будет идти без сетевого взаимодействия.
-                    Для отказоустойчивости, вы можете создать Distributed таблицу на localhost и прописать её. - ->
+              <!- - If the address is similar to localhost, the request is made without network interaction. For fault tolerance, you can create a Distributed table on localhost and enter it. - ->
               -->
-  
-              <!-- или источник - исполняемый файл. Если layout.cache - список нужных ключей будет записан в поток STDIN программы -->
+
+              <!-- or the source is a executable. If layout.complex_key_cache - list of needed keys will be written in STDIN of program -->
               <executable>
-                  <!-- Путь или имя программы (если директория есть в переменной окружения PATH) и параметры -->
+                  <!-- Path on the local file system or name located in one of env PATH dirs. -->
                   <command>cat /opt/dictionaries/os.tsv</command>
-                  <!-- С помощью какого формата понимать вывод и формировать список ключей. -->
+                  <!-- Which format to use for reading/writing stream. -->
                   <format>TabSeparated</format>
               </executable>
-  
-              <!-- или источник - http сервер. Если layout.cache - список нужных ключей будет послан как POST запрос -->
+
+              <!-- or the source is a http server. If layout.complex_key_cache - list of needed keys will be sent as POST  -->
               <http>
+                  <!-- Host. -->
                   <url>http://[::1]/os.tsv</url>
-                  <!-- С помощью какого формата понимать ответ и формировать список ключей. -->
+                  <!-- Which format to use for reading answer and making POST. -->
                   <format>TabSeparated</format>
               </http>
-  
+
           </source>
-  
-          <!-- Периодичность обновления для полностью загружаемых словарей. 0 - никогда не обновлять. -->
+
+          <!-- Update interval for fully loaded dictionaries. 0 - never update. -->
           <lifetime>
               <min>300</min>
               <max>360</max>
-              <!-- Периодичность обновления выбирается равномерно-случайно между min и max,
-                   чтобы размазать по времени нагрузку при обновлении словарей на большом количестве серверов. -->
+              <!-- The update interval is selected uniformly randomly between min and max, in order to spread out the load when updating dictionaries on a large number of servers. -->
           </lifetime>
-  
-          <!-- или
-          <!- - Периодичность обновления для полностью загружаемых словарей или время инвалидации для кэшируемых словарей.
-                0 - никогда не обновлять. - ->
+
+          <!-- or <!- - The update interval for fully loaded dictionaries or invalidation time for cached dictionaries. 0 - never update. - ->
           <lifetime>300</lifetime>
           -->
-  
-          <layout>   <!-- Способ размещения в памяти. -->
+
+          <layout> <!-- Method for storing in memory. -->
               <flat />
-              <!-- или
-              <hashed />
-              или
+              <!-- or <hashed />
+              or
               <cache>
-                  <!- - Размер кэша в количестве ячеек; округляется вверх до степени двух. - ->
+                  <!- - Cache size in number of cells; rounded up to a degree of two. - ->
                   <size_in_cells>1000000000</size_in_cells>
-              </cache>
-              -->
+              </cache> -->
           </layout>
-  
-          <!-- Структура. -->
+
+          <!-- Structure. -->
           <structure>
-              <!-- Описание столбца, являющегося идентификатором (ключом) словаря. -->
+              <!-- Description of the column that serves as the dictionary identifier (key). -->
               <id>
-                  <!-- Имя столбца с идентификатором. -->
+                  <!-- Column name with ID. -->
                   <name>Id</name>
               </id>
-  
-              <attribute>    <!-- id уже входит в атрибуты и дополнительно указывать его здесь не нужно. -->
-                  <!-- Имя столбца. -->
+
+              <attribute>
+                  <!-- Column name. -->
                   <name>Name</name>
-                  <!-- Тип столбца. (Как столбец понимается при загрузке.
-                       В случае MySQL, в таблице может быть TEXT, VARCHAR, BLOB, но загружается всё как String) -->
-                  <type>String</type>
-                  <!-- Какое значение использовать для несуществующего элемента. В примере - пустая строка. -->
+                  <!-- Column type. (How the column is understood when loading. For MySQL, a table can have TEXT, VARCHAR, and BLOB, but these are all loaded as String) -->
+                   <type>String</type>
+                  <!-- Value to use for a non-existing element. In the example, an empty string. -->
                   <null_value></null_value>
               </attribute>
-  
-              <!-- Может быть указано произвольное количество атрибутов. -->
+              <!-- Any number of attributes can be specified. -->
               <attribute>
                   <name>ParentID</name>
                   <type>UInt64</type>
                   <null_value>0</null_value>
-                  <!-- Определяет ли иерархию - отображение в идентификатор родителя (по умолчанию, false). -->
+                  <!-- Whether it defines a hierarchy - mapping to the parent ID (by default, false). -->
                   <hierarchical>true</hierarchical>
-                  <!-- Можно считать отображение id -> attribute инъективным, чтобы оптимизировать GROUP BY. (по умолчанию, false) -->
+                  <!-- The mapping id -> attribute can be considered injective, in order to optimize GROUP BY. (by default, false) -->
                   <injective>true</injective>
               </attribute>
           </structure>
       </dictionary>
   </dictionaries>
 
-Идентификатор (ключевой атрибут) словаря должен быть числом, помещающимся в UInt64.
-Также есть возможность задавать произвольные составные ключи (см. раздел "Словари с составными ключами"). Замечание: составной ключ может состоять и из одного элемента, что даёт возможность использовать в качестве ключа, например, строку.
+The dictionary identifier (key attribute) should be a number that fits into UInt64. Also, you can use arbitrary tuples as keys (see section "Dictionaries with complex keys"). Note: you can use complex keys consisting of just one element. This allows using e.g. Strings as dictionary keys.
 
-
-Существует шесть способов размещения словаря в памяти.
+There are six ways to store dictionaries in memory.
 
 flat
 -----
-В виде плоских массивов. Самый эффективный способ. Он подходит, если все ключи меньше 500 000. Если при создании словаря обнаружен ключ больше, то кидается исключение и словарь не создаётся. Словарь загружается в оперативку целиком. Словарь использует количество оперативки, пропорциональное максимальному значению ключа. Ввиду ограничения на 500 000, потребление оперативки вряд ли может быть большим.
-Поддерживаются все виды источников. При обновлении, данные (из файла, из таблицы) читаются целиком.
+This is the most effective method. It works if all keys are smaller than ``500,000``.  If a larger key is discovered when creating the dictionary, an exception is thrown and the dictionary is not created. The dictionary is loaded to RAM in its entirety. The dictionary uses the amount of memory proportional to maximum key value. With the limit of 500,000, memory consumption is not likely to be high. All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
 hashed
 -------
-В виде хэш-таблиц. Слегка менее эффективный способ. Словарь тоже загружается в оперативку целиком, и может содержать произвольное количество элементов с произвольными идентификаторами. На практике, имеет смысл использовать до десятков миллионов элементов, пока хватает оперативки.
-Поддерживаются все виды источников. При обновлении, данные (из файла, из таблицы) читаются целиком.
+This method is slightly less effective than the first one. The dictionary is also loaded to RAM in its entirety, and can contain any number of items with any identifiers. In practice, it makes sense to use up to tens of millions of items, while there is enough RAM.
+All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
 cache
 -------
-Наименее эффективный способ. Подходит, если словарь не помещается в оперативку. Представляет собой кэш из фиксированного количества ячеек, в которых могут быть расположены часто используемые данные. Поддерживается источник MySQL, ClickHouse, executable, http; источник-файл не поддерживается. При поиске в словаре, сначала просматривается кэш. На каждый блок данных, все не найденные в кэше ключи (или устаревшие ключи) собираются в пачку, и с этой пачкой делается запрос к источнику вида SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...). Затем полученные данные записываются в кэш.
+This is the least effective method. It is appropriate if the dictionary doesn't fit in RAM. It is a cache of a fixed number of cells, where frequently-used data can be located. MySQL, ClickHouse, executable, http sources are supported, but file sources are not supported. 
+When searching a dictionary, the cache is searched first. For each data block, all keys not found in the cache (or expired keys) are collected in a package, which is sent to the source with the query ``SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)``. The received data is then written to the cache.
 
 range_hashed
 --------
-В таблице прописаны какие-то данные для диапазонов дат, для каждого ключа. Дать возможность доставать эти данные для заданного ключа, для заданной даты.
+The table lists some data for date ranges, for each key. To give the possibility to extract this data for a given key, for a given date.
 
-Пример: в таблице записаны скидки для каждого рекламодателя в виде:
+Example: in the table there are discounts for each advertiser in the form:
 ::
-  id рекламодателя    дата начала действия скидки    дата конца    величина
+  advertiser id    discount start date    end date    value
   123                 2015-01-01                     2015-01-15    0.15
   123                 2015-01-16                     2015-01-31    0.25
   456                 2015-01-01                     2015-01-15    0.05
 
-Добавляем layout = range_hashed.
-При использовании такого layout, в structure должны быть элементы range_min, range_max.
+Adding layout = range_hashed.
+When using such a layout, the structure should have the elements range_min, range_max.
 
-Пример:
+Example:
 
 .. code-block:: xml
 
@@ -193,22 +182,22 @@ range_hashed
       </range_max>
       ...
       
-Эти столбцы должны иметь тип Date. Другие типы пока не поддерживаем.
-Столбцы обозначают закрытый диапазон дат.
+These columns must be of type Date. Other types are not yet supported.
+The columns indicate a closed date range.
 
-Для работы с такими словарями, функции dictGetT должны принимать ещё один аргумент - дату:
+To work with such dictionaries, dictGetT functions must take one more argument - the date:
 
 ``dictGetT('dict_name', 'attr_name', id, date)``
 
-Функция достаёт значение для данного id и для диапазона дат, в который входит переданная дата. Если не найден id или для найденного id не найден диапазон, то возвращается значение по умолчанию для словаря.
+The function takes out the value for this id and for the date range, which includes the transmitted date. If no id is found or the range found is not found for the found id, the default value for the dictionary is returned.
 
-Если есть перекрывающиеся диапазоны, то можно использовать любой подходящий.
+If there are overlapping ranges, then any suitable one can be used.
 
-Если граница диапазона является NULL или является некорректной датой (1900-01-01, 2039-01-01), то диапазон следует считать открытым. Диапазон может быть открытым с обеих сторон.
+If the range boundary is NULL or is an incorrect date (1900-01-01, 2039-01-01), then the range should be considered open. The range can be open on both sides.
 
-В оперативке данные представлены в виде хэш-таблицы со значением в виде упорядоченного массива диапазонов и соответствующих им значений.
+In the RAM, the data is presented as a hash table with a value in the form of an ordered array of ranges and their corresponding values.
 
-Пример словаря по диапазонам:
+Example of a dictionary by ranges:
 
 .. code-block:: xml
 
@@ -257,45 +246,45 @@ range_hashed
 complex_key_hashed
 ----------------
 
-Для использования с составными ключами. Аналогичен hashed.
+The same as ``hashed``, but for complex keys.
 
 complex_key_cache
 ----------
 
-Для использования с составными ключами. Аналогичен cache.
+The same as ``cache``, but for complex keys.
 
-Примечания
+Notes
 ----------
 
-Рекомендуется использовать способ ``flat``, если возможно, или ``hashed``, ``complex_key_hashed``. Скорость работы словарей с таким размещением в памяти является безупречной.
+We recommend using the ``flat`` method when possible, or ``hashed``. The speed of the dictionaries is impeccable with this type of memory storage.
 
-Способы ``cache`` и ``complex_key_cache`` следует использовать лишь если это неизбежно. Скорость работы кэша очень сильно зависит от правильности настройки и сценария использования. Словарь типа cache нормально работает лишь при достаточно больших hit rate-ах (рекомендуется 99% и выше). Посмотреть средний hit rate можно в таблице system.dictionaries. Укажите достаточно большой размер кэша. Количество ячеек следует подобрать экспериментальным путём - выставить некоторое значение, с помощью запроса добиться полной заполненности кэша, посмотреть на потребление оперативки (эта информация находится в таблице system.dictionaries); затем пропорционально увеличить количество ячеек так, чтобы расходовалось разумное количество оперативки. В качестве источника для кэша рекомендуется MySQL, MongoDB, так как ClickHouse плохо обрабатывает запросы со случайными чтениями.
+Use the cache method only in cases when it is unavoidable. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary only works normally for high enough hit rates (recommended 99% and higher). You can view the average hit rate in the system.dictionaries table. Set a large enough cache size. You will need to experiment to find the right number of cells - select a value, use a query to get the cache completely full, look at the memory consumption (this information is in the system.dictionaries table), then proportionally increase the number of cells so that a reasonable amount of memory is consumed. We recommend MySQL as the source for the cache, because ClickHouse doesn't handle requests with random reads very well.
 
-Во всех случаях, производительность будет выше, если вызывать функцию для работы со словарём после ``GROUP BY``, или если доставаемый атрибут помечен как инъективный. Для cache словарей, производительность будет лучше, если вызывать функцию после LIMIT-а - для этого можно использовать подзапрос с LIMIT-ом, и снаружи вызывать функцию со словарём.
+In all cases, performance is better if you call the function for working with a dictionary after ``GROUP BY``, and if the attribute being fetched is marked as injective. For a dictionary cache, performance improves if you call the function after LIMIT. To do this, you can use a subquery with LIMIT, and call the function with the dictionary from the outside.
 
-Атрибут называется инъективным, если разным ключам соответствуют разные значения атрибута. Тогда при использовании в ``GROUP BY`` функции, достающей значение атрибута по ключу, эта функция автоматически выносится из GROUP BY.
+An attribute is called injective if different attribute values correspond to different keys. So when ``GROUP BY`` uses a function that fetches an attribute value by the key, this function is automatically taken out of ``GROUP BY``.
 
-При обновлении словарей из файла, сначала проверяется время модификации файла, и загрузка производится только если файл изменился.
-При обновлении из MySQL, для flat и hashed словарей, сначала делается запрос ``SHOW TABLE STATUS`` и смотрится время обновления таблицы. И если оно не NULL, то оно сравнивается с запомненным временем. Это работает для MyISAM таблиц, а для InnoDB таблиц время обновления неизвестно, поэтому загрузка из InnoDB делается при каждом обновлении.
+When updating dictionaries from a file, first the file modification time is checked, and it is loaded only if the file has changed.
+When updating from MySQL, for flat and hashed dictionaries, first a ``SHOW TABLE STATUS`` query is made, and the table update time is checked. If it is not NULL, it is compared to the stored time. This works for MyISAM tables, but for InnoDB tables the update time is unknown, so loading from InnoDB is performed on each update.
 
-Для cache-словарей может быть задано время устаревания (``lifetime``) данных в кэше. Если от загрузки данных в ячейке прошло больше времени, чем lifetime, то значение не используется, и будет запрошено заново при следующей необходимости его использовать.
+For cache dictionaries, the expiration (lifetime) of data in the cache can be set. If more time than 'lifetime' has passed since loading the data in a cell, the cell's value is not used, and it is re-requested the next time it needs to be used.
 
-Если словарь не удалось ни разу загрузить, то при попытке его использования, будет брошено исключение.
-Если при запросе к источнику cached словаря возникла ошибка, то будет брошено исключение.
-Обновление словарей (кроме загрузки при первом использовании) не блокирует запросы - во время обновления используется старая версия словаря. Если при обновлении возникнет ошибка, то ошибка пишется в лог сервера, а запросы продолжат использовать старую версию словарей.
+If a dictionary couldn't be loaded even once, an attempt to use it throws an exception.
+If an error occurred during a request to a cached source, an exception is thrown.
+Dictionary updates (other than loading for first use) do not block queries. During updates, the old version of a dictionary is used. If an error occurs during an update, the error is written to the server log, and queries continue using the old version of dictionaries.
 
-Список внешних словарей и их статус можно посмотреть в таблице ``system.dictionaries``.
+You can view the list of external dictionaries and their status in the system.dictionaries table.
 
-Для использования внешних словарей, смотрите раздел "Функции для работы с внешними словарями".
+To use external dictionaries, see the section "Functions for working with external dictionaries".
 
-Обратите внимание, что вы можете преобразовать значения по небольшому словарю, указав всё содержимое словаря прямо в запросе SELECT - смотрите раздел "Функция transform". Эта функциональность никак не связана с внешними словарями.
+Note that you can convert values for a small dictionary by specifying all the contents of the dictionary directly in a ``SELECT`` query (see the section "transform function"). This functionality is not related to external dictionaries.
 
-Словари с составными ключами
+Dictionaries with complex keys
 ----------------------------
 
-В качестве ключа может выступать кортеж (tuple) из полей произвольных типов. Параметр layout в этом случае должен быть равен complex_key_hashed или complex_key_cache.
+You can use tuples consisting of fields of arbitrary types as keys. Configure your dictionary with ``complex_key_hashed`` or ``complex_key_cache`` layout in this case.
 
-Структура ключа задаётся не в элементе ``<id>``, а в элементе ``<key>``. Поля ключа задаются в том же формате, что и атрибуты словаря. Пример:
+Key structure is configured not in the ``<id>`` element but in the ``<key>`` element. Fields of the key tuple are configured analogously to dictionary attributes. Example:
 
 .. code-block:: xml
 
@@ -314,4 +303,4 @@ complex_key_cache
   ...
 
 
-При использовании такого словаря, в функции dictGet* в качестве ключа передаётся Tuple со значениями полей. Пример: ``dictGetString('dict_name', 'attr_name', tuple('field1', 123))``.
+When using such dictionary, use a Tuple of field values as a key in dictGet* functions. Example: ``dictGetString('dict_name', 'attr_name', tuple('field1_value', 123))``.
