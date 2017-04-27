@@ -5,8 +5,11 @@
 #include <experimental/optional>
 #include <vector>
 
+
 namespace DB
 {
+
+class IFunction;
 
 /// Implicitly converts string and numeric values to Enum.
 class CastEnumBlockInputStream : public IProfilingBlockInputStream
@@ -30,6 +33,7 @@ private:
 private:
     Context & context;
     std::vector<std::experimental::optional<NameAndTypePair>> enum_types;
+    std::vector<std::shared_ptr<IFunction>> cast_functions;  /// Used to perform type conversions.
 };
 
 }

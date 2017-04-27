@@ -1,6 +1,10 @@
 #include <DataStreams/CastEnumBlockInputStream.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Functions/FunctionsConversion.h>
+#include <DataTypes/DataTypeString.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+
 
 namespace DB
 {
@@ -13,6 +17,7 @@ CastEnumBlockInputStream::CastEnumBlockInputStream(
     : context(context_)
 {
     collectEnums(in_sample_, out_sample_);
+    cast_functions.resize(in_sample_.columns());
     children.push_back(input_);
 }
 
@@ -64,18 +69,22 @@ Block CastEnumBlockInputStream::readImpl()
                 }
             };
 
-            FunctionCast func_cast(context);
+            FunctionPtr & cast_function = cast_functions[i];
 
+            /// Initialize function.
+            if (!cast_function)
             {
+                cast_function = FunctionFactory::instance().get("CAST", context);
+
                 DataTypePtr unused_return_type;
                 ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
                 std::vector<ExpressionAction> unused_prerequisites;
 
                 /// Prepares function to execution. TODO It is not obvious.
-                func_cast.getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
+                cast_function->getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
             }
 
-            func_cast.execute(temporary_block, {0, 1}, 2);
+            cast_function->execute(temporary_block, {0, 1}, 2);
 
             res.insert({
                 temporary_block.getByPosition(2).column,
