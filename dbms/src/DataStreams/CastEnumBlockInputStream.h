@@ -12,7 +12,8 @@ namespace DB
 class CastEnumBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    CastEnumBlockInputStream(BlockInputStreamPtr input_,
+    CastEnumBlockInputStream(Context & context_,
+                             BlockInputStreamPtr input_,
                              const Block & in_sample_,
                              const Block & out_sample_);
 
@@ -27,6 +28,7 @@ private:
     void collectEnums(const Block & in_sample, const Block & out_sample);
 
 private:
+    Context & context;
     std::vector<std::experimental::optional<NameAndTypePair>> enum_types;
 };
 

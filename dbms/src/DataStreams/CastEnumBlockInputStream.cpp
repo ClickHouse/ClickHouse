@@ -1,13 +1,16 @@
 #include <DataStreams/CastEnumBlockInputStream.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <Functions/FunctionsConversion.h>
 
 namespace DB
 {
 
 CastEnumBlockInputStream::CastEnumBlockInputStream(
+    Context & context_,
     BlockInputStreamPtr input_,
     const Block & in_sample_,
     const Block & out_sample_)
+    : context(context_)
 {
     collectEnums(in_sample_, out_sample_);
     children.push_back(input_);
@@ -42,15 +45,40 @@ Block CastEnumBlockInputStream::readImpl()
         if (bool(enum_types[i]))
         {
             const auto & type = static_cast<const IDataTypeEnum *>(enum_types[i]->type.get());
-            ColumnPtr new_column = type->createColumn();
+            Block temporary_block
+            {
+                {
+                    elem.column,
+                    elem.type,
+                    elem.name
+                },
+                {
+                    std::make_shared<ColumnConstString>(1, type->getName()),
+                    std::make_shared<DataTypeString>(),
+                    ""
+                },
+                {
+                    nullptr,
+                    enum_types[i]->type,
+                    ""
+                }
+            };
 
-            size_t column_size = elem.column->size();
-            new_column->reserve(column_size);
-            for (size_t j = 0; j < column_size; ++j)
-                new_column->insert(type->castToValue((*elem.column)[j]));
+            FunctionCast func_cast(context);
+
+            {
+                DataTypePtr unused_return_type;
+                ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
+                std::vector<ExpressionAction> unused_prerequisites;
+
+                /// Prepares function to execution. TODO It is not obvious.
+                func_cast.getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
+            }
+
+            func_cast.execute(temporary_block, {0, 1}, 2);
 
             res.insert({
-                new_column,
+                temporary_block.getByPosition(2).column,
                 enum_types[i]->type,
                 enum_types[i]->name});
         }
