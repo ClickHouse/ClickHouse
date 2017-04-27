@@ -360,9 +360,9 @@ private:
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
 
-    /// Names of key columns (columns for equi-JOIN) in "left" table.
+    /// Names of key columns (columns for equi-JOIN) in "left" table (in the order they appear in USING clause).
     const Names key_names_left;
-    /// Names of key columns (columns for equi-JOIN) in "right" table.
+    /// Names of key columns (columns for equi-JOIN) in "right" table (in the order they appear in USING clause).
     const Names key_names_right;
 
     /// Substitute NULLs for non-JOINed rows.
@@ -387,7 +387,9 @@ private:
 
     Sizes key_sizes;
 
+    /// Block with columns from the right-side table except key columns.
     Block sample_block_with_columns_to_add;
+    /// Block with key columns in the same order they appear in the right-side table.
     Block sample_block_with_keys;
 
     Poco::Logger * log;
