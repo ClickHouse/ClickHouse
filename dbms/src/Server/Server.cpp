@@ -552,8 +552,8 @@ int Server::main(const std::vector<std::string> & args)
             }
             catch (const Poco::Net::NetException & e)
             {
-                if (try_listen)
-                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.displayText());
+                if (try_listen && e.code() == POCO_EPROTONOSUPPORT)
+                    LOG_ERROR(log, "Listen [" << listen_host << "] : " << e.what() << " : " << e.message());
                 else
                     throw;
             }
