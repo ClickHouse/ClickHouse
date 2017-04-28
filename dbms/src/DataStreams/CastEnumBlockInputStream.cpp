@@ -1,15 +1,23 @@
 #include <DataStreams/CastEnumBlockInputStream.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeString.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+
 
 namespace DB
 {
 
 CastEnumBlockInputStream::CastEnumBlockInputStream(
+    Context & context_,
     BlockInputStreamPtr input_,
     const Block & in_sample_,
     const Block & out_sample_)
+    : context(context_)
 {
     collectEnums(in_sample_, out_sample_);
+    cast_functions.resize(in_sample_.columns());
     children.push_back(input_);
 }
 
@@ -42,15 +50,44 @@ Block CastEnumBlockInputStream::readImpl()
         if (bool(enum_types[i]))
         {
             const auto & type = static_cast<const IDataTypeEnum *>(enum_types[i]->type.get());
-            ColumnPtr new_column = type->createColumn();
+            Block temporary_block
+            {
+                {
+                    elem.column,
+                    elem.type,
+                    elem.name
+                },
+                {
+                    std::make_shared<ColumnConstString>(1, type->getName()),
+                    std::make_shared<DataTypeString>(),
+                    ""
+                },
+                {
+                    nullptr,
+                    enum_types[i]->type,
+                    ""
+                }
+            };
 
-            size_t column_size = elem.column->size();
-            new_column->reserve(column_size);
-            for (size_t j = 0; j < column_size; ++j)
-                new_column->insert(type->castToValue((*elem.column)[j]));
+            FunctionPtr & cast_function = cast_functions[i];
+
+            /// Initialize function.
+            if (!cast_function)
+            {
+                cast_function = FunctionFactory::instance().get("CAST", context);
+
+                DataTypePtr unused_return_type;
+                ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
+                std::vector<ExpressionAction> unused_prerequisites;
+
+                /// Prepares function to execution. TODO It is not obvious.
+                cast_function->getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
+            }
+
+            cast_function->execute(temporary_block, {0, 1}, 2);
 
             res.insert({
-                new_column,
+                temporary_block.getByPosition(2).column,
                 enum_types[i]->type,
                 enum_types[i]->name});
         }

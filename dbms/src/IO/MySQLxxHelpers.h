@@ -3,11 +3,10 @@
 #include <mysqlxx/Row.h>
 #include <mysqlxx/Null.h>
 #include <mysqlxx/Manip.h>
-
+#include <common/MetrikaTypes.h>
 #include <Core/Field.h>
 #include <Core/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
-
 
 /// This is for Yandex.Metrica code.
 

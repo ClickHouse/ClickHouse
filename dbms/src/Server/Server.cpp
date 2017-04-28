@@ -443,10 +443,12 @@ int Server::main(const std::vector<std::string> & args)
             listen_hosts.emplace_back(config().getString(key));
         }
 
+        bool try_listen = false;
         if (listen_hosts.empty())
         {
             listen_hosts.emplace_back("::1");
             listen_hosts.emplace_back("127.0.0.1");
+            try_listen = true;
         }
 
         auto make_socket_address = [&](const std::string & host, std::uint16_t port) {
@@ -479,75 +481,87 @@ int Server::main(const std::vector<std::string> & args)
         for (const auto & listen_host : listen_hosts)
         {
             /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
-
-            /// HTTP
-            if (config().has("http_port"))
+            try 
             {
-                Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("http_port"));
-                Poco::Net::ServerSocket http_socket(http_socket_address);
-                http_socket.setReceiveTimeout(settings.receive_timeout);
-                http_socket.setSendTimeout(settings.send_timeout);
+                /// HTTP
+                if (config().has("http_port"))
+                {
+                    Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("http_port"));
+                    Poco::Net::ServerSocket http_socket(http_socket_address);
+                    http_socket.setReceiveTimeout(settings.receive_timeout);
+                    http_socket.setSendTimeout(settings.send_timeout);
 
-                servers.emplace_back(new Poco::Net::HTTPServer(
-                    new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"), server_pool, http_socket, http_params));
+                    servers.emplace_back(new Poco::Net::HTTPServer(
+                        new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"), server_pool, http_socket, http_params));
 
-                LOG_INFO(log, "Listening http://" + http_socket_address.toString());
+                    LOG_INFO(log, "Listening http://" + http_socket_address.toString());
+                }
+
+                /// HTTPS
+                if (config().has("https_port"))
+                {
+                #if Poco_NetSSL_FOUND
+                    std::call_once(ssl_init_once, SSLInit);
+                    Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("https_port"));
+                    Poco::Net::SecureServerSocket http_socket(http_socket_address);
+                    http_socket.setReceiveTimeout(settings.receive_timeout);
+                    http_socket.setSendTimeout(settings.send_timeout);
+
+                    servers.emplace_back(new Poco::Net::HTTPServer(
+                        new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"), server_pool, http_socket, http_params));
+
+                    LOG_INFO(log, "Listening https://" + http_socket_address.toString());
+                #else
+                    throw Exception{"https protocol disabled because poco library built without NetSSL support.",
+                        ErrorCodes::SUPPORT_IS_DISABLED};
+                #endif
+                }
+
+                /// TCP
+                if (config().has("tcp_port"))
+                {
+                    Poco::Net::SocketAddress tcp_address = make_socket_address(listen_host, config().getInt("tcp_port"));
+                    Poco::Net::ServerSocket tcp_socket(tcp_address);
+                    tcp_socket.setReceiveTimeout(settings.receive_timeout);
+                    tcp_socket.setSendTimeout(settings.send_timeout);
+                    servers.emplace_back(
+                        new Poco::Net::TCPServer(new TCPConnectionFactory(*this), server_pool, tcp_socket, new Poco::Net::TCPServerParams));
+
+                    LOG_INFO(log, "Listening tcp: " + tcp_address.toString());
+                }
+
+                /// At least one of TCP and HTTP servers must be created.
+                if (servers.empty())
+                    throw Exception("No 'tcp_port' and 'http_port' is specified in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+                /// Interserver IO HTTP
+                if (config().has("interserver_http_port"))
+                {
+                    Poco::Net::SocketAddress interserver_address = make_socket_address(listen_host, config().getInt("interserver_http_port"));
+                    Poco::Net::ServerSocket interserver_io_http_socket(interserver_address);
+                    interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
+                    interserver_io_http_socket.setSendTimeout(settings.send_timeout);
+                    servers.emplace_back(new Poco::Net::HTTPServer(
+                        new HTTPRequestHandlerFactory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
+                        server_pool,
+                        interserver_io_http_socket,
+                        http_params));
+
+                    LOG_INFO(log, "Listening interserver: " + interserver_address.toString());
+                }
+            }
+            catch (const Poco::Net::NetException & e)
+            {
+                if (try_listen && e.code() == POCO_EPROTONOSUPPORT)
+                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message());
+                else
+                    throw;
             }
 
-            /// HTTPS
-            if (config().has("https_port"))
-            {
-#if Poco_NetSSL_FOUND
-                std::call_once(ssl_init_once, SSLInit);
-                Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("https_port"));
-                Poco::Net::SecureServerSocket http_socket(http_socket_address);
-                http_socket.setReceiveTimeout(settings.receive_timeout);
-                http_socket.setSendTimeout(settings.send_timeout);
-
-                servers.emplace_back(new Poco::Net::HTTPServer(
-                    new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"), server_pool, http_socket, http_params));
-
-                LOG_INFO(log, "Listening https://" + http_socket_address.toString());
-#else
-                throw Exception{"https protocol disabled because poco library built without NetSSL support.",
-                    ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-            }
-
-            /// TCP
-            if (config().has("tcp_port"))
-            {
-                Poco::Net::SocketAddress tcp_address = make_socket_address(listen_host, config().getInt("tcp_port"));
-                Poco::Net::ServerSocket tcp_socket(tcp_address);
-                tcp_socket.setReceiveTimeout(settings.receive_timeout);
-                tcp_socket.setSendTimeout(settings.send_timeout);
-                servers.emplace_back(
-                    new Poco::Net::TCPServer(new TCPConnectionFactory(*this), server_pool, tcp_socket, new Poco::Net::TCPServerParams));
-
-                LOG_INFO(log, "Listening tcp: " + tcp_address.toString());
-            }
-
-
-            /// At least one of TCP and HTTP servers must be created.
-            if (servers.empty())
-                throw Exception("No 'tcp_port' and 'http_port' is specified in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-
-            /// Interserver IO HTTP
-            if (config().has("interserver_http_port"))
-            {
-                Poco::Net::SocketAddress interserver_address = make_socket_address(listen_host, config().getInt("interserver_http_port"));
-                Poco::Net::ServerSocket interserver_io_http_socket(interserver_address);
-                interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
-                interserver_io_http_socket.setSendTimeout(settings.send_timeout);
-                servers.emplace_back(new Poco::Net::HTTPServer(
-                    new HTTPRequestHandlerFactory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
-                    server_pool,
-                    interserver_io_http_socket,
-                    http_params));
-
-                LOG_INFO(log, "Listening interserver: " + interserver_address.toString());
-            }
         }
+
+        if (servers.empty())
+             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
         for (auto & server : servers)
             server->start();
