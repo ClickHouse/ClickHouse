@@ -63,6 +63,8 @@ SELECT count() FROM system.parts WHERE database = 'test' AND table = 'r1' AND ac
 SELECT count() FROM system.parts WHERE database = 'test' AND table = 'r2' AND active; -- 4
 SELECT count() FROM system.parts WHERE database = 'test' AND table = 'r3' AND active; -- 4
 
+SELECT sum(rows) FROM system.parts WHERE database = 'test' AND table = 'r1' AND active; -- 4
+
 DROP TABLE test.r1;
 DROP TABLE test.r2;
 DROP TABLE test.r3;
