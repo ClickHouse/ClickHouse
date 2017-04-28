@@ -123,6 +123,8 @@ public:
     void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
+    BlockInputStreamPtr getBlockInputStream() const override;
+
 private:
     template <typename Value> using CollectionType = HashMap<UInt64, Value>;
     template <typename Value> using CollectionPtrType = std::unique_ptr<CollectionType<Value>>;
@@ -180,6 +182,11 @@ private:
 
     template <typename T>
     void has(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const;
+
+    template <typename T>
+    PaddedPODArray<Key> getIds(const Attribute & attribute) const;
+
+    PaddedPODArray<Key> getIds() const;
 
     template <typename ChildType, typename AncestorType>
     void isInImpl(

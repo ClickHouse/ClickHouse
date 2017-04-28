@@ -1,5 +1,5 @@
 #include <Dictionaries/FlatDictionary.h>
-
+#include <Dictionaries/DictionaryBlockInputStream.h>
 
 namespace DB
 {
@@ -523,5 +523,27 @@ void FlatDictionary::has(const Attribute & attribute, const PaddedPODArray<Key> 
 
     query_count.fetch_add(ids_count, std::memory_order_relaxed);
 }
+
+
+PaddedPODArray<FlatDictionary::Key> FlatDictionary::getIds() const
+{
+    const auto ids_count = ext::size(loaded_ids);
+
+    PaddedPODArray<Key> ids;
+    for (auto idx : ext::range(0, ids_count))
+    {
+        if (loaded_ids[idx]) {
+            ids.push_back(idx);
+        }
+    }
+    return ids;
+}
+
+BlockInputStreamPtr FlatDictionary::getBlockInputStream() const
+{
+    auto block_input_stream = std::make_unique<DictionaryBlockInputStream<FlatDictionary, Key>>(*this, getIds());
+    return BlockInputStreamPtr(std::move(block_input_stream));
+}
+
 
 }

@@ -67,6 +67,8 @@ private:
 
     void checkNamesAndTypesCompatibleWithDictionary();
 
+    NamesAndTypes getNamesAndTypesFromDictionaryStructure();
+
     template <class ForwardIterator>
     std::string generateNamesAndTypesDescription(ForwardIterator begin, ForwardIterator end) {
         if (begin == end) {

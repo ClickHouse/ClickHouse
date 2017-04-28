@@ -17,29 +17,31 @@ namespace DB
  * read() returns single block consisting of the in-memory contents of the dictionaries
  */
 template <class DictionaryType, class Key>
-class DictionaryBlockInputStream : public DictionaryBlockInputStreamBase
+class RangeDictionaryBlockInputStream : public DictionaryBlockInputStreamBase
 {
 public:
-    DictionaryBlockInputStream(const DictionaryType& dictionary, const PaddedPODArray<Key> & ids);
+    RangeDictionaryBlockInputStream(const DictionaryType& dictionary, 
+                               const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates);
 
-    String getName() const override { return "DictionaryBlockInputStream"; }
+    String getName() const override { return "RangeDictionaryBlockInputStream"; }
 
 private:
     template<class Type>
-    using DictionaryGetter = void (DictionaryType::*)(const std::string &, 
-                                                      const PaddedPODArray<Key> &, PaddedPODArray<Type> &) const;
+    using DictionaryGetter = void (DictionaryType::*)(const std::string &, const PaddedPODArray<Key> &,
+                                                      const PaddedPODArray<UInt16> &, PaddedPODArray<Type> &) const;
 
     template <class AttributeType>
-    ColumnPtr getColumnFromAttribute(DictionaryGetter<AttributeType> getter, const PaddedPODArray<Key>& ids, 
+    ColumnPtr getColumnFromAttribute(DictionaryGetter<AttributeType> getter,
+                                     const PaddedPODArray<Key>& ids, const PaddedPODArray<UInt16> & dates,
                                      const DictionaryAttribute& attribute, const DictionaryType& dictionary);
-    ColumnPtr getColumnFromAttributeString(const PaddedPODArray<Key>& ids,
+    ColumnPtr getColumnFromAttributeString(const PaddedPODArray<Key>& ids, const PaddedPODArray<UInt16> & dates,
                                            const DictionaryAttribute& attribute, const DictionaryType& dictionary);
     ColumnPtr getColumnFromIds(const PaddedPODArray<Key>& ids);
 };
 
 template <class DictionaryType, class Key>
-DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(const DictionaryType& dictionary, 
-                                                                            const PaddedPODArray<Key>& ids)
+RangeDictionaryBlockInputStream<DictionaryType, Key>::RangeDictionaryBlockInputStream(
+    const DictionaryType& dictionary, const PaddedPODArray<Key>& ids, const PaddedPODArray<UInt16> & dates)
 {
     ColumnsWithTypeAndName columns;
     const DictionaryStructure& structure = dictionary.getStructure();
@@ -55,7 +57,7 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(cons
         const DictionaryAttribute& attribute = structure.attributes[idx];
         ColumnPtr column;
         #define GET_COLUMN_FORM_ATTRIBUTE(TYPE)\
-            column = getColumnFromAttribute<TYPE>(&DictionaryType::get##TYPE, ids, attribute, dictionary)
+            column = getColumnFromAttribute<TYPE>(&DictionaryType::get##TYPE, ids, dates, attribute, dictionary)
         switch (attribute.underlying_type)
         {
             case AttributeUnderlyingType::UInt8: GET_COLUMN_FORM_ATTRIBUTE(UInt8); break;
@@ -68,7 +70,8 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(cons
             case AttributeUnderlyingType::Int64: GET_COLUMN_FORM_ATTRIBUTE(Int64); break;
             case AttributeUnderlyingType::Float32: GET_COLUMN_FORM_ATTRIBUTE(Float32); break;
             case AttributeUnderlyingType::Float64: GET_COLUMN_FORM_ATTRIBUTE(Float64); break;
-            case AttributeUnderlyingType::String: column = getColumnFromAttributeString(ids, attribute, dictionary); break;
+            case AttributeUnderlyingType::String:
+                column = getColumnFromAttributeString(ids, dates, attribute, dictionary); break;
         }
 
         columns.emplace_back(column, attribute.type, attribute.name);
@@ -78,26 +81,27 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(cons
 
 template <class DictionaryType, class Key>
 template <class AttributeType>
-ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttribute(
-    DictionaryBlockInputStream::DictionaryGetter<AttributeType> getter,
-    const PaddedPODArray<Key>& ids, const DictionaryAttribute& attribute, const DictionaryType& dictionary)
+ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttribute(
+    DictionaryBlockInputStream::DictionaryGetter<AttributeType> getter, const PaddedPODArray<Key>& ids,
+    const PaddedPODArray<UInt16> & dates, const DictionaryAttribute& attribute, const DictionaryType& dictionary)
 {
     auto column_vector = std::make_unique<ColumnVector<AttributeType>>(ids.size());
-    (dictionary.*getter)(attribute.name, ids, column_vector->getData());
+    (dictionary.*getter)(attribute.name, ids, dates, column_vector->getData());
     return ColumnPtr(std::move(column_vector));
 }
 
 template <class DictionaryType, class Key>
-ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttributeString(
-    const PaddedPODArray<Key>& ids, const DictionaryAttribute& attribute, const DictionaryType& dictionary)
+ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttributeString(
+    const PaddedPODArray<Key>& ids, const PaddedPODArray<UInt16> & dates,
+    const DictionaryAttribute& attribute, const DictionaryType& dictionary)
 {
     auto column_string = std::make_unique<ColumnString>();
-    dictionary.getString(attribute.name, ids, column_string.get());
+    dictionary.getString(attribute.name, ids, dates, column_string.get());
     return ColumnPtr(std::move(column_string));
 }
 
 template <class DictionaryType, class Key>
-ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromIds(const PaddedPODArray<Key>& ids)
+ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromIds(const PaddedPODArray<Key>& ids)
 {
     auto column_vector = std::make_unique<ColumnVector<UInt64>>();
     column_vector->getData().reserve(ids.size());
