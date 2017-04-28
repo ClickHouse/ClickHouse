@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <Core/Block.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
 #include <DataStreams/IBlockInputStream.h>

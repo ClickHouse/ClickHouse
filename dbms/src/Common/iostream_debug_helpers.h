@@ -29,7 +29,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::Block & what);
 namespace DB { struct ColumnWithTypeAndName; }
 std::ostream & operator<<(std::ostream & stream, const DB::ColumnWithTypeAndName & what);
 
-namespace DB { struct IColumn; }
+namespace DB { class IColumn; }
 std::ostream & operator<<(std::ostream & stream, const DB::IColumn & what);
 
 
