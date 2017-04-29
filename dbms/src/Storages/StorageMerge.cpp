@@ -178,6 +178,8 @@ BlockInputStreams StorageMerge::read(
                 throw Exception("Source tables for Merge table are processing data up to different stages",
                     ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
+            /// Subordinary tables could have different but convertible types, like numeric types of different width.
+            /// We must return streams with structure equals to structure of Merge table. 
             for (auto & stream : source_streams)
                 stream = std::make_shared<CastTypeBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock());
         }
