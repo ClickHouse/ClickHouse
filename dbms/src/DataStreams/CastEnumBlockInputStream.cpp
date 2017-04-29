@@ -10,7 +10,7 @@ namespace DB
 {
 
 CastEnumBlockInputStream::CastEnumBlockInputStream(
-    Context & context_,
+    const Context & context_,
     BlockInputStreamPtr input_,
     const Block & in_sample_,
     const Block & out_sample_)
@@ -109,9 +109,15 @@ void CastEnumBlockInputStream::collectEnums(const Block & in_sample, const Block
         const auto & in_elem  = in_sample.getByPosition(i);
         const auto & out_elem = out_sample.getByPosition(i);
 
-        /// Force conversion only if source type is not Enum.
+        /// Force conversion if source type is not Enum.
         if ( dynamic_cast<IDataTypeEnum*>(out_elem.type.get()) &&
             !dynamic_cast<IDataTypeEnum*>(in_elem.type.get()))
+        {
+            enum_types[i] = NameAndTypePair(out_elem.name, out_elem.type);
+        }
+
+        /// Force conversion if both types is numeric but not equal.
+        if (in_elem.type->behavesAsNumber() && out_elem.type->behavesAsNumber() && !out_elem.type->equals(*in_elem.type))
         {
             enum_types[i] = NameAndTypePair(out_elem.name, out_elem.type);
         }
