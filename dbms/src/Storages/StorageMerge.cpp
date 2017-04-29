@@ -11,7 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Databases/IDatabase.h>
-#include <DataStreams/CastEnumBlockInputStream.h>
+#include <DataStreams/CastTypeBlockInputStream.h>
 
 
 namespace DB
@@ -179,7 +179,7 @@ BlockInputStreams StorageMerge::read(
                     ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
             for (auto & stream : source_streams)
-                stream = std::make_shared<CastEnumBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock());
+                stream = std::make_shared<CastTypeBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock());
         }
         else
         {
@@ -205,7 +205,7 @@ BlockInputStreams StorageMerge::read(
 
                 auto stream = streams.empty() ? std::make_shared<NullBlockInputStream>() : streams.front();
                 if (!streams.empty())
-                    stream = std::make_shared<CastEnumBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock());
+                    stream = std::make_shared<CastTypeBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock());
                 return stream;
             }));
         }
