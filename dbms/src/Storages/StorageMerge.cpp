@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Databases/IDatabase.h>
+#include <DataStreams/CastEnumBlockInputStream.h>
 
 
 namespace DB
@@ -176,6 +177,9 @@ BlockInputStreams StorageMerge::read(
             else if (processed_stage_in_source_table != processed_stage_in_source_tables.value())
                 throw Exception("Source tables for Merge table are processing data up to different stages",
                     ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
+
+            for (auto & stream : source_streams)
+                stream = std::make_shared<CastEnumBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock());
         }
         else
         {
@@ -199,7 +203,10 @@ BlockInputStreams StorageMerge::read(
                     throw Exception("Source tables for Merge table are processing data up to different stages",
                         ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
-                return streams.empty() ? std::make_shared<NullBlockInputStream>() : streams.front();
+                auto stream = streams.empty() ? std::make_shared<NullBlockInputStream>() : streams.front();
+                if (!streams.empty())
+                    stream = std::make_shared<CastEnumBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock());
+                return stream;
             }));
         }
 
