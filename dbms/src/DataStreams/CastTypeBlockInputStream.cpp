@@ -1,4 +1,4 @@
-#include <DataStreams/CastEnumBlockInputStream.h>
+#include <DataStreams/CastTypeBlockInputStream.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/ExpressionActions.h>
@@ -9,35 +9,35 @@
 namespace DB
 {
 
-CastEnumBlockInputStream::CastEnumBlockInputStream(
+CastTypeBlockInputStream::CastTypeBlockInputStream(
     const Context & context_,
     BlockInputStreamPtr input_,
     const Block & in_sample_,
     const Block & out_sample_)
     : context(context_)
 {
-    collectEnums(in_sample_, out_sample_);
+    collectDifferent(in_sample_, out_sample_);
     cast_functions.resize(in_sample_.columns());
     children.push_back(input_);
 }
 
-String CastEnumBlockInputStream::getName() const
+String CastTypeBlockInputStream::getName() const
 {
-    return "CastEnum";
+    return "CastType";
 }
 
-String CastEnumBlockInputStream::getID() const
+String CastTypeBlockInputStream::getID() const
 {
     std::stringstream res;
-    res << "CastEnum(" << children.back()->getID() << ")";
+    res << "CastType(" << children.back()->getID() << ")";
     return res.str();
 }
 
-Block CastEnumBlockInputStream::readImpl()
+Block CastTypeBlockInputStream::readImpl()
 {
     Block block = children.back()->read();
 
-    if (!block || enum_types.empty())
+    if (!block || cast_types.empty())
         return block;
 
     Block res;
@@ -47,9 +47,9 @@ Block CastEnumBlockInputStream::readImpl()
     {
         const auto & elem = block.getByPosition(i);
 
-        if (bool(enum_types[i]))
+        if (bool(cast_types[i]))
         {
-            const auto & type = static_cast<const IDataTypeEnum *>(enum_types[i]->type.get());
+            const auto & type = static_cast<const IDataTypeEnum *>(cast_types[i]->type.get());
             Block temporary_block
             {
                 {
@@ -64,7 +64,7 @@ Block CastEnumBlockInputStream::readImpl()
                 },
                 {
                     nullptr,
-                    enum_types[i]->type,
+                    cast_types[i]->type,
                     ""
                 }
             };
@@ -88,8 +88,8 @@ Block CastEnumBlockInputStream::readImpl()
 
             res.insert({
                 temporary_block.getByPosition(2).column,
-                enum_types[i]->type,
-                enum_types[i]->name});
+                cast_types[i]->type,
+                cast_types[i]->name});
         }
         else
         {
@@ -100,10 +100,10 @@ Block CastEnumBlockInputStream::readImpl()
     return res;
 }
 
-void CastEnumBlockInputStream::collectEnums(const Block & in_sample, const Block & out_sample)
+void CastTypeBlockInputStream::collectDifferent(const Block & in_sample, const Block & out_sample)
 {
     size_t in_size = in_sample.columns();
-    enum_types.resize(in_size);
+    cast_types.resize(in_size);
     for (size_t i = 0; i < in_size; ++i)
     {
         const auto & in_elem  = in_sample.getByPosition(i);
@@ -113,13 +113,13 @@ void CastEnumBlockInputStream::collectEnums(const Block & in_sample, const Block
         if ( dynamic_cast<IDataTypeEnum*>(out_elem.type.get()) &&
             !dynamic_cast<IDataTypeEnum*>(in_elem.type.get()))
         {
-            enum_types[i] = NameAndTypePair(out_elem.name, out_elem.type);
+            cast_types[i] = NameAndTypePair(out_elem.name, out_elem.type);
         }
 
         /// Force conversion if both types is numeric but not equal.
         if (in_elem.type->behavesAsNumber() && out_elem.type->behavesAsNumber() && !out_elem.type->equals(*in_elem.type))
         {
-            enum_types[i] = NameAndTypePair(out_elem.name, out_elem.type);
+            cast_types[i] = NameAndTypePair(out_elem.name, out_elem.type);
         }
     }
 }
