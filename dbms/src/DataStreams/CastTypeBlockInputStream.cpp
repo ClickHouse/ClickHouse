@@ -49,7 +49,7 @@ Block CastTypeBlockInputStream::readImpl()
 
         if (bool(cast_types[i]))
         {
-            const auto & type = static_cast<const IDataTypeEnum *>(cast_types[i]->type.get());
+            const auto & type = cast_types[i]->type;
             Block temporary_block
             {
                 {
@@ -110,14 +110,13 @@ void CastTypeBlockInputStream::collectDifferent(const Block & in_sample, const B
         const auto & out_elem = out_sample.getByPosition(i);
 
         /// Force conversion if source type is not Enum.
-        if ( dynamic_cast<IDataTypeEnum*>(out_elem.type.get()) &&
-            !dynamic_cast<IDataTypeEnum*>(in_elem.type.get()))
+        if (dynamic_cast<IDataTypeEnum*>(out_elem.type.get())
+            && !dynamic_cast<IDataTypeEnum*>(in_elem.type.get()))
         {
             cast_types[i] = NameAndTypePair(out_elem.name, out_elem.type);
         }
-
         /// Force conversion if both types is numeric but not equal.
-        if (in_elem.type->behavesAsNumber() && out_elem.type->behavesAsNumber() && !out_elem.type->equals(*in_elem.type))
+        else if (in_elem.type->behavesAsNumber() && out_elem.type->behavesAsNumber() && !out_elem.type->equals(*in_elem.type))
         {
             cast_types[i] = NameAndTypePair(out_elem.name, out_elem.type);
         }
