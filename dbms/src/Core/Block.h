@@ -42,20 +42,20 @@ public:
     Block(std::initializer_list<ColumnWithTypeAndName> il);
     Block(const ColumnsWithTypeAndName & data_);
 
-    /// вставить столбец в заданную позицию
+    /// insert the column at the specified position
     void insert(size_t position, const ColumnWithTypeAndName & elem);
     void insert(size_t position, ColumnWithTypeAndName && elem);
-    /// вставить столбец в конец
+    /// insert the column to the end
     void insert(const ColumnWithTypeAndName & elem);
     void insert(ColumnWithTypeAndName && elem);
-    /// вставить столбец в конец, если столбца с таким именем ещё нет
+    /// insert the column to the end, if there is no column with that name yet
     void insertUnique(const ColumnWithTypeAndName & elem);
     void insertUnique(ColumnWithTypeAndName && elem);
-    /// удалить столбец в заданной позиции
+    /// remove the column at the specified position
     void erase(size_t position);
-    /// удалить столбец с заданным именем
+    /// remove the column with the specified name
     void erase(const String & name);
-    /// Добавляет в блок недостающие столбцы со значениями по-умолчанию
+    /// Adds missing columns to the block with default values
     void addDefaults(const NamesAndTypesList & required_columns);
 
     /// References are invalidated after calling functions above.
@@ -90,23 +90,23 @@ public:
     operator bool() const { return !data.empty(); }
     bool operator!() const { return data.empty(); }
 
-    /** Получить список имён столбцов через запятую. */
+    /** Get a list of column names separated by commas. */
     std::string dumpNames() const;
 
-    /** Список имен, типов и длин столбцов. Предназначен для отладки. */
+     /** List of names, types and lengths of columns. Designed for debugging. */
     std::string dumpStructure() const;
 
-    /** Получить такой же блок, но пустой. */
+    /** Get the same block, but empty. */
     Block cloneEmpty() const;
 
-    /** Получить блок со столбцами, переставленными в порядке их имён. */
+    /** Get a block with columns that have been rearranged in the order of their names. */
     Block sortColumns() const;
 
-    /** Заменяет столбцы смещений внутри вложенных таблиц на один общий для таблицы.
-     *  Кидает исключение, если эти смещения вдруг оказались неодинаковы.
+    /** Replaces the offset columns within the nested tables by one common for the table.
+     *  Throws an exception if these offsets suddenly turn out to be different.
      */
     void optimizeNestedArraysOffsets();
-    /** Тоже самое, только без замены смещений. */
+    /** The same, only without changing the offsets. */
     void checkNestedArraysOffsets() const;
 
     void clear();
@@ -128,15 +128,15 @@ using Blocks = std::vector<Block>;
 using BlocksList = std::list<Block>;
 
 
-/// Сравнить типы столбцов у блоков. Порядок столбцов имеет значение. Имена не имеют значения.
+/// Compare column types for blocks. The order of the columns matters. Names do not matter.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 
 /// Calculate difference in structure of blocks and write description into output strings.
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
 
 
-/** Дополнительные данные к блокам. Они пока нужны только для запроса
-  * DESCRIBE TABLE с Distributed-таблицами.
+/** Additional data to the blocks. They are only needed for a query
+  * DESCRIBE TABLE with Distributed tables.
   */
 struct BlockExtraInfo
 {
