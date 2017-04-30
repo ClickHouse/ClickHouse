@@ -16,30 +16,30 @@
 #define DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC                   5
 #define DBMS_DEFAULT_POLL_INTERVAL                                 10
 
-/// Размер буфера ввода-вывода по-умолчанию.
+/// The size of the I/O buffer by default.
 #define DBMS_DEFAULT_BUFFER_SIZE                                 1048576ULL
 
-/// При записи данных, для сжатия выделяется буфер размером max_compress_block_size. При переполнении буфера или если в буфер
-/// записано данных больше или равно, чем min_compress_block_size, то при очередной засечке, данные так же будут сжиматься
-/// В результате, для маленьких столбцов (числа 1-8 байт), при index_granularity = 8192, размер блока будет 64 KБ.
-/// А для больших столбцов (Title - строка ~100 байт), размер блока будет ~819 КБ. За счёт этого, коэффициент сжатия почти не ухудшится.
+/// When writing data, a buffer of `max_compress_block_size` size is allocated for compression. When the buffer overflows or if into the buffer
+/// more or equal data is written than `min_compress_block_size`, then with the next mark, the data will also compressed
+/// As a result, for small columns (numbers 1-8 bytes), with index_granularity = 8192, the block size will be 64 KB.
+/// And for large columns (Title - string ~100 bytes), the block size will be ~819 KB. Due to this, the compression ratio almost does not get worse.
 #define DEFAULT_MIN_COMPRESS_BLOCK_SIZE                            65536
 #define DEFAULT_MAX_COMPRESS_BLOCK_SIZE                         1048576
 
-/** Какими блоками по-умолчанию читаются данные (в числе строк).
-  * Меньшие значения дают лучшую кэш-локальность, меньшее потребление оперативки, но больший оверхед на обработку запроса.
+/** Which blocks by default read the data (by number of rows).
+  * Smaller values ​​give better cache locality, less consumption of RAM, but more overhead to process the query.
   */
 #define DEFAULT_BLOCK_SIZE                                         65536
 
-/** Какие блоки следует формировать для вставки в таблицу, если мы управляем формированием блоков.
-  * (Иногда в таблицу вставляются ровно такие блоки, какие были считаны / переданы извне, и на их размер этот параметр не влияет.)
-  * Больше, чем DEFAULT_BLOCK_SIZE, так как в некоторых таблицах на каждый блок создаётся кусок данных на диске (довольно большая штука),
-  *  и если бы куски были маленькими, то их было бы накладно потом объединять.
+/** Which blocks should be formed for insertion into the table, if we control the formation of blocks.
+  * (Sometimes the blocks are inserted exactly such blocks that have been read / transmitted from the outside, and this parameter does not affect their size.)
+  * More than DEFAULT_BLOCK_SIZE, because in some tables a block of data on the disk is created for each block (quite a big thing),
+  *  and if the parts were small, then it would be costly then to combine them.
   */
 #define DEFAULT_INSERT_BLOCK_SIZE                                1048576
 
-/** То же самое, но для операций слияния. Меньше DEFAULT_BLOCK_SIZE для экономии оперативки (так как читаются все столбцы).
-  * Сильно меньше, так как бывают 10-way слияния.
+/** The same, but for merge operations. Less DEFAULT_BLOCK_SIZE for saving RAM (since all the columns are read).
+  * Significantly less, since there are 10-way mergers.
   */
 #define DEFAULT_MERGE_BLOCK_SIZE                                 8192
 
@@ -49,16 +49,16 @@
 #define DEFAULT_INTERACTIVE_DELAY                                100000
 #define DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE             1024
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES     3
-/// каждый период уменьшаем счетчик ошибок в 2 раза
-/// слишком маленький период может приводить, что ошибки исчезают сразу после создания.
+/// each period reduces the error counter by 2 times
+/// too short a period can cause errors to disappear immediately after creation.
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD     (2 * DBMS_DEFAULT_SEND_TIMEOUT_SEC)
-#define DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS                         5000    /// Максимальное время ожидания в очереди запросов.
+#define DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS                         5000    /// Maximum waiting time in the request queue.
 #define DBMS_DEFAULT_BACKGROUND_POOL_SIZE                        16
 
-/// Используется в методе reserve, когда известно число строк, но неизвестны их размеры.
+/// Used in the `reserve` method, when the number of rows is known, but their dimensions are unknown.
 #define DBMS_APPROX_STRING_SIZE 64
 
-/// Суффикс имени для столбца, содержащего смещения массива.
+/// Name suffix for the column containing the array offsets.
 #define ARRAY_SIZES_COLUMN_NAME_SUFFIX                             ".size"
 
 #define DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES                    50264
@@ -74,7 +74,7 @@
 
 #define DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS        100
 
-/// Граница, на которых должны быть выровнены блоки для асинхронных файловых операций.
+/// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE                                4096
 
 #define DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS        7500

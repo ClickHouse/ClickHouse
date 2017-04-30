@@ -31,13 +31,13 @@ STRONG_TYPEDEF(TupleBackend, Tuple); /// Array and Tuple are different types wit
 #define DBMS_MIN_FIELD_SIZE 32
 
 
-/** Discriminated union из нескольких типов.
-  * Сделан для замены boost::variant:
-  *  является не обобщённым,
-  *  зато несколько более эффективным, и более простым.
+/** Discriminated union of several types.
+  * Made for replacement of `boost::variant`
+  *  is not generalized,
+  *  but somewhat more efficient, and simpler.
   *
-  * Используется для представления единичного значения одного из нескольких типов в оперативке.
-  * Внимание! Предпочтительно вместо единичных значений хранить кусочки столбцов. См. Column.h
+  * Used to represent a unit value of one of several types in the RAM.
+  * Warning! Preferably, instead of single values, store the pieces of the columns. See Column.h
   */
 class Field
 {
@@ -80,7 +80,7 @@ public:
     };
 
 
-    /// Позволяет получить идентификатор для типа или наоборот.
+    /// Returns an identifier for the type or vice versa.
     template <typename T> struct TypeToEnum;
     template <Types::Which which> struct EnumToType;
 
@@ -90,8 +90,8 @@ public:
     {
     }
 
-    /** Не смотря на наличие шаблонного конструктора, этот конструктор всё-равно нужен,
-      *  так как при его отсутствии, компилятор всё-равно сгенерирует конструктор по-умолчанию.
+    /** Despite the presence of a template constructor, this constructor is still needed,
+      *  since, in its absence, the compiler will still generate the default constructor.
       */
     Field(const Field & rhs)
     {
@@ -110,7 +110,7 @@ public:
         createConcrete(std::forward<T>(rhs));
     }
 
-    /// Создать строку inplace.
+    /// Create a string inplace.
     Field(const char * data, size_t size)
     {
         create(data, size);
@@ -491,13 +491,13 @@ typename NearestFieldType<T>::Type nearestFieldType(const T & x)
 class ReadBuffer;
 class WriteBuffer;
 
-/// Предполагается что у всех элементов массива одинаковый тип.
+/// It is assumed that all elements of the array have the same type.
 void readBinary(Array & x, ReadBuffer & buf);
 
 inline void readText(Array & x, ReadBuffer & buf)             { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
 inline void readQuoted(Array & x, ReadBuffer & buf)         { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
 
-/// Предполагается что у всех элементов массива одинаковый тип.
+/// It is assumed that all elements of the array have the same type.
 void writeBinary(const Array & x, WriteBuffer & buf);
 
 void writeText(const Array & x, WriteBuffer & buf);
