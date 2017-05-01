@@ -53,6 +53,7 @@ replaceRegexpAll(haystack, pattern, replacement)
 То же самое, но делается замена всех вхождений. Пример:
 
 .. code-block:: sql
+
   SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
   
   ┌─res────────────────────────┐
@@ -63,6 +64,7 @@ replaceRegexpAll(haystack, pattern, replacement)
 Пример:
 
 .. code-block:: sql
+
   SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
   
   ┌─res─────────────────┐
