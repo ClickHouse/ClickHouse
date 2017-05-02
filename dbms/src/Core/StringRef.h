@@ -15,7 +15,7 @@
 #include <Common/unaligned.h>
 
 
-/// Штука, чтобы не создавать строки для поиска подстроки в хэш таблице.
+/// The thing to avoid creating strings to find substrings in the hash table.
 struct StringRef
 {
     const char * data = nullptr;
@@ -37,9 +37,9 @@ using UInt64 = DB::UInt64;
 
 #if __SSE2__
 
-/** Сравнение строк на равенство.
-  * Подход является спорным и выигрывает не во всех случаях.
-  * Подробнее смотрите hash_map_string_2.cpp
+/** Compare strings for equality.
+  * The approach is controversial and does not win in all cases.
+  * For more information, see hash_map_string_2.cpp
   */
 
 inline bool compareSSE2(const char * p1, const char * p2)
@@ -153,12 +153,12 @@ inline bool operator> (StringRef lhs, StringRef rhs)
 }
 
 
-/** Хэш-функции.
-  * Можно использовать либо CityHash64,
-  *  либо функцию на основе инструкции crc32,
-  *  которая является заведомо менее качественной, но на реальных наборах данных,
-  *  при использовании в хэш-таблице, работает существенно быстрее.
-  * Подробнее см. hash_map_string_3.cpp
+/** Hash functions.
+  * You can use either CityHash64,
+  *  or a function based on the crc32 statement,
+  *  which is obviously less qualitative, but on real data sets,
+  *  when used in a hash table, works much faster.
+  * For more information, see hash_map_string_3.cpp
   */
 
 struct StringRefHash64
@@ -183,7 +183,7 @@ inline UInt64 _mm_crc32_u64(UInt64 crc, UInt64 value)
 
 #endif
 
-/// Кусочки взяты из CityHash.
+/// Parts are taken from CityHash.
 
 inline UInt64 hashLen16(UInt64 u, UInt64 v)
 {
@@ -262,7 +262,7 @@ struct CRC32Hash
             pos += 8;
         } while (pos + 8 < end);
 
-        UInt64 word = unalignedLoad<UInt64>(end - 8);    /// Не уверен, что это нормально.
+        UInt64 word = unalignedLoad<UInt64>(end - 8);    /// I'm not sure if this is normal.
         res = _mm_crc32_u64(res, word);
 
         return res;

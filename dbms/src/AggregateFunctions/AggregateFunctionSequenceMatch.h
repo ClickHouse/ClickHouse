@@ -50,32 +50,32 @@ struct AggregateFunctionSequenceMatchData final
 
     bool sorted = true;
     static constexpr size_t bytes_in_arena = 64;
-    PODArray<TimestampEvents, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>> eventsList;
+    PODArray<TimestampEvents, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>> events_list;
 
     void add(const Timestamp timestamp, const Events & events)
     {
         /// store information exclusively for rows with at least one event
         if (events.any())
         {
-            eventsList.emplace_back(timestamp, events);
+            events_list.emplace_back(timestamp, events);
             sorted = false;
         }
     }
 
     void merge(const AggregateFunctionSequenceMatchData & other)
     {
-        const auto size = eventsList.size();
+        const auto size = events_list.size();
 
-        eventsList.insert(std::begin(other.eventsList), std::end(other.eventsList));
+        events_list.insert(std::begin(other.events_list), std::end(other.events_list));
 
         /// either sort whole container or do so partially merging ranges afterwards
         if (!sorted && !other.sorted)
-            std::sort(std::begin(eventsList), std::end(eventsList), Comparator{});
+            std::sort(std::begin(events_list), std::end(events_list), Comparator{});
         else
         {
-            const auto begin = std::begin(eventsList);
+            const auto begin = std::begin(events_list);
             const auto middle = std::next(begin, size);
-            const auto end = std::end(eventsList);
+            const auto end = std::end(events_list);
 
             if (!sorted)
                 std::sort(begin, middle, Comparator{});
@@ -93,7 +93,7 @@ struct AggregateFunctionSequenceMatchData final
     {
         if (!sorted)
         {
-            std::sort(std::begin(eventsList), std::end(eventsList), Comparator{});
+            std::sort(std::begin(events_list), std::end(events_list), Comparator{});
             sorted = true;
         }
     }
@@ -101,9 +101,9 @@ struct AggregateFunctionSequenceMatchData final
     void serialize(WriteBuffer & buf) const
     {
         writeBinary(sorted, buf);
-        writeBinary(eventsList.size(), buf);
+        writeBinary(events_list.size(), buf);
 
-        for (const auto & events : eventsList)
+        for (const auto & events : events_list)
         {
             writeBinary(events.first, buf);
             writeBinary(events.second.to_ulong(), buf);
@@ -117,8 +117,8 @@ struct AggregateFunctionSequenceMatchData final
         std::size_t size;
         readBinary(size, buf);
 
-        eventsList.clear();
-        eventsList.reserve(size);
+        events_list.clear();
+        events_list.reserve(size);
 
         for (std::size_t i = 0; i < size; ++i)
         {
@@ -128,7 +128,7 @@ struct AggregateFunctionSequenceMatchData final
             UInt64 events;
             readBinary(events, buf);
 
-            eventsList.emplace_back(timestamp, Events{events});
+            events_list.emplace_back(timestamp, Events{events});
         }
     }
 };
@@ -231,8 +231,8 @@ public:
 
         const auto & data_ref = data(place);
 
-        const auto events_begin = std::begin(data_ref.eventsList);
-        const auto events_end = std::end(data_ref.eventsList);
+        const auto events_begin = std::begin(data_ref.events_list);
+        const auto events_end = std::end(data_ref.events_list);
         auto events_it = events_begin;
 
         static_cast<ColumnUInt8 &>(to).getData().push_back(match(events_it, events_end));
@@ -294,11 +294,11 @@ private:
         decltype(pos) max_parsed_pos{};
         Expected expected;
 
-        const auto throw_exception = [&] (const std::string & msg) {
+        const auto throw_exception = [&] (const std::string & msg)
+        {
             throw Exception{
                 msg + " '" + std::string(pos, end) + "' at position " + std::to_string(pos - begin),
-                ErrorCodes::SYNTAX_ERROR
-            };
+                ErrorCodes::SYNTAX_ERROR};
         };
 
         while (pos < end)
@@ -519,8 +519,8 @@ private:
     {
         const auto & data_ref = data(place);
 
-        const auto events_begin = std::begin(data_ref.eventsList);
-        const auto events_end = std::end(data_ref.eventsList);
+        const auto events_begin = std::begin(data_ref.events_list);
+        const auto events_end = std::end(data_ref.events_list);
         auto events_it = events_begin;
 
         std::size_t count = 0;

@@ -11,6 +11,7 @@ class Context;
 
 
 /** Allows you to create a table by the name of the engine.
+  * In 'columns', 'materialized_columns', etc., Nested data structures must be flattened.
   */
 class StorageFactory : public Singleton<StorageFactory>
 {

@@ -67,7 +67,7 @@ public:
     {
     public:
         bool isLocal() const { return !local_addresses.empty(); }
-        bool hasRemoteConnections() const { return pool.get() != nullptr; }
+        bool hasRemoteConnections() const { return pool != nullptr; }
         size_t getLocalNodeCount() const { return local_addresses.size(); }
 
     public:
@@ -76,7 +76,7 @@ public:
         UInt32 shard_num;    /// Номер шарда, начиная с 1.
         int weight;
         Addresses local_addresses;
-        mutable ConnectionPoolPtr pool;
+        ConnectionPoolWithFailoverPtr pool;
     };
 
     using ShardsInfo = std::vector<ShardInfo>;

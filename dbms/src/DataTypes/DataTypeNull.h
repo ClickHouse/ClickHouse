@@ -26,6 +26,11 @@ public:
         return true;
     }
 
+    bool notForTables() const override
+    {
+        return true;
+    }
+
     DataTypePtr clone() const override
     {
         return std::make_shared<DataTypeNull>();

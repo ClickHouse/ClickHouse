@@ -9,7 +9,7 @@
 namespace DB
 {
 
-/** Типы данных для представления значений из БД в оперативке.
+/** Data types for representing values ​​from a database in RAM.
   */
 
 STRONG_TYPEDEF(char, Null);
@@ -74,7 +74,7 @@ template <> struct TypeName<Float32>     { static std::string get() { return "Fl
 template <> struct TypeName<Float64>     { static std::string get() { return "Float64";     } };
 template <> struct TypeName<String>     { static std::string get() { return "String";     } };
 
-/// Этот тип не поддерживается СУБД, но используется в некоторых внутренних преобразованиях.
+/// This type is not supported by the DBMS, but is used in some internal transformations.
 template <> struct TypeName<long double>{ static std::string get() { return "long double";     } };
 
 }

@@ -8,10 +8,10 @@ add_library(clickhouse-server
     StatusFile.cpp
     ReplicasStatusHandler.cpp
 )
-target_link_libraries(clickhouse-server daemon storages_system)
+target_link_libraries(clickhouse-server daemon storages_system clickhouse_functions)
 
 add_library(clickhouse-local LocalServer.cpp)
-target_link_libraries(clickhouse-local dbms)
+target_link_libraries(clickhouse-local dbms clickhouse_functions)
 
 add_library(clickhouse-extract-from-config ExtractFromConfig.cpp)
 target_link_libraries(clickhouse-extract-from-config dbms)

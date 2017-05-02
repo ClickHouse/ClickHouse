@@ -41,8 +41,6 @@ set(dbms_headers)
 set(dbms_sources)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
-add_headers_and_sources(dbms src/Functions)
-add_headers_and_sources(dbms src/Functions/Conditional)
 add_headers_and_sources(dbms src/TableFunctions)
 add_headers_and_sources(dbms src/Parsers)
 add_headers_and_sources(dbms src/Analyzers)
@@ -69,6 +67,9 @@ add_headers_only(dbms src/Server)
 
 list (APPEND dbms_sources ${CONFIG_BUILD})
 list (APPEND dbms_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
+
+list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/DataTypeTraits.cpp)
+list (APPEND dbms_headers src/Functions/IFunction.h   src/Functions/FunctionFactory.h   src/Functions/DataTypeTraits.h)
 
 list(REMOVE_ITEM dbms_sources
     src/Client/Client.cpp
@@ -172,9 +173,13 @@ if (Poco_NetSSL_FOUND)
     target_link_libraries (dbms ${Poco_NetSSL_LIBRARY})
 endif()
 
+target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
+
+if (USE_ICU)
+    target_link_libraries (dbms ${ICU_LIBS})
+endif ()
+
 target_link_libraries (dbms
-    ${Poco_Foundation_LIBRARY}
-    ${ICU_LIBS}
     ${PLATFORM_LIBS}
     ${CMAKE_DL_LIBS}
     ${LTDL_LIB}

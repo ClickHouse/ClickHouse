@@ -9,9 +9,10 @@ if (ENABLE_ICU)
     set (ICU_LIBS ${ICUI18N} ${ICUUC} ${ICUDATA})
 
     find_path (ICU_INCLUDE_DIR NAMES unicode/unistr.h PATHS ${ICU_INCLUDE_PATHS})
-    include_directories (${ICU_INCLUDE_DIR})
-
-    set(USE_ICU 1)
+    if (ICU_INCLUDE_DIR AND ICU_LIBS)
+        include_directories (${ICU_INCLUDE_DIR})
+        set(USE_ICU 1)
+    endif ()
 endif ()
 
 if (USE_ICU)
