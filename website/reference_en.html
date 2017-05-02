@@ -6418,6 +6418,17 @@ Usage example:
 Problem: Generate a report that shows only keywords that produced at least 5 unique users.
 Solution: Write in the query <span class="inline-example">GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5</span>
 
+==topK(N)(x)==
+
+Returns the K most frequent argument values as an array sorted by their relative frequency.
+
+Recommended for use with small Ns, up to 10. The maximum N value is 65536.
+
+For the state of an aggregate function, it uses approximately the amount of memory equal to K * (the size of the key + 16) for counters, and 48 * N bytes for alpha value map.
+
+Usage example:
+Problem: Generate a report that shows top 5 frequent queries.
+Solution: Write in the query <span class="inline-example">SELECT topK(5)(SearchPhrase)</span>
 
 ==Aggregate function combinators==
 
