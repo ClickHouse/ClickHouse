@@ -1,7 +1,7 @@
 #!/bin/sh -x
 # Usages:
 # ./clickhouse_report.sh > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
-# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/clickhouse_report.sh | sh > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
+# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/report/clickhouse_report.sh | sh > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
 
 clickhouse --client -q 'SELECT * FROM system.events FORMAT Pretty'
 clickhouse --client -q 'SELECT * FROM system.metrics FORMAT Pretty'
