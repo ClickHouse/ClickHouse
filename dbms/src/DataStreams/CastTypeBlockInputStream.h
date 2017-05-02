@@ -18,7 +18,8 @@ public:
     CastTypeBlockInputStream(const Context & context_,
                              BlockInputStreamPtr input_,
                              const Block & in_sample_,
-                             const Block & out_sample_);
+                             const Block & out_sample_,
+                             bool fail_non_convertible = false);
 
     String getName() const override;
 
@@ -28,7 +29,7 @@ protected:
     Block readImpl() override;
 
 private:
-    void collectDifferent(const Block & in_sample, const Block & out_sample);
+    void collectDifferent(const Block & in_sample, const Block & out_sample, bool fail_non_convertible = false);
 
 private:
     const Context & context;

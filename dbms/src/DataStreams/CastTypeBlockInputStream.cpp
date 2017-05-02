@@ -9,14 +9,20 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCOMPATIBLE_SOURCE_TABLES;
+}
+
 CastTypeBlockInputStream::CastTypeBlockInputStream(
     const Context & context_,
     BlockInputStreamPtr input_,
     const Block & in_sample_,
-    const Block & out_sample_)
+    const Block & out_sample_,
+    bool fail_non_convertible)
     : context(context_)
 {
-    collectDifferent(in_sample_, out_sample_);
+    collectDifferent(in_sample_, out_sample_, fail_non_convertible);
     cast_functions.resize(in_sample_.columns());
     children.push_back(input_);
 }
@@ -100,7 +106,7 @@ Block CastTypeBlockInputStream::readImpl()
     return res;
 }
 
-void CastTypeBlockInputStream::collectDifferent(const Block & in_sample, const Block & out_sample)
+void CastTypeBlockInputStream::collectDifferent(const Block & in_sample, const Block & out_sample, bool fail_non_convertible)
 {
     size_t in_size = in_sample.columns();
     cast_types.resize(in_size);
@@ -119,6 +125,10 @@ void CastTypeBlockInputStream::collectDifferent(const Block & in_sample, const B
         else if (in_elem.type->behavesAsNumber() && out_elem.type->behavesAsNumber() && !out_elem.type->equals(*in_elem.type))
         {
             cast_types[i] = NameAndTypePair(out_elem.name, out_elem.type);
+        }
+        else if (fail_non_convertible && !out_elem.type->equals(*in_elem.type))
+        {
+            throw Exception("Cant convert column [" + in_elem.name + "] of type " + in_elem.type->getName() + " to type " + out_elem.type->getName(), ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
         }
     }
 }
