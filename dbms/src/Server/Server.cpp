@@ -459,7 +459,6 @@ int Server::main(const std::vector<std::string> & args)
             }
             catch (const Poco::Net::DNSException & e)
             {
-                /// Better message when IPv6 is disabled on host.
                 if (e.code() == EAI_FAMILY
 #if defined(EAI_ADDRFAMILY)
                     || e.code() == EAI_ADDRFAMILY
