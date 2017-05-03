@@ -182,7 +182,7 @@ BlockInputStreams StorageMerge::read(
             /// We must return streams with structure equals to structure of Merge table. 
             for (auto & stream : source_streams){
                 /// will throw if some columns not convertible
-                stream = std::make_shared<CastTypeBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock(), true);
+                stream = std::make_shared<CastTypeBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock());
             }
         }
         else
@@ -211,7 +211,7 @@ BlockInputStreams StorageMerge::read(
                 if (!streams.empty())
                 {
                     /// will throw if some columns not convertible
-                    stream = std::make_shared<CastTypeBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock(), true);
+                    stream = std::make_shared<CastTypeBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock());
                 }
                 return stream;
             }));
