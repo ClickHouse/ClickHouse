@@ -9,10 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INCOMPATIBLE_SOURCE_TABLES;
-}
 
 CastTypeBlockInputStream::CastTypeBlockInputStream(
     const Context & context_,
