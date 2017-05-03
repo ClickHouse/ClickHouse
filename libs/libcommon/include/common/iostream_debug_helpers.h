@@ -135,11 +135,26 @@ std::ostream & operator<<(std::ostream & stream, const std::chrono::time_point<c
 template <class T>
 std::ostream & operator<<(std::ostream & stream, const std::shared_ptr<T> & what)
 {
-    stream << "std::shared_ptr(use_count = " << what.use_count() << ") {";
+    stream << "shared_ptr(use_count = " << what.use_count() << ") {";
     if (what)
         stream << *what;
     else
         stream << "nullptr";
+    stream << "}";
+    return stream;
+}
+
+
+#include <experimental/optional>
+
+template <class T>
+std::ostream & operator<<(std::ostream & stream, const std::experimental::optional<T> & what)
+{
+    stream << "optional{";
+    if (what)
+        stream << *what;
+    else
+        stream << "empty";
     stream << "}";
     return stream;
 }

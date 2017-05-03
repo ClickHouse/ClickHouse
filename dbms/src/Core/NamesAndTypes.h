@@ -44,22 +44,22 @@ public:
     String toString() const;
     static NamesAndTypesList parse(const String & s);
 
-    /// Все элементы rhs должны быть различны.
+    /// All `rhs` elements must be different.
     bool isSubsetOf(const NamesAndTypesList & rhs) const;
 
-    /// Расстояние Хемминга между множествами
-    ///  (иными словами, добавленные и удаленные столбцы считаются один раз; столбцы, изменившие тип, - дважды).
+    /// Hamming distance between sets
+    ///  (in other words, the added and deleted columns are counted once, the columns that changed the type - twice).
     size_t sizeOfDifference(const NamesAndTypesList & rhs) const;
 
     Names getNames() const;
 
-    /// Оставить только столбцы, имена которых есть в names. В names могут быть лишние столбцы.
+    /// Leave only the columns whose names are in the `names`. In `names` there can be superfluous columns.
     NamesAndTypesList filter(const NameSet & names) const;
 
-    /// Оставить только столбцы, имена которых есть в names. В names могут быть лишние столбцы.
+    /// Leave only the columns whose names are in the `names`. In `names` there can be superfluous columns.
     NamesAndTypesList filter(const Names & names) const;
 
-    /// В отличие от filter, возвращает столбцы в том порядке, в котором они идут в names.
+    /// Unlike `filter`, returns columns in the order in which they go in `names`.
     NamesAndTypesList addTypes(const Names & names) const;
 };
 

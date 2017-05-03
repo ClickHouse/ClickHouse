@@ -12,7 +12,7 @@
 namespace DB
 {
 
-/// Перевести что угодно в Field.
+/// Transform anything to Field.
 template <typename T>
 inline Field toField(const T & x)
 {

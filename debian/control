@@ -1,9 +1,15 @@
 Source: clickhouse
 Priority: optional
 Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
-Build-Depends: debhelper (>= 9), cmake, gcc-6, g++-6,
-               libicu-dev, libreadline-dev, default-libmysqlclient-dev | libmysqlclient-dev, unixodbc-dev,
-               libglib2.0-dev, libltdl-dev, libssl-dev
+Build-Depends: debhelper (>= 9),
+               cmake,
+               gcc-6, g++-6,
+               default-libmysqlclient-dev | libmysqlclient-dev,
+               libicu-dev,
+               libltdl-dev,
+               libreadline-dev,
+               libssl-dev,
+               unixodbc-dev
 Standards-Version: 3.8.0
 Section: libs
 

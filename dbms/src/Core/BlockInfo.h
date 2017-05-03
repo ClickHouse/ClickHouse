@@ -9,20 +9,20 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-/** Дополнительная информация о блоке.
+/** More information about the block.
   */
 struct BlockInfo
 {
     /** is_overflows:
-      * После выполнения GROUP BY ... WITH TOTALS с настройками max_rows_to_group_by и group_by_overflow_mode = 'any',
-      *  в отдельный блок засовывается строчка с аргегированными значениями, не прошедшими max_rows_to_group_by.
-      * Если это такой блок, то для него is_overflows выставляется в true.
+      * After running GROUP BY ... WITH TOTALS with the max_rows_to_group_by and group_by_overflow_mode = 'any' settings,
+      *  a row is inserted in the separate block with aggregated values ​​that have not passed max_rows_to_group_by.
+      * If it is such a block, then is_overflows is set to true for it.
       */
 
     /** bucket_num:
-      * При использовании двухуровневого метода агрегации, данные с разными группами ключей раскидываются по разным корзинам.
-      * В таком случае здесь указывается номер корзины. Он используется для оптимизации слияния при распределённой аргегации.
-      * Иначе - -1.
+      * When using the two-level aggregation method, data with different key groups are scattered across different buckets.
+      * In this case, the bucket number is indicated here. It is used to optimize the merge for distributed aggregation.
+      * Otherwise -1.
       */
 
 #define APPLY_FOR_BLOCK_INFO_FIELDS(M) \
@@ -36,10 +36,10 @@ struct BlockInfo
 
 #undef DECLARE_FIELD
 
-    /// Записать значения в бинарном виде. NOTE: Можно было бы использовать protobuf, но он был бы overkill для данного случая.
+    /// Write the values ​​in binary form. NOTE: You could use protobuf, but it would be overkill for this case.
     void write(WriteBuffer & out) const;
 
-    /// Прочитать значения в бинарном виде.
+    /// Read the values ​​in binary form.
     void read(ReadBuffer & in);
 };
 

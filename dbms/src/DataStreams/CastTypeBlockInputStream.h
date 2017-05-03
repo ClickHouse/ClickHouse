@@ -11,11 +11,11 @@ namespace DB
 
 class IFunction;
 
-/// Implicitly converts string and numeric values to Enum.
-class CastEnumBlockInputStream : public IProfilingBlockInputStream
+/// Implicitly converts string and numeric values to Enum, numeric types to other numeric types.
+class CastTypeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    CastEnumBlockInputStream(Context & context_,
+    CastTypeBlockInputStream(const Context & context_,
                              BlockInputStreamPtr input_,
                              const Block & in_sample_,
                              const Block & out_sample_);
@@ -28,11 +28,11 @@ protected:
     Block readImpl() override;
 
 private:
-    void collectEnums(const Block & in_sample, const Block & out_sample);
+    void collectDifferent(const Block & in_sample, const Block & out_sample);
 
 private:
-    Context & context;
-    std::vector<std::experimental::optional<NameAndTypePair>> enum_types;
+    const Context & context;
+    std::vector<std::experimental::optional<NameAndTypePair>> cast_types;
     std::vector<std::shared_ptr<IFunction>> cast_functions;  /// Used to perform type conversions.
 };
 

@@ -35,7 +35,7 @@ struct SortCursorImpl
     /** Should we use Collator to sort a column? */
     NeedCollationFlags need_collation;
 
-    /** Есть ли хотя бы один столбец с Collator. */
+    /** Is there at least one column with Collator. */
     bool has_collation = false;
 
     SortCursorImpl() {}
@@ -48,7 +48,7 @@ struct SortCursorImpl
 
     bool empty() const { return rows == 0; }
 
-    /// Установить курсор в начало нового блока.
+    /// Set the cursor to the beginning of the new block.
     void reset(const Block & block)
     {
         all_columns.clear();
@@ -81,7 +81,7 @@ struct SortCursorImpl
 };
 
 
-/// Для лёгкости копирования.
+/// For easy copying.
 struct SortCursor
 {
     SortCursorImpl * impl;
@@ -90,7 +90,7 @@ struct SortCursor
     SortCursorImpl * operator-> () { return impl; }
     const SortCursorImpl * operator-> () const { return impl; }
 
-    /// Указанная строка данного курсора больше указанной строки другого курсора.
+    /// The specified row of this cursor is greater than the specified row of another cursor.
     bool greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
@@ -106,13 +106,13 @@ struct SortCursor
         return impl->order > rhs.impl->order;
     }
 
-    /// Проверяет, что все строки в текущем блоке данного курсора меньше или равны, чем все строки текущего блока другого курсора.
+    /// Checks that all rows in the current block of this cursor are less than or equal to all the rows of the current block of another cursor.
     bool totallyLessOrEquals(const SortCursor & rhs) const
     {
         if (impl->rows == 0 || rhs.impl->rows == 0)
             return false;
 
-        /// Последняя строка данного курсора не больше первой строки другого.
+        /// The last row of this cursor is no larger than the first row of the another cursor.
         return !greaterAt(rhs, impl->rows - 1, 0);
     }
 
@@ -121,7 +121,7 @@ struct SortCursor
         return greaterAt(rhs, impl->pos, rhs.impl->pos);
     }
 
-    /// Инвертировано, чтобы из priority queue элементы вынимались в порядке по возрастанию.
+    /// Inverted so that the priority queue elements are removed in ascending order.
     bool operator< (const SortCursor & rhs) const
     {
         return greater(rhs);
@@ -129,7 +129,7 @@ struct SortCursor
 };
 
 
-/// Отдельный компаратор для locale-sensitive сравнения строк
+/// Separate comparator for locale-sensitive string comparisons
 struct SortCursorWithCollation
 {
     SortCursorImpl * impl;
@@ -167,7 +167,7 @@ struct SortCursorWithCollation
         if (impl->rows == 0 || rhs.impl->rows == 0)
             return false;
 
-        /// Последняя строка данного курсора не больше первой строки другого.
+        /// The last row of this cursor is no larger than the first row of the another cursor.
         return !greaterAt(rhs, impl->rows - 1, 0);
     }
 
