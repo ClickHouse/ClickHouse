@@ -553,7 +553,11 @@ int Server::main(const std::vector<std::string> & args)
             catch (const Poco::Net::NetException & e)
             {
                 if (try_listen && e.code() == POCO_EPROTONOSUPPORT)
-                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message());
+                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message()
+                                                       << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
+                                                       << "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
+                                                       << "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
+                                                       << " Example for disabled IPv4: <listen_host>::</listen_host>");
                 else
                     throw;
             }
