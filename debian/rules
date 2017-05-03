@@ -2,7 +2,7 @@
 # -*- makefile -*-
 
 # Uncomment this to turn on verbose mode.
-export DH_VERBOSE=1
+#export DH_VERBOSE=1
 
 # -pie only for static mode
 export DEB_BUILD_MAINT_OPTIONS=hardening=+all,-pie
@@ -33,6 +33,9 @@ CXX := $(DEB_HOST_GNU_TYPE)-$(DEB_CXX)
 endif
 
 CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` -DENABLE_TESTS=0 $(CMAKE_FLAGS_ADD)
+ifndef DH_VERBOSE
+    CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=0
+endif
 
 %:
 	dh $@ --parallel --buildsystem=cmake --builddirectory=$(BUILDDIR)
