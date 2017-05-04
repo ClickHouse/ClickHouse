@@ -41,10 +41,17 @@ Block CastTypeBlockInputStream::readImpl()
     if (!block || cast_types.empty())
         return block;
 
-    Block res;
-    size_t s = block.columns();
+    size_t block_size = block.columns();
 
-    for (size_t i = 0; i < s; ++i)
+    if (block_size != cast_types.size())
+    {
+        LOG_ERROR(log, "Number of columns do not match, skipping cast");
+        return block;
+    }
+
+    Block res;
+
+    for (size_t i = 0; i < block_size; ++i)
     {
         const auto & elem = block.getByPosition(i);
 
