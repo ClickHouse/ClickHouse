@@ -55,7 +55,7 @@ struct IDictionaryBase
 
     virtual bool isInjective(const std::string & attribute_name) const = 0;
 
-    virtual BlockInputStreamPtr getBlockInputStream() const { return const_cast<IDictionarySource*>(getSource())->loadAll(); }
+    virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names) const = 0;
 
     virtual ~IDictionaryBase() = default;
 };

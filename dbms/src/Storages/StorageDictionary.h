@@ -14,7 +14,7 @@ namespace DB
 class StorageDictionary : private ext::shared_ptr_helper<StorageDictionary>, public IStorage
 {
     friend class ext::shared_ptr_helper<StorageDictionary>;
-    
+
 public:
     static StoragePtr create(
         const String & table_name_,

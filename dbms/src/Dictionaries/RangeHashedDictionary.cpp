@@ -1,4 +1,5 @@
 #include <Dictionaries/RangeHashedDictionary.h>
+#include <Dictionaries/RangeDictionaryBlockInputStream.h>
 
 
 namespace DB
@@ -352,5 +353,55 @@ const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttributeWith
 
     return attribute;
 }
+
+void RangeHashedDictionary::getIdsAndDates(PaddedPODArray<Key> & ids, 
+                                           PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const
+{
+    const auto & attribute = attributes.front();
+
+    switch (attribute.type)
+    {
+        case AttributeUnderlyingType::UInt8: getIdsAndDates<UInt8>(attribute, ids, start_dates, end_dates); break;
+        case AttributeUnderlyingType::UInt16: getIdsAndDates<UInt16>(attribute, ids, start_dates, end_dates); break;
+        case AttributeUnderlyingType::UInt32: getIdsAndDates<UInt32>(attribute, ids, start_dates, end_dates); break;
+        case AttributeUnderlyingType::UInt64: getIdsAndDates<UInt64>(attribute, ids, start_dates, end_dates); break;
+        case AttributeUnderlyingType::Int8: getIdsAndDates<Int8>(attribute, ids, start_dates, end_dates); break;
+        case AttributeUnderlyingType::Int16: getIdsAndDates<Int16>(attribute, ids, start_dates, end_dates); break;
+        case AttributeUnderlyingType::Int32: getIdsAndDates<Int32>(attribute, ids, start_dates, end_dates); break;
+        case AttributeUnderlyingType::Int64: getIdsAndDates<Int64>(attribute, ids, start_dates, end_dates); break;
+        case AttributeUnderlyingType::Float32: getIdsAndDates<Float32>(attribute, ids, start_dates, end_dates); break;
+        case AttributeUnderlyingType::Float64: getIdsAndDates<Float64>(attribute, ids, start_dates, end_dates); break;
+        case AttributeUnderlyingType::String: getIdsAndDates<StringRef>(attribute, ids, start_dates, end_dates); break;
+    }
+}
+
+template <typename T>
+void RangeHashedDictionary::getIdsAndDates(const Attribute& attribute, PaddedPODArray<Key> & ids, 
+                                           PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const
+{
+    const HashMap<UInt64, Values<T>> & attr = *std::get<Ptr<T>>(attribute.maps);
+
+    for (const auto & key : attr) {
+        ids.push_back(key.first);
+        for (const auto & value : key.second) 
+        {
+            start_dates.push_back(value.range.first);
+            end_dates.push_back(value.range.second);
+        }
+    }
+}
+
+BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & column_names) const
+{
+    PaddedPODArray<Key> ids;
+    PaddedPODArray<UInt16> start_dates;
+    PaddedPODArray<UInt16> end_dates;
+    getIdsAndDates(ids, start_dates, end_dates);
+
+    using BlockInputStreamType = RangeDictionaryBlockInputStream<RangeHashedDictionary, Key>;
+    auto block_input_stream = std::make_unique<BlockInputStreamType>(*this, column_names, ids, start_dates, end_dates);
+    return BlockInputStreamPtr(std::move(block_input_stream));
+}
+
 
 }

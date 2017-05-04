@@ -59,9 +59,7 @@ public:
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
-    BlockInputStreamPtr blockInputStreamFromCache() const;
-
-    BlockInputStreamPtr getBlockInputStream() const override { return blockInputStreamFromCache(); }
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names) const override;
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 

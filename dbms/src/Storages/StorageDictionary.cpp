@@ -63,8 +63,8 @@ BlockInputStreams StorageDictionary::read(
     const size_t max_block_size,
     const unsigned threads)
 {
-    processed_stage = QueryProcessingStage::FetchColumns;
-    return BlockInputStreams{dictionary->getBlockInputStream()};
+    processed_stage = QueryProcessingStage::Complete;
+    return BlockInputStreams{dictionary->getBlockInputStream(column_names)};
 }
 
 NamesAndTypes StorageDictionary::getNamesAndTypesFromDictionaryStructure()

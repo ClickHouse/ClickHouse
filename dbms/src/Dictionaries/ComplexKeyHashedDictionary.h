@@ -125,6 +125,8 @@ public:
 
     void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names) const override;
+
 private:
     template <typename Value> using ContainerType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
     template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
@@ -187,6 +189,11 @@ private:
 
     template <typename T>
     void has(const Attribute & attribute, const ConstColumnPlainPtrs & key_columns, PaddedPODArray<UInt8> & out) const;
+
+    std::vector<StringRef> getKeys() const;
+
+    template <typename T>
+    std::vector<StringRef> getKeys(const Attribute& attribute) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;

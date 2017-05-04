@@ -1,4 +1,5 @@
 #include <Dictionaries/ComplexKeyCacheDictionary.h>
+#include <Dictionaries/DictionaryBlockInputStream.h>
 #include <Common/BitHelpers.h>
 #include <Common/randomSeed.h>
 #include <Common/Stopwatch.h>
@@ -912,28 +913,32 @@ void ComplexKeyCacheDictionary::freeKey(const StringRef key) const
         keys_pool->free(const_cast<char *>(key.data), key.size);
 }
 
-template <typename Arena>
+template <typename Pool>
 StringRef ComplexKeyCacheDictionary::placeKeysInPool(
-    const size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
+    const size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Pool & pool)
 {
     const auto keys_size = key_columns.size();
     size_t sum_keys_size{};
-    for (const auto i : ext::range(0, keys_size))
-    {
-        keys[i] = key_columns[i]->getDataAtWithTerminatingZero(row);
-        sum_keys_size += keys[i].size;
-    }
 
-    const auto res = pool.alloc(sum_keys_size);
-    auto place = res;
-
+    Arena arena;
+    const char * block_start = nullptr;
     for (size_t j = 0; j < keys_size; ++j)
     {
-        memcpy(place, keys[j].data, keys[j].size);
-        place += keys[j].size;
+        keys[j] = key_columns[j]->serializeValueIntoArena(row, arena, block_start);
+        sum_keys_size += keys[j].size;
     }
 
-    return { res, sum_keys_size };
+    auto place = pool.alloc(sum_keys_size);
+    memcpy(place, block_start, sum_keys_size);
+
+    auto key_start = place;
+    for (size_t j = 0; j < keys_size; ++j)
+    {
+        keys[j].data = key_start;
+        key_start += keys[j].size;
+    }
+
+    return { place, sum_keys_size };
 }
 
 StringRef ComplexKeyCacheDictionary::placeKeysInFixedSizePool(
@@ -966,5 +971,27 @@ StringRef ComplexKeyCacheDictionary::copyKey(const StringRef key) const
 
     return { res, key.size };
 }
+
+bool ComplexKeyCacheDictionary::isEmptyCell(const UInt64 idx) const
+{
+    return (cells[idx].key == StringRef{} && (idx != zero_cell_idx 
+        || cells[idx].data == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t())));
+}
+
+BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names & column_names) const
+{
+    std::vector<StringRef> keys;
+    {
+        const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+
+        for (auto idx : ext::range(0, cells.size()))
+            if (!isEmptyCell(idx))
+                keys.push_back(cells[idx].key);
+    }
+
+    using BlockInputStreamType = DictionaryBlockInputStream<ComplexKeyCacheDictionary, UInt64>;
+    return std::move(std::make_unique<BlockInputStreamType>(*this, keys, column_names));
+}
+
 
 }

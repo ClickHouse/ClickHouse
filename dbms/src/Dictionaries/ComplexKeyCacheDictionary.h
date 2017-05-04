@@ -147,6 +147,8 @@ public:
 
     void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names) const override;
+
 private:
     template <typename Value> using MapType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
     template <typename Value> using ContainerType = Value[];
@@ -253,6 +255,8 @@ private:
         const auto hash = StringRefHash{}(key);
         return findCellIdx(key, now, hash);
     };
+
+    bool isEmptyCell(const UInt64 idx) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;

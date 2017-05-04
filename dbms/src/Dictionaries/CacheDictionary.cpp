@@ -958,9 +958,10 @@ bool CacheDictionary::isEmptyCell(const UInt64 idx) const
         == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t()));
 }
 
-
 PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
 {
+    const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+
     PaddedPODArray<Key> array;
     for (size_t idx = 0; idx < cells.size(); ++idx)
     {
@@ -973,10 +974,10 @@ PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
     return array;
 }
 
-
-BlockInputStreamPtr CacheDictionary::blockInputStreamFromCache() const
+BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_names) const
 {
-    auto block_input_stream = std::make_unique<DictionaryBlockInputStream<CacheDictionary, Key>>(*this, getCachedIds());
+    using BlockInputStreamType = DictionaryBlockInputStream<CacheDictionary, Key>;
+    auto block_input_stream = std::make_unique<BlockInputStreamType>(*this, getCachedIds(), column_names);
     return BlockInputStreamPtr(std::move(block_input_stream));
 }
 
