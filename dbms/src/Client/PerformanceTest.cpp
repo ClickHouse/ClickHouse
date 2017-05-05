@@ -659,7 +659,7 @@ private:
     };
     ExecutionType execType;
 
-    size_t timesToRun = 1;
+    size_t times_to_run = 1;
     std::vector<Stats> statistics;
 
     void readTestsConfiguration(const Paths & input_files)
@@ -768,12 +768,12 @@ private:
         else
             throw Poco::Exception("Unknown type " + configExecType + " in :" + testName, 1);
 
-        if (testConfig->has("timesToRun"))
+        if (testConfig->has("times_to_run"))
         {
-            timesToRun = testConfig->getUInt("timesToRun");
+            times_to_run = testConfig->getUInt("times_to_run");
         }
 
-        stopCriterions.resize(timesToRun * queries.size());
+        stopCriterions.resize(times_to_run * queries.size());
 
         if (testConfig->has("stop"))
         {
@@ -804,8 +804,8 @@ private:
         if (metrics.size() > 0)
             checkMetricsInput(metrics);
 
-        statistics.resize(timesToRun * queries.size());
-        for (size_t numberOfLaunch = 0; numberOfLaunch < timesToRun; ++numberOfLaunch)
+        statistics.resize(times_to_run * queries.size());
+        for (size_t numberOfLaunch = 0; numberOfLaunch < times_to_run; ++numberOfLaunch)
         {
             QueriesWithIndexes queriesWithIndexes;
 
@@ -1140,57 +1140,59 @@ public:
         }
 
         std::vector<JSONString> runInfos;
-        for (size_t numberOfLaunch = 0; numberOfLaunch < statistics.size(); ++numberOfLaunch)
+        for (size_t queryIndex = 0; queryIndex < queries.size(); ++queryIndex)
         {
-            if (!statistics[numberOfLaunch].ready)
-                continue;
-
-            JSONString runJSON;
-
-            size_t queryIndex = numberOfLaunch % queries.size();
-            if (substitutionsMaps.size())
+            for (size_t numberOfLaunch = 0; numberOfLaunch < statistics.size(); ++numberOfLaunch)
             {
-                JSONString parameters(4);
+                if (!statistics[numberOfLaunch].ready)
+                    continue;
 
-                for (auto it = substitutionsMaps[queryIndex].begin(); it != substitutionsMaps[queryIndex].end(); ++it)
+                JSONString runJSON;
+
+                if (substitutionsMaps.size())
                 {
-                    parameters[it->first].set(it->second);
+                    JSONString parameters(4);
+
+                    for (auto it = substitutionsMaps[queryIndex].begin(); it != substitutionsMaps[queryIndex].end(); ++it)
+                    {
+                        parameters[it->first].set(it->second);
+                    }
+
+                    runJSON["parameters"].set(parameters);
                 }
 
-                runJSON["parameters"].set(parameters);
-            }
-
-            if (execType == loop)
-            {
-                /// in seconds
-                runJSON["min_time"].set(statistics[numberOfLaunch].min_time / double(1000));
-
-                JSONString quantiles(4); /// here, 4 is the size of \t padding
-                for (double percent = 10; percent <= 90; percent += 10)
+                if (execType == loop)
                 {
-                    quantiles[percent / 100].set(statistics[numberOfLaunch].sampler.quantileInterpolated(percent / 100.0));
+                    /// in seconds
+                    runJSON["min_time"].set(statistics[numberOfLaunch].min_time / double(1000));
+
+                    JSONString quantiles(4); /// here, 4 is the size of \t padding
+                    for (double percent = 10; percent <= 90; percent += 10)
+                    {
+                        quantiles[percent / 100].set(statistics[numberOfLaunch].sampler.quantileInterpolated(percent / 100.0));
+                    }
+                    quantiles[0.95].set(statistics[numberOfLaunch].sampler.quantileInterpolated(95 / 100.0));
+                    quantiles[0.99].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99 / 100.0));
+                    quantiles[0.999].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99.9 / 100.0));
+                    quantiles[0.9999].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99.99 / 100.0));
+
+                    runJSON["quantiles"].set(quantiles);
+
+                    runJSON["total_time"].set(statistics[numberOfLaunch].total_time);
+                    runJSON["queries_per_second"].set(double(statistics[numberOfLaunch].queries) / statistics[numberOfLaunch].total_time);
+                    runJSON["rows_per_second"].set(double(statistics[numberOfLaunch].rows_read) / statistics[numberOfLaunch].total_time);
+                    runJSON["bytes_per_second"].set(double(statistics[numberOfLaunch].bytes_read) / statistics[numberOfLaunch].total_time);
                 }
-                quantiles[0.95].set(statistics[numberOfLaunch].sampler.quantileInterpolated(95 / 100.0));
-                quantiles[0.99].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99 / 100.0));
-                quantiles[0.999].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99.9 / 100.0));
-                quantiles[0.9999].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99.99 / 100.0));
+                else
+                {
+                    runJSON["max_rows_per_second"].set(statistics[numberOfLaunch].max_rows_speed);
+                    runJSON["max_bytes_per_second"].set(statistics[numberOfLaunch].max_bytes_speed);
+                    runJSON["avg_rows_per_second"].set(statistics[numberOfLaunch].avg_rows_speed_value);
+                    runJSON["avg_bytes_per_second"].set(statistics[numberOfLaunch].avg_bytes_speed_value);
+                }
 
-                runJSON["quantiles"].set(quantiles);
-
-                runJSON["total_time"].set(statistics[numberOfLaunch].total_time);
-                runJSON["queries_per_second"].set(double(statistics[numberOfLaunch].queries) / statistics[numberOfLaunch].total_time);
-                runJSON["rows_per_second"].set(double(statistics[numberOfLaunch].rows_read) / statistics[numberOfLaunch].total_time);
-                runJSON["bytes_per_second"].set(double(statistics[numberOfLaunch].bytes_read) / statistics[numberOfLaunch].total_time);
+                runInfos.push_back(runJSON);
             }
-            else
-            {
-                runJSON["max_rows_per_second"].set(statistics[numberOfLaunch].max_rows_speed);
-                runJSON["max_bytes_per_second"].set(statistics[numberOfLaunch].max_bytes_speed);
-                runJSON["avg_rows_per_second"].set(statistics[numberOfLaunch].avg_rows_speed_value);
-                runJSON["avg_bytes_per_second"].set(statistics[numberOfLaunch].avg_bytes_speed_value);
-            }
-
-            runInfos.push_back(runJSON);
         }
 
         jsonOutput["runs"].set(runInfos);
@@ -1200,9 +1202,9 @@ public:
 
     void minOutput(const std::string & main_metric)
     {
-        for (size_t numberOfLaunch = 0; numberOfLaunch < timesToRun; ++numberOfLaunch)
+        for (size_t queryIndex = 0; queryIndex < queries.size(); ++queryIndex)
         {
-            for (size_t queryIndex = 0; queryIndex < queries.size(); ++queryIndex)
+            for (size_t numberOfLaunch = 0; numberOfLaunch < times_to_run; ++numberOfLaunch)
             {
                 std::cout << testName << ", ";
 
