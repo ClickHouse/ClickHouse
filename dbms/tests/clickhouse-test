@@ -160,7 +160,7 @@ def main(args):
 									report_testcase.append(stderr_element)
 									print(stderr)
 
-								if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr):
+								if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
 									SERVER_DIED = True
 
 							elif stderr:
