@@ -30,25 +30,6 @@ std::string trimRight(const std::string & in, const char * suffix)
 
 }
 
-void registerAggregateFunctionAvg(AggregateFunctionFactory & factory);
-void registerAggregateFunctionCount(AggregateFunctionFactory & factory);
-void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory);
-void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory);
-void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory);
-void registerAggregateFunctionsQuantileExact(AggregateFunctionFactory & factory);
-void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & factory);
-void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & factory);
-void registerAggregateFunctionsQuantileTiming(AggregateFunctionFactory & factory);
-void registerAggregateFunctionsQuantileTDigest(AggregateFunctionFactory & factory);
-void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory);
-void registerAggregateFunctionsMinMaxAny(AggregateFunctionFactory & factory);
-void registerAggregateFunctionsStatistics(AggregateFunctionFactory & factory);
-void registerAggregateFunctionSum(AggregateFunctionFactory & factory);
-void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory);
-void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory);
-void registerAggregateFunctionTopK(AggregateFunctionFactory & factory);
-void registerAggregateFunctionDebug(AggregateFunctionFactory & factory);
-
 AggregateFunctionPtr createAggregateFunctionArray(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionForEach(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested);
@@ -61,24 +42,6 @@ AggregateFunctionPtr createAggregateFunctionCountNotNull(const DataTypes & argum
 
 AggregateFunctionFactory::AggregateFunctionFactory()
 {
-    registerAggregateFunctionAvg(*this);
-    registerAggregateFunctionCount(*this);
-    registerAggregateFunctionGroupArray(*this);
-    registerAggregateFunctionGroupUniqArray(*this);
-    registerAggregateFunctionsQuantile(*this);
-    registerAggregateFunctionsQuantileExact(*this);
-    registerAggregateFunctionsQuantileExactWeighted(*this);
-    registerAggregateFunctionsQuantileDeterministic(*this);
-    registerAggregateFunctionsQuantileTiming(*this);
-    registerAggregateFunctionsQuantileTDigest(*this);
-    registerAggregateFunctionsSequenceMatch(*this);
-    registerAggregateFunctionsMinMaxAny(*this);
-    registerAggregateFunctionsStatistics(*this);
-    registerAggregateFunctionSum(*this);
-    registerAggregateFunctionsUniq(*this);
-    registerAggregateFunctionUniqUpTo(*this);
-    registerAggregateFunctionTopK(*this);
-    registerAggregateFunctionDebug(*this);
 }
 
 
