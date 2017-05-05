@@ -72,9 +72,8 @@ public:
     void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
     {
         auto & set = this->data(place).value;
-        if (set.capacity() != reserved) {
+        if (set.capacity() != reserved)
             set.resize(reserved);
-        }
         set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
     }
 

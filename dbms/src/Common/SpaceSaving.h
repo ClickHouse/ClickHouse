@@ -85,7 +85,7 @@ public:
         m_capacity = new_capacity;
     }
 
-    Counter * insert(const TKey & key, UInt64 increment = 1, UInt64 error = 0)
+    void insert(const TKey & key, UInt64 increment = 1, UInt64 error = 0)
     {
         // Increase weight of a key that already exists
         // It uses hashtable for both value mapping as a presence test (c_i != 0)
@@ -97,7 +97,7 @@ public:
             c->count += increment;
             c->error += error;
             percolate(c);
-            return c;
+            return;
         }
 
         // Key doesn't exist, but can fit in the top K
@@ -105,7 +105,7 @@ public:
         {
             auto c = new Counter(key, increment, error);
             push(c);
-            return c;
+            return;
         }
 
         auto min = counter_list.back();
@@ -113,12 +113,12 @@ public:
         if (alpha + increment < min->count)
         {
             alpha += increment;
-            return nullptr;
+            return;
         }
 
         // Erase the current minimum element
-        auto minHash = counter_map.hash(min->key);
-        it = counter_map.find(min->key, minHash);
+        auto min_hash = counter_map.hash(min->key);
+        it = counter_map.find(min->key, min_hash);
         if (it != counter_map.end())
         {
             auto cell = it.getPtr();
@@ -130,15 +130,13 @@ public:
         counter_map.emplace(key, it, inserted, hash);
         if (inserted)
         {
-            alpha_map[minHash % alpha_map.size()] = min->count;
+            alpha_map[min_hash % alpha_map.size()] = min->count;
             min->key = key;
             min->count = alpha + increment;
             min->error = alpha + error;
             it->second = min;
             percolate(min);
         }
-
-        return min;
     }
 
     /*
