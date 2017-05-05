@@ -951,7 +951,7 @@ private:
         statistics[statisticIndex].watch_per_query.restart();
 
         std::shared_ptr<RemoteBlockInputStream> stream
-            = std::make_shared<RemoteBlockInputStream>(connection, query, &settings, nullptr, Tables() /*, query_processing_stage*/
+            = std::make_shared<RemoteBlockInputStream>(*connection, query, &settings, nullptr, Tables() /*, query_processing_stage*/
                 );
 
         size_t stream_index;
