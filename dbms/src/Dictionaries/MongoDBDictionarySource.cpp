@@ -32,6 +32,7 @@ namespace ErrorCodes
 static const size_t max_block_size = 8192;
 
 
+#if POCO_VERSION < 0x01070800
 /// See https://pocoproject.org/forum/viewtopic.php?f=10&t=6326&p=11426&hilit=mongodb+auth#p11485
 static void authenticate(Poco::MongoDB::Connection & connection,
     const std::string & database, const std::string & user, const std::string & password)
@@ -117,6 +118,7 @@ static void authenticate(Poco::MongoDB::Connection & connection,
         }
     }
 }
+#endif
 
 
 MongoDBDictionarySource::MongoDBDictionarySource(
