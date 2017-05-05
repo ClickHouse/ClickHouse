@@ -480,7 +480,7 @@ int Server::main(const std::vector<std::string> & args)
         for (const auto & listen_host : listen_hosts)
         {
             /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
-            try 
+            try
             {
                 /// HTTP
                 if (config().has("http_port"))
@@ -617,7 +617,7 @@ int Server::main(const std::vector<std::string> & args)
 
             LOG_DEBUG(
                 log, "Closed connections." << (current_connections ? " But " + std::to_string(current_connections) + " remains."
-                    + " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished> ." : ""));
+                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>" : ""));
 
             main_config_reloader.reset();
             users_config_reloader.reset();
