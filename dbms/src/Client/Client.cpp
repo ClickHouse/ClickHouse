@@ -46,6 +46,7 @@
 #include <Common/NetException.h>
 #include <common/readline_use.h>
 #include <Functions/registerFunctions.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
@@ -191,6 +192,7 @@ private:
 #undef EXTRACT_LIMIT
 
         registerFunctions();
+        registerAggregateFunctions();
     }
 
 

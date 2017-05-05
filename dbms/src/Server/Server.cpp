@@ -39,6 +39,8 @@
 #endif
 
 #include <Functions/registerFunctions.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
+
 
 namespace DB
 {
@@ -212,6 +214,7 @@ int Server::main(const std::vector<std::string> & args)
     Logger * log = &logger();
 
     registerFunctions();
+    registerAggregateFunctions();
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
