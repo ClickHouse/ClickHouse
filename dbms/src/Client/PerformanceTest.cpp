@@ -38,7 +38,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
 }
 
-const std::string four_spaces = "    ";
+const std::string FOUR_SPACES = "    ";
 
 bool isNumber(const std::string & str)
 {
@@ -47,7 +47,7 @@ bool isNumber(const std::string & str)
         return false;
     }
 
-    size_t dotsCounter = 0;
+    size_t dots_counter = 0;
 
     if (str[0] == '.' || str[str.size() - 1] == '.')
     {
@@ -58,10 +58,10 @@ bool isNumber(const std::string & str)
     {
         if (chr == '.')
         {
-            if (dotsCounter)
+            if (dots_counter)
                 return false;
             else
-                ++dotsCounter;
+                ++dots_counter;
             continue;
         }
 
@@ -121,12 +121,12 @@ public:
         current_key = "";
     }
 
-    void set(const JSONString & innerJSON)
+    void set(const JSONString & inner_json)
     {
-        set(innerJSON.constructOutput());
+        set(inner_json.constructOutput());
     }
 
-    void set(const std::vector<JSONString> & runInfos)
+    void set(const std::vector<JSONString> & run_infos)
     {
         if (current_key.empty())
         {
@@ -135,15 +135,15 @@ public:
 
         content[current_key] = "[\n";
 
-        for (size_t i = 0; i < runInfos.size(); ++i)
+        for (size_t i = 0; i < run_infos.size(); ++i)
         {
             for (size_t i = 0; i < _padding + 1; ++i)
             {
-                content[current_key] += four_spaces;
+                content[current_key] += FOUR_SPACES;
             }
-            content[current_key] += runInfos[i].constructOutput(_padding + 2);
+            content[current_key] += run_infos[i].constructOutput(_padding + 2);
 
-            if (i != runInfos.size() - 1)
+            if (i != run_infos.size() - 1)
             {
                 content[current_key] += ',';
             }
@@ -153,7 +153,7 @@ public:
 
         for (size_t i = 0; i < _padding; ++i)
         {
-            content[current_key] += four_spaces;
+            content[current_key] += FOUR_SPACES;
         }
         content[current_key] += ']';
         current_key = "";
@@ -189,7 +189,7 @@ public:
             output += "\n";
             for (size_t i = 0; i < padding; ++i)
             {
-                output += four_spaces;
+                output += FOUR_SPACES;
             }
 
             std::string key = '\"' + it->first + '\"';
@@ -201,16 +201,16 @@ public:
         output += "\n";
         for (size_t i = 0; i < padding - 1; ++i)
         {
-            output += four_spaces;
+            output += FOUR_SPACES;
         }
         output += "}";
         return output;
     }
 };
 
-std::ostream & operator<<(std::ostream & stream, const JSONString & jsonObj)
+std::ostream & operator<<(std::ostream & stream, const JSONString & json_obj)
 {
-    stream << jsonObj.constructOutput();
+    stream << json_obj.constructOutput();
 
     return stream;
 }
@@ -243,49 +243,49 @@ private:
     using AbstractConfiguration = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
     using Keys = std::vector<std::string>;
 
-    void initializeStruct(const std::string & priority, const AbstractConfiguration & stopCriterionsView)
+    void initializeStruct(const std::string & priority, const AbstractConfiguration & stop_criterions_view)
     {
         Keys keys;
-        stopCriterionsView->keys(priority, keys);
+        stop_criterions_view->keys(priority, keys);
 
-        PriorityType priorityType = (priority == "min" ? min : max);
+        PriorityType priority_type = (priority == "min" ? min : max);
 
         for (const std::string & key : keys)
         {
             if (key == "timeout_ms")
             {
-                timeout_ms.value = stopCriterionsView->getUInt64(priority + ".timeout_ms");
-                timeout_ms.priority = priorityType;
+                timeout_ms.value = stop_criterions_view->getUInt64(priority + ".timeout_ms");
+                timeout_ms.priority = priority_type;
             }
             else if (key == "rows_read")
             {
-                rows_read.value = stopCriterionsView->getUInt64(priority + ".rows_read");
-                rows_read.priority = priorityType;
+                rows_read.value = stop_criterions_view->getUInt64(priority + ".rows_read");
+                rows_read.priority = priority_type;
             }
             else if (key == "bytes_read_uncompressed")
             {
-                bytes_read_uncompressed.value = stopCriterionsView->getUInt64(priority + ".bytes_read_uncompressed");
-                bytes_read_uncompressed.priority = priorityType;
+                bytes_read_uncompressed.value = stop_criterions_view->getUInt64(priority + ".bytes_read_uncompressed");
+                bytes_read_uncompressed.priority = priority_type;
             }
             else if (key == "iterations")
             {
-                iterations.value = stopCriterionsView->getUInt64(priority + ".iterations");
-                iterations.priority = priorityType;
+                iterations.value = stop_criterions_view->getUInt64(priority + ".iterations");
+                iterations.priority = priority_type;
             }
             else if (key == "min_time_not_changing_for_ms")
             {
-                min_time_not_changing_for_ms.value = stopCriterionsView->getUInt64(priority + ".min_time_not_changing_for_ms");
-                min_time_not_changing_for_ms.priority = priorityType;
+                min_time_not_changing_for_ms.value = stop_criterions_view->getUInt64(priority + ".min_time_not_changing_for_ms");
+                min_time_not_changing_for_ms.priority = priority_type;
             }
             else if (key == "max_speed_not_changing_for_ms")
             {
-                max_speed_not_changing_for_ms.value = stopCriterionsView->getUInt64(priority + ".max_speed_not_changing_for_ms");
-                max_speed_not_changing_for_ms.priority = priorityType;
+                max_speed_not_changing_for_ms.value = stop_criterions_view->getUInt64(priority + ".max_speed_not_changing_for_ms");
+                max_speed_not_changing_for_ms.priority = priority_type;
             }
             else if (key == "average_speed_not_changing_for_ms")
             {
-                average_speed_not_changing_for_ms.value = stopCriterionsView->getUInt64(priority + ".average_speed_not_changing_for_ms");
-                average_speed_not_changing_for_ms.priority = priorityType;
+                average_speed_not_changing_for_ms.value = stop_criterions_view->getUInt64(priority + ".average_speed_not_changing_for_ms");
+                average_speed_not_changing_for_ms.priority = priority_type;
             }
             else
             {
@@ -308,32 +308,32 @@ public:
     {
     }
 
-    StopCriterions(const StopCriterions & anotherCriterions)
-        : timeout_ms(anotherCriterions.timeout_ms),
-          rows_read(anotherCriterions.rows_read),
-          bytes_read_uncompressed(anotherCriterions.bytes_read_uncompressed),
-          iterations(anotherCriterions.iterations),
-          min_time_not_changing_for_ms(anotherCriterions.min_time_not_changing_for_ms),
-          max_speed_not_changing_for_ms(anotherCriterions.max_speed_not_changing_for_ms),
-          average_speed_not_changing_for_ms(anotherCriterions.average_speed_not_changing_for_ms),
+    StopCriterions(const StopCriterions & another_criterions)
+        : timeout_ms(another_criterions.timeout_ms),
+          rows_read(another_criterions.rows_read),
+          bytes_read_uncompressed(another_criterions.bytes_read_uncompressed),
+          iterations(another_criterions.iterations),
+          min_time_not_changing_for_ms(another_criterions.min_time_not_changing_for_ms),
+          max_speed_not_changing_for_ms(another_criterions.max_speed_not_changing_for_ms),
+          average_speed_not_changing_for_ms(another_criterions.average_speed_not_changing_for_ms),
 
-          number_of_initialized_min(anotherCriterions.number_of_initialized_min),
-          number_of_initialized_max(anotherCriterions.number_of_initialized_max),
-          fulfilled_criterions_min(anotherCriterions.fulfilled_criterions_min),
-          fulfilled_criterions_max(anotherCriterions.fulfilled_criterions_max)
+          number_of_initialized_min(another_criterions.number_of_initialized_min),
+          number_of_initialized_max(another_criterions.number_of_initialized_max),
+          fulfilled_criterions_min(another_criterions.fulfilled_criterions_min),
+          fulfilled_criterions_max(another_criterions.fulfilled_criterions_max)
     {
     }
 
-    void loadFromConfig(const AbstractConfiguration & stopCriterionsView)
+    void loadFromConfig(const AbstractConfiguration & stop_criterions_view)
     {
-        if (stopCriterionsView->has("min"))
+        if (stop_criterions_view->has("min"))
         {
-            initializeStruct("min", stopCriterionsView);
+            initializeStruct("min", stop_criterions_view);
         }
 
-        if (stopCriterionsView->has("max"))
+        if (stop_criterions_view->has("max"))
         {
-            initializeStruct("max", stopCriterionsView);
+            initializeStruct("max", stop_criterions_view);
         }
     }
 
@@ -404,59 +404,59 @@ struct Stats
 
     bool ready = false; // check if a query wasn't interrupted by SIGINT
 
-    std::string getStatisticByName(const std::string & statisticName)
+    std::string getStatisticByName(const std::string & statistic_name)
     {
-        if (statisticName == "min_time")
+        if (statistic_name == "min_time")
         {
             return std::to_string(min_time) + "ms";
         }
-        if (statisticName == "quantiles")
+        if (statistic_name == "quantiles")
         {
             std::string result = "\n";
 
             for (double percent = 10; percent <= 90; percent += 10)
             {
-                result += four_spaces + std::to_string((percent / 100));
+                result += FOUR_SPACES + std::to_string((percent / 100));
                 result += ": " + std::to_string(sampler.quantileInterpolated(percent / 100.0));
                 result += "\n";
             }
-            result += four_spaces + "0.95:   " + std::to_string(sampler.quantileInterpolated(95 / 100.0)) + "\n";
-            result += four_spaces + "0.99: "   + std::to_string(sampler.quantileInterpolated(99 / 100.0)) + "\n";
-            result += four_spaces + "0.999: "  + std::to_string(sampler.quantileInterpolated(99.9 / 100.)) + "\n";
-            result += four_spaces + "0.9999: " + std::to_string(sampler.quantileInterpolated(99.99 / 100.));
+            result += FOUR_SPACES + "0.95:   " + std::to_string(sampler.quantileInterpolated(95 / 100.0)) + "\n";
+            result += FOUR_SPACES + "0.99: "   + std::to_string(sampler.quantileInterpolated(99 / 100.0)) + "\n";
+            result += FOUR_SPACES + "0.999: "  + std::to_string(sampler.quantileInterpolated(99.9 / 100.)) + "\n";
+            result += FOUR_SPACES + "0.9999: " + std::to_string(sampler.quantileInterpolated(99.99 / 100.));
 
             return result;
         }
-        if (statisticName == "total_time")
+        if (statistic_name == "total_time")
         {
             return std::to_string(total_time) + "s";
         }
-        if (statisticName == "queries_per_second")
+        if (statistic_name == "queries_per_second")
         {
             return std::to_string(queries / total_time);
         }
-        if (statisticName == "rows_per_second")
+        if (statistic_name == "rows_per_second")
         {
             return std::to_string(rows_read / total_time);
         }
-        if (statisticName == "bytes_per_second")
+        if (statistic_name == "bytes_per_second")
         {
             return std::to_string(bytes_read / total_time);
         }
 
-        if (statisticName == "max_rows_per_second")
+        if (statistic_name == "max_rows_per_second")
         {
             return std::to_string(max_rows_speed);
         }
-        if (statisticName == "max_bytes_per_second")
+        if (statistic_name == "max_bytes_per_second")
         {
             return std::to_string(max_bytes_speed);
         }
-        if (statisticName == "avg_rows_per_second")
+        if (statistic_name == "avg_rows_per_second")
         {
             return std::to_string(avg_rows_speed_value);
         }
-        if (statisticName == "avg_bytes_per_second")
+        if (statistic_name == "avg_bytes_per_second")
         {
             return std::to_string(avg_bytes_speed_value);
         }
@@ -594,7 +594,7 @@ public:
         const std::vector<std::string> & names_regexp,
         const std::vector<std::string> & without_names_regexp)
         : connection(host_, port_, default_database_, user_, password_),
-          testsConfigurations(input_files.size()),
+          tests_configurations(input_files.size()),
           gotSIGINT(false),
           lite_output(lite_output_)
     {
@@ -610,7 +610,7 @@ public:
 
 private:
     unsigned concurrency;
-    std::string testName;
+    std::string test_name;
 
     using Query = std::string;
     using Queries = std::vector<Query>;
@@ -633,23 +633,23 @@ private:
     using Paths = std::vector<std::string>;
     using StringToVector = std::map<std::string, std::vector<std::string>>;
     StringToVector substitutions;
-    std::vector<Config> testsConfigurations;
+    std::vector<Config> tests_configurations;
 
     using StringKeyValue = std::map<std::string, std::string>;
-    std::vector<StringKeyValue> substitutionsMaps;
+    std::vector<StringKeyValue> substitutions_maps;
 
     bool gotSIGINT;
-    std::vector<StopCriterions> stopCriterions;
+    std::vector<StopCriterions> stop_criterions;
     std::string main_metric;
     bool lite_output;
 
 // TODO: create enum class instead of string
 #define incFulfilledCriterions(index, CRITERION)                                                            \
-    if (!stopCriterions[index].CRITERION.fulfilled)                                                         \
+    if (!stop_criterions[index].CRITERION.fulfilled)                                                         \
     {                                                                                                       \
-        stopCriterions[index].CRITERION.priority == min ? ++stopCriterions[index].fulfilled_criterions_min  \
-                                                        : ++stopCriterions[index].fulfilled_criterions_max; \
-        stopCriterions[index].CRITERION.fulfilled = true;                                                   \
+        stop_criterions[index].CRITERION.priority == min ? ++stop_criterions[index].fulfilled_criterions_min  \
+                                                        : ++stop_criterions[index].fulfilled_criterions_max; \
+        stop_criterions[index].CRITERION.fulfilled = true;                                                   \
     }
 
     enum ExecutionType
@@ -657,92 +657,92 @@ private:
         loop,
         once
     };
-    ExecutionType execType;
+    ExecutionType exec_type;
 
     size_t times_to_run = 1;
     std::vector<Stats> statistics;
 
     void readTestsConfiguration(const Paths & input_files)
     {
-        testsConfigurations.resize(input_files.size());
+        tests_configurations.resize(input_files.size());
 
         for (size_t i = 0; i != input_files.size(); ++i)
         {
             const std::string path = input_files[i];
-            testsConfigurations[i] = Config(new XMLConfiguration(path));
+            tests_configurations[i] = Config(new XMLConfiguration(path));
         }
 
         // TODO: here will be tests filter on tags, names, regexp matching, etc.
         // { ... }
 
         // for now let's launch one test only
-        if (testsConfigurations.size())
+        if (tests_configurations.size())
         {
-            for (auto & testConfig : testsConfigurations)
+            for (auto & test_config : tests_configurations)
             {
-                runTest(testConfig);
+                runTest(test_config);
             }
         }
     }
 
-    void runTest(Config & testConfig)
+    void runTest(Config & test_config)
     {
-        testName = testConfig->getString("name");
-        std::cout << "Running: " << testName << "\n";
+        test_name = test_config->getString("name");
+        std::cout << "Running: " << test_name << "\n";
 
         /// Preprocess configuration file
-        if (testConfig->has("settings"))
+        if (test_config->has("settings"))
         {
-            Keys configSettings;
-            testConfig->keys("settings", configSettings);
+            Keys config_settings;
+            test_config->keys("settings", config_settings);
 
             /// This macro goes through all settings in the Settings.h
             /// and, if found any settings in test's xml configuration
             /// with the same name, sets its value to settings
             std::vector<std::string>::iterator it;
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT)                             \
-    it = std::find(configSettings.begin(), configSettings.end(), #NAME); \
-    if (it != configSettings.end())                                      \
-        settings.set(#NAME, testConfig->getString("settings." #NAME));
+    it = std::find(config_settings.begin(), config_settings.end(), #NAME); \
+    if (it != config_settings.end())                                      \
+        settings.set(#NAME, test_config->getString("settings." #NAME));
             APPLY_FOR_SETTINGS(EXTRACT_SETTING)
             APPLY_FOR_LIMITS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
-            if (std::find(configSettings.begin(), configSettings.end(), "profile") != configSettings.end())
+            if (std::find(config_settings.begin(), config_settings.end(), "profile") != config_settings.end())
             {
                 // TODO: proceed profile settings in a proper way
             }
 
-            if (std::find(configSettings.begin(), configSettings.end(), "average_rows_speed_precision") != configSettings.end())
+            if (std::find(config_settings.begin(), config_settings.end(), "average_rows_speed_precision") != config_settings.end())
             {
-                Stats::avg_rows_speed_precision = testConfig->getDouble("settings.average_rows_speed_precision");
+                Stats::avg_rows_speed_precision = test_config->getDouble("settings.average_rows_speed_precision");
             }
 
-            if (std::find(configSettings.begin(), configSettings.end(), "average_bytes_speed_precision") != configSettings.end())
+            if (std::find(config_settings.begin(), config_settings.end(), "average_bytes_speed_precision") != config_settings.end())
             {
-                Stats::avg_bytes_speed_precision = testConfig->getDouble("settings.average_bytes_speed_precision");
+                Stats::avg_bytes_speed_precision = test_config->getDouble("settings.average_bytes_speed_precision");
             }
         }
 
         Query query;
 
-        if (!testConfig->has("query"))
+        if (!test_config->has("query"))
         {
-            throw Poco::Exception("Missing query field in test's config: " + testName, 1);
+            throw Poco::Exception("Missing query field in test's config: " + test_name, 1);
         }
 
-        query = testConfig->getString("query");
+        query = test_config->getString("query");
 
         if (query.empty())
         {
-            throw Poco::Exception("The query is empty in test's config: " + testName, 1);
+            throw Poco::Exception("The query is empty in test's config: " + test_name, 1);
         }
 
-        if (testConfig->has("substitutions"))
+        if (test_config->has("substitutions"))
         {
             /// Make "subconfig" of inner xml block
-            AbstractConfig substitutionsView(testConfig->createView("substitutions"));
-            constructSubstitutions(substitutionsView, substitutions);
+            AbstractConfig substitutions_view(test_config->createView("substitutions"));
+            constructSubstitutions(substitutions_view, substitutions);
 
             queries = formatQueries(query, substitutions);
         }
@@ -755,32 +755,32 @@ private:
             queries.push_back(query);
         }
 
-        if (!testConfig->has("type"))
+        if (!test_config->has("type"))
         {
-            throw Poco::Exception("Missing type property in config: " + testName, 1);
+            throw Poco::Exception("Missing type property in config: " + test_name, 1);
         }
 
-        std::string configExecType = testConfig->getString("type");
-        if (configExecType == "loop")
-            execType = loop;
-        else if (configExecType == "once")
-            execType = once;
+        std::string config_exec_type = test_config->getString("type");
+        if (config_exec_type == "loop")
+            exec_type = loop;
+        else if (config_exec_type == "once")
+            exec_type = once;
         else
-            throw Poco::Exception("Unknown type " + configExecType + " in :" + testName, 1);
+            throw Poco::Exception("Unknown type " + config_exec_type + " in :" + test_name, 1);
 
-        if (testConfig->has("times_to_run"))
+        if (test_config->has("times_to_run"))
         {
-            times_to_run = testConfig->getUInt("times_to_run");
+            times_to_run = test_config->getUInt("times_to_run");
         }
 
-        stopCriterions.resize(times_to_run * queries.size());
+        stop_criterions.resize(times_to_run * queries.size());
 
-        if (testConfig->has("stop"))
+        if (test_config->has("stop"))
         {
-            AbstractConfig stopCriterionsView(testConfig->createView("stop"));
-            for (StopCriterions & stopCriterion : stopCriterions)
+            AbstractConfig stop_criterions_view(test_config->createView("stop"));
+            for (StopCriterions & stop_criterion : stop_criterions)
             {
-                stopCriterion.loadFromConfig(stopCriterionsView);
+                stop_criterion.loadFromConfig(stop_criterions_view);
             }
         }
         else
@@ -788,10 +788,10 @@ private:
             throw Poco::Exception("No termination conditions were found in config", 1);
         }
 
-        AbstractConfig metricsView(testConfig->createView("metrics"));
+        AbstractConfig metrics_view(test_config->createView("metrics"));
         Keys metrics;
-        metricsView->keys(metrics);
-        main_metric = testConfig->getString("main_metric", "");
+        metrics_view->keys(metrics);
+        main_metric = test_config->getString("main_metric", "");
 
         if (!main_metric.empty()) {
             if (std::find(metrics.begin(), metrics.end(), main_metric) == metrics.end())
@@ -805,16 +805,16 @@ private:
             checkMetricsInput(metrics);
 
         statistics.resize(times_to_run * queries.size());
-        for (size_t numberOfLaunch = 0; numberOfLaunch < times_to_run; ++numberOfLaunch)
+        for (size_t number_of_launch = 0; number_of_launch < times_to_run; ++number_of_launch)
         {
-            QueriesWithIndexes queriesWithIndexes;
+            QueriesWithIndexes queries_with_indexes;
 
-            for (size_t queryIndex = 0; queryIndex < queries.size(); ++queryIndex)
+            for (size_t query_index = 0; query_index < queries.size(); ++query_index)
             {
-                size_t statisticIndex = numberOfLaunch * queries.size() + queryIndex;
-                stopCriterions[statisticIndex].reset();
+                size_t statistic_index = number_of_launch * queries.size() + query_index;
+                stop_criterions[statistic_index].reset();
 
-                queriesWithIndexes.push_back({queries[queryIndex], statisticIndex});
+                queries_with_indexes.push_back({queries[query_index], statistic_index});
             }
 
             if (interrupt_listener.check())
@@ -823,7 +823,7 @@ private:
             if (gotSIGINT)
                 break;
 
-            runQueries(queriesWithIndexes);
+            runQueries(queries_with_indexes);
         }
 
         if (lite_output)
@@ -834,17 +834,17 @@ private:
 
     void checkMetricsInput(const Strings & metrics) const
     {
-        std::vector<std::string> loopMetrics
+        std::vector<std::string> loop_metrics
             = {"min_time", "quantiles", "total_time", "queries_per_second", "rows_per_second", "bytes_per_second"};
 
-        std::vector<std::string> nonLoopMetrics
+        std::vector<std::string> non_loop_metrics
             = {"max_rows_per_second", "max_bytes_per_second", "avg_rows_per_second", "avg_bytes_per_second"};
 
-        if (execType == loop)
+        if (exec_type == loop)
         {
             for (const std::string & metric : metrics)
             {
-                if (std::find(nonLoopMetrics.begin(), nonLoopMetrics.end(), metric) != nonLoopMetrics.end())
+                if (std::find(non_loop_metrics.begin(), non_loop_metrics.end(), metric) != non_loop_metrics.end())
                 {
                     throw Poco::Exception("Wrong type of metric for loop execution type (" + metric + ")", 1);
                 }
@@ -854,7 +854,7 @@ private:
         {
             for (const std::string & metric : metrics)
             {
-                if (std::find(loopMetrics.begin(), loopMetrics.end(), metric) != loopMetrics.end())
+                if (std::find(loop_metrics.begin(), loop_metrics.end(), metric) != loop_metrics.end())
                 {
                     throw Poco::Exception("Wrong type of metric for non-loop execution type (" + metric + ")", 1);
                 }
@@ -862,20 +862,20 @@ private:
         }
     }
 
-    void runQueries(const QueriesWithIndexes & queriesWithIndexes)
+    void runQueries(const QueriesWithIndexes & queries_with_indexes)
     {
-        for (const std::pair<Query, const size_t> & queryAndIndex : queriesWithIndexes)
+        for (const std::pair<Query, const size_t> & query_and_index : queries_with_indexes)
         {
-            Query query = queryAndIndex.first;
-            const size_t statisticIndex = queryAndIndex.second;
+            Query query = query_and_index.first;
+            const size_t statistic_index = query_and_index.second;
 
-            size_t max_iterations = stopCriterions[statisticIndex].iterations.value;
+            size_t max_iterations = stop_criterions[statistic_index].iterations.value;
             size_t iteration = 0;
 
-            statistics[statisticIndex].clear();
-            execute(query, statisticIndex);
+            statistics[statistic_index].clear();
+            execute(query, statistic_index);
 
-            if (execType == loop)
+            if (exec_type == loop)
             {
                 while (!gotSIGINT)
                 {
@@ -884,45 +884,45 @@ private:
                     /// check stop criterions
                     if (max_iterations && iteration >= max_iterations)
                     {
-                        incFulfilledCriterions(statisticIndex, iterations);
+                        incFulfilledCriterions(statistic_index, iterations);
                     }
 
-                    if (stopCriterions[statisticIndex].number_of_initialized_min
-                        && (stopCriterions[statisticIndex].fulfilled_criterions_min
-                               >= stopCriterions[statisticIndex].number_of_initialized_min))
+                    if (stop_criterions[statistic_index].number_of_initialized_min
+                        && (stop_criterions[statistic_index].fulfilled_criterions_min
+                               >= stop_criterions[statistic_index].number_of_initialized_min))
                     {
                         /// All 'min' criterions are fulfilled
                         break;
                     }
 
-                    if (stopCriterions[statisticIndex].number_of_initialized_max && stopCriterions[statisticIndex].fulfilled_criterions_max)
+                    if (stop_criterions[statistic_index].number_of_initialized_max && stop_criterions[statistic_index].fulfilled_criterions_max)
                     {
                         /// Some 'max' criterions are fulfilled
                         break;
                     }
 
-                    execute(query, statisticIndex);
+                    execute(query, statistic_index);
                 }
             }
 
             if (!gotSIGINT)
             {
-                statistics[statisticIndex].ready = true;
+                statistics[statistic_index].ready = true;
             }
         }
     }
 
-    void execute(const Query & query, const size_t statisticIndex)
+    void execute(const Query & query, const size_t statistic_index)
     {
-        statistics[statisticIndex].watch_per_query.restart();
+        statistics[statistic_index].watch_per_query.restart();
 
         RemoteBlockInputStream stream(connection, query, &settings, nullptr, Tables() /*, query_processing_stage*/);
 
         Progress progress;
-        stream.setProgressCallback([&progress, &stream, statisticIndex, this](const Progress & value) {
+        stream.setProgressCallback([&progress, &stream, statistic_index, this](const Progress & value) {
             progress.incrementPiecewiseAtomically(value);
 
-            this->checkFulfilledCriterionsAndUpdate(progress, stream, statisticIndex);
+            this->checkFulfilledCriterionsAndUpdate(progress, stream, statistic_index);
         });
 
         stream.readPrefix();
@@ -930,76 +930,76 @@ private:
             ;
         stream.readSuffix();
 
-        statistics[statisticIndex].updateQueryInfo();
-        statistics[statisticIndex].setTotalTime();
+        statistics[statistic_index].updateQueryInfo();
+        statistics[statistic_index].setTotalTime();
     }
 
     void checkFulfilledCriterionsAndUpdate(const Progress & progress,
         RemoteBlockInputStream & stream,
-        const size_t statisticIndex)
+        const size_t statistic_index)
     {
-        statistics[statisticIndex].add(progress.rows, progress.bytes);
+        statistics[statistic_index].add(progress.rows, progress.bytes);
 
-        size_t max_rows_to_read = stopCriterions[statisticIndex].rows_read.value;
-        if (max_rows_to_read && statistics[statisticIndex].rows_read >= max_rows_to_read)
+        size_t max_rows_to_read = stop_criterions[statistic_index].rows_read.value;
+        if (max_rows_to_read && statistics[statistic_index].rows_read >= max_rows_to_read)
         {
-            incFulfilledCriterions(statisticIndex, rows_read);
+            incFulfilledCriterions(statistic_index, rows_read);
         }
 
-        size_t max_bytes_to_read = stopCriterions[statisticIndex].bytes_read_uncompressed.value;
-        if (max_bytes_to_read && statistics[statisticIndex].bytes_read >= max_bytes_to_read)
+        size_t max_bytes_to_read = stop_criterions[statistic_index].bytes_read_uncompressed.value;
+        if (max_bytes_to_read && statistics[statistic_index].bytes_read >= max_bytes_to_read)
         {
-            incFulfilledCriterions(statisticIndex, bytes_read_uncompressed);
+            incFulfilledCriterions(statistic_index, bytes_read_uncompressed);
         }
 
-        if (UInt64 max_timeout_ms = stopCriterions[statisticIndex].timeout_ms.value)
+        if (UInt64 max_timeout_ms = stop_criterions[statistic_index].timeout_ms.value)
         {
             /// cast nanoseconds to ms
-            if ((statistics[statisticIndex].watch.elapsed() / (1000 * 1000)) > max_timeout_ms)
+            if ((statistics[statistic_index].watch.elapsed() / (1000 * 1000)) > max_timeout_ms)
             {
-                incFulfilledCriterions(statisticIndex, timeout_ms);
+                incFulfilledCriterions(statistic_index, timeout_ms);
             }
         }
 
-        size_t min_time_not_changing_for_ms = stopCriterions[statisticIndex].min_time_not_changing_for_ms.value;
+        size_t min_time_not_changing_for_ms = stop_criterions[statistic_index].min_time_not_changing_for_ms.value;
         if (min_time_not_changing_for_ms)
         {
-            size_t min_time_did_not_change_for = statistics[statisticIndex].min_time_watch.elapsed() / (1000 * 1000);
+            size_t min_time_did_not_change_for = statistics[statistic_index].min_time_watch.elapsed() / (1000 * 1000);
 
             if (min_time_did_not_change_for >= min_time_not_changing_for_ms)
             {
-                incFulfilledCriterions(statisticIndex, min_time_not_changing_for_ms);
+                incFulfilledCriterions(statistic_index, min_time_not_changing_for_ms);
             }
         }
 
-        size_t max_speed_not_changing_for_ms = stopCriterions[statisticIndex].max_speed_not_changing_for_ms.value;
+        size_t max_speed_not_changing_for_ms = stop_criterions[statistic_index].max_speed_not_changing_for_ms.value;
         if (max_speed_not_changing_for_ms)
         {
-            UInt64 speed_not_changing_time = statistics[statisticIndex].max_rows_speed_watch.elapsed() / (1000 * 1000);
+            UInt64 speed_not_changing_time = statistics[statistic_index].max_rows_speed_watch.elapsed() / (1000 * 1000);
             if (speed_not_changing_time >= max_speed_not_changing_for_ms)
             {
-                incFulfilledCriterions(statisticIndex, max_speed_not_changing_for_ms);
+                incFulfilledCriterions(statistic_index, max_speed_not_changing_for_ms);
             }
         }
 
-        size_t average_speed_not_changing_for_ms = stopCriterions[statisticIndex].average_speed_not_changing_for_ms.value;
+        size_t average_speed_not_changing_for_ms = stop_criterions[statistic_index].average_speed_not_changing_for_ms.value;
         if (average_speed_not_changing_for_ms)
         {
-            UInt64 speed_not_changing_time = statistics[statisticIndex].avg_rows_speed_watch.elapsed() / (1000 * 1000);
+            UInt64 speed_not_changing_time = statistics[statistic_index].avg_rows_speed_watch.elapsed() / (1000 * 1000);
             if (speed_not_changing_time >= average_speed_not_changing_for_ms)
             {
-                incFulfilledCriterions(statisticIndex, average_speed_not_changing_for_ms);
+                incFulfilledCriterions(statistic_index, average_speed_not_changing_for_ms);
             }
         }
 
-        if (stopCriterions[statisticIndex].number_of_initialized_min
-            && (stopCriterions[statisticIndex].fulfilled_criterions_min >= stopCriterions[statisticIndex].number_of_initialized_min))
+        if (stop_criterions[statistic_index].number_of_initialized_min
+            && (stop_criterions[statistic_index].fulfilled_criterions_min >= stop_criterions[statistic_index].number_of_initialized_min))
         {
             /// All 'min' criterions are fulfilled
             stream.cancel();
         }
 
-        if (stopCriterions[statisticIndex].number_of_initialized_max && stopCriterions[statisticIndex].fulfilled_criterions_max)
+        if (stop_criterions[statistic_index].number_of_initialized_max && stop_criterions[statistic_index].fulfilled_criterions_max)
         {
             /// Some 'max' criterions are fulfilled
             stream.cancel();
@@ -1012,14 +1012,14 @@ private:
         }
     }
 
-    void constructSubstitutions(AbstractConfig & substitutionsView, StringToVector & substitutions)
+    void constructSubstitutions(AbstractConfig & substitutions_view, StringToVector & substitutions)
     {
         Keys xml_substitutions;
-        substitutionsView->keys(xml_substitutions);
+        substitutions_view->keys(xml_substitutions);
 
         for (size_t i = 0; i != xml_substitutions.size(); ++i)
         {
-            const AbstractConfig xml_substitution(substitutionsView->createView("substitution[" + std::to_string(i) + "]"));
+            const AbstractConfig xml_substitution(substitutions_view->createView("substitution[" + std::to_string(i) + "]"));
 
             /// Property values for substitution will be stored in a vector
             /// accessible by property name
@@ -1043,9 +1043,9 @@ private:
         StringToVector::iterator substitutions_last = substitutions.end();
         --substitutions_last;
 
-        std::map<std::string, std::string> substitutionsMap;
+        std::map<std::string, std::string> substitutions_map;
 
-        runThroughAllOptionsAndPush(substitutions_first, substitutions_last, query, queries, substitutionsMap);
+        runThroughAllOptionsAndPush(substitutions_first, substitutions_last, query, queries, substitutions_map);
 
         return queries;
     }
@@ -1056,7 +1056,7 @@ private:
         StringToVector::iterator substitutions_right,
         const std::string & template_query,
         std::vector<std::string> & queries,
-        const StringKeyValue & templateSubstitutionsMap = StringKeyValue())
+        const StringKeyValue & template_substitutions_map = StringKeyValue())
     {
         std::string name = substitutions_left->first;
         std::vector<std::string> values = substitutions_left->second;
@@ -1065,33 +1065,33 @@ private:
         {
             /// Copy query string for each unique permutation
             Query query = template_query;
-            StringKeyValue substitutionsMap = templateSubstitutionsMap;
-            size_t substrPos = 0;
+            StringKeyValue substitutions_map = template_substitutions_map;
+            size_t substr_pos = 0;
 
-            while (substrPos != std::string::npos)
+            while (substr_pos != std::string::npos)
             {
-                substrPos = query.find("{" + name + "}");
+                substr_pos = query.find("{" + name + "}");
 
-                if (substrPos != std::string::npos)
+                if (substr_pos != std::string::npos)
                 {
-                    query.replace(substrPos, 1 + name.length() + 1, value);
+                    query.replace(substr_pos, 1 + name.length() + 1, value);
                 }
             }
 
-            substitutionsMap[name] = value;
+            substitutions_map[name] = value;
 
             /// If we've reached the end of substitution chain
             if (substitutions_left == substitutions_right)
             {
                 queries.push_back(query);
-                substitutionsMaps.push_back(substitutionsMap);
+                substitutions_maps.push_back(substitutions_map);
             }
             else
             {
                 StringToVector::iterator next_it = substitutions_left;
                 ++next_it;
 
-                runThroughAllOptionsAndPush(next_it, substitutions_right, query, queries, substitutionsMap);
+                runThroughAllOptionsAndPush(next_it, substitutions_right, query, queries, substitutions_map);
             }
         }
     }
@@ -1099,7 +1099,7 @@ private:
 public:
     void constructTotalInfo()
     {
-        JSONString jsonOutput;
+        JSONString json_output;
         std::string hostname;
 
         char hostname_buffer[256];
@@ -1108,52 +1108,52 @@ public:
             hostname = std::string(hostname_buffer);
         }
 
-        jsonOutput["hostname"].set(hostname);
-        jsonOutput["Number of CPUs"].set(sysconf(_SC_NPROCESSORS_ONLN));
-        jsonOutput["test_name"].set(testName);
-        jsonOutput["main_metric"].set(main_metric);
+        json_output["hostname"].set(hostname);
+        json_output["Number of CPUs"].set(sysconf(_SC_NPROCESSORS_ONLN));
+        json_output["test_name"].set(test_name);
+        json_output["main_metric"].set(main_metric);
 
         if (substitutions.size())
         {
-            JSONString jsonParameters(2); /// here, 2 is the size of \t padding
+            JSONString json_parameters(2); /// here, 2 is the size of \t padding
 
             for (auto it = substitutions.begin(); it != substitutions.end(); ++it)
             {
                 std::string parameter = it->first;
                 std::vector<std::string> values = it->second;
 
-                std::string arrayString = "[";
+                std::string array_string = "[";
                 for (size_t i = 0; i != values.size(); ++i)
                 {
-                    arrayString += '\"' + values[i] + '\"';
+                    array_string += '\"' + values[i] + '\"';
                     if (i != values.size() - 1)
                     {
-                        arrayString += ", ";
+                        array_string += ", ";
                     }
                 }
-                arrayString += ']';
+                array_string += ']';
 
-                jsonParameters[parameter].set(arrayString);
+                json_parameters[parameter].set(array_string);
             }
 
-            jsonOutput["parameters"].set(jsonParameters);
+            json_output["parameters"].set(json_parameters);
         }
 
-        std::vector<JSONString> runInfos;
-        for (size_t queryIndex = 0; queryIndex < queries.size(); ++queryIndex)
+        std::vector<JSONString> run_infos;
+        for (size_t query_index = 0; query_index < queries.size(); ++query_index)
         {
-            for (size_t numberOfLaunch = 0; numberOfLaunch < statistics.size(); ++numberOfLaunch)
+            for (size_t number_of_launch = 0; number_of_launch < statistics.size(); ++number_of_launch)
             {
-                if (!statistics[numberOfLaunch].ready)
+                if (!statistics[number_of_launch].ready)
                     continue;
 
                 JSONString runJSON;
 
-                if (substitutionsMaps.size())
+                if (substitutions_maps.size())
                 {
                     JSONString parameters(4);
 
-                    for (auto it = substitutionsMaps[queryIndex].begin(); it != substitutionsMaps[queryIndex].end(); ++it)
+                    for (auto it = substitutions_maps[query_index].begin(); it != substitutions_maps[query_index].end(); ++it)
                     {
                         parameters[it->first].set(it->second);
                     }
@@ -1161,64 +1161,64 @@ public:
                     runJSON["parameters"].set(parameters);
                 }
 
-                if (execType == loop)
+                if (exec_type == loop)
                 {
                     /// in seconds
-                    runJSON["min_time"].set(statistics[numberOfLaunch].min_time / double(1000));
+                    runJSON["min_time"].set(statistics[number_of_launch].min_time / double(1000));
 
                     JSONString quantiles(4); /// here, 4 is the size of \t padding
                     for (double percent = 10; percent <= 90; percent += 10)
                     {
-                        quantiles[percent / 100].set(statistics[numberOfLaunch].sampler.quantileInterpolated(percent / 100.0));
+                        quantiles[percent / 100].set(statistics[number_of_launch].sampler.quantileInterpolated(percent / 100.0));
                     }
-                    quantiles[0.95].set(statistics[numberOfLaunch].sampler.quantileInterpolated(95 / 100.0));
-                    quantiles[0.99].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99 / 100.0));
-                    quantiles[0.999].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99.9 / 100.0));
-                    quantiles[0.9999].set(statistics[numberOfLaunch].sampler.quantileInterpolated(99.99 / 100.0));
+                    quantiles[0.95].set(statistics[number_of_launch].sampler.quantileInterpolated(95 / 100.0));
+                    quantiles[0.99].set(statistics[number_of_launch].sampler.quantileInterpolated(99 / 100.0));
+                    quantiles[0.999].set(statistics[number_of_launch].sampler.quantileInterpolated(99.9 / 100.0));
+                    quantiles[0.9999].set(statistics[number_of_launch].sampler.quantileInterpolated(99.99 / 100.0));
 
                     runJSON["quantiles"].set(quantiles);
 
-                    runJSON["total_time"].set(statistics[numberOfLaunch].total_time);
-                    runJSON["queries_per_second"].set(double(statistics[numberOfLaunch].queries) / statistics[numberOfLaunch].total_time);
-                    runJSON["rows_per_second"].set(double(statistics[numberOfLaunch].rows_read) / statistics[numberOfLaunch].total_time);
-                    runJSON["bytes_per_second"].set(double(statistics[numberOfLaunch].bytes_read) / statistics[numberOfLaunch].total_time);
+                    runJSON["total_time"].set(statistics[number_of_launch].total_time);
+                    runJSON["queries_per_second"].set(double(statistics[number_of_launch].queries) / statistics[number_of_launch].total_time);
+                    runJSON["rows_per_second"].set(double(statistics[number_of_launch].rows_read) / statistics[number_of_launch].total_time);
+                    runJSON["bytes_per_second"].set(double(statistics[number_of_launch].bytes_read) / statistics[number_of_launch].total_time);
                 }
                 else
                 {
-                    runJSON["max_rows_per_second"].set(statistics[numberOfLaunch].max_rows_speed);
-                    runJSON["max_bytes_per_second"].set(statistics[numberOfLaunch].max_bytes_speed);
-                    runJSON["avg_rows_per_second"].set(statistics[numberOfLaunch].avg_rows_speed_value);
-                    runJSON["avg_bytes_per_second"].set(statistics[numberOfLaunch].avg_bytes_speed_value);
+                    runJSON["max_rows_per_second"].set(statistics[number_of_launch].max_rows_speed);
+                    runJSON["max_bytes_per_second"].set(statistics[number_of_launch].max_bytes_speed);
+                    runJSON["avg_rows_per_second"].set(statistics[number_of_launch].avg_rows_speed_value);
+                    runJSON["avg_bytes_per_second"].set(statistics[number_of_launch].avg_bytes_speed_value);
                 }
 
-                runInfos.push_back(runJSON);
+                run_infos.push_back(runJSON);
             }
         }
 
-        jsonOutput["runs"].set(runInfos);
+        json_output["runs"].set(run_infos);
 
-        std::cout << std::endl << jsonOutput << std::endl;
+        std::cout << std::endl << json_output << std::endl;
     }
 
     void minOutput(const std::string & main_metric)
     {
-        for (size_t queryIndex = 0; queryIndex < queries.size(); ++queryIndex)
+        for (size_t query_index = 0; query_index < queries.size(); ++query_index)
         {
-            for (size_t numberOfLaunch = 0; numberOfLaunch < times_to_run; ++numberOfLaunch)
+            for (size_t number_of_launch = 0; number_of_launch < times_to_run; ++number_of_launch)
             {
-                std::cout << testName << ", ";
+                std::cout << test_name << ", ";
 
-                if (substitutionsMaps.size())
+                if (substitutions_maps.size())
                 {
-                    for (auto it = substitutionsMaps[queryIndex].begin(); it != substitutionsMaps[queryIndex].end(); ++it)
+                    for (auto it = substitutions_maps[query_index].begin(); it != substitutions_maps[query_index].end(); ++it)
                     {
                         std::cout << it->first << " = " << it->second << ", ";
                     }
                 }
 
-                std::cout << "run " << numberOfLaunch + 1 << ": ";
+                std::cout << "run " << number_of_launch + 1 << ": ";
                 std::cout << main_metric << " = ";
-                std::cout << statistics[numberOfLaunch * queries.size() + queryIndex].getStatisticByName(main_metric);
+                std::cout << statistics[number_of_launch * queries.size() + query_index].getStatisticByName(main_metric);
                 std::cout << std::endl;
             }
         }
