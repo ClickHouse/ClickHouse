@@ -3,6 +3,7 @@
 #include <unistd.h>
 
 #include <boost/program_options.hpp>
+#include <boost/filesystem.hpp>
 #include <sys/stat.h>
 
 #include <AggregateFunctions/ReservoirSampler.h>
@@ -700,13 +701,13 @@ private:
             /// and, if found any settings in test's xml configuration
             /// with the same name, sets its value to settings
             std::vector<std::string>::iterator it;
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT)                             \
-    it = std::find(config_settings.begin(), config_settings.end(), #NAME); \
-    if (it != config_settings.end())                                      \
-        settings.set(#NAME, test_config->getString("settings." #NAME));
-            APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-            APPLY_FOR_LIMITS(EXTRACT_SETTING)
-#undef EXTRACT_SETTING
+            #define EXTRACT_SETTING(TYPE, NAME, DEFAULT)                               \
+                it = std::find(config_settings.begin(), config_settings.end(), #NAME); \
+                if (it != config_settings.end())                                       \
+                    settings.set(#NAME, test_config->getString("settings." #NAME));
+                        APPLY_FOR_SETTINGS(EXTRACT_SETTING)
+                        APPLY_FOR_LIMITS(EXTRACT_SETTING)
+            #undef EXTRACT_SETTING
 
             if (std::find(config_settings.begin(), config_settings.end(), "profile") != config_settings.end())
             {
@@ -1226,6 +1227,20 @@ public:
 };
 }
 
+namespace fs = boost::filesystem;
+void getFilesFromDir(fs::path && dir, std::vector<std::string> & input_files)
+{
+    if (dir.extension().string() == ".xml")
+        std::cerr << "Warning: \"" + dir.string() + "\" is a directory, but has .xml extension" << std::endl;
+
+    fs::directory_iterator end;
+    for (fs::directory_iterator it(dir); it != end; ++it)
+    {
+        const fs::path file = (*it);
+        if (!fs::is_directory(file) && file.extension().string() == ".xml")
+            input_files.push_back(file.string());
+    }
+}
 
 int mainEntryClickhousePerformanceTest(int argc, char ** argv)
 {
@@ -1275,11 +1290,35 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
             return 0;
         }
 
+        Strings input_files;
+
         if (!options.count("input-files"))
         {
-            std::cerr << "No tests files were specified. See --help"
-                      << "\n";
-            return 1;
+            std::cout << "Trying to find tests in current folder" << std::endl;
+
+            getFilesFromDir(fs::path("."), input_files);
+
+            if (input_files.empty())
+                throw Poco::Exception("Did not find any xml files", 1);
+        } else {
+            input_files = options["input-files"].as<Strings>();
+
+            for (const std::string file_name : input_files)
+            {
+                fs::path file(file_name);
+
+                if (!fs::exists(file))
+                    throw Poco::Exception("File \"" + file_name + "\" does not exist", 1);
+
+                if (fs::is_directory(file))
+                {
+                    input_files.erase( std::remove(input_files.begin(), input_files.end(), file_name) , input_files.end());
+                    getFilesFromDir(std::move(file), input_files);
+                } else {
+                    if (file.extension().string() != ".xml")
+                        throw Poco::Exception("File \"" + file_name + "\" does not have .xml extension", 1);
+                }
+            }
         }
 
         Strings tests_tags;
@@ -1326,7 +1365,7 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
             options["user"].as<std::string>(),
             options["password"].as<std::string>(),
             options.count("lite") > 0,
-            options["input-files"].as<Strings>(),
+            input_files,
             tests_tags,
             skip_tags,
             tests_names,
