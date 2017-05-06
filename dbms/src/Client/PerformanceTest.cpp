@@ -753,17 +753,11 @@ private:
             ReadBufferFromFile query_file(filename);
             while (!query_file.eof())
             {
-                size_t bytes = 0;
-                while (query_file.position() + bytes != query_file.buffer().end()
-                       && (query_file.position()[bytes] == '\t' || query_file.position()[bytes] == '\n')) {
-                    std::cout << "shift" << std::endl;
-                    ++bytes;
-                }
-                query_file.position() += bytes;
+                tsv ? readEscapedString(query, query_file, true)
+                    : readString(query, query_file, true);
 
-                tsv ? readEscapedString(query, query_file)
-                    : readString(query, query_file);
-                queries.push_back(query);
+                if (!query.empty())
+                    queries.push_back(query);
             }
         }
 
