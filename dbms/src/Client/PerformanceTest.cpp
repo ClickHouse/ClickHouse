@@ -690,6 +690,8 @@ private:
 
     void runTest(Config & test_config)
     {
+        queries.clear();
+
         test_name = test_config->getString("name");
         std::cout << "Running: " << test_name << "\n";
 
@@ -768,19 +770,14 @@ private:
 
         if (test_config->has("substitutions"))
         {
+            if (queries.size() > 1)
+                throw Poco::Exception("Only one query is allowed when using substitutions", 1);
+
             /// Make "subconfig" of inner xml block
             AbstractConfig substitutions_view(test_config->createView("substitutions"));
             constructSubstitutions(substitutions_view, substitutions);
 
-            queries = formatQueries(query, substitutions);
-        }
-        else
-        {
-            // TODO: probably it will be a good practice to check if
-            // query string has {substitution pattern}, but no substitution field
-            // was found in xml configuration
-
-            queries.push_back(query);
+            queries = formatQueries(queries[0], substitutions);
         }
 
         if (!test_config->has("type"))
