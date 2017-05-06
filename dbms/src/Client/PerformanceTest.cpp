@@ -13,7 +13,7 @@
 #include <Common/ThreadPool.h>
 #include <Core/Types.h>
 #include <DataStreams/RemoteBlockInputStream.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Settings.h>
 
@@ -30,6 +30,8 @@
   * The tool walks through given or default folder in order to find files with
   * tests' descriptions and launches it.
   */
+namespace FS = boost::filesystem;
+
 namespace DB
 {
 namespace ErrorCodes
@@ -727,16 +729,47 @@ private:
 
         Query query;
 
-        if (!test_config->has("query"))
+        if (!test_config->has("query") && !test_config->has("query_file"))
         {
-            throw Poco::Exception("Missing query field in test's config: " + test_name, 1);
+            throw Poco::Exception("Missing query fields in test's config: " + test_name, 1);
         }
 
-        query = test_config->getString("query");
-
-        if (query.empty())
+        if (test_config->has("query") && test_config->has("query_file"))
         {
-            throw Poco::Exception("The query is empty in test's config: " + test_name, 1);
+            throw Poco::Exception("Found both query and query_file fields. Choose only one", 1);
+        }
+
+        if (test_config->has("query"))
+            queries.push_back(test_config->getString("query"));
+
+        if (test_config->has("query_file"))
+        {
+            const std::string filename = test_config->getString("query_file");
+            if (filename.empty())
+                throw Poco::Exception("Empty file name", 1);
+
+            bool tsv = FS::path(filename).extension().string() == ".tsv";
+
+            ReadBufferFromFile query_file(filename);
+            while (!query_file.eof())
+            {
+                size_t bytes = 0;
+                while (query_file.position() + bytes != query_file.buffer().end()
+                       && (query_file.position()[bytes] == '\t' || query_file.position()[bytes] == '\n')) {
+                    std::cout << "shift" << std::endl;
+                    ++bytes;
+                }
+                query_file.position() += bytes;
+
+                tsv ? readEscapedString(query, query_file)
+                    : readString(query, query_file);
+                queries.push_back(query);
+            }
+        }
+
+        if (queries.empty())
+        {
+            throw Poco::Exception("Did not find any query to execute: " + test_name, 1);
         }
 
         if (test_config->has("substitutions"))
@@ -1227,17 +1260,16 @@ public:
 };
 }
 
-namespace fs = boost::filesystem;
-void getFilesFromDir(fs::path && dir, std::vector<std::string> & input_files)
+void getFilesFromDir(FS::path && dir, std::vector<std::string> & input_files)
 {
     if (dir.extension().string() == ".xml")
         std::cerr << "Warning: \"" + dir.string() + "\" is a directory, but has .xml extension" << std::endl;
 
-    fs::directory_iterator end;
-    for (fs::directory_iterator it(dir); it != end; ++it)
+    FS::directory_iterator end;
+    for (FS::directory_iterator it(dir); it != end; ++it)
     {
-        const fs::path file = (*it);
-        if (!fs::is_directory(file) && file.extension().string() == ".xml")
+        const FS::path file = (*it);
+        if (!FS::is_directory(file) && file.extension().string() == ".xml")
             input_files.push_back(file.string());
     }
 }
@@ -1296,27 +1328,27 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
         {
             std::cout << "Trying to find tests in current folder" << std::endl;
 
-            getFilesFromDir(fs::path("."), input_files);
+            getFilesFromDir(FS::path("."), input_files);
 
             if (input_files.empty())
                 throw Poco::Exception("Did not find any xml files", 1);
         } else {
             input_files = options["input-files"].as<Strings>();
 
-            for (const std::string file_name : input_files)
+            for (const std::string filename : input_files)
             {
-                fs::path file(file_name);
+                FS::path file(filename);
 
-                if (!fs::exists(file))
-                    throw Poco::Exception("File \"" + file_name + "\" does not exist", 1);
+                if (!FS::exists(file))
+                    throw Poco::Exception("File \"" + filename + "\" does not exist", 1);
 
-                if (fs::is_directory(file))
+                if (FS::is_directory(file))
                 {
-                    input_files.erase( std::remove(input_files.begin(), input_files.end(), file_name) , input_files.end());
+                    input_files.erase( std::remove(input_files.begin(), input_files.end(), filename) , input_files.end());
                     getFilesFromDir(std::move(file), input_files);
                 } else {
                     if (file.extension().string() != ".xml")
-                        throw Poco::Exception("File \"" + file_name + "\" does not have .xml extension", 1);
+                        throw Poco::Exception("File \"" + filename + "\" does not have .xml extension", 1);
                 }
             }
         }
