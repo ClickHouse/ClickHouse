@@ -132,16 +132,22 @@ inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, const char * begin
 
 
 template <typename Vector>
-void readStringInto(Vector & s, ReadBuffer & buf)
+void readStringInto(Vector & s, ReadBuffer & buf, bool skip_whitespace)
 {
     while (!buf.eof())
     {
         size_t bytes = 0;
+        bool whitespace = false;
         for (; buf.position() + bytes != buf.buffer().end(); ++bytes)
             if (buf.position()[bytes] == '\t' || buf.position()[bytes] == '\n')
+            {
+                whitespace = true;
                 break;
+            }
 
         appendToStringOrVector(s, buf.position(), buf.position() + bytes);
+        if (skip_whitespace && whitespace)
+            bytes += 1;
         buf.position() += bytes;
 
         if (buf.hasPendingData())
@@ -149,13 +155,13 @@ void readStringInto(Vector & s, ReadBuffer & buf)
     }
 }
 
-void readString(String & s, ReadBuffer & buf)
+void readString(String & s, ReadBuffer & buf, bool skip_whitespace)
 {
     s.clear();
-    readStringInto(s, buf);
+    readStringInto(s, buf, skip_whitespace);
 }
 
-template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, bool skip_whitespace);
 
 
 template <typename Vector>
@@ -326,7 +332,7 @@ static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 
 
 template <typename Vector>
-void readEscapedStringInto(Vector & s, ReadBuffer & buf)
+void readEscapedStringInto(Vector & s, ReadBuffer & buf, bool skip_whitespace)
 {
     while (!buf.eof())
     {
@@ -338,22 +344,24 @@ void readEscapedStringInto(Vector & s, ReadBuffer & buf)
         if (!buf.hasPendingData())
             continue;
 
-        if (*buf.position() == '\t' || *buf.position() == '\n')
+        if (*buf.position() == '\t' || *buf.position() == '\n') {
+            buf.position() += 1;
             return;
+        }
 
         if (*buf.position() == '\\')
             parseComplexEscapeSequence(s, buf);
     }
 }
 
-void readEscapedString(String & s, ReadBuffer & buf)
+void readEscapedString(String & s, ReadBuffer & buf, bool skip_whitespace)
 {
     s.clear();
-    readEscapedStringInto(s, buf);
+    readEscapedStringInto(s, buf, skip_whitespace);
 }
 
-template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readEscapedStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
+template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, bool skip_whitespace);
+template void readEscapedStringInto<NullSink>(NullSink & s, ReadBuffer & buf, bool skip_whitespace);
 
 
 template <char quote, typename Vector>

@@ -483,9 +483,9 @@ inline void readFloatText(T & x, ReadBuffer & buf)
 }
 
 /// rough; all until '\n' or '\t'
-void readString(String & s, ReadBuffer & buf);
+void readString(String & s, ReadBuffer & buf, bool skip_whitespace = false);
 
-void readEscapedString(String & s, ReadBuffer & buf);
+void readEscapedString(String & s, ReadBuffer & buf, bool skip_whitespace = false);
 
 void readQuotedString(String & s, ReadBuffer & buf);
 
@@ -514,10 +514,10 @@ void readCSVString(String & s, ReadBuffer & buf, const char delimiter = ',');
 
 /// Read and append result to array of characters.
 template <typename Vector>
-void readStringInto(Vector & s, ReadBuffer & buf);
+void readStringInto(Vector & s, ReadBuffer & buf, bool skip_whitespace = false);
 
 template <typename Vector>
-void readEscapedStringInto(Vector & s, ReadBuffer & buf);
+void readEscapedStringInto(Vector & s, ReadBuffer & buf, bool skip_whitespace = false);
 
 template <typename Vector>
 void readQuotedStringInto(Vector & s, ReadBuffer & buf);
