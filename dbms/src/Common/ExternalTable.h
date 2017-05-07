@@ -25,16 +25,16 @@ namespace ErrorCodes
 }
 
 
-/// Базовый класс содержащий основную информацию о внешней таблице и
-/// основные функции для извлечения этой информации из текстовых полей.
+/// The base class containing the basic information about external table and
+/// basic functions for extracting this information from text fields.
 class BaseExternalTable
 {
 public:
-    std::string file;         /// Файл с данными или '-' если stdin
-    std::string name;         /// Имя таблицы
-    std::string format;     /// Название формата хранения данных
+    std::string file;       /// File with data or '-' if stdin
+    std::string name;       /// The name of the table
+    std::string format;     /// Name of the data storage format
 
-    /// Описание структуры таблицы: (имя столбца, имя типа данных)
+    /// Description of the table structure: (column name, data type name)
     std::vector<std::pair<std::string, std::string> > structure;
 
     std::unique_ptr<ReadBuffer> read_buffer;
@@ -42,10 +42,10 @@ public:
 
     virtual ~BaseExternalTable() {};
 
-    /// Инициализировать read_buffer в зависимости от источника данных. По умолчанию не делает ничего.
+    /// Initialize read_buffer, depending on the data source. By default, does nothing.
     virtual void initReadBuffer() {};
 
-    /// Инициализировать sample_block по структуре таблицы сохраненной в structure
+    /// Initialize sample_block according to the structure of the table stored in the `structure`
     virtual void initSampleBlock(const Context & context)
     {
         const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
@@ -60,7 +60,7 @@ public:
         }
     }
 
-    /// Получить данные таблицы - пару (поток с содержимым таблицы, имя таблицы)
+    /// Get the table data - a pair (a thread with the contents of the table, the name of the table)
     virtual ExternalTableData getData(const Context & context)
     {
         initReadBuffer();
@@ -71,7 +71,7 @@ public:
     }
 
 protected:
-    /// Очистить всю накопленную информацию
+    /// Clear all accumulated information
     void clean()
     {
         name = "";
@@ -82,7 +82,7 @@ protected:
         read_buffer.reset();
     }
 
-    /// Функция для отладочного вывода информации
+    /// Function for debugging information output
     void write()
     {
         std::cerr << "file " << file << std::endl;
@@ -100,7 +100,7 @@ protected:
         return res;
     }
 
-    /// Построить вектор structure по текстовому полю structure
+    /// Construct the `structure` vector from the text field `structure`
     virtual void parseStructureFromStructureField(const std::string & argument)
     {
         std::vector<std::string> vals = split(argument, " ,");
@@ -112,7 +112,7 @@ protected:
             structure.emplace_back(vals[i], vals[i + 1]);
     }
 
-    /// Построить вектор structure по текстовому полю types
+    /// Construct the `structure` vector from the text field `types`
     virtual void parseStructureFromTypesField(const std::string & argument)
     {
         std::vector<std::string> vals = split(argument, " ,");
@@ -123,7 +123,7 @@ protected:
 };
 
 
-/// Парсинг внешей таблицы, используемый в tcp клиенте.
+/// Parsing of external table used in the tcp client.
 class ExternalTable : public BaseExternalTable
 {
 public:
@@ -135,7 +135,7 @@ public:
             read_buffer = std::make_unique<ReadBufferFromFile>(file);
     }
 
-    /// Извлечение параметров из variables_map, которая строится по командной строке клиента
+    /// Extract parameters from variables_map, which is built on the client command line
     ExternalTable(const boost::program_options::variables_map & external_options)
     {
         if (external_options.count("file"))
@@ -162,9 +162,9 @@ public:
     }
 };
 
-/// Парсинг внешей таблицы, используемый при отправке таблиц через http
-/// Функция handlePart будет вызываться для каждой переданной таблицы,
-/// поэтому так же необходимо вызывать clean в конце handlePart.
+/// Parsing of external table used when sending tables via http
+/// The `handlePart` function will be called for each table passed,
+ /// so it's also necessary to call `clean` at the end of the `handlePart`.
 class ExternalTablesHandler : public Poco::Net::PartHandler, BaseExternalTable
 {
 public:
@@ -174,15 +174,15 @@ public:
 
     void handlePart(const Poco::Net::MessageHeader & header, std::istream & stream)
     {
-        /// Буфер инициализируется здесь, а не в виртуальной функции initReadBuffer
+        /// The buffer is initialized here, not in the virtual function initReadBuffer
         read_buffer = std::make_unique<ReadBufferFromIStream>(stream);
 
-        /// Извлекаем коллекцию параметров из MessageHeader
+        /// Retrieve a collection of parameters from MessageHeader
         Poco::Net::NameValueCollection content;
         std::string label;
         Poco::Net::MessageHeader::splitParameters(header.get("Content-Disposition"), label, content);
 
-        /// Получаем параметры
+        /// Get parameters
         name = content.get("name", "_data");
         format = params.get(name + "_format", "TabSeparated");
 
@@ -195,13 +195,13 @@ public:
 
         ExternalTableData data = getData(context);
 
-        /// Создаем таблицу
+        /// Create table
         NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample_block.getColumnsList());
         StoragePtr storage = StorageMemory::create(data.second, columns);
         context.addExternalTable(data.second, storage);
         BlockOutputStreamPtr output = storage->write(ASTPtr(), context.getSettingsRef());
 
-        /// Записываем данные
+        /// Write data
         data.first->readPrefix();
         output->writePrefix();
         while(Block block = data.first->read())
@@ -210,7 +210,7 @@ public:
         output->writeSuffix();
 
         names.push_back(name);
-        /// Подготавливаемся к приему следующего файла, для этого очищаем всю полученную информацию
+        /// We are ready to receive the next file, for this we clear all the information received
         clean();
     }
 

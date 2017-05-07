@@ -1,7 +1,7 @@
 #pragma once
 
-/** Устанавливает имя потока (максимальная длина - 15 байт),
-  *  которое будет видно в ps, gdb, /proc,
-  *  для удобства наблюдений и отладки.
+/** Sets the thread name (maximum length is 15 bytes),
+  *  which will be visible in ps, gdb, /proc,
+  *  for convenience of observation and debugging.
   */
 void setThreadName(const char * name);

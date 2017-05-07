@@ -1,14 +1,14 @@
 #pragma once
 
-/** SipHash - быстрая криптографическая хэш функция для коротких строк.
-  * Взято отсюда: https://www.131002.net/siphash/
+/** SipHash is a fast cryptographic hash function for short strings.
+  * Taken from here: https://www.131002.net/siphash/
   *
-  * Сделано два изменения:
-  * - возвращает 128 бит, а не 64;
-  * - сделано потоковой (можно вычислять по частям).
+  * Two changes are made:
+  * - returns 128 bits, not 64;
+  * - done streaming (can be calculated in parts).
   *
-  * На коротких строках (URL, поисковые фразы) более чем в 3 раза быстрее MD5 от OpenSSL.
-  * (~ 700 МБ/сек., 15 млн. строк в секунду)
+  * On short strings (URL, search phrases) more than 3 times faster than MD5 from OpenSSL.
+  * (~ 700 MB/sec, 15 million strings per second)
   */
 
 #include <cstdint>
@@ -33,16 +33,16 @@ private:
     using u64 = DB::UInt64;
     using u8 = DB::UInt8;
 
-    /// Состояние.
+    /// Status.
     u64 v0;
     u64 v1;
     u64 v2;
     u64 v3;
 
-    /// Сколько байт обработано.
+    /// How many bytes have been processed.
     u64 cnt;
 
-    /// Текущие 8 байт входных данных.
+    /// The current 8 bytes of input data.
     union
     {
         u64 current_word;
@@ -51,7 +51,7 @@ private:
 
     void finalize()
     {
-        /// В последний свободный байт пишем остаток от деления длины на 256.
+        /// In the last free byte, we write the remainder of the division by 256.
         current_bytes[7] = cnt;
 
         v3 ^= current_word;
@@ -67,10 +67,10 @@ private:
     }
 
 public:
-    /// Аргументы - seed.
+    /// Arguments - seed.
     SipHash(u64 k0 = 0, u64 k1 = 0)
     {
-        /// Инициализируем состояние некоторыми случайными байтами и seed-ом.
+        /// Initialize the state with some random bytes and seed.
         v0 = 0x736f6d6570736575ULL ^ k0;
         v1 = 0x646f72616e646f6dULL ^ k1;
         v2 = 0x6c7967656e657261ULL ^ k0;
@@ -84,7 +84,7 @@ public:
     {
         const char * end = data + size;
 
-        /// Дообработаем остаток от предыдущего апдейта, если есть.
+        /// We'll finish to process the remainder of the previous update, if any.
         if (cnt & 7)
         {
             while (cnt & 7 && data < end)
@@ -94,7 +94,7 @@ public:
                 ++cnt;
             }
 
-            /// Если всё ещё не хватает байт до восьмибайтового слова.
+            /// If you still do not have enough bytes to an 8-byte word.
             if (cnt & 7)
                 return;
 
@@ -118,7 +118,7 @@ public:
             data += 8;
         }
 
-        /// Заполняем остаток, которого не хватает до восьмибайтового слова.
+        /// Pad the remainder, which is missing up to an 8-byte word.
         current_word = 0;
         switch (end - data)
         {
@@ -133,7 +133,7 @@ public:
         }
     }
 
-    /// Получить результат в некотором виде. Это можно сделать только один раз!
+    /// Get the result in some form. This can only be done once!
 
     void get128(char * out)
     {
