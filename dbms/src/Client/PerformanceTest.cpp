@@ -681,12 +681,33 @@ private:
         // TODO: here will be tests filter on tags, names, regexp matching, etc.
         // { ... }
 
-        // for now let's launch one test only
         if (tests_configurations.size())
         {
+            Strings outputs;
+
             for (auto & test_config : tests_configurations)
             {
-                runTest(test_config);
+                std::string output = runTest(test_config);
+                if (lite_output)
+                    std::cout << output << std::endl;
+                else
+                    outputs.push_back(output);
+            }
+
+            if (!lite_output && outputs.size())
+            {
+                std::cout << "[" << std::endl;
+
+                for (size_t i = 0; i != outputs.size(); ++i)
+                {
+                    std::cout << outputs[i];
+                    if (i != outputs.size() - 1)
+                        std::cout << ",";
+
+                    std::cout << std::endl;
+                }
+
+                std::cout << "]" << std::endl;
             }
         }
     }
@@ -708,12 +729,12 @@ private:
         }
     }
 
-    void runTest(Config & test_config)
+    std::string runTest(Config & test_config)
     {
         queries.clear();
 
         test_name = test_config->getString("name");
-        std::cout << "Running: " << test_name << "\n";
+        std::cerr << "Running: " << test_name << "\n";
 
         if (test_config->has("settings"))
         {
@@ -850,7 +871,14 @@ private:
         AbstractConfig metrics_view(test_config->createView("metrics"));
         Keys metrics;
         metrics_view->keys(metrics);
-        main_metric = test_config->getString("main_metric", "");
+
+        if (test_config->has("main_metric"))
+        {
+            Keys main_metrics;
+            test_config->keys("main_metric", main_metrics);
+            if (main_metrics.size())
+                main_metric = main_metrics[0];
+        }
 
         if (!main_metric.empty()) {
             if (std::find(metrics.begin(), metrics.end(), main_metric) == metrics.end())
@@ -886,9 +914,9 @@ private:
         }
 
         if (lite_output)
-            minOutput(main_metric);
+            return minOutput(main_metric);
         else
-            constructTotalInfo();
+            return constructTotalInfo();
     }
 
     void checkMetricsInput(const Strings & metrics) const
@@ -1156,7 +1184,7 @@ private:
     }
 
 public:
-    void constructTotalInfo()
+    std::string constructTotalInfo()
     {
         JSONString json_output;
         std::string hostname;
@@ -1256,31 +1284,35 @@ public:
 
         json_output["runs"].set(run_infos);
 
-        std::cout << std::endl << json_output << std::endl;
+        return json_output.constructOutput();
     }
 
-    void minOutput(const std::string & main_metric)
+    std::string minOutput(const std::string & main_metric)
     {
+        std::string output;
+
         for (size_t query_index = 0; query_index < queries.size(); ++query_index)
         {
             for (size_t number_of_launch = 0; number_of_launch < times_to_run; ++number_of_launch)
             {
-                std::cout << test_name << ", ";
+                output += test_name  + ", ";
 
                 if (substitutions_maps.size())
                 {
                     for (auto it = substitutions_maps[query_index].begin(); it != substitutions_maps[query_index].end(); ++it)
                     {
-                        std::cout << it->first << " = " << it->second << ", ";
+                        output += it->first + " = " + it->second + ", ";
                     }
                 }
 
-                std::cout << "run " << number_of_launch + 1 << ": ";
-                std::cout << main_metric << " = ";
-                std::cout << statistics[number_of_launch * queries.size() + query_index].getStatisticByName(main_metric);
-                std::cout << std::endl;
+                output += "run " + std::to_string(number_of_launch + 1) + ": ";
+                output += main_metric + " = ";
+                output += statistics[number_of_launch * queries.size() + query_index].getStatisticByName(main_metric);
+                output += "\n";
             }
         }
+
+        return output;
     }
 };
 }
