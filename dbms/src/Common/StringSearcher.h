@@ -26,8 +26,8 @@ namespace ErrorCodes
 }
 
 
-/** Варианты поиска подстроки в строке.
-  * В большинстве случаев, менее производительные, чем Volnitsky (см. Volnitsky.h).
+/** Variants for finding a substring in a string.
+  * In most cases, less productive than Volnitsky (see Volnitsky.h).
   */
 
 
@@ -693,10 +693,10 @@ using UTF8CaseSensitiveStringSearcher = StringSearcher<true, false>;
 using UTF8CaseInsensitiveStringSearcher = StringSearcher<false, false>;
 
 
-/** Используют функции из libc.
-  * Имеет смысл использовать для коротких строк, когда требуется дешёвая инициализация.
-  * Нет варианта для регистронезависимого поиска UTF-8 строк.
-  * Требуется, чтобы за концом строк был нулевой байт.
+/** Uses functions from libc.
+  * It makes sense to use short strings when cheap initialization is required.
+  * There is no option for register-independent search for UTF-8 strings.
+  * It is required that the end of the lines be zero byte.
   */
 
 struct LibCASCIICaseSensitiveStringSearcher

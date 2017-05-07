@@ -15,12 +15,12 @@ void OptimizedRegularExpressionImpl<b>::analyze(
 	bool & is_trivial,
 	bool & required_substring_is_prefix)
 {
-	/** Выражение тривиально, если в нём все метасимволы эскейплены.
-	  * Безальтернативная строка - это
-	  *  строка вне скобок,
-	  *  в которой все метасимволы эскейплены,
-	  *  а также если вне скобок нет '|',
-	  *  а также избегаются подстроки вида http:// или www.
+	/** The expression is trivial if all the metacharacters in it are escaped.
+ 	  * The non-alternative string is
+ 	  *  a string outside parentheses,
+ 	  *  in which all metacharacters are escaped,
+ 	  *  and also if there are no '|' outside the brackets,
+ 	  *  and also avoid substrings of the form `http://` or `www`.
 	  */
 	const char * begin = regexp.data();
 	const char * pos = begin;
@@ -31,7 +31,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(
 	required_substring.clear();
 	bool has_alternative_on_depth_0 = false;
 
-	/// Подстрока с позицией.
+ 	/// Substring with a position.
 	typedef std::pair<std::string, size_t> Substring;
 
 	typedef std::vector<Substring> Substrings;
@@ -66,7 +66,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(
 						}
 						break;
 					default:
-						/// все остальные escape-последовательности не поддерживаем
+ 						/// all other escape sequences are not supported
 						is_trivial = false;
 						if (!last_substring->first.empty())
 						{
@@ -157,7 +157,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(
 				++pos;
 				break;
 
-			/// Квантификаторы, допускающие нулевое количество.
+ 			/// Quantifiers that allow a zero number.
 			case '{':
 				in_curly_braces = true;
 			case '?': case '*':
@@ -179,7 +179,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(
 				++pos;
 				break;
 
-			ordinary:	/// Обычный, не заэскейпленный символ.
+ 			ordinary:   /// Normal, not escaped symbol.
 			default:
 				if (depth == 0 && !in_curly_braces && !in_square_braces)
 				{
@@ -199,8 +199,8 @@ void OptimizedRegularExpressionImpl<b>::analyze(
 	{
 		if (!has_alternative_on_depth_0)
 		{
-			/** Выберем безальтернативную подстроку максимальной длины, среди префиксов,
-			  *  или безальтернативную подстроку максимальной длины.
+			/** We choose the non-alternative substring of the maximum length, among the prefixes,
+			  *  or a non-alternative substring of maximum length.
 			  */
 			size_t max_length = 0;
 			Substrings::const_iterator candidate_it = trivial_substrings.begin();
@@ -208,7 +208,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(
 			{
 				if (((it->second == 0 && candidate_it->second != 0)
 						|| ((it->second == 0) == (candidate_it->second == 0) && it->first.size() > max_length))
-					/// Тюнинг для предметной области
+ 					/// Tuning for the domain
 					&& (it->first.size() > strlen("://") || strncmp(it->first.data(), "://", strlen("://")))
 					&& (it->first.size() > strlen("http://") || strncmp(it->first.data(), "http", strlen("http")))
 					&& (it->first.size() > strlen("www.") || strncmp(it->first.data(), "www", strlen("www")))
@@ -246,7 +246,7 @@ OptimizedRegularExpressionImpl<b>::OptimizedRegularExpressionImpl(const std::str
 {
 	analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix);
 
-	/// Поддерживаются 3 опции
+ 	/// 3 options are supported
 	if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
 		throw Poco::Exception("OptimizedRegularExpression: Unsupported option.");
 
@@ -257,7 +257,7 @@ OptimizedRegularExpressionImpl<b>::OptimizedRegularExpressionImpl(const std::str
 	number_of_subpatterns = 0;
 	if (!is_trivial)
 	{
-		/// Скомпилируем регулярное выражение re2.
+ 		/// Compile the re2 regular expression.
 		typename RegexType::Options options;
 
 		if (is_case_insensitive)

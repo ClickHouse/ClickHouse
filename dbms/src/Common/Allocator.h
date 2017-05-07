@@ -3,13 +3,13 @@
 #include <string.h>
 
 
-/** Отвечает за выделение/освобождение памяти. Используется, например, в PODArray, Arena.
-  * Также используется в хэш-таблицах.
-  * Интерфейс отличается от std::allocator
-  * - наличием метода realloc, который для больших кусков памяти использует mremap;
-  * - передачей размера в метод free;
-  * - наличием аргумента alignment;
-  * - возможностью зануления памяти (используется в хэш-таблицах);
+/** Responsible for allocating / freeing memory. Used, for example, in PODArray, Arena.
+  * Also used in hash tables.
+  * The interface is different from std::allocator
+  * - the presence of the method realloc, which for large chunks of memory uses mremap;
+  * - passing the size into the `free` method;
+  * - by the presence of the `alignment` argument;
+  * - the possibility of zeroing memory (used in hash tables);
   */
 template <bool clear_memory_>
 class Allocator
@@ -38,9 +38,9 @@ protected:
 };
 
 
-/** При использовании AllocatorWithStackMemory, размещённом на стеке,
-  *  GCC 4.9 ошибочно делает предположение, что мы можем вызывать free от указателя на стек.
-  * На самом деле, комбинация условий внутри AllocatorWithStackMemory этого не допускает.
+/** When using AllocatorWithStackMemory, located on the stack,
+  *  GCC 4.9 mistakenly assumes that we can call `free` from a pointer to the stack.
+  * In fact, the combination of conditions inside AllocatorWithStackMemory does not allow this.
   */
 #if !__clang__
 #pragma GCC diagnostic push

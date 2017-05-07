@@ -3,12 +3,12 @@
 #include <Core/Types.h>
 
 
-/** Хэш функции, которые лучше чем тривиальная функция std::hash.
-  * (при агрегации по идентификатору посетителя, прирост производительности более чем в 5 раз)
+/** Hash functions that are better than the trivial function std::hash.
+  * (when aggregated by the visitor ID, the performance increase is more than 5 times)
   */
 
-/** Взято из MurmurHash.
-  * Быстрее, чем intHash32 при вставке в хэш-таблицу UInt64 -> UInt64, где ключ - идентификатор посетителя.
+/** Taken from MurmurHash.
+  * Faster than intHash32 when inserting into the hash table UInt64 -> UInt64, where the key is the visitor ID.
   */
 inline DB::UInt64 intHash64(DB::UInt64 x)
 {
@@ -21,12 +21,12 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
     return x;
 }
 
-/** CRC32C является не очень качественной в роли хэш функции,
-  *  согласно avalanche и bit independence тестам, а также малым количеством бит,
-  *  но может вести себя хорошо при использовании в хэш-таблицах,
-  *  за счёт высокой скорости (latency 3 + 1 такт, througput 1 такт).
-  * Работает только при поддержке SSE 4.2.
-  * Используется asm вместо интринсика, чтобы не обязательно было собирать весь проект с -msse4.
+/** CRC32C is not very high-quality as a hash function,
+  *  according to avalanche and bit independence tests, as well as a small number of bits,
+  *  but can behave well when used in hash tables,
+  *  due to high speed (latency 3 + 1 clock cycle, throughput 1 clock cycle).
+  * Works only with SSE 4.2 support.
+  * Used asm instead of intrinsics, so you do not have to build the entire project with -msse4.
   */
 inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 {
@@ -35,7 +35,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x)
     asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x));
     return crc;
 #else
-    /// На других платформах используем не обязательно CRC32. NOTE Это может сбить с толку.
+    /// On other platforms we do not need CRC32. NOTE This can be confusing.
     return intHash64(x);
 #endif
 }
@@ -117,7 +117,7 @@ DEFINE_HASH(DB::Float64)
 #undef DEFINE_HASH
 
 
-/// Разумно использовать для UInt8, UInt16 при достаточном размере хэш-таблицы.
+/// It is reasonable to use for UInt8, UInt16 with sufficient hash table size.
 struct TrivialHash
 {
     template <typename T>
@@ -128,17 +128,17 @@ struct TrivialHash
 };
 
 
-/** Сравнительно неплохая некриптографическая хэш функция из UInt64 в UInt32.
-  * Но хуже (и по качеству и по скорости), чем просто срезка intHash64.
-  * Взята отсюда: http://www.concentric.net/~ttwang/tech/inthash.htm
+/** A relatively good non-cryptic hash function from UInt64 to UInt32.
+  * But worse (both in quality and speed) than just cutting intHash64.
+  * Taken from here: http://www.concentric.net/~ttwang/tech/inthash.htm
   *
-  * Немного изменена по сравнению с функцией по ссылке: сдвиги вправо случайно заменены на цикличесвие сдвиги вправо.
-  * Это изменение никак не повлияло на результаты тестов smhasher.
+  * Slightly changed compared to the function by link: shifts to the right are accidentally replaced by a cyclic shift to the right.
+  * This change did not affect the smhasher test results.
   *
-  * Рекомендуется для разных задач использовать разные salt.
-  * А то был случай, что в БД значения сортировались по хэшу (для некачественного псевдослучайного разбрасывания),
-  *  а в другом месте, в агрегатной функции, в хэш таблице использовался такой же хэш,
-  *  в результате чего, эта агрегатная функция чудовищно тормозила из-за коллизий.
+  * It is recommended to use different salt for different tasks.
+  * That was the case that in the database values ​​were sorted by hash (for low-quality pseudo-random spread),
+  *  and in another place, in the aggregate function, the same hash was used in the hash table,
+  *  as a result, this aggregate function was monstrously slowed due to collisions.
   */
 template <DB::UInt64 salt>
 inline DB::UInt32 intHash32(DB::UInt64 key)
@@ -156,7 +156,7 @@ inline DB::UInt32 intHash32(DB::UInt64 key)
 }
 
 
-/// Для контейнеров.
+/// For containers.
 template <typename T, DB::UInt64 salt = 0>
 struct IntHash32
 {
