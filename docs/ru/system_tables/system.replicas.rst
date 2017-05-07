@@ -37,6 +37,7 @@ system.replicas
 
 Столбцы:
 ::
+
   database:           имя БД
   table:              имя таблицы
   engine:             имя движка таблицы

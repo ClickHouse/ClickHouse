@@ -28,7 +28,7 @@ min(x)
 Вычисляет минимум.
 
 max(x)
------
+------
 Вычисляет максимум.
 
 argMin(arg, val)
@@ -237,6 +237,7 @@ sequenceMatch(pattern)(time, cond1, cond2, ...)
 
 Это вырожденный пример. Его можно записать с помощью других агрегатных функций:
 ::
+
   minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
 
 Но в более сложных случаях, такого решения нет.
