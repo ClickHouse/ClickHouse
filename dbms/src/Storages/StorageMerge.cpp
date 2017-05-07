@@ -181,7 +181,10 @@ BlockInputStreams StorageMerge::read(
             /// Subordinary tables could have different but convertible types, like numeric types of different width.
             /// We must return streams with structure equals to structure of Merge table. 
             for (auto & stream : source_streams)
+            {
+                /// will throw if some columns not convertible
                 stream = std::make_shared<CastTypeBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock());
+            }
         }
         else
         {
@@ -207,7 +210,10 @@ BlockInputStreams StorageMerge::read(
 
                 auto stream = streams.empty() ? std::make_shared<NullBlockInputStream>() : streams.front();
                 if (!streams.empty())
+                {
+                    /// will throw if some columns not convertible
                     stream = std::make_shared<CastTypeBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock());
+                }
                 return stream;
             }));
         }

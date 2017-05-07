@@ -2,6 +2,7 @@
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 
+#include <common/logger_useful.h> 
 #include <experimental/optional>
 #include <vector>
 
@@ -34,6 +35,7 @@ private:
     const Context & context;
     std::vector<std::experimental::optional<NameAndTypePair>> cast_types;
     std::vector<std::shared_ptr<IFunction>> cast_functions;  /// Used to perform type conversions.
+    Logger * log = &Logger::get("CastTypeBlockInputStream");
 };
 
 }

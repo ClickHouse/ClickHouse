@@ -104,7 +104,6 @@ struct ContextShared
     String flags_path;                                        ///
     Databases databases;                                    /// List of databases and tables in them.
     TableFunctionFactory table_function_factory;            /// Table functions.
-    AggregateFunctionFactory aggregate_function_factory;    /// Aggregate functions.
     FormatFactory format_factory;                           /// Formats.
     mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaeis. Have lazy initialization.
     mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
@@ -211,7 +210,6 @@ Context::~Context() = default;
 
 
 const TableFunctionFactory & Context::getTableFunctionFactory() const            { return shared->table_function_factory; }
-const AggregateFunctionFactory & Context::getAggregateFunctionFactory() const    { return shared->aggregate_function_factory; }
 InterserverIOHandler & Context::getInterserverIOHandler()                        { return shared->interserver_io_handler; }
 
 std::unique_lock<Poco::Mutex> Context::getLock() const

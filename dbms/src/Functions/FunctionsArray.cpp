@@ -2818,7 +2818,7 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
             }
         }
 
-        aggregate_function = AggregateFunctionFactory().get(aggregate_function_name, argument_types);
+        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types);
 
         if (has_parameters)
             aggregate_function->setParameters(params_row);

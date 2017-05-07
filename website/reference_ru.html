@@ -6534,6 +6534,17 @@ cond1, cond2 ... - от одного до 32 аргументов типа UInt8
 Задача: показывать в отчёте только поисковые фразы, по которым было хотя бы 5 уникальных посетителей.
 Решение: пишем в запросе %%GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) &gt;= 5%%
 
+==topK(N)(x)==
+
+Returns the K most frequent argument values as an array sorted by their relative frequency.
+
+Recommended for use with small Ns, up to 10. The maximum N value is 65536.
+
+For the state of an aggregate function, it uses approximately the amount of memory equal to K * (the size of the key + 16) for counters, and 48 * N bytes for alpha value map.
+
+Usage example:
+Problem: Generate a report that shows top 5 frequent queries.
+Solution: Write in the query <span class="inline-example">SELECT topK(5)(SearchPhrase)</span>
 
 ==Комбинаторы агрегатных функций==
 
@@ -7173,6 +7184,12 @@ dictGetT('dict_name', 'attr_name', id, date)
 ==output_format_json_quote_64bit_integers==
 
 Если значение истинно, то при использовании JSON* форматов UInt64 и Int64 числа выводятся в кавычках (из соображений совместимости с большинством реализаций JavaScript), иначе - без кавычек.
+
+==input_format_allow_errors_num==
+==input_format_allow_errors_ratio==
+
+Максимальное количество ошибок при чтении из текстовых форматов (таких как CSV или TSV).
+В случае ошибки, если оба параметра не равны нулю и количество ошибок меньше соответствующего значения, ошибочная строка игнорируется и чтение продолжается со следующей строки.
 
 
 ==Ограничения на сложность запроса==
