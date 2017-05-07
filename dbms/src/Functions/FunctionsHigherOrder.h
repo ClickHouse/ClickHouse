@@ -642,6 +642,56 @@ public:
         arguments[0] = std::make_shared<DataTypeExpression>(nested_types);
     }
 
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        size_t min_args = Impl::needExpression() ? 2 : 1;
+        if (arguments.size() < min_args)
+            throw Exception("Function " + getName() + " needs at least "
+                + toString(min_args) + " argument; passed "
+                + toString(arguments.size()) + ".",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if (arguments.size() == 1)
+        {
+            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+
+            if (!array_type)
+                throw Exception("The only argument for function " + getName() + " must be array. Found "
+                    + arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            DataTypePtr nested_type = array_type->getNestedType();
+
+            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(&*nested_type))
+                throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
+                    + arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            return Impl::getReturnType(nested_type, nested_type);
+        }
+        else
+        {
+            if (arguments.size() > 2 && Impl::needOneArray())
+                throw Exception("Function " + getName() + " needs one array argument.",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+            const DataTypeExpression * expression = typeid_cast<const DataTypeExpression *>(arguments[0].get());
+
+            if (!expression)
+                throw Exception("Type of first argument for function " + getName() + " must be an expression.",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            /// Типы остальных аргументов уже проверены в getLambdaArgumentTypes.
+
+            DataTypePtr return_type = expression->getReturnType();
+            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(&*return_type))
+                throw Exception("Expression for function " + getName() + " must return UInt8, found "
+                    + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            const DataTypeArray * first_array_type = typeid_cast<const DataTypeArray *>(arguments[1].get());
+
+            return Impl::getReturnType(return_type, first_array_type->getNestedType());
+        }
+    }
+
     void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
                                         DataTypePtr & out_return_type,
                                         ExpressionActions::Actions & out_prerequisites) override

@@ -12,7 +12,7 @@ namespace DB
 namespace DataPartsExchange
 {
 
-/** Сервис для отправки кусков из таблицы *MergeTree.
+/** Service for sending parts from the table *MergeTree.
   */
 class Service final : public InterserverIOEndpoint
 {
@@ -24,7 +24,7 @@ public:
     Service & operator=(const Service &) = delete;
 
     std::string getId(const std::string & node_id) const override;
-    void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out) override;
+    void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) override;
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
@@ -36,7 +36,7 @@ private:
     Logger * log;
 };
 
-/** Клиент для получения кусков из таблицы *MergeTree.
+/** Client for getting the parts from the table *MergeTree.
   */
 class Fetcher final
 {
@@ -46,7 +46,7 @@ public:
     Fetcher(const Fetcher &) = delete;
     Fetcher & operator=(const Fetcher &) = delete;
 
-    /// Скачивает кусок в tmp_директорию. Если to_detached - скачивает в директорию detached.
+    /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
     MergeTreeData::MutableDataPartPtr fetchPart(
         const String & part_name,
         const String & replica_path,
@@ -54,8 +54,8 @@ public:
         int port,
         bool to_detached = false);
 
-    /// Метод для перешардирования. Скачивает шардированный кусок
-    /// из заданного шарда в папку to_detached.
+    /// Method for resharding. Downloads a sharded part
+    /// from the specified shard to the `to_detached` folder.
     MergeTreeData::MutableDataPartPtr fetchShardedPart(
         const InterserverIOEndpointLocation & location,
         const String & part_name,
@@ -74,7 +74,7 @@ private:
 
 private:
     MergeTreeData & data;
-    /// Нужно остановить передачу данных.
+    /// You need to stop the data transfer.
     std::atomic<bool> is_cancelled {false};
     Logger * log;
 };

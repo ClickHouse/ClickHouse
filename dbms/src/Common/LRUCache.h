@@ -73,8 +73,8 @@ public:
     /// set of concurrent threads will then try to call its load_func etc.
     ///
     /// Returns std::pair of the cached value and a bool indicating whether the value was produced during this call.
-    template<typename LoadFunc>
-    std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc&& load_func)
+    template <typename LoadFunc>
+    std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
     {
         InsertTokenHolder token_holder;
         {

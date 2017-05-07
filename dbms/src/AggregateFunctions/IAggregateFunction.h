@@ -1,15 +1,29 @@
 #pragma once
 
+#include <cstddef>
 #include <memory>
+#include <vector>
+#include <type_traits>
 
-#include <Core/Row.h>
-#include <DataTypes/IDataType.h>
-#include <Common/typeid_cast.h>
-#include <Common/Arena.h>
+#include <Core/Types.h>
+#include <Core/Field.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
+
+class Arena;
+class ReadBuffer;
+class WriteBuffer;
+class IColumn;
+class IDataType;
+
+using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypes = std::vector<DataTypePtr>;
+
+using AggregateDataPtr = char *;
+using ConstAggregateDataPtr = const char *;
 
 namespace ErrorCodes
 {
@@ -18,9 +32,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
-
-using AggregateDataPtr = char *;
-using ConstAggregateDataPtr = const char *;
 
 
 /** Aggregate functions interface.
@@ -126,8 +137,8 @@ class IAggregateFunctionHelper : public IAggregateFunction
 protected:
     using Data = T;
 
-    static Data & data(AggregateDataPtr place)                 { return *reinterpret_cast<Data*>(place); }
-    static const Data & data(ConstAggregateDataPtr place)     { return *reinterpret_cast<const Data*>(place); }
+    static Data & data(AggregateDataPtr place)            { return *reinterpret_cast<Data*>(place); }
+    static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
 public:
     void create(AggregateDataPtr place) const override
@@ -142,7 +153,7 @@ public:
 
     bool hasTrivialDestructor() const override
     {
-        return __has_trivial_destructor(Data);
+        return std::is_trivially_destructible<Data>::value;
     }
 
     size_t sizeOfData() const override
@@ -153,7 +164,7 @@ public:
     /// NOTE: Currently not used (structures with aggregation state are put without alignment).
     size_t alignOfData() const override
     {
-        return __alignof__(Data);
+        return alignof(Data);
     }
 };
 

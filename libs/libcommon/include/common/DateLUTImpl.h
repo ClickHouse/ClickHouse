@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/Common.h>
+#include <common/Types.h>
 #include <common/singleton.h>
 #include <common/likely.h>
 #include <common/strong_typedef.h>

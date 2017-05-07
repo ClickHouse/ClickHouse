@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/escapeForFileName.h>
+#include <Common/MemoryTracker.h>
 #include <IO/CachedCompressedReadBuffer.h>
 #include <IO/CompressedReadBufferFromFile.h>
 #include <Columns/ColumnArray.h>

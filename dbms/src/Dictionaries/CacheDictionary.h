@@ -4,6 +4,7 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Common/ArenaWithFreeLists.h>
+#include <Common/CurrentMetrics.h>
 #include <Columns/ColumnString.h>
 #include <ext/bit_cast.hpp>
 #include <Poco/RWLock.h>
@@ -15,24 +16,6 @@
 #include <tuple>
 #include <random>
 
-namespace ProfileEvents
-{
-    extern const Event DictCacheKeysRequested;
-    extern const Event DictCacheKeysRequestedMiss;
-    extern const Event DictCacheKeysRequestedFound;
-    extern const Event DictCacheKeysExpired;
-    extern const Event DictCacheKeysNotFound;
-    extern const Event DictCacheKeysHit;
-    extern const Event DictCacheRequestTimeNs;
-    extern const Event DictCacheRequests;
-    extern const Event DictCacheLockWriteNs;
-    extern const Event DictCacheLockReadNs;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric DictCacheRequests;
-}
 
 namespace DB
 {

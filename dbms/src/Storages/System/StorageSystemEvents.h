@@ -10,7 +10,7 @@ namespace DB
 class Context;
 
 
-/** Реализует системную таблицу events, которая позволяет получить информацию для профайлинга.
+/** Implements `events` system table, which allows you to obtain information for profiling.
   */
 class StorageSystemEvents : private ext::shared_ptr_helper<StorageSystemEvents>, public IStorage
 {

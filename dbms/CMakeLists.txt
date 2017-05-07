@@ -22,7 +22,6 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
-include_directories (${ODBC_INCLUDE_DIRECTORIES})
 include_directories (${ClickHouse_BINARY_DIR}/dbms/src)
 
 if (NOT NO_WERROR)
@@ -42,34 +41,61 @@ set(dbms_headers)
 set(dbms_sources)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
-add_headers_and_sources(dbms Functions)
-add_headers_and_sources(dbms Functions/Conditional)
-add_headers_and_sources(dbms TableFunctions)
-add_headers_and_sources(dbms Parsers)
-add_headers_and_sources(dbms Analyzers)
-add_headers_and_sources(dbms AggregateFunctions)
-add_headers_and_sources(dbms Core)
-add_headers_and_sources(dbms DataStreams)
-add_headers_and_sources(dbms DataTypes)
-add_headers_and_sources(dbms Databases)
-add_headers_and_sources(dbms DataBases/Distributed)
-add_headers_and_sources(dbms Dictionaries)
-add_headers_and_sources(dbms Dictionaries/Embedded)
-add_headers_and_sources(dbms Interpreters)
-add_headers_and_sources(dbms Interpreters/ClusterProxy)
-add_headers_and_sources(dbms Common)
-add_headers_and_sources(dbms Common/HashTable)
-add_headers_and_sources(dbms IO)
-add_headers_and_sources(dbms Columns)
-add_headers_and_sources(dbms Storages)
-add_headers_and_sources(dbms Storages/Distributed)
-add_headers_and_sources(dbms Storages/MergeTree)
-add_headers_and_sources(dbms Core)
-add_headers_and_sources(dbms Client)
-add_headers_only(dbms Server)
+add_headers_and_sources(dbms src/TableFunctions)
+add_headers_and_sources(dbms src/Parsers)
+add_headers_and_sources(dbms src/Analyzers)
+add_headers_and_sources(dbms src/Core)
+add_headers_and_sources(dbms src/DataStreams)
+add_headers_and_sources(dbms src/DataTypes)
+add_headers_and_sources(dbms src/Databases)
+add_headers_and_sources(dbms src/DataBases/Distributed)
+add_headers_and_sources(dbms src/Dictionaries)
+add_headers_and_sources(dbms src/Dictionaries/Embedded)
+add_headers_and_sources(dbms src/Interpreters)
+add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
+add_headers_and_sources(dbms src/Common)
+add_headers_and_sources(dbms src/Common/HashTable)
+add_headers_and_sources(dbms src/IO)
+add_headers_and_sources(dbms src/Columns)
+add_headers_and_sources(dbms src/Storages)
+add_headers_and_sources(dbms src/Storages/Distributed)
+add_headers_and_sources(dbms src/Storages/MergeTree)
+add_headers_and_sources(dbms src/Core)
+add_headers_and_sources(dbms src/Client)
+add_headers_only(dbms src/Server)
 
 list (APPEND dbms_sources ${CONFIG_BUILD})
 list (APPEND dbms_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
+
+list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/DataTypeTraits.cpp)
+list (APPEND dbms_headers src/Functions/IFunction.h   src/Functions/FunctionFactory.h   src/Functions/DataTypeTraits.h)
+list (APPEND dbms_sources
+    src/AggregateFunctions/AggregateFunctionFactory.cpp
+    src/AggregateFunctions/AggregateFunctionState.cpp
+    src/AggregateFunctions/AggregateFunctionFactory.cpp
+    src/AggregateFunctions/AggregateFunctionState.cpp
+    src/AggregateFunctions/AggregateFunctionArray.cpp
+    src/AggregateFunctions/AggregateFunctionNull.cpp
+    src/AggregateFunctions/AggregateFunctionForEach.cpp
+    src/AggregateFunctions/AggregateFunctionIf.cpp
+    src/AggregateFunctions/AggregateFunctionMerge.cpp
+    src/AggregateFunctions/AggregateFunctionCount.cpp
+)
+
+list (APPEND dbms_headers
+    src/AggregateFunctions/IAggregateFunction.h
+    src/AggregateFunctions/AggregateFunctionFactory.h
+    src/AggregateFunctions/AggregateFunctionState.h
+    src/AggregateFunctions/AggregateFunctionFactory.h
+    src/AggregateFunctions/AggregateFunctionState.h
+    src/AggregateFunctions/AggregateFunctionArray.h
+    src/AggregateFunctions/AggregateFunctionNull.h
+    src/AggregateFunctions/AggregateFunctionForEach.h
+    src/AggregateFunctions/AggregateFunctionIf.h
+    src/AggregateFunctions/AggregateFunctionMerge.h
+    src/AggregateFunctions/AggregateFunctionCount.h
+)
+
 
 list(REMOVE_ITEM dbms_sources
     src/Client/Client.cpp
@@ -93,7 +119,7 @@ if (MAKE_STATIC_LIBRARIES)
 else ()
     add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
     set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse)
-    install (TARGETS dbms LIBRARY DESTINATION lib COMPONENT clickhouse)
+    install (TARGETS dbms LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
 endif ()
 
 
@@ -146,7 +172,7 @@ endif()
 target_link_libraries (dbms
     common
     zkutil
-    mysqlxx
+    ${MYSQLXX_LIBRARY}
     cityhash farmhash metrohash
     ${LZ4_LIBRARY}
     ${ZSTD_LIBRARY}
@@ -173,9 +199,13 @@ if (Poco_NetSSL_FOUND)
     target_link_libraries (dbms ${Poco_NetSSL_LIBRARY})
 endif()
 
+target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
+
+if (USE_ICU)
+    target_link_libraries (dbms ${ICU_LIBS})
+endif ()
+
 target_link_libraries (dbms
-    ${Poco_Foundation_LIBRARY}
-    ${ICU_LIBS}
     ${PLATFORM_LIBS}
     ${CMAKE_DL_LIBS}
     ${LTDL_LIB}
@@ -187,9 +217,10 @@ target_include_directories (dbms
 )
 
 if (ENABLE_TESTS)
+    add_subdirectory (tests)
     # attach all dbms gtest sources
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
     target_link_libraries(unit_tests_dbms gtest_main dbms)
     add_check(unit_tests_dbms)
-endif()
+endif ()

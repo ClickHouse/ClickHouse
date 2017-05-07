@@ -3,6 +3,7 @@
 #include <Common/HashTable/SmallTable.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogCounter.h>
+#include <Common/MemoryTracker.h>
 #include <Core/Defines.h>
 
 
@@ -235,8 +236,7 @@ private:
         medium = tmp_medium.release();
         setContainerType(details::ContainerType::MEDIUM);
 
-        if (current_memory_tracker)
-            current_memory_tracker->alloc(sizeof(medium));
+        CurrentMemoryTracker::alloc(sizeof(medium));
     }
 
     void toLarge()
@@ -264,8 +264,7 @@ private:
         large = tmp_large.release();
         setContainerType(details::ContainerType::LARGE);
 
-        if (current_memory_tracker)
-            current_memory_tracker->alloc(sizeof(large));
+        CurrentMemoryTracker::alloc(sizeof(large));
 
     }
 
@@ -280,16 +279,14 @@ private:
             delete medium;
             medium = nullptr;
 
-            if (current_memory_tracker)
-                current_memory_tracker->free(sizeof(medium));
+            CurrentMemoryTracker::free(sizeof(medium));
         }
         else if (container_type == details::ContainerType::LARGE)
         {
             delete large;
             large = nullptr;
 
-            if (current_memory_tracker)
-                current_memory_tracker->free(sizeof(large));
+            CurrentMemoryTracker::free(sizeof(large));
         }
     }
 

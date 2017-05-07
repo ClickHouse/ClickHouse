@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/// Позволяет узнать, куда отправлять запросы, чтобы попасть на реплику.
+/// Lets you know where to send requests to get to the replica.
 
 struct ReplicatedMergeTreeAddress
 {

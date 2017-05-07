@@ -104,7 +104,6 @@ struct ContextShared
     String flags_path;                                        ///
     Databases databases;                                    /// List of databases and tables in them.
     TableFunctionFactory table_function_factory;            /// Table functions.
-    AggregateFunctionFactory aggregate_function_factory;    /// Aggregate functions.
     FormatFactory format_factory;                           /// Formats.
     mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaeis. Have lazy initialization.
     mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
@@ -211,7 +210,6 @@ Context::~Context() = default;
 
 
 const TableFunctionFactory & Context::getTableFunctionFactory() const            { return shared->table_function_factory; }
-const AggregateFunctionFactory & Context::getAggregateFunctionFactory() const    { return shared->aggregate_function_factory; }
 InterserverIOHandler & Context::getInterserverIOHandler()                        { return shared->interserver_io_handler; }
 
 std::unique_lock<Poco::Mutex> Context::getLock() const
@@ -1059,8 +1057,8 @@ QueryLog & Context::getQueryLog()
 
         String database = config.getString("query_log.database", "system");
         String table = config.getString("query_log.table", "query_log");
-        size_t flush_interval_milliseconds = parse<size_t>(
-            config.getString("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
+        size_t flush_interval_milliseconds = config.getUInt64(
+                "query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
 
         shared->query_log = std::make_unique<QueryLog>(
             *global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
@@ -1088,8 +1086,8 @@ std::shared_ptr<PartLog> Context::getPartLog()
 
         String database = config.getString("part_log.database", "system");
         String table = config.getString("part_log.table", "part_log");
-        size_t flush_interval_milliseconds = parse<size_t>(
-            config.getString("part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
+        size_t flush_interval_milliseconds = config.getUInt64(
+                "part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
         shared->part_log = std::make_unique<PartLog>(
             *global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
     }

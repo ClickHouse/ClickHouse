@@ -16,6 +16,7 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogWithSmallSetOptimization.h>
 #include <Common/CombinedCardinalityEstimator.h>
+#include <Common/MemoryTracker.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>

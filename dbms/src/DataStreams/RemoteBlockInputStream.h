@@ -1,5 +1,7 @@
 #pragma once
 
+#include <experimental/optional>
+
 #include <common/logger_useful.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
@@ -24,20 +26,14 @@ public:
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         const Context & context_ = getDefaultContext());
 
-    /// Takes already set connection. Takes the ownership of a connection from a pool
-    RemoteBlockInputStream(ConnectionPool::Entry & pool_entry_, const String & query_, const Settings * settings_,
-        ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        const Context & context_ = getDefaultContext());
-
     /// Takes a pool and gets one or several connections from it
-    RemoteBlockInputStream(ConnectionPoolPtr & pool_, const String & query_, const Settings * settings_,
+    RemoteBlockInputStream(const ConnectionPoolWithFailoverPtr & pool_, const String & query_, const Settings * settings_,
         ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         const Context & context_ = getDefaultContext());
 
     /// Takes a pool for each shard and gets one or several connections from it
-    RemoteBlockInputStream(ConnectionPoolsPtr & pools_, const String & query_, const Settings * settings_,
+    RemoteBlockInputStream(ConnectionPoolWithFailoverPtrs && pools_, const String & query_, const Settings * settings_,
         ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         const Context & context_ = getDefaultContext());
@@ -45,7 +41,9 @@ public:
     ~RemoteBlockInputStream() override;
 
     /// Specify how we allocate connections on a shard.
-    void setPoolMode(PoolMode pool_mode_);
+    void setPoolMode(PoolMode pool_mode_) { pool_mode = pool_mode_; }
+
+    void setMainTable(QualifiedTableName main_table_) { main_table = std::move(main_table_); }
 
     /// Besides blocks themself, get blocks' extra info
     void appendExtraInfo();
@@ -108,14 +106,13 @@ private:
 
 private:
     /// Already set connection
-    ConnectionPool::Entry pool_entry;
     Connection * connection = nullptr;
 
     /// One shard's connections pool
-    ConnectionPoolPtr pool = nullptr;
+    ConnectionPoolWithFailoverPtr pool = nullptr;
 
     /// Connections pools of one or several shards
-    ConnectionPoolsPtr pools;
+    ConnectionPoolWithFailoverPtrs pools;
 
     std::unique_ptr<MultiplexedConnections> multiplexed_connections;
 
@@ -166,6 +163,7 @@ private:
 
     bool append_extra_info = false;
     PoolMode pool_mode = PoolMode::GET_MANY;
+    std::experimental::optional<QualifiedTableName> main_table;
 
     Logger * log = &Logger::get("RemoteBlockInputStream");
 };

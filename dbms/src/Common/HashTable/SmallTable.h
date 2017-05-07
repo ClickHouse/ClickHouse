@@ -348,7 +348,7 @@ public:
 
     void clear()
     {
-        if (!__has_trivial_destructor(Cell))
+        if (!std::is_trivially_destructible<Cell>::value)
             for (iterator it = begin(); it != end(); ++it)
                 it.ptr->~Cell();
 

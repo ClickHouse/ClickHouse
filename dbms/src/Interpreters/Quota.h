@@ -12,8 +12,6 @@
 
 #include <Poco/Net/IPAddress.h>
 
-#include <common/Common.h>
-
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
@@ -37,11 +35,11 @@ struct QuotaValues
 {
     /// Zero values (for maximums) means no limit.
     Counter queries;                /// Number of queries.
-    Counter errors;                    /// Number of queries with exceptions.
+    Counter errors;                 /// Number of queries with exceptions.
     Counter result_rows;            /// Number of rows returned as result.
-    Counter result_bytes;            /// Number of bytes returned as result.
-    Counter read_rows;                /// Number of rows read from tables.
-    Counter read_bytes;                /// Number of bytes read from tables.
+    Counter result_bytes;           /// Number of bytes returned as result.
+    Counter read_rows;              /// Number of rows read from tables.
+    Counter read_bytes;             /// Number of bytes read from tables.
     Counter execution_time_usec;    /// Total amount of query execution time in microseconds.
 
     QuotaValues()
@@ -218,6 +216,12 @@ struct Quota
     std::mutex mutex;
 
     bool is_keyed = false;
+
+    /// If the quota is not keyed, but the user passed some key, ignore it instead of throwing exception.
+    /// For transitional periods, when you want to enable quota keys
+    ///  - first, enable passing keys from your application, then make quota keyed in ClickHouse users config.
+    bool ignore_key_if_not_keyed = false;
+
     bool keyed_by_ip = false;
 
     void loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng);

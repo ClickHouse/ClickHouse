@@ -104,7 +104,7 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
 
         ASTPtr default_expr;
         Expected expected{};
-        auto begin = default_expr_str.data();
+        const char * begin = default_expr_str.data();
         const auto end = begin + default_expr_str.size();
         const char * max_parsed_pos = begin;
         if (!expr_parser.parse(begin, end, default_expr, max_parsed_pos, expected))

@@ -174,7 +174,6 @@ debian/clickhouse-benchmark/
 debian/clickhouse-client/
 debian/clickhouse-server-base/
 debian/clickhouse-server-common/
-debian/clickhouse-server-metrika/
 debian/files
 
 dbms/src/Server/data/*
@@ -187,7 +186,6 @@ config-9001.xml
 core
 vgcore*
 
-*.install
 *.deb
 *.build
 *.upload
@@ -196,8 +194,6 @@ build-stamp
 configure-stamp
 debian/changelog
 debian/*.debhelper.log
-debian/*.cron.d
-debian/*.init
 debian/*.debhelper
 debian/*.substvars
 
@@ -223,3 +219,7 @@ config-preprocessed.xml
 
 # Ignore symlink to private repository
 /private
+
+# Gulp dependencies used to minify website
+node_modules
+public

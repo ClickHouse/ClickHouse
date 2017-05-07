@@ -1,13 +1,18 @@
 #pragma once
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Core/Defines.h>
 #include <Core/Types.h>
-#include <IO/ReadHelpers.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INVALID_CONFIG_PARAMETER;
+}
 
 /** Advanced settings of MergeTree.
   * Could be loaded from config.
@@ -76,8 +81,11 @@ struct MergeTreeSettings
     size_t replicated_max_missing_active_parts = 20;
 
     /// Limit parallel fetches
-    size_t replicated_max_parallel_fetches = 4;
-    size_t replicated_max_parallel_fetches_for_table = 2;
+    size_t replicated_max_parallel_fetches = 0;
+    size_t replicated_max_parallel_fetches_for_table = 0;
+    /// Limit parallel sends
+    size_t replicated_max_parallel_sends = 0;
+    size_t replicated_max_parallel_sends_for_table = 0;
 
     /// If ration of wrong parts to total number of parts is less than this - allow to start anyway.
     double replicated_max_ratio_of_wrong_parts = 0.05;
@@ -111,45 +119,52 @@ struct MergeTreeSettings
 
     void loadFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
     {
-    #define SET_DOUBLE(NAME) \
-        NAME = config.getDouble(config_elem + "." #NAME, NAME);
+    #define SET(NAME, GETTER) \
+        try \
+        { \
+            NAME = config.GETTER(config_elem + "." #NAME, NAME); \
+        } \
+        catch (const Poco::Exception & e) \
+        { \
+            throw Exception( \
+                    "Invalid config parameter: " + config_elem + "/" #NAME + ": " + e.message() + ".", \
+                    ErrorCodes::INVALID_CONFIG_PARAMETER); \
+        }
 
-    #define SET_SIZE_T(NAME) \
-        if (config.has(config_elem + "." #NAME)) NAME = parse<size_t>(config.getString(config_elem + "." #NAME));
+        SET(max_bytes_to_merge_at_max_space_in_pool, getUInt64);
+        SET(max_bytes_to_merge_at_min_space_in_pool, getUInt64);
+        SET(max_replicated_merges_in_queue, getUInt64);
+        SET(old_parts_lifetime, getUInt64);
+        SET(temporary_directories_lifetime, getUInt64);
+        SET(parts_to_delay_insert, getUInt64);
+        SET(parts_to_throw_insert, getUInt64);
+        SET(max_delay_to_insert, getUInt64);
+        SET(replicated_deduplication_window, getUInt64);
+        SET(replicated_logs_to_keep, getUInt64);
+        SET(prefer_fetch_merged_part_time_threshold, getUInt64);
+        SET(prefer_fetch_merged_part_size_threshold, getUInt64);
+        SET(max_suspicious_broken_parts, getUInt64);
+        SET(max_files_to_modify_in_alter_columns, getUInt64);
+        SET(max_files_to_remove_in_alter_columns, getUInt64);
+        SET(replicated_max_unexpected_parts, getUInt64);
+        SET(replicated_max_unexpectedly_merged_parts, getUInt64);
+        SET(replicated_max_missing_obsolete_parts, getUInt64);
+        SET(replicated_max_missing_active_parts, getUInt64);
+        SET(replicated_max_parallel_fetches, getUInt64);
+        SET(replicated_max_parallel_fetches_for_table, getUInt64);
+        SET(replicated_max_parallel_sends, getUInt64);
+        SET(replicated_max_parallel_sends_for_table, getUInt64);
+        SET(replicated_max_ratio_of_wrong_parts, getDouble);
+        SET(zookeeper_session_expiration_check_period, getUInt64);
+        SET(check_delay_period, getUInt64);
+        SET(min_relative_delay_to_yield_leadership, getUInt64);
+        SET(min_relative_delay_to_close, getUInt64);
+        SET(min_absolute_delay_to_close, getUInt64);
+        SET(enable_vertical_merge_algorithm, getUInt64);
+        SET(vertical_merge_algorithm_min_rows_to_activate, getUInt64);
+        SET(vertical_merge_algorithm_min_columns_to_activate, getUInt64);
 
-        SET_SIZE_T(max_bytes_to_merge_at_max_space_in_pool);
-        SET_SIZE_T(max_bytes_to_merge_at_min_space_in_pool);
-        SET_SIZE_T(max_replicated_merges_in_queue);
-        SET_SIZE_T(old_parts_lifetime);
-        SET_SIZE_T(temporary_directories_lifetime);
-        SET_SIZE_T(parts_to_delay_insert);
-        SET_SIZE_T(parts_to_throw_insert);
-        SET_SIZE_T(max_delay_to_insert);
-        SET_SIZE_T(replicated_deduplication_window);
-        SET_SIZE_T(replicated_logs_to_keep);
-        SET_SIZE_T(prefer_fetch_merged_part_time_threshold);
-        SET_SIZE_T(prefer_fetch_merged_part_size_threshold);
-        SET_SIZE_T(max_suspicious_broken_parts);
-        SET_SIZE_T(max_files_to_modify_in_alter_columns);
-        SET_SIZE_T(max_files_to_remove_in_alter_columns);
-        SET_SIZE_T(replicated_max_unexpected_parts);
-        SET_SIZE_T(replicated_max_unexpectedly_merged_parts);
-        SET_SIZE_T(replicated_max_missing_obsolete_parts);
-        SET_SIZE_T(replicated_max_missing_active_parts);
-        SET_SIZE_T(replicated_max_parallel_fetches);
-        SET_SIZE_T(replicated_max_parallel_fetches_for_table);
-        SET_DOUBLE(replicated_max_ratio_of_wrong_parts);
-        SET_SIZE_T(zookeeper_session_expiration_check_period);
-        SET_SIZE_T(check_delay_period);
-        SET_SIZE_T(min_relative_delay_to_yield_leadership);
-        SET_SIZE_T(min_relative_delay_to_close);
-        SET_SIZE_T(min_absolute_delay_to_close);
-        SET_SIZE_T(enable_vertical_merge_algorithm);
-        SET_SIZE_T(vertical_merge_algorithm_min_rows_to_activate);
-        SET_SIZE_T(vertical_merge_algorithm_min_columns_to_activate);
-
-    #undef SET_SIZE_T
-    #undef SET_DOUBLE
+    #undef SET
     }
 };
 

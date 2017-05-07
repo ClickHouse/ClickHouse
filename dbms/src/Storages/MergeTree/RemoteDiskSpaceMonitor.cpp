@@ -1,9 +1,10 @@
 #include <Storages/MergeTree/RemoteDiskSpaceMonitor.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Interpreters/Context.h>
-#include <IO/ReadBufferFromHTTP.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Poco/Net/HTTPRequest.h>
 
 namespace DB
 {
@@ -36,7 +37,7 @@ std::string Service::getId(const std::string & node_id) const
     return getEndpointId(node_id);
 }
 
-void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out)
+void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response)
 {
     if (is_cancelled)
         throw Exception{"RemoteDiskSpaceMonitor service terminated", ErrorCodes::ABORTED};
@@ -48,13 +49,18 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
 size_t Client::getFreeSpace(const InterserverIOEndpointLocation & location) const
 {
-    ReadBufferFromHTTP::Params params =
+    Poco::URI uri;
+    uri.setScheme("http");
+    uri.setHost(location.host);
+    uri.setPort(location.port);
+    uri.setQueryParameters(
     {
         {"endpoint", getEndpointId(location.name) },
         {"compress", "false"}
-    };
+    }
+    );
 
-    ReadBufferFromHTTP in{location.host, location.port, "", params};
+    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
 
     size_t free_disk_space;
     readBinary(free_disk_space, in);

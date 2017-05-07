@@ -14,7 +14,7 @@
 namespace DB
 {
 
-/** См. описание структуры данных в MergeTreeData.
+/** See the description of the data structure in MergeTreeData.
   */
 class StorageMergeTree : private ext::shared_ptr_helper<StorageMergeTree>, public IStorage
 {
@@ -22,13 +22,13 @@ friend class ext::shared_ptr_helper<StorageMergeTree>;
 friend class MergeTreeBlockOutputStream;
 
 public:
-    /** Подцепить таблицу с соответствующим именем, по соответствующему пути (с / на конце),
-      *  (корректность имён и путей не проверяется)
-      *  состоящую из указанных столбцов.
+    /** hook the table with the appropriate name, along the appropriate path (with  / at the end),
+      *  (correctness of names and paths are not checked)
+      *  consisting of the specified columns.
       *
-      * primary_expr_ast    - выражение для сортировки;
-      * date_column_name     - имя столбца с датой;
-      * index_granularity     - на сколько строчек пишется одно значение индекса.
+      * primary_expr_ast      - expression for sorting;
+      * date_column_name      - the name of the column with the date;
+      * index_granularity     - fow how many rows one index value is written.
       */
     static StoragePtr create(
         const String & path_,
@@ -42,7 +42,7 @@ public:
         Context & context_,
         ASTPtr & primary_expr_ast_,
         const String & date_column_name_,
-        const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
+        const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
         size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,
         bool has_force_restore_data_flag,
@@ -85,14 +85,15 @@ public:
 
     BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 
-    /** Выполнить очередной шаг объединения кусков.
+    /** Perform the next step in combining the parts.
       */
-    bool optimize(const String & partition, bool final, const Settings & settings) override
+    bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override
     {
-        return merge(settings.min_bytes_to_use_direct_io, true, partition, final);
+        return merge(settings.min_bytes_to_use_direct_io, true, partition, final, deduplicate);
     }
 
     void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
+    void dropColumnFromPartition(ASTPtr query, const Field & partition, const Field & column_name, const Settings & settings) override;
     void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
     void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
 
@@ -162,7 +163,7 @@ private:
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.
       */
-    bool merge(size_t aio_threshold, bool aggressive, const String & partition, bool final);
+    bool merge(size_t aio_threshold, bool aggressive, const String & partition, bool final, bool deduplicate);
 
     bool mergeTask();
 };

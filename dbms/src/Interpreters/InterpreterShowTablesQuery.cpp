@@ -6,7 +6,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 
-#include <mysqlxx/Manip.h>
+#include <iomanip>
 
 
 namespace DB
@@ -36,10 +36,10 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     context.assertDatabaseExists(database, false);
 
     std::stringstream rewritten_query;
-    rewritten_query << "SELECT name FROM system.tables WHERE database = " << mysqlxx::quote << database;
+    rewritten_query << "SELECT name FROM system.tables WHERE database = " << std::quoted(database, '\'');
 
     if (!query.like.empty())
-        rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << mysqlxx::quote << query.like;
+        rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');
 
     return rewritten_query.str();
 }

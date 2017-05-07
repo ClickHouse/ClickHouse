@@ -2,9 +2,9 @@
 set -e
 
 for i in `seq -w 0 2 20`; do
-	clickhouse-client -q "DROP TABLE IF EXISTS test.merge_item_$i"
-	clickhouse-client -q "CREATE TABLE test.merge_item_$i (d Int8) ENGINE = Memory"
-	clickhouse-client -q "INSERT INTO test.merge_item_$i VALUES ($i)"
+    clickhouse-client -q "DROP TABLE IF EXISTS test.merge_item_$i"
+    clickhouse-client -q "CREATE TABLE test.merge_item_$i (d Int8) ENGINE = Memory"
+    clickhouse-client -q "INSERT INTO test.merge_item_$i VALUES ($i)"
 done
 
 clickhouse-client -q "DROP TABLE IF EXISTS test.merge_storage"

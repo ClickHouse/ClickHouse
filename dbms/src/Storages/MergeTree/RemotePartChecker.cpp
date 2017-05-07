@@ -1,10 +1,11 @@
 #include <Storages/MergeTree/RemotePartChecker.h>
 #include <Storages/MergeTree/ReshardingWorker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <IO/ReadBufferFromHTTP.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
+#include <Poco/Net/HTTPRequest.h>
 
 
 namespace DB
@@ -33,7 +34,7 @@ std::string Service::getId(const std::string & node_id) const
     return getEndpointId(node_id);
 }
 
-void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out)
+void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response)
 {
     auto part_name = params.get("part");
     auto hash = params.get("hash");
@@ -65,15 +66,19 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 Status Client::check(const std::string & part_name, const std::string & hash,
     const InterserverIOEndpointLocation & to_location)
 {
-    ReadBufferFromHTTP::Params params =
+    Poco::URI uri;
+    uri.setScheme("http");
+    uri.setHost(to_location.host);
+    uri.setPort(to_location.port);
+    uri.setQueryParameters(
     {
         {"endpoint", getEndpointId(to_location.name) },
         {"compress", "false"},
         {"part", part_name},
         {"hash", hash}
-    };
+    });
 
-    ReadBufferFromHTTP in{to_location.host, to_location.port, "", params};
+    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
 
     UInt8 val;
     readBinary(val, in);

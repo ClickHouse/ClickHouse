@@ -303,7 +303,7 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 }
 
 
-/// Explicit template instantinations - to avoid code bloat in headers.
+/// Explicit template instantiations - to avoid code bloat in headers.
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;
 template class ColumnVector<UInt32>;

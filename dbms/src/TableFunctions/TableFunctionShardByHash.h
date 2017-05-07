@@ -6,10 +6,10 @@
 namespace DB
 {
 
-/* shardByHash(cluster, 'key', db, table) - создаёт временный StorageDistributed,
- *  используя кластер cluster, и выбирая из него только один шард путём хэширования строки key.
+/* shardByHash(cluster, 'key', db, table) - creates a temporary StorageDistributed,
+ *  using the cluster `cluster`, and selecting from it only one shard by hashing the string key.
  *
- * Аналогично функции remote, чтобы получить структуру таблицы, делается запрос DESC TABLE на удалённый сервер.
+ * Similarly to the `remote` function, to get the table structure, a DESC TABLE request is made to the remote server.
  */
 class TableFunctionShardByHash : public ITableFunction
 {

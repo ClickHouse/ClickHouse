@@ -13,7 +13,7 @@ namespace DB
 {
 
 
-/// Чексумма одного файла.
+/// Checksum of one file.
 struct MergeTreeDataPartChecksum
 {
     size_t file_size {};
@@ -34,8 +34,8 @@ struct MergeTreeDataPartChecksum
 };
 
 
-/** Контрольные суммы всех не временных файлов.
-  * Для сжатых файлов хранятся чексумма и размер разжатых данных, чтобы не зависеть от способа сжатия.
+/** Checksums of all non-temporary files.
+  * For compressed files, the check sum and the size of the decompressed data are stored to not depend on the compression method.
   */
 struct MergeTreeDataPartChecksums
 {
@@ -48,15 +48,15 @@ struct MergeTreeDataPartChecksums
 
     void add(MergeTreeDataPartChecksums && rhs_checksums);
 
-    /// Проверяет, что множество столбцов и их контрольные суммы совпадают. Если нет - бросает исключение.
-    /// Если have_uncompressed, для сжатых файлов сравнивает чексуммы разжатых данных. Иначе сравнивает только чексуммы файлов.
+    /// Checks that the set of columns and their checksums are the same. If not, throws an exception.
+    /// If have_uncompressed, for compressed files it compares the checksums of the decompressed data. Otherwise, it compares only the checksums of the files.
     void checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed) const;
 
-    /// Проверяет, что в директории есть все нужные файлы правильных размеров. Не проверяет чексуммы.
+    /// Checks that the directory contains all the needed files of the correct size. Does not check the checksum.
     void checkSizes(const String & path) const;
 
-    /// Сериализует и десериализует в человекочитаемом виде.
-    bool read(ReadBuffer & in); /// Возвращает false, если чексуммы в слишком старом формате.
+    /// Serializes and deserializes in human readable form.
+    bool read(ReadBuffer & in); /// Returns false if the checksum is too old.
     bool read_v2(ReadBuffer & in);
     bool read_v3(ReadBuffer & in);
     bool read_v4(ReadBuffer & in);
@@ -67,7 +67,7 @@ struct MergeTreeDataPartChecksums
         return files.empty();
     }
 
-    /// Контрольная сумма от множества контрольных сумм .bin файлов.
+    /// Checksum from the set of checksums of .bin files.
     void summaryDataChecksum(SipHash & hash) const;
 
     String toString() const;
@@ -78,33 +78,43 @@ struct MergeTreeDataPartChecksums
 class MergeTreeData;
 
 
-/// Описание куска с данными.
+/// Description of the data part.
 struct MergeTreeDataPart : public ActiveDataPartSet::Part
 {
     using Checksums = MergeTreeDataPartChecksums;
+    using Checksum = MergeTreeDataPartChecksums::Checksum;
 
     MergeTreeDataPart(MergeTreeData & storage_) : storage(storage_) {}
 
+    /// Returns checksum of column's binary file.
+    const Checksum * tryGetBinChecksum(const String & name) const;
+
     /// Returns the size of .bin file for column `name` if found, zero otherwise
     size_t getColumnCompressedSize(const String & name) const;
+    size_t getColumnUncompressedSize(const String & name) const;
 
-    /** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
-      * If no checksums are present returns the name of the first physically existing column.
-      */
+    /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
+    /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const;
+
+    /// If part has column with fixed size, will return exact size of part (in rows)
+    size_t getExactSizeRows() const;
+
+    /// Returns full path to part dir
+    String getFullPath() const;
 
     MergeTreeData & storage;
 
     size_t size = 0;                /// in number of marks.
-    std::atomic<size_t> size_in_bytes {0};     /// размер в байтах, 0 - если не посчитано;
-                                            /// используется из нескольких потоков без блокировок (изменяется при ALTER).
+    std::atomic<size_t> size_in_bytes {0};     /// size in bytes, 0 - if not counted;
+                                               /// is used from several threads without locks (it is changed with ALTER).
     time_t modification_time = 0;
-    mutable time_t remove_time = std::numeric_limits<time_t>::max(); /// Когда кусок убрали из рабочего набора.
+    mutable time_t remove_time = std::numeric_limits<time_t>::max(); /// When the part is removed from the working set.
 
-    /// Если true, деструктор удалит директорию с куском.
+    /// If true, the destructor will delete the directory with the part.
     bool is_temp = false;
 
-    /// Для перешардирования.
+    /// For resharding.
     bool is_sharded = false;
     size_t shard_no = 0;
 
@@ -116,52 +126,55 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
 
     Checksums checksums;
 
-    /// Описание столбцов.
+    /// Columns description.
     NamesAndTypesList columns;
 
     using ColumnToSize = std::map<std::string, size_t>;
 
-    /** Блокируется на запись при изменении columns, checksums или любых файлов куска.
-        * Блокируется на чтение при    чтении columns, checksums или любых файлов куска.
+    /** It is blocked for writing when changing columns, checksums or any part files.
+        * Locked to read when reading columns, checksums or any part files.
         */
     mutable Poco::RWLock columns_lock;
 
-    /** Берется на все время ALTER куска: от начала записи временных фалов до их переименования в постоянные.
-        * Берется при разлоченном columns_lock.
+    /** It is taken for the whole time ALTER a part: from the beginning of the recording of the temporary files to their renaming to permanent.
+        * It is taken with unlocked `columns_lock`.
         *
-        * NOTE: "Можно" было бы обойтись без этого мьютекса, если бы можно было превращать ReadRWLock в WriteRWLock, не снимая блокировку.
-        * Такое превращение невозможно, потому что создало бы дедлок, если делать его из двух потоков сразу.
-        * Взятие этого мьютекса означает, что мы хотим заблокировать columns_lock на чтение с намерением потом, не
-        *  снимая блокировку, заблокировать его на запись.
+        * NOTE: "You can" do without this mutex if you could turn ReadRWLock into WriteRWLock without removing the lock.
+        * This transformation is impossible, because it would create a deadlock, if you do it from two threads at once.
+        * Taking this mutex means that we want to lock columns_lock on read with intention then, not
+        *  unblocking, block it for writing.
         */
     mutable std::mutex alter_mutex;
 
     ~MergeTreeDataPart();
 
-    /// Вычисляем суммарный размер всей директории со всеми файлами
+    /// Calculate the total size of the entire directory with all the files
     static size_t calcTotalSize(const String & from);
 
     void remove() const;
     void renameTo(const String & new_name) const;
 
-    /// Переименовывает кусок, дописав к имени префикс. to_detached - также перенести в директорию detached.
+    /// Renames a piece by appending a prefix to the name. To_detached - also moved to the detached directory.
     void renameAddPrefix(bool to_detached, const String & prefix) const;
 
-    /// Загрузить индекс и вычислить размер. Если size=0, вычислить его тоже.
+    /// Loads index file. Also calculates this->size if size=0
     void loadIndex();
 
-    /// Прочитать контрольные суммы, если есть.
+    /// If checksums.txt exists, reads files' checksums (and sizes) from it
     void loadChecksums(bool require);
 
+    /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & column_to_size) const;
 
+    /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
 
     void checkNotBroken(bool require_part_metadata);
 
+    /// Checks that .bin and .mrk files exist
     bool hasColumnFiles(const String & column) const;
 
-    /// For data in RAM ('index').
+    /// For data in RAM ('index')
     size_t getIndexSizeInBytes() const;
     size_t getIndexSizeInAllocatedBytes() const;
 };

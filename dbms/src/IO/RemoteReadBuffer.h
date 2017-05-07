@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/ReadBufferFromHTTP.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include "ReadHelpers.h"
 
 #define DEFAULT_REMOTE_READ_BUFFER_CONNECTION_TIMEOUT 1
@@ -15,7 +15,7 @@ namespace DB
 class RemoteReadBuffer : public ReadBuffer
 {
 private:
-    std::unique_ptr<ReadBufferFromHTTP> impl;
+    std::unique_ptr<ReadWriteBufferFromHTTP> impl;
 
 public:
     RemoteReadBuffer(
@@ -29,12 +29,17 @@ public:
         const Poco::Timespan & receive_timeout = Poco::Timespan(DEFAULT_REMOTE_READ_BUFFER_RECEIVE_TIMEOUT, 0))
         : ReadBuffer(nullptr, 0)
     {
-        ReadBufferFromHTTP::Params params = {
+        Poco::URI uri;
+        uri.setScheme("http");
+        uri.setHost(host);
+        uri.setPort(port);
+        uri.setQueryParameters(
+        {
             std::make_pair("action", "read"),
             std::make_pair("path", path),
-            std::make_pair("compress", (compress ? "true" : "false"))};
+            std::make_pair("compress", (compress ? "true" : "false"))});
 
-        impl = std::make_unique<ReadBufferFromHTTP>(host, port, "", params, "", buffer_size, connection_timeout, send_timeout, receive_timeout);
+        impl = std::make_unique<ReadWriteBufferFromHTTP>(uri, std::string(), ReadWriteBufferFromHTTP::OutStreamCallback(), buffer_size, HTTPTimeouts{connection_timeout, send_timeout, receive_timeout});
     }
 
     bool nextImpl() override
@@ -53,11 +58,16 @@ public:
         const std::string & path,
         size_t timeout = 0)
     {
-        ReadBufferFromHTTP::Params params = {
+        Poco::URI uri;
+        uri.setScheme("http");
+        uri.setHost(host);
+        uri.setPort(port);
+        uri.setQueryParameters(
+        {
             std::make_pair("action", "list"),
-            std::make_pair("path", path)};
+            std::make_pair("path", path)});
 
-        ReadBufferFromHTTP in(host, port, "", params, "", timeout);
+        ReadWriteBufferFromHTTP in(uri, {}, {}, {}, HTTPTimeouts{timeout});
 
         std::vector<std::string> files;
         while (!in.eof())

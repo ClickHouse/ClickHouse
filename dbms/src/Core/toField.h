@@ -1,17 +1,18 @@
 #pragma once
 
-#include <common/Common.h>        /// VisitID_t
+#include <common/MetrikaTypes.h>
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 #include <Core/Field.h>
-#include <mysqlxx/Null.h>
+
+
+/// This is for Yandex.Metrica code.
 
 
 namespace DB
 {
 
-
-/// Перевести что угодно в Field.
+/// Transform anything to Field.
 template <typename T>
 inline Field toField(const T & x)
 {
@@ -32,12 +33,5 @@ inline Field toField(const VisitID_t & x)
 {
     return toField(static_cast<UInt64>(x));
 }
-
-template <typename T>
-inline Field toField(const mysqlxx::Null<T> & x)
-{
-    return x.isNull() ? Field(Null()) : toField(static_cast<const T &>(x));
-}
-
 
 }

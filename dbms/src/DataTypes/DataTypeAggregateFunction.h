@@ -15,8 +15,8 @@ namespace ErrorCodes
 }
 
 
-/** Тип - состояние агрегатной функции.
-  * Параметры типа - это агрегатная функция, типы её аргументов и её параметры (для параметрических агрегатных функций).
+/** Type - the state of the aggregate function.
+  * Type parameters is an aggregate function, the types of its arguments, and its parameters (for parametric aggregate functions).
   */
 class DataTypeAggregateFunction final : public IDataType
 {
@@ -41,7 +41,7 @@ public:
 
     DataTypePtr clone() const override { return std::make_shared<DataTypeAggregateFunction>(function, argument_types, parameters); }
 
-    /// NOTE Эти две функции сериализации одиночных значений несовместимы с функциями ниже.
+    /// NOTE These two functions for serializing single values ​​are incompatible with the functions below.
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
 

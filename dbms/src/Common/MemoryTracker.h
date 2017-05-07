@@ -1,7 +1,7 @@
 #pragma once
 
 #include <atomic>
-#include <common/Common.h>
+#include <common/Types.h>
 #include <Common/CurrentMetrics.h>
 
 
@@ -108,6 +108,14 @@ public:
   * Таким образом, его нужно всего-лишь протащить во все потоки, в которых обрабатывается один запрос.
   */
 extern __thread MemoryTracker * current_memory_tracker;
+
+/// Convenience methods, that use current_memory_tracker if it is available.
+namespace CurrentMemoryTracker
+{
+    void alloc(Int64 size);
+    void realloc(Int64 old_size, Int64 new_size);
+    void free(Int64 size);
+}
 
 
 #include <boost/noncopyable.hpp>

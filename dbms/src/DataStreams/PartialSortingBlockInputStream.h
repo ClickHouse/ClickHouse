@@ -35,6 +35,10 @@ public:
         return res.str();
     }
 
+    bool isGroupedOutput() const override { return true; }
+    bool isSortedOutput() const override { return true; }
+    const SortDescription & getSortDescription() const override { return description; }
+
 protected:
     Block readImpl() override;
 

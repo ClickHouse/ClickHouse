@@ -8,10 +8,10 @@ add_library(clickhouse-server
     StatusFile.cpp
     ReplicasStatusHandler.cpp
 )
-target_link_libraries(clickhouse-server daemon storages_system)
+target_link_libraries(clickhouse-server daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions)
 
 add_library(clickhouse-local LocalServer.cpp)
-target_link_libraries(clickhouse-local dbms)
+target_link_libraries(clickhouse-local dbms clickhouse_functions clickhouse_aggregate_functions)
 
 add_library(clickhouse-extract-from-config ExtractFromConfig.cpp)
 target_link_libraries(clickhouse-extract-from-config dbms)
@@ -23,11 +23,11 @@ target_link_libraries(clickhouse
     clickhouse-local
     clickhouse-benchmark
     clickhouse-extract-from-config)
-INSTALL(TARGETS clickhouse RUNTIME DESTINATION bin COMPONENT clickhouse)
+INSTALL(TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
 # make symbolic links to concrete clickhouse applications
 macro(install_symlink_to_clickhouse app)
-    INSTALL(CODE "execute_process(COMMAND ln -sf clickhouse ${app} WORKING_DIRECTORY \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin\" )" COMPONENT ${app})
+    INSTALL(CODE "execute_process(COMMAND ln -sf clickhouse ${app} WORKING_DIRECTORY \"\$ENV{DESTDIR}${CMAKE_INSTALL_FULL_BINDIR}\" )" COMPONENT ${app})
 endmacro(install_symlink_to_clickhouse)
 
 install_symlink_to_clickhouse(clickhouse-server)

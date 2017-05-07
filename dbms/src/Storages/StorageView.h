@@ -29,7 +29,7 @@ public:
     const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
     ASTPtr getInnerQuery() const { return inner_query.clone(); };
 
-    /// Пробрасывается внутрь запроса и решается на его уровне.
+    /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal()     const override { return true; }
 
@@ -66,7 +66,7 @@ protected:
         const ColumnDefaults & column_defaults_);
 
 private:
-    /// Достать из самого внутреннего подзапроса имя базы данных и таблицы: select_database_name, select_table_name.
+    /// extract the name of the database and the table from the most internal subquery: `select_database_name, select_table_name`.
     void extractDependentTable(const ASTSelectQuery & query);
 };
 

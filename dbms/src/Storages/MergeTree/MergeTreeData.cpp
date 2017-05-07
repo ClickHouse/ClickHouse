@@ -306,16 +306,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     DataPartsVector broken_parts_to_detach;
     size_t suspicious_broken_parts = 0;
 
-    Poco::RegularExpression::MatchVec matches;
     for (const String & file_name : part_file_names)
     {
-        if (!ActiveDataPartSet::isPartDirectory(file_name, &matches))
+        MutableDataPartPtr part = std::make_shared<DataPart>(*this);
+        if (!ActiveDataPartSet::parsePartNameImpl(file_name, part.get()))
             continue;
 
-        MutableDataPartPtr part = std::make_shared<DataPart>(*this);
-        ActiveDataPartSet::parsePartName(file_name, *part, &matches);
         part->name = file_name;
-
         bool broken = false;
 
         try
@@ -365,10 +362,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 {
                     if (contained_name == file_name)
                         continue;
-                    if (!ActiveDataPartSet::isPartDirectory(contained_name, &matches))
-                        continue;
+
                     DataPart contained_part(*this);
-                    ActiveDataPartSet::parsePartName(contained_name, contained_part, &matches);
+                    if (!ActiveDataPartSet::parsePartNameImpl(contained_name, &contained_part))
+                        continue;
+
                     if (part->contains(contained_part))
                     {
                         LOG_ERROR(log, "Found part " << full_path + contained_name);
@@ -912,8 +910,12 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     {
         transaction->clear();
 
+        const bool forbidden_because_of_modify = num_files_to_modify > settings.max_files_to_modify_in_alter_columns;
+
         std::stringstream exception_message;
-        exception_message << "Suspiciously many (" << transaction->rename_map.size()
+        exception_message
+            << "Suspiciously many ("
+            << (forbidden_because_of_modify ? num_files_to_modify : num_files_to_remove)
             << ") files (";
 
         bool first = true;
@@ -921,12 +923,27 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         {
             if (!first)
                 exception_message << ", ";
-            exception_message << "from '" << from_to.first << "' to '" << from_to.second << "'";
-            first = false;
+            if (forbidden_because_of_modify)
+            {
+                exception_message << "from `" << from_to.first << "' to `" << from_to.second << "'";
+                first = false;
+            }
+            else if (from_to.second.empty())
+            {
+                exception_message << "`" << from_to.first << "'";
+                first = false;
+            }
         }
 
-        exception_message << ") need to be modified in part " << part->name << " of table at " << full_path << ". Aborting just in case. "
-            << " If it is not an error, you could increase merge_tree/max_files_to_modify_in_alter_columns parameter in configuration file.";
+        exception_message
+            << ") need to be "
+            << (forbidden_because_of_modify ? "modified" : "removed")
+            << " in part " << part->name << " of table at " << full_path << ". Aborting just in case."
+            << " If it is not an error, you could increase merge_tree/"
+            << (forbidden_because_of_modify ? "max_files_to_modify_in_alter_columns" : "max_files_to_remove_in_alter_columns")
+            << " parameter in configuration file (current value: "
+            << (forbidden_because_of_modify ? settings.max_files_to_modify_in_alter_columns : settings.max_files_to_remove_in_alter_columns)
+            << ")";
 
         throw Exception(exception_message.str(), ErrorCodes::TABLE_DIFFERS_TOO_MUCH);
     }
@@ -997,9 +1014,9 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     /// Apply the expression and write the result to temporary files.
     if (expression)
     {
-        MarkRanges ranges(1, MarkRange(0, part->size));
-        BlockInputStreamPtr part_in = std::make_shared<MergeTreeBlockInputStream>(full_path + part->name + '/',
-            DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges,
+        MarkRanges ranges{MarkRange(0, part->size)};
+        BlockInputStreamPtr part_in = std::make_shared<MergeTreeBlockInputStream>(
+            *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, expression->getRequiredColumns(), ranges,
             false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         ExpressionBlockInputStream in(part_in, expression);

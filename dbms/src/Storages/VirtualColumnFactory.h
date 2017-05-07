@@ -5,8 +5,8 @@
 namespace DB
 {
 
-/** Знает имена и типы всех возможных виртуальных столбцов.
-  * Нужно для движков, перенаправляющих запрос в другие таблицы, не зная заранее, какие в них есть виртуальные столбцы.
+/** Knows the names and types of all possible virtual columns.
+  * It is necessary for engines that redirect a request to other tables without knowing in advance what virtual columns they contain.
   */
 class VirtualColumnFactory
 {

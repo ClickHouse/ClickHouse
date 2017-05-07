@@ -52,6 +52,7 @@ namespace ErrorCodes
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int BAD_ARGUMENTS;
 }
 
 class Benchmark
@@ -227,7 +228,7 @@ private:
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
 
         for (size_t i = 0; i < concurrency; ++i)
-            pool.schedule(std::bind(&Benchmark::thread, this, connections.IConnectionPool::get()));
+            pool.schedule(std::bind(&Benchmark::thread, this, connections.get()));
 
         InterruptListener interrupt_listener;
         info_per_interval.watch.restart();
@@ -294,7 +295,7 @@ private:
     void execute(ConnectionPool::Entry & connection, Query & query)
     {
         Stopwatch watch;
-        RemoteBlockInputStream stream(connection, query, &settings, nullptr, Tables(), query_processing_stage);
+        RemoteBlockInputStream stream(*connection, query, &settings, nullptr, Tables(), query_processing_stage);
 
         Progress progress;
         stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });

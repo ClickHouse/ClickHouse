@@ -2,7 +2,7 @@
 
 #include <string>
 #include <DataStreams/IBlockOutputStream.h>
-
+#include <Core/Block.h>
 
 namespace DB
 {
@@ -19,16 +19,17 @@ class WriteBuffer;
 class ODBCDriverBlockOutputStream : public IBlockOutputStream
 {
 public:
-    ODBCDriverBlockOutputStream(WriteBuffer & out_);
+    ODBCDriverBlockOutputStream(WriteBuffer & out_, const Block & sample_);
 
     void write(const Block & block) override;
+    void writePrefix() override;
 
     void flush() override;
     std::string getContentType() const override { return "application/octet-stream"; }
 
 private:
-    bool is_first = true;
     WriteBuffer & out;
+    const Block sample;
 };
 
 }

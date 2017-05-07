@@ -35,9 +35,9 @@ namespace
     static constexpr const std::chrono::minutes decrease_error_count_period{5};
 
     template <typename PoolFactory>
-    ConnectionPools createPoolsForAddresses(const std::string & name, PoolFactory && factory)
+    ConnectionPoolPtrs createPoolsForAddresses(const std::string & name, PoolFactory && factory)
     {
-        ConnectionPools pools;
+        ConnectionPoolPtrs pools;
 
         for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
         {

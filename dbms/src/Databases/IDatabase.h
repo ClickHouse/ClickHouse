@@ -57,37 +57,37 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// Загрузить множество существующих таблиц. Если задан thread_pool - использовать его.
-    /// Можно вызывать только один раз, сразу после создания объекта.
+    /// Load a set of existing tables. If thread_pool is specified, use it.
+    /// You can call only once, right after the object is created.
     virtual void loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag) = 0;
 
-    /// Проверить существование таблицы.
+    /// Check the existence of the table.
     virtual bool isTableExist(const String & name) const = 0;
 
-    /// Получить таблицу для работы. Вернуть nullptr, если таблицы нет.
+    /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name) = 0;
 
-    /// Получить итератор, позволяющий перебрать все таблицы.
-    /// Допустимо наличие "скрытых" таблиц, которые не видны при переборе, но видны, если получать их по имени, используя функции выше.
+    /// Get an iterator that allows you to pass through all the tables.
+    /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
     virtual DatabaseIteratorPtr getIterator() = 0;
 
-    /// Является ли БД пустой.
+    /// Is the database empty.
     virtual bool empty() const = 0;
 
-    /// Добавить таблицу в базу данных. Прописать её наличие в метаданных.
+    /// Add the table to the database. Record its presence in the metadata.
     virtual void createTable(
         const String & name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings) = 0;
 
-    /// Удалить таблицу из базы данных и вернуть её. Удалить метаданные.
+    /// Delete the table from the database and return it. Delete the metadata.
     virtual void removeTable(const String & name) = 0;
 
-    /// Добавить таблицу в базу данных, но не прописывать её в метаданных. БД может не поддерживать этот метод.
+    /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     virtual void attachTable(const String & name, const StoragePtr & table) = 0;
 
-    /// Забыть про таблицу, не удаляя её, и вернуть её. БД может не поддерживать этот метод.
+    /// Forget about the table without deleting it, and return it. The database may not support this method.
     virtual StoragePtr detachTable(const String & name) = 0;
 
-    /// Переименовать таблицу и, возможно, переместить таблицу в другую БД.
+    /// Rename the table and possibly move the table to another database.
     virtual void renameTable(
         const Context & context, const String & name, IDatabase & to_database, const String & to_name, const Settings & settings) = 0;
 
@@ -96,8 +96,8 @@ public:
 
     using ASTModifier = std::function<void(ASTPtr &)>;
 
-    /// Изменить структуру таблицы в метаданных.
-    /// Нужно вызывать под TableStructureLock соответствующей таблицы. Если engine_modifier пустой, то engine не изменяется.
+    /// Change the table structure in metadata.
+    /// You must call under the TableStructureLock of the corresponding table . If engine_modifier is empty, then engine does not change.
     virtual void alterTable(
         const Context & context,
         const String & name,
@@ -107,13 +107,13 @@ public:
         const ColumnDefaults & column_defaults,
         const ASTModifier & engine_modifier) = 0;
 
-    /// Получить запрос CREATE TABLE для таблицы. Может выдавать информацию и для detached таблиц, для которых есть метаданные.
+    /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
     virtual ASTPtr getCreateQuery(const String & name) const = 0;
 
-    /// Попросить все таблицы завершить фоновые потоки, которые они используют, и удалить все объекты таблиц.
+    /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;
 
-    /// Удалить метаданные, удаление которых отличается от рекурсивного удаления директории, если такие есть.
+    /// Delete metadata, the deletion of which differs from the recursive deletion of the directory, if any.
     virtual void drop() = 0;
 
     virtual ~IDatabase() {}

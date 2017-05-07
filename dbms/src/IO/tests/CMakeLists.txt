@@ -73,3 +73,6 @@ endif ()
 
 add_executable (zlib_buffers zlib_buffers.cpp ${SRCS})
 target_link_libraries (zlib_buffers dbms)
+
+add_executable (remote_read_write_buffer remote_read_write_buffer.cpp ${SRCS})
+target_link_libraries (remote_read_write_buffer dbms)

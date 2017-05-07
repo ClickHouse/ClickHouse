@@ -6,6 +6,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+
 BlockIO InterpreterOptimizeQuery::execute()
 {
     const ASTOptimizeQuery & ast = typeid_cast<const ASTOptimizeQuery &>(*query_ptr);
@@ -15,7 +21,7 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     StoragePtr table = context.getTable(ast.database, ast.table);
     auto table_lock = table->lockStructure(true);
-    table->optimize(ast.partition, ast.final, context.getSettings());
+    table->optimize(ast.partition, ast.final, ast.deduplicate, context.getSettings());
     return {};
 }
 

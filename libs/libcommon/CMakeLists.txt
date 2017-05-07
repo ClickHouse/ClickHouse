@@ -28,7 +28,8 @@ add_library (common
     src/JSON.cpp
 
     include/common/ApplicationServerExt.h
-    include/common/Common.h
+    include/common/Types.h
+    include/common/MetrikaTypes.h
     include/common/DateLUT.h
     include/common/DateLUTImpl.h
     include/common/LocalDate.h
@@ -87,4 +88,4 @@ target_link_libraries (
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)
-endif (ENABLE_TESTS)
+endif ()

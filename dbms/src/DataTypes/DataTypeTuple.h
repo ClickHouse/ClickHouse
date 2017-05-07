@@ -6,10 +6,10 @@
 namespace DB
 {
 
-/** Тип данных - кортеж.
-  * Используется как промежуточный результат при вычислении выражений.
-  * Также может быть использовать в качестве столбца - результата выполнения запроса.
-  * Не может быть сохранён в таблицы.
+/** Tuple data type.
+  * Used as an intermediate result when evaluating expressions.
+  * Also can be used as a column - the result of the query execution.
+  * Can not be saved to tables.
   */
 class DataTypeTuple final : public IDataType
 {
@@ -35,15 +35,15 @@ public:
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
-    /// Кортежи в формате CSV будем сериализовать, как отдельные столбцы (то есть, теряя их вложенность в кортеж).
+    /// Tuples in CSV format will be serialized as separate columns (that is, losing their nesting in the tuple).
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
 
-    /** limit обязательно должен быть в точности равен количеству сериализованных значений.
-      * Именно из-за этого (невозможности читать меньший кусок записанных данных), Tuple не могут быть использованы для хранения данных в таблицах.
-      * (Хотя могут быть использованы для передачи данных по сети в Native формате.)
+    /** `limit` must be exactly equal to the number of serialized values.
+      * It is because of this (the inability to read a smaller piece of recorded data) that Tuple can not be used to store data in tables.
+      * (Although they can be used to transfer data over a network in Native format.)
       */
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 

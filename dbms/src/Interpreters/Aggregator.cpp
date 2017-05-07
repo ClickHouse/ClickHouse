@@ -20,6 +20,7 @@
 
 #include <Interpreters/Aggregator.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/MemoryTracker.h>
 #include <Interpreters/config_compile.h>
 
 

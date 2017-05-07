@@ -69,6 +69,10 @@ public:
 
     String getID() const override;
 
+    bool isGroupedOutput() const override { return true; }
+    bool isSortedOutput() const override { return true; }
+    const SortDescription & getSortDescription() const override { return description; }
+
 protected:
     struct RowRef
     {
@@ -115,7 +119,7 @@ protected:
     void fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue);
 
 
-    SortDescription description;
+    const SortDescription description;
     const size_t max_block_size;
     size_t limit;
     size_t total_merged_rows = 0;

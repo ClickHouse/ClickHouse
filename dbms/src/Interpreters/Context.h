@@ -187,7 +187,6 @@ public:
     void setSetting(const String & name, const std::string & value);
 
     const TableFunctionFactory & getTableFunctionFactory() const;
-    const AggregateFunctionFactory & getAggregateFunctionFactory() const;
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;
     void tryCreateEmbeddedDictionaries() const;

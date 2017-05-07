@@ -2,7 +2,7 @@
 
 #include <math.h>
 
-#include <common/Common.h>
+#include <common/Types.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -14,7 +14,7 @@
 #include <Common/HashTable/Hash.h>
 
 
-/** Approximate calculation of anything, as a rule, is constructed according to the following scheme:
+/** Approximate calculation of anything, as usual, is constructed according to the following scheme:
   * - some data structure is used to calculate the value of X;
   * - Not all values are added to the data structure, but only selected ones (according to some selectivity criteria);
   * - after processing all elements, the data structure is in some state S;

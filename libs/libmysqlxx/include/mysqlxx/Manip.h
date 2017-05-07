@@ -41,10 +41,10 @@ struct EscapeManipResult
 
     EscapeManipResult(std::ostream & ostr_) : ostr(ostr_) {}
 
-    std::ostream & operator<< (bool value)                     { return ostr << static_cast<int>(value); }
-    std::ostream & operator<< (char value)                     { return ostr << static_cast<int>(value); }
+    std::ostream & operator<< (bool value)                  { return ostr << static_cast<int>(value); }
+    std::ostream & operator<< (char value)                  { return ostr << static_cast<int>(value); }
     std::ostream & operator<< (unsigned char value)         { return ostr << static_cast<int>(value); }
-    std::ostream & operator<< (signed char value)            { return ostr << static_cast<int>(value); }
+    std::ostream & operator<< (signed char value)           { return ostr << static_cast<int>(value); }
 
     template <typename T>
     typename std::enable_if<std::is_arithmetic<T>::value, std::ostream &>::type
@@ -163,10 +163,10 @@ public:
 
     QuoteManipResult(std::ostream & ostr_) : ostr(ostr_) {}
 
-    std::ostream & operator<< (bool value)                     { return ostr << static_cast<int>(value); }
-    std::ostream & operator<< (char value)                     { return ostr << static_cast<int>(value); }
+    std::ostream & operator<< (bool value)                  { return ostr << static_cast<int>(value); }
+    std::ostream & operator<< (char value)                  { return ostr << static_cast<int>(value); }
     std::ostream & operator<< (unsigned char value)         { return ostr << static_cast<int>(value); }
-    std::ostream & operator<< (signed char value)            { return ostr << static_cast<int>(value); }
+    std::ostream & operator<< (signed char value)           { return ostr << static_cast<int>(value); }
 
     template <typename T>
     typename std::enable_if<std::is_arithmetic<T>::value, std::ostream &>::type
@@ -318,8 +318,8 @@ struct UnEscapeManipResult
 
     std::istream & operator>> (bool                 & value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
     std::istream & operator>> (char                 & value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
-    std::istream & operator>> (unsigned char         & value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
-    std::istream & operator>> (signed char             & value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
+    std::istream & operator>> (unsigned char        & value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
+    std::istream & operator>> (signed char          & value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
 
     template <typename T>
     typename std::enable_if<std::is_arithmetic<T>::value, std::istream &>::type
@@ -418,8 +418,8 @@ public:
 
     std::istream & operator>> (bool                 & value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
     std::istream & operator>> (char                 & value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
-    std::istream & operator>> (unsigned char         & value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
-    std::istream & operator>> (signed char             & value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
+    std::istream & operator>> (unsigned char        & value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
+    std::istream & operator>> (signed char          & value) { int tmp = 0; istr >> tmp; value = tmp; return istr; }
 
     template <typename T>
     typename std::enable_if<std::is_arithmetic<T>::value, std::istream &>::type

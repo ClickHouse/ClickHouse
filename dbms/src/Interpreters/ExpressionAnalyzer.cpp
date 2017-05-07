@@ -883,7 +883,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
         {
             node->kind = ASTFunction::LAMBDA_EXPRESSION;
         }
-        else if (context.getAggregateFunctionFactory().isAggregateFunctionName(node->name))
+        else if (AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
         {
             node->kind = ASTFunction::AGGREGATE_FUNCTION;
         }
@@ -2077,7 +2077,7 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
             aggregate.argument_names[i] = name;
         }
 
-        aggregate.function = context.getAggregateFunctionFactory().get(node->name, types);
+        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types);
 
         if (node->parameters)
         {
@@ -2238,7 +2238,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     if (!subquery_for_set.join)
     {
         JoinPtr join = std::make_shared<Join>(
-            join_key_names_left, join_key_names_right, settings.limits,
+            join_key_names_left, join_key_names_right,
+            settings.join_use_nulls, settings.limits,
             join_params.kind, join_params.strictness);
 
         Names required_joined_columns(join_key_names_right.begin(), join_key_names_right.end());

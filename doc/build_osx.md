@@ -9,28 +9,10 @@ With appropriate changes, build should work on any other OS X distribution.
 /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 ```
 
-## Install cmake, gcc
+## Install required compilers, tools, libraries
 
 ```
-brew install cmake gcc
-```
-
-## Install GCC-compatible version of boost
-
-```
-brew install boost --cc=gcc-6
-```
-
-## Install required libraries
-
-```
-brew install icu4c mysql openssl unixodbc libtool gettext homebrew/dupes/zlib
-```
-
-## Install optional libraries
-
-```
-brew install readline
+brew install cmake gcc icu4c mysql openssl unixodbc libtool gettext homebrew/dupes/zlib readline boost --cc=gcc-6
 ```
 
 # Checkout ClickHouse sources
@@ -38,8 +20,8 @@ brew install readline
 To get the latest stable version:
 
 ```
-git clone -b stable git@github.com:yandex/ClickHouse.git
-# or: git clone -b stable https://github.com/yandex/ClickHouse.git
+git clone -b stable --recursive --depth=10 git@github.com:yandex/ClickHouse.git
+# or: git clone -b stable --recursive --depth=10 https://github.com/yandex/ClickHouse.git
 
 cd ClickHouse
 ```
@@ -47,27 +29,13 @@ cd ClickHouse
 For development, switch to the `master` branch.
 For the latest release candidate, switch to the `testing` branch.
 
-
-## Use GCC 6 for builds
-
-```
-export CC=gcc-6
-export CXX=g++-6
-```
-
-## Detect number of threads
-
-```
-export THREADS=$(sysctl -n hw.ncpu)
-```
-
 # Build ClickHouse
 
 ```
 mkdir build
 cd build
-cmake ..
-make -j $THREADS
+cmake .. -DCMAKE_CXX_COMPILER=`which g++-6` -DCMAKE_C_COMPILER=`which gcc-6`
+make -j `sysctl -n hw.ncpu`
 cd ..
 ```
 

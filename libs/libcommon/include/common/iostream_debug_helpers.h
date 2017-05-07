@@ -1,3 +1,4 @@
+#pragma once
 #include <iostream>
 
 
@@ -93,6 +94,17 @@ std::ostream & operator<<(std::ostream & stream, const std::unordered_set<K> & w
 }
 
 
+#include <list>
+
+template <typename K>
+std::ostream & operator<<(std::ostream & stream, const std::list<K> & what)
+{
+    stream << "list(size = " << what.size() << ")";
+    dumpContainer(stream, what);
+    return stream;
+}
+
+
 #include <ratio>
 
 template <std::intmax_t Num, std::intmax_t Denom>
@@ -114,6 +126,36 @@ template <class clock, class duration>
 std::ostream & operator<<(std::ostream & stream, const std::chrono::time_point<clock, duration> & what)
 {
     stream << "chrono::time_point{" << what.time_since_epoch() << "}";
+    return stream;
+}
+
+
+#include <memory>
+
+template <class T>
+std::ostream & operator<<(std::ostream & stream, const std::shared_ptr<T> & what)
+{
+    stream << "shared_ptr(use_count = " << what.use_count() << ") {";
+    if (what)
+        stream << *what;
+    else
+        stream << "nullptr";
+    stream << "}";
+    return stream;
+}
+
+
+#include <experimental/optional>
+
+template <class T>
+std::ostream & operator<<(std::ostream & stream, const std::experimental::optional<T> & what)
+{
+    stream << "optional{";
+    if (what)
+        stream << *what;
+    else
+        stream << "empty";
+    stream << "}";
     return stream;
 }
 

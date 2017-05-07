@@ -13,11 +13,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/** Примитив синхронизации. Работает следующим образом:
-  * При создании создает неэфемерную инкрементную ноду и помечает ее как заблокированную (LOCKED).
-  * unlock() разблокирует ее (UNLOCKED).
-  * При вызове деструктора или завершении сессии в ZooKeeper, переходит в состояние ABANDONED.
-  *  (В том числе при падении программы).
+/** The synchronization is primitive. Works as follows:
+  * Creates a non-ephemeral incremental node and marks it as locked (LOCKED).
+  * `unlock()` unlocks it (UNLOCKED).
+  * When the destructor is called or the session ends in ZooKeeper, it goes into the ABANDONED state.
+  * (Including when the program is halted).
   */
 class AbandonableLockInZooKeeper : private boost::noncopyable
 {
@@ -33,10 +33,10 @@ public:
         const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_)
         : zookeeper(zookeeper_), path_prefix(path_prefix_)
     {
-        /// Создадим вспомогательную эфемерную ноду.
+        /// Let's create an secondary ephemeral node.
         holder_path = zookeeper.create(temp_path + "/abandonable_lock-", "", zkutil::CreateMode::EphemeralSequential);
 
-        /// Запишем в основную ноду путь к вспомогательной.
+        /// Write the path to the secondary node in the main node.
         path = zookeeper.create(path_prefix, holder_path, zkutil::CreateMode::PersistentSequential);
 
         if (path.size() <= path_prefix.size())
@@ -56,7 +56,7 @@ public:
         return path;
     }
 
-    /// Распарсить число в конце пути.
+    /// Parse the number at the end of the path.
     UInt64 getNumber() const
     {
         return parse<UInt64>(path.c_str() + path_prefix.size(), path.size() - path_prefix.size());
@@ -69,7 +69,7 @@ public:
         holder_path = "";
     }
 
-    /// Добавляет в список действия, эквивалентные unlock().
+    /// Adds actions equivalent to `unlock()` to the list.
     void getUnlockOps(zkutil::Ops & ops)
     {
         ops.emplace_back(std::make_unique<zkutil::Op::Remove>(path, -1));
@@ -84,7 +84,7 @@ public:
         try
         {
             zookeeper.tryRemoveEphemeralNodeWithRetries(holder_path);
-            zookeeper.trySet(path, ""); /// Это не обязательно.
+            zookeeper.trySet(path, ""); /// It's not necessary.
         }
         catch (...)
         {
@@ -96,21 +96,21 @@ public:
     {
         String holder_path;
 
-        /// Если нет основной ноды, UNLOCKED.
+        /// If there is no main node, UNLOCKED.
         if (!zookeeper.tryGet(path, holder_path))
             return UNLOCKED;
 
-        /// Если в основной ноде нет пути к вспомогательной, ABANDONED.
+        /// If there is no path to the secondary node in the main node, ABANDONED.
         if (holder_path.empty())
             return ABANDONED;
 
-        /// Если вспомогательная нода жива, LOCKED.
+        /// If the secondary node is alive, LOCKED.
         if (zookeeper.exists(holder_path))
             return LOCKED;
 
-        /// Если вспомогательной ноды нет, нужно еще раз проверить существование основной ноды,
-        ///  потому что за это время могли успеть вызвать unlock().
-        /// Заодно уберем оттуда путь к вспомогательной ноде.
+        /// If there is no secondary node, you need to test again the existence of the main node,
+        /// because during this time you might have time to call unlock().
+        /// At the same time, we will remove the path to the secondary node from there.
         if (zookeeper.trySet(path, "") == ZOK)
             return ABANDONED;
 

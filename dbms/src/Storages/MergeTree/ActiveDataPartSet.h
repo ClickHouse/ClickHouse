@@ -1,17 +1,17 @@
 #pragma once
 #include <mutex>
-#include <Poco/RegularExpression.h>
 #include <common/DateLUT.h>
 #include <Core/Types.h>
 #include <set>
 
+
 namespace DB
 {
 
-/** Поддерживает множество названий активных кусков данных.
-  * Повторяет часть функциональности MergeTreeData.
-  * TODO: обобщить с MergeTreeData. Можно этот класс оставить примерно как есть и использовать его из MergeTreeData.
-  *       Тогда в MergeTreeData можно сделать map<String, DataPartPtr> data_parts и all_data_parts.
+/** Supports multiple names of active parts of data.
+  * Repeats part of the MergeTreeData functionality.
+  * TODO: generalize with MergeTreeData. It is possible to leave this class approximately as is and use it from MergeTreeData.
+  *       Then in MergeTreeData you can make map<String, DataPartPtr> data_parts and all_data_parts.
   */
 class ActiveDataPartSet
 {
@@ -45,10 +45,10 @@ public:
             return false;
         }
 
-        /// Содержит другой кусок (получен после объединения другого куска с каким-то ещё)
+        /// Contains another part (obtained after combining another part with some other)
         bool contains(const Part & rhs) const
         {
-            return month == rhs.month        /// Куски за разные месяцы не объединяются
+            return month == rhs.month        /// Parts for different months are not combined
                 && left_date <= rhs.left_date
                 && right_date >= rhs.right_date
                 && left <= rhs.left
@@ -59,20 +59,22 @@ public:
 
     void add(const String & name);
 
-    /// Если не найдено - возвращает пустую строку.
+    /// If not found, returns an empty string.
     String getContainingPart(const String & name) const;
 
-    Strings getParts() const; /// В порядке возрастания месяца и номера блока.
+    Strings getParts() const; /// In ascending order of the month and block number.
 
     size_t size() const;
 
     static String getPartName(DayNum_t left_date, DayNum_t right_date, Int64 left_id, Int64 right_id, UInt64 level);
 
-    /// Возвращает true если имя директории совпадает с форматом имени директории кусочков
-    static bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec * out_matches = nullptr);
+    /// Returns true if the directory name matches the format of the directory name of the parts
+    static bool isPartDirectory(const String & dir_name);
 
-    /// Кладет в DataPart данные из имени кусочка.
-    static void parsePartName(const String & file_name, Part & part, const Poco::RegularExpression::MatchVec * matches = nullptr);
+    static bool parsePartNameImpl(const String & dir_name, Part * part);
+
+    /// Put data in DataPart from the name of the part.
+    static void parsePartName(const String & dir_name, Part & part);
 
     static bool contains(const String & outer_part_name, const String & inner_part_name);
 
@@ -82,7 +84,7 @@ private:
     mutable std::mutex mutex;
     Parts parts;
 
-    /// Не блокируют mutex.
+    /// Do not block mutex.
     void addImpl(const String & name);
     String getContainingPartImpl(const String & name) const;
 };

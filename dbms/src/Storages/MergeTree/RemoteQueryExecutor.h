@@ -11,7 +11,7 @@ class Context;
 namespace RemoteQueryExecutor
 {
 
-/** Сервис для выполнения SQL запросов.
+/** Service for executing SQL queries.
   */
 class Service final : public InterserverIOEndpoint
 {
@@ -20,13 +20,13 @@ public:
     Service(const Service &) = delete;
     Service & operator=(const Service &) = delete;
     std::string getId(const std::string & node_id) const override;
-    void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out) override;
+    void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) override;
 
 private:
     Context & context;
 };
 
-/** Клиент для удалённого выполнения SQL запросов.
+/** Client for remote execution of SQL queries.
   */
 class Client final
 {

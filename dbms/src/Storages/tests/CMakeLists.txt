@@ -1,7 +1,7 @@
 include_directories (${CMAKE_CURRENT_BINARY_DIR})
 
 add_executable (system_numbers system_numbers.cpp)
-target_link_libraries (system_numbers dbms storages_system)
+target_link_libraries (system_numbers dbms clickhouse_storages_system)
 
 add_executable (storage_log storage_log.cpp)
 target_link_libraries (storage_log dbms)
@@ -33,5 +33,3 @@ target_link_libraries (merge_selector dbms)
 
 add_executable (merge_selector2 merge_selector2.cpp)
 target_link_libraries (merge_selector2 dbms)
-
-add_executable (row_source_bitwise_compatibility row_source_bitwise_test.cpp)

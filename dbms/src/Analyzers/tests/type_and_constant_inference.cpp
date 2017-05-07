@@ -14,6 +14,7 @@
 #include <Storages/System/StorageSystemOne.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Databases/DatabaseMemory.h>
+#include <Functions/registerFunctions.h>
 
 
 /// Parses query from stdin and print data types of expressions; and for constant expressions, print its values.
@@ -22,6 +23,8 @@ int main(int argc, char ** argv)
 try
 {
     using namespace DB;
+
+    registerFunctions();
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);

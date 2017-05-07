@@ -2,8 +2,11 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
-#include <IO/ReadBufferFromHTTP.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
+#include <ext/scope_guard.hpp>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/HTTPRequest.h>
 
 
 namespace CurrentMetrics
@@ -19,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
+    extern const int TOO_MUCH_SIMULTANEOUS_QUERIES;
 }
 
 namespace DataPartsExchange
@@ -39,7 +43,7 @@ std::string Service::getId(const std::string & node_id) const
     return getEndpointId(node_id);
 }
 
-void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out)
+void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response)
 {
     if (is_cancelled)
         throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
@@ -48,6 +52,24 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
     String shard_str = params.get("shard");
 
     bool send_sharded_part = !shard_str.empty();
+
+    static std::atomic_uint total_sends {0};
+
+    if ((data.settings.replicated_max_parallel_sends && total_sends >= data.settings.replicated_max_parallel_sends)
+        || (data.settings.replicated_max_parallel_sends_for_table && data.current_table_sends >= data.settings.replicated_max_parallel_sends_for_table))
+    {
+        response.setStatus(std::to_string(HTTP_TOO_MANY_REQUESTS));
+        response.setReason("Too many concurrent fetches, try again later");
+        response.set("Retry-After", "10");
+        response.setChunkedTransferEncoding(false);
+        return;
+    }
+    ++total_sends;
+    SCOPE_EXIT({--total_sends;});
+
+    ++data.current_table_sends;
+    SCOPE_EXIT({--data.current_table_sends;});
+
 
     LOG_TRACE(log, "Sending part " << part_name);
 
@@ -173,25 +195,27 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
     const String & shard_no,
     bool to_detached)
 {
-    ReadBufferFromHTTP::Params params =
+    Poco::URI uri;
+    uri.setScheme("http");
+    uri.setHost(host);
+    uri.setPort(port);
+    uri.setQueryParameters(
     {
         {"endpoint", getEndpointId(replica_path)},
         {"part", part_name},
         {"shard", shard_no},
         {"compress", "false"}
-    };
+    }
+    );
 
-    ReadBufferFromHTTP in(host, port, "", params);
+    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
 
     String full_part_name = String(to_detached ? "detached/" : "") + "tmp_" + part_name;
     String part_path = data.getFullPath() + full_part_name + "/";
     Poco::File part_file(part_path);
 
     if (part_file.exists())
-    {
-        LOG_ERROR(log, "Directory " + part_path + " already exists. Removing.");
-        part_file.remove(true);
-    }
+        throw Exception("Directory " + part_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 

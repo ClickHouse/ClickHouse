@@ -1,8 +1,0 @@
-Source: clickhouse
-Priority: optional
-Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
-Build-Depends: debhelper (>= 5), cmake, gcc-6, g++-6,
-               libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev,
-               libglib2.0-dev, libltdl-dev, libssl-dev
-Standards-Version: 3.8.0
-Section: libs

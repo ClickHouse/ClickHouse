@@ -1,35 +1,46 @@
 #!/bin/sh
 
-# How to build ClickHouse under freebsd 11+
-# [temporary solution before port created]
+#  How to build ClickHouse under freebsd 11+
+
+#  Variant 1: Use pkg:
+# pkg install databases/clickhouse
+
+#  Variant 2: Use ports:
+# make -C /usr/ports/databases/clickhouse install clean
+
+#  Run server:
+# echo clickhouse_enable="YES" >> /etc/rc.conf.local
+# service clickhouse restart
+
+
+#  Variant 3: Manual build:
 
 # pkg install -y curl sudo
 # curl https://raw.githubusercontent.com/yandex/ClickHouse/master/doc/build_freebsd.sh | sh
 
-# install compiler and libs
-sudo pkg install git cmake bash mysql57-client icu libltdl unixODBC google-perftools
+#  install compiler and libs
+sudo pkg install devel/git devel/cmake shells/bash devel/icu devel/libltdl databases/unixODBC devel/google-perftools devel/libzookeeper devel/libdouble-conversion archivers/zstd archivers/liblz4 devel/sparsehash devel/re2
 
-# install testing only stuff if you want:
-sudo pkg install python py27-lxml py27-termcolor curl perl5
+#  install testing only stuff if you want:
+sudo pkg install lang/python devel/py-lxml devel/py-termcolor ftp/curl perl5
 
-# Checkout ClickHouse sources
+#  If you want ODBC support: Check UNIXODBC option:
+# make -C /usr/ports/devel/poco config reinstall
+
+#  Checkout ClickHouse sources
 git clone https://github.com/yandex/ClickHouse.git
 
-# Build!
+#  Build!
 mkdir -p ClickHouse/build
 cd ClickHouse/build
-cmake .. -DUSE_INTERNAL_GPERFTOOLS_LIBRARY=0
-#  WIP: variant with libs from ports:
-# sudo pkg install devel/boost-libs devel/libzookeeper devel/libdouble-conversion archivers/zstd archivers/liblz4 devel/sparsehash devel/re2
-#  Check UNIXODBC option:
-# make -C /usr/ports/devel/poco config reinstall
-# cmake .. -DUNBUNDLED=1 -DUSE_STATIC_LIBRARIES=0 -DNO_WERROR=1
+cmake .. -DUNBUNDLED=1 -DUSE_STATIC_LIBRARIES=0 -DNO_WERROR=1 -DUSE_INTERNAL_BOOST_LIBRARY=1
+# build with boost 1.64 from ports temporary broken
 
 make -C dbms/src/Server -j $(nproc || sysctl -n hw.ncpu || echo 2)
 cd ../..
 
-# run server:
+#  Run server:
 # ClickHouse/build/dbms/src/Server/clickhouse --server --config-file=ClickHouse/dbms/src/Server/config.xml &
 
-# run client:
+#  Run client:
 # ClickHouse/build/dbms/src/Server/clickhouse --client

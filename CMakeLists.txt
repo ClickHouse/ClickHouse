@@ -24,7 +24,7 @@ endif ()
 cmake_policy (SET CMP0014 OLD) # Ignore warning about CMakeLists.txt in each directory
 cmake_policy (SET CMP0012 NEW) # Don't dereference TRUE and FALSE
 
-if (NOT CMAKE_BUILD_TYPE)
+if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
     message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = RELWITHDEBINFO")
     set (CMAKE_BUILD_TYPE "RELWITHDEBINFO")
 endif ()
@@ -134,15 +134,13 @@ endif (TEST_COVERAGE)
 if (ENABLE_TESTS)
     message (STATUS "Tests are enabled")
     enable_testing()
-    add_subdirectory (dbms/tests)
-endif (ENABLE_TESTS)
+endif ()
 
-# Installation prefix
-if (NOT CMAKE_SYSTEM MATCHES "FreeBSD")
-    set (CMAKE_INSTALL_PREFIX /usr)
-    set (CLICKHOUSE_ETC_DIR /etc)
+# when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
+if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+    set (CLICKHOUSE_ETC_DIR "/etc")
 else ()
-    set (CLICKHOUSE_ETC_DIR ${CMAKE_INSTALL_PREFIX}/etc)
+    set (CLICKHOUSE_ETC_DIR "${CMAKE_INSTALL_PREFIX}/etc")
 endif ()
 
 option (UNBUNDLED "Try find all libraries in system (if fail - use bundled from contrib/)" OFF)
@@ -154,10 +152,16 @@ endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} UNBUNDLED=${UNBUNDLED}")
 
+include(GNUInstallDirs)
+
 include (cmake/find_openssl.cmake)
+if (NOT OPENSSL_FOUND)
+    message (FATAL_ERROR "Need openssl for build. debian tip: sudo apt install libssl-dev")
+endif ()
+
 include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
-# zlib before poco
+# openssl, zlib before poco
 include (cmake/find_zlib.cmake)
 include (cmake/find_zstd.cmake)
 include (cmake/find_poco.cmake)
@@ -171,6 +175,7 @@ include (cmake/find_double-conversion.cmake)
 include (cmake/find_re2.cmake)
 include (libs/libcommon/cmake/find_gperftools.cmake)
 include (libs/libcommon/cmake/find_jemalloc.cmake)
+include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 
 set (FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")
 set (FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")

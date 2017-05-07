@@ -210,11 +210,19 @@ struct Limits;
   * NULLs never join to anything, even to each other.
   * During building of map, we just skip keys with NULL value of any component.
   * During joining, we simply treat rows with any NULLs in key as non joined.
+  *
+  * Default values for outer joins (LEFT, RIGHT, FULL):
+  *
+  * Behaviour is controlled by 'join_use_nulls' settings.
+  * If it is false, we substitute (global) default value for the data type, for non-joined rows
+  *  (zero, empty string, etc. and NULL for Nullable data types).
+  * If it is true, we always generate Nullable column and substitute NULLs for non-joined rows,
+  *  as in standard SQL.
   */
 class Join
 {
 public:
-    Join(const Names & key_names_left_, const Names & key_names_right_,
+    Join(const Names & key_names_left_, const Names & key_names_right_, bool use_nulls_,
          const Limits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_);
 
     bool empty() { return type == Type::EMPTY; }
@@ -244,6 +252,7 @@ public:
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.
       * Use only after all calls to joinBlock was done.
+      * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
     BlockInputStreamPtr createStreamWithNonJoinedRows(Block & left_sample_block, size_t max_block_size) const;
 
@@ -351,10 +360,13 @@ private:
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
 
-    /// Names of key columns (columns for equi-JOIN) in "left" table.
+    /// Names of key columns (columns for equi-JOIN) in "left" table (in the order they appear in USING clause).
     const Names key_names_left;
-    /// Names of key columns (columns for equi-JOIN) in "right" table.
+    /// Names of key columns (columns for equi-JOIN) in "right" table (in the order they appear in USING clause).
     const Names key_names_right;
+
+    /// Substitute NULLs for non-JOINed rows.
+    bool use_nulls;
 
     /** Blocks of "right" table.
       */
@@ -375,7 +387,9 @@ private:
 
     Sizes key_sizes;
 
+    /// Block with columns from the right-side table except key columns.
     Block sample_block_with_columns_to_add;
+    /// Block with key columns in the same order they appear in the right-side table.
     Block sample_block_with_keys;
 
     Poco::Logger * log;

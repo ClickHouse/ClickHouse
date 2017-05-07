@@ -27,6 +27,7 @@ public:
     bool isNumericNotNullable() const override { return false; }
     bool isConst() const override { return nested_column->isConst(); }
     bool isFixed() const override { return nested_column->isFixed(); }
+    size_t sizeOfField() const override;
     bool isNullable() const override { return true; }
     ColumnPtr cloneResized(size_t size) const override;
     size_t size() const override { return nested_column->size(); }
@@ -88,6 +89,9 @@ public:
     void applyNullMap(const ColumnNullable & other);
     void applyNullMap(const ColumnUInt8 & map);
     void applyNegatedNullMap(const ColumnUInt8 & map);
+
+    /// Check that size of null map equals to size of nested column.
+    void checkConsistency() const;
 
 private:
     ColumnPtr nested_column;

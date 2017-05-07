@@ -1,4 +1,4 @@
-#include <mysqlxx/Manip.h>
+#include <iomanip>
 #include <Parsers/ASTInsertQuery.h>
 
 
@@ -14,7 +14,7 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
 
     if (!insert_id.empty())
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " ID = " << (settings.hilite ? hilite_none : "")
-        << mysqlxx::quote << insert_id;
+        << std::quoted(insert_id, '\'');
 
     if (columns)
     {

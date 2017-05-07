@@ -1,19 +1,34 @@
 add_definitions(
     -DNO_TCMALLOC_SAMPLES
-    -DNDEBUG -DNO_FRAME_POINTER
-    -Wwrite-strings -Wno-sign-compare -Wno-unused-result
-    -Wno-deprecated-declarations -Wno-unused-function
+    -DNDEBUG
+    -DNO_FRAME_POINTER
+    -Wwrite-strings
+    -Wno-sign-compare
+    -Wno-unused-result
+    -Wno-deprecated-declarations
+    -Wno-unused-function
     -Wno-unused-private-field
-    -fno-builtin-malloc -fno-builtin-free -fno-builtin-realloc -fno-builtin-calloc -fno-builtin-cfree
-    -fno-builtin-memalign -fno-builtin-posix_memalign -fno-builtin-valloc -fno-builtin-pvalloc
+    -fno-builtin-malloc
+    -fno-builtin-free
+    -fno-builtin-realloc
+    -fno-builtin-calloc
+    -fno-builtin-cfree
+    -fno-builtin-memalign
+    -fno-builtin-posix_memalign
+    -fno-builtin-valloc
+    -fno-builtin-pvalloc
 )
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 3.9)
+    add_definitions( -Wno-dynamic-exception-spec )
+endif()
+
 if(CMAKE_SYSTEM MATCHES "FreeBSD" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-	add_definitions(-Wno-unused-but-set-variable)
+    add_definitions(-Wno-unused-but-set-variable)
 endif()
 
 if(CMAKE_SYSTEM MATCHES "FreeBSD")
-	add_definitions(-D_GNU_SOURCE)
+    add_definitions(-D_GNU_SOURCE)
 endif()
 
 include_directories (include src)

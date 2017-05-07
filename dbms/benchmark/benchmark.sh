@@ -3,7 +3,7 @@
 
 function usage()
 {
-        cat <<EOF   
+        cat <<EOF
 usage: $0 options
 
 This script run benhmark for database
@@ -27,11 +27,11 @@ table_name_pattern=hits_10m
 while getopts “c:ht:n:q:e:s:r” OPTION
 do
      case $OPTION in
-	 c)
-	     source $OPTARG
-	     ;;
-	 ?)
-	     ;;
+     c)
+         source $OPTARG
+         ;;
+     ?)
+         ;;
      esac
 done
 
@@ -40,33 +40,33 @@ OPTIND=1
 while getopts “c:ht:n:q:e:s:r” OPTION
 do
      case $OPTION in
-	 h)
+     h)
              usage
              exit 0
              ;;
          t)
-	     TIMES=$OPTARG
-	     ;;
-	 n)
-	     table_name=$OPTARG
-	     ;;
-	 q)
-	     test_file=$OPTARG
-	     ;;
-	 e)
-	     expect_file=$OPTARG
-	     ;;
-	 s)
-	     etc_init_d_service=$OPTARG
-	     ;;
-	 p) 
-	     table_name_pattern=$OPTARG
-	     ;;
-	 c)
-	     ;;
-	 r)
-	     restart_server_each_query=1
-	     ;;
+         TIMES=$OPTARG
+         ;;
+     n)
+         table_name=$OPTARG
+         ;;
+     q)
+         test_file=$OPTARG
+         ;;
+     e)
+         expect_file=$OPTARG
+         ;;
+     s)
+         etc_init_d_service=$OPTARG
+         ;;
+     p)
+         table_name_pattern=$OPTARG
+         ;;
+     c)
+         ;;
+     r)
+         restart_server_each_query=1
+         ;;
          ?)
              usage
              exit 0
@@ -93,7 +93,7 @@ fi
 if [[ "$table_name_pattern" == "" ]]; then
     echo "Empty table_name_pattern"
     exit 1
-fi 
+fi
 if [[  "$table_name" == "" ]]; then
     echo "Empty table_name"
     exit 1
@@ -103,71 +103,71 @@ function execute()
 {
     queries=("${@}")
     queries_count=${#queries[@]}
-    
+
     if [ -z $TIMES ]; then
-	TIMES=1
+    TIMES=1
     fi
-    
+
     index=0
     while [ "$index" -lt "$queries_count" ]; do
-	query=${queries[$index]}
+    query=${queries[$index]}
 
-	if [[ $query == "" ]]; then
-	    let "index = $index + 1"
-	    continue
-	fi
-	
-   	comment_re='--.*'
-	if [[ $query =~ $comment_re ]]; then
-	    echo "$query"
-	    echo
-	else	    
-	    sync
-	    sudo sh -c "echo 3 > /proc/sys/vm/drop_caches"
+    if [[ $query == "" ]]; then
+        let "index = $index + 1"
+        continue
+    fi
 
-	    if [[  "$restart_server_each_query" == "1"  && "$use_service" == "1" ]]; then
-		echo "restart server: $etc_init_d_service restart"
-		sudo $etc_init_d_service restart
-	    fi	    
+       comment_re='--.*'
+    if [[ $query =~ $comment_re ]]; then
+        echo "$query"
+        echo
+    else
+        sync
+        sudo sh -c "echo 3 > /proc/sys/vm/drop_caches"
 
-	    for i in $(seq $TIMES)
-	    do
-		if [[ -f $etc_init_d_service && "$use_service" == "1" ]]; then
-		    sudo $etc_init_d_service status 
-		    server_status=$?
-                    expect -f $expect_file ""		
+        if [[  "$restart_server_each_query" == "1"  && "$use_service" == "1" ]]; then
+        echo "restart server: $etc_init_d_service restart"
+        sudo $etc_init_d_service restart
+        fi
 
-		    if [[ "$?" != "0" || $server_status != "0" ]]; then
-			echo "restart server: $etc_init_d_service restart"
-			sudo $etc_init_d_service restart
-		    fi	    
+        for i in $(seq $TIMES)
+        do
+        if [[ -f $etc_init_d_service && "$use_service" == "1" ]]; then
+            sudo $etc_init_d_service status
+            server_status=$?
+                    expect -f $expect_file ""
 
-		    #wait until can connect to server
-		    restart_timer=0
-		    restart_limit=60
-                    expect -f $expect_file "" &> /dev/null	
-		    while [ "$?" != "0" ]; do
-			echo "waiting"
-			sleep 1			
-			let "restart_timer = $restart_timer + 1"
-			if (( $restart_limit < $restart_timer )); then 
-			    sudo $etc_init_d_service restart
-			    restart_timer=0
-			fi
-			expect -f $expect_file "" &> /dev/null
-		    done
-		fi
-		
-		echo
-		echo "times: $i"  
-		
-		echo "query:" "$query"
-                expect -f $expect_file "$query"		
+            if [[ "$?" != "0" || $server_status != "0" ]]; then
+            echo "restart server: $etc_init_d_service restart"
+            sudo $etc_init_d_service restart
+            fi
 
-	    done
-	fi
+            #wait until can connect to server
+            restart_timer=0
+            restart_limit=60
+                    expect -f $expect_file "" &> /dev/null
+            while [ "$?" != "0" ]; do
+            echo "waiting"
+            sleep 1
+            let "restart_timer = $restart_timer + 1"
+            if (( $restart_limit < $restart_timer )); then
+                sudo $etc_init_d_service restart
+                restart_timer=0
+            fi
+            expect -f $expect_file "" &> /dev/null
+            done
+        fi
 
-	let "index = $index + 1"
+        echo
+        echo "times: $i"
+
+        echo "query:" "$query"
+                expect -f $expect_file "$query"
+
+        done
+    fi
+
+    let "index = $index + 1"
     done
 }
 

@@ -9,7 +9,7 @@
 #include <limits>
 
 #include <common/exp10.h>
-#include <common/Common.h>
+#include <common/Types.h>
 #include <common/DateLUT.h>
 
 #include <mysqlxx/Types.h>
@@ -239,27 +239,25 @@ private:
 };
 
 
-template <> inline bool                 Value::get<bool                    >() const { return getBool(); }
-template <> inline char                 Value::get<char                    >() const { return getInt(); }
-template <> inline signed char             Value::get<signed char            >() const { return getInt(); }
+template <> inline bool                 Value::get<bool                 >() const { return getBool(); }
+template <> inline char                 Value::get<char                 >() const { return getInt(); }
+template <> inline signed char          Value::get<signed char          >() const { return getInt(); }
 template <> inline unsigned char        Value::get<unsigned char        >() const { return getUInt(); }
-template <> inline short                 Value::get<short                >() const { return getInt(); }
-template <> inline unsigned short        Value::get<unsigned short        >() const { return getUInt(); }
-template <> inline int                     Value::get<int                    >() const { return getInt(); }
-template <> inline unsigned int         Value::get<unsigned int            >() const { return getUInt(); }
-template <> inline long                 Value::get<long                    >() const { return getInt(); }
-template <> inline unsigned long         Value::get<unsigned long        >() const { return getUInt(); }
-template <> inline long long             Value::get<long long            >() const { return getInt(); }
-template <> inline unsigned long long     Value::get<unsigned long long    >() const { return getUInt(); }
-template <> inline float                 Value::get<float                >() const { return getDouble(); }
-template <> inline double                 Value::get<double                >() const { return getDouble(); }
-template <> inline std::string            Value::get<std::string            >() const { return getString(); }
+template <> inline short                Value::get<short                >() const { return getInt(); }
+template <> inline unsigned short       Value::get<unsigned short       >() const { return getUInt(); }
+template <> inline int                  Value::get<int                  >() const { return getInt(); }
+template <> inline unsigned int         Value::get<unsigned int         >() const { return getUInt(); }
+template <> inline long                 Value::get<long                 >() const { return getInt(); }
+template <> inline unsigned long        Value::get<unsigned long        >() const { return getUInt(); }
+template <> inline long long            Value::get<long long            >() const { return getInt(); }
+template <> inline unsigned long long   Value::get<unsigned long long   >() const { return getUInt(); }
+template <> inline float                Value::get<float                >() const { return getDouble(); }
+template <> inline double               Value::get<double               >() const { return getDouble(); }
+template <> inline std::string          Value::get<std::string          >() const { return getString(); }
 template <> inline LocalDate            Value::get<LocalDate            >() const { return getDate(); }
 template <> inline LocalDateTime        Value::get<LocalDateTime        >() const { return getDateTime(); }
 
-template <> inline VisitID_t            Value::get<VisitID_t            >() const { return VisitID_t(getUInt()); }
-
-template <typename T> inline T            Value::get()                         const { return T(*this); }
+template <typename T> inline T          Value::get()                        const { return T(*this); }
 
 
 inline std::ostream & operator<< (std::ostream & ostr, const Value & x)

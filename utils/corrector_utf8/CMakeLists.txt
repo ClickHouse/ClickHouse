@@ -6,4 +6,4 @@ add_executable(corrector_utf8 corrector_utf8.cpp)
 target_link_libraries (corrector_utf8 dbms)
 add_dependencies(corrector_utf8 dbms)
 
-INSTALL( TARGETS corrector_utf8 RUNTIME DESTINATION bin COMPONENT corrector_utf8)
+install( TARGETS corrector_utf8 RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT corrector_utf8)

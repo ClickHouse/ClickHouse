@@ -1,3 +1,6 @@
+#include <Common/config.h>
+#if USE_MYSQL
+
 #include <Dictionaries/Embedded/TechDataHierarchy.h>
 
 #include <common/logger_useful.h>
@@ -54,3 +57,5 @@ bool TechDataHierarchy::isConfigured()
 {
     return Poco::Util::Application::instance().config().has(config_key);
 }
+
+#endif

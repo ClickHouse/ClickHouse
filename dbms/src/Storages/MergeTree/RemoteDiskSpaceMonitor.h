@@ -12,7 +12,7 @@ class Context;
 namespace RemoteDiskSpaceMonitor
 {
 
-/** Сервис для получения информации о свободном месте на диске.
+/** Service to get information about free disk space.
   */
 class Service final : public InterserverIOEndpoint
 {
@@ -21,13 +21,13 @@ public:
     Service(const Service &) = delete;
     Service & operator=(const Service &) = delete;
     std::string getId(const std::string & node_id) const override;
-    void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out) override;
+    void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) override;
 
 private:
     const Context & context;
 };
 
-/** Клиент для получения информации о свободном месте на удалённом диске.
+/** Client to get information about free space on a remote disk.
   */
 class Client final
 {

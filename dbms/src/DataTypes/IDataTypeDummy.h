@@ -6,43 +6,48 @@
 namespace DB
 {
 
-/** Базовые класс для типов данных, которые не поддерживают сериализацию и десериализацию,
-  *  а возникают лишь в качестве промежуточного результата вычислений.
+/** The base class for data types that do not support serialization and deserialization,
+  *  but arise only as an intermediate result of the calculations.
   *
-  * То есть, этот класс используется всего лишь чтобы отличить соответствующий тип данных от других.
+  * That is, this class is used just to distinguish the corresponding data type from the others.
   */
 class IDataTypeDummy : public IDataType
 {
 private:
+    bool notForTables() const override
+    {
+        return true;
+    }
+
     void throwNoSerialization() const
     {
         throw Exception("Serialization is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
 public:
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override                             { throwNoSerialization(); }
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override                                 { throwNoSerialization(); }
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override         { throwNoSerialization(); }
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override                                 { throwNoSerialization(); }
+    void serializeBinary(const Field & field, WriteBuffer & ostr) const override                       { throwNoSerialization(); }
+    void deserializeBinary(Field & field, ReadBuffer & istr) const override                            { throwNoSerialization(); }
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override    { throwNoSerialization(); }
+    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override                         { throwNoSerialization(); }
 
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr,
         size_t offset, size_t limit) const override                                                    { throwNoSerialization(); }
 
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override { throwNoSerialization(); }
 
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override             { throwNoSerialization(); }
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override           { throwNoSerialization(); }
 
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override     { throwNoSerialization(); }
+    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override    { throwNoSerialization(); }
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override                         { throwNoSerialization(); }
 
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override     { throwNoSerialization(); }
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override                             { throwNoSerialization(); }
+    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override                          { throwNoSerialization(); }
 
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const override         { throwNoSerialization(); }
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const override { throwNoSerialization(); }
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override                            { throwNoSerialization(); }
 
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override        { throwNoSerialization(); }
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override         { throwNoSerialization(); }
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override       { throwNoSerialization(); }
 
     ColumnPtr createColumn() const override
     {

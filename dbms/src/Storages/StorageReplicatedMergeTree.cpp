@@ -103,6 +103,8 @@ namespace ErrorCodes
     extern const int UNFINISHED;
     extern const int METADATA_MISMATCH;
     extern const int RESHARDING_NULLABLE_SHARDING_KEY;
+    extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
+    extern const int TOO_MUCH_FETCHES;
 }
 
 
@@ -126,8 +128,8 @@ static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
   * Why is this number 200?
   * The fact is that previously negative block numbers were not supported.
   * And also, the merge is done that way so that when you increase the number of parts, insertion of new parts slows down on purpose,
-  *  until mergers have time to reduce the number of parts; and it was calculated for about 200 pieces.
-  * So, when you insert all the parts from the other table into the table, 200 numbers are sure enough.
+  *  until mergers have time to reduce the number of parts; and it was calculated for about 200 parts.
+  * So, when you insert all the parts from the other table into the table, 200 is sure enough.
   * In turn, this number is chosen almost at random.
   */
 extern const Int64 RESERVED_BLOCK_NUMBERS = 200;
@@ -1159,7 +1161,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
             Stopwatch stopwatch;
 
             auto part = merger.mergePartsToTemporaryPart(
-                parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get());
+                parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
 
             zkutil::Ops ops;
 
@@ -1253,22 +1255,23 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
         String replica = findReplicaHavingCoveringPart(entry.new_part_name, true, covering_part);
 
         static std::atomic_uint total_fetches {0};
-        if (total_fetches >= data.settings.replicated_max_parallel_fetches)
+        if (data.settings.replicated_max_parallel_fetches && total_fetches >= data.settings.replicated_max_parallel_fetches)
         {
-            return false;
+            throw Exception("Too much total fetches from replicas, maximum: " + toString(data.settings.replicated_max_parallel_fetches),
+                ErrorCodes::TOO_MUCH_FETCHES);
         }
 
         ++total_fetches;
         SCOPE_EXIT({--total_fetches;});
 
-        if (current_table_fetches >= data.settings.replicated_max_parallel_fetches_for_table)
+        if (data.settings.replicated_max_parallel_fetches_for_table && current_table_fetches >= data.settings.replicated_max_parallel_fetches_for_table)
         {
-            return false;
+            throw Exception("Too much fetches from replicas for table, maximum: " + toString(data.settings.replicated_max_parallel_fetches_for_table),
+                ErrorCodes::TOO_MUCH_FETCHES);
         }
 
         ++current_table_fetches;
         SCOPE_EXIT({--current_table_fetches;});
-
 
         if (replica.empty() && entry.type == LogEntry::ATTACH_PART)
         {
@@ -1417,8 +1420,18 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 }
             }
 
-            if (!fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
-                return false;
+            try
+            {
+                if (!fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
+                    return false;
+            }
+            catch (Exception & e)
+            {
+                /// No stacktrace, just log message
+                if (e.code() == ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
+                    e.addMessage("Too busy replica. Will try later.");
+                throw;
+            }
 
             if (entry.type == LogEntry::MERGE_PARTS)
                 ProfileEvents::increment(ProfileEvents::ReplicatedPartFetchesOfMerged);
@@ -1554,9 +1567,11 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 
     while (!shutdown_called)
     {
+        last_queue_update_attempt_time.store(time(nullptr));
         try
         {
             pullLogsToQueue(queue_updating_event);
+            last_successful_queue_update_attempt_time.store(time(nullptr));
             queue_updating_event->wait();
         }
         catch (const zkutil::KeeperException & e)
@@ -1744,6 +1759,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
     setThreadName("ReplMTMergeSel");
     LOG_DEBUG(log, "Merge selecting thread started");
 
+    bool deduplicate = false; /// TODO: read deduplicate option from table config
     bool need_pull = true;
 
     MemoizedPartsThatCouldBeMerged memoized_parts_that_could_be_merged;
@@ -1794,7 +1810,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
                         parts, merged_name, false,
                         max_parts_size_for_merge,
                         can_merge)
-                    && createLogEntryToMergeParts(parts, merged_name))
+                    && createLogEntryToMergeParts(parts, merged_name, deduplicate))
                 {
                     success = true;
                     need_pull = true;
@@ -1818,7 +1834,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 
 bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
-    const MergeTreeData::DataPartsVector & parts, const String & merged_name, ReplicatedMergeTreeLogEntryData * out_log_entry)
+    const MergeTreeData::DataPartsVector & parts, const String & merged_name, bool deduplicate, ReplicatedMergeTreeLogEntryData * out_log_entry)
 {
     auto zookeeper = getZooKeeper();
 
@@ -1847,6 +1863,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
     entry.type = LogEntry::MERGE_PARTS;
     entry.source_replica = replica_name;
     entry.new_part_name = merged_name;
+    entry.deduplicate = deduplicate;
     entry.create_time = time(0);
 
     for (const auto & part : parts)
@@ -2386,7 +2403,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query, const Setti
 }
 
 
-bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, const Settings & settings)
+bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
 {
     /// If there is nonreplicated data, then merge them first.
     if (unreplicated_data)
@@ -2406,7 +2423,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
             Stopwatch stopwatch;
 
             auto new_part = unreplicated_merger->mergePartsToTemporaryPart(
-                parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io, time(0));
+                parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io, time(0), nullptr /*disk_reservation*/, deduplicate);
 
             unreplicated_merger->renameMergedTemporaryPart(parts, new_part, merged_name, nullptr);
 
@@ -2482,7 +2499,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
         if (!selected)
             return false;
 
-        if (!createLogEntryToMergeParts(parts, merged_name, &merge_entry))
+        if (!createLogEntryToMergeParts(parts, merged_name, deduplicate, &merge_entry))
             return false;
     }
 
@@ -2789,7 +2806,7 @@ void StorageReplicatedMergeTree::dropPartition(
     String fake_part_name = getFakePartNameForDrop(month_name, left, right);
 
     /** Forbid to choose the parts to be deleted for merging.
-      * Invariant: after the `DROP_RANGE` entry appears in the log, merge of deleted pieces will not appear in the log.
+      * Invariant: after the `DROP_RANGE` entry appears in the log, merge of deleted parts will not appear in the log.
       */
     {
         std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
@@ -3187,6 +3204,8 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
     res.is_session_expired = !zookeeper || zookeeper->expired();
 
     res.queue = queue.getStatus();
+    res.absolute_delay = getAbsoluteDelay(); /// NOTE: may be slightly inconsistent with queue status.
+
     res.parts_to_check = part_check_thread.size();
 
     res.zookeeper_path = zookeeper_path;
@@ -3235,24 +3254,52 @@ void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica
     queue.getEntries(res);
 }
 
+time_t StorageReplicatedMergeTree::getAbsoluteDelay() const
+{
+    time_t min_unprocessed_insert_time = 0;
+    time_t max_processed_insert_time = 0;
+    queue.getInsertTimes(min_unprocessed_insert_time, max_processed_insert_time);
+
+    /// Load in reverse order to preserve consistency (successful update time must be after update start time).
+    /// Probably doesn't matter because pullLogsToQueue() acts as a barrier.
+    time_t successful_queue_update_time = last_successful_queue_update_attempt_time.load();
+    time_t queue_update_time = last_queue_update_attempt_time.load();
+
+    time_t current_time = time(nullptr);
+
+    if (!queue_update_time)
+    {
+        /// We have not even tried to update queue yet (perhaps replica is readonly).
+        /// As we have no info about the current state of replication log, return effectively infinite delay.
+        return current_time;
+    }
+    else if (min_unprocessed_insert_time)
+    {
+        /// There are some unprocessed insert entries in queue.
+        return (current_time > min_unprocessed_insert_time) ? (current_time - min_unprocessed_insert_time) : 0;
+    }
+    else if (queue_update_time > successful_queue_update_time)
+    {
+        /// Queue is empty, but there are some in-flight or failed queue update attempts
+        /// (likely because of problems with connecting to ZooKeeper).
+        /// Return the time passed since last attempt.
+        return (current_time > queue_update_time) ? (current_time - queue_update_time) : 0;
+    }
+    else
+    {
+        /// Everything is up-to-date.
+        return 0;
+    }
+}
 
 void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay)
 {
     assertNotReadonly();
 
-    /** Absolute delay - the lag of the current replica from real time.
-      */
+    time_t current_time = time(nullptr);
 
-    time_t min_unprocessed_insert_time = 0;
-    time_t max_processed_insert_time = 0;
-    queue.getInsertTimes(min_unprocessed_insert_time, max_processed_insert_time);
-
-    time_t current_time = time(0);
-    out_absolute_delay = 0;
+    out_absolute_delay = getAbsoluteDelay();
     out_relative_delay = 0;
-
-    if (min_unprocessed_insert_time)
-        out_absolute_delay = current_time - min_unprocessed_insert_time;
 
     /** Relative delay is the maximum difference of absolute delay from any other replica,
       *  (if this replica lags behind any other live replica, or zero, otherwise).
@@ -3304,8 +3351,13 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 
     if (have_replica_with_nothing_unprocessed)
         out_relative_delay = out_absolute_delay;
-    else if (max_replicas_unprocessed_insert_time > min_unprocessed_insert_time)
-        out_relative_delay = max_replicas_unprocessed_insert_time - min_unprocessed_insert_time;
+    else
+    {
+        max_replicas_unprocessed_insert_time = std::min(current_time, max_replicas_unprocessed_insert_time);
+        time_t min_replicas_delay = current_time - max_replicas_unprocessed_insert_time;
+        if (out_absolute_delay > min_replicas_delay)
+            out_relative_delay = out_absolute_delay - min_replicas_delay;
+    }
 }
 
 
@@ -3444,7 +3496,7 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
             }
             catch (const DB::Exception & e)
             {
-                if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+                if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
                     throw;
 
                 LOG_INFO(log, e.displayText());

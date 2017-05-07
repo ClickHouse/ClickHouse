@@ -14,8 +14,8 @@ namespace ErrorCodes
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int TOO_MUCH_SIMULTANEOUS_QUERIES;
 }
-
 
 void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
@@ -37,11 +37,11 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
     if (compress)
     {
         CompressedWriteBuffer compressed_out(out);
-        endpoint->processQuery(params, body, compressed_out);
+        endpoint->processQuery(params, body, compressed_out, response);
     }
     else
     {
-        endpoint->processQuery(params, body, out);
+        endpoint->processQuery(params, body, out, response);
     }
 
     out.finalize();
@@ -61,6 +61,14 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
     }
     catch (Exception & e)
     {
+
+        if (e.code() == ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES)
+        {
+            if (!response.sent())
+                response.send();
+            return;
+        }
+
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
         /// Sending to remote server was cancelled due to server shutdown or drop table.

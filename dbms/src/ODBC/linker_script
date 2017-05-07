@@ -1,4 +1,0 @@
-{
-    global: SQL*;
-    local: *;
-};

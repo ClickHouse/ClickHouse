@@ -400,7 +400,6 @@ public:
     SortDescription getSortDescription() const { return sort_descr; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    /// Проверить, что кусок не сломан и посчитать для него чексуммы, если их нет.
     MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
 
     /** Create local backup (snapshot) for parts with specified prefix.
@@ -471,6 +470,9 @@ public:
     ASTPtr primary_expr_ast;
     Block primary_key_sample;
     DataTypes primary_key_data_types;
+
+    /// Limiting parallel sends per one table, used in DataPartsExchange
+    std::atomic_uint current_table_sends {0};
 
 private:
     friend struct MergeTreeDataPart;

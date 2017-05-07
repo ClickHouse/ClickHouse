@@ -1,0 +1,55 @@
+Source: clickhouse
+Priority: optional
+Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
+Build-Depends: debhelper (>= 9),
+               cmake,
+               gcc-6, g++-6,
+               default-libmysqlclient-dev | libmysqlclient-dev,
+               libicu-dev,
+               libltdl-dev,
+               libreadline-dev,
+               libssl-dev,
+               unixodbc-dev
+Standards-Version: 3.8.0
+Section: libs
+
+Package: clickhouse-compressor
+Section: libdevel
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: clickhouse-compressor
+
+Package: clickhouse-client
+Section: libdevel
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
+Description: Client binary for clickhouse
+ Yandex ClickHouse is a column-oriented database management system
+ that allows generating analytical data reports in real time.
+ .
+ This package provides clickhouse-client , clickhouse-local and clickhouse-benchmark
+
+Package: clickhouse-server-base
+Section: libdevel
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, adduser
+Description: Server binary for clickhouse
+ Yandex ClickHouse is a column-oriented database management system
+ that allows generating analytical data reports in real time.
+ .
+ This package provides clickhouse common configuration files
+
+Package: clickhouse-server-common
+Section: libdevel
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
+Description: clickhouse-server-common
+ Common configuration files for clickhouse-server-base package
+
+Package: clickhouse-common-dbg
+Architecture: any
+Section: debug
+Priority: extra
+Depends: ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
+Description: debugging symbols for clickhouse-server-base
+ This package contains the debugging symbols for clickhouse-server-base.

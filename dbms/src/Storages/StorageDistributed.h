@@ -18,11 +18,11 @@ class Context;
 class StorageDistributedDirectoryMonitor;
 
 
-/** Распределённая таблица, находящаяся на нескольких серверах.
-  * Использует данные заданной БД и таблицы на каждом сервере.
+/** A distributed table that resides on multiple servers.
+  * Uses data from the specified database and tables on each server.
   *
-  * Можно передать один адрес, а не несколько.
-  * В этом случае, таблицу можно считать удалённой, а не распределённой.
+  * You can pass one address, not several.
+  * In this case, the table can be considered remote, rather than distributed.
   */
 class StorageDistributed : private ext::shared_ptr_helper<StorageDistributed>, public IStorage
 {
@@ -32,23 +32,23 @@ class StorageDistributed : private ext::shared_ptr_helper<StorageDistributed>, p
 
 public:
     static StoragePtr create(
-        const std::string & name_,            /// Имя таблицы.
-        NamesAndTypesListPtr columns_,        /// Список столбцов.
+        const std::string & name_,            /// The name of the table.
+        NamesAndTypesListPtr columns_,        /// List of columns.
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
-        const String & remote_database_,    /// БД на удалённых серверах.
-        const String & remote_table_,        /// Имя таблицы на удалённых серверах.
+        const String & remote_database_,    /// database on remote servers.
+        const String & remote_table_,        /// The name of the table on the remote servers.
         const String & cluster_name,
         Context & context_,
         const ASTPtr & sharding_key_,
         const String & data_path_);
 
     static StoragePtr create(
-        const std::string & name_,            /// Имя таблицы.
-        NamesAndTypesListPtr columns_,        /// Список столбцов.
-        const String & remote_database_,    /// БД на удалённых серверах.
-        const String & remote_table_,        /// Имя таблицы на удалённых серверах.
+        const std::string & name_,            /// The name of the table.
+        NamesAndTypesListPtr columns_,        /// List of columns.
+        const String & remote_database_,      /// database on remote servers.
+        const String & remote_table_,         /// The name of the table on the remote servers.
         ClusterPtr & owned_cluster_,
         Context & context_);
 
@@ -78,8 +78,8 @@ public:
 
     void drop() override {}
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
-    /// в подтаблицах добавлять и удалять столбы нужно вручную
-    /// структура подтаблиц не проверяется
+    /// in the sub-tables, you need to manually add and delete columns
+    /// the structure of the sub-table is not checked
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
     void shutdown() override;
@@ -90,7 +90,7 @@ public:
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
         const Settings & settings) override;
 
-    /// От каждой реплики получить описание соответствующей локальной таблицы.
+    /// From each replica, get a description of the corresponding local table.
     BlockInputStreams describe(const Context & context, const Settings & settings);
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
@@ -156,7 +156,7 @@ private:
     bool has_sharding_key;
     ExpressionActionsPtr sharding_key_expr;
     String sharding_key_column_name;
-    String path;    /// Может быть пустым, если data_path_ пустой. В этом случае, директория для данных для отправки не создаётся.
+    String path;    /// Can be empty if data_path_ is empty. In this case, a directory for the data to be sent is not created.
 
     std::unordered_map<std::string, std::unique_ptr<StorageDistributedDirectoryMonitor>> directory_monitors;
 };

@@ -190,7 +190,6 @@ void Compiler::compile(
 #if INTERNAL_COMPILER_CUSTOM_ROOT
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/"
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/mysql/"
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/"
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/"
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*/"
@@ -200,10 +199,8 @@ void Compiler::compile(
         " -I " INTERNAL_COMPILER_HEADERS "/contrib/libcityhash/include/"
         " -I " INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
         " -I " INTERNAL_Poco_Foundation_INCLUDE_DIR
-        " -I " INTERNAL_Poco_Util_INCLUDE_DIR
         " -I " INTERNAL_Boost_INCLUDE_DIRS
         " -I " INTERNAL_COMPILER_HEADERS "/libs/libcommon/include/"
-        " -I " INTERNAL_COMPILER_HEADERS "/libs/libmysqlxx/include/"
         " " << additional_compiler_flags <<
         " -o " << so_tmp_file_path << " " << cpp_file_path
         << " 2>&1 || echo Exit code: $?";
