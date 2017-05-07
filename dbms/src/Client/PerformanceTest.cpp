@@ -1,5 +1,7 @@
+#include <functional>
 #include <iostream>
 #include <limits>
+#include <regex>
 #include <unistd.h>
 
 #include <boost/program_options.hpp>
@@ -582,6 +584,8 @@ double Stats::avg_bytes_speed_precision = 0.001;
 class PerformanceTest
 {
 public:
+    using Strings = std::vector<std::string>;
+
     PerformanceTest(
         const String & host_,
         const UInt16 port_,
@@ -590,18 +594,25 @@ public:
         const String & password_,
         const bool & lite_output_,
         const std::string & profiles_file_,
-        const std::vector<std::string> & input_files,
-        const std::vector<std::string> & tags,
-        const std::vector<std::string> & without_tags,
-        const std::vector<std::string> & names,
-        const std::vector<std::string> & without_names,
-        const std::vector<std::string> & names_regexp,
-        const std::vector<std::string> & without_names_regexp)
+        Strings && input_files_,
+        Strings && tests_tags_,
+        Strings && skip_tags_,
+        Strings && tests_names_,
+        Strings && skip_names_,
+        Strings && tests_names_regexp_,
+        Strings && skip_names_regexp_
+    )
         : connection(host_, port_, default_database_, user_, password_),
-          tests_configurations(input_files.size()),
           gotSIGINT(false),
           lite_output(lite_output_),
-          profiles_file(profiles_file_)
+          profiles_file(profiles_file_),
+          input_files(input_files_),
+          tests_tags(std::move(tests_tags_)),
+          skip_tags(std::move(skip_tags_)),
+          tests_names(std::move(tests_names_)),
+          skip_names(std::move(skip_names_)),
+          tests_names_regexp(std::move(tests_names_regexp_)),
+          skip_names_regexp(std::move(skip_names_regexp_))
     {
         if (input_files.size() < 1)
         {
@@ -610,7 +621,7 @@ public:
 
         std::cerr << std::fixed << std::setprecision(3);
         std::cout << std::fixed << std::setprecision(3);
-        readTestsConfiguration(input_files);
+        processTestsConfigurations(input_files);
     }
 
 private:
@@ -635,10 +646,10 @@ private:
     using XMLConfiguration = Poco::Util::XMLConfiguration;
     using AbstractConfig = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
     using Config = Poco::AutoPtr<XMLConfiguration>;
+
     using Paths = std::vector<std::string>;
     using StringToVector = std::map<std::string, std::vector<std::string>>;
     StringToVector substitutions;
-    std::vector<Config> tests_configurations;
 
     using StringKeyValue = std::map<std::string, std::string>;
     std::vector<StringKeyValue> substitutions_maps;
@@ -649,13 +660,22 @@ private:
     bool lite_output;
     std::string profiles_file;
 
-// TODO: create enum class instead of string
-#define incFulfilledCriterions(index, CRITERION)                                                            \
-    if (!stop_criterions[index].CRITERION.fulfilled)                                                         \
-    {                                                                                                       \
+    Strings input_files;
+    std::vector<Config> tests_configurations;
+
+    Strings tests_tags;
+    Strings skip_tags;
+    Strings tests_names;
+    Strings skip_names;
+    Strings tests_names_regexp;
+    Strings skip_names_regexp;
+
+    #define incFulfilledCriterions(index, CRITERION)                                                          \
+    if (!stop_criterions[index].CRITERION.fulfilled)                                                          \
+    {                                                                                                         \
         stop_criterions[index].CRITERION.priority == min ? ++stop_criterions[index].fulfilled_criterions_min  \
-                                                        : ++stop_criterions[index].fulfilled_criterions_max; \
-        stop_criterions[index].CRITERION.fulfilled = true;                                                   \
+                                                         : ++stop_criterions[index].fulfilled_criterions_max; \
+        stop_criterions[index].CRITERION.fulfilled = true;                                                    \
     }
 
     enum ExecutionType
@@ -665,10 +685,82 @@ private:
     };
     ExecutionType exec_type;
 
+    enum FilterType
+    {
+        tag,
+        name,
+        name_regexp
+    };
+
     size_t times_to_run = 1;
     std::vector<Stats> statistics;
 
-    void readTestsConfiguration(const Paths & input_files)
+    /// Removes configurations that has a given value. If leave is true, the logic is reversed.
+    void removeConfigurationsIf(std::vector<Config> & configs, FilterType filter_type, const Strings & values, bool leave = false)
+    {
+        std::function<bool(Config &)> checker = [&filter_type, &values, &leave](Config & config) {
+            if (values.size() == 0)
+                return false;
+
+            bool remove_or_not = false;
+
+            if (filter_type == tag)
+            {
+                Keys tags_keys;
+                config->keys("tags", tags_keys);
+
+                Strings tags(tags_keys.size());
+                for (size_t i = 0; i != tags_keys.size(); ++i)
+                    tags[i] = config->getString("tags.tag[" + std::to_string(i) + "]");
+
+                for (const std::string & config_tag : tags) {
+                    if (std::find(values.begin(), values.end(), config_tag) != values.end())
+                        remove_or_not = true;
+                }
+            }
+
+            if (filter_type == name)
+            {
+                remove_or_not = (std::find(values.begin(), values.end(), config->getString("name", "")) != values.end());
+            }
+
+            if (filter_type == name_regexp)
+            {
+                std::string config_name = config->getString("name", "");
+                std::function<bool(const std::string &)> regex_checker = [&config_name](const std::string & name_regexp) {
+                    std::regex pattern(name_regexp);
+                    return std::regex_search(config_name, pattern);
+                };
+
+                remove_or_not = config->has("name") ? (std::find_if(values.begin(), values.end(), regex_checker) != values.end())
+                                                    : false;
+            }
+
+            if (leave)
+                remove_or_not = !remove_or_not;
+            return remove_or_not;
+        };
+
+        std::vector<Config>::iterator new_end = std::remove_if(configs.begin(), configs.end(), checker);
+        configs.erase(new_end, configs.end());
+    }
+
+    /// Filter tests by tags, names, regexp matching, etc.
+    void filterConfigurations()
+    {
+        /// Leave tests:
+        removeConfigurationsIf(tests_configurations, FilterType::tag, tests_tags, true);
+        removeConfigurationsIf(tests_configurations, FilterType::name, tests_names, true);
+        removeConfigurationsIf(tests_configurations, FilterType::name_regexp, tests_names_regexp, true);
+
+
+        /// Skip tests
+        removeConfigurationsIf(tests_configurations, FilterType::tag, skip_tags, false);
+        removeConfigurationsIf(tests_configurations, FilterType::name, skip_names, false);
+        removeConfigurationsIf(tests_configurations, FilterType::name_regexp, skip_names_regexp, false);
+    }
+
+    void processTestsConfigurations(const Paths & input_files)
     {
         tests_configurations.resize(input_files.size());
 
@@ -678,8 +770,7 @@ private:
             tests_configurations[i] = Config(new XMLConfiguration(path));
         }
 
-        // TODO: here will be tests filter on tags, names, regexp matching, etc.
-        // { ... }
+        filterConfigurations();
 
         if (tests_configurations.size())
         {
@@ -1344,18 +1435,18 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
         desc.add_options()
             ("help",                                                                     "produce help message")
             ("lite",                                                                     "use lite version of output")
-            ("profiles-file",       value<std::string>()->default_value(""),             "Specify a file with global profiles")
-            ("host,h",              value<std::string>()->default_value("localhost"),    "")
-            ("port",                value<UInt16>()->default_value(9000),                "")
-            ("database",            value<std::string>()->default_value("default"),      "")
-            ("user",                value<std::string>()->default_value("default"),      "")
-            ("password",            value<std::string>()->default_value(""),             "")
-            ("tag",                 value<Strings>(),                                    "Run only tests with tag")
-            ("without-tag",         value<Strings>(),                                    "Do not run tests with tag")
-            ("name",                value<Strings>(),                                    "Run tests with specific name")
-            ("without-name",        value<Strings>(),                                    "Do not run tests with name")
-            ("name-regexp",         value<Strings>(),                                    "Run tests with names matching regexp")
-            ("without-name-regexp", value<Strings>(),                                    "Do not run tests with names matching regexp");
+            ("profiles-file",        value<std::string>()->default_value(""),            "Specify a file with global profiles")
+            ("host,h",               value<std::string>()->default_value("localhost"),   "")
+            ("port",                 value<UInt16>()->default_value(9000),               "")
+            ("database",             value<std::string>()->default_value("default"),     "")
+            ("user",                 value<std::string>()->default_value("default"),     "")
+            ("password",             value<std::string>()->default_value(""),            "")
+            ("tags",                 value<Strings>()->multitoken(),                     "Run only tests with tag")
+            ("skip-tags",            value<Strings>()->multitoken(),                     "Do not run tests with tag")
+            ("names",                value<Strings>()->multitoken(),                     "Run tests with specific name")
+            ("skip-names",           value<Strings>()->multitoken(),                     "Do not run tests with name")
+            ("names-regexp",         value<Strings>()->multitoken(),                     "Run tests with names matching regexp")
+            ("skip-names-regexp",    value<Strings>()->multitoken(),                     "Do not run tests with names matching regexp");
 
         /// These options will not be displayed in --help
         boost::program_options::options_description hidden("Hidden options");
@@ -1411,42 +1502,24 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
             }
         }
 
-        Strings tests_tags;
-        Strings skip_tags;
-        Strings tests_names;
-        Strings skip_names;
-        Strings name_regexp;
-        Strings skip_matching_regexp;
-
-        if (options.count("tag"))
-        {
-            tests_tags = options["tag"].as<Strings>();
-        }
-
-        if (options.count("without-tag"))
-        {
-            skip_tags = options["without-tag"].as<Strings>();
-        }
-
-        if (options.count("name"))
-        {
-            tests_names = options["name"].as<Strings>();
-        }
-
-        if (options.count("without-name"))
-        {
-            skip_names = options["without-name"].as<Strings>();
-        }
-
-        if (options.count("name-regexp"))
-        {
-            name_regexp = options["name-regexp"].as<Strings>();
-        }
-
-        if (options.count("without-name-regexp"))
-        {
-            skip_matching_regexp = options["without-name-regexp"].as<Strings>();
-        }
+        Strings tests_tags = options.count("tags")
+            ? options["tags"].as<Strings>()
+            : Strings({});
+        Strings skip_tags = options.count("skip-tags")
+            ? options["skip-tags"].as<Strings>()
+            : Strings({});
+        Strings tests_names = options.count("names")
+            ? options["names"].as<Strings>()
+            : Strings({});
+        Strings skip_names = options.count("skip-names")
+            ? options["skip-names"].as<Strings>()
+            : Strings({});
+        Strings tests_names_regexp = options.count("names-regexp")
+            ? options["names-regexp"].as<Strings>()
+            : Strings({});
+        Strings skip_names_regexp = options.count("skip-names-regexp")
+            ? options["skip-names-regexp"].as<Strings>()
+            : Strings({});
 
         PerformanceTest performanceTest(
             options["host"].as<std::string>(),
@@ -1456,13 +1529,14 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
             options["password"].as<std::string>(),
             options.count("lite") > 0,
             options["profiles-file"].as<std::string>(),
-            input_files,
-            tests_tags,
-            skip_tags,
-            tests_names,
-            skip_names,
-            name_regexp,
-            skip_matching_regexp);
+            std::move(input_files),
+            std::move(tests_tags),
+            std::move(skip_tags),
+            std::move(tests_names),
+            std::move(skip_names),
+            std::move(tests_names_regexp),
+            std::move(skip_names_regexp)
+        );
     }
     catch (const Exception & e)
     {
