@@ -589,6 +589,7 @@ public:
         const String & user_,
         const String & password_,
         const bool & lite_output_,
+        const std::string & profiles_file_,
         const std::vector<std::string> & input_files,
         const std::vector<std::string> & tags,
         const std::vector<std::string> & without_tags,
@@ -599,7 +600,8 @@ public:
         : connection(host_, port_, default_database_, user_, password_),
           tests_configurations(input_files.size()),
           gotSIGINT(false),
-          lite_output(lite_output_)
+          lite_output(lite_output_),
+          profiles_file(profiles_file_)
     {
         if (input_files.size() < 1)
         {
@@ -645,6 +647,7 @@ private:
     std::vector<StopCriterions> stop_criterions;
     std::string main_metric;
     bool lite_output;
+    std::string profiles_file;
 
 // TODO: create enum class instead of string
 #define incFulfilledCriterions(index, CRITERION)                                                            \
@@ -688,6 +691,23 @@ private:
         }
     }
 
+    void extractSettings(const Config & config, const std::string & key,
+                         const Strings & settings_list,
+                         std::map<std::string, std::string> settings_to_apply)
+    {
+        for (const std::string & setup : settings_list)
+        {
+            if (setup == "profile")
+                continue;
+
+            std::string value = config->getString(key + "." + setup);
+            if (value.empty())
+                value = "true";
+
+            settings_to_apply[setup] = value;
+        }
+    }
+
     void runTest(Config & test_config)
     {
         queries.clear();
@@ -695,28 +715,42 @@ private:
         test_name = test_config->getString("name");
         std::cout << "Running: " << test_name << "\n";
 
-        /// Preprocess configuration file
         if (test_config->has("settings"))
         {
+            std::map<std::string, std::string> settings_to_apply;
             Keys config_settings;
             test_config->keys("settings", config_settings);
+
+            /// Preprocess configuration file
+            if (std::find(config_settings.begin(), config_settings.end(), "profile") != config_settings.end())
+            {
+                if (!profiles_file.empty())
+                {
+                    std::string profile_name = test_config->getString("settings.profile");
+                    Config profiles_config(new XMLConfiguration(profiles_file));
+
+                    Keys profile_settings;
+                    profiles_config->keys("profiles." + profile_name, profile_settings);
+
+                    extractSettings(profiles_config, "profiles." + profile_name, profile_settings, settings_to_apply);
+                }
+            }
+
+            extractSettings(test_config, "settings", config_settings, settings_to_apply);
 
             /// This macro goes through all settings in the Settings.h
             /// and, if found any settings in test's xml configuration
             /// with the same name, sets its value to settings
-            std::vector<std::string>::iterator it;
-            #define EXTRACT_SETTING(TYPE, NAME, DEFAULT)                               \
-                it = std::find(config_settings.begin(), config_settings.end(), #NAME); \
-                if (it != config_settings.end())                                       \
-                    settings.set(#NAME, test_config->getString("settings." #NAME));
-                        APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-                        APPLY_FOR_LIMITS(EXTRACT_SETTING)
-            #undef EXTRACT_SETTING
+            std::map<std::string, std::string>::iterator it;
+            #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+                it = settings_to_apply.find(#NAME);      \
+                if (it != settings_to_apply.end())       \
+                    settings.set(#NAME, settings_to_apply[#NAME]);
 
-            if (std::find(config_settings.begin(), config_settings.end(), "profile") != config_settings.end())
-            {
-                // TODO: proceed profile settings in a proper way
-            }
+            APPLY_FOR_SETTINGS(EXTRACT_SETTING)
+            APPLY_FOR_LIMITS(EXTRACT_SETTING)
+
+            #undef EXTRACT_SETTING
 
             if (std::find(config_settings.begin(), config_settings.end(), "average_rows_speed_precision") != config_settings.end())
             {
@@ -1276,19 +1310,20 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
 
         boost::program_options::options_description desc("Allowed options");
         desc.add_options()
-            ("help",                                                                  "produce help message")
-            ("lite",                                                                  "use lite version of output")
-            ("host,h",              value<std::string>()->default_value("localhost"), "")
-            ("port",                value<UInt16>()->default_value(9000),             "")
-            ("user",                value<std::string>()->default_value("default"),   "")
-            ("password",            value<std::string>()->default_value(""),          "")
-            ("database",            value<std::string>()->default_value("default"),   "")
-            ("tag",                 value<Strings>(),                                 "Run only tests with tag")
-            ("without-tag",         value<Strings>(),                                 "Do not run tests with tag")
-            ("name",                value<Strings>(),                                 "Run tests with specific name")
-            ("without-name",        value<Strings>(),                                 "Do not run tests with name")
-            ("name-regexp",         value<Strings>(),                                 "Run tests with names matching regexp")
-            ("without-name-regexp", value<Strings>(),                                 "Do not run tests with names matching regexp");
+            ("help",                                                                     "produce help message")
+            ("lite",                                                                     "use lite version of output")
+            ("profiles-file",       value<std::string>()->default_value(""),             "Specify a file with global profiles")
+            ("host,h",              value<std::string>()->default_value("localhost"),    "")
+            ("port",                value<UInt16>()->default_value(9000),                "")
+            ("database",            value<std::string>()->default_value("default"),      "")
+            ("user",                value<std::string>()->default_value("default"),      "")
+            ("password",            value<std::string>()->default_value(""),             "")
+            ("tag",                 value<Strings>(),                                    "Run only tests with tag")
+            ("without-tag",         value<Strings>(),                                    "Do not run tests with tag")
+            ("name",                value<Strings>(),                                    "Run tests with specific name")
+            ("without-name",        value<Strings>(),                                    "Do not run tests with name")
+            ("name-regexp",         value<Strings>(),                                    "Run tests with names matching regexp")
+            ("without-name-regexp", value<Strings>(),                                    "Do not run tests with names matching regexp");
 
         /// These options will not be displayed in --help
         boost::program_options::options_description hidden("Hidden options");
@@ -1388,6 +1423,7 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
             options["user"].as<std::string>(),
             options["password"].as<std::string>(),
             options.count("lite") > 0,
+            options["profiles-file"].as<std::string>(),
             input_files,
             tests_tags,
             skip_tags,
