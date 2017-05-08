@@ -2,6 +2,7 @@
 #include <iostream>
 #include <limits>
 #include <regex>
+#include <sys/sysinfo.h>
 #include <unistd.h>
 
 #include <boost/program_options.hpp>
@@ -17,6 +18,7 @@
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Settings.h>
 
 
@@ -760,6 +762,80 @@ private:
         removeConfigurationsIf(tests_configurations, FilterType::name_regexp, skip_names_regexp, false);
     }
 
+    /// Checks specified preconditions per test (process cache, table existence, etc.)
+    bool checkPreconditions(const Config & config)
+    {
+        if (!config->has("preconditions"))
+            return true;
+
+        Keys preconditions;
+        config->keys("preconditions", preconditions);
+        size_t table_precondition_index = 0;
+
+        for (const std::string & precondition : preconditions)
+        {
+            if (precondition == "reset_cpu_cache")
+                if (system("(>&2 echo 'Flushing cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')"))
+                    std::cerr << "Failed to flush cache" << std::endl;
+
+            if (precondition == "ram_size")
+            {
+                struct sysinfo *system_information = new struct sysinfo();
+                if (sysinfo(system_information))
+                {
+                    std::cerr << "Failed to check system RAM size" << std::endl;
+                    delete system_information;
+                }
+                else
+                {
+                    size_t ram_size_needed = config->getUInt64("preconditions.ram_size");
+                    size_t actual_ram = system_information->totalram / 1024 / 1024;
+                    if (ram_size_needed > actual_ram)
+                    {
+                        std::cerr << "Not enough RAM" << std::endl;
+                        delete system_information;
+                        return false;
+                    }
+                }
+            }
+
+            if (precondition == "table_exists")
+            {
+                std::string precondition_key = "preconditions.table_exists[" + std::to_string(table_precondition_index++) + "]";
+                std::string table_to_check = config->getString(precondition_key);
+                std::string query = "EXISTS TABLE " + table_to_check + ";";
+
+                size_t exist = 0;
+
+                connection.sendQuery(query, "", QueryProcessingStage::Complete, &settings, nullptr, false);
+
+                while (true)
+                {
+                    Connection::Packet packet = connection.receivePacket();
+
+                    if (packet.type == Protocol::Server::Data) {
+                        for (const ColumnWithTypeAndName & column : packet.block.getColumns())
+                        {
+                            if (column.name == "result" && column.column->getDataAt(0).data != nullptr) {
+                                exist = column.column->get64(0);
+                            }
+                        }
+                    }
+
+                    if (packet.type == Protocol::Server::Exception || packet.type == Protocol::Server::EndOfStream)
+                        break;
+                }
+
+                if (exist == 0) {
+                    std::cerr << "Table " + table_to_check + " doesn't exist" << std::endl;
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
     void processTestsConfigurations(const Paths & input_files)
     {
         tests_configurations.resize(input_files.size());
@@ -778,6 +854,12 @@ private:
 
             for (auto & test_config : tests_configurations)
             {
+                if (!checkPreconditions(test_config))
+                {
+                    std::cerr << "Preconditions are not fulfilled for test \"" + test_config->getString("name", "") + "\"";
+                    continue;
+                }
+
                 std::string output = runTest(test_config);
                 if (lite_output)
                     std::cout << output << std::endl;
@@ -971,10 +1053,13 @@ private:
                 main_metric = main_metrics[0];
         }
 
-        if (!main_metric.empty()) {
+        if (!main_metric.empty())
+        {
             if (std::find(metrics.begin(), metrics.end(), main_metric) == metrics.end())
                 metrics.push_back(main_metric);
-        } else {
+        }
+        else
+        {
             if (lite_output)
                 throw Poco::Exception("Specify main_metric for lite output", 1);
         }
@@ -1475,13 +1560,15 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
 
         if (!options.count("input-files"))
         {
-            std::cout << "Trying to find tests in current folder" << std::endl;
+            std::cerr << "Trying to find tests in current folder" << std::endl;
 
             getFilesFromDir(FS::path("."), input_files);
 
             if (input_files.empty())
                 throw Poco::Exception("Did not find any xml files", 1);
-        } else {
+        }
+        else
+        {
             input_files = options["input-files"].as<Strings>();
 
             for (const std::string filename : input_files)
@@ -1495,7 +1582,9 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
                 {
                     input_files.erase( std::remove(input_files.begin(), input_files.end(), filename) , input_files.end());
                     getFilesFromDir(std::move(file), input_files);
-                } else {
+                }
+                else
+                {
                     if (file.extension().string() != ".xml")
                         throw Poco::Exception("File \"" + filename + "\" does not have .xml extension", 1);
                 }
