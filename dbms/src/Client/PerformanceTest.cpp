@@ -1092,7 +1092,7 @@ private:
         if (lite_output)
             return minOutput(main_metric);
         else
-            return constructTotalInfo();
+            return constructTotalInfo(metrics);
     }
 
     void checkMetricsInput(const Strings & metrics) const
@@ -1360,7 +1360,7 @@ private:
     }
 
 public:
-    std::string constructTotalInfo()
+    std::string constructTotalInfo(Strings metrics)
     {
         JSONString json_output;
         std::string hostname;
@@ -1427,31 +1427,52 @@ public:
                 if (exec_type == loop)
                 {
                     /// in seconds
-                    runJSON["min_time"].set(statistics[number_of_launch].min_time / double(1000));
+                    if (std::find(metrics.begin(), metrics.end(), "min_time") != metrics.end())
+                        runJSON["min_time"].set(statistics[number_of_launch].min_time / double(1000));
 
-                    JSONString quantiles(4); /// here, 4 is the size of \t padding
-                    for (double percent = 10; percent <= 90; percent += 10)
+                    if (std::find(metrics.begin(), metrics.end(), "quantiles") != metrics.end())
                     {
-                        quantiles[percent / 100].set(statistics[number_of_launch].sampler.quantileInterpolated(percent / 100.0));
+                        JSONString quantiles(4); /// here, 4 is the size of \t padding
+                        for (double percent = 10; percent <= 90; percent += 10)
+                        {
+                            quantiles[percent / 100].set(statistics[number_of_launch].sampler.quantileInterpolated(percent / 100.0));
+                        }
+                        quantiles[0.95].set(statistics[number_of_launch].sampler.quantileInterpolated(95 / 100.0));
+                        quantiles[0.99].set(statistics[number_of_launch].sampler.quantileInterpolated(99 / 100.0));
+                        quantiles[0.999].set(statistics[number_of_launch].sampler.quantileInterpolated(99.9 / 100.0));
+                        quantiles[0.9999].set(statistics[number_of_launch].sampler.quantileInterpolated(99.99 / 100.0));
+
+                        runJSON["quantiles"].set(quantiles);
                     }
-                    quantiles[0.95].set(statistics[number_of_launch].sampler.quantileInterpolated(95 / 100.0));
-                    quantiles[0.99].set(statistics[number_of_launch].sampler.quantileInterpolated(99 / 100.0));
-                    quantiles[0.999].set(statistics[number_of_launch].sampler.quantileInterpolated(99.9 / 100.0));
-                    quantiles[0.9999].set(statistics[number_of_launch].sampler.quantileInterpolated(99.99 / 100.0));
 
-                    runJSON["quantiles"].set(quantiles);
+                    if (std::find(metrics.begin(), metrics.end(), "total_time") != metrics.end())
+                        runJSON["total_time"].set(statistics[number_of_launch].total_time);
 
-                    runJSON["total_time"].set(statistics[number_of_launch].total_time);
-                    runJSON["queries_per_second"].set(double(statistics[number_of_launch].queries) / statistics[number_of_launch].total_time);
-                    runJSON["rows_per_second"].set(double(statistics[number_of_launch].rows_read) / statistics[number_of_launch].total_time);
-                    runJSON["bytes_per_second"].set(double(statistics[number_of_launch].bytes_read) / statistics[number_of_launch].total_time);
+                    if (std::find(metrics.begin(), metrics.end(), "queries_per_second") != metrics.end())
+                        runJSON["queries_per_second"].set(double(statistics[number_of_launch].queries) /
+                                                          statistics[number_of_launch].total_time);
+
+                    if (std::find(metrics.begin(), metrics.end(), "rows_per_second") != metrics.end())
+                        runJSON["rows_per_second"].set(double(statistics[number_of_launch].rows_read) /
+                                                       statistics[number_of_launch].total_time);
+
+                    if (std::find(metrics.begin(), metrics.end(), "bytes_per_second") != metrics.end())
+                        runJSON["bytes_per_second"].set(double(statistics[number_of_launch].bytes_read) /
+                                                        statistics[number_of_launch].total_time);
                 }
                 else
                 {
-                    runJSON["max_rows_per_second"].set(statistics[number_of_launch].max_rows_speed);
-                    runJSON["max_bytes_per_second"].set(statistics[number_of_launch].max_bytes_speed);
-                    runJSON["avg_rows_per_second"].set(statistics[number_of_launch].avg_rows_speed_value);
-                    runJSON["avg_bytes_per_second"].set(statistics[number_of_launch].avg_bytes_speed_value);
+                    if (std::find(metrics.begin(), metrics.end(), "max_rows_per_second") != metrics.end())
+                        runJSON["max_rows_per_second"].set(statistics[number_of_launch].max_rows_speed);
+
+                    if (std::find(metrics.begin(), metrics.end(), "max_bytes_per_second") != metrics.end())
+                        runJSON["max_bytes_per_second"].set(statistics[number_of_launch].max_bytes_speed);
+
+                    if (std::find(metrics.begin(), metrics.end(), "avg_rows_per_second") != metrics.end())
+                        runJSON["avg_rows_per_second"].set(statistics[number_of_launch].avg_rows_speed_value);
+
+                    if (std::find(metrics.begin(), metrics.end(), "avg_bytes_per_second") != metrics.end())
+                        runJSON["avg_bytes_per_second"].set(statistics[number_of_launch].avg_bytes_speed_value);
                 }
 
                 run_infos.push_back(runJSON);
