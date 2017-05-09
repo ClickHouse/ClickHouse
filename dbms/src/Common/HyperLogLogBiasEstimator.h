@@ -22,7 +22,7 @@ public:
         return false;
     }
 
-    /// Maximum number of unique values ​​to which the correction should apply
+    /// Maximum number of unique values to which the correction should apply
     /// from the LinearCounting algorithm.
     static double getThreshold()
     {
@@ -83,7 +83,7 @@ private:
 };
 
 /** Trivial case of HyperLogLogBiasEstimator: used if we do not want to fix
-  * error. This has meaning for small values ​​of the accuracy parameter, for example 5 or 12.
+  * error. This has meaning for small values of the accuracy parameter, for example 5 or 12.
   * Then the corrections from the original version of the HyperLogLog algorithm are applied.
   * See "HyperLogLog: The analysis of a near-optimal cardinality estimation algorithm"
   * (P. Flajolet et al., AOFA '07: Proceedings of the 2007 International Conference on Analysis

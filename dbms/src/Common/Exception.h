@@ -74,7 +74,7 @@ void throwFromErrno(const std::string & s, int code = 0, int the_errno = errno);
 
 
 /** Try to write an exception to the log (and forget about it).
-  * Can be used in destructors in the catch block (...).
+  * Can be used in destructors in the catch-all block.
   */
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "");
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "");

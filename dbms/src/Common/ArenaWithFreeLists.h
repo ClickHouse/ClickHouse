@@ -13,7 +13,7 @@ namespace DB
   * For this, the requested size is rounded up to the power of two
   *  (or up to 8, if less, or using memory allocation outside Arena if the size is greater than 65536).
   * When freeing memory, for each size (14 options in all: 8, 16 ... 65536),
-  *  a one-link list of free blocks is kept track.
+  *  a single-linked list of free blocks is kept track.
   * When allocating, we take the head of the list of free blocks,
   *  or, if the list is empty - allocate a new block using Arena.
   */

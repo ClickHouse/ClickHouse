@@ -19,7 +19,7 @@
   * - when initializing, fill in an open-addressing linear probing hash table of the form
   *    hash from the bigram of needle -> the position of this bigram in needle + 1.
   *    (one is added only to distinguish zero offset from an empty cell)
-  * - the keys are not stored in the hash table, only the values ​​are stored;
+  * - the keys are not stored in the hash table, only the values are stored;
   * - bigrams can be inserted several times if they occur in the needle several times;
   * - when searching, take from haystack bigram, which should correspond to the last bigram of needle (comparing from the end);
   * - look for it in the hash table, if found - get the offset from the hash table and compare the string bytewise;

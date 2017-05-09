@@ -46,9 +46,9 @@ namespace ErrorCodes
 
 /** The state of the hash table that affects the properties of its cells.
   * Used as a template parameter.
-  * For example, there is an implementation of an instantly cleared hash table - ClearableHashMap.
+  * For example, there is an implementation of an instantly clearable hash table - ClearableHashMap.
   * For it, each cell holds the version number, and in the hash table itself is the current version.
-  *  When cleaning, the current version simply increases; All cells with a mismatching version are considered empty.
+  *  When clearing, the current version simply increases; All cells with a mismatching version are considered empty.
   *  Another example: for an approximate calculation of the number of unique visitors, there is a hash table for UniquesHashSet.
   *  It has the concept of "degree". At each overflow, cells with keys that do not divide by the corresponding power of the two are deleted.
   */
@@ -77,8 +77,8 @@ void set(T & x) { x = 0; }
 };
 
 
-/** Compile-time cell interface of the hash table.
-  * Different cells are used to implement different hash tables.
+/** Compile-time interface for cell of the hash table.
+  * Different cell types are used to implement different hash tables.
   * The cell must contain a key.
   * It can also contain a value and arbitrary additional data
   *  (example: the stored hash value; version number for ClearableHashMap).
@@ -95,7 +95,7 @@ struct HashTableCell
 
     /// Create a cell with the given key / key and value.
     HashTableCell(const Key & key_, const State & state) : key(key_) {}
-///    HashTableCell(const value_type & value_, const State & state) : key(value_) {}
+/// HashTableCell(const value_type & value_, const State & state) : key(value_) {}
 
     /// Get what the value_type of the container will be.
     value_type & getValue()             { return key; }
@@ -126,13 +126,13 @@ struct HashTableCell
     /// Set the key value to zero.
     void setZero() { ZeroTraits::set(key); }
 
-    /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
+    /// Do the hash table need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = true;
 
     /// Whether the cell is deleted.
     bool isDeleted() const { return false; }
 
-    /// Set the displayed value, if any (for HashMap), to the corresponding `value`.
+    /// Set the mapped value, if any (for HashMap), to the corresponding `value`.
     void setMapped(const value_type & value) {}
 
     /// Serialization, in binary and text form.
@@ -145,7 +145,7 @@ struct HashTableCell
 };
 
 
-/** Determines the size of the hash table, and when and how many times it should be resized.
+/** Determines the size of the hash table, and when and how much it should be resized.
   */
 template <size_t initial_size_degree = 8>
 struct HashTableGrower
@@ -195,7 +195,7 @@ struct HashTableGrower
 /** When used as a Grower, it turns a hash table into something like a lookup table.
   * It remains non-optimal - the cells store the keys.
   * Also, the compiler can not completely remove the code of passing through the collision resolution chain, although it is not needed.
-  * TODO Make a full lookup table.
+  * TODO Make a proper lookup table.
   */
 template <size_t key_bits>
 struct HashTableFixedGrower
@@ -212,7 +212,7 @@ struct HashTableFixedGrower
 };
 
 
-/** If you want to store the null key separately - a place to store it. */
+/** If you want to store the zero key separately - a place to store it. */
 template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
 
@@ -272,7 +272,7 @@ protected:
     using cell_type = Cell;
 
     size_t m_size = 0;        /// Amount of elements
-    Cell * buf;               /// A piece of memory for all elements except the element with key 0.
+    Cell * buf;               /// A piece of memory for all elements except the element with zero key.
     Grower grower;
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
@@ -334,7 +334,7 @@ protected:
 
         /** In case of exception for the object to remain in the correct state,
           *  changing the variable `grower` (which determines the buffer size of the hash table)
-          *  postpone for a moment after a real buffer change.
+          *  is postponed for a moment after a real buffer change.
           * The temporary variable `new_grower` is used to determine the new size.
           */
         Grower new_grower = grower;
@@ -410,7 +410,7 @@ protected:
         memcpy(&buf[place_value], &x, sizeof(x));
         x.setZero();
 
-        /// Then the elements that previously were in conflict with this can move to the old place.
+        /// Then the elements that previously were in collision with this can move to the old place.
     }
 
 
@@ -638,7 +638,7 @@ protected:
     }
 
 
-    /// Only for non-zero keys. Find the right place, insert the key there, if it does not already exist, return the iterator to the cell.
+    /// Only for non-zero keys. Find the right place, insert the key there, if it does not already exist. Set iterator to the cell in output parameter.
     void ALWAYS_INLINE emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
     {
         size_t place_value = findCell(x, hash_value, grower.place(hash_value));
@@ -664,8 +664,8 @@ protected:
             }
             catch (...)
             {
-                /** If you do not do it, then there will be problems.
-                  * After all, there remains a key, but uninitialized mapped-value,
+                /** If we have not resized successfully, then there will be problems.
+                  * There remains a key, but uninitialized mapped-value,
                   *  which, perhaps, can not even be called a destructor.
                   */
                 --m_size;
@@ -698,7 +698,7 @@ public:
       * return the iterator to a position that can be used for `placement new` of value,
       * as well as the flag - whether a new key was inserted.
       *
-      * You are required to make `placement new` of value ​​if you inserted a new key,
+      * You have to make `placement new` of value if you inserted a new key,
       * since when destroying a hash table, it will call the destructor!
       *
       * Example usage:

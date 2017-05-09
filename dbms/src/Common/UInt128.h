@@ -4,6 +4,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#if __SSE4_2__
+#include <nmmintrin.h>
+#endif
+
 
 namespace DB
 {
@@ -42,15 +46,15 @@ struct UInt128Hash
     }
 };
 
-#if defined(__x86_64__)
+#if __SSE4_2__
 
 struct UInt128HashCRC32
 {
     size_t operator()(UInt128 x) const
     {
         UInt64 crc = -1ULL;
-        asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x.first));
-        asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x.second));
+        crc = _mm_crc32_u64(crc, x.first);
+        crc = _mm_crc32_u64(crc, x.second);
         return crc;
     }
 };
@@ -122,17 +126,17 @@ struct UInt256Hash
     }
 };
 
-#if defined(__x86_64__)
+#if __SSE4_2__
 
 struct UInt256HashCRC32
 {
     size_t operator()(UInt256 x) const
     {
         UInt64 crc = -1ULL;
-        asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x.a));
-        asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x.b));
-        asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x.c));
-        asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x.d));
+        crc = _mm_crc32_u64(crc, x.a);
+        crc = _mm_crc32_u64(crc, x.b);
+        crc = _mm_crc32_u64(crc, x.c);
+        crc = _mm_crc32_u64(crc, x.d);
         return crc;
     }
 };

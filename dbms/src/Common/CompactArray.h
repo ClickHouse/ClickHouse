@@ -18,7 +18,7 @@ namespace ErrorCodes
 /** Compact array for data storage, size `content_width`, in bits, of which is
   * less than one byte. Instead of storing each value in a separate
   * bytes, which leads to a waste of 37.5% of the space for content_width = 5, CompactArray stores
-  * adjacent `content_width`-bit values ​​in the byte array, that is actually CompactArray
+  * adjacent `content_width`-bit values in the byte array, that is actually CompactArray
   * simulates an array of `content_width`-bit values.
   */
 template <typename BucketIndex, UInt8 content_width, size_t bucket_count>

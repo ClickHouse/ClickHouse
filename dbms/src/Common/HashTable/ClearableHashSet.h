@@ -7,7 +7,7 @@
 /** A hash table that allows you to clear the table in O(1).
   * Even simpler than HashSet: Key and Mapped must be POD-types.
   *
-  * Instead of this class, you could just use the couple <version, key> in the HashSet as the key
+  * Instead of this class, you could just use the pair (version, key) in the HashSet as the key
   * but then the table would accumulate all the keys that it ever stored, and it was unreasonably growing.
   * This class goes a step further and considers the keys with the old version empty in the hash table.
   */

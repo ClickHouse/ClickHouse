@@ -26,7 +26,7 @@ namespace DB
   * Designed for situations in which many arrays of the same small size are created,
   *  but the size is not known at compile time.
   * Also gives a significant advantage in cases where it is important that `sizeof` is minimal.
-  * For example, if arrays are put in an open-addressing hash table with inplace storage of values ​​(like HashMap)
+  * For example, if arrays are put in an open-addressing hash table with inplace storage of values (like HashMap)
   *
   * In this case, compared to std::vector:
   * - for arrays of 1 element size - an advantage of about 2 times;
@@ -82,7 +82,7 @@ public:
         init(size_, dont_init_elems);
     }
 
-    /** Preposition.
+    /** Move operations.
       */
     AutoArray(AutoArray && src)
     {

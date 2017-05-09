@@ -27,7 +27,7 @@
 #define DEFAULT_MAX_COMPRESS_BLOCK_SIZE                         1048576
 
 /** Which blocks by default read the data (by number of rows).
-  * Smaller values ​​give better cache locality, less consumption of RAM, but more overhead to process the query.
+  * Smaller values give better cache locality, less consumption of RAM, but more overhead to process the query.
   */
 #define DEFAULT_BLOCK_SIZE                                         65536
 

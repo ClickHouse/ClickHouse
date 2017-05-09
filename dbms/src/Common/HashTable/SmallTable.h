@@ -215,7 +215,7 @@ public:
       * return the iterator to a position that can be used for `placement new` of value,
       * as well as the flag - whether a new key was inserted.
       *
-      * You have to make `placement new` of value ​​if you inserted a new key,
+      * You have to make `placement new` of value if you inserted a new key,
       * since when destroying a hash table, a destructor will be called for it!
       *
       * Example usage:

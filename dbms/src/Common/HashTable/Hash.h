@@ -4,10 +4,17 @@
 
 
 /** Hash functions that are better than the trivial function std::hash.
-  * (when aggregated by the visitor ID, the performance increase is more than 5 times)
+  *
+  * Example: when aggregated by the visitor ID, the performance increase is more than 5 times.
+  * This is because of following reasons:
+  * - in Yandex, visitor identifier is an integer that has timestamp with seconds resolution in lower bits;
+  * - in typical implementation of standard library, hash function for integers is trivial and just use lower bits;
+  * - traffic is non-uniformly distributed across a day;
+  * - we are using open-addressing linear probing hash tables that are most critical to hash function quality,
+  *   and trivial hash function gives disasterous results.
   */
 
-/** Taken from MurmurHash.
+/** Taken from MurmurHash. This is Murmur finalizer.
   * Faster than intHash32 when inserting into the hash table UInt64 -> UInt64, where the key is the visitor ID.
   */
 inline DB::UInt64 intHash64(DB::UInt64 x)
@@ -22,20 +29,21 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 }
 
 /** CRC32C is not very high-quality as a hash function,
-  *  according to avalanche and bit independence tests, as well as a small number of bits,
+  *  according to avalanche and bit independence tests (see SMHasher software), as well as a small number of bits,
   *  but can behave well when used in hash tables,
   *  due to high speed (latency 3 + 1 clock cycle, throughput 1 clock cycle).
   * Works only with SSE 4.2 support.
-  * Used asm instead of intrinsics, so you do not have to build the entire project with -msse4.
   */
+#if __SSE4_2__
+#include <nmmintrin.h>
+#endif
+
 inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 {
-#if defined(__x86_64__)
-    DB::UInt64 crc = -1ULL;
-    asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x));
-    return crc;
+#if __SSE4_2__
+    return _mm_crc32_u64(-1ULL, x);
 #else
-    /// On other platforms we do not need CRC32. NOTE This can be confusing.
+    /// On other platforms we do not have CRC32. NOTE This can be confusing.
     return intHash64(x);
 #endif
 }
@@ -128,7 +136,7 @@ struct TrivialHash
 };
 
 
-/** A relatively good non-cryptic hash function from UInt64 to UInt32.
+/** A relatively good non-cryptographic hash function from UInt64 to UInt32.
   * But worse (both in quality and speed) than just cutting intHash64.
   * Taken from here: http://www.concentric.net/~ttwang/tech/inthash.htm
   *
@@ -136,9 +144,14 @@ struct TrivialHash
   * This change did not affect the smhasher test results.
   *
   * It is recommended to use different salt for different tasks.
-  * That was the case that in the database values ​​were sorted by hash (for low-quality pseudo-random spread),
+  * That was the case that in the database values were sorted by hash (for low-quality pseudo-random spread),
   *  and in another place, in the aggregate function, the same hash was used in the hash table,
   *  as a result, this aggregate function was monstrously slowed due to collisions.
+  *
+  * NOTE Salting is far from perfect, because it commutes with first steps of calculation.
+  *
+  * NOTE As mentioned, this function is slower than intHash64.
+  * But occasionaly, it is faster, when written in a loop and loop is vectorized.
   */
 template <DB::UInt64 salt>
 inline DB::UInt32 intHash32(DB::UInt64 key)

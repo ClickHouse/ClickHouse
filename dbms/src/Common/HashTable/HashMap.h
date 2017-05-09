@@ -66,7 +66,7 @@ struct HashMapCell
     /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = true;
 
-    /// Whether the cell is removed.
+    /// Whether the cell was deleted.
     bool isDeleted() const { return false; }
 
     void setMapped(const value_type & value_) { value.second = value_.second; }
