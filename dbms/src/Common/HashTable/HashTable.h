@@ -365,7 +365,7 @@ protected:
         size_t i = 0;
         for (; i < old_size; ++i)
             if (!buf[i].isZero(*this) && !buf[i].isDeleted())
-                reinsert(buf[i]);
+                reinsert(buf[i], buf[i].getHash(*this));
 
         /** There is also a special case:
           *    if the element was to be at the end of the old buffer,                  [        x]
@@ -376,7 +376,7 @@ protected:
           *    process tail from the collision resolution chain immediately after it   [        o    x    ]
           */
         for (; !buf[i].isZero(*this) && !buf[i].isDeleted(); ++i)
-            reinsert(buf[i]);
+            reinsert(buf[i], buf[i].getHash(*this));
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         watch.stop();
@@ -390,9 +390,8 @@ protected:
     /** Paste into the new buffer the value that was in the old buffer.
       * Used when increasing the buffer size.
       */
-    void reinsert(Cell & x)
+    void reinsert(Cell & x, size_t hash_value)
     {
-        size_t hash_value = x.getHash(*this);
         size_t place_value = grower.place(hash_value);
 
         /// If the element is in its place.
@@ -407,6 +406,7 @@ protected:
             return;
 
         /// Copy to a new location and zero the old one.
+        x.setHash(hash_value);
         memcpy(&buf[place_value], &x, sizeof(x));
         x.setZero();
 
@@ -612,7 +612,7 @@ protected:
 
 
     /// If the key is zero, insert it into a special place and return true.
-    bool ALWAYS_INLINE emplaceIfZero(Key x, iterator & it, bool & inserted)
+    bool ALWAYS_INLINE emplaceIfZero(Key x, iterator & it, bool & inserted, size_t hash_value)
     {
         /// If it is claimed that the zero key can not be inserted into the table.
         if (!Cell::need_zero_value_storage)
@@ -625,7 +625,7 @@ protected:
             {
                 ++m_size;
                 this->setHasZero();
-                it.ptr->setHash(hash(x));
+                it.ptr->setHash(hash_value);
                 inserted = true;
             }
             else
@@ -684,13 +684,21 @@ public:
     {
         std::pair<iterator, bool> res;
 
-        if (!emplaceIfZero(Cell::getKey(x), res.first, res.second))
-            emplaceNonZero(Cell::getKey(x), res.first, res.second, hash(Cell::getKey(x)));
+        size_t hash_value = hash(Cell::getKey(x));
+        if (!emplaceIfZero(Cell::getKey(x), res.first, res.second, hash_value))
+            emplaceNonZero(Cell::getKey(x), res.first, res.second, hash_value);
 
         if (res.second)
             res.first.ptr->setMapped(x);
 
         return res;
+    }
+
+
+    /// Reinsert node pointed to by iterator
+    void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value)
+    {
+        reinsert(*it.getPtr(), hash_value);
     }
 
 
@@ -711,15 +719,16 @@ public:
       */
     void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted)
     {
-        if (!emplaceIfZero(x, it, inserted))
-            emplaceNonZero(x, it, inserted, hash(x));
+        size_t hash_value = hash(x);
+        if (!emplaceIfZero(x, it, inserted, hash_value))
+            emplaceNonZero(x, it, inserted, hash_value);
     }
 
 
     /// Same, but with a precalculated value of hash function.
     void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
     {
-        if (!emplaceIfZero(x, it, inserted))
+        if (!emplaceIfZero(x, it, inserted, hash_value))
             emplaceNonZero(x, it, inserted, hash_value);
     }
 
