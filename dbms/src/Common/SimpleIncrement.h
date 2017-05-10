@@ -1,8 +1,11 @@
 #pragma once
 
 #include <common/Types.h>
+#include <atomic>
 
 
+/** Is used for numbering of files.
+  */
 struct SimpleIncrement
 {
     std::atomic<UInt64> value;
