@@ -8,7 +8,7 @@
 #include <Storages/MergeTree/MergeTreeDataMerger.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
-#include <Common/Increment.h>
+#include <Common/SimpleIncrement.h>
 
 
 namespace DB

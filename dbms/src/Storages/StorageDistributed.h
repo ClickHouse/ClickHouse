@@ -3,7 +3,7 @@
 #include <ext/shared_ptr_helper.hpp>
 
 #include <Storages/IStorage.h>
-#include <Common/Increment.h>
+#include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Settings.h>
