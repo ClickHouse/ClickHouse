@@ -9,6 +9,7 @@ void registerAggregateFunctionAvg(AggregateFunctionFactory & factory);
 void registerAggregateFunctionCount(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory);
+void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileExact(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & factory);
@@ -33,6 +34,7 @@ void registerAggregateFunctions()
     registerAggregateFunctionCount(factory);
     registerAggregateFunctionGroupArray(factory);
     registerAggregateFunctionGroupUniqArray(factory);
+    registerAggregateFunctionGroupArrayInsertAt(factory);
     registerAggregateFunctionsQuantile(factory);
     registerAggregateFunctionsQuantileExact(factory);
     registerAggregateFunctionsQuantileExactWeighted(factory);
