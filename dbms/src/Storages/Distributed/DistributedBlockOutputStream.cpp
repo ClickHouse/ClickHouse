@@ -13,9 +13,11 @@
 
 #include <Common/Increment.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <memory>
 #include <Common/ClickHouseRevision.h>
 
+#include <Poco/DirectoryIterator.h>
+
+#include <memory>
 #include <iostream>
 
 
@@ -124,8 +126,8 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
 void DistributedBlockOutputStream::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
     /** tmp directory is used to ensure atomicity of transactions
-        *  and keep monitor thread out from reading incomplete data
-        */
+      *  and keep monitor thread out from reading incomplete data
+      */
     std::string first_file_tmp_path{};
 
     auto first = true;
