@@ -24,6 +24,8 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 
+#include <Poco/File.h>
+
 #include <cmath>
 #include <numeric>
 #include <iomanip>
