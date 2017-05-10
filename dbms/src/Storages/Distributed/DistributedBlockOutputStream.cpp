@@ -11,7 +11,6 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/createBlockSelector.h>
 
-#include <Common/Increment.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/ClickHouseRevision.h>
 
@@ -142,7 +141,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         if (Poco::File(path).createDirectory())
             storage.requireDirectoryMonitor(dir_name);
 
-        const auto & file_name = toString(Increment{path + "increment.txt"}.get(true)) + ".bin";
+        const auto & file_name = toString(storage.file_names_increment.get()) + ".bin";
         const auto & block_file_path = path + file_name;
 
         /** on first iteration write block to a temporary directory for subsequent hardlinking to ensure
