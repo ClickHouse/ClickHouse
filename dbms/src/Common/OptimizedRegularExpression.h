@@ -26,6 +26,8 @@
   * - if in most calls, the regular expression does not match;
   * - if the regular expression is compatible with the re2 engine;
   * - you can use at your own risk, since, probably, not all cases are taken into account.
+  *
+  * NOTE: Multi-character metasymbols such as \Pl are handled incorrectly.
   */
 
 namespace OptimizedRegularExpressionDetails
@@ -105,4 +107,4 @@ private:
 
 using OptimizedRegularExpression = OptimizedRegularExpressionImpl<true>;
 
-#include "OptimizedRegularExpression.inl"
+#include "OptimizedRegularExpression.inl.h"
