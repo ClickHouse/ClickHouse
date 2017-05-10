@@ -16,7 +16,7 @@ namespace DB
 }
 
 
-/** Checks match of type by comparing typeid.
+/** Checks type by comparing typeid.
   * The exact match of the type is checked. That is, cast in the ancestor will be unsuccessful.
   * In the rest, behaves like a dynamic_cast.
   */

@@ -10,8 +10,8 @@ namespace DB
 
 
 /** Lets you run the command,
- *   read it stdout, stderr, write to stdin,
- *   wait for completion.
+  *  read it stdout and stderr; write to stdin;
+  *  wait for completion.
   *
   * The implementation is similar to the popen function from POSIX (see libc source code).
   *
@@ -20,8 +20,8 @@ namespace DB
   *  with some overcommit settings, if the address space of the process is more than half the amount of available memory.
   * Also, changing memory maps - a fairly resource-intensive operation.
   *
-  * The second difference - allows to work simultaneously with stdin, and with stdout, and with stderr running process,
-  *  and also find out the code and the completion status.
+  * The second difference - allows to work simultaneously with stdin, and with stdout, and with stderr of running process,
+  *  and also to obtain the return code and completion status.
   */
 class ShellCommand
 {

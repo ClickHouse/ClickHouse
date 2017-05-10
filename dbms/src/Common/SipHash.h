@@ -3,17 +3,17 @@
 /** SipHash is a fast cryptographic hash function for short strings.
   * Taken from here: https://www.131002.net/siphash/
   *
+  * This is SipHash 2-4 variant.
+  *
   * Two changes are made:
-  * - returns 128 bits, not 64;
+  * - returns also 128 bits, not only 64;
   * - done streaming (can be calculated in parts).
   *
   * On short strings (URL, search phrases) more than 3 times faster than MD5 from OpenSSL.
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
-#include <cstdint>
-#include <cstddef>
-#include <Core/Types.h>
+#include <common/Types.h>
 
 #define ROTL(x,b) static_cast<u64>( ((x) << (b)) | ( (x) >> (64 - (b))) )
 
@@ -30,23 +30,20 @@
 class SipHash
 {
 private:
-    using u64 = DB::UInt64;
-    using u8 = DB::UInt8;
-
-    /// Status.
-    u64 v0;
-    u64 v1;
-    u64 v2;
-    u64 v3;
+    /// State.
+    UInt64 v0;
+    UInt64 v1;
+    UInt64 v2;
+    UInt64 v3;
 
     /// How many bytes have been processed.
-    u64 cnt;
+    UInt64 cnt;
 
     /// The current 8 bytes of input data.
     union
     {
-        u64 current_word;
-        u8 current_bytes[8];
+        UInt64 current_word;
+        UInt8 current_bytes[8];
     };
 
     void finalize()
@@ -68,7 +65,7 @@ private:
 
 public:
     /// Arguments - seed.
-    SipHash(u64 k0 = 0, u64 k1 = 0)
+    SipHash(UInt64 k0 = 0, UInt64 k1 = 0)
     {
         /// Initialize the state with some random bytes and seed.
         v0 = 0x736f6d6570736575ULL ^ k0;
@@ -80,7 +77,7 @@ public:
         current_word = 0;
     }
 
-    void update(const char * data, u64 size)
+    void update(const char * data, UInt64 size)
     {
         const char * end = data + size;
 
@@ -94,7 +91,7 @@ public:
                 ++cnt;
             }
 
-            /// If you still do not have enough bytes to an 8-byte word.
+            /// If we still do not have enough bytes to an 8-byte word.
             if (cnt & 7)
                 return;
 
@@ -108,7 +105,7 @@ public:
 
         while (data + 8 <= end)
         {
-            current_word = *reinterpret_cast<const u64 *>(data);
+            current_word = *reinterpret_cast<const UInt64 *>(data);
 
             v3 ^= current_word;
             SIPROUND;
@@ -138,18 +135,18 @@ public:
     void get128(char * out)
     {
         finalize();
-        reinterpret_cast<u64 *>(out)[0] = v0 ^ v1;
-        reinterpret_cast<u64 *>(out)[1] = v2 ^ v3;
+        reinterpret_cast<UInt64 *>(out)[0] = v0 ^ v1;
+        reinterpret_cast<UInt64 *>(out)[1] = v2 ^ v3;
     }
 
-    void get128(u64 & lo, u64 & hi)
+    void get128(UInt64 & lo, UInt64 & hi)
     {
         finalize();
         lo = v0 ^ v1;
         hi = v2 ^ v3;
     }
 
-    u64 get64()
+    UInt64 get64()
     {
         finalize();
         return v0 ^ v1 ^ v2 ^ v3;
@@ -160,6 +157,7 @@ public:
 #undef ROTL
 #undef SIPROUND
 
+#include <cstddef>
 
 inline void sipHash128(const char * data, const size_t size, char * out)
 {
@@ -168,7 +166,7 @@ inline void sipHash128(const char * data, const size_t size, char * out)
     hash.get128(out);
 }
 
-inline DB::UInt64 sipHash64(const char * data, const size_t size)
+inline UInt64 sipHash64(const char * data, const size_t size)
 {
     SipHash hash;
     hash.update(data, size);
@@ -177,7 +175,7 @@ inline DB::UInt64 sipHash64(const char * data, const size_t size)
 
 #include <string>
 
-inline DB::UInt64 sipHash64(const std::string & s)
+inline UInt64 sipHash64(const std::string & s)
 {
     return sipHash64(s.data(), s.size());
 }

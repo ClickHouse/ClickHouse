@@ -8,8 +8,17 @@
 #include <common/logger_useful.h>
 #include <Common/Exception.h>
 
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int LOGICAL_ERROR;
+    }
+}
+
 /** A class from which you can inherit and get a pool of something. Used for database connection pools.
-  * The heir must provide a method for creating a new object to place in the pool.
+  * Descendant class must provide a method for creating a new object to place in the pool.
   */
 
 template <typename TObject>
@@ -63,27 +72,27 @@ public:
         Entry() {}    /// For deferred initialization.
 
         /** The `Entry` object protects the resource from being used by another thread.
-         * The following methods are forbidden for `rvalue`, so you can not write a similar to
-         *
-         * auto q = pool.Get()->query("SELECT .."); // Oops, after this line Entry was destroyed
-         * q.execute (); // Someone else can use this Connection
-         */
+          * The following methods are forbidden for `rvalue`, so you can not write a similar to
+          *
+          * auto q = pool.Get()->query("SELECT .."); // Oops, after this line Entry was destroyed
+          * q.execute (); // Someone else can use this Connection
+          */
         Object * operator->() && = delete;
         const Object * operator->() const && = delete;
         Object & operator*() && = delete;
         const Object & operator*() const && = delete;
 
-        Object * operator->() &            { return &*data->data.object; }
-        const Object * operator->() const &    { return &*data->data.object; }
-        Object & operator*() &                { return *data->data.object; }
-        const Object & operator*() const &    { return *data->data.object; }
+        Object * operator->() &             { return &*data->data.object; }
+        const Object * operator->() const & { return &*data->data.object; }
+        Object & operator*() &              { return *data->data.object; }
+        const Object & operator*() const &  { return *data->data.object; }
 
         bool isNull() const { return data == nullptr; }
 
         PoolBase * getPool() const
         {
             if (!data)
-                throw DB::Exception("attempt to get pool from uninitialized entry");
+                throw DB::Exception("Attempt to get pool from uninitialized entry", DB::ErrorCodes::LOGICAL_ERROR);
             return &data->data.pool;
         }
 
@@ -95,7 +104,7 @@ public:
 
     virtual ~PoolBase() {}
 
-    /** Allocates the object for the job. With timeout < 0, the timeout is infinite. */
+    /** Allocates the object. Wait for free object in pool for 'timeout'. With 'timeout' < 0, the timeout is infinite. */
     Entry get(Poco::Timespan::TimeDiff timeout)
     {
         std::unique_lock<std::mutex> lock(mutex);
@@ -137,7 +146,7 @@ private:
     /** Pool. */
     Objects items;
 
-    /** Block to access the pool. */
+    /** Lock to access the pool. */
     std::mutex mutex;
     std::condition_variable available;
 
@@ -151,7 +160,7 @@ protected:
         items.reserve(max_items);
     }
 
-    /** Creates a new object to put in the pool. */
+    /** Creates a new object to put into the pool. */
     virtual ObjectPtr allocObject() = 0;
 };
 

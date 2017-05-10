@@ -9,9 +9,9 @@
   *
   * Usually works a little slower than a simple hash table.
   * However, it has advantages in some cases:
-  * - if you need to measure two hash tables together, then you can easily parallelize them by buckets;
-  * - lag during resizes is spread, since the small hash tables will be resized separately;
-  * - in theory, the cache resize is local in a larger range of sizes.
+  * - if you need to merge two hash tables together, then you can easily parallelize it by buckets;
+  * - delay during resizes is amortized, since the small hash tables will be resized separately;
+  * - in theory, resizes are cache-local in a larger range of sizes.
   */
 
 template <size_t initial_size_degree = 8>
@@ -52,7 +52,7 @@ public:
 
     size_t hash(const Key & x) const { return Hash::operator()(x); }
 
-    /// NOTE Bad for hash tables for more than 2^32 cells.
+    /// NOTE Bad for hash tables with more than 2^32 cells.
     static size_t getBucketFromHash(size_t hash_value) { return (hash_value >> (32 - BITS_FOR_BUCKET)) & MAX_BUCKET; }
 
 protected:
@@ -95,7 +95,7 @@ public:
     {
         typename Source::const_iterator it = src.begin();
 
-        /// It is assumed that the zero key (stored separately) when iterating is first.
+        /// It is assumed that the zero key (stored separately) is first in iteration order.
         if (it != src.end() && it.getPtr()->isZero(src))
         {
             insert(*it);
@@ -221,7 +221,7 @@ public:
 
 
     /** Insert the key,
-      * return the iterator to a position that can be used for `placement new` value,
+      * return an iterator to a position that can be used for `placement new` of value,
       * as well as the flag - whether a new key was inserted.
       *
       * You have to make `placement new` values if you inserted a new key,

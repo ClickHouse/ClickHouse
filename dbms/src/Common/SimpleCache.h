@@ -7,9 +7,9 @@
 
 
 /** The simplest cache for a free function.
-  * You can also pass a static class method or lambda without capturing.
-  * The size is unlimited. Values are not obsolete.
-  * To synchronize, use mutex.
+  * You can also pass a static class method or lambda without captures.
+  * The size is unlimited. Values are stored permanently and never evicted.
+  * Mutex is used for synchronization.
   * Suitable only for the simplest cases.
   *
   * Usage

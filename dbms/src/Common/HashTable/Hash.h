@@ -5,7 +5,7 @@
 
 /** Hash functions that are better than the trivial function std::hash.
   *
-  * Example: when aggregated by the visitor ID, the performance increase is more than 5 times.
+  * Example: when we do aggregation by the visitor ID, the performance increase is more than 5 times.
   * This is because of following reasons:
   * - in Yandex, visitor identifier is an integer that has timestamp with seconds resolution in lower bits;
   * - in typical implementation of standard library, hash function for integers is trivial and just use lower bits;

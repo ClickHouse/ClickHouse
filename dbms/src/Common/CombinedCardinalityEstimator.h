@@ -23,7 +23,7 @@ static inline ContainerType max(const ContainerType & lhs, const ContainerType &
 
 }
 
-/** For a small number of keys - an array of fixed size "on the stack."
+/** For a small number of keys - an array of fixed size "on the stack".
   * For the average, HashSet is allocated.
   * For large, HyperLogLog is allocated.
   */

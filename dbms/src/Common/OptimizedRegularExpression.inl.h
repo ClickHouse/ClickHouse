@@ -8,8 +8,9 @@
 #define MIN_LENGTH_FOR_STRSTR 3
 #define MAX_SUBPATTERNS 5
 
-template <bool b>
-void OptimizedRegularExpressionImpl<b>::analyze(
+
+template <bool thread_safe>
+void OptimizedRegularExpressionImpl<thread_safe>::analyze(
     const std::string & regexp,
     std::string & required_substring,
     bool & is_trivial,
@@ -20,7 +21,8 @@ void OptimizedRegularExpressionImpl<b>::analyze(
       *  a string outside parentheses,
       *  in which all metacharacters are escaped,
       *  and also if there are no '|' outside the brackets,
-      *  and also avoid substrings of the form `http://` or `www`.
+      *  and also avoid substrings of the form `http://` or `www` and some other
+      *   (this is the hack for typical use case in Yandex.Metrica).
       */
     const char * begin = regexp.data();
     const char * pos = begin;
@@ -32,9 +34,9 @@ void OptimizedRegularExpressionImpl<b>::analyze(
     bool has_alternative_on_depth_0 = false;
 
     /// Substring with a position.
-    typedef std::pair<std::string, size_t> Substring;
+    using Substring = std::pair<std::string, size_t>;
+    using Substrings = std::vector<Substring>;
 
-    typedef std::vector<Substring> Substrings;
     Substrings trivial_substrings(1);
     Substring * last_substring = &trivial_substrings.back();
 
@@ -157,7 +159,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(
                 ++pos;
                 break;
 
-             /// Quantifiers that allow a zero number.
+            /// Quantifiers that allow a zero number of occurences.
             case '{':
                 in_curly_braces = true;
             case '?': case '*':
@@ -208,7 +210,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(
             {
                 if (((it->second == 0 && candidate_it->second != 0)
                         || ((it->second == 0) == (candidate_it->second == 0) && it->first.size() > max_length))
-                    /// Tuning for the domain
+                    /// Tuning for typical usage domain
                     && (it->first.size() > strlen("://") || strncmp(it->first.data(), "://", strlen("://")))
                     && (it->first.size() > strlen("http://") || strncmp(it->first.data(), "http", strlen("http")))
                     && (it->first.size() > strlen("www.") || strncmp(it->first.data(), "www", strlen("www")))
@@ -241,12 +243,12 @@ void OptimizedRegularExpressionImpl<b>::analyze(
 }
 
 
-template <bool b>
-OptimizedRegularExpressionImpl<b>::OptimizedRegularExpressionImpl(const std::string & regexp_, int options)
+template <bool thread_safe>
+OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(const std::string & regexp_, int options)
 {
     analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix);
 
-    /// 3 options are supported
+    /// Just three following options are supported
     if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
         throw Poco::Exception("OptimizedRegularExpression: Unsupported option.");
 
@@ -280,8 +282,8 @@ OptimizedRegularExpressionImpl<b>::OptimizedRegularExpressionImpl(const std::str
 }
 
 
-template <bool b>
-bool OptimizedRegularExpressionImpl<b>::match(const char * subject, size_t subject_size) const
+template <bool thread_safe>
+bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size) const
 {
     if (is_trivial)
     {
@@ -309,8 +311,8 @@ bool OptimizedRegularExpressionImpl<b>::match(const char * subject, size_t subje
 }
 
 
-template <bool b>
-bool OptimizedRegularExpressionImpl<b>::match(const char * subject, size_t subject_size, Match & match) const
+template <bool thread_safe>
+bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size, Match & match) const
 {
     if (is_trivial)
     {
@@ -357,8 +359,8 @@ bool OptimizedRegularExpressionImpl<b>::match(const char * subject, size_t subje
 }
 
 
-template <bool b>
-unsigned OptimizedRegularExpressionImpl<b>::match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
+template <bool thread_safe>
+unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
 {
     matches.clear();
 

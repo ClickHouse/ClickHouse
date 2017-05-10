@@ -2,6 +2,7 @@
 
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils.h>
+#include <Core/Types.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
 #include <ext/range.hpp>
@@ -12,7 +13,7 @@
 /** Search for a substring in a string by Volnitsky's algorithm
   * http://volnitsky.com/project/str_search/
   *
-  * `haystack` and `needle` can contain null bytes.
+  * `haystack` and `needle` can contain zero bytes.
   *
   * Algorithm:
   * - if the `needle` is too small or too large, or too small `haystack`, use std::search or memchr;
@@ -23,7 +24,7 @@
   * - bigrams can be inserted several times if they occur in the needle several times;
   * - when searching, take from haystack bigram, which should correspond to the last bigram of needle (comparing from the end);
   * - look for it in the hash table, if found - get the offset from the hash table and compare the string bytewise;
-  * - if it did not work, we check the next cell of the hash table from the collision resolution chain;
+  * - if it did not match, we check the next cell of the hash table from the collision resolution chain;
   * - if not found, skip to haystack almost the size of the needle bytes;
   *
   * Unaligned memory access is used.
@@ -39,34 +40,35 @@ template <typename CRTP>
 class VolnitskyBase
 {
 protected:
-    using offset_t = uint8_t;    /// Offset in the needle. For the basic algorithm, the length of the needle must not be greater than 255.
-    using ngram_t = uint16_t;    /// n-gram (2 bytes).
+    using Offset = UInt8;    /// Offset in the needle. For the basic algorithm, the length of the needle must not be greater than 255.
+    using Ngram = UInt16;    /// n-gram (2 bytes).
 
     const UInt8 * const needle;
     const size_t needle_size;
     const UInt8 * const needle_end = needle + needle_size;
     /// For how long we move, if the n-gram from haystack is not found in the hash table.
-    const size_t step = needle_size - sizeof(ngram_t) + 1;
+    const size_t step = needle_size - sizeof(Ngram) + 1;
 
     /** max needle length is 255, max distinct ngrams for case-sensitive is (255 - 1), case-insensitive is 4 * (255 - 1)
-     *    storage of 64K ngrams (n = 2, 128 KB) should be large enough for both cases */
-    static const size_t hash_size = 64 * 1024;    /// Fits into the L2 cache.
-    offset_t hash[hash_size];    /// Hash table.
+      *  storage of 64K ngrams (n = 2, 128 KB) should be large enough for both cases */
+    static const size_t hash_size = 64 * 1024;    /// Fits into the L2 cache (of common Intel CPUs).
+    Offset hash[hash_size];    /// Hash table.
 
     /// min haystack size to use main algorithm instead of fallback
     static constexpr auto min_haystack_size_for_algorithm = 20000;
-    const bool fallback;                /// Do I need to use the fallback algorithm.
+    const bool fallback; /// Do we need to use the fallback algorithm.
 
 public:
-    /** haystack_size_hint - the expected total size of the haystack for `search` calls. Can not specify.
+    /** haystack_size_hint - the expected total size of the haystack for `search` calls. Optional (zero means unspecified).
       * If you specify it small enough, the fallback algorithm will be used,
       *  since it is considered that it's useless to waste time initializing the hash table.
       */
     VolnitskyBase(const char * const needle, const size_t needle_size, size_t haystack_size_hint = 0)
     : needle{reinterpret_cast<const UInt8 *>(needle)}, needle_size{needle_size},
       fallback{
-          needle_size < 2 * sizeof(ngram_t) || needle_size >= std::numeric_limits<offset_t>::max() ||
-          (haystack_size_hint && haystack_size_hint < min_haystack_size_for_algorithm)}
+          needle_size < 2 * sizeof(Ngram)
+          || needle_size >= std::numeric_limits<Offset>::max()
+          || (haystack_size_hint && haystack_size_hint < min_haystack_size_for_algorithm)}
     {
         if (fallback)
             return;
@@ -74,7 +76,7 @@ public:
         memset(hash, 0, sizeof(hash));
 
         /// int is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
-        for (auto i = static_cast<int>(needle_size - sizeof(ngram_t)); i >= 0; --i)
+        for (auto i = static_cast<int>(needle_size - sizeof(Ngram)); i >= 0; --i)
             self().putNGram(this->needle + i, i + 1, this->needle);
     }
 
@@ -91,7 +93,7 @@ public:
             return self().search_fallback(haystack, haystack_end);
 
         /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
-        const auto * pos = haystack + needle_size - sizeof(ngram_t);
+        const auto * pos = haystack + needle_size - sizeof(Ngram);
         for (; pos <= haystack_end - needle_size; pos += step)
         {
             /// We look at all the cells of the hash table that can correspond to the n-gram from haystack.
@@ -119,12 +121,12 @@ protected:
     CRTP & self() { return static_cast<CRTP &>(*this); }
     const CRTP & self() const { return const_cast<VolnitskyBase *>(this)->self(); }
 
-    static const ngram_t & toNGram(const UInt8 * const pos)
+    static const Ngram & toNGram(const UInt8 * const pos)
     {
-        return *reinterpret_cast<const ngram_t *>(pos);
+        return *reinterpret_cast<const Ngram *>(pos);
     }
 
-    void putNGramBase(const ngram_t ngram, const int offset)
+    void putNGramBase(const Ngram ngram, const int offset)
     {
         /// Put the offset for the n-gram in the corresponding cell or the nearest free cell.
         size_t cell_num = ngram % hash_size;
@@ -145,7 +147,7 @@ protected:
 
         union
         {
-            ngram_t n;
+            Ngram n;
             Chars chars;
         };
 
@@ -260,7 +262,7 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
 
         union
         {
-            ngram_t n;
+            Ngram n;
             Chars chars;
         };
 
@@ -277,10 +279,12 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
               *  or intersect with two code points.
               *
               * In the first case, you need to consider up to two alternatives - this code point in upper and lower case,
-              *  and in the second case - up to four alternatives - fragments of two code points in all combinations of registers.
+              *  and in the second case - up to four alternatives - fragments of two code points in all combinations of cases.
               *
-              * It does not take into account the dependence of the transformation between the registers from the locale (for example - Turkish `Ii`)
+              * It does not take into account the dependence of the case-transformation from the locale (for example - Turkish `Ii`)
               *  as well as composition / decomposition and other features.
+              *
+              * It also does not work if characters with lower and upper cases are represented by different number of bytes or code points.
               */
 
             using Seq = UInt8[6];
@@ -302,12 +306,12 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
                     putNGramBase(n, offset);
                 else
                 {
-                    /// where is the given ngram in respect to UTF-8 sequence start?
+                    /// where is the given ngram in respect to the start of UTF-8 sequence?
                     const auto seq_ngram_offset = pos - seq_pos;
 
                     Seq seq;
 
-                    /// put ngram from lowercase
+                    /// put ngram for lowercase
                     utf8.convert(l_u32, seq, sizeof(seq));
                     chars.c0 = seq[seq_ngram_offset];
                     chars.c1 = seq[seq_ngram_offset + 1];
@@ -326,7 +330,7 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
                 /// first sequence may start before u_pos if it is not ASCII
                 auto first_seq_pos = pos;
                 UTF8::syncBackward(first_seq_pos, begin);
-                /// where is the given ngram in respect to the first UTF-8 sequence start?
+                /// where is the given ngram in respect to the start of first UTF-8 sequence?
                 const auto seq_ngram_offset = pos - first_seq_pos;
 
                 const auto first_u32 = utf8.convert(first_seq_pos);

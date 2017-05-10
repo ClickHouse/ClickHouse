@@ -4,10 +4,11 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <map>
 
+
 namespace DB
 {
 
-/** Apply the macros from the config in the line.
+/** Apply substitutions from the macros in config to the string.
   */
 class Macros
 {

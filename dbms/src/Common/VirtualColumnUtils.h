@@ -16,10 +16,10 @@ class Context;
 namespace VirtualColumnUtils
 {
 
-/// Calculate the minimum numeric suffix to add to the row so that it is not present in the set
+/// Calculate the minimum numeric suffix to add to the string so that it is not present in the set
 String chooseSuffix(const NamesAndTypesList & columns, const String & name);
 
-/// Calculate the minimum total numeric suffix to add to each row,
+/// Calculate the minimum total numeric suffix to add to each string,
 /// so that none is present in the set.
 String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<String> & names);
 

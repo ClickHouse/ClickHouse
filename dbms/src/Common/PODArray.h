@@ -24,7 +24,7 @@ namespace DB
   * To be more precise - for use in ColumnVector.
   * It differs from std::vector in that it does not initialize the elements.
   *
-  * Made uncopable so that there are no random copies. You can copy the data using `assign` method.
+  * Made noncopyable so that there are no accidential copies. You can copy the data using `assign` method.
   *
   * Only part of the std::vector interface is supported.
   *
@@ -40,20 +40,20 @@ template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocato
 class PODArray : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
 private:
-    /// Round padding up to an integer number of elements to simplify arithmetic.
+    /// Round padding up to an whole number of elements to simplify arithmetic.
     static constexpr size_t pad_right = (pad_right_ + sizeof(T) - 1) / sizeof(T) * sizeof(T);
 
-    char * c_start             = nullptr;
-    char * c_end             = nullptr;
+    char * c_start          = nullptr;
+    char * c_end            = nullptr;
     char * c_end_of_storage = nullptr;    /// Does not include pad_right.
 
-    T * t_start()                         { return reinterpret_cast<T *>(c_start); }
-    T * t_end()                         { return reinterpret_cast<T *>(c_end); }
-    T * t_end_of_storage()                 { return reinterpret_cast<T *>(c_end_of_storage); }
+    T * t_start()                      { return reinterpret_cast<T *>(c_start); }
+    T * t_end()                        { return reinterpret_cast<T *>(c_end); }
+    T * t_end_of_storage()             { return reinterpret_cast<T *>(c_end_of_storage); }
 
-    const T * t_start() const             { return reinterpret_cast<const T *>(c_start); }
-    const T * t_end() const             { return reinterpret_cast<const T *>(c_end); }
-    const T * t_end_of_storage() const     { return reinterpret_cast<const T *>(c_end_of_storage); }
+    const T * t_start() const          { return reinterpret_cast<const T *>(c_start); }
+    const T * t_end() const            { return reinterpret_cast<const T *>(c_end); }
+    const T * t_end_of_storage() const { return reinterpret_cast<const T *>(c_end_of_storage); }
 
     /// The amount of memory occupied by the num_elements of the elements.
     static size_t byte_size(size_t num_elements) { return num_elements * sizeof(T); }
@@ -173,16 +173,16 @@ public:
     const T & operator[] (size_t n) const     { return t_start()[n]; }
 
     T & front()             { return t_start()[0]; }
-    T & back()                 { return t_end()[-1]; }
+    T & back()              { return t_end()[-1]; }
     const T & front() const { return t_start()[0]; }
     const T & back() const  { return t_end()[-1]; }
 
-    iterator begin()                 { return t_start(); }
-    iterator end()                     { return t_end(); }
-    const_iterator begin() const    { return t_start(); }
-    const_iterator end() const        { return t_end(); }
-    const_iterator cbegin() const    { return t_start(); }
-    const_iterator cend() const        { return t_end(); }
+    iterator begin()              { return t_start(); }
+    iterator end()                { return t_end(); }
+    const_iterator begin() const  { return t_start(); }
+    const_iterator end() const    { return t_end(); }
+    const_iterator cbegin() const { return t_start(); }
+    const_iterator cend() const   { return t_end(); }
 
     void reserve(size_t n)
     {
@@ -209,7 +209,7 @@ public:
         c_end = c_start + byte_size(n);
     }
 
-    /// Same as resize, but zeros new elements.
+    /// Same as resize, but zeroes new elements.
     void resize_fill(size_t n)
     {
         size_t old_size = size();
@@ -261,7 +261,7 @@ public:
         c_end -= byte_size(1);
     }
 
-    /// Do not insert a piece of yourself into the array. Because with the resize, the iterators on themselves can be invalidated.
+    /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
     template <typename It1, typename It2>
     void insert(It1 from_begin, It2 from_end)
     {

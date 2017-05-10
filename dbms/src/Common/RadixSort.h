@@ -13,10 +13,10 @@
 #include <Core/Defines.h>
 
 
-/** Bitwise sort, has the following functionality:
+/** Radix sort, has the following functionality:
   * Can sort unsigned, signed numbers, and floats.
   * Can sort an array of fixed length elements that contain something else besides the key.
-  * Customizable digit size.
+  * Customizable radix size.
   *
   * LSB, stable.
   * NOTE For some applications it makes sense to add MSB-radix-sort,
@@ -49,7 +49,7 @@ struct RadixSortMallocAllocator
 template <typename KeyBits>
 struct RadixSortFloatTransform
 {
-    /// Is it worth writing the result in memory, or is it better to do it every time again?
+    /// Is it worth writing the result in memory, or is it better to do calculation every time again?
     static constexpr bool transform_is_simple = false;
 
     static KeyBits forward(KeyBits x)
@@ -74,7 +74,7 @@ struct RadixSortFloatTraits
     /// The type to which the key is transformed to do bit operations. This UInt is the same size as the key.
     using KeyBits = typename std::conditional<sizeof(Float) == 8, uint64_t, uint32_t>::type;
 
-    static constexpr size_t PART_SIZE_BITS = 8;    /// With what pieces of the key, it bits, to do one pass - reshuffle of the array.
+    static constexpr size_t PART_SIZE_BITS = 8;    /// With what pieces of the key, in bits, to do one pass - reshuffle of the array.
 
     /// Converting a key into KeyBits is such that the order relation over the key corresponds to the order relation over KeyBits.
     using Transform = RadixSortFloatTransform<KeyBits>;
@@ -95,7 +95,7 @@ struct RadixSortIdentityTransform
     static constexpr bool transform_is_simple = true;
 
     static KeyBits forward(KeyBits x)     { return x; }
-    static KeyBits backward(KeyBits x)     { return x; }
+    static KeyBits backward(KeyBits x)    { return x; }
 };
 
 
@@ -105,7 +105,7 @@ struct RadixSortSignedTransform
     static constexpr bool transform_is_simple = true;
 
     static KeyBits forward(KeyBits x)     { return x ^ (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)); }
-    static KeyBits backward(KeyBits x)     { return x ^ (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)); }
+    static KeyBits backward(KeyBits x)    { return x ^ (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)); }
 };
 
 
@@ -150,7 +150,7 @@ struct RadixSort
 private:
     using Element     = typename Traits::Element;
     using Key         = typename Traits::Key;
-    using CountType = typename Traits::CountType;
+    using CountType   = typename Traits::CountType;
     using KeyBits     = typename Traits::KeyBits;
 
     static constexpr size_t HISTOGRAM_SIZE = 1 << Traits::PART_SIZE_BITS;
@@ -174,9 +174,9 @@ public:
     {
         /// If the array is smaller than 256, then it is better to use another algorithm.
 
-        /// There are loops of NUM_PASSES. It is very important that they unfold in compile-time.
+        /// There are loops of NUM_PASSES. It is very important that they are unfolded at compile-time.
 
-        /// For each of the NUM_PASSES bits of the key, consider how many times each value of this piece met.
+        /// For each of the NUM_PASSES bit ranges of the key, consider how many times each value of this bit range met.
         CountType histograms[HISTOGRAM_SIZE * NUM_PASSES] = {0};
 
         typename Traits::Allocator allocator;
@@ -230,6 +230,7 @@ public:
         }
 
         /// If the number of passes is odd, the result array is in a temporary buffer. Copy it to the place of the original array.
+        /// NOTE Sometimes it will be more optimal to provide non-destructive interface, that will not modify original array.
         if (NUM_PASSES % 2)
             memcpy(arr, swap_buffer, size * sizeof(Element));
 

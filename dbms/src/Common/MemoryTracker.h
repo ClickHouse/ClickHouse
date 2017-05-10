@@ -102,10 +102,10 @@ public:
 };
 
 
-/** The MemoryTracker object is quite difficult to drag to all places where significant amounts of memory are allocated.
-  * Therefore, a thread-local pointer to used MemoryTracker or nullptr is used, if it does not need to be used.
-  * This pointer is set when memory consumption is monitored in this thread.
-  * So, you just need to drag it to all the threads that handle one request.
+/** The MemoryTracker object is quite difficult to pass to all places where significant amounts of memory are allocated.
+  * Therefore, a thread-local pointer to used MemoryTracker is set, or nullptr if MemoryTracker does not need to be used.
+  * This pointer is set when memory consumption is monitored in current thread.
+  * So, you just need to pass it to all the threads that handle one request.
   */
 extern __thread MemoryTracker * current_memory_tracker;
 

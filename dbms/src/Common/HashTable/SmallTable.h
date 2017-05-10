@@ -212,7 +212,7 @@ public:
 
 
     /** Insert the key,
-      * return the iterator to a position that can be used for `placement new` of value,
+      * return an iterator to a position that can be used for `placement new` of value,
       * as well as the flag - whether a new key was inserted.
       *
       * You have to make `placement new` of value if you inserted a new key,

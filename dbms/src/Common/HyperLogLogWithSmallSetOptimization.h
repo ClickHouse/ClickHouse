@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-/** For a small number of keys - an array of fixed size "on the stack."
+/** For a small number of keys - an array of fixed size "on the stack".
   * For large, HyperLogLog is allocated.
   * See also the more practical implementation in CombinedCardinalityEstimator.h,
   *  where a hash table is also used for medium-sized sets.

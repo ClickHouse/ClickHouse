@@ -4,11 +4,11 @@
 #include <IO/WriteBuffer.h>
 
 
-/// Displays the transmitted size in bytes as 123.45 GiB.
+/// Displays the passed size in bytes as 123.45 GiB.
 void formatReadableSizeWithBinarySuffix(double value, DB::WriteBuffer & out, int precision = 2);
 std::string formatReadableSizeWithBinarySuffix(double value, int precision = 2);
 
-/// Displays the transmitted size in bytes as 132.55 GB.
+/// Displays the passed size in bytes as 132.55 GB.
 void formatReadableSizeWithDecimalSuffix(double value, DB::WriteBuffer & out, int precision = 2);
 std::string formatReadableSizeWithDecimalSuffix(double value, int precision = 2);
 
