@@ -22,13 +22,21 @@ namespace DB
 
 // Allow NxK more space before calculating top K to increase accuracy
 #define TOP_K_LOAD_FACTOR 3
+#define TOP_K_DEFAULT_DEGREE 10
 #define TOP_K_MAX_SIZE 0xFFFFFF
 
 
 template <typename T>
 struct AggregateFunctionTopKData
 {
-    using Set = SpaceSaving<T, DefaultHash<T>>;
+    using Set = SpaceSaving
+    <
+        T,
+        T,
+        HashCRC32<T>,
+        HashTableGrower<TOP_K_DEFAULT_DEGREE>,
+        HashTableAllocatorWithStackMemory<sizeof(T) * (1 << (TOP_K_DEFAULT_DEGREE/2))>
+    >;
     Set value;
 };
 
@@ -39,7 +47,7 @@ class AggregateFunctionTopK
 {
 private:
     using State = AggregateFunctionTopKData<T>;
-    size_t threshold = 10; // Default value if the parameter is not specified.
+    size_t threshold = TOP_K_DEFAULT_DEGREE;
     size_t reserved = TOP_K_LOAD_FACTOR * threshold;
 
 public:
@@ -119,7 +127,14 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionTopKGenericData
 {
-    using Set = SpaceSaving<StringRef, StringRefHash>;
+    using Set = SpaceSaving
+    <
+        std::string,
+        StringRef,
+        StringRefHash,
+        HashTableGrower<TOP_K_DEFAULT_DEGREE>,
+        HashTableAllocatorWithStackMemory<sizeof(StringRef) * (1 << (TOP_K_DEFAULT_DEGREE/2))>
+    >;
 
     Set value;
 };
@@ -133,10 +148,9 @@ class AggregateFunctionTopKGeneric : public IUnaryAggregateFunction<AggregateFun
 private:
     using State = AggregateFunctionTopKGenericData;
     DataTypePtr input_data_type;
-    size_t threshold = 10; // Default value if the parameter is not specified.
+    size_t threshold = TOP_K_DEFAULT_DEGREE;
     size_t reserved = TOP_K_LOAD_FACTOR * threshold;
 
-    static StringRef getSerialization(const IColumn & column, size_t row_num, Arena & arena);
     static void deserializeAndInsert(StringRef str, IColumn & data_to);
 
 public:
@@ -185,11 +199,12 @@ public:
         size_t count = 0;
         readVarUInt(count, buf);
         for (size_t i = 0; i < count; ++i) {
-            auto key = readStringBinaryInto(*arena, buf);
+            std::string key_string;
+            readStringBinary(key_string, buf);
             UInt64 count, error;
             readVarUInt(count, buf);
             readVarUInt(error, buf);
-            set.insert(key, count, error);
+            set.insert(key_string, count, error);
         }
     }
 
@@ -200,13 +215,8 @@ public:
             set.resize(reserved);
         }
 
-        StringRef str_serialized = getSerialization(column, row_num, *arena);
-        if (is_plain_column) {
-            auto ptr = arena->insert(str_serialized.data, str_serialized.size);
-            str_serialized = StringRef(ptr, str_serialized.size);
-        }
-
-        set.insert(str_serialized);
+        StringRef str_serialized = column.getDataAt(row_num);
+        set.insert(str_serialized.toString());
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -230,19 +240,6 @@ public:
     }
 };
 
-
-template <>
-inline StringRef AggregateFunctionTopKGeneric<false>::getSerialization(const IColumn & column, size_t row_num, Arena & arena)
-{
-    const char * begin = nullptr;
-    return column.serializeValueIntoArena(row_num, arena, begin);
-}
-
-template <>
-inline StringRef AggregateFunctionTopKGeneric<true>::getSerialization(const IColumn & column, size_t row_num, Arena &)
-{
-    return column.getDataAt(row_num);
-}
 
 template <>
 inline void AggregateFunctionTopKGeneric<false>::deserializeAndInsert(StringRef str, IColumn & data_to)

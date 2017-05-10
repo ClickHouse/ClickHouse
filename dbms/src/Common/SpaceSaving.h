@@ -1,7 +1,6 @@
 #pragma once
 
 #include <iostream>
-#include <list>
 #include <vector>
 
 #include <boost/range/adaptor/reversed.hpp>
@@ -26,18 +25,34 @@
 namespace DB
 {
 
-template <typename TKey, typename Hash = DefaultHash<TKey>>
+template
+<
+    typename TKey,
+    typename HashKey = TKey,
+    typename Hash = DefaultHash<HashKey>,
+    typename Grower = HashTableGrower<>,
+    typename Allocator = HashTableAllocator
+>
 class SpaceSaving
 {
+private:
+    // Suggested constants in the paper "Finding top-k elements in data streams", chap 6. equation (24)
+    // Round to nearest power of 2 for cheaper binning without modulo
+    constexpr uint64_t nextAlphaSize (uint64_t x)
+    {
+        constexpr uint64_t ALPHA_MAP_ELEMENTS_PER_COUNTER = 6;
+        return 1ULL<<(sizeof(uint64_t) * 8 - __builtin_clzll(x * ALPHA_MAP_ELEMENTS_PER_COUNTER));
+    }
+
 public:
-    using Self = SpaceSaving<TKey, Hash>;
+    using Self = SpaceSaving<TKey, HashKey, Hash, Grower, Allocator>;
 
     struct Counter
     {
         Counter() {}
 
-        Counter(const TKey & k, UInt64 c = 0, UInt64 e = 0)
-          : key(k), slot(0), count(c), error(e) {}
+        Counter(const TKey & k, UInt64 c = 0, UInt64 e = 0, size_t h = 0)
+          : key(k), slot(0), hash(h), count(c), error(e) {}
 
         void write(WriteBuffer & wb) const
         {
@@ -60,12 +75,12 @@ public:
         }
 
         TKey key;
-        size_t slot;
+        size_t slot, hash;
         UInt64 count;
         UInt64 error;
     };
 
-    SpaceSaving(size_t c = 10) : alpha_map(ALPHA_MAP_ELEMENTS_PER_COUNTER * c), m_capacity(c) {}
+    SpaceSaving(size_t c = 10) : alpha_map(nextAlphaSize(c)), m_capacity(c) {}
     ~SpaceSaving() { destroyElements(); }
 
     inline size_t size() const
@@ -81,7 +96,7 @@ public:
     void resize(size_t new_capacity)
     {
         counter_list.reserve(new_capacity);
-        alpha_map.resize(new_capacity * ALPHA_MAP_ELEMENTS_PER_COUNTER);
+        alpha_map.resize(nextAlphaSize(new_capacity));
         m_capacity = new_capacity;
     }
 
@@ -99,17 +114,17 @@ public:
             percolate(c);
             return;
         }
-
         // Key doesn't exist, but can fit in the top K
-        if (size() < capacity())
+        else if (unlikely(size() < capacity()))
         {
-            auto c = new Counter(key, increment, error);
+            auto c = new Counter(key, increment, error, hash);
             push(c);
             return;
         }
 
         auto min = counter_list.back();
-        auto & alpha = alpha_map[hash % alpha_map.size()];
+        const size_t alpha_mask = alpha_map.size() - 1;
+        auto & alpha = alpha_map[hash & alpha_mask];
         if (alpha + increment < min->count)
         {
             alpha += increment;
@@ -117,25 +132,21 @@ public:
         }
 
         // Erase the current minimum element
-        auto min_hash = counter_map.hash(min->key);
-        it = counter_map.find(min->key, min_hash);
-        if (it != counter_map.end())
-        {
-            auto cell = it.getPtr();
-            cell->setZero();
-        }
+        alpha_map[min->hash & alpha_mask] = min->count;
+        it = counter_map.find(min->key, min->hash);
 
         // Replace minimum with newly inserted element
-        bool inserted = false;
-        counter_map.emplace(key, it, inserted, hash);
-        if (inserted)
+        if (it != counter_map.end())
         {
-            alpha_map[min_hash % alpha_map.size()] = min->count;
+            min->hash = hash;
             min->key = key;
             min->count = alpha + increment;
             min->error = alpha + error;
-            it->second = min;
             percolate(min);
+
+            it->second = min;
+            it->first = key;
+            counter_map.reinsert(it, hash);
         }
     }
 
@@ -220,10 +231,11 @@ public:
         {
             auto counter = new Counter();
             counter->read(rb);
+            counter->hash = counter_map.hash(counter->key);
             push(counter);
         }
 
-        for (size_t i = 0; i < m_capacity * ALPHA_MAP_ELEMENTS_PER_COUNTER; ++i)
+        for (size_t i = 0; i < nextAlphaSize(m_capacity); ++i)
         {
             UInt64 alpha = 0;
             readVarUInt(alpha, rb);
@@ -267,13 +279,10 @@ private:
         alpha_map.clear();
     }
 
-    HashMap<TKey, Counter *, Hash> counter_map;
+    HashMap<HashKey, Counter *, Hash, Grower, Allocator> counter_map;
     std::vector<Counter *> counter_list;
     std::vector<UInt64> alpha_map;
     size_t m_capacity;
-
-    // Suggested constants in the paper "Finding top-k elements in data streams", chap 6. equation (24)
-    enum { ALPHA_MAP_ELEMENTS_PER_COUNTER = 6 };
 };
 
 };
