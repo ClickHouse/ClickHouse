@@ -100,7 +100,7 @@ public:
 
 
 
-/// General case (ineffective). NOTE You can also implement a special case for strings.
+/// General case (inefficient). NOTE You can also implement a special case for strings.
 struct AggregateFunctionGroupArrayDataGeneric
 {
     Array value;    /// TODO Add MemoryTracker
