@@ -178,7 +178,7 @@ public:
                 to_data.insert(default_value);
         }
 
-        to_offsets.push_back(arr.size());
+        to_offsets.push_back(to_offsets.back() + arr.size());
     }
 };
 
