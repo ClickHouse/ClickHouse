@@ -109,7 +109,7 @@ struct AggregateFunctionGroupArrayDataGeneric
 
 /// Puts all values to an array, general case. Implemented inefficiently.
 class AggregateFunctionGroupArrayGeneric final
-: public IUnaryAggregateFunction<AggregateFunctionGroupArrayDataGeneric, AggregateFunctionGroupArrayGeneric>
+    : public IUnaryAggregateFunction<AggregateFunctionGroupArrayDataGeneric, AggregateFunctionGroupArrayGeneric>
 {
 private:
     DataTypePtr type;
