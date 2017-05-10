@@ -22,6 +22,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Poco/DirectoryIterator.h>
+#include <Common/Increment.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
