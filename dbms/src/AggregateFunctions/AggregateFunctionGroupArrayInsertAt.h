@@ -9,6 +9,9 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 
+#include <Core/FieldVisitors.h>
+#include <Interpreters/convertFieldToType.h>
+
 #include <AggregateFunctions/IBinaryAggregateFunction.h>
 
 #define AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE 0xFFFFFF
@@ -20,6 +23,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -57,16 +62,28 @@ public:
 
     void setArgumentsImpl(const DataTypes & arguments)
     {
+        if (!arguments.at(1)->behavesAsNumber())    /// TODO filter out floating point types.
+            throw Exception("Second argument of aggregate function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         type = arguments.front();
+
+        if (default_value.isNull())
+            default_value = type->getDefault();
+        else
+        {
+            Field converted = convertFieldToType(default_value, *type);
+            if (converted.isNull())
+                throw Exception("Cannot convert parameter of aggregate function " + getName() + " (" + applyVisitor(FieldVisitorToString(), default_value) + ")"
+                    " to type " + type->getName() + " to be used as default value in array", ErrorCodes::CANNOT_CONVERT_TYPE);
+
+            default_value = converted;
+        }
     }
 
     void setParameters(const Array & params) override
     {
         if (params.empty())
-        {
-            default_value = type->getDefault();
             return;
-        }
 
         if (params.size() != 1)
             throw Exception("Aggregate function " + getName() + " requires at most one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
