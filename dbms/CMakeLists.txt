@@ -21,6 +21,7 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libbtrie/include)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 include_directories (${ClickHouse_BINARY_DIR}/dbms/src)
 
@@ -153,6 +154,7 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
         src/Dictionaries/FlatDictionary.cpp
         src/Dictionaries/HashedDictionary.cpp
         src/Dictionaries/CacheDictionary.cpp
+        src/Dictionaries/TrieDictionary.cpp
         src/Dictionaries/RangeHashedDictionary.cpp
         src/Dictionaries/ComplexKeyHashedDictionary.cpp
         src/Dictionaries/ComplexKeyCacheDictionary.cpp
@@ -185,6 +187,7 @@ target_link_libraries (dbms
     ${OPENSSL_CRYPTO_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
     ${Poco_Data_LIBRARY}
+    btrie
 )
 
 if (Poco_DataODBC_FOUND)
