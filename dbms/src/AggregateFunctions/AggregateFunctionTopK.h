@@ -21,8 +21,8 @@ namespace DB
 
 
 // Allow NxK more space before calculating top K to increase accuracy
+#define TOP_K_DEFAULT 10
 #define TOP_K_LOAD_FACTOR 3
-#define TOP_K_DEFAULT_DEGREE 10
 #define TOP_K_MAX_SIZE 0xFFFFFF
 
 
@@ -34,8 +34,8 @@ struct AggregateFunctionTopKData
         T,
         T,
         HashCRC32<T>,
-        HashTableGrower<TOP_K_DEFAULT_DEGREE>,
-        HashTableAllocatorWithStackMemory<sizeof(T) * (1 << (TOP_K_DEFAULT_DEGREE/2))>
+        HashTableGrower<4>,
+        HashTableAllocatorWithStackMemory<sizeof(T) * (1 << 4)>
     >;
     Set value;
 };
@@ -47,7 +47,7 @@ class AggregateFunctionTopK
 {
 private:
     using State = AggregateFunctionTopKData<T>;
-    size_t threshold = TOP_K_DEFAULT_DEGREE;
+    size_t threshold = TOP_K_DEFAULT;
     size_t reserved = TOP_K_LOAD_FACTOR * threshold;
 
 public:
@@ -132,8 +132,8 @@ struct AggregateFunctionTopKGenericData
         std::string,
         StringRef,
         StringRefHash,
-        HashTableGrower<TOP_K_DEFAULT_DEGREE>,
-        HashTableAllocatorWithStackMemory<sizeof(StringRef) * (1 << (TOP_K_DEFAULT_DEGREE/2))>
+        HashTableGrower<4>,
+        HashTableAllocatorWithStackMemory<sizeof(StringRef) * (1 << 4)>
     >;
 
     Set value;
@@ -148,7 +148,7 @@ class AggregateFunctionTopKGeneric : public IUnaryAggregateFunction<AggregateFun
 private:
     using State = AggregateFunctionTopKGenericData;
     DataTypePtr input_data_type;
-    size_t threshold = TOP_K_DEFAULT_DEGREE;
+    size_t threshold = TOP_K_DEFAULT;
     size_t reserved = TOP_K_LOAD_FACTOR * threshold;
 
     static void deserializeAndInsert(StringRef str, IColumn & data_to);
@@ -254,6 +254,7 @@ inline void AggregateFunctionTopKGeneric<true>::deserializeAndInsert(StringRef s
 }
 
 
+#undef TOP_K_DEFAULT
 #undef TOP_K_MAX_SIZE
 #undef TOP_K_LOAD_FACTOR
 
