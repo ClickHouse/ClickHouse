@@ -249,9 +249,14 @@ StoragePtr StorageFactory::get(
     bool attach,
     bool has_force_restore_data_flag) const
 {
-    checkAllTypesAreAllowedInTable(*columns);
-    checkAllTypesAreAllowedInTable(materialized_columns);
-    checkAllTypesAreAllowedInTable(alias_columns);
+    /// Check for some special types, that are not allowed to be stored in tables. Example: NULL data type.
+    /// Exception: any type is allowed in View, because plain (non-materialized) View does not store anything itself.
+    if (name != "View")
+    {
+        checkAllTypesAreAllowedInTable(*columns);
+        checkAllTypesAreAllowedInTable(materialized_columns);
+        checkAllTypesAreAllowedInTable(alias_columns);
+    }
 
     if (name == "Log")
     {
