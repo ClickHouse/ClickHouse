@@ -34,7 +34,11 @@ namespace ErrorCodes
   * If more than one value was inserted to single position, the any value (first in case of single thread) is stored.
   * If no values was inserted to some position, then default value will be substituted.
   *
-  * Default value is optional parameter for aggregate function.
+  * Aggregate function also accept optional parameters:
+  * - default value to substitute;
+  * - length to resize result arrays (if you want to have results of same length for all aggregation keys);
+  *
+  * If you want to pass length, default value should be also given.
   */
 
 
@@ -51,6 +55,7 @@ class AggregateFunctionGroupArrayInsertAtGeneric final
 private:
     DataTypePtr type;
     Field default_value;
+    size_t length_to_resize = 0;    /// zero means - do not do resizing.
 
 public:
     String getName() const override { return "groupArrayInsertAt"; }
@@ -85,16 +90,26 @@ public:
         if (params.empty())
             return;
 
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires at most one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        if (params.size() > 2)
+            throw Exception("Aggregate function " + getName() + " requires at most two parameters.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        default_value = params.front();
+        default_value = params[0];
+
+        if (params.size() == 2)
+        {
+            length_to_resize = applyVisitor(FieldVisitorConvertToNumber<size_t>(), params[1]);
+        }
     }
 
     void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_position, size_t row_num, Arena *) const
     {
         /// TODO Do positions need to be 1-based for this function?
         size_t position = column_position.get64(row_num);
+
+        /// If position is larger than size to which array will be cutted - simply ignore value.
+        if (length_to_resize && position >= length_to_resize)
+            return;
+
         if (position >= AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE)
             throw Exception("Too large array size: position argument (" + toString(position) + ")"
                 " is greater or equals to limit (" + toString(AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE) + ")",
@@ -179,7 +194,13 @@ public:
                 to_data.insert(default_value);
         }
 
-        to_offsets.push_back((to_offsets.empty() ? 0 : to_offsets.back()) + arr.size());
+        size_t result_array_size = length_to_resize ? length_to_resize : arr.size();
+
+        /// Pad array if need.
+        for (size_t i = arr.size(); i < result_array_size; ++i)
+            to_data.insert(default_value);
+
+        to_offsets.push_back((to_offsets.empty() ? 0 : to_offsets.back()) + result_array_size);
     }
 };
 
