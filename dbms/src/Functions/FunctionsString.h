@@ -20,10 +20,10 @@ namespace DB
   * lengthUTF8, substringUTF8, lowerUTF8, upperUTF8, reverseUTF8
   *
   * s                -> UInt8:    empty, notEmpty
-  * s                 -> UInt64:     length, lengthUTF8
-  * s                 -> s:        lower, upper, lowerUTF8, upperUTF8, reverse, reverseUTF8
-  * s, s             -> s:         concat
-  * s, c1, c2         -> s:        substring, substringUTF8
+  * s                -> UInt64:   length, lengthUTF8
+  * s                -> s:        lower, upper, lowerUTF8, upperUTF8, reverse, reverseUTF8
+  * s, s             -> s:        concat
+  * s, c1, c2        -> s:        substring, substringUTF8
   * s, c1, c2, s2    -> s:        replace, replaceUTF8
   *
   * Функции поиска строк и регулярных выражений расположены отдельно.
@@ -76,7 +76,7 @@ inline void UTF8CyrillicToCase(const UInt8 *& src, const UInt8 * const src_end, 
     }
     else if (src[0] == 0xD0u && (src[1] >= 0xA0u && src[1] <= 0xAFu))
     {
-        ///    Р-Я
+        /// Р-Я
         *dst++ = xor_or_identity<to_lower>(*src++, 0x1);
         *dst++ = xor_or_identity<to_lower>(*src++, 0x20);
     }
