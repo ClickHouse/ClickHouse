@@ -118,7 +118,7 @@ public:
         if (arr_lhs.size() < arr_rhs.size())
             arr_lhs.resize(arr_rhs.size());
 
-        for (size_t i = 0, size = arr_lhs.size(); i < size; ++i)
+        for (size_t i = 0, size = arr_rhs.size(); i < size; ++i)
             if (arr_lhs[i].isNull() && !arr_rhs[i].isNull())
                 arr_lhs[i] = arr_rhs[i];
     }
@@ -128,6 +128,7 @@ public:
         const Array & arr = data(place).value;
         size_t size = arr.size();
         writeVarUInt(size, buf);
+
         for (const Field & elem : arr)
         {
             if (elem.isNull())
