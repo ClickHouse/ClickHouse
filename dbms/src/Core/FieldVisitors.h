@@ -33,13 +33,13 @@ typename std::decay<Visitor>::type::ResultType applyVisitor(Visitor && visitor, 
 {
     switch (field.getType())
     {
-        case Field::Types::Null:     return visitor(field.template get<Null>());
-        case Field::Types::UInt64:     return visitor(field.template get<UInt64>());
-        case Field::Types::Int64:     return visitor(field.template get<Int64>());
+        case Field::Types::Null:    return visitor(field.template get<Null>());
+        case Field::Types::UInt64:  return visitor(field.template get<UInt64>());
+        case Field::Types::Int64:   return visitor(field.template get<Int64>());
         case Field::Types::Float64: return visitor(field.template get<Float64>());
-        case Field::Types::String:     return visitor(field.template get<String>());
-        case Field::Types::Array:     return visitor(field.template get<Array>());
-        case Field::Types::Tuple:     return visitor(field.template get<Tuple>());
+        case Field::Types::String:  return visitor(field.template get<String>());
+        case Field::Types::Array:   return visitor(field.template get<Array>());
+        case Field::Types::Tuple:   return visitor(field.template get<Tuple>());
 
         default:
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -52,13 +52,13 @@ static typename std::decay<Visitor>::type::ResultType applyBinaryVisitorImpl(Vis
 {
     switch (field2.getType())
     {
-        case Field::Types::Null:     return visitor(field1, field2.template get<Null>());
-        case Field::Types::UInt64:     return visitor(field1, field2.template get<UInt64>());
-        case Field::Types::Int64:     return visitor(field1, field2.template get<Int64>());
+        case Field::Types::Null:    return visitor(field1, field2.template get<Null>());
+        case Field::Types::UInt64:  return visitor(field1, field2.template get<UInt64>());
+        case Field::Types::Int64:   return visitor(field1, field2.template get<Int64>());
         case Field::Types::Float64: return visitor(field1, field2.template get<Float64>());
-        case Field::Types::String:     return visitor(field1, field2.template get<String>());
-        case Field::Types::Array:     return visitor(field1, field2.template get<Array>());
-        case Field::Types::Tuple:     return visitor(field1, field2.template get<Tuple>());
+        case Field::Types::String:  return visitor(field1, field2.template get<String>());
+        case Field::Types::Array:   return visitor(field1, field2.template get<Array>());
+        case Field::Types::Tuple:   return visitor(field1, field2.template get<Tuple>());
 
         default:
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -102,13 +102,13 @@ typename std::decay<Visitor>::type::ResultType applyVisitor(Visitor && visitor, 
 class FieldVisitorToString : public StaticVisitor<String>
 {
 public:
-    String operator() (const Null         & x) const;
-    String operator() (const UInt64     & x) const;
-    String operator() (const Int64         & x) const;
-    String operator() (const Float64     & x) const;
-    String operator() (const String     & x) const;
-    String operator() (const Array         & x) const;
-    String operator() (const Tuple         & x) const;
+    String operator() (const Null & x) const;
+    String operator() (const UInt64 & x) const;
+    String operator() (const Int64 & x) const;
+    String operator() (const Float64 & x) const;
+    String operator() (const String & x) const;
+    String operator() (const Array & x) const;
+    String operator() (const Tuple & x) const;
 };
 
 
@@ -116,13 +116,13 @@ public:
 class FieldVisitorDump : public StaticVisitor<String>
 {
 public:
-    String operator() (const Null         & x) const;
-    String operator() (const UInt64     & x) const;
-    String operator() (const Int64         & x) const;
-    String operator() (const Float64     & x) const;
-    String operator() (const String     & x) const;
-    String operator() (const Array         & x) const;
-    String operator() (const Tuple         & x) const;
+    String operator() (const Null & x) const;
+    String operator() (const UInt64 & x) const;
+    String operator() (const Int64 & x) const;
+    String operator() (const Float64 & x) const;
+    String operator() (const String & x) const;
+    String operator() (const Array & x) const;
+    String operator() (const Tuple & x) const;
 };
 
 
@@ -151,8 +151,8 @@ public:
         throw Exception("Cannot convert Tuple to " + TypeName<T>::get(), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    T operator() (const UInt64     & x) const { return x; }
-    T operator() (const Int64     & x) const { return x; }
+    T operator() (const UInt64 & x) const { return x; }
+    T operator() (const Int64 & x) const { return x; }
     T operator() (const Float64 & x) const { return x; }
 };
 
@@ -165,12 +165,12 @@ private:
 public:
     FieldVisitorHash(SipHash & hash);
 
-    void operator() (const Null     & x) const;
-    void operator() (const UInt64     & x) const;
-    void operator() (const Int64     & x) const;
-    void operator() (const Float64     & x) const;
-    void operator() (const String     & x) const;
-    void operator() (const Array     & x) const;
+    void operator() (const Null & x) const;
+    void operator() (const UInt64 & x) const;
+    void operator() (const Int64 & x) const;
+    void operator() (const Float64 & x) const;
+    void operator() (const String & x) const;
+    void operator() (const Array & x) const;
 };
 
 
