@@ -19,66 +19,66 @@ class IProfilingBlockInputStream;
 using ProfilingBlockInputStreamPtr = std::shared_ptr<IProfilingBlockInputStream>;
 
 
-/** Смотрит за тем, как работает источник блоков.
-  * Позволяет получить информацию для профайлинга:
-  *  строк в секунду, блоков в секунду, мегабайт в секунду и т. п.
-  * Позволяет остановить чтение данных (во вложенных источниках).
+/** Watches out at how the source of the blocks works.
+  * Lets you get information for profiling:
+  *  rows per second, blocks per second, megabytes per second, etc.
+  * Allows you to stop reading data (in nested sources).
   */
 class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
     Block read() override final;
 
-    /** Реализация по-умолчанию вызывает readPrefixImpl() у себя, а затем readPrefix() у всех детей рекурсивно.
-      * Есть случаи, когда вы не хотите, чтобы readPrefix у детей вызывался синхронно, в этой функции,
-      *  а хотите, чтобы они вызывались, например, в отдельных потоках (для распараллеливания инициализации детей).
-      * Тогда перегрузите функцию readPrefix.
+    /** The default implementation calls readPrefixImpl() on itself, and then readPrefix() recursively for all children.
+      * There are cases when you do not want `readPrefix` of children to be called synchronously, in this function,
+      *  but you want them to be called, for example, in separate threads (for parallel initialization of children).
+      * Then overload `readPrefix` function.
       */
     void readPrefix() override;
 
-    /** Реализация по-умолчанию вызывает рекурсивно readSuffix() у всех детей, а затем readSuffixImpl() у себя.
-      * Если этот поток вызывает у детей read() в отдельном потоке, этот поведение обычно неверно:
-      * readSuffix() у ребенка нельзя вызывать в момент, когда read() того же ребенка выполняется в другом потоке.
-      * В таком случае нужно переопределить этот метод, чтобы readSuffix() у детей вызывался, например, после соединения потоков.
+    /** The default implementation calls recursively readSuffix() on all children, and then readSuffixImpl() on itself.
+      * If this stream calls read() in children in a separate thread, this behavior is usually incorrect:
+      * readSuffix() of the child can not be called at the moment when the same child's read() is executed in another thread.
+      * In this case, you need to override this method so that readSuffix() in children is called, for example, after connecting streams.
       */
     void readSuffix() override;
 
     /// Get information about execution speed.
     const BlockStreamProfileInfo & getProfileInfo() const { return info; }
 
-    /** Получить "тотальные" значения.
-      * Реализация по-умолчанию берёт их из себя или из первого дочернего источника, в котором они есть.
-      * Переопределённый метод может провести некоторые вычисления. Например, применить выражение к totals дочернего источника.
-      * Тотальных значений может не быть - тогда возвращается пустой блок.
+    /** Get "total" values.
+      * The default implementation takes them from itself or from the first child source in which they are.
+      * The overridden method can perform some calculations. For example, apply an expression to the `totals` of the child source.
+      * There can be no total values - then an empty block is returned.
       *
-      * Вызывайте этот метод только после получения всех данных с помощью read,
-      *  иначе будут проблемы, если какие-то данные в это же время вычисляются в другом потоке.
+      * Call this method only after all the data has been retrieved with `read`,
+      *  otherwise there will be problems if any data at the same time is computed in another thread.
       */
     virtual const Block & getTotals();
 
-    /// То же самое для минимумов и максимумов.
+    /// The same for minimums and maximums.
     const Block & getExtremes() const;
 
 
-    /** Установить колбэк прогресса выполнения.
-      * Колбэк пробрасывается во все дочерние источники.
-      * По-умолчанию, он вызывается для листовых источников, после каждого блока.
-      * (Но это может быть переопределено в методе progress())
-      * Функция принимает количество строк в последнем блоке, количество байт в последнем блоке.
-      * Следует иметь ввиду, что колбэк может вызываться из разных потоков.
+    /** Set the execution progress bar callback.
+      * The callback is passed to all child sources.
+      * By default, it is called for leaf sources, after each block.
+      * (But this can be overridden in the progress() method)
+      * The function takes the number of rows in the last block, the number of bytes in the last block.
+      * Note that the callback can be called from different threads.
       */
     void setProgressCallback(ProgressCallback callback);
 
 
-    /** В этом методе:
-      * - вызывается колбэк прогресса;
-      * - обновляется статус выполнения запроса в ProcessList-е;
-      * - проверяются ограничения и квоты, которые должны быть проверены не в рамках одного источника,
-      *   а над общим количеством потраченных ресурсов во всех источниках сразу (информация в ProcessList-е).
+    /** In this method:
+      * - the progress callback is called;
+      * - the status of the query execution in ProcessList is updated;
+      * - checks restrictions and quotas that should be checked not within the same source,
+      *   but over the total amount of resources spent in all sources at once (information in the ProcessList).
       */
     virtual void progress(const Progress & value)
     {
-        /// Данные для прогресса берутся из листовых источников.
+        /// The data for progress is taken from leaf sources.
         if (children.empty())
             progressImpl(value);
     }
@@ -86,26 +86,26 @@ public:
     void progressImpl(const Progress & value);
 
 
-    /** Установить указатель на элемент списка процессов.
-      * Пробрасывается во все дочерние источники.
-      * В него будет записываться общая информация о потраченных на запрос ресурсах.
-      * На основе этой информации будет проверяться квота, и некоторые ограничения.
-      * Также эта информация будет доступна в запросе SHOW PROCESSLIST.
+    /** Set the pointer to the process list item.
+      * It is passed to all child sources.
+      * General information about the resources spent on the request will be written into it.
+      * Based on this information, the quota and some restrictions will be checked.
+      * This information will also be available in the SHOW PROCESSLIST request.
       */
     void setProcessListElement(ProcessListElement * elem);
 
-    /** Установить информацию о приблизительном общем количестве строк, которых нужно прочитать.
+    /** Set the approximate total number of rows to read.
       */
     void setTotalRowsApprox(size_t value) { total_rows_approx = value; }
 
 
-    /** Попросить прервать получение данных как можно скорее.
-      * По-умолчанию - просто выставляет флаг is_cancelled и просит прерваться всех детей.
-      * Эта функция может вызываться несколько раз, в том числе, одновременно из разных потоков.
+    /** Ask to abort the receipt of data as soon as possible.
+      * By default - just sets the flag is_cancelled and asks that all children be interrupted.
+      * This function can be called several times, including simultaneously from different threads.
       */
     virtual void cancel();
 
-    /** Требуется ли прервать получение данных.
+    /** Do you want to abort the receipt of data.
      */
     bool isCancelled() const
     {
@@ -140,7 +140,7 @@ public:
 
         /// in rows per second
         size_t min_execution_speed = 0;
-        /// Проверять, что скорость не слишком низкая, после прошествия указанного времени.
+        /// Verify that the speed is not too low after the specified time has elapsed.
         Poco::Timespan timeout_before_checking_execution_speed = 0;
     };
 
@@ -155,15 +155,15 @@ public:
         return limits;
     }
 
-    /** Установить квоту. Если устанавливается квота на объём исходных данных,
-      * то следует ещё установить mode = LIMITS_TOTAL в LocalLimits с помощью setLimits.
+    /** Set the quota. If you set a quota on the amount of raw data,
+      * then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
       */
     void setQuota(QuotaForIntervals & quota_)
     {
         quota = &quota_;
     }
 
-    /// Включить рассчёт минимумов и максимумов по столбцам результата.
+    /// Enable calculation of minimums and maximums by the result columns.
     void enableExtremes() { enabled_extremes = true; }
 
 protected:
@@ -174,49 +174,49 @@ protected:
 
     bool enabled_extremes = false;
 
-    /// Дополнительная информация, которая может образоваться в процессе работы.
+    /// Additional information that can be generated during the work process.
 
-    /// Тотальные значения при агрегации.
+    /// Total values during aggregation.
     Block totals;
-    /// Минимумы и максимумы. Первая строчка блока - минимумы, вторая - максимумы.
+    /// Minimums and maximums. The first row of the block - minimums, the second - the maximums.
     Block extremes;
-    /// Приблизительное общее количество строк, которых нужно прочитать. Для прогресс-бара.
+    /// The approximate total number of rows to read. For progress bar.
     size_t total_rows_approx = 0;
-    /// Информация о приблизительном общем количестве строк собрана в родительском источнике.
+    /// Information about the approximate total number of rows is collected in the parent source.
     bool collected_total_rows_approx = false;
 
-    /// Превышено ограничение на количество строк/байт, и нужно прекратить выполнение на следующем вызове read, как будто поток иссяк.
+    /// The limit on the number of rows/bytes has been exceeded, and you need to stop execution on the next `read` call, as if the thread has run out.
     bool limit_exceeded_need_break = false;
 
-    /// Ограничения и квоты.
+    /// Limitations and quotas.
 
     LocalLimits limits;
 
-    QuotaForIntervals * quota = nullptr;    /// Если nullptr - квота не используется.
+    QuotaForIntervals * quota = nullptr;    /// If nullptr - the quota is not used.
     double prev_elapsed = 0;
 
-    /// Наследники должны реализовать эту функцию.
+    /// The heirs must implement this function.
     virtual Block readImpl() = 0;
 
-    /// Здесь можно делать предварительную инициализацию.
+    /// Here you can do a preliminary initialization.
     virtual void readPrefixImpl() {}
 
-    /// Здесь необходимо делать финализацию, которая может привести к исключению.
+    /// Here you need to do a finalization, which can lead to an exception.
     virtual void readSuffixImpl() {}
 
     void updateExtremes(Block & block);
 
-    /** Проверить ограничения и квоты.
-      * Но только те, что могут быть проверены в рамках каждого отдельного источника.
+    /** Check constraints and quotas.
+      * But only those that can be tested within each separate source.
       */
     bool checkLimits();
     void checkQuota(Block & block);
 
-    /// Собрать информацию о приблизительном общем числе строк по всем детям.
+    /// Gather information about the approximate total number of rows from all children.
     void collectTotalRowsApprox();
 
-    /** Передать информацию о приблизительном общем числе строк в колбэк прогресса.
-      * Сделано так, что отправка происходит лишь в верхнем источнике.
+    /** Send information about the approximate total number of rows to the progress bar.
+      * It is done so that sending occurs only in the upper source.
       */
     void collectAndSendTotalRowsApprox();
 };

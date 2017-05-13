@@ -63,7 +63,7 @@ struct ReplicatedMergeTreeLogEntryData
     /// The name of resulting part.
     /// For DROP_RANGE, the name of a non-existent part. You need to remove all the parts covered by it.
     String new_part_name;
-    String block_id;    /// For parts of level zero, the block identifier for deduplication (node name in /blocks /).
+    String block_id;    /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
 
     Strings parts_to_merge;
     bool deduplicate = false; /// Do deduplicate on merge

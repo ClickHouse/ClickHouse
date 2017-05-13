@@ -4,7 +4,7 @@
 
 namespace DB
 {
-/// Переводит выражение LIKE в regexp re2. Например, abc%def -> ^abc.*def$
+/// Transforms the LIKE expression into regexp re2. For example, abc%def -> ^abc.*def$
 inline String likePatternToRegexp(const String & pattern)
 {
     String res;

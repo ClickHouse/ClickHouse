@@ -49,8 +49,8 @@ public:
 };
 
 
-/** Создаёт массив, размножая столбец (первый аргумент) по количеству элементов в массиве (втором аргументе).
-  * Используется только в качестве prerequisites для функций высшего порядка.
+/** Creates an array, multiplying the column (the first argument) by the number of elements in the array (the second argument).
+  * Used only as prerequisites for higher-order functions.
   */
 class FunctionReplicate : public IFunction
 {

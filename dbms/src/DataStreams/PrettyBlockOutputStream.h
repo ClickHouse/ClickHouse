@@ -11,12 +11,12 @@ class WriteBuffer;
 class Context;
 
 
-/** Выводит результат в виде красивых таблиц.
+/** Prints the result in the form of beautiful tables.
   */
 class PrettyBlockOutputStream : public IBlockOutputStream
 {
 public:
-    /// no_escapes - не использовать ANSI escape sequences - для отображения в браузере, а не в консоли.
+    /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
     PrettyBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_, size_t max_rows_, const Context & context_);
 
     void write(const Block & block) override;
@@ -33,7 +33,7 @@ protected:
 
     using Widths_t = std::vector<size_t>;
 
-    /// Вычислить видимую (при выводе на консоль с кодировкой UTF-8) ширину значений и имён столбцов.
+    /// Evaluate the visible width (when outputting to the console with UTF-8 encoding) the width of the values and column names.
     void calculateWidths(Block & block, Widths_t & max_widths, Widths_t & name_widths);
 
     WriteBuffer & ostr;

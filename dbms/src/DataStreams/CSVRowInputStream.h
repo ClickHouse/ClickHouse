@@ -9,14 +9,14 @@ namespace DB
 
 class ReadBuffer;
 
-/** Поток для ввода данных в формате csv.
-  * Не соответствует https://tools.ietf.org/html/rfc4180 потому что пропускает пробелы и табы между значениями.
+/** A stream for inputting data in csv format.
+  * Does not conform with https://tools.ietf.org/html/rfc4180 because it skips spaces and tabs between values.
   */
 class CSVRowInputStream : public IRowInputStream
 {
 public:
-    /** with_names - в первой строке заголовок с именами столбцов
-      * with_types - на следующей строке заголовок с именами типов
+    /** with_names - in the first line the header with column names
+      * with_types - on the next line header with type names
       */
     CSVRowInputStream(ReadBuffer & istr_, const Block & sample_, const char delimiter_, bool with_names_ = false, bool with_types_ = false);
 
@@ -35,11 +35,11 @@ private:
     bool with_types;
     DataTypes data_types;
 
-    /// Для удобной диагностики в случае ошибки.
+    /// For convenient diagnostics in case of an error.
 
     size_t row_num = 0;
 
-    /// Сколько байт было считано, не считая тех, что ещё в буфере.
+    /// How many bytes were read, not counting those that are still in the buffer.
     size_t bytes_read_at_start_of_buffer_on_current_row = 0;
     size_t bytes_read_at_start_of_buffer_on_prev_row = 0;
 

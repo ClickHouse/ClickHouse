@@ -10,11 +10,11 @@ namespace DB
 class WriteBuffer;
 
 
-/** Формат данных, предназначенный для упрощения реализации ODBC драйвера.
-  * ODBC драйвер предназначен для сборки под разные платформы без зависимостей от основного кода,
-  *  поэтому формат сделан так, чтобы в нём можно было как можно проще его распарсить.
-  * Выводится заголовок с нужной информацией.
-  * Затем данные выводятся в порядке строк. Каждое значение выводится так: длина в формате VarUInt, затем данные в текстовом виде.
+/** A data format designed to simplify the implementation of the ODBC driver.
+  * ODBC driver is designed to be build for different platforms without dependencies from the main code,
+  *  so the format is made that way so that it can be as easy as possible to parse it.
+  * A header is displayed with the required information.
+  * The data is then output in the order of the rows. Each value is displayed as follows: length in VarUInt format, then data in text form.
   */
 class ODBCDriverBlockOutputStream : public IBlockOutputStream
 {

@@ -478,7 +478,7 @@ struct BinaryFunctionVectorized
 struct EImpl
 {
     static constexpr auto name = "e";
-    static const double value;    /// См. .cpp
+    static const double value;    /// See .cpp
 };
 
 struct PiImpl

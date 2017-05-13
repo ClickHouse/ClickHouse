@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** Пустой поток блоков.
+/** Empty stream of blocks.
   */
 class NullBlockInputStream : public IBlockInputStream
 {
