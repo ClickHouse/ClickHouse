@@ -10,14 +10,14 @@ namespace DB
 class WriteBuffer;
 
 
-/** Поток для вывода данных в формате csv.
-  * Не соответствует https://tools.ietf.org/html/rfc4180 потому что использует LF, а не CR LF.
+/** The stream for outputting data in csv format.
+  * Does not conform with https://tools.ietf.org/html/rfc4180 because it uses LF, not CR LF.
   */
 class CSVRowOutputStream : public IRowOutputStream
 {
 public:
-    /** with_names - выводить в первой строке заголовок с именами столбцов
-      * with_types - выводить на следующей строке заголовок с именами типов
+    /** with_names - output in the first line a header with column names
+      * with_types - output in the next line header with the names of the types
       */
     CSVRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false);
 

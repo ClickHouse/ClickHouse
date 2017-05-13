@@ -7,8 +7,8 @@
 namespace DB
 {
 
-/** Преобразует поток для записи данных по строкам в поток для записи данных по блокам.
-  * Наример, для записи текстового дампа.
+/** Transforms a stream to write data by rows to a stream to write data by blocks.
+  * For example, to write a text dump.
   */
 class BlockOutputStreamFromRowOutputStream : public IBlockOutputStream
 {

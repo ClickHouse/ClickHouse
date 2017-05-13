@@ -37,17 +37,17 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
 }
 
-/** Функции, использующие подключаемые (внешние) словари.
+/** Functions that use plug-ins (external) dictionaries.
   *
-  * Получить значение аттрибута заданного типа.
+  * Get the value of the attribute of the specified type.
   *     dictGetType(dictionary, attribute, id),
-  *         Type - placeholder для имени типа, в данный момент поддерживаются любые числовые и строковой типы.
-  *        Тип должен соответствовать реальному типу аттрибута, с которым он был объявлен в структуре словаря.
+  *         Type - placeholder for the type name, any numeric and string types are currently supported.
+  *        The type must match the actual attribute type with which it was declared in the dictionary structure.
   *
-  * Получить массив идентификаторов, состоящий из исходного и цепочки родителей.
+  * Get an array of identifiers, consisting of the source and parents chain.
   *  dictGetHierarchy(dictionary, id).
   *
-  * Является ли первы йидентификатор потомком второго.
+  * Is the first identifier the child of the second.
   *  dictIsIn(dictionary, child_id, parent_id).
   */
 
@@ -155,7 +155,7 @@ private:
         if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
             || typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
         {
-            /// Функции у внешних словарей поддерживают только полноценные (не константные) столбцы с ключами.
+            /// Functions in external dictionaries only support full-value (not constant) columns with keys.
             const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
 
             const auto key_columns = ext::map<ConstColumnPlainPtrs>(

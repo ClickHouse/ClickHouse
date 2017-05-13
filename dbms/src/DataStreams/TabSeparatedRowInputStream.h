@@ -10,13 +10,13 @@ namespace DB
 class ReadBuffer;
 
 
-/** Поток для ввода данных в формате tsv.
+/** A stream to input data in tsv format.
   */
 class TabSeparatedRowInputStream : public IRowInputStream
 {
 public:
-    /** with_names - в первой строке заголовок с именами столбцов
-      * with_types - на следующей строке заголовок с именами типов
+    /** with_names - the first line is the header with the names of the columns
+      * with_types - on the next line header with type names
       */
     TabSeparatedRowInputStream(ReadBuffer & istr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false);
 
@@ -34,11 +34,11 @@ private:
     bool with_types;
     DataTypes data_types;
 
-    /// Для удобной диагностики в случае ошибки.
+    /// For convenient diagnostics in case of an error.
 
     size_t row_num = 0;
 
-    /// Сколько байт было считано, не считая тех, что ещё в буфере.
+    /// How many bytes were read, not counting those still in the buffer.
     size_t bytes_read_at_start_of_buffer_on_current_row = 0;
     size_t bytes_read_at_start_of_buffer_on_prev_row = 0;
 

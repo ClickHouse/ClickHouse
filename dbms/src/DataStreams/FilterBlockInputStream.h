@@ -9,9 +9,9 @@ namespace DB
 class ExpressionActions;
 
 
-/** Реализует операции WHERE, HAVING.
-  * На вход подаётся поток блоков и выражение, добавляющее в блок один столбец типа ColumnUInt8, содержащий условия фильтрации.
-  * Выражение вычисляется и возвращается поток блоков, в котором содержатся только отфильтрованные строки.
+/** Implements WHERE, HAVING operations.
+  * A stream of blocks and an expression, which adds to the block one ColumnUInt8 column containing the filtering conditions, are passed as input.
+  * The expression is evaluated and a stream of blocks is returned, which contains only the filtered rows.
   */
 class FilterBlockInputStream : public IProfilingBlockInputStream
 {
@@ -19,7 +19,7 @@ private:
     using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 public:
-    /// filter_column_ - номер столбца с условиями фильтрации.
+    /// filter_column_ - the number of the column with filter conditions.
     FilterBlockInputStream(BlockInputStreamPtr input_, ExpressionActionsPtr expression_, ssize_t filter_column_);
     FilterBlockInputStream(BlockInputStreamPtr input_, ExpressionActionsPtr expression_, const String & filter_column_name_);
 

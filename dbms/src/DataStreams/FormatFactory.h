@@ -9,8 +9,8 @@ namespace DB
 
 class Context;
 
-/** Позволяет создать IBlockInputStream или IBlockOutputStream по названию формата.
-  * Замечание: формат и сжатие - независимые вещи.
+/** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
+  * Note: format and compression are independent things.
   */
 class FormatFactory
 {

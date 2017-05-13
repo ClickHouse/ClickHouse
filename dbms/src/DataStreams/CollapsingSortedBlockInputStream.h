@@ -8,17 +8,17 @@
 namespace DB
 {
 
-/** Соединяет несколько сортированных потоков в один.
-  * При этом, для каждой группы идущих подряд одинаковых значений первичного ключа (столбцов, по которым сортируются данные),
-  *  оставляет не более одной строки со значением столбца sign_column = -1 ("отрицательной строки")
-  *  и не более одиной строки со значением столбца sign_column = 1 ("положительной строки").
-  * То есть - производит схлопывание записей из лога изменений.
+/** Merges several sorted streams to one.
+  * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
+  *  keeps no more than one row with the value of the column `sign_column = -1` ("negative row")
+  *  and no more than a row with the value of the column `sign_column = 1` ("positive row").
+  * That is, it collapses the records from the change log.
   *
-  * Если количество положительных и отрицательных строк совпадает, и последняя строка положительная - то пишет первую отрицательную и последнюю положительную строку.
-  * Если количество положительных и отрицательных строк совпадает, и последняя строка отрицательная - то ничего не пишет.
-  * Если положительных на 1 больше, чем отрицательных - то пишет только последнюю положительную строку.
-  * Если отрицательных на 1 больше, чем положительных - то пишет только первую отрицательную строку.
-  * Иначе - логическая ошибка.
+  * If the number of positive and negative rows is the same, and the last row is positive, then the first negative and last positive rows are written.
+  * If the number of positive and negative rows is the same, and the last line is negative, it writes nothing.
+  * If the positive by 1 is greater than the negative rows, then only the last positive row is written.
+  * If negative by 1 is greater than positive rows, then only the first negative row is written.
+  * Otherwise, a logical error.
   */
 class CollapsingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
@@ -50,7 +50,7 @@ public:
     }
 
 protected:
-    /// Может возвращаться на 1 больше записей, чем max_block_size.
+    /// Can return 1 more records than max_block_size.
     Block readImpl() override;
 
 private:
@@ -59,21 +59,21 @@ private:
 
     Logger * log = &Logger::get("CollapsingSortedBlockInputStream");
 
-    /// Прочитали до конца.
+    /// Read is finished.
     bool finished = false;
 
-    RowRef current_key;            /// Текущий первичный ключ.
-    RowRef next_key;            /// Первичный ключ следующей строки.
+    RowRef current_key;         /// The current primary key.
+    RowRef next_key;            /// The primary key of the next row.
 
-    RowRef first_negative;        /// Первая отрицательная строка для текущего первичного ключа.
-    RowRef last_positive;        /// Последняя положительная строка для текущего первичного ключа.
-    RowRef last_negative;        /// Последняя отрицательная. Сорраняется только если ни одной строки в ответ еще не выписано.
+    RowRef first_negative;        /// The first negative row for the current primary key.
+    RowRef last_positive;         /// The last positive row for the current primary key.
+    RowRef last_negative;         /// Last negative row. It is only stored if there is not one row is written to output.
 
-    size_t count_positive = 0;    /// Количество положительных строк для текущего первичного ключа.
-    size_t count_negative = 0;    /// Количество отрицательных строк для текущего первичного ключа.
-    bool last_is_positive = false;  /// true, если последняя строка для текущего первичного ключа положительная.
+    size_t count_positive = 0;    /// The number of positive rows for the current primary key.
+    size_t count_negative = 0;    /// The number of negative rows for the current primary key.
+    bool last_is_positive = false;  /// true if the last row for the current primary key is positive.
 
-    size_t count_incorrect_data = 0;    /// Чтобы не писать в лог слишком много сообщений об ошибке.
+    size_t count_incorrect_data = 0;    /// To prevent too many error messages from writing to the log.
 
     size_t blocks_written = 0;
 
@@ -83,13 +83,13 @@ private:
     size_t last_positive_pos = 0;    /// Global row number of last_positive
     size_t last_negative_pos = 0;    /// Global row number of last_negative
 
-    /** Делаем поддержку двух разных курсоров - с Collation и без.
-     *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
+    /** We support two different cursors - with Collation and without.
+     *  Templates are used instead of polymorphic SortCursors and calls to virtual functions.
      */
     template<class TSortCursor>
     void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
-    /// Вставить в результат строки для текущего первичного ключа.
+    /// Output to result rows for the current primary key.
     void insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows, bool last_in_stream = false);
 
     void reportIncorrectData();

@@ -6,12 +6,12 @@
 namespace DB
 {
 
-/** Если количество источников inputs больше width,
-  *  то клеит источники друг с другом (с помощью ConcatBlockInputStream),
-  *  чтобы количество источников стало не больше width.
+/** If the number of sources of `inputs` is greater than `width`,
+  *  then glues the sources to each other (using ConcatBlockInputStream),
+  *  so that the number of sources becomes no more than `width`.
   *
-  * Старается клеить источники друг с другом равномерно-случайно.
-  *  (чтобы избежать перевеса в случае, если распределение количества данных в разных источниках подчиняется некоторому шаблону)
+  * Trying to glue the sources with each other uniformly randomly.
+  *  (to avoid overweighting if the distribution of the amount of data in different sources is subject to some pattern)
   */
 BlockInputStreams narrowBlockInputStreams(BlockInputStreams & inputs, size_t width);
 

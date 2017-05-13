@@ -8,9 +8,9 @@
 namespace DB
 {
 
-/// Схлопывает одинаковые строки с противоположным знаком примерно как CollapsingSortedBlockInputStream.
-/// Выдает строки в произвольном порядке (входные потоки по-прежнему должны быть упорядочены).
-/// Выдает только строки с положительным знаком.
+/// Collapses the same rows with the opposite sign roughly like CollapsingSortedBlockInputStream.
+/// Outputs the rows in random order (the input streams must still be ordered).
+/// Outputs only rows with a positive sign.
 class CollapsingFinalBlockInputStream : public IProfilingBlockInputStream
 {
 public:
@@ -79,31 +79,31 @@ private:
                 throw Exception("Sign column must have type Int8", ErrorCodes::BAD_TYPE_OF_FIELD);
 
             rows = sign_column->size();
-            /// Заполняется целиком нулями. Потом выставляются единички в позициях строчек, которых нужно оставить.
+            /// Filled entirely with zeros. Then `1` are set in the positions of the rows to be left.
             filter.resize_fill(rows);
         }
 
         Block block;
 
-        /// Строки с одинаковым ключом будут упорядочены по возрастанию stream_index.
+        /// Rows with the same key will be sorted in ascending order of stream_index.
         size_t stream_index;
         size_t rows;
 
-        /// Какие строки нужно оставить. Заполняется при слиянии потоков.
+        /// Which rows should be left. Filled when the threads merge.
         IColumn::Filter filter;
 
-        /// Указывают в block.
+        /// Point to `block`.
         ConstColumnPlainPtrs sort_columns;
         const ColumnInt8 * sign_column;
 
-        /// Когда достигает нуля, блок можно выдавать в ответ.
+        /// When it reaches zero, the block can be outputted in response.
         int refcount = 0;
 
-        /// Куда положить блок, когда он готов попасть в ответ.
+        /// Where to put the block when it is ready to be outputted in response.
         BlockPlainPtrs * output_blocks;
     };
 
-    /// При удалении последней ссылки на блок, добавляет блок в output_blocks.
+    /// When deleting the last block reference, adds a block to `output_blocks`.
     class MergingBlockPtr
     {
     public:
@@ -135,7 +135,7 @@ private:
             destroy();
         }
 
-        /// Обнулить указатель и не добавлять блок в output_blocks.
+        /// Zero the pointer and do not add a block to output_blocks.
         void cancel()
         {
             if (ptr)
@@ -194,7 +194,7 @@ private:
             return block->stream_index > rhs.block->stream_index;
         }
 
-        /// Не согласован с operator< : не учитывает order.
+        /// Not consistent with operator< : does not consider order.
         bool equal(const Cursor & rhs) const
         {
             if (!block || !rhs.block)
@@ -215,7 +215,7 @@ private:
             return block->sign_column->getData()[pos];
         }
 
-        /// Помечает, что эту строку нужно взять в ответ.
+        /// Indicates that this row should be outputted in response.
         void addToFilter()
         {
             block->filter[pos] = 1;
@@ -245,16 +245,16 @@ private:
 
     Queue queue;
 
-    Cursor previous;        /// Текущий первичный ключ.
-    Cursor last_positive;    /// Последняя положительная строка для текущего первичного ключа.
+    Cursor previous;                    /// The current primary key.
+    Cursor last_positive;               /// The last positive row for the current primary key.
 
-    size_t count_positive = 0;        /// Количество положительных строк для текущего первичного ключа.
-    size_t count_negative = 0;        /// Количество отрицательных строк для текущего первичного ключа.
-    bool last_is_positive = false;    /// true, если последняя строка для текущего первичного ключа положительная.
+    size_t count_positive = 0;          /// The number of positive rows for the current primary key.
+    size_t count_negative = 0;          /// The number of negative rows for the current primary key.
+    bool last_is_positive = false;      /// true if the last row for the current primary key is positive.
 
-    size_t count_incorrect_data = 0;    /// Чтобы не писать в лог слишком много сообщений об ошибке.
+    size_t count_incorrect_data = 0;    /// To prevent too many error messages from writing to the log.
 
-    /// Посчитаем, сколько блоков получили на вход и отдали на выход.
+    /// Count the number of blocks fetched and outputted.
     size_t blocks_fetched = 0;
     size_t blocks_output = 0;
 

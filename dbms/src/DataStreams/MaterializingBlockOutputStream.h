@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/** Преобразует столбцы-константы в полноценные столбцы ("материализует" их).
+/** Converts columns-constants to full columns ("materializes" them).
   */
 class MaterializingBlockOutputStream : public IBlockOutputStream
 {

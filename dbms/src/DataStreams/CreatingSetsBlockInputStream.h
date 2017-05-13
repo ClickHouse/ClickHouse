@@ -10,9 +10,9 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-/** Отдаёт без изменений данные из потока блоков, но
-  * в функции readPrefix или перед чтением первого блока
-  * инициализирует все переданные множества.
+/** Returns the data from the stream of blocks without changes, but
+  * in the `readPrefix` function or before reading the first block
+  * initializes all the passed sets.
   */
 class CreatingSetsBlockInputStream : public IProfilingBlockInputStream
 {
@@ -44,7 +44,7 @@ public:
         for (size_t i = 0; i < children.size(); ++i)
             children_ids[i] = children[i]->getID();
 
-        /// Будем считать, что порядок создания множеств не имеет значения.
+        /// Let's assume that the order of creating sets does not matter.
         std::sort(children_ids.begin(), children_ids.end() - 1);
 
         for (size_t i = 0; i < children_ids.size(); ++i)
@@ -54,7 +54,7 @@ public:
         return res.str();
     }
 
-    /// Берёт totals только из основного источника, а не из источников подзапросов.
+    /// Takes `totals` only from the main source, not from subquery sources.
     const Block & getTotals() override;
 
 protected:
