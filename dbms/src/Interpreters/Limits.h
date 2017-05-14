@@ -9,22 +9,22 @@
 namespace DB
 {
 
-/** Ограничения при выполнении запроса - часть настроек.
-  * Используются, чтобы обеспечить более безопасное исполнение запросов из пользовательского интерфейса.
-  * В основном, ограничения проверяются на каждый блок (а не на каждую строку). То есть, ограничения могут быть немного нарушены.
-  * Почти все ограничения действуют только на SELECT-ы.
-  * Почти все ограничения действуют на каждый поток по отдельности.
+/** Limits during query execution are part of the settings.
+  * Used to provide a more safe execution of queries from the user interface.
+  * Basically, constraints are checked for each block (not every row). That is, the limits can be slightly violated.
+  * Almost all limits apply only to SELECTs.
+  * Almost all limits apply to each thread individually.
   */
 struct Limits
 {
-    /** Перечисление ограничений: тип, имя, значение по-умолчанию.
-      * По-умолчанию: всё не ограничено, кроме довольно слабых ограничений на глубину рекурсии и размер выражений.
+    /** Enumeration of limits: type, name, default value.
+      * By default: everything is unlimited, except for rather weak restrictions on the depth of recursion and the size of the expressions.
       */
 
 #define APPLY_FOR_LIMITS(M) \
-    /** Ограничения на чтение из самых "глубоких" источников. \
-      * То есть, только в самом глубоком подзапросе. \
-      * При чтении с удалённого сервера, проверяется только на удалённом сервере. \
+    /** Limits on reading from the most "deep" sources. \
+      * That is, only in the deepest subquery. \
+      * When reading from a remote server, it is only checked on a remote server. \
       */ \
     M(SettingUInt64, max_rows_to_read, 0) \
     M(SettingUInt64, max_bytes_to_read, 0) \
@@ -39,20 +39,20 @@ struct Limits
     M(SettingOverflowMode<false>, sort_overflow_mode, OverflowMode::THROW) \
     M(SettingUInt64, max_bytes_before_external_sort, 0) \
     \
-    /** Ограничение на размер результата. \
-      * Проверяются также для подзапросов и на удалённых серверах. \
+    /** Limits on result size. \
+      * Are also checked for subqueries and on remote servers. \
       */ \
     M(SettingUInt64, max_result_rows, 0) \
     M(SettingUInt64, max_result_bytes, 0) \
     M(SettingOverflowMode<false>, result_overflow_mode, OverflowMode::THROW) \
     \
-    /* TODO: Проверять также при слиянии и финализации агрегатных функций. */ \
+    /* TODO: Check also when merging and finalizing aggregate functions. */ \
     M(SettingSeconds, max_execution_time, 0) \
     M(SettingOverflowMode<false>, timeout_overflow_mode, OverflowMode::THROW) \
     \
-    /** В строчках в секунду. */ \
+    /** In rows per second. */ \
     M(SettingUInt64, min_execution_speed, 0) \
-    /** Проверять, что скорость не слишком низкая, после прошествия указанного времени. */ \
+    /** Check that the speed is not too low after the specified time has elapsed. */ \
     M(SettingSeconds, timeout_before_checking_execution_speed, 0) \
     \
     M(SettingUInt64, max_columns_to_read, 0) \
@@ -61,42 +61,42 @@ struct Limits
     \
     M(SettingUInt64, max_subquery_depth, 100) \
     M(SettingUInt64, max_pipeline_depth, 1000) \
-    M(SettingUInt64, max_ast_depth, 1000)        /** Проверяются не во время парсинга, */ \
-    M(SettingUInt64, max_ast_elements, 50000)    /**  а уже после парсинга запроса. */ \
+    M(SettingUInt64, max_ast_depth, 1000)        /** Checked not during parsing, */ \
+    M(SettingUInt64, max_ast_elements, 50000)    /**  but after parsing the request. */ \
     \
-    /** 0 - можно всё. 1 - только запросы на чтение. 2 - только запросы на чтение, а также изменение настроек, кроме настройки readonly. */ \
+    /** 0 - everything is allowed. 1 - only read requests. 2 - only read requests, as well as changing settings, except for the readonly setting. */ \
     M(SettingUInt64, readonly, 0) \
     \
-    /** Ограничения для максимального размера множества, получающегося при выполнении секции IN. */ \
+    /** Limits for the maximum size of the set resulting from the execution of the IN section. */ \
     M(SettingUInt64, max_rows_in_set, 0) \
     M(SettingUInt64, max_bytes_in_set, 0) \
     M(SettingOverflowMode<false>, set_overflow_mode, OverflowMode::THROW) \
     \
-    /** Ограничения для максимального размера множества, получающегося при выполнении секции IN. */ \
+    /** Limits for the maximum size of the set obtained by executing the IN section. */ \
     M(SettingUInt64, max_rows_in_join, 0) \
     M(SettingUInt64, max_bytes_in_join, 0) \
     M(SettingOverflowMode<false>, join_overflow_mode, OverflowMode::THROW) \
     \
-    /** Ограничения для максимального размера передаваемой внешней таблицы, получающейся при выполнении секции GLOBAL IN/JOIN. */ \
+    /** Limits for the maximum size of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed. */ \
     M(SettingUInt64, max_rows_to_transfer, 0) \
     M(SettingUInt64, max_bytes_to_transfer, 0) \
     M(SettingOverflowMode<false>, transfer_overflow_mode, OverflowMode::THROW) \
     \
-    /** Ограничения для максимального размера запоминаемого состояния при выполнении DISTINCT. */ \
+    /** Limits for the maximum size of the stored state when executing DISTINCT. */ \
     M(SettingUInt64, max_rows_in_distinct, 0) \
     M(SettingUInt64, max_bytes_in_distinct, 0) \
     M(SettingOverflowMode<false>, distinct_overflow_mode, OverflowMode::THROW) \
     \
-    /** Максимальное использование памяти при обработке запроса. 0 - не ограничено. */ \
-    M(SettingUInt64, max_memory_usage, 0) /* На один запрос */ \
-    /* Суммарно на одновременно выполняющиеся запросы одного пользователя */ \
+    /** Maximum memory usage when processing a request. 0 - not bounded. */ \
+    M(SettingUInt64, max_memory_usage, 0) /* For one query */ \
+    /* Totally for concurrently running queries of one user */ \
     M(SettingUInt64, max_memory_usage_for_user, 0) \
-    /* Суммарно на все одновременно выполняющиеся запросы */ \
+    /* Totally for all concurrent queries */ \
     M(SettingUInt64, max_memory_usage_for_all_queries, 0) \
     \
-    /** Максимальная скорость обмена данными по сети в байтах в секунду. 0 - не ограничена. */ \
+    /** The maximum speed of data exchange over the network in bytes per second. 0 - not bounded. */ \
     M(SettingUInt64, max_network_bandwidth, 0) \
-    /** Максимальное количество байт на приём или передачу по сети, в рамках запроса. */ \
+    /** The maximum number of bytes to receive or transmit over the network, as part of the query. */ \
     M(SettingUInt64, max_network_bytes, 0) \
 
 #define DECLARE(TYPE, NAME, DEFAULT) \
@@ -106,7 +106,7 @@ struct Limits
 
 #undef DECLARE
 
-    /// Установить настройку по имени.
+    /// Set setting by name.
     bool trySet(const String & name, const Field & value)
     {
     #define TRY_SET(TYPE, NAME, DEFAULT) \
@@ -122,7 +122,7 @@ struct Limits
     #undef TRY_SET
     }
 
-    /// Установить настройку по имени. Прочитать сериализованное в бинарном виде значение из буфера (для межсерверного взаимодействия).
+    /// Set the setting by name. Read the binary serialized value from the buffer (for server-to-server interaction).
     bool trySet(const String & name, ReadBuffer & buf)
     {
     #define TRY_SET(TYPE, NAME, DEFAULT) \
@@ -138,7 +138,7 @@ struct Limits
     #undef TRY_SET
     }
 
-    /// Пропустить сериализованное в бинарном виде значение из буфера.
+    /// Skip the binary-serialized value from the buffer.
     bool tryIgnore(const String & name, ReadBuffer & buf)
     {
     #define TRY_IGNORE(TYPE, NAME, DEFAULT) \
@@ -154,7 +154,7 @@ struct Limits
         #undef TRY_IGNORE
     }
 
-    /** Установить настройку по имени. Прочитать значение в текстовом виде из строки (например, из конфига, или из параметра URL).
+    /** Set the setting by name. Read the value in text form from a string (for example, from a config, or from a URL parameter).
       */
     bool trySet(const String & name, const String & value)
     {
@@ -174,7 +174,7 @@ struct Limits
 private:
     friend struct Settings;
 
-    /// Записать все настройки в буфер. (В отличие от соответствующего метода в Settings, пустая строка на конце не пишется).
+    /// Write all the settings to the buffer. (Unlike the corresponding method in Settings, the empty line on the end is not written).
     void serialize(WriteBuffer & buf) const
     {
     #define WRITE(TYPE, NAME, DEFAULT) \
