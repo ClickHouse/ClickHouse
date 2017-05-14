@@ -349,6 +349,12 @@ void DDLWorker::processTaskAlter(
 
     if (execute_once_on_replica)
     {
+        /// The following code may perform ALTER twice if
+        ///  current secver aquires lock, executes replicated alter,
+        ///  losts zookeeper connection and doesn't have time to create /executed node, second server executes replicated alter again
+        /// To avoid this problem alter() method of replicated tables should be changed and takes into account ddl query id tag.
+        throw Exception("Distributed DDL alters don't work properly yet", ErrorCodes::NOT_IMPLEMENTED);
+
         Strings replica_names;
         for (const auto & address : cluster->getShardsWithFailoverAddresses().at(shard_num))
             replica_names.emplace_back(address.toString());
