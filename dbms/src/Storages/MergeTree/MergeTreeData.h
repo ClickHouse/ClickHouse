@@ -446,7 +446,14 @@ public:
 
         for (const auto & col : column_sizes)
             total_size += col.second.getTotalCompressedSize();
+
         return total_size;
+    }
+
+    void recalculateColumnSizes()
+    {
+        std::lock_guard<std::mutex> lock{data_parts_mutex};
+        calculateColumnSizesImpl();
     }
 
     /// For ATTACH/DETACH/DROP/RESHARD PARTITION.
@@ -535,7 +542,7 @@ private:
         ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
 
     /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
-    void calculateColumnSizes();
+    void calculateColumnSizesImpl();
     /// Adds or subtracts the contribution of the part to compressed column sizes.
     void addPartContributionToColumnSizes(const DataPartPtr & part);
     void removePartContributionToColumnSizes(const DataPartPtr & part);

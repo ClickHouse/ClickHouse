@@ -2954,6 +2954,7 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 bool StorageReplicatedMergeTree::checkTableCanBeDropped() const
 {
     /// Consider only synchronized data
+    const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
     context.checkTableCanBeDropped(database_name, table_name, getData().getTotalCompressedSize());
     return true;
 }
