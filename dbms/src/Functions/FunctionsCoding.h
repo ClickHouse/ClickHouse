@@ -1189,6 +1189,103 @@ public:
     }
 };
 
+class FunctionMACStringToOUI : public IFunction
+{
+public:
+    static constexpr auto name = "MACStringToOUI";
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMACStringToOUI>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeUInt64>();
+    }
+
+    static UInt64 parseMAC(const char * pos)
+    {
+
+        /// get integer value for a hexademical char digit, or -1
+        const auto number_by_char = [] (const char ch)
+        {
+            if ('A' <= ch && ch <= 'F')
+                return 10 + ch - 'A';
+
+            if ('a' <= ch && ch <= 'f')
+                return 10 + ch - 'a';
+
+            if ('0' <= ch && ch <= '9')
+                return ch - '0';
+
+            return -1;
+        };
+
+        UInt64 res = 0;
+        for (int offset = 40; offset >= 0; offset -= 8)
+        {
+            UInt64 value = 0;
+            size_t len = 0;
+            int val = 0;
+            while ((val = number_by_char(*pos)) >= 0 && len <= 2)
+            {
+                value = value * 16 + val;
+                ++len;
+                ++pos;
+            }
+            if (len == 0 || value > 255 || (offset > 0 && *pos != ':'))
+                return 0;
+            res |= value << offset;
+            ++pos;
+        }
+        if (*(pos - 1) != '\0')
+            return 0;
+        res = res >> 24;
+        return res;
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        const ColumnPtr & column = block.safeGetByPosition(arguments[0]).column;
+
+        if (const ColumnString * col = typeid_cast<const ColumnString *>(column.get()))
+        {
+            auto col_res = std::make_shared<ColumnUInt64>();
+            block.safeGetByPosition(result).column = col_res;
+
+            ColumnUInt64::Container_t & vec_res = col_res->getData();
+            vec_res.resize(col->size());
+
+            const ColumnString::Chars_t & vec_src = col->getChars();
+            const ColumnString::Offsets_t & offsets_src = col->getOffsets();
+            size_t prev_offset = 0;
+
+            for (size_t i = 0; i < vec_res.size(); ++i)
+            {
+                vec_res[i] = parseMAC(reinterpret_cast<const char *>(&vec_src[prev_offset]));
+                prev_offset = offsets_src[i];
+            }
+        }
+        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
+        {
+            auto col_res = std::make_shared<ColumnConst<UInt64>>(col->size(), parseMAC(col->getData().c_str()));
+            block.safeGetByPosition(result).column = col_res;
+        }
+        else
+            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
 
 class FunctionUUIDNumToString : public IFunction
 {
