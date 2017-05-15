@@ -25,7 +25,8 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
         config.getString(config_prefix + ".connector", "ODBC"),
         config.getString(config_prefix + ".connection_string"))},
     query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},    /// NOTE Better to obtain quoting style via ODBC interface.
-    load_all_query{query_builder.composeLoadAllQuery()}
+    load_all_query{query_builder.composeLoadAllQuery()},
+    invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
 {
 }
 
@@ -39,7 +40,8 @@ ODBCDictionarySource::ODBCDictionarySource(const ODBCDictionarySource & other)
     sample_block{other.sample_block},
     pool{other.pool},
     query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},
-    load_all_query{other.load_all_query}
+    load_all_query{other.load_all_query},
+    invalidate_query{other.invalidate_query}, invalidate_query_response{other.invalidate_query_response}
 {
 }
 
@@ -62,11 +64,6 @@ BlockInputStreamPtr ODBCDictionarySource::loadKeys(
     return std::make_shared<ODBCBlockInputStream>(pool->get(), query, sample_block, max_block_size);
 }
 
-bool ODBCDictionarySource::isModified() const
-{
-    return true;
-}
-
 bool ODBCDictionarySource::supportsSelectiveLoad() const
 {
     return true;
@@ -82,5 +79,68 @@ std::string ODBCDictionarySource::toString() const
     return "ODBC: " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
 }
 
+bool ODBCDictionarySource::isModified() const
+{
+    if (!invalidate_query.empty())
+    {
+        auto response = do_invalidate_query(invalidate_query);
+        if (!response.empty() && invalidate_query_response == response)
+            return false;
+        invalidate_query_response = response;
+    }
+    return true;
+}
+
+
+std::string ODBCDictionarySource::do_invalidate_query(const std::string & request) const
+{
+    std::string response;
+
+    auto getErrorMessage = [& request](const std::string & message)
+    {
+        return message + " (Query = '" + request + "')";
+    };
+
+    try
+    {
+        Poco::Data::Session session = pool->get();
+        Poco::Data::Statement statement = (session << request, Poco::Data::Keywords::now);
+        Poco::Data::RecordSet result(statement);
+        auto iterator = result.begin();
+        if (iterator == result.end())
+        {
+            LOG_ERROR(log, getErrorMessage("Empty response"));
+        }
+        else
+        {
+            const Poco::Data::Row & row = *iterator;
+            const auto & values = row.values();
+            if (values.empty())
+            {
+                LOG_ERROR(log, getErrorMessage("Empty row"));
+            }
+            else
+            {
+                const auto & value = values.front();
+                response = value.toString();
+                LOG_TRACE(log, getErrorMessage("Received value: " + value));
+                if (values.size() > 1)
+                {
+                    LOG_ERROR(log, getErrorMessage("Response contains more than 1 column"));
+                }
+            }
+
+            if (++iterator != result.end())
+            {
+                LOG_ERROR(log, getErrorMessage("Response contains more than 1 row"));
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, getErrorMessage("ODBCDictionarySource"));
+    }
+    return response;
+}
 
 }

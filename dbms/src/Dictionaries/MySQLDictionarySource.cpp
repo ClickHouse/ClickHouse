@@ -26,7 +26,8 @@ MySQLDictionarySource::MySQLDictionarySource(const DictionaryStructure & dict_st
     sample_block{sample_block},
     pool{config, config_prefix},
     query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
-    load_all_query{query_builder.composeLoadAllQuery()}
+    load_all_query{query_builder.composeLoadAllQuery()},
+    invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
 {
 }
 
@@ -41,7 +42,8 @@ MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other
     sample_block{other.sample_block},
     pool{other.pool},
     query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
-    load_all_query{other.load_all_query}, last_modification{other.last_modification}
+    load_all_query{other.load_all_query}, last_modification{other.last_modification},
+    invalidate_query{other.invalidate_query}, invalidate_query_response{other.invalidate_query_response}
 {
 }
 
@@ -72,6 +74,15 @@ BlockInputStreamPtr MySQLDictionarySource::loadKeys(
 
 bool MySQLDictionarySource::isModified() const
 {
+    if (!invalidate_query.empty())
+    {
+        auto response = do_invalidate_query(invalidate_query);
+        if (!response.empty() && response == invalidate_query_response)
+            return false;
+        invalidate_query_response = response;
+        return true;
+    }
+
     if (dont_check_update_time)
         return true;
 
@@ -162,6 +173,66 @@ LocalDateTime MySQLDictionarySource::getLastModification() const
     return update_time;
 }
 
+std::string MySQLDictionarySource::do_invalidate_query(const std::string & request) const
+{
+    std::string response;
+
+    auto getErrorMessage = [& request](const std::string & message)
+    {
+        return message + " (Query = '" + request + "')";
+    };
+    try
+    {
+        auto connection = pool.Get();
+        auto query = connection->query(request);
+
+        auto result = query.use();
+
+        size_t fetched_rows = 0;
+        if (auto row = result.fetch())
+        {
+            ++fetched_rows;
+
+            if (row.empty()) {
+                LOG_ERROR(log, getErrorMessage("Empty row"));
+            }
+            else if (row.size() > 1)
+            {
+                LOG_ERROR(log, getErrorMessage("Expected single row"));
+            }
+
+            if (!row.empty())
+            {
+                const auto & value = row[0];
+
+                if (!value.isNull())
+                {
+                    response = value.getString();
+                    LOG_TRACE(log, getErrorMessage("Got value: " + response));
+                }
+                else
+                {
+                    LOG_ERROR(log, getErrorMessage("Got Null value"));
+                }
+            }
+
+            /// fetch remaining rows to avoid "commands out of sync" error
+            while (result.fetch())
+                ++fetched_rows;
+        }
+
+        if (0 == fetched_rows)
+            LOG_ERROR(log, getErrorMessage("Empty response"));
+
+        if (fetched_rows > 1)
+            LOG_ERROR(log, getErrorMessage("Found more than one rows"));
+    }
+    catch (...)
+    {
+        tryLogCurrentException("MySQLDictionarySource");
+    }
+    return response;
+}
 
 }
 

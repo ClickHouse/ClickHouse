@@ -52,6 +52,8 @@ public:
     std::string toString() const override;
 
 private:
+    std::string do_invalidate_query(const std::string & request) const;
+
     Poco::Logger * log;
 
     const DictionaryStructure dict_struct;
@@ -62,6 +64,8 @@ private:
     std::shared_ptr<Poco::Data::SessionPool> pool;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
+    std::string invalidate_query;
+    mutable std::string invalidate_query_response;
 };
 
 
