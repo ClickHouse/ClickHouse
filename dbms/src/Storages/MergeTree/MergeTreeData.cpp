@@ -1612,7 +1612,7 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
     }
 }
 
-inline void logSubtract(size_t & from, size_t value, Logger * log, const String & variable)
+static inline void logSubtract(size_t & from, size_t value, Logger * log, const String & variable)
 {
     if (value > from)
         LOG_ERROR(log, "Possibly incorrect subtraction: " << from << " - " << value << " = " << from - value << ", variable " << variable);
