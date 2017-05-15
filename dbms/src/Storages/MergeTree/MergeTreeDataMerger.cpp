@@ -474,14 +474,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
     size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplicate)
 {
+    static const String TMP_PREFIX = "tmpmerge_";
+
     if (isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
-    LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << merged_name);
+    LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << TMP_PREFIX + merged_name);
 
-    String merged_dir = data.getFullPath() + merged_name;
-    if (Poco::File(merged_dir).exists())
-        throw Exception("Directory " + merged_dir + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+    String new_part_tmp_path = data.getFullPath() + TMP_PREFIX + merged_name + "/";
+    if (Poco::File(new_part_tmp_path).exists())
+        throw Exception("Directory " + new_part_tmp_path + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     merge_entry->num_parts = parts.size();
 
@@ -508,7 +510,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
     ActiveDataPartSet::parsePartName(merged_name, *new_data_part);
-    new_data_part->name = "tmp_" + merged_name;
+    new_data_part->name = TMP_PREFIX + merged_name;
     new_data_part->is_temp = true;
 
     size_t sum_input_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity;
@@ -600,8 +602,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
     if (deduplicate && merged_stream->isGroupedOutput())
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, Limits(), 0 /*limit_hint*/, Names());
-
-    String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
 
     auto compression_method = data.context.chooseCompressionMethod(
         merge_entry->total_size_bytes_compressed,

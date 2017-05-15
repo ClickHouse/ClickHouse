@@ -210,7 +210,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
 
     ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
 
-    String full_part_name = String(to_detached ? "detached/" : "") + "tmp_" + part_name;
+    static const String TMP_PREFIX = "tmpfetch_";
+    String full_part_name = String(to_detached ? "detached/" : "") + TMP_PREFIX + part_name;
     String part_path = data.getFullPath() + full_part_name + "/";
     Poco::File part_file(part_path);
 

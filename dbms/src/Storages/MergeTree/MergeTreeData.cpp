@@ -297,7 +297,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     for (Poco::DirectoryIterator it(full_path); it != end; ++it)
     {
         /// Skip temporary directories older than one day.
-        if (startsWith(it.name(), "tmp_"))
+        if (startsWith(it.name(), "tmp"))
             continue;
 
         part_file_names.push_back(it.name());
@@ -482,7 +482,7 @@ void MergeTreeData::clearOldTemporaryDirectories()
     Poco::DirectoryIterator end;
     for (Poco::DirectoryIterator it{full_path}; it != end; ++it)
     {
-        if (startsWith(it.name(), "tmp_"))
+        if (startsWith(it.name(), "tmp"))
         {
             Poco::File tmp_dir(full_path + it.name());
 
@@ -1202,6 +1202,9 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
             throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
 
         String new_path = getFullPath() + new_name + "/";
+
+        if (Poco::File(new_path).exists())
+            throw Exception("Destination directory " + new_path + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
         /// Rename the part.
         Poco::File(old_path).renameTo(new_path);
