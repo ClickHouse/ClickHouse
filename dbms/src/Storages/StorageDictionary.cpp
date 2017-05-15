@@ -39,7 +39,7 @@ StorageDictionary::StorageDictionary(
     const ColumnDefaults & column_defaults_,
     const ExternalDictionaries & external_dictionaries_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
-    database_name(database_name_), context(context_), columns(columns_), 
+    database_name(database_name_), context(context_), columns(columns_),
     external_dictionaries(external_dictionaries_)
 {
     logger = &Poco::Logger::get("StorageDictionary");
@@ -50,8 +50,8 @@ StorageDictionary::StorageDictionary(
         function.arguments->format(IAST::FormatSettings(iss, false, false));
         dictionary_name = iss.str();
     }
-    dictionary = external_dictionaries.getDictionary(dictionary_name);
-    checkNamesAndTypesCompatibleWithDictionary();
+    auto dictionary = external_dictionaries.getDictionary(dictionary_name);
+    checkNamesAndTypesCompatibleWithDictionary(dictionary);
 }
 
 BlockInputStreams StorageDictionary::read(
@@ -64,17 +64,18 @@ BlockInputStreams StorageDictionary::read(
     const unsigned threads)
 {
     processed_stage = QueryProcessingStage::Complete;
+    auto dictionary = external_dictionaries.getDictionary(dictionary_name);
     return BlockInputStreams{dictionary->getBlockInputStream(column_names)};
 }
 
-NamesAndTypes StorageDictionary::getNamesAndTypesFromDictionaryStructure()
+NamesAndTypes StorageDictionary::getNamesAndTypesFromDictionaryStructure(Ptr dictionary) const
 {
     const DictionaryStructure & dictionaryStructure = dictionary->getStructure();
 
     NamesAndTypes dictionaryNamesAndTypes;
 
     if (dictionaryStructure.id)
-        dictionaryNamesAndTypes.push_back(NameAndTypePair(dictionaryStructure.id->name, 
+        dictionaryNamesAndTypes.push_back(NameAndTypePair(dictionaryStructure.id->name,
                                                           std::make_shared<DataTypeUInt64>()));
     if (dictionaryStructure.range_min)
         dictionaryNamesAndTypes.push_back(NameAndTypePair(dictionaryStructure.range_min->name,
@@ -92,9 +93,9 @@ NamesAndTypes StorageDictionary::getNamesAndTypesFromDictionaryStructure()
     return dictionaryNamesAndTypes;
 }
 
-void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary()
+void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(Ptr dictionary) const
 {
-    auto dictionaryNamesAndTypes = getNamesAndTypesFromDictionaryStructure();
+    auto dictionaryNamesAndTypes = getNamesAndTypesFromDictionaryStructure(dictionary);
     std::set<NameAndTypePair> namesAndTypesSet(dictionaryNamesAndTypes.begin(), dictionaryNamesAndTypes.end());
 
     for (auto & column : *columns) {

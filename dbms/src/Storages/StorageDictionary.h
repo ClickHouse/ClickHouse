@@ -42,6 +42,8 @@ public:
     void drop() override {}
 
 private:
+    using Ptr = MultiVersion<IDictionaryBase>::Version;
+
     String select_database_name;
     String select_table_name;
     String table_name;
@@ -51,7 +53,6 @@ private:
     NamesAndTypesListPtr columns;
     String dictionary_name;
     const ExternalDictionaries & external_dictionaries;
-    MultiVersion<IDictionaryBase>::Version dictionary;
     Poco::Logger * logger;
 
     StorageDictionary(
@@ -65,12 +66,12 @@ private:
         const ColumnDefaults & column_defaults_,
         const ExternalDictionaries & external_dictionaries_);
 
-    void checkNamesAndTypesCompatibleWithDictionary();
+    void checkNamesAndTypesCompatibleWithDictionary(Ptr dictionary) const;
 
-    NamesAndTypes getNamesAndTypesFromDictionaryStructure();
+    NamesAndTypes getNamesAndTypesFromDictionaryStructure(Ptr dictionary) const;
 
     template <class ForwardIterator>
-    std::string generateNamesAndTypesDescription(ForwardIterator begin, ForwardIterator end) {
+    std::string generateNamesAndTypesDescription(ForwardIterator begin, ForwardIterator end) const {
         if (begin == end) {
             return "";
         }
@@ -86,3 +87,4 @@ private:
 };
 
 }
+
