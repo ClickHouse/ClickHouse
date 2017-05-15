@@ -152,11 +152,13 @@ sudo service clickhouse-server start
 ```
 
 ## 2. Build to work with code.
+(if `make -j $THREADS` fails in your environment, use just `make` instead)
 ```
 mkdir build
 cd build
 cmake ..
 make -j $THREADS
+make install
 cd ..
 ```
 To create an executable, run
