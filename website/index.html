@@ -770,12 +770,10 @@
 <pre>
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 
-sudo mkdir -p /etc/apt/sources.list.d
-echo "deb http://repo.yandex.ru/clickhouse/<span id="distributive">trusty</span> stable main" |
-&nbsp;&nbsp;&nbsp;&nbsp;sudo tee /etc/apt/sources.list.d/clickhouse.list
+sudo apt-add-repository "deb http://repo.yandex.ru/clickhouse/<span id="distributive">trusty</span> stable main"
 sudo apt-get update
 
-sudo apt-get install clickhouse-server-common clickhouse-client
+sudo apt-get install clickhouse-server-common clickhouse-client -y
 
 sudo service clickhouse-server start
 clickhouse-client
