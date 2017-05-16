@@ -24,6 +24,9 @@ do
         gen_revision_author
         git push
         exit 0
+    elif [[ $1 == '--head' ]]; then
+        REVISION=`git rev-parse HEAD`
+        shift
     else
         echo "Unknown option $1"
         exit 2
