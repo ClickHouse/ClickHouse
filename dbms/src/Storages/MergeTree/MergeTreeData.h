@@ -114,7 +114,12 @@ public:
         {
             if (data && (!parts_to_remove_on_rollback.empty() || !parts_to_add_on_rollback.empty()))
             {
-                LOG_DEBUG(data->log, "Undoing transaction");
+                String parts_to_remove_str;
+                for (const auto & part : parts_to_remove_on_rollback)
+                    parts_to_remove_str += part->relative_path + ", ";
+
+                LOG_DEBUG(data->log, "Undoing transaction. Removing parts: " + parts_to_remove_str);
+
                 data->replaceParts(parts_to_remove_on_rollback, parts_to_add_on_rollback, true);
 
                 clear();

@@ -314,6 +314,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             continue;
 
         part->name = file_name;
+        part->relative_path = file_name;
         bool broken = false;
 
         try
@@ -400,9 +401,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
             ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
-    for (const auto & part : broken_parts_to_remove)
+    for (auto & part : broken_parts_to_remove)
         part->remove();
-    for (const auto & part : broken_parts_to_detach)
+    for (auto & part : broken_parts_to_detach)
         part->renameAddPrefix(true, "");
 
     all_data_parts = data_parts;
@@ -1134,9 +1135,9 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
         if (!data_part)
             return;
 
-        LOG_WARNING(data_part->storage.log, "Aborting ALTER of part " << data_part->name);
+        LOG_WARNING(data_part->storage.log, "Aborting ALTER of part " << data_part->relative_path);
 
-        String path = data_part->storage.full_path + data_part->name + "/";
+        String path = data_part->getFullPath();
         for (auto it : rename_map)
         {
             if (!it.second.empty())
@@ -1175,10 +1176,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     if (out_transaction && out_transaction->data)
         throw Exception("Using the same MergeTreeData::Transaction for overlapping transactions is invalid", ErrorCodes::LOGICAL_ERROR);
 
-    LOG_TRACE(log, "Renaming " << part->name << ".");
-
-    String old_name = part->name;
-    String old_path = getFullPath() + old_name + "/";
+    LOG_TRACE(log, "Renaming temporary part " << part->relative_path << ".");
 
     DataPartsVector replaced;
     {
@@ -1190,25 +1188,23 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
         if (increment)
             part->left = part->right = increment->get();
 
+        String old_name = part->name;
         String new_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
 
-        part->is_temp = false;
-        part->name = new_name;
-        bool duplicate = data_parts.count(part);
-        part->name = old_name;
-        part->is_temp = true;
+        /// Check that new part doesn't exist yet.
+        {
+            part->is_temp = false;
+            part->name = new_name;
+            bool duplicate = data_parts.count(part);
+            part->name = old_name;
+            part->is_temp = true;
 
-        if (duplicate)
-            throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
-
-        String new_path = getFullPath() + new_name + "/";
-
-        if (Poco::File(new_path).exists())
-            throw Exception("Destination directory " + new_path + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+            if (duplicate)
+                throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+        }
 
         /// Rename the part.
-        Poco::File(old_path).renameTo(new_path);
-
+        part->renameTo(new_name);
         part->is_temp = false;
         part->name = new_name;
 
@@ -1547,19 +1543,22 @@ MergeTreeData::DataPartPtr MergeTreeData::getShardedPartIfExists(const String & 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const String & relative_path)
 {
     MutableDataPartPtr part = std::make_shared<DataPart>(*this);
-    part->name = relative_path;
-    ActiveDataPartSet::parsePartName(Poco::Path(relative_path).getFileName(), *part);
+
+    part->relative_path = relative_path;
+    part->name = Poco::Path(relative_path).getFileName();
+    ActiveDataPartSet::parsePartName(part->name, *part);
+    String full_part_path = part->getFullPath();
 
     /// Earlier the list of columns was written incorrectly. Delete it and re-create.
-    if (Poco::File(full_path + relative_path + "/columns.txt").exists())
-        Poco::File(full_path + relative_path + "/columns.txt").remove();
+    if (Poco::File(full_part_path + "columns.txt").exists())
+        Poco::File(full_part_path + "columns.txt").remove();
 
     part->loadColumns(false);
     part->loadChecksums(false);
     part->loadIndex();
     part->checkNotBroken(false);
 
-    part->modification_time = Poco::File(full_path + relative_path).getLastModified().epochTime();
+    part->modification_time = Poco::File(full_part_path).getLastModified().epochTime();
 
     /// If the checksums file is not present, calculate the checksums and write them to disk.
     /// Check the data while we are at it.
@@ -1568,14 +1567,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
         MergeTreePartChecker::Settings settings;
         settings.setIndexGranularity(index_granularity);
         settings.setRequireColumnFiles(true);
-        MergeTreePartChecker::checkDataPart(full_path + relative_path, settings, primary_key_data_types, &part->checksums);
+        MergeTreePartChecker::checkDataPart(full_part_path, settings, primary_key_data_types, &part->checksums);
 
         {
-            WriteBufferFromFile out(full_path + relative_path + "/checksums.txt.tmp", 4096);
+            WriteBufferFromFile out(full_part_path + "checksums.txt.tmp", 4096);
             part->checksums.write(out);
         }
 
-        Poco::File(full_path + relative_path + "/checksums.txt.tmp").renameTo(full_path + relative_path + "/checksums.txt");
+        Poco::File(full_part_path + "checksums.txt.tmp").renameTo(full_part_path + "checksums.txt");
     }
 
     return part;

@@ -2202,7 +2202,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     }
     else
     {
-        Poco::File(data.getFullPath() + "detached/tmp_" + part_name).renameTo(data.getFullPath() + "detached/" + part_name);
+        part->renameTo("detached/" + part_name);
     }
 
     ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);

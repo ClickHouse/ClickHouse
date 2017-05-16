@@ -26,7 +26,7 @@ public:
         Int64 left;
         Int64 right;
         UInt32 level;
-        std::string name;
+        String name; /// pure name without prefixes
         DayNum_t month;
 
         bool operator<(const Part & rhs) const
