@@ -12,8 +12,9 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import sys
+import collections
 import os
+import sys
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
@@ -115,7 +116,13 @@ html_theme_options = {
     'font_family': font_family,
     'head_font_family': font_family,
     'caption_font_family': font_family,
-    'show_powered_by': False
+    'show_powered_by': False,
+    'extra_nav_links': collections.OrderedDict([
+        (u'Documentation in English', '/docs/en/'),
+        (u'Документация на одной странице', '/docs/ru/single/'),
+        (u'Главная страница сайта', '/'),
+        (u'GitHub', 'https://github.com/yandex/ClickHouse'),
+    ])
 }
 
 # Add any paths that contain custom themes here, relative to this directory.
