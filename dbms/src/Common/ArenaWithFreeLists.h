@@ -8,40 +8,40 @@ namespace DB
 {
 
 
-/** В отличие от Arena, позволяет освобождать (для последующего повторного использования)
-  *  выделенные ранее (не обязательно только что) куски памяти.
-  * Для этого, запрашиваемый размер округляется вверх до степени двух
-  *  (или до 8, если меньше; или используется выделение памяти вне Arena, если размер больше 65536).
-  * При освобождении памяти, для каждого размера (всего 14 вариантов: 8, 16... 65536),
-  *  поддерживается односвязный список свободных блоков.
-  * При аллокации, мы берём голову списка свободных блоков,
-  *  либо, если список пуст - выделяем новый блок, используя Arena.
+/** Unlike Arena, allows you to release (for later re-use)
+  *  previously allocated (not necessarily just recently) chunks of memory.
+  * For this, the requested size is rounded up to the power of two
+  *  (or up to 8, if less, or using memory allocation outside Arena if the size is greater than 65536).
+  * When freeing memory, for each size (14 options in all: 8, 16 ... 65536),
+  *  a single-linked list of free blocks is kept track.
+  * When allocating, we take the head of the list of free blocks,
+  *  or, if the list is empty - allocate a new block using Arena.
   */
 class ArenaWithFreeLists : private Allocator<false>, private boost::noncopyable
 {
 private:
-    /// Если блок свободен, то в его начале хранится указатель на следующий свободный блок, либо nullptr, если свободных блоков больше нет.
-    /// Если блок используется, то в нём хранятся какие-то данные.
+    /// If the block is free, then the pointer to the next free block is stored at its beginning, or nullptr, if there are no more free blocks.
+    /// If the block is used, then some data is stored in it.
     union Block
     {
         Block * next;
         char data[0];
     };
 
-    /// Максимальный размер куска памяти, который выделяется с помощью Arena. Иначе используем Allocator напрямую.
+    /// The maximum size of a piece of memory that is allocated with Arena. Otherwise, we use Allocator directly.
     static constexpr size_t max_fixed_block_size = 65536;
 
-    /// Получить индекс в массиве freelist-ов для заданного размера.
+    /// Get the index in the freelist array for the specified size.
     static size_t findFreeListIndex(const size_t size)
     {
         return size <= 8 ? 2 : bitScanReverse(size - 1);
     }
 
-    /// Для выделения блоков не слишком большого размера используется Arena.
+    /// Arena is used to allocate blocks that are not too large.
     Arena pool;
 
-    /// Списки свободных блоков. Каждый элемент указывает на голову соответствующего списка, либо равен nullptr.
-    /// Первые два элемента не используются, а предназначены для упрощения арифметики.
+    /// Lists of free blocks. Each element points to the head of the corresponding list, or is nullptr.
+    /// The first two elements are not used, but are intended to simplify arithmetic.
     Block * free_lists[16] {};
 
 public:
@@ -60,10 +60,10 @@ public:
         /// find list of required size
         const auto list_idx = findFreeListIndex(size);
 
-        /// Если есть свободный блок.
+        /// If there is a free block.
         if (auto & free_block_ptr = free_lists[list_idx])
         {
-            /// Возьмём его. И поменяем голову списка на следующий элемент списка.
+            /// Let's take it. And change the head of the list to the next item in the list.
             const auto res = free_block_ptr->data;
             free_block_ptr = free_block_ptr->next;
             return res;
@@ -81,14 +81,14 @@ public:
         /// find list of required size
         const auto list_idx = findFreeListIndex(size);
 
-        /// Вставим освобождённый блок в голову списка.
+        /// Insert the released block into the head of the list.
         auto & free_block_ptr = free_lists[list_idx];
         const auto old_head = free_block_ptr;
         free_block_ptr = reinterpret_cast<Block *>(ptr);
         free_block_ptr->next = old_head;
     }
 
-    /// Размер выделенного пула в байтах
+    /// Size of the allocated pool in bytes
     size_t size() const
     {
         return pool.size();

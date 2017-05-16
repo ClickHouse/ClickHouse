@@ -2,7 +2,9 @@ JSONEachRow
 -----------
 
 Выводит данные в виде отдельных JSON объектов для каждой строки (newline delimited JSON).
-::
+
+.. code-block:: json
+
   {"SearchPhrase":"","count()":"8267016"}
   {"SearchPhrase":"интерьер ванной комнаты","count()":"2166"}
   {"SearchPhrase":"яндекс","count()":"1655"}

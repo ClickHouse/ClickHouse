@@ -8,8 +8,8 @@ function make_control {
     true
 }
 
-# Генерируем номер ревизии.
-# выставляются переменные окружения REVISION, AUTHOR
+# Generate revision number.
+# set environment variables REVISION, AUTHOR
 function gen_revision_author {
     REVISION=$(get_revision)
 
@@ -87,8 +87,8 @@ function get_revision_author {
     export AUTHOR
 }
 
-# Генерируем changelog из changelog.in.
-# изменяет
+# Generate changelog from changelog.in.
+# changes
 #   programs/CMakeLists.txt
 #   dbms/src/CMakeLists.txt
 function gen_changelog {
@@ -105,11 +105,11 @@ function gen_changelog {
         < $CHLOG.in > $CHLOG
 }
 
-# Загрузка в репозитории Метрики
-# рабочая директория - где лежит сам скрипт
+# Upload to Metrica repository
+# working directory - where script is itself
 function upload_debs {
     REVISION="$1"
-    # Определим репозиторий, в который надо загружать пакеты. Он соответствует версии Ubuntu.
+    # Determine the repository, in which you need to upload the packages. It corresponds to the version of Ubuntu.
     source /etc/lsb-release
 
     if [ "$DISTRIB_CODENAME" == "precise" ]; then
@@ -122,7 +122,7 @@ function upload_debs {
         echo -e "\n\e[0;31mUnknown Ubuntu version $DISTRIB_CODENAME \e[0;0m\n"
     fi
 
-    # Загрузка в репозиторий Метрики.
+    # Upload to Metrica repository.
 
     cd ../
     DUPLOAD_CONF=dupload.conf

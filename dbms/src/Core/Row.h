@@ -9,8 +9,8 @@
 namespace DB
 {
 
-/** Тип данных для представления одной строки таблицы в оперативке.
-  * Внимание! Предпочтительно вместо единичных строк хранить блоки столбцов. См. Block.h
+/** The data type for representing one row of the table in the RAM.
+  * Warning! It is preferable to store column blocks instead of single rows. See Block.h
   */
 
 using Row = AutoArray<Field>;

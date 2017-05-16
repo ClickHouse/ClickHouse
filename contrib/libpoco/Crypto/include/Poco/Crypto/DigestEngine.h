@@ -61,7 +61,7 @@ protected:
 	
 private:
 	std::string _name;
-	EVP_MD_CTX* _ctx;
+	EVP_MD_CTX* _pContext;
 	Poco::DigestEngine::Digest _digest;
 	OpenSSLInitializer _openSSLInitializer;
 };

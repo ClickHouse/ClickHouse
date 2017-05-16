@@ -2,6 +2,7 @@
 
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils.h>
+#include <Core/Types.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
 #include <ext/range.hpp>
@@ -9,24 +10,24 @@
 #include <string.h>
 
 
-/** Поиск подстроки в строке по алгоритму Вольницкого:
+/** Search for a substring in a string by Volnitsky's algorithm
   * http://volnitsky.com/project/str_search/
   *
-  * haystack и needle могут содержать нулевые байты.
+  * `haystack` and `needle` can contain zero bytes.
   *
-  * Алгоритм:
-  * - при слишком маленьком или слишком большом размере needle, или слишком маленьком haystack, используем std::search или memchr;
-  * - при инициализации, заполняем open-addressing linear probing хэш-таблицу вида:
-  *    хэш от биграммы из needle -> позиция этой биграммы в needle + 1.
-  *    (прибавлена единица только чтобы отличить смещение ноль от пустой ячейки)
-  * - в хэш-таблице ключи не хранятся, хранятся только значения;
-  * - биграммы могут быть вставлены несколько раз, если они встречаются в needle несколько раз;
-  * - при поиске, берём из haystack биграмму, которая должна соответствовать последней биграмме needle (сравниваем с конца);
-  * - ищем её в хэш-таблице, если нашли - достаём смещение из хэш-таблицы и сравниваем строку побайтово;
-  * - если сравнить не получилось - проверяем следующую ячейку хэш-таблицы из цепочки разрешения коллизий;
-  * - если не нашли, пропускаем в haystack почти размер needle байт;
+  * Algorithm:
+  * - if the `needle` is too small or too large, or too small `haystack`, use std::search or memchr;
+  * - when initializing, fill in an open-addressing linear probing hash table of the form
+  *    hash from the bigram of needle -> the position of this bigram in needle + 1.
+  *    (one is added only to distinguish zero offset from an empty cell)
+  * - the keys are not stored in the hash table, only the values are stored;
+  * - bigrams can be inserted several times if they occur in the needle several times;
+  * - when searching, take from haystack bigram, which should correspond to the last bigram of needle (comparing from the end);
+  * - look for it in the hash table, if found - get the offset from the hash table and compare the string bytewise;
+  * - if it did not match, we check the next cell of the hash table from the collision resolution chain;
+  * - if not found, skip to haystack almost the size of the needle bytes;
   *
-  * Используется невыровненный доступ к памяти.
+  * Unaligned memory access is used.
   */
 
 
@@ -39,34 +40,35 @@ template <typename CRTP>
 class VolnitskyBase
 {
 protected:
-    using offset_t = uint8_t;    /// Смещение в needle. Для основного алгоритма, длина needle не должна быть больше 255.
-    using ngram_t = uint16_t;    /// n-грамма (2 байта).
+    using Offset = UInt8;    /// Offset in the needle. For the basic algorithm, the length of the needle must not be greater than 255.
+    using Ngram = UInt16;    /// n-gram (2 bytes).
 
     const UInt8 * const needle;
     const size_t needle_size;
     const UInt8 * const needle_end = needle + needle_size;
-    /// На сколько двигаемся, если n-грамма из haystack не нашлась в хэш-таблице.
-    const size_t step = needle_size - sizeof(ngram_t) + 1;
+    /// For how long we move, if the n-gram from haystack is not found in the hash table.
+    const size_t step = needle_size - sizeof(Ngram) + 1;
 
     /** max needle length is 255, max distinct ngrams for case-sensitive is (255 - 1), case-insensitive is 4 * (255 - 1)
-     *    storage of 64K ngrams (n = 2, 128 KB) should be large enough for both cases */
-    static const size_t hash_size = 64 * 1024;    /// Помещается в L2-кэш.
-    offset_t hash[hash_size];    /// Хэш-таблица.
+      *  storage of 64K ngrams (n = 2, 128 KB) should be large enough for both cases */
+    static const size_t hash_size = 64 * 1024;    /// Fits into the L2 cache (of common Intel CPUs).
+    Offset hash[hash_size];    /// Hash table.
 
     /// min haystack size to use main algorithm instead of fallback
     static constexpr auto min_haystack_size_for_algorithm = 20000;
-    const bool fallback;                /// Нужно ли использовать fallback алгоритм.
+    const bool fallback; /// Do we need to use the fallback algorithm.
 
 public:
-    /** haystack_size_hint - ожидаемый суммарный размер haystack при вызовах search. Можно не указывать.
-      * Если указать его достаточно маленьким, то будет использован fallback алгоритм,
-      *  так как считается, что тратить время на инициализацию хэш-таблицы не имеет смысла.
+    /** haystack_size_hint - the expected total size of the haystack for `search` calls. Optional (zero means unspecified).
+      * If you specify it small enough, the fallback algorithm will be used,
+      *  since it is considered that it's useless to waste time initializing the hash table.
       */
     VolnitskyBase(const char * const needle, const size_t needle_size, size_t haystack_size_hint = 0)
     : needle{reinterpret_cast<const UInt8 *>(needle)}, needle_size{needle_size},
       fallback{
-          needle_size < 2 * sizeof(ngram_t) || needle_size >= std::numeric_limits<offset_t>::max() ||
-          (haystack_size_hint && haystack_size_hint < min_haystack_size_for_algorithm)}
+          needle_size < 2 * sizeof(Ngram)
+          || needle_size >= std::numeric_limits<Offset>::max()
+          || (haystack_size_hint && haystack_size_hint < min_haystack_size_for_algorithm)}
     {
         if (fallback)
             return;
@@ -74,12 +76,12 @@ public:
         memset(hash, 0, sizeof(hash));
 
         /// int is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
-        for (auto i = static_cast<int>(needle_size - sizeof(ngram_t)); i >= 0; --i)
+        for (auto i = static_cast<int>(needle_size - sizeof(Ngram)); i >= 0; --i)
             self().putNGram(this->needle + i, i + 1, this->needle);
     }
 
 
-    /// Если не найдено - возвращается конец haystack.
+    /// If not found, the end of the haystack is returned.
     const UInt8 * search(const UInt8 * const haystack, const size_t haystack_size) const
     {
         if (needle_size == 0)
@@ -90,15 +92,15 @@ public:
         if (needle_size == 1 || fallback || haystack_size <= needle_size)
             return self().search_fallback(haystack, haystack_end);
 
-        /// Будем "прикладывать" needle к haystack и сравнивать n-грам из конца needle.
-        const auto * pos = haystack + needle_size - sizeof(ngram_t);
+        /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
+        const auto * pos = haystack + needle_size - sizeof(Ngram);
         for (; pos <= haystack_end - needle_size; pos += step)
         {
-            /// Смотрим все ячейки хэш-таблицы, которые могут соответствовать n-граму из haystack.
+            /// We look at all the cells of the hash table that can correspond to the n-gram from haystack.
             for (size_t cell_num = toNGram(pos) % hash_size; hash[cell_num];
                  cell_num = (cell_num + 1) % hash_size)
             {
-                /// Когда нашли - сравниваем побайтово, используя смещение из хэш-таблицы.
+                /// When found - compare bytewise, using the offset from the hash table.
                 const auto res = pos - (hash[cell_num] - 1);
 
                 if (self().compare(res))
@@ -106,7 +108,7 @@ public:
             }
         }
 
-        /// Оставшийся хвостик.
+        /// The remaining tail.
         return self().search_fallback(pos - step + 1, haystack_end);
     }
 
@@ -119,18 +121,18 @@ protected:
     CRTP & self() { return static_cast<CRTP &>(*this); }
     const CRTP & self() const { return const_cast<VolnitskyBase *>(this)->self(); }
 
-    static const ngram_t & toNGram(const UInt8 * const pos)
+    static const Ngram & toNGram(const UInt8 * const pos)
     {
-        return *reinterpret_cast<const ngram_t *>(pos);
+        return *reinterpret_cast<const Ngram *>(pos);
     }
 
-    void putNGramBase(const ngram_t ngram, const int offset)
+    void putNGramBase(const Ngram ngram, const int offset)
     {
-        /// Кладём смещение для n-грама в соответствующую ему ячейку или ближайшую свободную.
+        /// Put the offset for the n-gram in the corresponding cell or the nearest free cell.
         size_t cell_num = ngram % hash_size;
 
         while (hash[cell_num])
-            cell_num = (cell_num + 1) % hash_size; /// Поиск следующей свободной ячейки.
+            cell_num = (cell_num + 1) % hash_size; /// Search for the next free cell.
 
         hash[cell_num] = offset;
     }
@@ -145,7 +147,7 @@ protected:
 
         union
         {
-            ngram_t n;
+            Ngram n;
             Chars chars;
         };
 
@@ -260,7 +262,7 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
 
         union
         {
-            ngram_t n;
+            Ngram n;
             Chars chars;
         };
 
@@ -272,15 +274,17 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
         }
         else
         {
-            /** n-грам (в случае n = 2)
-              *  может быть целиком расположен внутри одной кодовой точки,
-              *  либо пересекаться с двумя кодовыми точками.
+            /** n-gram (in the case of n = 2)
+              *  can be entirely located within one code point,
+              *  or intersect with two code points.
               *
-              * В первом случае, нужно рассматривать до двух альтернатив - эта кодовая точка в верхнем и нижнем регистре,
-              *  а во втором случае - до четырёх альтернатив - фрагменты двух кодовых точек во всех комбинациях регистров.
+              * In the first case, you need to consider up to two alternatives - this code point in upper and lower case,
+              *  and in the second case - up to four alternatives - fragments of two code points in all combinations of cases.
               *
-              * При этом не учитывается зависимость перевода между регистрами от локали (пример - турецкие Ii)
-              *  а также композиция/декомпозиция и другие особенности.
+              * It does not take into account the dependence of the case-transformation from the locale (for example - Turkish `Ii`)
+              *  as well as composition / decomposition and other features.
+              *
+              * It also does not work if characters with lower and upper cases are represented by different number of bytes or code points.
               */
 
             using Seq = UInt8[6];
@@ -302,12 +306,12 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
                     putNGramBase(n, offset);
                 else
                 {
-                    /// where is the given ngram in respect to UTF-8 sequence start?
+                    /// where is the given ngram in respect to the start of UTF-8 sequence?
                     const auto seq_ngram_offset = pos - seq_pos;
 
                     Seq seq;
 
-                    /// put ngram from lowercase
+                    /// put ngram for lowercase
                     utf8.convert(l_u32, seq, sizeof(seq));
                     chars.c0 = seq[seq_ngram_offset];
                     chars.c1 = seq[seq_ngram_offset + 1];
@@ -326,7 +330,7 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
                 /// first sequence may start before u_pos if it is not ASCII
                 auto first_seq_pos = pos;
                 UTF8::syncBackward(first_seq_pos, begin);
-                /// where is the given ngram in respect to the first UTF-8 sequence start?
+                /// where is the given ngram in respect to the start of first UTF-8 sequence?
                 const auto seq_ngram_offset = pos - first_seq_pos;
 
                 const auto first_u32 = utf8.convert(first_seq_pos);

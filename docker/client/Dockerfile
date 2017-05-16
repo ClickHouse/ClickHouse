@@ -4,7 +4,7 @@ ARG repository="deb https://repo.yandex.ru/clickhouse/xenial/ dists/stable/main/
 ARG version=\*
 
 RUN apt-get update && \
-    apt-get install -y apt-transport-https && \
+    apt-get install -y apt-transport-https tzdata && \
     mkdir -p /etc/apt/sources.list.d && \
     echo $repository | tee /etc/apt/sources.list.d/clickhouse.list && \
     apt-get update && \

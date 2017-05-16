@@ -54,3 +54,6 @@ target_link_libraries (thread_pool dbms)
 
 add_executable (array_cache array_cache.cpp)
 target_link_libraries (array_cache dbms)
+
+add_executable (space_saving space_saving.cpp)
+target_link_libraries (space_saving dbms)

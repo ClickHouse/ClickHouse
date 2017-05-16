@@ -8,8 +8,8 @@ namespace DB
 {
 
 
-/** Доагрегирует поток блоков, в котором каждый блок уже агрегирован.
-  * Агрегатные функции в блоках не должны быть финализированы, чтобы их состояния можно было объединить.
+/** A pre-aggregate stream of blocks in which each block is already aggregated.
+  * Aggregate functions in blocks should not be finalized so that their states can be merged.
   */
 class MergingAggregatedBlockInputStream : public IProfilingBlockInputStream
 {

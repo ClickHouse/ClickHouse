@@ -38,9 +38,9 @@ namespace detail
     }
 };
 
-/** Очень простая thread-safe очередь ограниченной длины.
-  * Если пытаться вынуть элемент из пустой очереди, то поток блокируется, пока очередь не станет непустой.
-  * Если пытаться вставить элемент в переполненную очередь, то поток блокируется, пока в очереди не появится элемент.
+/** A very simple thread-safe queue of limited length.
+  * If you try to pop an item from an empty queue, the thread is blocked until the queue becomes nonempty.
+  * If you try to push an element into an overflowed queue, the thread is blocked until space appears in the queue.
   */
 template <typename T>
 class ConcurrentBoundedQueue

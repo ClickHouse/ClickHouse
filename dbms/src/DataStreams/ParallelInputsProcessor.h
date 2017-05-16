@@ -33,33 +33,33 @@ namespace CurrentMetrics
 namespace DB
 {
 
-/** Режим объединения.
+/** Union mode.
   */
 enum class StreamUnionMode
 {
-    Basic = 0, /// вынимать блоки
-    ExtraInfo  /// вынимать блоки + дополнительную информацию
+    Basic = 0, /// take out blocks
+    ExtraInfo  /// take out blocks + additional information
 };
 
-/// Пример обработчика.
+/// Example of the handler.
 struct ParallelInputsHandler
 {
-    /// Обработка блока данных.
+    /// Processing the data block.
     void onBlock(Block & block, size_t thread_num) {}
 
-    /// Обработка блока данных + дополнительных информаций.
+    /// Processing the data block + additional information.
     void onBlock(Block & block, BlockExtraInfo & extra_info, size_t thread_num) {}
 
-    /// Вызывается для каждого потока, когда потоку стало больше нечего делать.
-    /// Из-за того, что иссякла часть источников, и сейчас источников осталось меньше, чем потоков.
-    /// Вызывается, если метод onException не кидает исключение; вызывается до метода onFinish.
+    /// Called for each thread, when the thread has nothing else to do.
+    /// Due to the fact that part of the sources has run out, and now there are fewer sources left than streams.
+    /// Called if the `onException` method does not throw an exception; is called before the `onFinish` method.
     void onFinishThread(size_t thread_num) {}
 
-    /// Блоки закончились. Из-за того, что все источники иссякли или из-за отмены работы.
-    /// Этот метод всегда вызывается ровно один раз, в конце работы, если метод onException не кидает исключение.
+    /// Blocks are over. Due to the fact that all sources ran out or because of the cancellation of work.
+    /// This method is always called exactly once, at the end of the work, if the `onException` method does not throw an exception.
     void onFinish() {}
 
-    /// Обработка исключения. Разумно вызывать в этом методе метод ParallelInputsProcessor::cancel, а также передавать эксепшен в основной поток.
+    /// Exception handling. It is reasonable to call the ParallelInputsProcessor::cancel method in this method, and also pass the exception to the main thread.
     void onException(std::exception_ptr & exception, size_t thread_num) {}
 };
 
@@ -68,13 +68,13 @@ template <typename Handler, StreamUnionMode mode = StreamUnionMode::Basic>
 class ParallelInputsProcessor
 {
 public:
-    /** additional_input_at_end - если не nullptr,
-      *  то из этого источника начинают доставаться блоки лишь после того, как все остальные источники обработаны.
-      * Это делается в основном потоке.
+    /** additional_input_at_end - if not nullptr,
+      *  then the blocks from this source will start to be processed only after all other sources are processed.
+      * This is done in the main thread.
       *
-      * Предназначено для реализации FULL и RIGHT JOIN
-      * - где нужно сначала параллельно сделать JOIN, при этом отмечая, какие ключи не найдены,
-      *   и только после завершения этой работы, создать блоки из ненайденных ключей.
+      * Intended for implementation of FULL and RIGHT JOIN
+      * - where you must first make JOIN in parallel, while noting which keys are not found,
+      *   and only after the completion of this work, create blocks of keys that are not found.
       */
     ParallelInputsProcessor(BlockInputStreams inputs_, BlockInputStreamPtr additional_input_at_end_, size_t max_threads_, Handler & handler_)
         : inputs(inputs_), additional_input_at_end(additional_input_at_end_), max_threads(std::min(inputs_.size(), max_threads_)), handler(handler_)
@@ -95,7 +95,7 @@ public:
         }
     }
 
-    /// Запустить фоновые потоки, начать работу.
+    /// Start background threads, start work.
     void process()
     {
         active_threads = max_threads;
@@ -104,7 +104,7 @@ public:
             threads.emplace_back(std::bind(&ParallelInputsProcessor::thread, this, current_memory_tracker, i));
     }
 
-    /// Попросить все источники остановиться раньше, чем они иссякнут.
+    /// Ask all sources to stop earlier than they run out.
     void cancel()
     {
         finish = true;
@@ -119,9 +119,9 @@ public:
                 }
                 catch (...)
                 {
-                    /** Если не удалось попросить остановиться одного или несколько источников.
-                      * (например, разорвано соединение при распределённой обработке запроса)
-                      * - то пофиг.
+                    /** If you can not ask one or more sources to stop.
+                      * (for example, the connection is broken for distributed query processing)
+                      * - then do not care.
                       */
                     LOG_ERROR(log, "Exception while cancelling " << child->getName());
                 }
@@ -129,7 +129,7 @@ public:
         }
     }
 
-    /// Подождать завершения работы всех потоков раньше деструктора.
+    /// Wait until all threads are finished, before the destructor.
     void wait()
     {
         if (joined_threads)
@@ -148,11 +148,11 @@ public:
     }
 
 private:
-    /// Данные отдельного источника
+    /// Single source data
     struct InputData
     {
         BlockInputStreamPtr in;
-        size_t i;        /// Порядковый номер источника (для отладки).
+        size_t i;        /// The source number (for debugging).
 
         InputData() {}
         InputData(BlockInputStreamPtr & in_, size_t i_) : in(in_), i(i_) {}
@@ -197,10 +197,10 @@ private:
 
         handler.onFinishThread(thread_num);
 
-        /// Последний поток при выходе сообщает, что данных больше нет.
+        /// The last thread on the output indicates that there is no more data.
         if (0 == --active_threads)
         {
-            /// И ещё обрабатывает дополнительный источник, если такой есть.
+            /// And then it processes an additional source, if there is one.
             if (additional_input_at_end)
             {
                 try
@@ -219,38 +219,38 @@ private:
                 }
             }
 
-            handler.onFinish();        /// TODO Если в onFinish или onFinishThread эксепшен, то вызывается std::terminate.
+            handler.onFinish ();       /// TODO If in `onFinish` or `onFinishThread` there is an exception, then std::terminate is called.
         }
     }
 
     void loop(size_t thread_num)
     {
-        while (!finish)    /// Может потребоваться прекратить работу раньше, чем все источники иссякнут.
+        while (!finish)    /// You may need to stop work earlier than all sources run out.
         {
             InputData input;
 
-            /// Выбираем следующий источник.
+            /// Select the next source.
             {
                 std::lock_guard<std::mutex> lock(available_inputs_mutex);
 
-                /// Если свободных источников нет, то этот поток больше не нужен. (Но другие потоки могут работать со своими источниками.)
+                /// If there are no free sources, then this thread is no longer needed. (But other threads can work with their sources.)
                 if (available_inputs.empty())
                     break;
 
                 input = available_inputs.front();
 
-                /// Убираем источник из очереди доступных источников.
+                /// We remove the source from the queue of available sources.
                 available_inputs.pop();
             }
 
-            /// Основная работа.
+            /// The main work.
             Block block = input.in->read();
 
             {
                 if (finish)
                     break;
 
-                /// Если этот источник ещё не иссяк, то положим полученный блок в очередь готовых.
+                /// If this source is not run out yet, then put the resulting block in the ready queue.
                 {
                     std::lock_guard<std::mutex> lock(available_inputs_mutex);
 
@@ -280,38 +280,38 @@ private:
 
     Handler & handler;
 
-    /// Потоки.
+    /// Streams.
     using ThreadsData = std::vector<std::thread>;
     ThreadsData threads;
 
-    /** Набор доступных источников, которые не заняты каким-либо потоком в данный момент.
-      * Каждый поток берёт из этого набора один источник, вынимает из источника блок (в этот момент источник делает вычисления),
-      *  и (если источник не исчерпан), кладёт назад в набор доступных источников.
+    /** A set of available sources that are not currently processed by any thread.
+      * Each thread takes one source from this set, takes a block out of the source (at this moment the source does the calculations)
+      *  and (if the source is not run out), puts it back into the set of available sources.
       *
-      * Возникает вопрос, что лучше использовать:
-      * - очередь (только что обработанный источник будет в следующий раз обработан позже остальных)
-      * - стек (только что обработанный источник будет обработан как можно раньше).
+      * The question arises what is better to use:
+      * - the queue (just processed source will be processed the next time later than the rest)
+      * - stack (just processed source will be processed as soon as possible).
       *
-      * Стек лучше очереди, когда надо выполнять работу по чтению одного источника более последовательно,
-      *  и теоретически, это позволяет достичь более последовательных чтений с диска.
+      * The stack is better than the queue when you need to do work on reading one source more consequentially,
+      *  and theoretically, this allows you to achieve more consequent/consistent reads from the disk.
       *
-      * Но при использовании стека, возникает проблема при распределённой обработке запроса:
-      *  данные всё-время читаются только с части серверов, а на остальных серверах
-      *  возникает таймаут при send-е, и обработка запроса завершается с исключением.
+      * But when using the stack, there is a problem with distributed query processing:
+      *  data is read only from a part of the servers, and on the other servers
+      * a timeout occurs during send, and the request processing ends with an exception.
       *
-      * Поэтому, используется очередь. Это можно улучшить в дальнейшем.
+      * Therefore, a queue is used. This can be improved in the future.
       */
     using AvailableInputs = std::queue<InputData>;
     AvailableInputs available_inputs;
 
-    /// Для операций с available_inputs.
+    /// For operations with available_inputs.
     std::mutex available_inputs_mutex;
 
-    /// Сколько источников иссякло.
+    /// How many sources ran out.
     std::atomic<size_t> active_threads { 0 };
-    /// Завершить работу потоков (раньше, чем иссякнут источники).
+    /// Finish the threads work (before the sources run out).
     std::atomic<bool> finish { false };
-    /// Подождали завершения всех потоков.
+    /// Wait for the completion of all threads.
     std::atomic<bool> joined_threads { false };
 
     Logger * log = &Logger::get("ParallelInputsProcessor");

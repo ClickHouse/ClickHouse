@@ -11,6 +11,7 @@ ClickHouse позволяет отправить на сервер данные,
 
 В клиенте командной строки, может быть указана секция параметров вида
 ::
+
     --external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
 
 Таких секций может быть несколько - по числу передаваемых таблиц.
@@ -31,6 +32,7 @@ ClickHouse позволяет отправить на сервер данные,
 
 Примеры:
 ::
+
   echo -ne "1\n2\n3\n" | clickhouse-client --query="SELECT count() FROM test.visits WHERE TraficSourceID IN _data" --external --file=- --types=Int8
   849897
   cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, count() AS c FROM passwd GROUP BY shell ORDER BY c DESC" --external --file=- --name=passwd --structure='login String, unused String, uid UInt16, gid UInt16, comment String, home String, shell String'
@@ -44,6 +46,7 @@ ClickHouse позволяет отправить на сервер данные,
 
 Пример:
 ::
+
   cat /etc/passwd | sed 's/:/\t/g' > passwd.tsv
   
   curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+count()+AS+c+FROM+passwd+GROUP+BY+shell+ORDER+BY+c+DESC&passwd_structure=login+String,+unused+String,+uid+UInt16,+gid+UInt16,+comment+String,+home+String,+shell+String'

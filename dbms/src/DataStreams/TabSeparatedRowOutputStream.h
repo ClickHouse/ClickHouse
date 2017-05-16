@@ -9,13 +9,13 @@ namespace DB
 
 class WriteBuffer;
 
-/** Поток для вывода данных в формате tsv.
+/** A stream for outputting data in tsv format.
   */
 class TabSeparatedRowOutputStream : public IRowOutputStream
 {
 public:
-    /** with_names - выводить в первой строке заголовок с именами столбцов
-      * with_types - выводить на следующей строке заголовок с именами типов
+    /** with_names - output in the first line a header with column names
+      * with_types - output the next line header with the names of the types
       */
     TabSeparatedRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false);
 

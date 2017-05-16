@@ -286,7 +286,7 @@ private:
         ParserString dot_p(".");
         ParserNumber number_p;
 
-        auto pos = pattern.data();
+        const char * pos = pattern.data();
         const auto begin = pos;
         const auto end = pos + pattern.size();
 

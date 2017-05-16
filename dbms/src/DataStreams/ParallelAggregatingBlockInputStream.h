@@ -11,15 +11,15 @@ namespace DB
 {
 
 
-/** Агрегирует несколько источников параллельно.
-  * Производит агрегацию блоков из разных источников независимо в разных потоках, затем объединяет результаты.
-  * Если final == false, агрегатные функции не финализируются, то есть, не заменяются на своё значение, а содержат промежуточное состояние вычислений.
-  * Это необходимо, чтобы можно было продолжить агрегацию (например, объединяя потоки частично агрегированных данных).
+/** Aggregates several sources in parallel.
+  * Makes aggregation of blocks from different sources independently in different threads, then combines the results.
+  * If final == false, aggregate functions are not finalized, that is, they are not replaced by their value, but contain an intermediate state of calculations.
+  * This is necessary so that aggregation can continue (for example, by combining streams of partially aggregated data).
   */
 class ParallelAggregatingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    /** Столбцы из key_names и аргументы агрегатных функций, уже должны быть вычислены.
+    /** Columns from key_names and arguments of aggregate functions must already be computed.
       */
     ParallelAggregatingBlockInputStream(
         BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end,
@@ -32,7 +32,7 @@ public:
     void cancel() override;
 
 protected:
-    /// Ничего не делаем, чтобы подготовка к выполнению запроса делалась параллельно, в ParallelInputsProcessor.
+    /// Do nothing that preparation to execution of the query be done in parallel, in ParallelInputsProcessor.
     void readPrefix() override
     {
     }
@@ -49,16 +49,16 @@ private:
     size_t keys_size;
     size_t aggregates_size;
 
-    /** Используется, если есть ограничение на максимальное количество строк при агрегации,
-      *  и если group_by_overflow_mode == ANY.
-      * В этом случае, новые ключи не добавляются в набор, а производится агрегация только по
-      *  ключам, которые уже успели попасть в набор.
+    /** Used if there is a limit on the maximum number of rows in the aggregation,
+      *  and if group_by_overflow_mode == ANY.
+      * In this case, new keys are not added to the set, but aggregation is performed only by
+      *  keys that have already been added into the set.
       */
     bool no_more_keys = false;
 
     std::atomic<bool> executed {false};
 
-    /// Для чтения сброшенных во временный файл данных.
+    /// To read the data stored into the temporary data file.
     struct TemporaryFileStream
     {
         ReadBufferFromFile file_in;
@@ -117,7 +117,7 @@ private:
     void execute();
 
 
-    /** Отсюда будем доставать готовые блоки после агрегации.
+    /** From here we get the finished blocks after the aggregation.
       */
     std::unique_ptr<IBlockInputStream> impl;
 };

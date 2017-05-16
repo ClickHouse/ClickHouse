@@ -15,7 +15,7 @@
 namespace DB
 {
 
-/** Функции преобразования чисел и дат в строки, содержащие тот же набор байт в машинном представлении, и обратно.
+/** Functions for transforming numbers and dates to strings that contain the same set of bytes in the machine representation, and vice versa.
     */
 
 

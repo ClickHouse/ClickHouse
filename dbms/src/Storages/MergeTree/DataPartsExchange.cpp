@@ -215,10 +215,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
     Poco::File part_file(part_path);
 
     if (part_file.exists())
-    {
-        LOG_ERROR(log, "Directory " + part_path + " already exists. Removing.");
-        part_file.remove(true);
-    }
+        throw Exception("Directory " + part_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 

@@ -7,9 +7,9 @@ namespace DB
 {
 
 
-/** Объединяет несколько источников в один.
-  * В отличие от UnionBlockInputStream, делает это последовательно.
-  * Блоки разных источников не перемежаются друг с другом.
+/** Combines several sources into one.
+  * Unlike UnionBlockInputStream, it does this sequentially.
+  * Blocks of different sources are not interleaved with each other.
   */
 class ConcatBlockInputStream : public IProfilingBlockInputStream
 {
@@ -31,7 +31,7 @@ public:
         for (size_t i = 0; i < children.size(); ++i)
             children_ids[i] = children[i]->getID();
 
-        /// Будем считать, что порядок конкатенации блоков не имеет значения.
+        /// Let's assume that the order of concatenation of blocks does not matter.
         std::sort(children_ids.begin(), children_ids.end());
 
         for (size_t i = 0; i < children_ids.size(); ++i)

@@ -49,7 +49,7 @@ BlockInputStreams StorageSystemFunctions::read(
         column_is_aggregate.column->insert(UInt64(0));
     }
 
-    const auto & aggregate_functions = context.getAggregateFunctionFactory().aggregate_functions;
+    const auto & aggregate_functions = AggregateFunctionFactory::instance().aggregate_functions;
     for (const auto & it : aggregate_functions)
     {
         column_name.column->insert(it.first);

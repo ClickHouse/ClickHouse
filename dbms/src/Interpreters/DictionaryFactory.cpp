@@ -6,6 +6,7 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 #include <Dictionaries/ComplexKeyHashedDictionary.h>
 #include <Dictionaries/ComplexKeyCacheDictionary.h>
+#include <Dictionaries/TrieDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <memory>
 
@@ -80,6 +81,15 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::Ab
                 ErrorCodes::BAD_ARGUMENTS};
 
         return std::make_unique<ComplexKeyCacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
+    }
+    else if ("ip_trie" == layout_type)
+    {
+        if (!dict_struct.key)
+            throw Exception{"'key' is required for dictionary of layout 'ip_trie'",
+                ErrorCodes::BAD_ARGUMENTS};
+
+        // This is specialised trie for storing IPv4 and IPv6 prefixes.
+        return std::make_unique<TrieDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     }
     else
     {

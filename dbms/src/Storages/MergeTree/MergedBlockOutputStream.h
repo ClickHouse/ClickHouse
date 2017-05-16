@@ -136,7 +136,7 @@ public:
 private:
     void init();
 
-    /** If `permutation` is given, it rearranges the values ​​in the columns when writing.
+    /** If `permutation` is given, it rearranges the values in the columns when writing.
       * This is necessary to not keep the whole block in the RAM to sort it.
       */
     void writeImpl(const Block & block, const IColumn::Permutation * permutation);

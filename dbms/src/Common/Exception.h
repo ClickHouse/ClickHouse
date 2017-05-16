@@ -35,7 +35,7 @@ public:
     DB::Exception * clone() const override { return new DB::Exception(*this); }
     void rethrow() const override { throw *this; }
 
-    /// Дописать к существующему сообщению что-нибудь ещё.
+    /// Add something to the existing message.
     void addMessage(const std::string & arg) { extendedMessage(arg); }
 
     const StackTrace & getStackTrace() const { return trace; }
@@ -45,7 +45,7 @@ private:
 };
 
 
-/// Содержит дополнительный член saved_errno. См. функцию throwFromErrno.
+/// Contains an additional member `saved_errno`. See the throwFromErrno function.
 class ErrnoException : public Exception
 {
 public:
@@ -73,8 +73,8 @@ using Exceptions = std::vector<std::exception_ptr>;
 void throwFromErrno(const std::string & s, int code = 0, int the_errno = errno);
 
 
-/** Попробовать записать исключение в лог (и забыть про него).
-  * Можно использовать в деструкторах в блоке catch (...).
+/** Try to write an exception to the log (and forget about it).
+  * Can be used in destructors in the catch-all block.
   */
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "");
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "");

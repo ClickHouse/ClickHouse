@@ -13,18 +13,18 @@
 #include <Core/Defines.h>
 
 
-/** Поразрядная сортировка, обладает следующей функциональностью:
-  * Может сортировать unsigned, signed числа, а также float-ы.
-  * Может сортировать массив элементов фиксированной длины, которые содержат что-то ещё кроме ключа.
-  * Настраиваемый размер разряда.
+/** Radix sort, has the following functionality:
+  * Can sort unsigned, signed numbers, and floats.
+  * Can sort an array of fixed length elements that contain something else besides the key.
+  * Customizable radix size.
   *
   * LSB, stable.
-  * NOTE Для некоторых приложений имеет смысл добавить MSB-radix-sort,
-  *  а также алгоритмы radix-select, radix-partial-sort, radix-get-permutation на его основе.
+  * NOTE For some applications it makes sense to add MSB-radix-sort,
+  *  as well as radix-select, radix-partial-sort, radix-get-permutation algorithms based on it.
   */
 
 
-/** Используется в качестве параметра шаблона. См. ниже.
+/** Used as a template parameter. See below.
   */
 struct RadixSortMallocAllocator
 {
@@ -40,16 +40,16 @@ struct RadixSortMallocAllocator
 };
 
 
-/** Преобразование, которое переводит битовое представление ключа в такое целое беззнаковое число,
-  *  что отношение порядка над ключами будет соответствовать отношению порядка над полученными беззнаковыми числами.
-  * Для float-ов это преобразование делает следующее:
-  *  если выставлен знаковый бит, то переворачивает все остальные биты.
-  * При этом, NaN-ы оказываются больше всех нормальных чисел.
+/** A transformation that transforms the bit representation of a key into an unsigned integer number,
+  *  that the order relation over the keys will match the order relation over the obtained unsigned numbers.
+  * For floats this conversion does the following:
+  *  if the signed bit is set, it flips all other bits.
+  * In this case, NaN-s are bigger than all normal numbers.
   */
 template <typename KeyBits>
 struct RadixSortFloatTransform
 {
-    /// Стоит ли записывать результат в память, или лучше делать его каждый раз заново?
+    /// Is it worth writing the result in memory, or is it better to do calculation every time again?
     static constexpr bool transform_is_simple = false;
 
     static KeyBits forward(KeyBits x)
@@ -67,24 +67,24 @@ struct RadixSortFloatTransform
 template <typename Float>
 struct RadixSortFloatTraits
 {
-    using Element = Float;        /// Тип элемента. Это может быть структура с ключём и ещё каким-то payload-ом. Либо просто ключ.
-    using Key = Float;            /// Ключ, по которому нужно сортировать.
-    using CountType = uint32_t;    /// Тип для подсчёта гистограмм. В случае заведомо маленького количества элементов, может быть меньше чем size_t.
+    using Element = Float;        /// The type of the element. It can be a structure with a key and some other payload. Or just a key.
+    using Key = Float;            /// The key to sort.
+    using CountType = uint32_t;   /// Type for calculating histograms. In the case of a known small number of elements, it can be less than size_t.
 
-    /// Тип, в который переводится ключ, чтобы делать битовые операции. Это UInt такого же размера, как ключ.
+    /// The type to which the key is transformed to do bit operations. This UInt is the same size as the key.
     using KeyBits = typename std::conditional<sizeof(Float) == 8, uint64_t, uint32_t>::type;
 
-    static constexpr size_t PART_SIZE_BITS = 8;    /// Какими кусочками ключа в количестве бит делать один проход - перестановку массива.
+    static constexpr size_t PART_SIZE_BITS = 8;    /// With what pieces of the key, in bits, to do one pass - reshuffle of the array.
 
-    /// Преобразования ключа в KeyBits такое, что отношение порядка над ключём соответствует отношению порядка над KeyBits.
+    /// Converting a key into KeyBits is such that the order relation over the key corresponds to the order relation over KeyBits.
     using Transform = RadixSortFloatTransform<KeyBits>;
 
-    /// Объект с функциями allocate и deallocate.
-    /// Может быть использован, например, чтобы выделить память для временного массива на стеке.
-    /// Для этого сам аллокатор создаётся на стеке.
+    /// An object with the functions allocate and deallocate.
+    /// Can be used, for example, to allocate memory for a temporary array on the stack.
+    /// To do this, the allocator itself is created on the stack.
     using Allocator = RadixSortMallocAllocator;
 
-    /// Функция получения ключа из элемента массива.
+    /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
 };
 
@@ -95,7 +95,7 @@ struct RadixSortIdentityTransform
     static constexpr bool transform_is_simple = true;
 
     static KeyBits forward(KeyBits x)     { return x; }
-    static KeyBits backward(KeyBits x)     { return x; }
+    static KeyBits backward(KeyBits x)    { return x; }
 };
 
 
@@ -105,7 +105,7 @@ struct RadixSortSignedTransform
     static constexpr bool transform_is_simple = true;
 
     static KeyBits forward(KeyBits x)     { return x ^ (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)); }
-    static KeyBits backward(KeyBits x)     { return x ^ (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)); }
+    static KeyBits backward(KeyBits x)    { return x ^ (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)); }
 };
 
 
@@ -122,7 +122,7 @@ struct RadixSortUIntTraits
     using Transform = RadixSortIdentityTransform<KeyBits>;
     using Allocator = RadixSortMallocAllocator;
 
-    /// Функция получения ключа из элемента массива.
+    /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
 };
 
@@ -139,7 +139,7 @@ struct RadixSortIntTraits
     using Transform = RadixSortSignedTransform<KeyBits>;
     using Allocator = RadixSortMallocAllocator;
 
-    /// Функция получения ключа из элемента массива.
+    /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
 };
 
@@ -150,7 +150,7 @@ struct RadixSort
 private:
     using Element     = typename Traits::Element;
     using Key         = typename Traits::Key;
-    using CountType = typename Traits::CountType;
+    using CountType   = typename Traits::CountType;
     using KeyBits     = typename Traits::KeyBits;
 
     static constexpr size_t HISTOGRAM_SIZE = 1 << Traits::PART_SIZE_BITS;
@@ -172,19 +172,19 @@ private:
 public:
     static void execute(Element * arr, size_t size)
     {
-        /// Если массив имеет размер меньше 256, то лучше использовать другой алгоритм.
+        /// If the array is smaller than 256, then it is better to use another algorithm.
 
-        /// Здесь есть циклы по NUM_PASSES. Очень важно, что они разворачиваются в compile-time.
+        /// There are loops of NUM_PASSES. It is very important that they are unfolded at compile-time.
 
-        /// Для каждого из NUM_PASSES кусков бит ключа, считаем, сколько раз каждое значение этого куска встретилось.
+        /// For each of the NUM_PASSES bit ranges of the key, consider how many times each value of this bit range met.
         CountType histograms[HISTOGRAM_SIZE * NUM_PASSES] = {0};
 
         typename Traits::Allocator allocator;
 
-        /// Будем делать несколько проходов по массиву. На каждом проходе, данные перекладываются в другой массив. Выделим этот временный массив.
+        /// We will do several passes through the array. On each pass, the data is transferred to another array. Let's allocate this temporary array.
         Element * swap_buffer = reinterpret_cast<Element *>(allocator.allocate(size * sizeof(Element)));
 
-        /// Трансформируем массив и вычисляем гистограмму.
+        /// Transform the array and calculate the histogram.
         for (size_t i = 0; i < size; ++i)
         {
             if (!Traits::Transform::transform_is_simple)
@@ -195,7 +195,7 @@ public:
         }
 
         {
-            /// Заменяем гистограммы на суммы с накоплением: значение в позиции i равно сумме в предыдущих позициях минус один.
+            /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
             size_t sums[NUM_PASSES] = {0};
 
             for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
@@ -209,7 +209,7 @@ public:
             }
         }
 
-        /// Перекладываем элементы в порядке начиная от младшего куска бит, и далее делаем несколько проходов по количеству кусков.
+        /// Move the elements in the order starting from the least bit piece, and then do a few passes on the number of pieces.
         for (size_t j = 0; j < NUM_PASSES; ++j)
         {
             Element * writer = j % 2 ? arr : swap_buffer;
@@ -219,17 +219,18 @@ public:
             {
                 size_t pos = getPart(j, keyToBits(Traits::extractKey(reader[i])));
 
-                /// Размещаем элемент на следующей свободной позиции.
+                /// Place the element on the next free position.
                 auto & dest = writer[++histograms[j * HISTOGRAM_SIZE + pos]];
                 dest = reader[i];
 
-                /// На последнем перекладывании, делаем обратную трансформацию.
+                /// On the last pass, we do the reverse transformation.
                 if (!Traits::Transform::transform_is_simple && j == NUM_PASSES - 1)
                     Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(reader[i]))));
             }
         }
 
-        /// Если число проходов нечётное, то результирующий массив находится во временном буфере. Скопируем его на место исходного массива.
+        /// If the number of passes is odd, the result array is in a temporary buffer. Copy it to the place of the original array.
+        /// NOTE Sometimes it will be more optimal to provide non-destructive interface, that will not modify original array.
         if (NUM_PASSES % 2)
             memcpy(arr, swap_buffer, size * sizeof(Element));
 
