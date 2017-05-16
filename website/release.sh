@@ -29,6 +29,6 @@ else
 fi
 QLOUD_COMPONENT="${QLOUD_ENV}.nginx"
 QLOUD_VERSION=$(curl -v -H "Authorization: OAuth ${QLOUD_TOKEN}" "${QLOUD_ENDPOINT}/environment/status/${QLOUD_ENV}" | python -c "import json; import sys; print json.loads(sys.stdin.read()).get('version')")
-curl -v -H "Authorization: OAuth ${QLOUD_TOKEN}" -H "Content-Type: application/json" --data "{\"repository\": \"${REMOTE_NAME}\", \"componentVariables\": {\"v\": \"${QLOUD_VERSION}\"}}" "${QLOUD_ENDPOINT}/component/${QLOUD_COMPONENT}/${QLOUD_VERSION}/deploy" > /dev/null
+curl -v -H "Authorization: OAuth ${QLOUD_TOKEN}" -H "Content-Type: application/json" --data "{\"repository\": \"${REMOTE_NAME}\"}" "${QLOUD_ENDPOINT}/component/${QLOUD_COMPONENT}/${QLOUD_VERSION}/deploy" > /dev/null
 
 echo ">>> Successfully deployed ${TAG} to ${QLOUD_ENV} <<<"
