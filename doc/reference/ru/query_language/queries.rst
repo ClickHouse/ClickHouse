@@ -18,7 +18,7 @@ CREATE TABLE
 
 .. code-block:: sql
 
-    CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name
+    CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
     (
         name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
         name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
@@ -92,6 +92,20 @@ CREATE TABLE
 
 В большинстве случаев, временные таблицы создаются не вручную, а при использовании внешних данных для запроса, или при распределённом ``(GLOBAL) IN``. Подробнее см. соответствующие разделы
 
+Распределенные DDL запросы (секция ``ON CLUSTER``)
+""""""""""""""""""""""""""""""""""""""""""""""""""
+
+Запросы ``CREATE``, ``DROP``, ``ALTER``, ``RENAME`` поддерживают возможность распределенного выполнения на кластере.
+Например, следующий запрос создает ``Distributed``-таблицу ``all_hits`` на каждом хосте кластера ``cluster``:
+
+.. code-block:: sql
+
+    CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
+
+Для корректного выполнения таких запросов необходимо на каждом хосте иметь одинаковое определение кластера (для упрощения синхронизации конфигов можете использовать :ref:`подстановки из ZooKeeper <configurattion_files>`), также необходимо подключение к ZooKeeper серверам.
+Локальная версия запроса в конечном итоге будет выполнена на каждом хосте кластера, даже если некоторые хосты в данный момент не доступны, гарантируется упорядоченность выполнения запросов в рамках одного хоста.
+Пока не поддерживаются ``ALTER``-запросы для реплицированных таблиц.
+
 CREATE VIEW
 ~~~~~~~~~~~~
 
@@ -152,14 +166,14 @@ DROP
 
 .. code-block:: sql
 
-    DROP DATABASE [IF EXISTS] db
+    DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 
 Удаляет все таблицы внутри базы данных db, а затем саму базу данных db.
 Если указано ``IF EXISTS`` - не выдавать ошибку, если база данных не существует.
 
 .. code-block:: sql
 
-    DROP TABLE [IF EXISTS] [db.]name
+    DROP TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Удаляет таблицу.
 Если указано ``IF EXISTS`` - не выдавать ошибку, если таблица не существует или база данных не существует.
@@ -183,7 +197,7 @@ RENAME
 
 .. code-block:: sql
 
-    RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ...
+    RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ... [ON CLUSTER cluster]
 
 Все таблицы переименовываются под глобальной блокировкой. Переименовывание таблицы является лёгкой операцией. Если вы указали после TO другую базу данных, то таблица будет перенесена в эту базу данных. При этом, директории с базами данных должны быть расположены в одной файловой системе (иначе возвращается ошибка).
 
@@ -197,7 +211,7 @@ ALTER
 
 .. code-block:: sql
 
-    ALTER TABLE [db].name ADD|DROP|MODIFY COLUMN ...
+    ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|MODIFY COLUMN ...
 
 В запросе указывается список из одного или более действий через запятую.
 Каждое действие - операция над столбцом.

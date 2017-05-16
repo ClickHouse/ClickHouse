@@ -13,8 +13,10 @@ If "IF NOT EXISTS" is included, the query won't return an error if the database 
 CREATE TABLE
 ~~~~~~~~~~~~
 The ``CREATE TABLE`` query can have several forms.
-::
-    CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name
+
+.. code-block:: sql
+
+    CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
     (
         name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
         name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
@@ -37,7 +39,7 @@ Creates a table with a structure like the result of the ``SELECT`` query, with t
 In all cases, if IF NOT EXISTS is specified, the query won't return an error if the table already exists. In this case, the query won't do anything.
 
 Default values
-"""""""""""""""""""""
+""""""""""""""
 The column description can specify an expression for a default value, in one of the following ways:
 ``DEFAULT expr``, ``MATERIALIZED expr``, ``ALIAS expr``.
 Example: ``URLDomain String DEFAULT domain(URL)``.
@@ -73,7 +75,7 @@ If you add a new column to a table but later change its default expression, the 
 It is not possible to set default values for elements in nested data structures.
 
 Temporary tables
-"""""""""""""""""
+""""""""""""""""
 In all cases, if TEMPORARY is specified, a temporary table will be created. Temporary tables have the following characteristics:
 - Temporary tables disappear when the session ends, including if the connection is lost.
 - A temporary table is created with the Memory engine. The other table engines are not supported.
@@ -82,6 +84,20 @@ In all cases, if TEMPORARY is specified, a temporary table will be created. Temp
 - For distributed query processing, temporary tables used in a query are passed to remote servers.
 
 In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed (GLOBAL) IN. For more information, see the appropriate sections.
+
+Distributed DDL queries (section ``ON CLUSTER``)
+""""""""""""""""""""""""""""""""""""""""""""""""
+
+Queries ``CREATE``, ``DROP``, ``ALTER``, ``RENAME`` support distributed execution on cluster.
+For example, the following query creates ``Distributed`` table ``all_hits`` for each host of the cluster ``cluster``:
+
+.. code-block:: sql
+
+    CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
+
+To correctly execute such queries you need to have equal definitions of the cluster on each host (you can use :ref:`ZooKeeper substitutions <configuration_files>` to syncronize configs on hosts) and connection to ZooKeeper quorum.
+Local version of the query will be eventually executed on each host of the cluster, even if some hosts are temporary unavaiable; on each host queries are executed stictly sequentually.
+At the moment, ``ALTER`` queries for replicated tables are not supported yet.
 
 CREATE VIEW
 ~~~~~~~~~~~~
@@ -130,13 +146,17 @@ This query is used when starting the server. The server stores table metadata as
 DROP
 ~~~~
 This query has two types: ``DROP DATABASE`` and ``DROP TABLE``.
-::
-    DROP DATABASE [IF EXISTS] db
+
+.. code-block:: sql
+
+    DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 
 Deletes all tables inside the 'db' database, then deletes the 'db' database itself.
 If IF EXISTS is specified, it doesn't return an error if the database doesn't exist.
-::
-    DROP TABLE [IF EXISTS] [db.]name
+
+.. code-block:: sql
+
+    DROP TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Deletes the table.
 If IF EXISTS is specified, it doesn't return an error if the table doesn't exist or the database doesn't exist.
@@ -154,20 +174,24 @@ There is no DETACH DATABASE query.
 RENAME
 ~~~~~~
 Renames one or more tables.
-::
-    RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ...
+
+.. code-block:: sql
+
+    RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ... [ON CLUSTER cluster]
 
  All tables are renamed under global locking. Renaming tables is a light operation. If you indicated another database after TO, the table will be moved to this database. However, the directories with databases must reside in the same file system (otherwise, an error is returned).
- 
+
 ALTER
 ~~~~~
 The ALTER query is only supported for *MergeTree type tables, as well as for Merge and Distributed types. The query has several variations.
 
 Column manipulations
 """"""""""""""""""""""""
-Lets you change the table structure. 
-::
-    ALTER TABLE [db].name ADD|DROP|MODIFY COLUMN ...
+Lets you change the table structure.
+
+.. code-block:: sql
+
+    ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|MODIFY COLUMN ...
 
 In the query, specify a list of one or more comma-separated actions. Each action is an operation on a column.
 
