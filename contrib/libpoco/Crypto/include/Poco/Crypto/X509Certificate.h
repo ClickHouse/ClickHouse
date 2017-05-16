@@ -130,6 +130,14 @@ public:
 		/// Returns true if verification against the issuer certificate
 		/// was successfull, false otherwise.
 
+	bool equals(const X509Certificate& otherCertificate) const;
+		/// Checks whether the certificate is equal to
+		/// the other certificate, by comparing the hashes
+		/// of both certificates.
+		///
+		/// Returns true if both certificates are identical,
+		/// otherwise false.
+
 	const X509* certificate() const;
 		/// Returns the underlying OpenSSL certificate.
 

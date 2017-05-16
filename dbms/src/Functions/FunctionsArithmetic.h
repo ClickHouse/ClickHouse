@@ -91,7 +91,7 @@ struct PlusImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        /// Далее везде, static_cast - чтобы не было неправильного результата в выражениях вида Int64 c = UInt32(a) * Int32(-1).
+        /// Next everywhere, static_cast - so that there is no wrong result in expressions of the form Int64 c = UInt32(a) * Int32(-1).
         return static_cast<Result>(a) + b;
     }
 };
@@ -140,7 +140,7 @@ struct DivideFloatingImpl
 template <typename A, typename B>
 inline void throwIfDivisionLeadsToFPE(A a, B b)
 {
-    /// Возможно, лучше вместо проверок использовать siglongjmp?
+    /// Is it better to use siglongjmp instead of checks?
 
     if (unlikely(b == 0))
         throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
@@ -153,7 +153,7 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
 template <typename A, typename B>
 inline bool divisionLeadsToFPE(A a, B b)
 {
-    /// Возможно, лучше вместо проверок использовать siglongjmp?
+    /// Is it better to use siglongjmp instead of checks?
 
     if (unlikely(b == 0))
         return true;
@@ -308,7 +308,7 @@ struct LeastBaseImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        /** gcc 4.9.2 успешно векторизует цикл из этой функции. */
+        /** gcc 4.9.2 successfully vectorizes a loop from this function. */
         return static_cast<Result>(a) < static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
     }
 };
@@ -937,7 +937,7 @@ using FunctionBitRotateRight = FunctionBinaryArithmetic<BitRotateRightImpl, Name
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 
-/// Свойства монотонности для некоторых функций.
+/// Monotonicity properties for some functions.
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
 {
@@ -974,7 +974,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 
 }
 
-/// Оптимизации для целочисленного деления на константу.
+/// Optimizations for integer division by a constant.
 
 #if __SSE2__
     #define LIBDIVIDE_USE_SSE2 1
@@ -1065,16 +1065,16 @@ struct ModuloByConstantImpl
 
         libdivide::divider<A> divider(b);
 
-        /// Тут не удалось сделать так, чтобы SSE вариант из libdivide давал преимущество.
+        /// Here we failed to make the SSE variant from libdivide give an advantage.
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
-            c[i] = a[i] - (a[i] / divider) * b;    /// NOTE: возможно, не сохраняется семантика деления с остатком отрицательных чисел.
+            c[i] = a[i] - (a[i] / divider) * b;    /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
     }
 };
 
 
-/** Прописаны специализации для деления чисел типа UInt64 и UInt32 на числа той же знаковости.
-  * Можно дополнить до всех возможных комбинаций, но потребуется больше кода.
+/** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
+  * Can be expanded to all possible combinations, but more code is needed.
   */
 
 template <> struct BinaryOperationImpl<UInt64, UInt8,     DivideIntegralImpl<UInt64, UInt8>>     : DivideIntegralByConstantImpl<UInt64, UInt8> {};

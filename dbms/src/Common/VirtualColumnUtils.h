@@ -16,23 +16,23 @@ class Context;
 namespace VirtualColumnUtils
 {
 
-/// Вычислить минимальный числовый суффикс, который надо добавить к строке, чтобы она не присутствовала в множестве
+/// Calculate the minimum numeric suffix to add to the string so that it is not present in the set
 String chooseSuffix(const NamesAndTypesList & columns, const String & name);
 
-/// Вычислить минимальный общий числовый суффикс, который надо добавить к каждой строке,
-/// чтобы ни одна не присутствовала в множестве.
+/// Calculate the minimum total numeric suffix to add to each string,
+/// so that none is present in the set.
 String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<String> & names);
 
-/// Добавляет в селект запрос секцию select column_name as value
-/// Например select _port as 9000.
+/// Adds to the select query section `select column_name as value`
+/// For example select _port as 9000.
 void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value);
 
-/// Оставить в блоке только строки, подходящие под секции WHERE и PREWHERE запроса.
-/// Рассматриваются только элементы внешней конъюнкции, зависящие только от столбцов, присутствующих в блоке.
-/// Возвращает true, если хоть одна строка выброшена.
+/// Leave in the block only the rows that fit under the WHERE clause and the PREWHERE clause of the query.
+/// Only elements of the outer conjunction are considered, depending only on the columns present in the block.
+/// Returns true if at least one row is discarded.
 bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context);
 
-/// Извлечь из входного потока множество значений столбца name
+/// Extract from the input stream a set of `name` column values
 template<typename T1>
 std::multiset<T1> extractSingleValueFromBlock(const Block & block, const String & name)
 {

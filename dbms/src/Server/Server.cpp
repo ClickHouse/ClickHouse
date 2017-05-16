@@ -39,6 +39,8 @@
 #endif
 
 #include <Functions/registerFunctions.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
+
 
 namespace DB
 {
@@ -212,6 +214,7 @@ int Server::main(const std::vector<std::string> & args)
     Logger * log = &logger();
 
     registerFunctions();
+    registerAggregateFunctions();
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
@@ -459,7 +462,6 @@ int Server::main(const std::vector<std::string> & args)
             }
             catch (const Poco::Net::DNSException & e)
             {
-                /// Better message when IPv6 is disabled on host.
                 if (e.code() == EAI_FAMILY
 #if defined(EAI_ADDRFAMILY)
                     || e.code() == EAI_ADDRFAMILY
@@ -468,9 +470,9 @@ int Server::main(const std::vector<std::string> & args)
                 {
                     LOG_ERROR(log,
                         "Cannot resolve listen_host (" << host << "), error: " << e.message() << ". "
-                                                       << "If it is an IPv6 address and your host has disabled IPv6, then consider to "
-                                                       << "specify IPv4 address to listen in <listen_host> element of configuration "
-                                                       << "file. Example: <listen_host>0.0.0.0</listen_host>");
+                        "If it is an IPv6 address and your host has disabled IPv6, then consider to "
+                        "specify IPv4 address to listen in <listen_host> element of configuration "
+                        "file. Example: <listen_host>0.0.0.0</listen_host>");
                 }
 
                 throw;
@@ -481,7 +483,7 @@ int Server::main(const std::vector<std::string> & args)
         for (const auto & listen_host : listen_hosts)
         {
             /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
-            try 
+            try
             {
                 /// HTTP
                 if (config().has("http_port"))
@@ -553,7 +555,11 @@ int Server::main(const std::vector<std::string> & args)
             catch (const Poco::Net::NetException & e)
             {
                 if (try_listen && e.code() == POCO_EPROTONOSUPPORT)
-                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message());
+                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message()
+                        << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
+                        "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
+                        "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
+                        " Example for disabled IPv4: <listen_host>::</listen_host>");
                 else
                     throw;
             }
@@ -614,7 +620,7 @@ int Server::main(const std::vector<std::string> & args)
 
             LOG_DEBUG(
                 log, "Closed connections." << (current_connections ? " But " + std::to_string(current_connections) + " remains."
-                    + " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished> ." : ""));
+                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>" : ""));
 
             main_config_reloader.reset();
             users_config_reloader.reset();

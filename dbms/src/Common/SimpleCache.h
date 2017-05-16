@@ -6,13 +6,13 @@
 #include <ext/function_traits.hpp>
 
 
-/** Простейший кэш для свободной функции.
-  * Можете также передать статический метод класса или лямбду без захвата.
-  * Размер неограничен. Значения не устаревают.
-  * Для синхронизации используется mutex.
-  * Подходит только для простейших случаев.
+/** The simplest cache for a free function.
+  * You can also pass a static class method or lambda without captures.
+  * The size is unlimited. Values are stored permanently and never evicted.
+  * Mutex is used for synchronization.
+  * Suitable only for the simplest cases.
   *
-  * Использование:
+  * Usage
   *
   * SimpleCache<decltype(func), &func> func_cached;
   * std::cerr << func_cached(args...);
@@ -41,7 +41,7 @@ public:
                 return it->second;
         }
 
-        /// Сами вычисления делаются не под mutex-ом.
+        /// The calculations themselves are not done under mutex.
         Result res = f(std::forward<Args>(args)...);
 
         {

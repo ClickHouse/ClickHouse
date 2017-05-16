@@ -14,7 +14,7 @@ class StorageReplicatedMergeTree;
 
 
 /** Initializes ZK session.
-  * Exposes ephemeral nodes. It sets the node values ​​that are required for replica detection.
+  * Exposes ephemeral nodes. It sets the node values that are required for replica detection.
   * Starts participation in the leader selection. Starts all background threads.
   * Then monitors whether the session has expired. And if it expired, it will reinitialize it.
   */

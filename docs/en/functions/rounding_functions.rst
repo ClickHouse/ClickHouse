@@ -35,4 +35,4 @@ Accepts a number. If the number is less than one, it returns 0. Otherwise, it ro
 
 roundAge(num)
 ~~~~~~~
-Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to numbers from the set: 18, 25, 35, 45. This function is specific to Yandex.Metrica and used for implementing the report on user age.
+Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to numbers from the set: 18, 25, 35, 45, 55. This function is specific to Yandex.Metrica and used for implementing the report on user age.

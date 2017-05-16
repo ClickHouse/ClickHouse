@@ -3,21 +3,21 @@
 #include <Common/HashTable/HashTable.h>
 
 
-/** Двухуровневая хэш-таблица.
-  * Представляет собой 256 (или 1 << BITS_FOR_BUCKET) маленьких хэш-таблиц (bucket-ов первого уровня).
-  * Для определения, какую из них использовать, берётся один из байтов хэш-функции.
+/** Two-level hash table.
+  * Represents 256 (or 1 << BITS_FOR_BUCKET) small hash tables (buckets of the first level).
+  * To determine which one to use, one of the bytes of the hash function is taken.
   *
-  * Обычно работает чуть-чуть медленнее простой хэш-таблицы.
-  * Тем не менее, обладает преимуществами в некоторых случаях:
-  * - если надо мерджить две хэш-таблицы вместе, то это можно легко распараллелить по bucket-ам;
-  * - лаг при ресайзах размазан, так как маленькие хэш-таблицы ресайзятся по-отдельности;
-  * - по идее, ресайзы кэш-локальны в большем диапазоне размеров.
+  * Usually works a little slower than a simple hash table.
+  * However, it has advantages in some cases:
+  * - if you need to merge two hash tables together, then you can easily parallelize it by buckets;
+  * - delay during resizes is amortized, since the small hash tables will be resized separately;
+  * - in theory, resizes are cache-local in a larger range of sizes.
   */
 
 template <size_t initial_size_degree = 8>
 struct TwoLevelHashTableGrower : public HashTableGrower<initial_size_degree>
 {
-    /// Увеличить размер хэш-таблицы.
+    /// Increase the size of the hash table.
     void increaseSize()
     {
         this->size_degree += this->size_degree >= 15 ? 1 : 2;
@@ -52,7 +52,7 @@ public:
 
     size_t hash(const Key & x) const { return Hash::operator()(x); }
 
-    /// NOTE Плохо для хэш-таблиц больше чем на 2^32 ячеек.
+    /// NOTE Bad for hash tables with more than 2^32 cells.
     static size_t getBucketFromHash(size_t hash_value) { return (hash_value >> (32 - BITS_FOR_BUCKET)) & MAX_BUCKET; }
 
 protected:
@@ -89,13 +89,13 @@ public:
 
     TwoLevelHashTable() {}
 
-    /// Скопировать данные из другой (обычной) хэш-таблицы. У неё должна быть такая же хэш-функция.
+    /// Copy the data from another (normal) hash table. It should have the same hash function.
     template <typename Source>
     TwoLevelHashTable(const Source & src)
     {
         typename Source::const_iterator it = src.begin();
 
-        /// Предполагается, что нулевой ключ (хранящийся отдельно) при итерировании идёт первым.
+        /// It is assumed that the zero key (stored separately) is first in iteration order.
         if (it != src.end() && it.getPtr()->isZero(src))
         {
             insert(*it);
@@ -205,7 +205,7 @@ public:
     iterator end()                     { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
 
 
-    /// Вставить значение. В случае хоть сколько-нибудь сложных значений, лучше используйте функцию emplace.
+    /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
     {
         size_t hash_value = hash(Cell::getKey(x));
@@ -220,14 +220,14 @@ public:
     }
 
 
-    /** Вставить ключ,
-      * вернуть итератор на позицию, которую можно использовать для placement new значения,
-      * а также флаг - был ли вставлен новый ключ.
+    /** Insert the key,
+      * return an iterator to a position that can be used for `placement new` of value,
+      * as well as the flag - whether a new key was inserted.
       *
-      * Вы обязаны сделать placement new значения, если был вставлен новый ключ,
-      * так как при уничтожении хэш-таблицы для него будет вызываться деструктор!
+      * You have to make `placement new` values if you inserted a new key,
+      * since when destroying a hash table, the destructor will be invoked for it!
       *
-      * Пример использования:
+      * Example usage:
       *
       * Map::iterator it;
       * bool inserted;
@@ -242,7 +242,7 @@ public:
     }
 
 
-    /// То же самое, но с заранее вычисленным значением хэш-функции.
+    /// Same, but with a precalculated values of hash function.
     void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
     {
         size_t buck = getBucketFromHash(hash_value);

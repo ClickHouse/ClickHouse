@@ -59,9 +59,15 @@ private:
     const std::string table;
     const std::string where;
     Block sample_block;
-    std::shared_ptr<Poco::Data::SessionPool> pool;
+    std::shared_ptr<Poco::Data::SessionPool> pool = nullptr;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
+
+    using PocoSessionPoolConstructor = std::function<std::shared_ptr<Poco::Data::SessionPool>()>;
+
+    /// Is used to adjust max size of default Poco thread pool. See issue #750
+    /// Acquire the lock, resize pool and construct new Session
+    static std::shared_ptr<Poco::Data::SessionPool> createAndCheckResizePocoSessionPool(PocoSessionPoolConstructor pool_constr);
 };
 
 

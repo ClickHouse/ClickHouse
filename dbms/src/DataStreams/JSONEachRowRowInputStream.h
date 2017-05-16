@@ -11,10 +11,10 @@ namespace DB
 class ReadBuffer;
 
 
-/** Поток для чтения данных в формате JSON, где каждая строчка представлена отдельным JSON объектом.
-  * Объекты могут быть разделены переводом строки, другими пробельными символами в любом количестве и, возможно, запятой.
-  * Поля могут быть перечислены в произвольном порядке (в том числе, в разных строках может быть разный порядок),
-  *  и часть полей может отсутствовать.
+/** A stream for reading data in JSON format, where each row is represented by a separate JSON object.
+  * Objects can be separated by feed return, other whitespace characters in any number and possibly a comma.
+  * Fields can be listed in any order (including, in different lines there may be different order),
+  *  and some fields may be missing.
   */
 class JSONEachRowRowInputStream : public IRowInputStream
 {
@@ -30,10 +30,10 @@ private:
     const Block sample;
     bool skip_unknown;
 
-    /// Буфер для прочитанного из потока имени поля. Используется, если его потребовалось скопировать.
+    /// Buffer for the read from the stream field name. Used when you have to copy it.
     String name_buf;
 
-    /// Хэш-таблица соответствия имя поля -> позиция в блоке. NOTE Можно использовать perfect hash map.
+    /// Hash table match `field name -> position in the block`. NOTE You can use perfect hash map.
     using NameMap = HashMap<StringRef, size_t, StringRefHash>;
     NameMap name_map;
 };

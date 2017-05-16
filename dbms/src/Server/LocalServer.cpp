@@ -22,6 +22,7 @@
 #include <common/ApplicationServerExt.h>
 #include "StatusFile.h"
 #include <Functions/registerFunctions.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
 
 
 namespace DB
@@ -266,6 +267,7 @@ try
     /// Don't initilaize DateLUT
 
     registerFunctions();
+    registerAggregateFunctions();
 
     /// Maybe useless
     if (config().has("macros"))

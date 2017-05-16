@@ -9,6 +9,7 @@
 namespace DB
 {
 
+
 CastTypeBlockInputStream::CastTypeBlockInputStream(
     const Context & context_,
     BlockInputStreamPtr input_,
@@ -40,10 +41,17 @@ Block CastTypeBlockInputStream::readImpl()
     if (!block || cast_types.empty())
         return block;
 
-    Block res;
-    size_t s = block.columns();
+    size_t block_size = block.columns();
 
-    for (size_t i = 0; i < s; ++i)
+    if (block_size != cast_types.size())
+    {
+        LOG_ERROR(log, "Number of columns do not match, skipping cast");
+        return block;
+    }
+
+    Block res;
+
+    for (size_t i = 0; i < block_size; ++i)
     {
         const auto & elem = block.getByPosition(i);
 
@@ -109,14 +117,8 @@ void CastTypeBlockInputStream::collectDifferent(const Block & in_sample, const B
         const auto & in_elem  = in_sample.getByPosition(i);
         const auto & out_elem = out_sample.getByPosition(i);
 
-        /// Force conversion if source type is not Enum.
-        if (dynamic_cast<IDataTypeEnum*>(out_elem.type.get())
-            && !dynamic_cast<IDataTypeEnum*>(in_elem.type.get()))
-        {
-            cast_types[i] = NameAndTypePair(out_elem.name, out_elem.type);
-        }
-        /// Force conversion if both types is numeric but not equal.
-        else if (in_elem.type->behavesAsNumber() && out_elem.type->behavesAsNumber() && !out_elem.type->equals(*in_elem.type))
+        /// Force conversion if source and destination types is different.
+        if (!out_elem.type->equals(*in_elem.type))
         {
             cast_types[i] = NameAndTypePair(out_elem.name, out_elem.type);
         }

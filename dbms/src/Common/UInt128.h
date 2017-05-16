@@ -4,12 +4,16 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#if __SSE4_2__
+#include <nmmintrin.h>
+#endif
+
 
 namespace DB
 {
 
 
-/// Для агрегации по SipHash или конкатенации нескольких полей.
+/// For aggregation by SipHash or concatenation of several fields.
 struct UInt128
 {
 /// Suppress gcc7 warnings: 'prev_key.DB::UInt128::first' may be used uninitialized in this function
@@ -42,22 +46,22 @@ struct UInt128Hash
     }
 };
 
-#if defined(__x86_64__)
+#if __SSE4_2__
 
 struct UInt128HashCRC32
 {
     size_t operator()(UInt128 x) const
     {
         UInt64 crc = -1ULL;
-        asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x.first));
-        asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x.second));
+        crc = _mm_crc32_u64(crc, x.first);
+        crc = _mm_crc32_u64(crc, x.second);
         return crc;
     }
 };
 
 #else
 
-/// На других платформах используем не обязательно CRC32. NOTE Это может сбить с толку.
+/// On other platforms we do not use CRC32. NOTE This can be confusing.
 struct UInt128HashCRC32 : public UInt128Hash {};
 
 #endif
@@ -71,7 +75,7 @@ inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 
-/** Используется при агрегации, для укладки большого количества ключей постоянной длины в хэш-таблицу.
+/** Used for aggregation, for putting a large number of constant-length keys in a hash table.
   */
 struct UInt256
 {
@@ -91,7 +95,7 @@ struct UInt256
     {
         return a == rhs.a && b == rhs.b && c == rhs.c && d == rhs.d;
 
-    /* Так получается не лучше.
+    /* So it's no better.
         return 0xFFFF == _mm_movemask_epi8(_mm_and_si128(
             _mm_cmpeq_epi8(
                 _mm_loadu_si128(reinterpret_cast<const __m128i *>(&a)),
@@ -122,30 +126,30 @@ struct UInt256Hash
     }
 };
 
-#if defined(__x86_64__)
+#if __SSE4_2__
 
 struct UInt256HashCRC32
 {
     size_t operator()(UInt256 x) const
     {
         UInt64 crc = -1ULL;
-        asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x.a));
-        asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x.b));
-        asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x.c));
-        asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x.d));
+        crc = _mm_crc32_u64(crc, x.a);
+        crc = _mm_crc32_u64(crc, x.b);
+        crc = _mm_crc32_u64(crc, x.c);
+        crc = _mm_crc32_u64(crc, x.d);
         return crc;
     }
 };
 
 #else
 
-/// На других платформах используем не обязательно CRC32. NOTE Это может сбить с толку.
+/// We do not need to use CRC32 on other platforms. NOTE This can be confusing.
 struct UInt256HashCRC32
 {
     DefaultHash<UInt64> hash64;
     size_t operator()(UInt256 x) const
     {
-        /// TODO Это не оптимально.
+        /// TODO This is not optimal.
         return hash64(hash64(hash64(hash64(x.a) ^ x.b) ^ x.c) ^ x.d);
     }
 };

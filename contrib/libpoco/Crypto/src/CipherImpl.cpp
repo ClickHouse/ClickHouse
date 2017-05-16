@@ -30,7 +30,7 @@ namespace
 	{
 		unsigned long err;
 		std::string msg;
-
+		
 		while ((err = ERR_get_error()))
 		{
 			if (!msg.empty())
@@ -60,24 +60,28 @@ namespace
 			Direction         dir);
 
 		~CryptoTransformImpl();
-
+		
 		std::size_t blockSize() const;
 
-		int setPadding(int padding);
+		int setPadding(int padding);	
 
 		std::streamsize transform(
 			const unsigned char* input,
 			std::streamsize      inputLength,
 			unsigned char*       output,
 			std::streamsize      outputLength);
-
+		
 		std::streamsize finalize(
 			unsigned char*  output,
 			std::streamsize length);
 
 	private:
 		const EVP_CIPHER* _pCipher;
-		EVP_CIPHER_CTX    _ctx;
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+		EVP_CIPHER_CTX*   _pContext;
+#else
+		EVP_CIPHER_CTX    _context;
+#endif
 		ByteVec           _key;
 		ByteVec           _iv;
 	};
@@ -92,32 +96,54 @@ namespace
 		_key(key),
 		_iv(iv)
 	{
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+		_pContext = EVP_CIPHER_CTX_new();
 		EVP_CipherInit(
-			&_ctx,
+			_pContext,
 			_pCipher,
 			&_key[0],
 			_iv.empty() ? 0 : &_iv[0],
 			(dir == DIR_ENCRYPT) ? 1 : 0);
+#else
+		EVP_CipherInit(
+			&_context,
+			_pCipher,
+			&_key[0],
+			_iv.empty() ? 0 : &_iv[0],
+			(dir == DIR_ENCRYPT) ? 1 : 0);
+#endif
 	}
 
 
 	CryptoTransformImpl::~CryptoTransformImpl()
 	{
-		EVP_CIPHER_CTX_cleanup(&_ctx);
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+		EVP_CIPHER_CTX_cleanup(_pContext);
+#else
+		EVP_CIPHER_CTX_cleanup(&_context);
+#endif
 	}
 
 
 	std::size_t CryptoTransformImpl::blockSize() const
 	{
-		return EVP_CIPHER_CTX_block_size(&_ctx);
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+		return EVP_CIPHER_CTX_block_size(_pContext);
+#else
+		return EVP_CIPHER_CTX_block_size(&_context);
+#endif
 	}
 
-
+	
 	int CryptoTransformImpl::setPadding(int padding)
 	{
-		return EVP_CIPHER_CTX_set_padding(&_ctx, padding);
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+		return EVP_CIPHER_CTX_block_size(_pContext);
+#else
+		return EVP_CIPHER_CTX_set_padding(&_context, padding);
+#endif
 	}
-
+	
 
 	std::streamsize CryptoTransformImpl::transform(
 		const unsigned char* input,
@@ -125,16 +151,24 @@ namespace
 		unsigned char*       output,
 		std::streamsize      outputLength)
 	{
-		poco_assert (outputLength >= std::streamsize(inputLength + blockSize() - 1));
+		poco_assert (outputLength >= (inputLength + blockSize() - 1));
 
 		int outLen = static_cast<int>(outputLength);
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 		int rc = EVP_CipherUpdate(
-			&_ctx,
+			_pContext,
 			output,
 			&outLen,
 			input,
 			static_cast<int>(inputLength));
-
+#else
+		int rc = EVP_CipherUpdate(
+			&_context,
+			output,
+			&outLen,
+			input,
+			static_cast<int>(inputLength));
+#endif
 		if (rc == 0)
 			throwError();
 
@@ -146,18 +180,22 @@ namespace
 		unsigned char*	output,
 		std::streamsize length)
 	{
-		poco_assert (length >= (std::streamsize)blockSize());
-
+		poco_assert (length >= blockSize());
+		
 		int len = static_cast<int>(length);
 
 		// Use the '_ex' version that does not perform implicit cleanup since we
 		// will call EVP_CIPHER_CTX_cleanup() from the dtor as there is no
 		// guarantee that finalize() will be called if an error occurred.
-		int rc = EVP_CipherFinal_ex(&_ctx, output, &len);
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+		int rc = EVP_CipherFinal_ex(_pContext, output, &len);
+#else
+		int rc = EVP_CipherFinal_ex(&_context, output, &len);
+#endif
 
 		if (rc == 0)
 			throwError();
-
+			
 		return static_cast<std::streamsize>(len);
 	}
 }

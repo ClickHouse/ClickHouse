@@ -22,15 +22,15 @@ namespace ErrorCodes
 }
 
 
-/** Многие современные аллокаторы (например, tcmalloc) не умеют делать mremap для realloc,
-  *  даже в случае достаточно больших кусков памяти.
-  * Хотя это позволяет увеличить производительность и уменьшить потребление памяти во время realloc-а.
-  * Чтобы это исправить, делаем mremap самостоятельно, если кусок памяти достаточно большой.
-  * Порог (64 МБ) выбран достаточно большим, так как изменение адресного пространства
-  *  довольно сильно тормозит, особенно в случае наличия большого количества потоков.
-  * Рассчитываем, что набор операций mmap/что-то сделать/mremap может выполняться всего лишь около 1000 раз в секунду.
+/** Many modern allocators (for example, tcmalloc) do not do a mremap for realloc,
+  *  even in case of large enough chunks of memory.
+  * Although this allows you to increase performance and reduce memory consumption during realloc.
+  * To fix this, we do mremap manually if the chunk of memory is large enough.
+  * The threshold (64 MB) is chosen quite large, since changing the address space is
+  *  very slow, especially in the case of a large number of threads.
+  * We expect that the set of operations mmap/something to do/mremap can only be performed about 1000 times per second.
   *
-  * PS. Также это требуется, потому что tcmalloc не может выделить кусок памяти больше 16 GB.
+  * PS. This is also required, because tcmalloc can not allocate a chunk of memory greater than 16 GB.
   */
 static constexpr size_t MMAP_THRESHOLD = 64 * (1 << 20);
 static constexpr size_t MMAP_MIN_ALIGNMENT = 4096;

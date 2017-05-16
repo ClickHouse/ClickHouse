@@ -22,7 +22,7 @@ namespace
 template <StreamUnionMode mode>
 struct OutputData;
 
-/// Блок или эксепшен.
+/// A block or an exception.
 template <>
 struct OutputData<StreamUnionMode::Basic>
 {
@@ -34,7 +34,7 @@ struct OutputData<StreamUnionMode::Basic>
     OutputData(std::exception_ptr & exception_) : exception(exception_) {}
 };
 
-/// Блок + дополнительнцю информацию или эксепшен.
+/// Block + additional information or an exception.
 template <>
 struct OutputData<StreamUnionMode::ExtraInfo>
 {
@@ -49,17 +49,17 @@ struct OutputData<StreamUnionMode::ExtraInfo>
 
 }
 
-/** Объединяет несколько источников в один.
-  * Блоки из разных источников перемежаются друг с другом произвольным образом.
-  * Можно указать количество потоков (max_threads),
-  *  в которых будет выполняться получение данных из разных источников.
+/** Merges several sources into one.
+  * Blocks from different sources are interleaved with each other in an arbitrary way.
+  * You can specify the number of threads (max_threads),
+  *  in which data will be retrieved from different sources.
   *
-  * Устроено так:
-  * - с помощью ParallelInputsProcessor в нескольких потоках вынимает из источников блоки;
-  * - полученные блоки складываются в ограниченную очередь готовых блоков;
-  * - основной поток вынимает готовые блоки из очереди готовых блоков;
-  * - если указан режим StreamUnionMode::ExtraInfo, в дополнение к блокам UnionBlockInputStream
-  *   вынимает информацию о блоках; в таком случае все источники должны поддержать такой режим.
+  * It's managed like this:
+  * - with the help of ParallelInputsProcessor in several threads it takes out blocks from the sources;
+  * - the completed blocks are added to a limited queue of finished blocks;
+  * - the main thread takes out completed blocks from the queue of finished blocks;
+  * - if the StreamUnionMode::ExtraInfo mode is specified, in addition to the UnionBlockInputStream
+  *   extracts blocks information; In this case all sources should support such mode.
   */
 
 template <StreamUnionMode mode = StreamUnionMode::Basic>
@@ -95,7 +95,7 @@ public:
         for (size_t i = 0; i < children.size(); ++i)
             children_ids[i] = children[i]->getID();
 
-        /// Порядок не имеет значения.
+        /// Order does not matter.
         std::sort(children_ids.begin(), children_ids.end());
 
         for (size_t i = 0; i < children_ids.size(); ++i)
@@ -121,8 +121,8 @@ public:
         }
     }
 
-    /** Отличается от реализации по-умолчанию тем, что пытается остановить все источники,
-      *  пропуская отвалившиеся по эксепшену.
+    /** Different from the default implementation by trying to stop all sources,
+      * skipping failed by execution.
       */
     void cancel() override
     {
@@ -150,8 +150,8 @@ protected:
         std::exception_ptr exception;
         if (!all_read)
         {
-            /** Прочитаем всё до конца, чтобы ParallelInputsProcessor не заблокировался при попытке вставить в очередь.
-              * Может быть, в очереди есть ещё эксепшен.
+            /** Let's read everything up to the end, so that ParallelInputsProcessor is not blocked when trying to insert into the queue.
+              * Maybe there is an exception in the queue.
               */
             OutputData<mode> res;
             while (true)
@@ -181,17 +181,17 @@ protected:
             std::rethrow_exception(exception);
     }
 
-    /// Ничего не делаем, чтобы подготовка к выполнению запроса делалась параллельно, в ParallelInputsProcessor.
+    /// Do nothing, to make the preparation for the query execution in parallel, in ParallelInputsProcessor.
     void readPrefix() override
     {
     }
 
-    /** Возможны следующие варианты:
-      * 1. Функция readImpl вызывается до тех пор, пока она не вернёт пустой блок.
-      *  Затем вызывается функция readSuffix и затем деструктор.
-      * 2. Вызывается функция readImpl. В какой-то момент, возможно из другого потока вызывается функция cancel.
-      *  Затем вызывается функция readSuffix и затем деструктор.
-      * 3. В любой момент, объект может быть и так уничтожен (вызываться деструктор).
+    /** The following options are possible:
+      * 1. `readImpl` function is called until it returns an empty block.
+      *  Then `readSuffix` function is called and then destructor.
+      * 2. `readImpl` function is called. At some point, `cancel` function is called perhaps from another thread.
+      *  Then `readSuffix` function is called and then destructor.
+      * 3. At any time, the object can be destroyed (destructor called).
       */
 
     Block readImpl() override
@@ -199,14 +199,14 @@ protected:
         if (all_read)
             return received_payload.block;
 
-        /// Запускаем потоки, если это ещё не было сделано.
+        /// Run threads if this has not already been done.
         if (!started)
         {
             started = true;
             processor.process();
         }
 
-        /// Будем ждать, пока будет готов следующий блок или будет выкинуто исключение.
+        /// We will wait until the next block is ready or an exception is thrown.
         //std::cerr << "popping\n";
         output_queue.pop(received_payload);
 
@@ -223,7 +223,7 @@ protected:
         return received_payload.block;
     }
 
-    /// Вызывается либо после того, как всё прочитано, либо после cancel-а.
+    /// Called either after everything is read, or after cancel.
     void readSuffix() override
     {
         //std::cerr << "readSuffix\n";
@@ -255,11 +255,11 @@ private:
     using OutputQueue = ConcurrentBoundedQueue<Payload>;
 
 private:
-    /** Очередь готовых блоков. Также туда можно положить эксепшен вместо блока.
-      * Когда данные закончатся - в очередь вставляется пустой блок.
-      * В очередь всегда (даже после исключения или отмены запроса) рано или поздно вставляется пустой блок.
-      * Очередь всегда (даже после исключения или отмены запроса, даже в деструкторе) нужно дочитывать до пустого блока,
-      *  иначе ParallelInputsProcessor может заблокироваться при вставке в очередь.
+    /** The queue of the finished blocks. Also, you can put an exception instead of a block.
+      * When data is run out, an empty block is inserted into the queue.
+      * Sooner or later, an empty block is always inserted into the queue (even after exception or query cancellation).
+      * The queue is always (even after exception or canceling the query, even in destructor) you must read up to an empty block,
+      *  otherwise ParallelInputsProcessor can be blocked during insertion into the queue.
       */
     OutputQueue output_queue;
 
@@ -297,12 +297,12 @@ private:
         {
             //std::cerr << "pushing exception\n";
 
-            /// Порядок строк имеет значение. Если его поменять, то возможна ситуация,
-            ///  когда перед эксепшеном, в очередь окажется вставлен пустой блок (конец данных),
-            ///  и эксепшен потеряется.
+            /// The order of the rows matters. If it is changed, then the situation is possible,
+            ///  when before exception, an empty block (end of data) will be put into the queue,
+            ///  and the exception is lost.
 
             parent.output_queue.push(exception);
-            parent.cancel();    /// Не кидает исключений.
+            parent.cancel();    /// Does not throw exceptions.
         }
 
         Self & parent;

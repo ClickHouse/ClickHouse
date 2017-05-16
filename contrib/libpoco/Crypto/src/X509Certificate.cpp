@@ -59,7 +59,11 @@ X509Certificate::X509Certificate(X509* pCert, bool shared):
 	
 	if (shared)
 	{
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+		X509_up_ref(_pCert);
+#else
 		_pCert->references++;
+#endif
 	}
 
 	init();
@@ -205,10 +209,10 @@ std::string X509Certificate::issuerName(NID nid) const
 	if (X509_NAME* issuer = X509_get_issuer_name(_pCert))
     {
 		char buffer[NAME_BUFFER_SIZE];
-		X509_NAME_get_text_by_NID(issuer, nid, buffer, sizeof(buffer));
-		return std::string(buffer);
+		if (X509_NAME_get_text_by_NID(issuer, nid, buffer, sizeof(buffer)) >= 0)
+			return std::string(buffer);
     }
-    else return std::string();
+    return std::string();
 }
 
 
@@ -217,10 +221,10 @@ std::string X509Certificate::subjectName(NID nid) const
 	if (X509_NAME* subj = X509_get_subject_name(_pCert))
     {
 		char buffer[NAME_BUFFER_SIZE];
-		X509_NAME_get_text_by_NID(subj, nid, buffer, sizeof(buffer));
-		return std::string(buffer);
+		if (X509_NAME_get_text_by_NID(subj, nid, buffer, sizeof(buffer)) >= 0)
+			return std::string(buffer);
     }
-    else return std::string();
+    return std::string();
 }
 
 
@@ -277,6 +281,14 @@ bool X509Certificate::issuedBy(const X509Certificate& issuerCertificate) const
 	int rc = X509_verify(pCert, pIssuerPublicKey);
 	EVP_PKEY_free(pIssuerPublicKey);
 	return rc == 1;
+}
+
+
+bool X509Certificate::equals(const X509Certificate& otherCertificate) const
+{
+	X509* pCert = const_cast<X509*>(_pCert);
+	X509* pOtherCert = const_cast<X509*>(otherCertificate.certificate());
+	return X509_cmp(pCert, pOtherCert) == 0;
 }
 
 

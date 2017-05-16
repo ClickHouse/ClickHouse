@@ -5,6 +5,7 @@ system.dictionaries
 
 Столбцы:
 ::
+
   name String                   - имя словаря
   type String                   - тип словаря: Flat, Hashed, Cache
   origin String                 - путь к конфигурационному файлу, в котором описан словарь

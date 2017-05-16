@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -30,10 +31,7 @@ public:
         return nested_func->getName() + "State";
     }
 
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeAggregateFunction>(nested_func_owner, arguments, params);
-    }
+    DataTypePtr getReturnType() const override;
 
     void setArguments(const DataTypes & arguments_) override
     {

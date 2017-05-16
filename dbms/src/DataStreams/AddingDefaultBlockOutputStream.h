@@ -11,8 +11,8 @@ namespace DB
 {
 
 
-/** Добавляет в блок недостающие столбцы со значениями по-умолчанию.
-  * Эти столбцы - материалированные (не константы).
+/** Adds missing columns to the block with default values.
+  * These columns are materialized (not constants).
   */
 class AddingDefaultBlockOutputStream : public IBlockOutputStream
 {

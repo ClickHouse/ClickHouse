@@ -7,10 +7,10 @@
 #include <tuple>
 #include <type_traits>
 
-/** Этот класс предоставляет способ, чтобы оценить погрешность результата применения алгоритма HyperLogLog.
-  * Эмирические наблюдения показывают, что большие погрешности возникают при E < 5 * 2^precision, где
-  * E - возвращаемое значение алгоритмом HyperLogLog, и precision - параметр точности HyperLogLog.
-  * См. "HyperLogLog in Practice: Algorithmic Engineering of a State of The Art Cardinality Estimation Algorithm".
+/** This class provides a way to evaluate the error in the result of applying the HyperLogLog algorithm.
+  * Empirical observations show that large errors occur at E < 5 * 2^precision, where
+  * E is the return value of the HyperLogLog algorithm, and `precision` is the HyperLogLog precision parameter.
+  * See "HyperLogLog in Practice: Algorithmic Engineering of a State of the Art Cardinality Estimation Algorithm".
   * (S. Heule et al., Proceedings of the EDBT 2013 Conference).
   */
 template <typename BiasData>
@@ -22,14 +22,14 @@ public:
         return false;
     }
 
-    /// Предельное количество уникальных значений до которого должна примениться поправка
-    /// из алгоритма LinearCounting.
+    /// Maximum number of unique values to which the correction should apply
+    /// from the LinearCounting algorithm.
     static double getThreshold()
     {
         return BiasData::getThreshold();
     }
 
-    /// Вернуть оценку погрешности.
+    /// Return the error estimate.
     static double getBias(double raw_estimate)
     {
         const auto & estimates = BiasData::getRawEstimates();
@@ -52,7 +52,7 @@ public:
         }
         else
         {
-            /// Получаем оценку погрешности путём линейной интерполяции.
+            /// We get the error estimate by linear interpolation.
             size_t index = std::distance(estimates.begin(), it);
 
             double estimate1 = estimates[index - 1];
@@ -60,7 +60,7 @@ public:
 
             double bias1 = biases[index - 1];
             double bias2 = biases[index];
-            /// Предполагается, что условие estimate1 < estimate2 всегда выполнено.
+            /// It is assumed that the estimate1 < estimate2 condition is always satisfied.
             double slope = (bias2 - bias1) / (estimate2 - estimate1);
 
             return bias1 + slope * (raw_estimate - estimate1);
@@ -68,7 +68,7 @@ public:
     }
 
 private:
-    /// Статические проверки.
+    /// Static checks.
     using TRawEstimatesRef = decltype(BiasData::getRawEstimates());
     using TRawEstimates = typename std::remove_reference<TRawEstimatesRef>::type;
 
@@ -82,10 +82,10 @@ private:
                   "Bias estimator has inconsistent data");
 };
 
-/** Тривиальный случай HyperLogLogBiasEstimator: употребляется, если не хотим исправить
-  * погрешность. Это имеет смысль при маленьких значениях параметра точности, например 5 или 12.
-  * Тогда применяются поправки из оригинальной версии алгоритма HyperLogLog.
-  * См. "HyperLogLog: The analysis of a near-optimal cardinality estimation algorithm"
+/** Trivial case of HyperLogLogBiasEstimator: used if we do not want to fix
+  * error. This has meaning for small values of the accuracy parameter, for example 5 or 12.
+  * Then the corrections from the original version of the HyperLogLog algorithm are applied.
+  * See "HyperLogLog: The analysis of a near-optimal cardinality estimation algorithm"
   * (P. Flajolet et al., AOFA '07: Proceedings of the 2007 International Conference on Analysis
   * of Algorithms)
   */

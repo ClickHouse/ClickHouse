@@ -883,7 +883,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
         {
             node->kind = ASTFunction::LAMBDA_EXPRESSION;
         }
-        else if (context.getAggregateFunctionFactory().isAggregateFunctionName(node->name))
+        else if (AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
         {
             node->kind = ASTFunction::AGGREGATE_FUNCTION;
         }
@@ -2077,7 +2077,7 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
             aggregate.argument_names[i] = name;
         }
 
-        aggregate.function = context.getAggregateFunctionFactory().get(node->name, types);
+        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types);
 
         if (node->parameters)
         {

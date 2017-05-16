@@ -1,57 +1,54 @@
 #pragma once
 
-/** SipHash - быстрая криптографическая хэш функция для коротких строк.
-  * Взято отсюда: https://www.131002.net/siphash/
+/** SipHash is a fast cryptographic hash function for short strings.
+  * Taken from here: https://www.131002.net/siphash/
   *
-  * Сделано два изменения:
-  * - возвращает 128 бит, а не 64;
-  * - сделано потоковой (можно вычислять по частям).
+  * This is SipHash 2-4 variant.
   *
-  * На коротких строках (URL, поисковые фразы) более чем в 3 раза быстрее MD5 от OpenSSL.
-  * (~ 700 МБ/сек., 15 млн. строк в секунду)
+  * Two changes are made:
+  * - returns also 128 bits, not only 64;
+  * - done streaming (can be calculated in parts).
+  *
+  * On short strings (URL, search phrases) more than 3 times faster than MD5 from OpenSSL.
+  * (~ 700 MB/sec, 15 million strings per second)
   */
 
-#include <cstdint>
-#include <cstddef>
-#include <Core/Types.h>
+#include <common/Types.h>
 
-#define ROTL(x,b) static_cast<u64>( ((x) << (b)) | ( (x) >> (64 - (b))) )
+#define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
 
-#define SIPROUND                                            \
-    do                                                         \
-    {                                                        \
-        v0 += v1; v1=ROTL(v1,13); v1 ^= v0; v0=ROTL(v0,32); \
-        v2 += v3; v3=ROTL(v3,16); v3 ^= v2;                    \
-        v0 += v3; v3=ROTL(v3,21); v3 ^= v0;                    \
-        v2 += v1; v1=ROTL(v1,17); v1 ^= v2; v2=ROTL(v2,32); \
+#define SIPROUND                                                  \
+    do                                                            \
+    {                                                             \
+        v0 += v1; v1 = ROTL(v1, 13); v1 ^= v0; v0 = ROTL(v0, 32); \
+        v2 += v3; v3 = ROTL(v3, 16); v3 ^= v2;                    \
+        v0 += v3; v3 = ROTL(v3, 21); v3 ^= v0;                    \
+        v2 += v1; v1 = ROTL(v1, 17); v1 ^= v2; v2 = ROTL(v2, 32); \
     } while(0)
 
 
 class SipHash
 {
 private:
-    using u64 = DB::UInt64;
-    using u8 = DB::UInt8;
+    /// State.
+    UInt64 v0;
+    UInt64 v1;
+    UInt64 v2;
+    UInt64 v3;
 
-    /// Состояние.
-    u64 v0;
-    u64 v1;
-    u64 v2;
-    u64 v3;
+    /// How many bytes have been processed.
+    UInt64 cnt;
 
-    /// Сколько байт обработано.
-    u64 cnt;
-
-    /// Текущие 8 байт входных данных.
+    /// The current 8 bytes of input data.
     union
     {
-        u64 current_word;
-        u8 current_bytes[8];
+        UInt64 current_word;
+        UInt8 current_bytes[8];
     };
 
     void finalize()
     {
-        /// В последний свободный байт пишем остаток от деления длины на 256.
+        /// In the last free byte, we write the remainder of the division by 256.
         current_bytes[7] = cnt;
 
         v3 ^= current_word;
@@ -67,10 +64,10 @@ private:
     }
 
 public:
-    /// Аргументы - seed.
-    SipHash(u64 k0 = 0, u64 k1 = 0)
+    /// Arguments - seed.
+    SipHash(UInt64 k0 = 0, UInt64 k1 = 0)
     {
-        /// Инициализируем состояние некоторыми случайными байтами и seed-ом.
+        /// Initialize the state with some random bytes and seed.
         v0 = 0x736f6d6570736575ULL ^ k0;
         v1 = 0x646f72616e646f6dULL ^ k1;
         v2 = 0x6c7967656e657261ULL ^ k0;
@@ -80,11 +77,11 @@ public:
         current_word = 0;
     }
 
-    void update(const char * data, u64 size)
+    void update(const char * data, UInt64 size)
     {
         const char * end = data + size;
 
-        /// Дообработаем остаток от предыдущего апдейта, если есть.
+        /// We'll finish to process the remainder of the previous update, if any.
         if (cnt & 7)
         {
             while (cnt & 7 && data < end)
@@ -94,7 +91,7 @@ public:
                 ++cnt;
             }
 
-            /// Если всё ещё не хватает байт до восьмибайтового слова.
+            /// If we still do not have enough bytes to an 8-byte word.
             if (cnt & 7)
                 return;
 
@@ -108,7 +105,7 @@ public:
 
         while (data + 8 <= end)
         {
-            current_word = *reinterpret_cast<const u64 *>(data);
+            current_word = *reinterpret_cast<const UInt64 *>(data);
 
             v3 ^= current_word;
             SIPROUND;
@@ -118,7 +115,7 @@ public:
             data += 8;
         }
 
-        /// Заполняем остаток, которого не хватает до восьмибайтового слова.
+        /// Pad the remainder, which is missing up to an 8-byte word.
         current_word = 0;
         switch (end - data)
         {
@@ -133,23 +130,23 @@ public:
         }
     }
 
-    /// Получить результат в некотором виде. Это можно сделать только один раз!
+    /// Get the result in some form. This can only be done once!
 
     void get128(char * out)
     {
         finalize();
-        reinterpret_cast<u64 *>(out)[0] = v0 ^ v1;
-        reinterpret_cast<u64 *>(out)[1] = v2 ^ v3;
+        reinterpret_cast<UInt64 *>(out)[0] = v0 ^ v1;
+        reinterpret_cast<UInt64 *>(out)[1] = v2 ^ v3;
     }
 
-    void get128(u64 & lo, u64 & hi)
+    void get128(UInt64 & lo, UInt64 & hi)
     {
         finalize();
         lo = v0 ^ v1;
         hi = v2 ^ v3;
     }
 
-    u64 get64()
+    UInt64 get64()
     {
         finalize();
         return v0 ^ v1 ^ v2 ^ v3;
@@ -160,6 +157,7 @@ public:
 #undef ROTL
 #undef SIPROUND
 
+#include <cstddef>
 
 inline void sipHash128(const char * data, const size_t size, char * out)
 {
@@ -168,7 +166,7 @@ inline void sipHash128(const char * data, const size_t size, char * out)
     hash.get128(out);
 }
 
-inline DB::UInt64 sipHash64(const char * data, const size_t size)
+inline UInt64 sipHash64(const char * data, const size_t size)
 {
     SipHash hash;
     hash.update(data, size);
@@ -177,7 +175,7 @@ inline DB::UInt64 sipHash64(const char * data, const size_t size)
 
 #include <string>
 
-inline DB::UInt64 sipHash64(const std::string & s)
+inline UInt64 sipHash64(const std::string & s)
 {
     return sipHash64(s.data(), s.size());
 }

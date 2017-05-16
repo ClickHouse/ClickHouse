@@ -1,3 +1,5 @@
+.. _table_engines-mergetree:
+
 MergeTree
 ---------
 
@@ -8,10 +10,12 @@ MergeTree
 
 Пример без поддержки сэмплирования:
 ::
+
   MergeTree(EventDate, (CounterID, EventDate), 8192)
 
 Пример с поддержкой сэмплирования:
 ::
+
   MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)), 8192)
 
 В таблице типа MergeTree обязательно должен быть отдельный столбец, содержащий дату. В этом примере, это - столбец EventDate. Тип столбца с датой - обязательно Date (а не DateTime).

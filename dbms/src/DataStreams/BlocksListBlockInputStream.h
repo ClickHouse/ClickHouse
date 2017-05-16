@@ -6,17 +6,17 @@
 namespace DB
 {
 
-/** Поток блоков, из которого можно прочитать следующий блок из явно предоставленного списка.
-  * Также смотрите OneBlockInputStream.
+/** A stream of blocks from which you can read the next block from an explicitly provided list.
+  * Also see OneBlockInputStream.
   */
 class BlocksListBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    /// Захватывает владение списком блоков.
+    /// Acquires the ownership of the block list.
     BlocksListBlockInputStream(BlocksList && list_)
         : list(std::move(list_)), it(list.begin()), end(list.end()) {}
 
-    /// Использует лежащий где-то ещё список блоков.
+    /// Uses a list of blocks lying somewhere else.
     BlocksListBlockInputStream(BlocksList::iterator & begin_, BlocksList::iterator & end_)
         : it(begin_), end(end_) {}
 

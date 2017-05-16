@@ -39,10 +39,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::IDataType & what)
 std::ostream & operator<<(std::ostream & stream, const DB::IStorage & what)
 {
     stream << "IStorage(name = " << what.getName() << ", tableName = " << what.getTableName() << ") {"
-// TODO: uncomment #if and fix me:
-#if !defined(__APPLE__)
-           << what.getColumnsList()
-#endif
+           << what.getColumnsList().toString()
            << "}";
     // isRemote supportsSampling supportsFinal supportsPrewhere supportsParallelReplicas
     return stream;
@@ -64,10 +61,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::IFunction & what)
 std::ostream & operator<<(std::ostream & stream, const DB::Block & what)
 {
     stream << "Block("
-// TODO: uncomment #if and fix me:
-#if !defined(__APPLE__)
-           << "data = " << what.getColumns()
-#endif
+           << "size = " << what.getColumns().size()
            << ")";
     return stream;
 }

@@ -8,30 +8,30 @@
 namespace DB
 {
 
-/** Массив (почти) неизменяемого размера:
-  *  размер задаётся в конструкторе;
-  *  метод resize приводит к удалению старых данных и нужен лишь для того,
-  *   чтобы можно было сначала создать пустой объект, используя конструктор по-умолчанию,
-  *   а потом уже определиться с размером.
+/** An array of (almost) unchangable size:
+  *  the size is specified in the constructor;
+  *  `resize` method removes old data, and necessary only for
+  *  so that you can first create an empty object using the default constructor,
+  *  and then decide on the size.
   *
-  * Есть возможность не инициализировать элементы по-умолчанию, а создавать их inplace.
-  * Деструкторы элементов вызываются автоматически.
+  * There is a possibility to not initialize elements by default, but create them inplace.
+  * Member destructors are called automatically.
   *
-  * sizeof равен размеру одного указателя.
+  * `sizeof` is equal to the size of one pointer.
   *
-  * Не exception-safe.
-  * Копирование не поддерживается. Перемещение опустошает исходный объект.
-  * То есть, использовать этот массив во многих случаях неудобно.
+  * Not exception-safe.
+  * Copying is not supported. Moving empties the original object.
+  * That is, it is inconvenient to use this array in many cases.
   *
-  * Предназначен для ситуаций, в которых создаётся много массивов одинакового небольшого размера,
-  *  но при этом размер не известен во время компиляции.
-  * Также даёт существенное преимущество в случаях, когда важно, чтобы sizeof был минимальным.
-  * Например, если массивы кладутся в open-addressing хэш-таблицу с inplace хранением значений (как HashMap)
+  * Designed for situations in which many arrays of the same small size are created,
+  *  but the size is not known at compile time.
+  * Also gives a significant advantage in cases where it is important that `sizeof` is minimal.
+  * For example, if arrays are put in an open-addressing hash table with inplace storage of values (like HashMap)
   *
-  * В этом случае, по сравнению с std::vector:
-  * - для массивов размером в 1 элемент - преимущество примерно в 2 раза;
-  * - для массивов размером в 5 элементов - преимущество примерно в 1.5 раза
-  *   (в качестве T использовались DB::Field, содержащие UInt64 и String);
+  * In this case, compared to std::vector:
+  * - for arrays of 1 element size - an advantage of about 2 times;
+  * - for arrays of 5 elements - an advantage of about 1.5 times
+  *   (DB::Field, containing UInt64 and String, used as T);
   */
 
 const size_t empty_auto_array_helper = 0;
@@ -42,7 +42,7 @@ template <typename T>
 class AutoArray
 {
 public:
-    /// Для отложенного создания.
+    /// For deferred creation.
     AutoArray()
     {
         setEmpty();
@@ -53,16 +53,16 @@ public:
         init(size_, false);
     }
 
-    /** Не будут вызваны конструкторы по-умолчанию для элементов.
-      * В этом случае, вы должны вставить все элементы с помощью функции place и placement new,
-      *  так как для них потом будут вызваны деструкторы.
+    /** The default constructors for elements will not be called.
+      * In this case, you must insert all elements using the `place` and `placement new` functions,
+      *  since destructors are then called for them.
       */
     AutoArray(size_t size_, const DontInitElemsTag & tag)
     {
         init(size_, true);
     }
 
-    /** Инициализирует все элементы копирующим конструктором с параметром value.
+    /** Initializes all elements with a copy constructor with the `value` parameter.
       */
     AutoArray(size_t size_, const T & value)
     {
@@ -74,7 +74,7 @@ public:
         }
     }
 
-    /** resize удаляет все существующие элементы.
+    /** `resize` removes all existing items.
       */
     void resize(size_t size_, bool dont_init_elems = false)
     {
@@ -82,7 +82,7 @@ public:
         init(size_, dont_init_elems);
     }
 
-    /** Премещение.
+    /** Move operations.
       */
     AutoArray(AutoArray && src)
     {
@@ -125,10 +125,10 @@ public:
         setEmpty();
     }
 
-    /** Можно читать и модифицировать элементы с помощью оператора []
-      *  только если элементы были инициализированы
-      *  (то есть, в конструктор не был передан DontInitElemsTag,
-      *   или вы их инициализировали с помощью place и placement new).
+    /** You can read and modify elements using the [] operator
+      *  only if items were initialized
+      *  (that is, into the constructor was not passed DontInitElemsTag,
+      *   or you initialized them using `place` and `placement new`).
       */
     T & operator[](size_t i)
     {
@@ -140,9 +140,9 @@ public:
         return elem(i);
     }
 
-    /** Получить кусок памяти, в котором должен быть расположен элемент.
-      * Функция предназначена, чтобы инициализировать элемент,
-      *  который ещё не был инициализирован:
+    /** Get the piece of memory in which the element should be located.
+      * The function is intended to initialize an element,
+      *  which has not yet been initialized
       * new (arr.place(i)) T(args);
       */
     char * place(size_t i)
