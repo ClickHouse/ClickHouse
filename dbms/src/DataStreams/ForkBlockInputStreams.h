@@ -7,27 +7,27 @@ namespace DB
 {
 
 
-/** Позволяет из одного источника сделать несколько.
-  * Используется для однопроходного выполнения сразу нескольких запросов.
+/** Allows you to make several sources from one.
+  * Used for single-pass execution of several queries at once.
   *
-  * Несколько полученных источников должны читаться из разных потоков!
-  * Расходует O(1) оперативки (не буферизует все данные).
-  * Для этого, чтения из разных полученных источников синхронизируются:
-  *  чтение следующего блока блокируется, пока все источники не прочитают текущий блок.
+  * Multiple received sources should be read from different threads!
+  * Uses O(1) RAM (does not buffer all data).
+  * For this, readings from different sources are synchronized:
+  *  reading of next block is blocked until all sources have read the current block.
   */
 class ForkBlockInputStreams : private boost::noncopyable
 {
 public:
     ForkBlockInputStreams(BlockInputStreamPtr source_) : source(source_) {}
 
-    /// Создать источник. Вызывайте функцию столько раз, сколько размноженных источников вам нужно.
+    /// Create a source. Call the function as many times as many forked sources you need.
     BlockInputStreamPtr createInput()
     {
         destinations.emplace_back(std::make_shared<QueueBlockIOStream>(1));
         return destinations.back();
     }
 
-    /// Перед тем, как из полученных источников можно будет читать, необходимо "запустить" эту конструкцию.
+    /// Before you can read from the sources you have to "run" this construct.
     void run()
     {
         while (1)
@@ -56,12 +56,12 @@ public:
     }
 
 private:
-    /// Откуда читать.
+    /// From where to read.
     BlockInputStreamPtr source;
 
-    /** Размноженные источники.
-      * Сделаны на основе очереди небольшой длины.
-      * Блок из source кладётся в каждую очередь.
+    /** Forked sources.
+      * Made on the basis of a queue of small length.
+      * A block from `source` is put in each queue.
       */
     using Destination = std::shared_ptr<QueueBlockIOStream>;
     using Destinations = std::list<Destination>;

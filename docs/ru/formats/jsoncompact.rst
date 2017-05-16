@@ -5,6 +5,7 @@ JSONCompact
 
 Пример:
 ::
+
   {
           "meta":
           [

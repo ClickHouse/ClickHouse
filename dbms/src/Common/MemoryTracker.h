@@ -102,10 +102,10 @@ public:
 };
 
 
-/** Объект MemoryTracker довольно трудно протащить во все места, где выделяются существенные объёмы памяти.
-  * Поэтому, используется thread-local указатель на используемый MemoryTracker или nullptr, если его не нужно использовать.
-  * Этот указатель выставляется, когда в данном потоке следует отслеживать потребление памяти.
-  * Таким образом, его нужно всего-лишь протащить во все потоки, в которых обрабатывается один запрос.
+/** The MemoryTracker object is quite difficult to pass to all places where significant amounts of memory are allocated.
+  * Therefore, a thread-local pointer to used MemoryTracker is set, or nullptr if MemoryTracker does not need to be used.
+  * This pointer is set when memory consumption is monitored in current thread.
+  * So, you just need to pass it to all the threads that handle one request.
   */
 extern __thread MemoryTracker * current_memory_tracker;
 

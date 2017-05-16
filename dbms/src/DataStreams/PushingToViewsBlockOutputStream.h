@@ -12,8 +12,8 @@ namespace DB
 {
 
 
-/** Записывает данные в указанную таблицу, при этом рекурсивно вызываясь от всех зависимых вьюшек.
-  * Если вьюшка не материализованная, то в нее данные не записываются, лишь перенаправляются дальше.
+/** Writes data to the specified table, recursively being called from all dependent views.
+  * If the view is not materialized, then the data is not written to it, only redirected further.
   */
 class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
@@ -23,9 +23,9 @@ public:
     {
         storage = context.getTable(database, table);
 
-        /** TODO Это очень важная строчка. При любой вставке в таблицу один из stream-ов должен владеть lock-ом.
-          * Хотя сейчас любая вставка в таблицу делается через PushingToViewsBlockOutputStream,
-          *  но ясно, что здесь - не лучшее место для этой функциональности.
+        /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
+          * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
+          *  but it's clear that here is not the best place for this functionality.
           */
         addTableLock(storage->lockStructure(true));
 

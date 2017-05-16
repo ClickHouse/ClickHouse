@@ -8,8 +8,8 @@
 namespace DB
 {
 
-/** Поток для вывода данных в формате JSON, по объекту на каждую строчку.
-  * Не валидирует UTF-8.
+/** The stream for outputting data in JSON format, by object per line.
+  * Does not validate UTF-8.
   */
 class JSONEachRowRowOutputStream : public IRowOutputStream
 {

@@ -368,7 +368,7 @@ inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
 /// То же самое, но обратные кавычки применяются только при наличии символов, не подходящих для идентификатора без обратных кавычек.
 inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
 {
-    if (s.empty() || !isWordCharASCII(s[0]))
+    if (s.empty() || !isValidIdentifierBegin(s[0]))
         writeBackQuotedString(s, buf);
     else
     {
@@ -583,6 +583,7 @@ inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x,    WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const StringRef & x,    WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const uint128 & x,     WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDate & x,        WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x,    WriteBuffer & buf) { writePODBinary(x, buf); }

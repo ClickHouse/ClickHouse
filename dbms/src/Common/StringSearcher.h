@@ -19,15 +19,14 @@
 namespace DB
 {
 
-
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_PARAMETER;
 }
 
 
-/** Варианты поиска подстроки в строке.
-  * В большинстве случаев, менее производительные, чем Volnitsky (см. Volnitsky.h).
+/** Variants for searching a substring in a string.
+  * In most cases, performance is less than Volnitsky (see Volnitsky.h).
   */
 
 
@@ -37,7 +36,7 @@ struct StringSearcherBase
     static constexpr auto n = sizeof(__m128i);
     const int page_size = getpagesize();
 
-    bool page_safe(const void * const ptr) const
+    bool pageSafe(const void * const ptr) const
     {
         return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - n;
     }
@@ -55,7 +54,7 @@ class StringSearcher<false, false> : private StringSearcherBase
 private:
     using UTF8SequenceBuffer = UInt8[6];
 
-    /// string to be searched for
+    /// substring to be searched for
     const UInt8 * const needle;
     const std::size_t needle_size;
     const UInt8 * const needle_end = needle + needle_size;
@@ -135,8 +134,7 @@ public:
             if (!(dst_l_len == dst_u_len && dst_u_len == src_len))
                 throw DB::Exception{
                     "UTF8 sequences with different lowercase and uppercase lengths are not supported",
-                    DB::ErrorCodes::UNSUPPORTED_PARAMETER
-                };
+                    DB::ErrorCodes::UNSUPPORTED_PARAMETER};
 
             cache_actual_len += src_len;
             if (cache_actual_len < n)
@@ -165,7 +163,7 @@ public:
         static const Poco::UTF8Encoding utf8;
 
 #if __SSE4_1__
-        if (page_safe(pos))
+        if (pageSafe(pos))
         {
             const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
             const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
@@ -230,7 +228,7 @@ public:
         while (haystack < haystack_end)
         {
 #if __SSE4_1__
-            if (haystack + n <= haystack_end && page_safe(haystack))
+            if (haystack + n <= haystack_end && pageSafe(haystack))
             {
                 const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
                 const auto v_against_l = _mm_cmpeq_epi8(v_haystack, patl);
@@ -249,7 +247,7 @@ public:
                 const auto offset = __builtin_ctz(mask);
                 haystack += offset;
 
-                if (haystack < haystack_end && haystack + n <= haystack_end && page_safe(haystack))
+                if (haystack < haystack_end && haystack + n <= haystack_end && pageSafe(haystack))
                 {
                     const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
                     const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
@@ -377,7 +375,7 @@ public:
     bool compare(const UInt8 * pos) const
     {
 #if __SSE4_1__
-        if (page_safe(pos))
+        if (pageSafe(pos))
         {
             const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
             const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
@@ -429,7 +427,7 @@ public:
         while (haystack < haystack_end)
         {
 #if __SSE4_1__
-            if (haystack + n <= haystack_end && page_safe(haystack))
+            if (haystack + n <= haystack_end && pageSafe(haystack))
             {
                 const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
                 const auto v_against_l = _mm_cmpeq_epi8(v_haystack, patl);
@@ -447,7 +445,7 @@ public:
                 const auto offset = __builtin_ctz(mask);
                 haystack += offset;
 
-                if (haystack < haystack_end && haystack + n <= haystack_end && page_safe(haystack))
+                if (haystack < haystack_end && haystack + n <= haystack_end && pageSafe(haystack))
                 {
                     const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
                     const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
@@ -559,7 +557,7 @@ public:
     bool compare(const UInt8 * pos) const
     {
 #if __SSE4_1__
-        if (page_safe(pos))
+        if (pageSafe(pos))
         {
             const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
             const auto v_against_cache = _mm_cmpeq_epi8(v_haystack, cache);
@@ -609,7 +607,7 @@ public:
         while (haystack < haystack_end)
         {
 #if __SSE4_1__
-            if (haystack + n <= haystack_end && page_safe(haystack))
+            if (haystack + n <= haystack_end && pageSafe(haystack))
             {
                 /// find first character
                 const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
@@ -627,7 +625,7 @@ public:
                 const auto offset = __builtin_ctz(mask);
                 haystack += offset;
 
-                if (haystack < haystack_end && haystack + n <= haystack_end && page_safe(haystack))
+                if (haystack < haystack_end && haystack + n <= haystack_end && pageSafe(haystack))
                 {
                     /// check for first 16 octets
                     const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
@@ -693,10 +691,10 @@ using UTF8CaseSensitiveStringSearcher = StringSearcher<true, false>;
 using UTF8CaseInsensitiveStringSearcher = StringSearcher<false, false>;
 
 
-/** Используют функции из libc.
-  * Имеет смысл использовать для коротких строк, когда требуется дешёвая инициализация.
-  * Нет варианта для регистронезависимого поиска UTF-8 строк.
-  * Требуется, чтобы за концом строк был нулевой байт.
+/** Uses functions from libc.
+  * It makes sense to use only with short haystacks when cheap initialization is required.
+  * There is no option for case-insensitive search for UTF-8 strings.
+  * It is required that strings are zero-terminated.
   */
 
 struct LibCASCIICaseSensitiveStringSearcher

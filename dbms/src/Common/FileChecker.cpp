@@ -136,7 +136,7 @@ void FileChecker::load(Map & map) const
         ReadBufferFromFile in(files_info_path);
         WriteBufferFromString out(content);
 
-        /// The JSON library does not support whitespace. We delete them. Ineffective.
+        /// The JSON library does not support whitespace. We delete them. Inefficient.
         while (!in.eof())
         {
             char c;

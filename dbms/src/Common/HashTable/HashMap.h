@@ -13,7 +13,7 @@
 
 struct NoInitTag {};
 
-/// Пара, которая не инициализирует элементы, если не нужно.
+/// A pair that does not initialize the elements, if not needed.
 template <typename First, typename Second>
 struct PairNoInit
 {
@@ -60,18 +60,18 @@ struct HashMapCell
     bool isZero(const State & state) const { return isZero(value.first, state); }
     static bool isZero(const Key & key, const State & state) { return ZeroTraits::check(key); }
 
-    /// Установить значение ключа в ноль.
+    /// Set the key value to zero.
     void setZero() { ZeroTraits::set(value.first); }
 
-    /// Нужно ли хранить нулевой ключ отдельно (то есть, могут ли в хэш-таблицу вставить нулевой ключ).
+    /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = true;
 
-    /// Является ли ячейка удалённой.
+    /// Whether the cell was deleted.
     bool isDeleted() const { return false; }
 
     void setMapped(const value_type & value_) { value.second = value_.second; }
 
-    /// Сериализация, в бинарном и текстовом виде.
+    /// Serialization, in binary and text form.
     void write(DB::WriteBuffer & wb) const
     {
         DB::writeBinary(value.first, wb);
@@ -85,7 +85,7 @@ struct HashMapCell
         DB::writeDoubleQuoted(value.second, wb);
     }
 
-    /// Десериализация, в бинарном и текстовом виде.
+    /// Deserialization, in binary and text form.
     void read(DB::ReadBuffer & rb)
     {
         DB::readBinary(value.first, rb);
@@ -141,19 +141,19 @@ public:
         bool inserted;
         this->emplace(x, it, inserted);
 
-        /** Может показаться, что инициализация не обязательна для POD-типов (или __has_trivial_constructor),
-          *  так как кусок памяти для хэш-таблицы изначально инициализирован нулями.
-          * Но, на самом деле, пустая ячейка может быть не инициализирована нулями в следующих случаях:
-          * - ZeroValueStorage (в нём зануляется только ключ);
-          * - после ресайза и переноса части ячеек в новую половину хэш-таблицы, у старых ячеек, тоже зануляется только ключ.
+        /** It may seem that initialization is not necessary for POD-types (or __has_trivial_constructor),
+          *  since the hash table memory is initially initialized with zeros.
+          * But, in fact, an empty cell may not be initialized with zeros in the following cases:
+          * - ZeroValueStorage (it only zeros the key);
+          * - after resizing and moving a part of the cells to the new half of the hash table, the old cells also have only the key to zero.
           *
-          * По производительности, разницы почти всегда нет, за счёт того, что it->second как правило присваивается сразу
-          *  после вызова operator[], и так как operator[] инлайнится, компилятор убирает лишнюю инициализацию.
+          * On performance, there is almost always no difference, due to the fact that it->second is usually assigned immediately
+          *  after calling `operator[]`, and since `operator[]` is inlined, the compiler removes unnecessary initialization.
           *
-          * Иногда из-за инициализации, производительность даже растёт. Это происходит в коде вида ++map[key].
-          * Когда мы делаем инициализацию, то для новых ячеек, достаточно сразу сделать store 1.
-          * А если бы мы не делали инициализацию, то не смотря на то, что в ячейке был ноль,
-          *  компилятор не может об этом догадаться, и генерирует код load, increment, store.
+          * Sometimes due to initialization, the performance even grows. This occurs in code like `++map[key]`.
+          * When we do the initialization, for new cells, it's enough to make `store 1` right away.
+          * And if we did not initialize, then even though there was zero in the cell,
+          *  the compiler can not guess about this, and generates the `load`, `increment`, `store` code.
           */
         if (inserted)
             new(&it->second) mapped_type();

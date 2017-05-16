@@ -10,8 +10,8 @@
 namespace DB
 {
 
-/** Засечка - позиция в сжатом файле. Сжатый файл состоит из уложенных подряд сжатых блоков.
-  * Засечка представляют собой пару - смещение в файле до начала сжатого блока, смещение в разжатом блоке до начала данных.
+/** Mark is the position in the compressed file. The compressed file consists of adjacent compressed blocks.
+  * Mark is a tuple - the offset in the file to the start of the compressed block, the offset in the decompressed block to the start of the data.
   */
 struct MarkInCompressedFile
 {

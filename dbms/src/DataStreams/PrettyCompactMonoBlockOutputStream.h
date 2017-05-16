@@ -6,8 +6,8 @@
 namespace DB
 {
 
-/** Тоже самое, что и PrettyCompactBlockOutputStream, но выводит все max_rows (или меньше,
- *     если результат содержит меньшее число строк) одним блоком с одной шапкой.
+/** Same as PrettyCompactBlockOutputStream, but prints all max_rows (or less,
+ *     if the result contains fewer rows) by one block with one header.
   */
 class PrettyCompactMonoBlockOutputStream : public PrettyCompactBlockOutputStream
 {

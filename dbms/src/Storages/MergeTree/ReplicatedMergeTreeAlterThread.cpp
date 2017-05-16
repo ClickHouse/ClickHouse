@@ -199,6 +199,9 @@ void ReplicatedMergeTreeAlterThread::run()
                         transaction->commit();
                     }
 
+                    /// Columns sizes could be quietly changed in case of MODIFY/ADD COLUMN
+                    storage.data.recalculateColumnSizes();
+
                     /// The same for non-replicated data.
                     if (storage.unreplicated_data)
                     {
@@ -216,6 +219,8 @@ void ReplicatedMergeTreeAlterThread::run()
 
                             transaction->commit();
                         }
+
+                        storage.unreplicated_data->recalculateColumnSizes();
                     }
 
                     /// List of columns for a specific replica.

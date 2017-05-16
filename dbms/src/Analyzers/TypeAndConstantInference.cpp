@@ -165,7 +165,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
     }
 
     /// Aggregate function.
-    if (AggregateFunctionPtr aggregate_function_ptr = context.getAggregateFunctionFactory().tryGet(function->name, argument_types))
+    if (AggregateFunctionPtr aggregate_function_ptr = AggregateFunctionFactory::instance().tryGet(function->name, argument_types))
     {
         /// NOTE Not considering aggregate function parameters in type inference. It could become needed in future.
         /// Note that aggregate function could never be constant expression.

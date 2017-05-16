@@ -86,12 +86,11 @@ struct AggregateFunctionUniqExactData
     using Key = T;
 
     /// When creating, the hash table must be small.
-    typedef HashSet<
+    using Set = HashSet<
         Key,
         HashCRC32<Key>,
         HashTableGrower<4>,
-        HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 4)>
-    > Set;
+        HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 4)>>;
 
     Set set;
 
@@ -105,12 +104,11 @@ struct AggregateFunctionUniqExactData<String>
     using Key = UInt128;
 
     /// When creating, the hash table must be small.
-    typedef HashSet<
+    using Set = HashSet<
         Key,
         UInt128TrivialHash,
         HashTableGrower<3>,
-        HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>
-    > Set;
+        HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>>;
 
     Set set;
 

@@ -21,8 +21,10 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
-#include <Common/Increment.h>
+#include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
+
+#include <Poco/File.h>
 
 #include <cmath>
 #include <numeric>

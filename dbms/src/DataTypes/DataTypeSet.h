@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** The data type corresponding to the set of values ​​in the IN section.
+/** The data type corresponding to the set of values in the IN section.
   * Used only as an intermediate option when evaluating expressions.
   */
 class DataTypeSet final : public IDataTypeDummy

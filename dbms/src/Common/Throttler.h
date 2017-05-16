@@ -1,10 +1,12 @@
 #pragma once
 
+#include <time.h>   /// nanosleep
 #include <mutex>
 #include <memory>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -15,12 +17,12 @@ namespace ErrorCodes
 }
 
 
-/** Позволяет ограничить скорость чего либо (в штуках в секунду) с помощью sleep.
-  * Особенности работы:
-  * - считается только средняя скорость, от момента первого вызова функции add;
-  *   если были периоды с низкой скоростью, то в течение промежутка времени после них, скорость будет выше;
+/** Allows you to limit the speed of something (in entities per second) using sleep.
+  * Specifics of work:
+  * - only the average speed is considered, from the moment of the first call of `add` function;
+  *   if there were periods with low speed, then during some time after them, the speed will be higher;
   *
-  * Также позволяет задать ограничение на максимальное количество в штуках. При превышении кидается исключение.
+  * Also allows you to set a limit on the maximum number of entities. If exceeded, an exception will be thrown.
   */
 class Throttler
 {
@@ -56,7 +58,7 @@ public:
 
         if (max_speed)
         {
-            /// Сколько должно было бы пройти времени, если бы скорость была равна max_speed.
+            /// How much time to wait for the average speed to become `max_speed`.
             UInt64 desired_ns = new_count * 1000000000 / max_speed;
 
             if (desired_ns > elapsed_ns)
@@ -65,7 +67,7 @@ public:
                 timespec sleep_ts;
                 sleep_ts.tv_sec = sleep_ns / 1000000000;
                 sleep_ts.tv_nsec = sleep_ns % 1000000000;
-                nanosleep(&sleep_ts, nullptr);    /// NOTE Завершается раньше в случае сигнала. Это считается нормальным.
+                nanosleep(&sleep_ts, nullptr);    /// NOTE Returns early in case of a signal. This is considered normal.
             }
         }
     }
@@ -73,7 +75,7 @@ public:
 private:
     size_t max_speed = 0;
     size_t count = 0;
-    size_t limit = 0;        /// 0 - не ограничено.
+    size_t limit = 0;        /// 0 - not limited.
     const char * limit_exceeded_exception_message = nullptr;
     Stopwatch watch {CLOCK_MONOTONIC_COARSE};
     std::mutex mutex;

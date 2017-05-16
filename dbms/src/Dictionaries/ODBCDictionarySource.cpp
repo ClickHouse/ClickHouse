@@ -21,12 +21,13 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     table{config.getString(config_prefix + ".table")},
     where{config.getString(config_prefix + ".where", "")},
     sample_block{sample_block},
-    pool{std::make_shared<Poco::Data::SessionPool>(
-        config.getString(config_prefix + ".connector", "ODBC"),
-        config.getString(config_prefix + ".connection_string"))},
     query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},    /// NOTE Better to obtain quoting style via ODBC interface.
     load_all_query{query_builder.composeLoadAllQuery()}
 {
+    pool = createAndCheckResizePocoSessionPool([&] () { return std::make_shared<Poco::Data::SessionPool>(
+        config.getString(config_prefix + ".connector", "ODBC"),
+        config.getString(config_prefix + ".connection_string"));
+    });
 }
 
 /// copy-constructor is provided in order to support cloneability
@@ -41,6 +42,21 @@ ODBCDictionarySource::ODBCDictionarySource(const ODBCDictionarySource & other)
     query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},
     load_all_query{other.load_all_query}
 {
+}
+
+std::shared_ptr<Poco::Data::SessionPool> ODBCDictionarySource::createAndCheckResizePocoSessionPool(PocoSessionPoolConstructor pool_constr)
+{
+    static std::mutex mutex;
+
+    Poco::ThreadPool & pool = Poco::ThreadPool::defaultPool();
+
+    /// NOTE: The lock don't guarantee that external users of the pool don't change its capacity
+    std::unique_lock<std::mutex> lock(mutex);
+
+    if (pool.available() == 0)
+        pool.addCapacity(2 * std::max(pool.capacity(), 1));
+
+    return pool_constr();
 }
 
 BlockInputStreamPtr ODBCDictionarySource::loadAll()

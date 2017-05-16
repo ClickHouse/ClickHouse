@@ -4,6 +4,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
 #include <ext/bit_cast.hpp>
+#include <Core/StringRef.h>
 
 
 namespace DB

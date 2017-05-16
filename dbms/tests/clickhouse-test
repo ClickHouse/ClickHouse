@@ -160,7 +160,7 @@ def main(args):
 									report_testcase.append(stderr_element)
 									print(stderr)
 
-								if 'Connection refused' in stderr or 'Attempt to read after eof' in stderr:
+								if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
 									SERVER_DIED = True
 
 							elif stderr:
@@ -235,6 +235,7 @@ if __name__ == '__main__':
 	group.add_argument('--no-zookeeper', action = 'store_false', default = None, dest = 'zookeeper', help = 'Do not run zookeeper related tests')
 	group.add_argument('--shard', action = 'store_true', default = None, dest = 'shard', help = 'Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
 	group.add_argument('--no-shard', action = 'store_false', default = None, dest = 'shard', help = 'Do not run shard related tests')
+	group.add_argument('--stop', action = 'store_true', default = None, dest = 'stop', help = 'Stop on network errors ')
 
 	args = parser.parse_args()
 

@@ -34,6 +34,11 @@ public:
         return nested_func->getReturnType();
     }
 
+    AggregateFunctionPtr getNestedFunction() const
+    {
+        return nested_func_owner;
+    }
+
     void setArguments(const DataTypes & arguments) override
     {
         if (arguments.size() != 1)

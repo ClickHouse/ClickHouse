@@ -16,9 +16,9 @@ namespace DB
 }
 
 
-/** Проверяет совпадение типа путём сравнения typeid-ов.
-  * Проверяется точное совпадение типа. То есть, cast в предка будет неуспешным.
-  * В остальном, ведёт себя как dynamic_cast.
+/** Checks type by comparing typeid.
+  * The exact match of the type is checked. That is, cast in the ancestor will be unsuccessful.
+  * In the rest, behaves like a dynamic_cast.
   */
 template <typename To, typename From>
 typename std::enable_if<std::is_reference<To>::value, To>::type typeid_cast(From & from)

@@ -33,19 +33,19 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/** Функции, использующие словари Яндекс.Метрики
-  * - словари регионов, операционных систем, поисковых систем.
+/** Functions using Yandex.Metrica dictionaries
+  * - dictionaries of regions, operating systems, search engines.
   *
-  * Подняться по дереву до определенного уровня.
+  * Climb up the tree to a certain level.
   *  regionToCity, regionToArea, regionToCountry, ...
   *
-  * Преобразовать значения в столбце
+  * Convert values of a column
   *  regionToName
   *
-  * Является ли первый идентификатор потомком второго.
+  * Whether the first identifier is a descendant of the second.
   *  regionIn
   *
-  * Получить массив идентификаторов регионов, состоящий из исходного и цепочки родителей. Порядок implementation defined.
+  * Get an array of region identifiers, consisting of the source and the parents chain. Order implementation defined.
   *  regionHierarchy
   */
 
@@ -131,9 +131,9 @@ struct SEHierarchyImpl
 #endif
 
 
-/** Вспомогательная вещь, позволяющая достать из словаря конкретный словарь, соответствующий точке зрения
-  *  (ключу словаря, передаваемому в аргументе функции).
-  * Пример: при вызове regionToCountry(x, 'ua'), может быть использован словарь, в котором Крым относится к Украине.
+/** Auxiliary thing, allowing to get from the dictionary a specific dictionary, corresponding to the point of view
+  *  (the dictionary key passed as function argument).
+  * Example: when calling regionToCountry(x, 'ua'), a dictionary can be used, in which Crimea refers to Ukraine.
   */
 struct RegionsHierarchyGetter
 {
@@ -146,7 +146,7 @@ struct RegionsHierarchyGetter
     }
 };
 
-/** Для словарей без поддержки ключей. Ничего не делает.
+/** For dictionaries without key support. Doing nothing.
   */
 template <typename Dict>
 struct IdentityDictionaryGetter
@@ -164,7 +164,7 @@ struct IdentityDictionaryGetter
 };
 
 
-/// Преобразует идентификатор, используя словарь.
+/// Converts an identifier using a dictionary.
 template <typename T, typename Transform, typename DictGetter, typename Name>
 class FunctionTransformWithDictionary : public IFunction
 {
@@ -213,7 +213,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        /// Ключ словаря, определяющий "точку зрения".
+        /// The dictionary key that defines the "point of view".
         std::string dict_key;
 
         if (arguments.size() == 2)
@@ -257,7 +257,7 @@ public:
 };
 
 
-/// Проверяет принадлежность, используя словарь.
+/// Checks belonging using a dictionary.
 template <typename T, typename Transform, typename DictGetter, typename Name>
 class FunctionIsInWithDictionary : public IFunction
 {
@@ -311,7 +311,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        /// Ключ словаря, определяющий "точку зрения".
+        /// The dictionary key that defines the "point of view".
         std::string dict_key;
 
         if (arguments.size() == 3)
@@ -390,7 +390,7 @@ public:
 };
 
 
-/// Получает массив идентификаторов, состоящий из исходного и цепочки родителей.
+/// Gets an array of identifiers consisting of the source and the parents chain.
 template <typename T, typename Transform, typename DictGetter, typename Name>
 class FunctionHierarchyWithDictionary : public IFunction
 {
@@ -439,7 +439,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        /// Ключ словаря, определяющий "точку зрения".
+        /// The dictionary key that defines the "point of view".
         std::string dict_key;
 
         if (arguments.size() == 2)
@@ -670,7 +670,7 @@ struct FunctionSEHierarchy :
 #endif
 
 
-/// Преобразует числовой идентификатор региона в имя на заданном языке, используя словарь.
+/// Converts a region's numeric identifier to a name in the specified language using a dictionary.
 class FunctionRegionToName : public IFunction
 {
 public:
@@ -727,7 +727,7 @@ public:
     {
         RegionsNames::Language language = RegionsNames::Language::RU;
 
-        /// Если указан язык результата
+        /// If the result language is specified
         if (arguments.size() == 2)
         {
             if (const ColumnConstString * col_language = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get()))

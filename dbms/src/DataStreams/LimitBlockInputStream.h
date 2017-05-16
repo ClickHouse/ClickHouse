@@ -7,15 +7,15 @@ namespace DB
 {
 
 
-/** Реализует реляционную операцию LIMIT.
+/** Implements the LIMIT relational operation.
   */
 class LimitBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    /** Если always_read_till_end = false (по-умолчанию), то после чтения достаточного количества данных,
-      *  возвращает пустой блок, и это приводит к отмене выполнения запроса.
-      * Если always_read_till_end = true - читает все данные до конца, но игнорирует их. Это нужно в редких случаях:
-      *  когда иначе, из-за отмены запроса, мы бы не получили данные для GROUP BY WITH TOTALS с удалённого сервера.
+    /** If always_read_till_end = false (by default), then after reading enough data,
+      *  returns an empty block, and this causes the query to be canceled.
+      * If always_read_till_end = true - reads all the data to the end, but ignores them. This is necessary in rare cases:
+      *  when otherwise, due to the cancellation of the request, we would not have received the data for GROUP BY WITH TOTALS from the remote server.
       */
     LimitBlockInputStream(BlockInputStreamPtr input_, size_t limit_, size_t offset_, bool always_read_till_end_ = false);
 
