@@ -1,7 +1,9 @@
 Клиент командной строки
 -----------------------
 Для работы из командной строки вы можете использовать clickhouse-client:
-::
+
+.. code-block:: bash
+
     $ clickhouse-client
     ClickHouse client version 0.0.26176.
     Connecting to localhost:9000.
@@ -50,7 +52,9 @@
 Аналогично HTTP интерфейсу, при использовании одновременно параметра query и отправке данных в stdin, запрос составляется из конкатенации параметра query, перевода строки, и данных в stdin. Это удобно для больших INSERT запросов.
 
 Примеры использования клиента для вставки данных:
-::
+
+.. code-block:: bash
+
     echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 
     cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";

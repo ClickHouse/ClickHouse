@@ -28,52 +28,52 @@ struct Settings
       */
 
 #define APPLY_FOR_SETTINGS(M) \
-    /** При записи данных, для сжатия выделяется буфер размером max_compress_block_size. При переполнении буфера или если в буфер */ \
-    /** записано данных больше или равно, чем min_compress_block_size, то при очередной засечке, данные так же будут сжиматься */ \
-    /** В результате, для маленьких столбцов (числа 1-8 байт), при index_granularity = 8192, размер блока будет 64 KБ. */ \
-    /** А для больших столбцов (Title - строка ~100 байт), размер блока будет ~819 КБ.  */ \
-    /** За счёт этого, коэффициент сжатия почти не ухудшится.  */ \
+    /** When writing data, a buffer of max_compress_block_size size is allocated for compression. When the buffer overflows or if into the buffer */ \
+    /** written data is greater than or equal to min_compress_block_size, then with the next mark, the data will also be compressed */ \
+    /** As a result, for small columns (around 1-8 bytes), with index_granularity = 8192, the block size will be 64 KB. */ \
+    /** And for large columns (Title - string ~100 bytes), the block size will be ~819 KB. */ \
+    /** Due to this, the compression ratio almost does not get worse. */ \
     M(SettingUInt64, min_compress_block_size, DEFAULT_MIN_COMPRESS_BLOCK_SIZE) \
     M(SettingUInt64, max_compress_block_size, DEFAULT_MAX_COMPRESS_BLOCK_SIZE) \
-    /** Максимальный размер блока для чтения */ \
+    /** Maximum block size for reading */ \
     M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE) \
-    /** Максимальный размер блока для вставки, если мы управляем формированием блоков для вставки. */ \
+    /** The maximum block size for insertion, if we control the creation of blocks for insertion. */ \
     M(SettingUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE) \
     /** Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough. */ \
     M(SettingUInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE) \
     /** Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough. */ \
     M(SettingUInt64, min_insert_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256)) \
-    /** Максимальное количество потоков выполнения запроса. По-умолчанию - определять автоматически. */ \
+    /** The maximum number of threads to execute the request. By default, it is determined automatically. */ \
     M(SettingMaxThreads, max_threads, 0) \
-    /** Максимальный размер буфера для чтения из файловой системы. */ \
+    /** The maximum size of the buffer to read from the file system. */ \
     M(SettingUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE) \
-    /** Максимальное количество соединений при распределённой обработке одного запроса (должно быть больше, чем max_threads). */ \
+    /** The maximum number of connections for distributed processing of one query (should be greater than max_threads). */ \
     M(SettingUInt64, max_distributed_connections, DEFAULT_MAX_DISTRIBUTED_CONNECTIONS) \
-    /** Какую часть запроса можно прочитать в оперативку для парсинга (оставшиеся данные для INSERT, если есть, считываются позже) */ \
+    /** Which part of the query can be read into RAM for parsing (the remaining data for INSERT, if any, is read later) */ \
     M(SettingUInt64, max_query_size, DEFAULT_MAX_QUERY_SIZE) \
-    /** Интервал в микросекундах для проверки, не запрошена ли остановка выполнения запроса, и отправки прогресса. */ \
+    /** The interval in microseconds to check if the request is cancelled, and to send progress info. */ \
     M(SettingUInt64, interactive_delay, DEFAULT_INTERACTIVE_DELAY) \
     M(SettingSeconds, connect_timeout, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC) \
-    /** Если следует выбрать одну из рабочих реплик. */ \
+    /** If you should select one of the working replicas. */ \
     M(SettingMilliseconds, connect_timeout_with_failover_ms, DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS) \
     M(SettingSeconds, receive_timeout, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC) \
     M(SettingSeconds, send_timeout, DBMS_DEFAULT_SEND_TIMEOUT_SEC) \
-    /** Время ожидания в очереди запросов, если количество одновременно выполняющихся запросов превышает максимальное. */ \
+    /** The wait time in the request queue, if the number of concurrent requests exceeds the maximum. */ \
     M(SettingMilliseconds, queue_max_wait_ms, DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS) \
-    /** Блокироваться в цикле ожидания запроса в сервере на указанное количество секунд. */ \
+    /** Block at the query wait cycle on the server for the specified number of seconds. */ \
     M(SettingUInt64, poll_interval, DBMS_DEFAULT_POLL_INTERVAL) \
-    /** Максимальное количество соединений с одним удалённым сервером в пуле. */ \
+    /** Maximum number of connections with one remote server in the pool. */ \
     M(SettingUInt64, distributed_connections_pool_size, DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE) \
-    /** Максимальное количество попыток соединения с репликами. */ \
+    /** The maximum number of attempts to connect to replicas. */ \
     M(SettingUInt64, connections_with_failover_max_tries, DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES) \
-    /** Считать минимумы и максимумы столбцов результата. Они могут выводиться в JSON-форматах. */ \
+    /** Calculate minimums and maximums of the result columns. They can be output in JSON-formats. */ \
     M(SettingBool, extremes, false) \
-    /** Использовать ли кэш разжатых блоков. */ \
+    /** Whether to use the cache of uncompressed blocks. */ \
     M(SettingBool, use_uncompressed_cache, true) \
-    /** Следует ли отменять выполняющийся запрос с таким же id, как новый. */ \
+    /** Whether the running request should be canceled with the same id as the new one. */ \
     M(SettingBool, replace_running_query, false) \
-    /** Количество потоков, выполняющих фоновую работу для таблиц (например, слияние в merge tree). \
-      * TODO: Сейчас применяется только при запуске сервера. Можно сделать изменяемым динамически. */ \
+    /** Number of threads performing background work for tables (for example, merging in merge tree). \
+      * TODO: Now only applies when the server is started. You can make it dynamically variable. */ \
     M(SettingUInt64, background_pool_size, DBMS_DEFAULT_BACKGROUND_POOL_SIZE) \
     \
     /** Sleep time for StorageDistributed DirectoryMonitors in case there is no work or exception has been thrown */ \
@@ -82,9 +82,9 @@ struct Settings
     /** Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree */ \
     M(SettingBool, optimize_move_to_prewhere, true) \
     \
-    /** Ожидать выполнения действий по манипуляции с партициями. 0 - не ждать, 1 - ждать выполнения только у себя, 2 - ждать всех. */ \
+    /** Wait for actions to manipulate the partitions. 0 - do not wait, 1 - wait for execution only of itself, 2 - wait for everyone. */ \
     M(SettingUInt64, replication_alter_partitions_sync, 1) \
-    /** Ожидать выполнения действий по изменению структуры таблицы в течение указанного количества секунд. 0 - ждать неограниченное время. */ \
+    /** Wait for actions to change the table structure within the specified number of seconds. 0 - wait unlimited time. */ \
     M(SettingUInt64, replication_alter_columns_timeout, 60) \
     \
     M(SettingLoadBalancing, load_balancing, LoadBalancing::RANDOM) \
@@ -92,78 +92,78 @@ struct Settings
     M(SettingTotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE) \
     M(SettingFloat, totals_auto_threshold, 0.5) \
     \
-    /** Включена ли компиляция запросов. */ \
+    /** Whether query compilation is enabled. */ \
     M(SettingBool, compile, false) \
-    /** Количество одинаковых по структуре запросов перед тем, как инициируется их компиляция. */ \
+    /** The number of structurally identical queries before they are compiled. */ \
     M(SettingUInt64, min_count_to_compile, 3) \
-    /** При каком количестве ключей, начинает использоваться двухуровневая агрегация. 0 - порог не выставлен. */ \
+    /** From what number of keys, a two-level aggregation starts. 0 - the threshold is not set. */ \
     M(SettingUInt64, group_by_two_level_threshold, 100000) \
-    /** При каком размере состояния агрегации в байтах, начинает использоваться двухуровневая агрегация. 0 - порог не выставлен. \
-      * Двухуровневая агрегация начинает использоваться при срабатывании хотя бы одного из порогов. */ \
+    /** From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. \
+      * Two-level aggregation is used when at least one of the thresholds is triggered. */ \
     M(SettingUInt64, group_by_two_level_threshold_bytes, 100000000) \
-    /** Включён ли экономный по памяти режим распределённой агрегации. */ \
+    /** Is the memory-saving mode of distributed aggregation enabled. */ \
     M(SettingBool, distributed_aggregation_memory_efficient, false) \
     /** Number of threads to use for merge intermediate aggregation results in memory efficient mode. When bigger, then more memory is consumed. \
       * 0 means - same as 'max_threads'. */ \
     M(SettingUInt64, aggregation_memory_efficient_merge_threads, 0) \
     \
-    /** Максимальное количество используемых реплик каждого шарда при выполнении запроса */ \
+    /** The maximum number of replicas of each shard used when executing the query */ \
     M(SettingUInt64, max_parallel_replicas, 1) \
     M(SettingUInt64, parallel_replicas_count, 0) \
     M(SettingUInt64, parallel_replica_offset, 0) \
     \
-    /** Тихо пропускать недоступные шарды. */ \
+    /** Silently skip unavailable shards. */ \
     M(SettingBool, skip_unavailable_shards, false) \
     \
-    /** Не мерджить состояния агрегации с разных серверов при распределённой обработке запроса \
-      *  - на случай, когда доподлинно известно, что на разных шардах разные ключи. \
+    /** Do not merge aggregation states from different servers for distributed query processing \
+      *  - in case it is for certain that there are different keys on different shards. \
       */ \
     M(SettingBool, distributed_group_by_no_merge, false) \
     \
-    /** Тонкие настройки для чтения из MergeTree */ \
+    /** Advanced settings for reading from MergeTree */ \
     \
-    /** Если из одного файла читается хотя бы столько строк, чтение можно распараллелить. */ \
+    /** If at least as many lines are read from one file, the reading can be parallelized. */ \
     M(SettingUInt64, merge_tree_min_rows_for_concurrent_read, (20 * 8192)) \
-    /** Можно пропускать чтение более чем стольки строк ценой одного seek по файлу. */ \
+    /** You can skip reading more than that number of rows at the price of one seek per file. */ \
     M(SettingUInt64, merge_tree_min_rows_for_seek, 0) \
-    /** Если отрезок индекса может содержать нужные ключи, делим его на столько частей и рекурсивно проверяем их. */ \
+    /** If the index segment can contain the required keys, divide it into as many parts and recursively check them. */ \
     M(SettingUInt64, merge_tree_coarse_index_granularity, 8) \
-    /** Максимальное количество строк на запрос, для использования кэша разжатых данных. Если запрос большой - кэш не используется. \
-      * (Чтобы большие запросы не вымывали кэш.) */ \
+    /** The maximum number of rows per request, to use the cache of uncompressed data. If the request is large, the cache is not used. \
+      * (For large queries not to flush out the cache.) */ \
     M(SettingUInt64, merge_tree_max_rows_to_use_cache, (1024 * 1024)) \
     \
-    /** Распределять чтение из MergeTree по потокам равномерно, обеспечивая стабильное среднее время исполнения каждого потока в пределах одного чтения. */ \
+    /** Distribute read from MergeTree over threads evenly, ensuring stable average execution time of each thread within one read operation. */ \
     M(SettingBool, merge_tree_uniform_read_distribution, true) \
     \
-    /** Минимальная длина выражения expr = x1 OR ... expr = xN для оптимизации */ \
+    /** The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization */ \
     M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 3) \
     \
-    /** Минимальное количество байт для операций ввода/ввывода минуя кэш страниц. 0 - отключено. */ \
+    /** The minimum number of bytes for input/output operations is bypassing the page cache. 0 - disabled. */ \
     M(SettingUInt64, min_bytes_to_use_direct_io, 0) \
     \
-    /** Кидать исключение, если есть индекс, и он не используется. */ \
+    /** Throw an exception if there is an index, and it is not used. */ \
     M(SettingBool, force_index_by_date, 0) \
     M(SettingBool, force_primary_key, 0) \
     \
-    /** В запросе INSERT с указанием столбцов, заполнять значения по-умолчанию только для столбцов с явными DEFAULT-ами. */ \
+    /** In the INSERT query with specified columns, fill in the default values ​​only for columns with explicit DEFAULTs. */ \
     M(SettingBool, strict_insert_defaults, 0) \
     \
-    /** В случае превышения максимального размера mark_cache, удалять только записи, старше чем mark_cache_min_lifetime секунд. */ \
+    /** If the maximum size of mark_cache is exceeded, delete only records older than mark_cache_min_lifetime seconds. */ \
     M(SettingUInt64, mark_cache_min_lifetime, 10000) \
     \
-    /** Позволяет использовать больше источников, чем количество потоков - для более равномерного распределения работы по потокам. \
-      * Предполагается, что это временное решение, так как можно будет в будущем сделать количество источников равное количеству потоков, \
-      *  но чтобы каждый источник динамически выбирал себе доступную работу. \
+    /** Allows you to use more sources than the number of threads - to more evenly distribute work across threads. \
+      * It is assumed that this is a temporary solution, since it will be possible in the future to make the number of sources equal to the number of threads, \
+      *  but for each source to dynamically select available work for itself. \
       */ \
     M(SettingFloat, max_streams_to_max_threads_ratio, 1) \
     \
-    /** Позволяет выбирать метод сжатия данных при записи */\
+    /** Allows you to select the method of data compression when writing */ \
     M(SettingCompressionMethod, network_compression_method, CompressionMethod::LZ4) \
     \
-    /** Приоритет запроса. 1 - самый высокий, больше - ниже; 0 - не использовать приоритеты. */ \
+    /** Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities. */ \
     M(SettingUInt64, priority, 0) \
     \
-    /** Логгировать запросы и писать лог в системную таблицу. */ \
+    /** Log requests and write the log to the system table. */ \
     M(SettingBool, log_queries, 0) \
     \
     /** If query length is greater than specified threshold (in bytes), then cut query when writing to query log. \
@@ -171,48 +171,48 @@ struct Settings
       */ \
     M(SettingUInt64, log_queries_cut_to_length, 100000) \
     \
-    /** Как выполняются распределённые подзапросы внутри секций IN или JOIN? */ \
+    /** How are distributed subqueries performed inside IN or JOIN sections? */ \
     M(SettingDistributedProductMode, distributed_product_mode, DistributedProductMode::DENY) \
     \
-    /** Схема выполнения GLOBAL-подзапросов. */ \
+    /** The scheme for executing GLOBAL subqueries. */ \
     M(SettingGlobalSubqueriesMethod, global_subqueries_method, GlobalSubqueriesMethod::PUSH) \
     \
-    /** Максимальное количество одновременно выполняющихся запросов на одного user-а. */ \
+    /** The maximum number of concurrent requests per user. */ \
     M(SettingUInt64, max_concurrent_queries_for_user, 0) \
     \
-    /** Для запросов INSERT в реплицируемую таблицу, ждать записи на указанное число реплик и лианеризовать добавление данных. 0 - отключено. */ \
+    /** For INSERT queries in the replicated table, wait writing for the specified number of replicas and linearize the addition of the data. 0 - disabled. */ \
     M(SettingUInt64, insert_quorum, 0) \
     M(SettingMilliseconds, insert_quorum_timeout, 600000) \
-    /** Для запросов SELECT из реплицируемой таблицы, кидать исключение, если на реплике нет куска, записанного с кворумом; \
-      * не читать куски, которые ещё не были записаны с кворумом. */ \
+    /** For SELECT queries from the replicated table, throw an exception if the replica does not have a chunk written with the quorum; \
+      * do not read the parts that have not yet been written with the quorum. */ \
     M(SettingUInt64, select_sequential_consistency, 0) \
-    /** Максимальное количество различных шардов и максимальное количество реплик одного шарда в функции remote. */ \
+    /** The maximum number of different shards and the maximum number of replicas of one shard in the `remote` function. */ \
     M(SettingUInt64, table_function_remote_max_addresses, 1000) \
-    /** Маскимальное количество потоков при распределённой обработке одного запроса */ \
+    /** Maximum number of threads for distributed processing of one query */ \
     M(SettingUInt64, max_distributed_processing_threads, 8) \
     \
-    /** Настройки понижения числа потоков в случае медленных чтений. */ \
-    /** Обращать внимания только на чтения, занявшие не меньше такого количества времени. */ \
+    /** Settings to reduce the number of threads in case of slow reads. */ \
+    /** Pay attention only to readings that took at least that much time. */ \
     M(SettingMilliseconds,     read_backoff_min_latency_ms, 1000) \
-    /** Считать события, когда пропускная способность меньше стольки байт в секунду. */ \
+    /** Count events when the bandwidth is less than that many bytes per second. */ \
     M(SettingUInt64,         read_backoff_max_throughput, 1048576) \
-    /** Не обращать внимания на событие, если от предыдущего прошло меньше стольки-то времени. */ \
+    /** Do not pay attention to the event, if the previous one has passed less than a certain amount of time. */ \
     M(SettingMilliseconds,     read_backoff_min_interval_between_events_ms, 1000) \
-    /** Количество событий, после которого количество потоков будет уменьшено. */ \
+    /** The number of events after which the number of threads will be reduced. */ \
     M(SettingUInt64,         read_backoff_min_events, 2) \
     \
-    /** В целях тестирования exception safety - кидать исключение при каждом выделении памяти с указанной вероятностью. */ \
+    /** For testing of `exception safety` - throw an exception every time you allocate memory with the specified probability. */ \
     M(SettingFloat, memory_tracker_fault_probability, 0.) \
     \
-    /** Сжимать результат, если клиент по HTTP сказал, что он понимает данные, сжатые методом gzip или deflate */ \
+    /** Compress the result if the client over HTTP said that it understands data compressed by gzip or deflate */ \
     M(SettingBool, enable_http_compression, 0) \
-    /** Уровень сжатия - используется, если клиент по HTTP сказал, что он понимает данные, сжатые методом gzip или deflate */ \
+    /** Compression level - used if the client on HTTP said that it understands data compressed by gzip or deflate */ \
     M(SettingInt64, http_zlib_compression_level, 3) \
     \
-    /** При разжатии данных POST от клиента, сжатых родным форматом, не проверять чексуммы */ \
+    /** If you uncompress the POST data from the client compressed by the native format, do not check the checksum */ \
     M(SettingBool, http_native_compression_disable_checksumming_on_decompress, 0) \
     \
-    /** Таймаут в секундах */ \
+    /** Timeout in seconds */ \
     M(SettingUInt64, resharding_barrier_timeout, 300) \
     \
     /** What aggregate function to use for implementation of count(DISTINCT ...) */ \
@@ -301,7 +301,7 @@ struct Settings
     void set(const String & name, const String & value);
 
     /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
-      * Профиль также может быть установлен с помощью функций set, как настройка profile.
+      * The profile can also be set using the `set` functions, like the profile setting.
       */
     void setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config);
 

@@ -272,7 +272,8 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
     {
         return static_cast<Int64>(getValue(value_or_name.get<String>()));
     }
-    else if (value_or_name.getType() == Field::Types::Int64)
+    else if (value_or_name.getType() == Field::Types::Int64
+          || value_or_name.getType() == Field::Types::UInt64)
     {
         Int64 value = value_or_name.get<Int64>();
         checkOverflow<Type>(value);

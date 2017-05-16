@@ -51,7 +51,6 @@ private:
     void buildActions(const Block & in_sample, const Block & out_sample);
 
 private:
-    NamesAndTypesListPtr required_columns;
     Actions actions;
     std::vector<std::experimental::optional<String>> rename;
     bool must_transform;

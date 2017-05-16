@@ -73,7 +73,7 @@ public:
         free_list = block;
     }
 
-    /// Размер выделенного пула в байтах
+    /// The size of the allocated pool in bytes
     size_t size() const
     {
         return pool.size();

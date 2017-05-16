@@ -111,16 +111,16 @@ namespace Graphite
     };
 }
 
-/** Соединяет несколько сортированных потоков в один.
+/** Merges several sorted streams into one.
   *
-  * При этом, для каждой группы идущих подряд одинаковых значений столбца path,
-  *  и одинаковых значений time с округлением до некоторой точности
-  *  (где точность округления зависит от набора шаблонов на path
-  *   и количества времени, прошедшего от time до заданного времени),
-  * оставляет одну строку,
-  *  выполняя округление времени,
-  *  слияние значений value, используя заданные агрегатные функции,
-  *  а также оставляя максимальное значение столбца version.
+  * For each group of consecutive identical values of the `path` column,
+  *  and the same `time` values, rounded to some precision
+  *  (where rounding accuracy depends on the template set for `path`
+  *   and the amount of time elapsed from `time` to the specified time),
+  * keeps one line,
+  *  performing the rounding of time,
+  *  merge `value` values using the specified aggregate functions,
+  *  as well as keeping the maximum value of the `version` column.
   */
 class GraphiteRollupSortedBlockInputStream : public MergingSortedBlockInputStream
 {
@@ -200,14 +200,14 @@ private:
     template <typename TSortCursor>
     void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
-    /// Вставить значения в результирующие столбцы, которые не будут меняться в дальнейшем.
+    /// Insert the values into the resulting columns, which will not be changed in the future.
     template <class TSortCursor>
     void startNextRow(ColumnPlainPtrs & merged_columns, TSortCursor & cursor);
 
-    /// Вставить в результирующие столбцы вычисленные значения time, value, version по последней группе строк.
+    /// Insert the calculated `time`, `value`, `version` values into the resulting columns by the last group of rows.
     void finishCurrentRow(ColumnPlainPtrs & merged_columns);
 
-    /// Обновить состояние агрегатной функции новым значением value.
+    /// Update the state of the aggregate function with the new `value`.
     void accumulateRow(RowRef & row);
 };
 

@@ -80,8 +80,9 @@ public:
       */
     void add(const LogElement & element)
     {
-        /// We could lock here in case of queue overflow. Maybe better to throw an exception or even don't do logging in that case.
-        queue.push({false, element});
+        /// Without try we could block here in case of queue overflow.
+        if (!queue.tryPush({false, element}))
+            LOG_ERROR(log, "SystemLog queue is full");
     }
 
 private:
@@ -215,7 +216,7 @@ void SystemLog<LogElement>::flush()
 {
     try
     {
-        LOG_TRACE(log, "Flushing query log");
+        LOG_TRACE(log, "Flushing system log");
 
         if (!is_prepared)    /// BTW, flush method is called from single thread.
             prepareTable();
@@ -223,6 +224,10 @@ void SystemLog<LogElement>::flush()
         Block block = LogElement::createBlock();
         for (const LogElement & elem : data)
             elem.appendToBlock(block);
+        
+        /// Clear queue early, because insertion to the table could lead to generation of more log entrites
+        ///  and pushing them to already full queue will lead to deadlock.
+        data.clear();
 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
@@ -242,10 +247,9 @@ void SystemLog<LogElement>::flush()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// In case of exception, also clean accumulated data - to avoid locking.
+        data.clear();
     }
-
-    /// In case of exception, also clean accumulated data - to avoid locking.
-    data.clear();
 }
 
 

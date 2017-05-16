@@ -101,6 +101,12 @@ inline bool isWordCharASCII(char c)
         || c == '_';
 }
 
+inline bool isValidIdentifierBegin(char c)
+{
+    return isAlphaASCII(c)
+        || c == '_';
+}
+
 inline bool isWhitespaceASCII(char c)
 {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';

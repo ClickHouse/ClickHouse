@@ -15,11 +15,11 @@ namespace ErrorCodes
 }
 
 
-/** Компактный массив для хранения данных, размер content_width, в битах, которых составляет
-  * меньше одного байта. Вместо того, чтобы хранить каждое значение в отдельный
-  * байт, что приводит к растрате 37.5% пространства для content_width=5, CompactArray хранит
-  * смежные content_width-битные значения в массиве байтов, т.е. фактически CompactArray
-  * симулирует массив content_width-битных значений.
+/** Compact array for data storage, size `content_width`, in bits, of which is
+  * less than one byte. Instead of storing each value in a separate
+  * bytes, which leads to a waste of 37.5% of the space for content_width = 5, CompactArray stores
+  * adjacent `content_width`-bit values in the byte array, that is actually CompactArray
+  * simulates an array of `content_width`-bit values.
   */
 template <typename BucketIndex, UInt8 content_width, size_t bucket_count>
 class __attribute__ ((packed)) CompactArray final
@@ -76,12 +76,12 @@ public:
     }
 
 private:
-    /// число байт в битсете
+    /// number of bytes in bitset
     static constexpr size_t BITSET_SIZE = (static_cast<size_t>(bucket_count) * content_width + 7) / 8;
     UInt8 bitset[BITSET_SIZE] = { 0 };
 };
 
-/** Класс для последовательного чтения ячеек из компактного массива на диске.
+/** A class for sequentially reading cells from a compact array on a disk.
   */
 template <typename BucketIndex, UInt8 content_width, size_t bucket_count>
 class CompactArray<BucketIndex, content_width, bucket_count>::Reader final
@@ -135,7 +135,7 @@ public:
         return true;
     }
 
-    /** Вернуть текущий номер ячейки и соответствующее содержание.
+    /** Return the current cell number and the corresponding content.
       */
     inline std::pair<BucketIndex, UInt8> get() const
     {
@@ -150,26 +150,26 @@ public:
 
 private:
     ReadBuffer & in;
-    /// Физическое расположение текущей ячейки.
+    /// The physical location of the current cell.
     Locus locus;
-    /// Текущая позиция в файле в виде номера ячейки.
+    /// The current position in the file as a cell number.
     BucketIndex current_bucket_index = 0;
-    /// Количество прочитанных байтов.
+    /// The number of bytes read.
     size_t read_count = 0;
-    /// Содержание в текущей позиции.
+    /// The content in the current position.
     UInt8 value_l;
     UInt8 value_r;
     ///
     bool is_eof = false;
-    /// Влезает ли ячейка полностью в один байт?
+    /// Does the cell fully fit into one byte?
     bool fits_in_byte;
 };
 
-/** Структура Locus содержит необходимую информацию, чтобы найти для каждой ячейки
-  * соответствующие байт и смещение, в битах, от начала ячейки. Поскольку в общем
-  * случае размер одного байта не делится на размер одной ячейки, возможны случаи,
-  * когда одна ячейка перекрывает два байта. Поэтому структура Locus содержит две
-  * пары (индекс, смещение).
+/** The `Locus` structure contains the necessary information to find for each cell
+  * the corresponding byte and offset, in bits, from the beginning of the cell. Since in general
+  * case the size of one byte is not divisible by the size of one cell, cases possible
+  * when one cell overlaps two bytes. Therefore, the `Locus` structure contains two
+  * pairs (index, offset).
   */
 template <typename BucketIndex, UInt8 content_width, size_t bucket_count>
 class CompactArray<BucketIndex, content_width, bucket_count>::Locus final
@@ -190,13 +190,13 @@ public:
     {
         if ((index_l == index_r) || (index_l == (BITSET_SIZE - 1)))
         {
-            /// Ячейка полностью влезает в один байт.
+            /// The cell completely fits into one byte.
             *content_l &= ~(((1 << content_width) - 1) << offset_l);
             *content_l |= content << offset_l;
         }
         else
         {
-            /// Ячейка перекрывает два байта.
+            /// The cell overlaps two bytes.
             size_t left = 8 - offset_l;
 
             *content_l &= ~(((1 << left) - 1) << offset_l);
@@ -230,13 +230,13 @@ private:
 
     UInt8 ALWAYS_INLINE read(UInt8 value_l) const
     {
-        /// Ячейка полностью влезает в один байт.
+        /// The cell completely fits into one byte.
         return (value_l >> offset_l) & ((1 << content_width) - 1);
     }
 
     UInt8 ALWAYS_INLINE read(UInt8 value_l, UInt8 value_r) const
     {
-        /// Ячейка перекрывает два байта.
+        /// The cell overlaps two bytes.
         return ((value_l >> offset_l) & ((1 << (8 - offset_l)) - 1))
             | ((value_r & ((1 << offset_r) - 1)) << (8 - offset_l));
     }
@@ -250,7 +250,7 @@ private:
     UInt8 * content_l;
     UInt8 * content_r;
 
-    /// Проверки
+    /// Checks
     static_assert((content_width > 0) && (content_width < 8), "Invalid parameter value");
     static_assert(bucket_count <= (std::numeric_limits<size_t>::max() / content_width), "Invalid parameter value");
 };

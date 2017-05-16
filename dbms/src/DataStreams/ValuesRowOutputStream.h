@@ -9,7 +9,7 @@ namespace DB
 class WriteBuffer;
 
 
-/** Поток для вывода данных в формате VALUES (как в INSERT запросе).
+/** A stream for outputting data in the VALUES format (as in the INSERT request).
   */
 class ValuesRowOutputStream : public IRowOutputStream
 {

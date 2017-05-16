@@ -23,6 +23,7 @@
 #include <Functions/IFunction.h>
 #include <Poco/DirectoryIterator.h>
 #include <Common/Increment.h>
+#include <Common/SimpleIncrement.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
 #include <Common/Stopwatch.h>
@@ -445,7 +446,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
     }
 
-    calculateColumnSizes();
+    calculateColumnSizesImpl();
 
     LOG_DEBUG(log, "Loaded data parts (" << data_parts.size() << " items)");
 }
@@ -1578,7 +1579,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 }
 
 
-void MergeTreeData::calculateColumnSizes()
+void MergeTreeData::calculateColumnSizesImpl()
 {
     column_sizes.clear();
 
@@ -1591,7 +1592,7 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
     const auto & files = part->checksums.files;
 
     /// TODO This method doesn't take into account columns with multiple files.
-    for (const auto & column : *columns)
+    for (const auto & column : getColumnsList())
     {
         const auto escaped_name = escapeForFileName(column.name);
         const auto bin_file_name = escaped_name + ".bin";
@@ -1611,6 +1612,14 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
     }
 }
 
+static inline void logSubtract(size_t & from, size_t value, Logger * log, const String & variable)
+{
+    if (value > from)
+        LOG_ERROR(log, "Possibly incorrect subtraction: " << from << " - " << value << " = " << from - value << ", variable " << variable);
+
+    from -= value;
+}
+
 void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part)
 {
     const auto & files = part->checksums.files;
@@ -1627,12 +1636,12 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
         if (files.count(bin_file_name))
         {
             const auto & bin_file_checksums = files.at(bin_file_name);
-            column_size.data_compressed -= bin_file_checksums.file_size;
-            column_size.data_uncompressed -= bin_file_checksums.uncompressed_size;
+            logSubtract(column_size.data_compressed, bin_file_checksums.file_size, log, bin_file_name + ".file_size");
+            logSubtract(column_size.data_uncompressed, bin_file_checksums.uncompressed_size, log, bin_file_name + ".uncompressed_size");
         }
 
         if (files.count(mrk_file_name))
-            column_size.marks -= files.at(mrk_file_name).file_size;
+            logSubtract(column_size.marks, files.at(mrk_file_name).file_size, log, mrk_file_name + ".file_size");
     }
 }
 

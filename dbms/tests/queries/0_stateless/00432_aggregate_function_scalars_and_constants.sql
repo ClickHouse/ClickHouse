@@ -38,3 +38,20 @@ SELECT arrayReduce('groupUniqArrayMergeIf',
 SELECT '';
 SELECT arrayReduce('avgState', [0]) IN (arrayReduce('avgState', [0, 1]), arrayReduce('avgState', [0]));
 SELECT arrayReduce('avgState', [0]) IN (arrayReduce('avgState', [0, 1]), arrayReduce('avgState', [1]));
+
+SELECT '';
+SELECT arrayReduce('uniqExactMerge',
+    [arrayReduce('uniqExactMergeState',
+        [
+            arrayReduce('uniqExactState', [12345678901]),
+            arrayReduce('uniqExactState', [12345678901])
+        ])
+    ]);
+
+SELECT arrayReduce('uniqExactMerge',
+    [arrayReduce('uniqExactMergeState',
+        [
+            arrayReduce('uniqExactState', [12345678901]),
+            arrayReduce('uniqExactState', [12345678902])
+        ])
+    ]);

@@ -3,15 +3,15 @@
 #include <Common/HashTable/HashMap.h>
 
 
-/** Замена хэш-таблицы для маленького количества (единицы) ключей.
-  * Реализована в виде массива с линейным поиском.
-  * Массив расположен внутри объекта.
-  * Интерфейс является подмножеством интерфейса HashTable.
+/** Replacement of the hash table for a small number (<10) of keys.
+  * Implemented as an array with linear search.
+  * The array is located inside the object.
+  * The interface is a subset of the HashTable interface.
   *
-  * Вставка возможна только если метод full возвращает false.
-  * При неизвестном количестве различных ключей,
-  *  вы должны проверять, не заполнена ли таблица,
-  *  и делать fallback в этом случае (например, использовать полноценную хэш-таблицу).
+  * Insert is possible only if the `full` method returns false.
+  * With an unknown number of different keys,
+  *  you should check if the table is not full,
+  *  and do a `fallback` in this case (for example, use a real hash table).
   */
 
 template
@@ -32,11 +32,11 @@ protected:
     using Self = SmallTable<Key, Cell, capacity>;
     using cell_type = Cell;
 
-    size_t m_size = 0;        /// Количество элементов.
-    Cell buf[capacity];        /// Кусок памяти для всех элементов.
+    size_t m_size = 0;        /// Amount of elements.
+    Cell buf[capacity];       /// A piece of memory for all elements.
 
 
-    /// Найти ячейку с тем же ключём или пустую ячейку, начиная с заданного места и далее по цепочке разрешения коллизий.
+    /// Find a cell with the same key or an empty cell, starting from the specified position and then by the collision resolution chain.
     const Cell * ALWAYS_INLINE findCell(const Key & x) const
     {
         const Cell * it = buf;
@@ -188,8 +188,8 @@ protected:
 
 
 public:
-    /** Таблица переполнена.
-      * В переполненную таблицу ничего нельзя вставлять.
+    /** The table is full.
+      * You can not insert anything into the full table.
       */
     bool full()
     {
@@ -197,7 +197,7 @@ public:
     }
 
 
-    /// Вставить значение. В случае хоть сколько-нибудь сложных значений, лучше используйте функцию emplace.
+    /// Insert the value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
     {
         std::pair<iterator, bool> res;
@@ -211,14 +211,14 @@ public:
     }
 
 
-    /** Вставить ключ,
-      * вернуть итератор на позицию, которую можно использовать для placement new значения,
-      * а также флаг - был ли вставлен новый ключ.
+    /** Insert the key,
+      * return an iterator to a position that can be used for `placement new` of value,
+      * as well as the flag - whether a new key was inserted.
       *
-      * Вы обязаны сделать placement new значения, если был вставлен новый ключ,
-      * так как при уничтожении хэш-таблицы для него будет вызываться деструктор!
+      * You have to make `placement new` of value if you inserted a new key,
+      * since when destroying a hash table, a destructor will be called for it!
       *
-      * Пример использования:
+      * Example usage:
       *
       * Map::iterator it;
       * bool inserted;
@@ -239,7 +239,7 @@ public:
     }
 
 
-    /// То же самое, но вернуть false, если переполнено.
+    /// Same, but return false if it's full.
     bool ALWAYS_INLINE tryEmplace(Key x, iterator & it, bool & inserted)
     {
         Cell * res = findCell(x);
@@ -257,7 +257,7 @@ public:
     }
 
 
-    /// Скопировать ячейку из другой хэш-таблицы. Предполагается, что такого ключа в таблице ещё не было.
+    /// Copy the cell from another hash table. It is assumed that there was no such key in the table yet.
     void ALWAYS_INLINE insertUnique(const Cell * cell)
     {
         memcpy(&buf[m_size], cell, sizeof(*cell));

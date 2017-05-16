@@ -17,12 +17,13 @@ namespace CurrentMetrics
 namespace DB
 {
 
-/** Выполняет другой BlockInputStream в отдельном потоке.
-  * Это служит для двух целей:
-  * 1. Позволяет сделать так, чтобы разные стадии конвейера выполнения запроса работали параллельно.
-  * 2. Позволяет не ждать до того, как данные будут готовы, а периодически проверять их готовность без блокировки.
-  *    Это нужно, например, чтобы можно было во время ожидания проверить, не пришёл ли по сети пакет с просьбой прервать выполнение запроса.
-  *    Также это позволяет выполнить несколько запросов одновременно.
+/** Executes another BlockInputStream in a separate thread.
+  * This serves two purposes:
+  * 1. Allows you to make the different stages of the query execution pipeline work in parallel.
+  * 2. Allows you not to wait until the data is ready, and periodically check their readiness without blocking.
+  *    This is necessary, for example, so that during the waiting period you can check if a packet
+  *     has come over the network with a request to interrupt the execution of the query.
+  *    It also allows you to execute multiple queries at the same time.
   */
 class AsynchronousBlockInputStream : public IProfilingBlockInputStream
 {
@@ -43,7 +44,7 @@ public:
 
     void readPrefix() override
     {
-        /// Не будем вызывать readPrefix у ребёнка, чтобы соответствующие действия совершались в отдельном потоке.
+        /// Do not call `readPrefix` on the child, so that the corresponding actions are performed in a separate thread.
         if (!started)
         {
             next();
@@ -64,8 +65,8 @@ public:
     }
 
 
-    /** Ждать готовность данных не более заданного таймаута. Запустить получение данных, если нужно.
-      * Если функция вернула true - данные готовы и можно делать read(); нельзя вызвать функцию сразу ещё раз.
+    /** Wait for the data to be ready no more than the specified timeout. Start receiving data if necessary.
+      * If the function returned true - the data is ready and you can do `read()`; You can not call the function just at the same moment again.
       */
     bool poll(UInt64 milliseconds)
     {
@@ -97,13 +98,13 @@ protected:
 
     Block readImpl() override
     {
-        /// Если вычислений ещё не было - вычислим первый блок синхронно
+        /// If there were no calculations yet, calculate the first block synchronously
         if (!started)
         {
             calculate(current_memory_tracker);
             started = true;
         }
-        else    /// Если вычисления уже идут - подождём результата
+        else    /// If the calculations are already in progress - wait for the result
             pool.wait();
 
         if (exception)
@@ -113,7 +114,7 @@ protected:
         if (!res)
             return res;
 
-        /// Запустим вычисления следующего блока
+        /// Start the next block calculation
         block = Block();
         next();
 
@@ -128,7 +129,7 @@ protected:
     }
 
 
-    /// Вычисления, которые могут выполняться в отдельном потоке
+    /// Calculations that can be performed in a separate thread
     void calculate(MemoryTracker * memory_tracker)
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};

@@ -13,48 +13,48 @@ namespace DB
 {
 
 
-/** Доагрегирует потоки блоков, держа в оперативной памяти только по одному или несколько (до merging_threads) блоков из каждого источника.
-  * Это экономит оперативку в случае использования двухуровневой агрегации, где в каждом источнике будет до 256 блоков с частями результата.
+/** Pre-aggregates block streams, holding in RAM only one or more (up to merging_threads) blocks from each source.
+  * This saves RAM in case of using two-level aggregation, where in each source there will be up to 256 blocks with parts of the result.
   *
-  * Агрегатные функции в блоках не должны быть финализированы, чтобы их состояния можно было объединить.
+  * Aggregate functions in blocks should not be finalized so that their states can be combined.
   *
-  * Используется для решения двух задач:
+  * Used to solve two tasks:
   *
-  * 1. Внешняя агрегация со сбросом данных на диск.
-  * Частично агрегированные данные (предварительно разбитые на 256 корзин) сброшены в какое-то количество файлов на диске.
-  * Нужно читать их и мерджить по корзинам - держа в оперативке одновременно только несколько корзин из каждого файла.
+  * 1. External aggregation with data flush to disk.
+  * Partially aggregated data (previously divided into 256 buckets) is flushed to some number of files on the disk.
+  * We need to read them and merge them by buckets - keeping only a few buckets from each file in RAM simultaneously.
   *
-  * 2. Слияние результатов агрегации при распределённой обработке запроса.
-  * С разных серверов приезжают частично агрегированные данные, которые могут быть разбиты, а могут быть не разбиты на 256 корзин,
-  *  и эти корзины отдаются нам по сети с каждого сервера последовательно, друг за другом.
-  * Надо так же читать и мерджить по корзинам.
+  * 2. Merge aggregation results for distributed query processing.
+  * Partially aggregated data arrives from different servers, which can be splitted down or not, into 256 buckets,
+  *  and these buckets are passed to us by the network from each server in sequence, one by one.
+  * You should also read and merge by the buckets.
   *
-  * Суть работы:
+  * The essence of the work:
   *
-  * Есть какое-то количество источников. Они отдают блоки с частично агрегированными данными.
-  * Каждый источник может отдать одну из следующих последовательностей блоков:
-  * 1. "неразрезанный" блок с bucket_num = -1;
-  * 2. "разрезанные" (two_level) блоки с bucket_num от 0 до 255;
-  * В обоих случаях, может ещё присутствовать блок "переполнений" (overflows) с bucket_num = -1 и is_overflows = true;
+  * There are a number of sources. They give out blocks with partially aggregated data.
+  * Each source can return one of the following block sequences:
+  * 1. "unsplitted" block with bucket_num = -1;
+  * 2. "splitted" (two_level) blocks with bucket_num from 0 to 255;
+  * In both cases, there may also be a block of "overflows" with bucket_num = -1 and is_overflows = true;
   *
-  * Исходим из соглашения, что разрезанные блоки всегда передаются в порядке bucket_num.
-  * То есть, если a < b, то блок с bucket_num = a идёт раньше bucket_num = b.
-  * Это нужно для экономного по памяти слияния
-  * - чтобы не надо было читать блоки наперёд, а идти по всем последовательностям по возрастанию bucket_num.
+  * We start from the convention that splitted blocks are always passed in the order of bucket_num.
+  * That is, if a < b, then the bucket_num = a block goes before bucket_num = b.
+  * This is needed for a memory-efficient merge
+  * - so that you do not need to read the blocks up front, but go all the way up by bucket_num.
   *
-  * При этом, не все bucket_num из диапазона 0..255 могут присутствовать.
-  * Блок переполнений может присутствовать в любом порядке относительно других блоков (но он может быть только один).
+  * In this case, not all bucket_num from the range of 0..255 can be present.
+  * The overflow block can be presented in any order relative to other blocks (but it can be only one).
   *
-  * Необходимо объединить эти последовательности блоков и отдать результат в виде последовательности с такими же свойствами.
-  * То есть, на выходе, если в последовательности есть "разрезанные" блоки, то они должны идти в порядке bucket_num.
+  * It is necessary to combine these sequences of blocks and return the result as a sequence with the same properties.
+  * That is, at the output, if there are "splitted" blocks in the sequence, then they should go in the order of bucket_num.
   *
-  * Мердж можно осуществлять с использованием нескольких (merging_threads) потоков.
-  * Для этого, получение набора блоков для следующего bucket_num надо делать последовательно,
-  *  а затем, когда мы имеем несколько полученных наборов, их объединение можно делать параллельно.
+  * The merge can be performed using several (merging_threads) threads.
+  * For this, receiving of a set of blocks for the next bucket_num should be done sequentially,
+  *  and then, when we have several received sets, they can be merged in parallel.
   *
-  * При получении следующих блоков из разных источников,
-  *  данные из источников можно также читать в несколько потоков (reading_threads)
-  *  для оптимальной работы при наличии быстрой сети или дисков (откуда эти блоки читаются).
+  * When you receive next blocks from different sources,
+  *  data from sources can also be read in several threads (reading_threads)
+  *  for optimal performance in the presence of a fast network or disks (from where these blocks are read).
   */
 class MergingAggregatedMemoryEfficientBlockInputStream : public IProfilingBlockInputStream
 {
@@ -69,14 +69,14 @@ public:
 
     String getID() const override;
 
-    /// Отправляет запрос (инициирует вычисления) раньше, чем read.
+    /// Sends the request (initiates calculations) earlier than `read`.
     void readPrefix() override;
 
-    /// Вызывается либо после того, как всё прочитано, либо после cancel-а.
+    /// Called either after everything is read, or after cancel.
     void readSuffix() override;
 
-    /** Отличается от реализации по-умолчанию тем, что пытается остановить все источники,
-      *  пропуская отвалившиеся по эксепшену.
+    /** Different from the default implementation by trying to stop all sources,
+      *  skipping failed by execution.
       */
     void cancel() override;
 
@@ -117,32 +117,33 @@ private:
 
     void start();
 
-    /// Получить блоки, которые можно мерджить. Это позволяет мерджить их параллельно в отдельных потоках.
+    /// Get blocks that you can merge. This allows you to merge them in parallel in separate threads.
     BlocksToMerge getNextBlocksToMerge();
 
     std::unique_ptr<ThreadPool> reading_pool;
 
-    /// Для параллельного мерджа.
+    /// For a parallel merge.
 
     struct ParallelMergeData
     {
         ThreadPool pool;
 
-        /// Сейчас один из мерджащих потоков получает следующие блоки для мерджа. Эта операция должна делаться последовательно.
+        /// Now one of the merging threads receives next blocks for the merge. This operation must be done sequentially.
         std::mutex get_next_blocks_mutex;
 
         std::atomic<bool> exhausted {false};    /// No more source data.
         std::atomic<bool> finish {false};        /// Need to terminate early.
 
         std::exception_ptr exception;
-        /// Следует отдавать блоки стого в порядке ключа (bucket_num).
-        /// Если значение - пустой блок - то нужно дождаться его мерджа.
-        /// (Такое значение означает обещание, что здесь будут данные. Это важно, потому что данные нужно отдавать в порядке ключа - bucket_num)
+        /// It is necessary to give out blocks in the order of the key (bucket_num).
+        /// If the value is an empty block, you need to wait for its merge.
+        /// (This means the promise that there will be data here, which is important because the data should be given out 
+        /// in the order of the key - bucket_num)
         std::map<int, Block> merged_blocks;
         std::mutex merged_blocks_mutex;
-        /// Событие, с помощью которого мерджащие потоки говорят главному потоку, что новый блок готов.
+        /// An event that is used by merging threads to tell the main thread that the new block is ready.
         std::condition_variable merged_blocks_changed;
-        /// Событие, с помощью которого главный поток говорят мерджащим потокам, что можно обработать следующую группу блоков.
+        /// An event by which the main thread is telling merging threads that it is possible to process the next group of blocks.
         std::condition_variable have_space;
 
         ParallelMergeData(size_t max_threads) : pool(max_threads) {}

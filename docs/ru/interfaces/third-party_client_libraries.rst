@@ -26,5 +26,7 @@
     - `clickhouse-r <https://github.com/hannesmuehleisen/clickhouse-r>`_
 * .NET
     - `ClickHouse-Net <https://github.com/killwort/ClickHouse-Net>`_
+* .C++
+    - `clickhouse-cpp <https://github.com/artpaul/clickhouse-cpp/>`_
 
 Библиотеки не тестировались нами. Порядок перечисления произвольный.

@@ -6,8 +6,8 @@
 namespace DB
 {
 
-/** Поток для вывода данных в формате tsv, но без эскейпинга отдельных значений.
-  * (То есть - вывод необратимый.)
+/** A stream for outputting data in tsv format, but without escaping individual values.
+  * (That is, the output is irreversible.)
   */
 class TabSeparatedRawRowOutputStream : public TabSeparatedRowOutputStream
 {

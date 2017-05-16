@@ -1,0 +1,3 @@
+[submodule "doc/presentations"]
+	path = doc/presentations
+	url = https://github.com/yandex/clickhouse-presentations.git

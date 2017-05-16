@@ -8,10 +8,10 @@ namespace DB
 
 class ExpressionActions;
 
-/** Выполняет над блоком вычисление некоторого выражения.
-  * Выражение состоит из идентификаторов столбцов из блока, констант, обычных функций.
-  * Например: hits * 2 + 3, url LIKE '%yandex%'
-  * Выражение обрабатывает каждую строку независимо от других.
+/** Executes a certain expression over the block.
+  * The expression consists of column identifiers from the block, constants, common functions.
+  * For example: hits * 2 + 3, url LIKE '%yandex%'
+  * The expression processes each row independently of the others.
   */
 class ExpressionBlockInputStream : public IProfilingBlockInputStream
 {

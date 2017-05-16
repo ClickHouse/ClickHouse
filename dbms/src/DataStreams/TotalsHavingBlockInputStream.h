@@ -9,9 +9,9 @@ namespace DB
 class ExpressionActions;
 
 
-/** Принимает блоки после группировки, с нефиализированными агрегатными функциями.
-  * Вычисляет тотальные значения в соответствии с totals_mode.
-  * Если нужно, вычисляет выражение из HAVING и фильтрует им строки. Отдает финализированные и отфильтрованные блоки.
+/** Takes blocks after grouping, with non-finalized aggregate functions.
+  * Calculates total values according to totals_mode.
+  * If necessary, evaluates the expression from HAVING and filters rows. Returns the finalized and filtered blocks.
   */
 class TotalsHavingBlockInputStream : public IProfilingBlockInputStream
 {
@@ -42,15 +42,15 @@ private:
     size_t passed_keys = 0;
     size_t total_keys = 0;
 
-    /** Здесь находятся значения, не прошедшие max_rows_to_group_by.
-      * Они прибавляются или не прибавляются к current_totals в зависимости от totals_mode.
+    /** Here are the values that did not pass max_rows_to_group_by.
+      * They are added or not added to the current_totals, depending on the totals_mode.
       */
     Block overflow_aggregates;
 
-    /// Здесь накапливаются тотальные значения. После окончания работы, они будут помещены в IProfilingBlockInputStream::totals.
+    /// Here, total values are accumulated. After the work is finished, they will be placed in IProfilingBlockInputStream::totals.
     Block current_totals;
 
-    /// Если filter == nullptr - прибавлять все строки. Иначе - только строки, проходящие фильтр (HAVING).
+    /// If filter == nullptr - add all rows. Otherwise, only the rows that pass the filter (HAVING).
     void addToTotals(Block & totals, Block & block, const IColumn::Filter * filter);
 };
 

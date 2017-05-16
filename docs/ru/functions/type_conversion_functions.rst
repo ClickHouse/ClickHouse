@@ -28,6 +28,7 @@ toString
 
 Форматы даты и даты-с-временем для функций toDate/toDateTime определены следующим образом:
 ::
+
   YYYY-MM-DD
   YYYY-MM-DD hh:mm:ss
 

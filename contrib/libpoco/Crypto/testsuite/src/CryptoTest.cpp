@@ -246,6 +246,11 @@ void CryptoTest::testCertificate()
 	
 	// fails with recent OpenSSL versions:
 	// assert (cert.issuedBy(cert));
+	
+	std::istringstream otherCertStream(APPINF_PEM);
+	X509Certificate otherCert(otherCertStream);
+	
+	assert (cert.equals(otherCert));
 }
 
 

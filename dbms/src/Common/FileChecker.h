@@ -8,11 +8,11 @@
 namespace DB
 {
 
-/// хранит размеры всех столбцов, и может проверять не побились ли столбцы
+/// stores the sizes of all columns, and can check whether the columns are corrupted
 class FileChecker
 {
 private:
-    /// Имя файла -> размер.
+    /// File name -> size.
     using Map = std::map<std::string, size_t>;
 
 public:
@@ -23,7 +23,7 @@ public:
     void update(const Poco::File & file);
     void update(const Files::const_iterator & begin, const Files::const_iterator & end);
 
-    /// Проверяем файлы, параметры которых указаны в sizes.json
+    /// Check the files whose parameters are specified in sizes.json
     bool check() const;
 
 private:
@@ -35,7 +35,7 @@ private:
     std::string files_info_path;
     std::string tmp_files_info_path;
 
-    /// Данные из файла читаются лениво.
+    /// The data from the file is read lazily.
     Map map;
     bool initialized = false;
 

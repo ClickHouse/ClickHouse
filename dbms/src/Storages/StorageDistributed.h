@@ -3,6 +3,7 @@
 #include <ext/shared_ptr_helper.hpp>
 
 #include <Storages/IStorage.h>
+#include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Settings.h>
@@ -159,6 +160,9 @@ private:
     String path;    /// Can be empty if data_path_ is empty. In this case, a directory for the data to be sent is not created.
 
     std::unordered_map<std::string, std::unique_ptr<StorageDistributedDirectoryMonitor>> directory_monitors;
+
+    /// Used for global monotonic ordering of files to send.
+    SimpleIncrement file_names_increment;
 };
 
 }
