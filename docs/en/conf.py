@@ -34,7 +34,10 @@ extensions = [
 ]
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = [os.getenv('SPHINX_TEMPLATES', '')]
+templates_path = [
+    '../_templates',
+    os.getenv('SPHINX_TEMPLATES', '')
+]
 
 # The suffix of source filenames.
 source_suffix = '.rst'
