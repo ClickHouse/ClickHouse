@@ -258,3 +258,15 @@ Example:
   │    1110 │ 2016-11-24 00:00:10 │     1 │
   └─────────┴─────────────────────┴───────┘
   
+MACNumToString(num)
+~~~~~~~~~~~~~~~~~~~
+Takes a UInt64 number. Interprets it as an MAC address in big endian. Returns a string containing the corresponding MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form).
+
+MACStringToNum(s)
+~~~~~~~~~~~~~~~~~
+The reverse function of MACNumToString. If the MAC address has an invalid format, it returns 0.
+
+MACStringToOUI(s)
+~~~~~~~~~~~~~~~~~
+Takes MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form). Returns first three octets as UInt64 number. If the MAC address has an invalid format, it returns 0.
+  

@@ -15,7 +15,7 @@ struct BlockInfo
 {
     /** is_overflows:
       * After running GROUP BY ... WITH TOTALS with the max_rows_to_group_by and group_by_overflow_mode = 'any' settings,
-      *  a row is inserted in the separate block with aggregated values ​​that have not passed max_rows_to_group_by.
+      *  a row is inserted in the separate block with aggregated values that have not passed max_rows_to_group_by.
       * If it is such a block, then is_overflows is set to true for it.
       */
 
@@ -36,10 +36,10 @@ struct BlockInfo
 
 #undef DECLARE_FIELD
 
-    /// Write the values ​​in binary form. NOTE: You could use protobuf, but it would be overkill for this case.
+    /// Write the values in binary form. NOTE: You could use protobuf, but it would be overkill for this case.
     void write(WriteBuffer & out) const;
 
-    /// Read the values ​​in binary form.
+    /// Read the values in binary form.
     void read(ReadBuffer & in);
 };
 

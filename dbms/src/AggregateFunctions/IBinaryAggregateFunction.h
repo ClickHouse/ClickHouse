@@ -19,8 +19,7 @@ public:
         if (arguments.size() != 2)
             throw Exception{
                 "Passed " + toString(arguments.size()) + " arguments to binary aggregate function " + this->getName(),
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-            };
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         getDerived().setArgumentsImpl(arguments);
     }

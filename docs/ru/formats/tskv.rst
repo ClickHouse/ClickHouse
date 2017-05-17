@@ -3,6 +3,7 @@ TSKV
 
 Похож на TabSeparated, но выводит значения в формате name=value. Имена экранируются так же, как строки в формате TabSeparated и, дополнительно, экранируется также символ =.
 ::
+
   SearchPhrase=   count()=8267016
   SearchPhrase=интерьер ванной комнаты    count()=2166
   SearchPhrase=яндекс     count()=1655

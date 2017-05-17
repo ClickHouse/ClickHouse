@@ -24,6 +24,9 @@ do
         gen_revision_author
         git push
         exit 0
+    elif [[ $1 == '--head' ]]; then
+        REVISION=`git rev-parse HEAD`
+        shift
     else
         echo "Unknown option $1"
         exit 2
@@ -63,4 +66,4 @@ echo -e "\nCurrent revision is $REVISION"
 gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG"
 
 # Build (only binary packages).
-debuild -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT -e DEB_CC -e DEB_CXX -e CMAKE_FLAGS_ADD="$CMAKE_FLAGS_ADD" -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT -e DEB_CC -e DEB_CXX -e CMAKE_FLAGS_ADD="$CMAKE_FLAGS_ADD" -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}

@@ -3,14 +3,14 @@
 #include <Poco/Path.h>
 
 
-/** Создаёт локальный (в той же точке монтирования) бэкап (снэпшот) директории.
+/** Creates a local (at the same mount point) backup (snapshot) directory.
   *
-  * В указанной destination-директории создаёт hard link-и на все файлы source-директории
-  *  и во всех вложенных директориях, с сохранением (созданием) всех относительных путей;
-  *  а также делает chown, снимая разрешение на запись.
+  * In the specified destination directory, it creates a hard links on all source-directory files
+  *  and in all nested directories, with saving (creating) all relative paths;
+  *  and also `chown`, removing the write permission.
   *
-  * Это защищает данные от случайного удаления или модификации,
-  *  и предназначено для использования как простое средство защиты от человеческой или программной ошибки,
-  *  но не от аппаратного сбоя.
+  * This protects data from accidental deletion or modification,
+  *  and is intended to be used as a simple means of protection against a human or program error,
+  *  but not from a hardware failure.
   */
 void localBackup(Poco::Path source_path, Poco::Path destination_path);

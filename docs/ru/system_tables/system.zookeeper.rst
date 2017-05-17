@@ -10,6 +10,7 @@ system.zookeeper
 
 Столбцы:
 ::
+
   name String          - имя узла
   path String          - путь к узлу
   value String         - значение узла

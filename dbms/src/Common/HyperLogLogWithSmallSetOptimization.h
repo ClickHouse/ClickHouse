@@ -9,10 +9,10 @@ namespace DB
 {
 
 
-/** Для маленького количества ключей - массив фиксированного размера "на стеке".
-  * Для большого - выделяется HyperLogLog.
-  * Смотрите также более практичную реализацию в CombinedCardinalityEstimator.h,
-  *  где используется также хэш-таблица для множеств среднего размера.
+/** For a small number of keys - an array of fixed size "on the stack".
+  * For large, HyperLogLog is allocated.
+  * See also the more practical implementation in CombinedCardinalityEstimator.h,
+  *  where a hash table is also used for medium-sized sets.
   */
 template
 <
@@ -39,7 +39,7 @@ private:
     {
         CurrentMemoryTracker::alloc(sizeof(large));
 
-        /// На время копирования данных из tiny, устанавливать значение large ещё нельзя (иначе оно перезатрёт часть данных).
+        /// At the time of copying data from `tiny`, setting the value of `large` is still not possible (otherwise it will overwrite some data).
         Large * tmp_large = new Large;
 
         for (const auto & x : small)
@@ -99,7 +99,7 @@ public:
         }
     }
 
-    /// Можно вызывать только для пустого объекта.
+    /// You can only call for an empty object.
     void read(DB::ReadBuffer & in)
     {
         bool is_large;

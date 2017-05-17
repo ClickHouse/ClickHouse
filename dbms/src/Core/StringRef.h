@@ -171,17 +171,7 @@ struct StringRefHash64
 
 #if __SSE4_2__
 
-#ifdef __SSE4_1__
 #include <smmintrin.h>
-#else
-
-inline UInt64 _mm_crc32_u64(UInt64 crc, UInt64 value)
-{
-    asm("crc32q %[value], %[crc]\n" : [crc] "+r" (crc) : [value] "rm" (value));
-    return crc;
-}
-
-#endif
 
 /// Parts are taken from CityHash.
 

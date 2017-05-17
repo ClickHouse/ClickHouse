@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/** Добавляет в блок материализованный const column с заданным значением.
+/** Adds a materialized const column to the block with a specified value.
   */
 template <typename ColumnType>
 class AddingConstColumnBlockInputStream : public IProfilingBlockInputStream

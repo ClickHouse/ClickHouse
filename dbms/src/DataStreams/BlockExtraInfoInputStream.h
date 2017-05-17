@@ -5,8 +5,8 @@
 namespace DB
 {
 
-/** Прибавляет к одному потоку дополнительную информацию о блоках, которая задана
-  * в качестве параметра конструктора.
+/** Adds to one thread additional block information that is specified
+  * as the constructor parameter.
   */
 class BlockExtraInfoInputStream : public IProfilingBlockInputStream
 {

@@ -9,7 +9,7 @@
 namespace DB
 {
 
-/** Data types for representing values ​​from a database in RAM.
+/** Data types for representing values from a database in RAM.
   */
 
 STRONG_TYPEDEF(char, Null);

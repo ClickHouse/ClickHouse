@@ -131,6 +131,7 @@ BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query, const Settings & sett
 
 bool StorageMergeTree::checkTableCanBeDropped() const
 {
+    const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
     context.checkTableCanBeDropped(database_name, table_name, getData().getTotalCompressedSize());
     return true;
 }
@@ -242,6 +243,9 @@ void StorageMergeTree::alter(
 
     for (auto & transaction : transactions)
         transaction->commit();
+
+    /// Columns sizes could be changed
+    data.recalculateColumnSizes();
 
     if (primary_key_is_modified)
         data.loadDataParts(false);

@@ -12,8 +12,8 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_EMPTY_BLOCK_OUTPUT_STREAM;
 }
 
-/** При попытке записать в этот поток блоков, кидает исключение.
-  * Используется там, где, в общем случае, нужно передать поток блоков, но в некоторых случаях, он не должен быть использован.
+/** When trying to write blocks to this stream of blocks, throws an exception.
+  * Used where, in general, you need to pass a stream of blocks, but in some cases, it should not be used.
   */
 class EmptyBlockOutputStream : public IBlockOutputStream
 {

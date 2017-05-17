@@ -15,7 +15,7 @@
 #include <unistd.h>
 
 
-/** Небольшие обёртки для асинхронного ввода-вывода.
+/** Small wrappers for asynchronous I/O.
   */
 
 

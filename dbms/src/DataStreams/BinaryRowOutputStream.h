@@ -11,7 +11,7 @@ class IDataType;
 class WriteBuffer;
 
 
-/** Поток для вывода данных в бинарном построчном формате.
+/** A stream for outputting data in a binary line-by-line format.
   */
 class BinaryRowOutputStream : public IRowOutputStream
 {

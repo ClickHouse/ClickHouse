@@ -66,16 +66,12 @@ int main(int argc, char ** argv)
     {
         /* Same test for string keys */
 
-        using Cont = DB::SpaceSaving<StringRef, StringRefHash>;
+        using Cont = DB::SpaceSaving<std::string, StringRef, StringRefHash>;
         Cont cont(10);
 
-        std::vector<std::string> refs;
-
         for (int i = 0; i < 400; ++i) {
-            refs.push_back(std::to_string(i));
-            cont.insert(StringRef(refs.back()));
-            refs.push_back(std::to_string(i % 5)); // Bias towards 0-4
-            cont.insert(StringRef(refs.back()));
+            cont.insert(std::to_string(i));
+            cont.insert(std::to_string(i % 5)); // Bias towards 0-4
         }
 
         // The hashing is going to be more lossy
@@ -86,7 +82,7 @@ int main(int argc, char ** argv)
         }
 
         for (auto x : cont.topK(5)) {
-            auto key = x.key.toString();
+            auto key = x.key;
             if (x.count < expect[key]) {
                 std::cerr << "key: " << key << " value: " << x.count << " expected: " << expect[key] << std::endl;
             } else {

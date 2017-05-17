@@ -2,7 +2,7 @@
 
 #include <string>
 
-/** Получить FQDN для локального сервера путём DNS-резолвинга hostname - аналогично вызову утилиты hostname с флагом -f.
-  * Если не получилось отрезолвить, то вернуть hostname - аналогично вызову утилиты hostname без флагов или uname -n.
+/** Get the FQDN for the local server by resolving DNS hostname - similar to calling the 'hostname' tool with the -f flag.
+  * If it does not work, return hostname - similar to calling 'hostname' without flags or 'uname -n'.
   */
 const std::string & getFQDNOrHostName();

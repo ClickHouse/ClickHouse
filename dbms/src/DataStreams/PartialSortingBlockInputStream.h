@@ -8,13 +8,13 @@
 namespace DB
 {
 
-/** Сортирует каждый блок по отдельности по значениям указанных столбцов.
-  * На данный момент, используется не очень оптимальный алгоритм.
+/** Sorts each block individually by the values of the specified columns.
+  * At the moment, not very optimal algorithm is used.
   */
 class PartialSortingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    /// limit - если не 0, то можно каждый блок сортировать не полностью, а только limit первых по порядку строк.
+    /// limit - if not 0, then you can sort each block not completely, but only `limit` first rows by order.
     PartialSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_, size_t limit_ = 0)
         : description(description_), limit(limit_)
     {

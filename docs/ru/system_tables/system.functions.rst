@@ -5,5 +5,6 @@ system.functions
 
 Столбцы:
 ::
+
   name String           - имя функции
   is_aggregate UInt8    - является ли функция агрегатной

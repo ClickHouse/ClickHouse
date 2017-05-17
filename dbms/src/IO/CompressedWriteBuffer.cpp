@@ -70,15 +70,18 @@ void CompressedWriteBuffer::nextImpl()
             compressed_buffer[0] = static_cast<UInt8>(CompressionMethodByte::LZ4);
 
             if (method == CompressionMethod::LZ4)
-                compressed_size = header_size + LZ4_compress(
+                compressed_size = header_size + LZ4_compress_default(
                     working_buffer.begin(),
                     &compressed_buffer[header_size],
-                    uncompressed_size);
+                    uncompressed_size,
+                    LZ4_COMPRESSBOUND(uncompressed_size));
             else
-                compressed_size = header_size + LZ4_compressHC(
+                compressed_size = header_size + LZ4_compress_HC(
                     working_buffer.begin(),
                     &compressed_buffer[header_size],
-                    uncompressed_size);
+                    uncompressed_size,
+                    LZ4_COMPRESSBOUND(uncompressed_size),
+                    0);
 
             UInt32 compressed_size_32 = compressed_size;
             UInt32 uncompressed_size_32 = uncompressed_size;

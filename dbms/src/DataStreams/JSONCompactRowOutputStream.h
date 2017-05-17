@@ -9,7 +9,7 @@
 namespace DB
 {
 
-/** Поток для вывода данных в формате JSONCompact.
+/** The stream for outputting data in the JSONCompact format.
   */
 class JSONCompactRowOutputStream : public JSONRowOutputStream
 {

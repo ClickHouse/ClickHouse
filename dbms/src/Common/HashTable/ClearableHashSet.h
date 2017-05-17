@@ -4,12 +4,12 @@
 #include <Common/HashTable/HashSet.h>
 
 
-/** Хеш-таблица, позволяющая очищать таблицу за O(1).
-  * Еще более простая, чем HashSet: Key и Mapped должны быть POD-типами.
+/** A hash table that allows you to clear the table in O(1).
+  * Even simpler than HashSet: Key and Mapped must be POD-types.
   *
-  * Вместо этого класса можно было бы просто использовать в HashSet в качестве ключа пару <версия, ключ>,
-  * но тогда таблица накапливала бы все ключи, которые в нее когда-либо складывали, и неоправданно росла.
-  * Этот класс идет на шаг дальше и считает ключи со старой версией пустыми местами в хеш-таблице.
+  * Instead of this class, you could just use the pair (version, key) in the HashSet as the key
+  * but then the table would accumulate all the keys that it ever stored, and it was unreasonably growing.
+  * This class goes a step further and considers the keys with the old version empty in the hash table.
   */
 
 
@@ -17,11 +17,11 @@ struct ClearableHashSetState
 {
     UInt32 version = 1;
 
-    /// Сериализация, в бинарном и текстовом виде.
+    /// Serialization, in binary and text form.
     void write(DB::WriteBuffer & wb) const         { DB::writeBinary(version, wb); }
     void writeText(DB::WriteBuffer & wb) const     { DB::writeText(version, wb); }
 
-    /// Десериализация, в бинарном и текстовом виде.
+    /// Deserialization, in binary and text form.
     void read(DB::ReadBuffer & rb)                 { DB::readBinary(version, rb); }
     void readText(DB::ReadBuffer & rb)             { DB::readText(version, rb); }
 };
@@ -38,10 +38,10 @@ struct ClearableHashTableCell : public BaseCell
     bool isZero(const State & state) const { return version != state.version; }
     static bool isZero(const Key & key, const State & state) { return false; }
 
-    /// Установить значение ключа в ноль.
+    /// Set the key value to zero.
     void setZero() { version = 0; }
 
-    /// Нужно ли хранить нулевой ключ отдельно (то есть, могут ли в хэш-таблицу вставить нулевой ключ).
+    /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = false;
 
     ClearableHashTableCell() {}

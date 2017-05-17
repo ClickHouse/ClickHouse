@@ -12,11 +12,11 @@
 namespace DB
 {
 
-/** Соединяет несколько сортированных потоков в один.
-  * При этом, для каждой группы идущих подряд одинаковых значений первичного ключа (столбцов, по которым сортируются данные),
-  * сливает их в одну строку. При слиянии, производится доагрегация данных - слияние состояний агрегатных функций,
-  * соответствующих одному значению первичного ключа. Для столбцов, не входящих в первичный ключ, и не имеющих тип AggregateFunction,
-  * при слиянии, выбирается первое попавшееся значение.
+/** Merges several sorted streams to one.
+  * During this for each group of consecutive identical values of the primary key (the columns by which the data is sorted),
+  * merges them into one row. When merging, the data is pre-aggregated - merge of states of aggregate functions,
+  * corresponding to a one value of the primary key. For columns that are not part of the primary key and which do not have the AggregateFunction type,
+  * when merged, the first random value is selected.
   */
 class AggregatingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
@@ -50,30 +50,30 @@ public:
     const SortDescription & getSortDescription() const override { return description; }
 
 protected:
-    /// Может возвращаться на 1 больше записей, чем max_block_size.
+    /// Can return 1 more records than max_block_size.
     Block readImpl() override;
 
 private:
     Logger * log = &Logger::get("AggregatingSortedBlockInputStream");
 
-    /// Прочитали до конца.
+    /// Read finished.
     bool finished = false;
 
-    /// Столбцы с какими номерами надо аггрегировать.
+    /// Columns with which numbers should be aggregated.
     ColumnNumbers column_numbers_to_aggregate;
     ColumnNumbers column_numbers_not_to_aggregate;
     std::vector<ColumnAggregateFunction *> columns_to_aggregate;
 
-    RowRef current_key;        /// Текущий первичный ключ.
-    RowRef next_key;        /// Первичный ключ следующей строки.
+    RowRef current_key;        /// The current primary key.
+    RowRef next_key;           /// The primary key of the next row.
 
-    /** Делаем поддержку двух разных курсоров - с Collation и без.
-     *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
+    /** We support two different cursors - with Collation and without.
+     *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.
      */
     template <class TSortCursor>
     void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
-    /** Извлечь все состояния аггрегатных функций и объединить с текущей группой.
+    /** Extract all states of aggregate functions and merge them with the current group.
       */
     template <class TSortCursor>
     void addRow(TSortCursor & cursor);

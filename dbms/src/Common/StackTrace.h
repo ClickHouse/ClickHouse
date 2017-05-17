@@ -6,14 +6,14 @@
 #define STACK_TRACE_MAX_DEPTH 32
 
 
-/// Позволяет получить стек-трейс
+/// Lets you get a stacktrace
 class StackTrace
 {
 public:
-    /// Стектрейс снимается в момент создания объекта
+    /// The stacktrace is captured when the object is created
     StackTrace();
 
-    /// Вывести в строку
+    /// Print to string
     std::string toString() const;
 
 private:
