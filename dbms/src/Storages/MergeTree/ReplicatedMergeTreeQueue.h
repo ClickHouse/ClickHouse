@@ -88,6 +88,11 @@ private:
       */
     bool shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason, MergeTreeDataMerger & merger, MergeTreeData & data);
 
+    /** Check that part isn't in currently generating parts and isn't covered by them.
+      * Should be called under queue's mutex.
+      */
+    bool isNotCoveredByFuturePartsImpl(const String & new_part_name, String & out_reason);
+
     /// After removing the queue element, update the insertion times in the RAM. Running under queue_mutex.
     /// Returns information about what times have changed - this information can be passed to updateTimesInZooKeeper.
     void updateTimesOnRemoval(const LogEntryPtr & entry, bool & min_unprocessed_insert_time_changed, bool & max_processed_insert_time_changed);
@@ -107,6 +112,10 @@ private:
 
         /// Created only in the selectEntryToProcess function. It is called under mutex.
         CurrentlyExecuting(ReplicatedMergeTreeQueue::LogEntryPtr & entry, ReplicatedMergeTreeQueue & queue);
+
+        /// In case of fetch, we determine actual part during the execution, so we need to update entry. It is called under mutex.
+        static void setActualPartName(const ReplicatedMergeTreeLogEntry & entry, const String & actual_part_name,
+            ReplicatedMergeTreeQueue & queue);
     public:
         ~CurrentlyExecuting();
     };
@@ -164,6 +173,11 @@ public:
 
     /// Prohibit merges in the specified range.
     void disableMergesInRange(const String & part_name);
+
+    /** Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
+      * Locks queue's mutex.
+      */
+    bool addFuturePartIfNotCoveredByThem(const String & part_name, const LogEntry & entry, String & reject_reason);
 
     /// Count the number of merges in the queue.
     size_t countMerges();

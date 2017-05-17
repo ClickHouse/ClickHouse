@@ -1251,8 +1251,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
     if (do_fetch)
     {
-        String covering_part;
-        String replica = findReplicaHavingCoveringPart(entry.new_part_name, true, covering_part);
+        String replica = findReplicaHavingCoveringPart(entry, true);
 
         static std::atomic_uint total_fetches {0};
         if (data.settings.replicated_max_parallel_fetches && total_fetches >= data.settings.replicated_max_parallel_fetches)
@@ -1422,7 +1421,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
             try
             {
-                if (!fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
+                if (!fetchPart(entry.actual_new_part_name, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
                     return false;
             }
             catch (Exception & e)
@@ -1965,7 +1964,7 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
 }
 
 
-String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const String & part_name, bool active, String & out_covering_part_name)
+String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const LogEntry & entry, bool active)
 {
     auto zookeeper = getZooKeeper();
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
@@ -1985,10 +1984,9 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const String & 
         Strings parts = zookeeper->getChildren(zookeeper_path + "/replicas/" + replica + "/parts");
         for (const String & part_on_replica : parts)
         {
-            if (part_on_replica == part_name || ActiveDataPartSet::contains(part_on_replica, part_name))
+            if (part_on_replica == entry.new_part_name || ActiveDataPartSet::contains(part_on_replica, entry.new_part_name))
             {
-                if (largest_part_found.empty()
-                    || ActiveDataPartSet::contains(part_on_replica, largest_part_found))
+                if (largest_part_found.empty() || ActiveDataPartSet::contains(part_on_replica, largest_part_found))
                 {
                     largest_part_found = part_on_replica;
                 }
@@ -1997,7 +1995,23 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const String & 
 
         if (!largest_part_found.empty())
         {
-            out_covering_part_name = largest_part_found;
+            bool the_same_part = largest_part_found == entry.new_part_name;
+
+            /// Make a check in case if selected part differs from source part
+            if (!the_same_part)
+            {
+                String reject_reason;
+                if (!queue.addFuturePartIfNotCoveredByThem(largest_part_found, entry, reject_reason))
+                {
+                    LOG_INFO(log, "Will not fetch part " << largest_part_found << " covering " << entry.new_part_name << ". " << reject_reason);
+                    return {};
+                }
+            }
+            else
+            {
+                entry.actual_new_part_name = entry.new_part_name;
+            }
+
             return replica;
         }
     }
@@ -2954,6 +2968,7 @@ void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & fie
 bool StorageReplicatedMergeTree::checkTableCanBeDropped() const
 {
     /// Consider only synchronized data
+    const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
     context.checkTableCanBeDropped(database_name, table_name, getData().getTotalCompressedSize());
     return true;
 }

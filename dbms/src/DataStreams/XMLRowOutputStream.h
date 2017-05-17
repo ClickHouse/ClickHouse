@@ -10,7 +10,7 @@
 namespace DB
 {
 
-/** Поток для вывода данных в формате XML.
+/** A stream for outputting data in XML format.
   */
 class XMLRowOutputStream : public IRowOutputStream
 {

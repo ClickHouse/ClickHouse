@@ -8,12 +8,15 @@ var htmlmin = require('gulp-htmlmin');
 var minifyInline = require('gulp-minify-inline');
 var del = require('del');
 var connect = require('gulp-connect');
+var run = require('gulp-run');
 
 var outputDir = 'public';
+var docsDir = '../docs/build/docs';
 
 var paths = {
     htmls: ['*.html', '!reference_ru.html', '!reference_en.html'],
     reference: ['reference_ru.html', 'reference_en.html'],
+    docs: [docsDir + '/**'],
     scripts: ['*.js', '!gulpfile.js'],
     styles: ['*.css'],
     images: ['*.png', '*.ico'],
@@ -22,13 +25,20 @@ var paths = {
 };
 
 gulp.task('clean', function () {
-    return del([outputDir + '**']);
+    return del([outputDir + '/**']);
 });
 
 gulp.task('reference', [], function () {
     return gulp.src(paths.reference)
         .pipe(minifyInline())
         .pipe(gulp.dest(outputDir))
+        .pipe(connect.reload())
+});
+
+gulp.task('docs', [], function () {
+    run('cd ' + docsDir + '; make');
+    return gulp.src(paths.docs)
+        .pipe(gulp.dest(outputDir + '/docs'))
         .pipe(connect.reload())
 });
 
@@ -44,7 +54,7 @@ gulp.task('robotstxt', [], function () {
         .pipe(connect.reload())
 });
 
-gulp.task('htmls', ['reference', 'robotstxt', 'presentations'], function () {
+gulp.task('htmls', ['reference', 'docs', 'robotstxt', 'presentations'], function () {
     return gulp.src(paths.htmls)
         .pipe(htmlmin({collapseWhitespace: true}))
         .pipe(minifyInline())

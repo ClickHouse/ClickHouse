@@ -11,17 +11,17 @@ class WriteBuffer;
 class CompressedWriteBuffer;
 
 
-/** Сериализует поток блоков в родном бинарном формате (с именами и типами столбцов).
-  * Предназначено для взаимодействия между серверами.
+/** Serializes the stream of blocks in their native binary format (with names and column types).
+  * Designed for communication between servers.
   *
-  * Может быть указан поток для записи индекса. Индекс содержит смещения до каждого кусочка каждого столбца.
-  * Если делается append в уже существующий файл, и нужно записать индекс, то укажите initial_size_of_file.
+  * A stream can be specified to write the index. The index contains offsets to each part of each column.
+  * If an `append` is made to an existing file, and you need to write the index, then specify `initial_size_of_file`.
   */
 class NativeBlockOutputStream : public IBlockOutputStream
 {
 public:
-    /** В случае указания ненулевой client_revision, может записываться дополнительная информация о блоке,
-      *  в зависимости от поддерживаемой для указанной ревизии.
+    /** If non-zero client_revision is specified, additional block information can be written,
+      *  depending on what is supported for the specified revision.
       */
     NativeBlockOutputStream(
         WriteBuffer & ostr_, UInt64 client_revision_ = 0,
@@ -39,8 +39,8 @@ private:
     UInt64 client_revision;
 
     WriteBuffer * index_ostr;
-    size_t initial_size_of_file;    /// Начальный размер файла с данными, если делается append. Используется для индекса.
-    /// Если требуется записывать индекс, то ostr обязан быть CompressedWriteBuffer.
+    size_t initial_size_of_file;    /// The initial size of the data file, if `append` done. Used for the index.
+    /// If you need to write index, then `ostr` must be a CompressedWriteBuffer.
     CompressedWriteBuffer * ostr_concrete = nullptr;
 };
 

@@ -16,29 +16,29 @@ class Block;
 class ReadBuffer;
 class WriteBuffer;
 
-/// Информация для профайлинга. См. IProfilingBlockInputStream.h
+/// Information for profiling. See IProfilingBlockInputStream.h
 struct BlockStreamProfileInfo
 {
     bool started = false;
-    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Время с учётом ожидания
+    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time
 
-    String stream_name;            /// Короткое имя потока, для которого собирается информация
+    String stream_name;            /// The short name of the stream for which information is collected
 
     size_t rows = 0;
     size_t blocks = 0;
     size_t bytes = 0;
 
-    /// Информация о вложенных потоках - для выделения чистого времени работы.
+    /// Information about nested threads - to calculate pure processing time.
     using BlockStreamProfileInfos = std::vector<const BlockStreamProfileInfo *>;
     BlockStreamProfileInfos nested_infos;
 
-    /// Собрать BlockStreamProfileInfo для ближайших в дереве источников с именем name. Пример; собрать все info для PartialSorting stream-ов.
+    /// Collect BlockStreamProfileInfo for the nearest sources in the tree named `name`. Example; collect all info for PartialSorting streams.
     void collectInfosForStreamsWithName(const char * name, BlockStreamProfileInfos & res) const;
 
-    /** Получить число строк, если бы не было LIMIT-а.
-      * Если нет LIMIT-а - возвращается 0.
-      * Если запрос не содержит ORDER BY, то число может быть занижено - возвращается количество строк в блоках, которые были прочитаны до LIMIT-а.
-      * Если запрос содержит ORDER BY, то возвращается точное число строк, которое было бы, если убрать LIMIT.
+    /** Get the number of rows if there were no LIMIT.
+      * If there is no LIMIT, 0 is returned.
+      * If the query does not contain ORDER BY, the number can be underestimated - return the number of rows in blocks that were read before LIMIT reached.
+      * If the query contains an ORDER BY, then returns the exact number of rows as if LIMIT is removed from query.
       */
     size_t getRowsBeforeLimit() const;
     bool hasAppliedLimit() const;
@@ -57,10 +57,10 @@ struct BlockStreamProfileInfo
 private:
     void calculateRowsBeforeLimit() const;
 
-    /// Для этих полей сделаем accessor'ы, т.к. их необходимо предварительно вычислять.
-    mutable bool applied_limit = false;                    /// Применялся ли LIMIT
+    /// For these fields we make accessors, because they must be calculated beforehand.
+    mutable bool applied_limit = false;                    /// Whether LIMIT was applied
     mutable size_t rows_before_limit = 0;
-    mutable bool calculated_rows_before_limit = false;    /// Вычислялось ли поле rows_before_limit
+    mutable bool calculated_rows_before_limit = false;    /// Whether the field rows_before_limit was calculated
 };
 
 }

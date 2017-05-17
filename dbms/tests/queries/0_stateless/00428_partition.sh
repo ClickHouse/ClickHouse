@@ -7,7 +7,7 @@ set -e
 chl="clickhouse-client -q"
 ch_dir=`clickhouse --extract-from-config -c /etc/clickhouse-server/config.xml -k path`
 
-$chl "DROP TABLE IF EXISTS partition_428"
+$chl "DROP TABLE IF EXISTS test.partition_428"
 $chl "CREATE TABLE test.partition_428 (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) ENGINE = MergeTree(p, k, 1)"
 $chl "INSERT INTO test.partition_428 (p, k) VALUES(toDate(31), 1)"
 $chl "INSERT INTO test.partition_428 (p, k) VALUES(toDate(1), 2)"

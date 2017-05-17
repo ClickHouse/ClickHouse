@@ -8,9 +8,9 @@
 namespace DB
 {
 
-/** Соединяет несколько сортированных потоков в один.
-  * При этом, для каждой группы идущих подряд одинаковых значений первичного ключа (столбцов, по которым сортируются данные),
-  *  оставляет
+/** Merges several sorted streams into one.
+  * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
+  *  keeps row with max `version` value.
   */
 class ReplacingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
@@ -42,7 +42,7 @@ public:
     }
 
 protected:
-    /// Может возвращаться на 1 больше записей, чем max_block_size.
+    /// Can return 1 more records than max_block_size.
     Block readImpl() override;
 
 private:
@@ -64,7 +64,7 @@ private:
     template<class TSortCursor>
     void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
-    /// Вставить в результат строки для текущего первичного ключа.
+    /// Output into result the rows for current primary key.
     void insertRow(ColumnPlainPtrs & merged_columns, size_t & merged_rows);
 };
 

@@ -11,13 +11,13 @@ namespace DB
 class ReadBuffer;
 
 
-/** Поток для чтения данных в формате TSKV.
-  * TSKV - очень неэффективный формат данных.
-  * Похож на TSV, но каждое поле записано в виде key=value.
-  * Поля могут быть перечислены в произвольном порядке (в том числе, в разных строках может быть разный порядок),
-  *  и часть полей может отсутствовать.
-  * В имени поля может быть заэскейплен знак равенства.
-  * Также, в качестве дополнительного элемента может присутствовать бесполезный фрагмент tskv - его нужно игнорировать.
+/** Stream for reading data in TSKV format.
+  * TSKV is a very inefficient data format.
+  * Similar to TSV, but each field is written as key=value.
+  * Fields can be listed in any order (including, in different lines there may be different order),
+  *  and some fields may be missing.
+  * An equal sign can be escaped in the field name.
+  * Also, as an additional element there may be a useless tskv fragment - it needs to be ignored.
   */
 class TSKVRowInputStream : public IRowInputStream
 {
@@ -31,13 +31,13 @@ public:
 private:
     ReadBuffer & istr;
     const Block sample;
-    /// Пропускать неизвестные поля.
+    /// Skip unknown fields.
     bool skip_unknown;
 
-    /// Буфер для прочитанного из потока имени поля. Используется, если его потребовалось скопировать.
+    /// Buffer for the read from the stream the field name. Used when you have to copy it.
     String name_buf;
 
-    /// Хэш-таблица соответствия имя поля -> позиция в блоке. NOTE Можно использовать perfect hash map.
+    /// Hash table matching `field name -> position in the block`. NOTE You can use perfect hash map.
     using NameMap = HashMap<StringRef, size_t, StringRefHash>;
     NameMap name_map;
 };

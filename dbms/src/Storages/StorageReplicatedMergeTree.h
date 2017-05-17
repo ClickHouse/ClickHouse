@@ -445,10 +445,10 @@ private:
 
     /** Find replica having specified part or any part that covers it.
       * If active = true, consider only active replicas.
-      * If found, returns replica name and set 'out_covering_part_name' to name of found largest covering part.
+      * If found, returns replica name and set 'entry->actual_new_part_name' to name of found largest covering part.
       * If not found, returns empty string.
       */
-    String findReplicaHavingCoveringPart(const String & part_name, bool active, String & out_covering_part_name);
+    String findReplicaHavingCoveringPart(const LogEntry & entry, bool active);
 
     /** Download the specified part from the specified replica.
       * If `to_detached`, the part is placed in the `detached` directory.
@@ -457,11 +457,11 @@ private:
       */
     bool fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
 
+    /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
     std::mutex currently_fetching_parts_mutex;
 
-    /** With the quorum being tracked, add a replica to the quorum for the part.
-      */
+    /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
 
     AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);

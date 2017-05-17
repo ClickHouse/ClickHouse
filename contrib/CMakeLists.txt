@@ -31,6 +31,7 @@ endif ()
 add_subdirectory (libcityhash)
 add_subdirectory (libfarmhash)
 add_subdirectory (libmetrohash)
+add_subdirectory (libbtrie)
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
 	add_subdirectory (libzlib-ng)

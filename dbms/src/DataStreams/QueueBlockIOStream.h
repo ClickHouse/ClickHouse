@@ -12,17 +12,17 @@ namespace DB
 {
 
 
-/** Является одновременно InputStream и OutputStream.
-  * При записи, кладёт блоки в очередь.
-  * При чтении, вынимает их из очереди.
-  * Используется thread-safe очередь.
-  * Если очередь пуста - чтение блокируется.
-  * Если очередь переполнена - запись блокируется.
+/** Is both an InputStream and an OutputStream.
+  * When writing, puts the blocks in the queue.
+  * When reading, it takes them out of the queue.
+  * A thread-safe queue is used.
+  * If the queue is empty, the read is blocked.
+  * If the queue is full, the write is blocked.
   *
-  * Используется для того, чтобы временно сохранить куда-то результат, и позже передать его дальше.
-  * Также используется для синхронизации, когда нужно из одного источника сделать несколько
-  *  - для однопроходного выполнения сразу нескольких запросов.
-  * Также может использоваться для распараллеливания: несколько потоков кладут блоки в очередь, а один - вынимает.
+  * Used to temporarily store the result somewhere, and later pass it further.
+  * Also used for synchronization, when you need to make several sources from one
+  *  - for single-pass execution of several queries at once.
+  * It can also be used for parallelization: several threads put blocks in the queue, and one - takes out.
   */
 
 class QueueBlockIOStream : public IProfilingBlockInputStream, public IBlockOutputStream

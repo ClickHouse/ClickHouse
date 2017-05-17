@@ -10,9 +10,9 @@ class Block;
 class WriteBuffer;
 
 
-/** Пишет данные в tab-separated файл, но по столбцам, блоками.
-  * Блоки разделены двойным переводом строки.
-  * На каждой строке блока - данные одного столбца.
+/** Writes the data into a tab-separated file, but by columns, in blocks.
+  * Blocks are separated by a double line feed.
+  * On each row of the block - the data of one column.
   */
 class TabSeparatedBlockOutputStream : public IBlockOutputStream
 {

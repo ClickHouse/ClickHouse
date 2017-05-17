@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/** Удаляет из блока указанные столбцы.
+/** Removes the specified columns from the block.
   */
 class RemoveColumnsBlockInputStream : public IProfilingBlockInputStream
 {

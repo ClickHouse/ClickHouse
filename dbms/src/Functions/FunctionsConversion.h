@@ -900,9 +900,9 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isInjective(const Block &) override { return true; }
 
-    /** Получить тип результата по типам аргументов и значениям константных аргументов.
-      * Если функция неприменима для данных аргументов - кинуть исключение.
-      * Для неконстантных столбцов arguments[i].column = nullptr.
+    /** Get the result type by argument types and constant argument values.
+      * If the function does not apply to these arguments, throw an exception.
+      * For non-constant columns arguments[i].column = nullptr.
       */
     void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
         DataTypePtr & out_return_type,
@@ -1089,8 +1089,8 @@ struct ToIntMonotonicity
     }
 };
 
-/** Монотонность для функции toString определяем, в основном, для тестовых целей.
-  * Всерьёз вряд ли кто-нибудь рассчитывает на оптимизацию запросов с условиями toString(CounterID) = 34.
+/** The monotonicity for the `toString` function is mainly determined for test purposes.
+  * It is doubtful that anyone is looking to optimize queries with conditions `toString(CounterID) = 34`.
   */
 struct ToStringMonotonicity
 {
@@ -1101,7 +1101,7 @@ struct ToStringMonotonicity
         IFunction::Monotonicity positive(true, true);
         IFunction::Monotonicity not_monotonic;
 
-        /// Функция toString монотонна, если аргумент - Date или DateTime, или неотрицательные числа с одинаковым количеством знаков.
+        /// `toString` function is monotonous if the argument is Date or DateTime, or non-negative numbers with the same number of symbols.
 
         if (typeid_cast<const DataTypeDate *>(&type)
             || typeid_cast<const DataTypeDateTime *>(&type))
