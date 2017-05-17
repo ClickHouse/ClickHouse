@@ -124,7 +124,7 @@ BlockIO InterpreterInsertQuery::execute()
         res.in = interpreter_select.execute().in;
 
         res.in = std::make_shared<NullableAdapterBlockInputStream>(res.in, res.in_sample, res.out_sample);
-        res.in = std::make_shared<CastTypeBlockInputStream>(context, res.in, res.in_sample, res.out_sample);
+        res.in = std::make_shared<CastTypeBlockInputStream>(context, res.in, res.out_sample);
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out);
     }
 

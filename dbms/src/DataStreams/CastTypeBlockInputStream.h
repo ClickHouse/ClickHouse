@@ -2,10 +2,6 @@
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 
-#include <common/logger_useful.h> 
-#include <experimental/optional>
-#include <vector>
-
 
 namespace DB
 {
@@ -18,8 +14,7 @@ class CastTypeBlockInputStream : public IProfilingBlockInputStream
 public:
     CastTypeBlockInputStream(const Context & context_,
                              BlockInputStreamPtr input_,
-                             const Block & in_sample_,
-                             const Block & out_sample_);
+                             const Block & ref_defenition_);
 
     String getName() const override;
 
@@ -29,13 +24,25 @@ protected:
     Block readImpl() override;
 
 private:
-    void collectDifferent(const Block & in_sample, const Block & out_sample);
+    void collectDifferent(const Block & src_block, const Block & ref_sample);
 
 private:
     const Context & context;
-    std::vector<std::experimental::optional<NameAndTypePair>> cast_types;
-    std::vector<std::shared_ptr<IFunction>> cast_functions;  /// Used to perform type conversions.
-    Logger * log = &Logger::get("CastTypeBlockInputStream");
+    Block ref_defenition;
+
+    bool initialized = false;
+
+    struct CastElement
+    {
+        std::shared_ptr<IFunction> function;
+        size_t tmp_col_offset;
+
+        CastElement(std::shared_ptr<IFunction> && function_, size_t tmp_col_offset_);
+    };
+
+    /// Used to perform type conversions in src block
+    std::map<size_t, CastElement> cast_description;
+    Block tmp_conversion_block;
 };
 
 }
