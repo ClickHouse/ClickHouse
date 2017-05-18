@@ -133,7 +133,7 @@ For production releases, GCC is used.
 ### Run release script.
 ```
 rm -f ../clickhouse*.deb
-./release --standalone
+./release
 ```
 
 You will find built packages in parent directory.
