@@ -10,7 +10,7 @@ struct MergeTreeReadTask;
 struct MergeTreeBlockSizePredictor;
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
-using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredictor>;
+using MergeTreeBlockSizePredictorPtr = std::unique_ptr<MergeTreeBlockSizePredictor>;
 
 
 /** If some of the requested columns are not in the part,
@@ -50,7 +50,7 @@ struct MergeTreeReadTask
         const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const std::size_t part_index_in_query,
         const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
         const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
-        const MergeTreeBlockSizePredictorPtr & size_predictor);
+        MergeTreeBlockSizePredictorPtr && size_predictor);
 
     virtual ~MergeTreeReadTask();
 };
@@ -58,10 +58,7 @@ struct MergeTreeReadTask
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(
-        const MergeTreeData::DataPartPtr & data_part_,
-        const NamesAndTypesList & columns,
-        const NamesAndTypesList & pre_columns);
+    MergeTreeBlockSizePredictor(const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block);
 
     /// Reset some values for correct statistics calculating
     void startBlock();

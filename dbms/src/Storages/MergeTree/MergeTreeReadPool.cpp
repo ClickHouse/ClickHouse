@@ -108,12 +108,12 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const std::size_t min_marks_to_r
     }
 
     auto curr_task_size_predictor = !per_part_size_predictor[part_idx] ? nullptr
-        : std::make_shared<MergeTreeBlockSizePredictor>(*per_part_size_predictor[part_idx]); /// make a copy
+        : std::make_unique<MergeTreeBlockSizePredictor>(*per_part_size_predictor[part_idx]); /// make a copy
 
     return std::make_unique<MergeTreeReadTask>(
         part.data_part, ranges_to_get_from_part, part.part_index_in_query, column_names,
         per_part_column_name_set[part_idx], per_part_columns[part_idx], per_part_pre_columns[part_idx],
-        per_part_remove_prewhere_column[part_idx], per_part_should_reorder[part_idx], curr_task_size_predictor);
+        per_part_remove_prewhere_column[part_idx], per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
 }
 
 
@@ -163,6 +163,7 @@ std::vector<std::size_t> MergeTreeReadPool::fillPerPartInfo(
     const bool check_columns)
 {
     std::vector<std::size_t> per_part_sum_marks;
+    Block sample_block = data.getSampleBlock();
 
     for (const auto i : ext::range(0, parts.size()))
     {
@@ -247,8 +248,8 @@ std::vector<std::size_t> MergeTreeReadPool::fillPerPartInfo(
 
         if (predict_block_size_bytes)
         {
-            per_part_size_predictor.emplace_back(std::make_shared<MergeTreeBlockSizePredictor>(
-                part.data_part, per_part_columns.back(), per_part_pre_columns.back()));
+            per_part_size_predictor.emplace_back(std::make_unique<MergeTreeBlockSizePredictor>(
+                part.data_part, column_names, sample_block));
         }
         else
             per_part_size_predictor.emplace_back(nullptr);
