@@ -67,29 +67,28 @@ MergeTreeReadTask::MergeTreeReadTask(
     const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const std::size_t part_index_in_query,
     const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
     const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
-    const MergeTreeBlockSizePredictorPtr & size_predictor)
+    MergeTreeBlockSizePredictorPtr && size_predictor)
 : data_part{data_part}, mark_ranges{mark_ranges}, part_index_in_query{part_index_in_query},
 ordered_names{ordered_names}, column_name_set{column_name_set}, columns{columns}, pre_columns{pre_columns},
-remove_prewhere_column{remove_prewhere_column}, should_reorder{should_reorder}, size_predictor{size_predictor}
+remove_prewhere_column{remove_prewhere_column}, should_reorder{should_reorder}, size_predictor{std::move(size_predictor)}
 {}
 
 MergeTreeReadTask::~MergeTreeReadTask() = default;
 
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const MergeTreeData::DataPartPtr & data_part_,
-    const NamesAndTypesList & columns,
-    const NamesAndTypesList & pre_columns)
+    const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
 : data_part(data_part_)
 {
-    auto add_column = [&] (const NameAndTypePair & column)
+    for (const String & column_name : columns)
     {
-        ColumnPtr column_data = column.type->createColumn();
-        const auto column_checksum = data_part->tryGetBinChecksum(column.name);
+        const auto column_checksum = data_part->tryGetBinChecksum(column_name);
 
-        /// There are no data files, column will be const
-        if (!column_checksum)
+        /// There are no column data files, column will be const
+        if (!column_checksum || !data_part->hasColumnFiles(column_name))
             return;
+
+        const ColumnPtr & column_data = sample_block.getByName(column_name).column;
 
         if (column_data->isFixed())
         {
@@ -98,18 +97,12 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
         else
         {
             ColumnInfo info;
-            info.name = column.name;
+            info.name = column_name;
             info.bytes_per_row_global = column_checksum->uncompressed_size;
 
             dynamic_columns_infos.emplace_back(info);
         }
     };
-
-    for (const NameAndTypePair & column : pre_columns)
-        add_column(column);
-
-    for (const NameAndTypePair & column : columns)
-        add_column(column);
 
     size_t rows_approx = data_part->getExactSizeRows();
 
@@ -133,7 +126,7 @@ void MergeTreeBlockSizePredictor::startBlock()
 }
 
 
-/// FIXME: add last_read_row_in_part parameter to take into account gaps between adjacent ranges
+/// TODO: add last_read_row_in_part parameter to take into account gaps between adjacent ranges
 void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
 {
     size_t new_rows = block.rows();
