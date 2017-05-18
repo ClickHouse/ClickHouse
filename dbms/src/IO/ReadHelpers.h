@@ -216,6 +216,23 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
     x = tmp != '0';
 }
 
+inline void readBoolTextWord(bool & x, ReadBuffer & buf)
+{
+    if (buf.eof())
+        throwReadAfterEOF();
+
+    if (*buf.position() == 't')
+    {
+        assertString("true", buf);
+        x = true;
+    }
+    else
+    {
+        assertString("false", buf);
+        x = false;
+    }
+}
+
 template <typename T, typename ReturnType = void>
 ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {
@@ -659,7 +676,19 @@ inline void readBinary(LocalDateTime & x, ReadBuffer & buf) { readPODBinary(x, b
 /// Generic methods to read value in text tab-separated format.
 template <typename T>
 inline typename std::enable_if<std::is_integral<T>::value, void>::type
-readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
+readText(T & x, ReadBuffer & buf)
+{
+    if (buf.eof())
+        throwReadAfterEOF();
+    if (*buf.position() == 't' || *buf.position() == 'f')
+    {
+        bool tmp = false;
+        readBoolTextWord(tmp, buf);
+        x = tmp;
+    }
+    else
+        readIntText(x, buf);
+}
 
 template <typename T>
 inline typename std::enable_if<std::is_floating_point<T>::value, void>::type
