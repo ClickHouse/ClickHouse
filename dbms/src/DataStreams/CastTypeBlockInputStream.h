@@ -12,9 +12,9 @@ class IFunction;
 class CastTypeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    CastTypeBlockInputStream(const Context & context_,
-                             BlockInputStreamPtr input_,
-                             const Block & ref_defenition_);
+    CastTypeBlockInputStream(const Context & context,
+                             const BlockInputStreamPtr & input,
+                             const Block & reference_definition);
 
     String getName() const override;
 
@@ -24,12 +24,10 @@ protected:
     Block readImpl() override;
 
 private:
-    void collectDifferent(const Block & src_block, const Block & ref_sample);
-
-private:
     const Context & context;
     Block ref_defenition;
 
+    void initialize(const Block & src_block);
     bool initialized = false;
 
     struct CastElement
@@ -40,8 +38,9 @@ private:
         CastElement(std::shared_ptr<IFunction> && function_, size_t tmp_col_offset_);
     };
 
-    /// Used to perform type conversions in src block
+    /// Describes required conversions on source block
     std::map<size_t, CastElement> cast_description;
+    /// Auxiliary block, stores arguments and results of required CAST calls
     Block tmp_conversion_block;
 };
 

@@ -12,11 +12,11 @@ namespace DB
 
 CastTypeBlockInputStream::CastTypeBlockInputStream(
     const Context & context_,
-    BlockInputStreamPtr input_,
-    const Block & ref_defenition_)
-    : context(context_), ref_defenition(ref_defenition_)
+    const BlockInputStreamPtr & input_,
+    const Block & reference_definition_)
+    : context(context_), ref_defenition(reference_definition_)
 {
-    children.push_back(input_);
+    children.emplace_back(input_);
 }
 
 String CastTypeBlockInputStream::getName() const
@@ -26,9 +26,7 @@ String CastTypeBlockInputStream::getName() const
 
 String CastTypeBlockInputStream::getID() const
 {
-    std::stringstream res;
-    res << "CastType(" << children.back()->getID() << ")";
-    return res.str();
+    return "CastType(" + children.back()->getID() + ")";
 }
 
 Block CastTypeBlockInputStream::readImpl()
@@ -41,7 +39,7 @@ Block CastTypeBlockInputStream::readImpl()
     if (!initialized)
     {
         initialized = true;
-        collectDifferent(block, ref_defenition);
+        initialize(block);
     }
 
     if (cast_description.empty())
@@ -80,17 +78,17 @@ CastTypeBlockInputStream::CastElement::CastElement(std::shared_ptr<IFunction> &&
     : function(std::move(function_)), tmp_col_offset(tmp_col_offset_) {}
 
 
-void CastTypeBlockInputStream::collectDifferent(const Block & src_block, const Block & ref_sample)
+void CastTypeBlockInputStream::initialize(const Block & src_block)
 {
     for (size_t src_col = 0; src_col < src_block.columns(); ++src_col)
     {
         const auto & src_column = src_block.getByPosition(src_col);
 
         /// Skip, if it is a problem, it will be detected on the next pipeline stage
-        if (!ref_sample.has(src_column.name))
+        if (!ref_defenition.has(src_column.name))
             continue;
 
-        const auto & ref_column = ref_sample.getByName(src_column.name);
+        const auto & ref_column = ref_defenition.getByName(src_column.name);
 
         /// Force conversion if source and destination types is different.
         if (!ref_column.type->equals(*src_column.type))
