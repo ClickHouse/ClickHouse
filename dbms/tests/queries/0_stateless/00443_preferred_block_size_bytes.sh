@@ -13,12 +13,12 @@ clickhouse-client -q "DROP TABLE IF EXISTS test.preferred_block_size_bytes"
 # PREWHERE using empty column
 
 clickhouse-client -q "DROP TABLE IF EXISTS test.pbs"
-clickhouse-client -q "CREATE TABLE test.pbs (p Date, i UInt64) ENGINE = MergeTree(p, p, 8192)"
-clickhouse-client -q "INSERT INTO test.pbs (i) SELECT number AS i FROM system.numbers LIMIT 9000"
-clickhouse-client -q "ALTER TABLE test.pbs ADD COLUMN s UInt8 DEFAULT 1"
-clickhouse-client --preferred_block_size_bytes=10000 -q "SELECT max(i) FROM test.pbs PREWHERE s = 1"
-clickhouse-client -q "INSERT INTO test.pbs (i, s) SELECT number AS i, 1 AS s FROM system.numbers LIMIT 9000"
-clickhouse-client --preferred_block_size_bytes=10000 -q "SELECT max(i) FROM test.pbs PREWHERE s = 1"
+clickhouse-client -q "CREATE TABLE test.pbs (p Date, i UInt64, sa Array(String)) ENGINE = MergeTree(p, p, 100)"
+clickhouse-client -q "INSERT INTO test.pbs (p, i, sa) SELECT toDate(i % 30) AS p, number AS i, ['a'] AS sa FROM system.numbers LIMIT 1000"
+clickhouse-client -q "ALTER TABLE test.pbs ADD COLUMN s UInt8 DEFAULT 0"
+clickhouse-client --preferred_block_size_bytes=100000 -q "SELECT count() FROM test.pbs PREWHERE s = 0"
+clickhouse-client -q "INSERT INTO test.pbs (p, i, sa) SELECT toDate(i % 30) AS p, number AS i, ['a'] AS sa FROM system.numbers LIMIT 1000"
+clickhouse-client --preferred_block_size_bytes=100000 -q "SELECT count() FROM test.pbs PREWHERE s = 0"
 clickhouse-client -q "DROP TABLE test.pbs"
 
 # Nullable PREWHERE
