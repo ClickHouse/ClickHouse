@@ -154,7 +154,7 @@ public:
 
     ~GraphiteRollupSortedBlockInputStream()
     {
-        if (current_pattern)
+        if (aggregate_state_created)
             current_pattern->function->destroy(place_for_aggregate_state.data());
     }
 
@@ -179,19 +179,17 @@ private:
     /// All data has been read.
     bool finished = false;
 
-    RowRef selected_row;        /// Last row with maximum version for current primary key.
+    RowRef current_selected_row;        /// Last row with maximum version for current primary key.
     UInt64 current_max_version = 0;
 
     bool is_first = true;
     StringRef current_path;
     time_t current_time = 0;
     time_t current_time_rounded = 0;
-    StringRef next_path;
-    time_t next_time = 0;
-    time_t next_time_rounded = 0;
 
     const Graphite::Pattern * current_pattern = nullptr;
     std::vector<char> place_for_aggregate_state;
+    bool aggregate_state_created = false; /// Invariant: if true then current_pattern is not NULL.
 
     const Graphite::Pattern * selectPatternForPath(StringRef path) const;
     UInt32 selectPrecision(const Graphite::Retentions & retentions, time_t time) const;
@@ -202,7 +200,7 @@ private:
 
     /// Insert the values into the resulting columns, which will not be changed in the future.
     template <class TSortCursor>
-    void startNextRow(ColumnPlainPtrs & merged_columns, TSortCursor & cursor);
+    void startNextRow(ColumnPlainPtrs & merged_columns, TSortCursor & cursor, const Graphite::Pattern * next_pattern);
 
     /// Insert the calculated `time`, `value`, `version` values into the resulting columns by the last group of rows.
     void finishCurrentRow(ColumnPlainPtrs & merged_columns);
