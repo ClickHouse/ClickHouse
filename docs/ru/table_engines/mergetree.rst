@@ -1,3 +1,5 @@
+.. _table_engines-mergetree:
+
 MergeTree
 ---------
 
