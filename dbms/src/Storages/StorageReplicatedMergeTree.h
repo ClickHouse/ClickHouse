@@ -245,8 +245,8 @@ private:
       * In ZK entries in chronological order. Here it is not necessary.
       */
     ReplicatedMergeTreeQueue queue;
-    std::atomic<time_t> last_queue_update_attempt_time{0};
-    std::atomic<time_t> last_successful_queue_update_attempt_time{0};
+    std::atomic<time_t> last_queue_update_start_time{0};
+    std::atomic<time_t> last_queue_update_finish_time{0};
 
     /** /replicas/me/is_active.
       */
