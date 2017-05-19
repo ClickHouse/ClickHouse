@@ -1,0 +1,25 @@
+version: '2'
+services:
+    zoo1:
+        image: zookeeper
+        restart: always
+        environment:
+            ZOO_TICK_TIME: 500
+            ZOO_MY_ID: 1
+            ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
+
+    zoo2:
+        image: zookeeper
+        restart: always
+        environment:
+            ZOO_TICK_TIME: 500
+            ZOO_MY_ID: 2
+            ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
+
+    zoo3:
+        image: zookeeper
+        restart: always
+        environment:
+            ZOO_TICK_TIME: 500
+            ZOO_MY_ID: 3
+            ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
