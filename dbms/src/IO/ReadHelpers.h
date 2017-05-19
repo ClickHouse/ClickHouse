@@ -676,19 +676,7 @@ inline void readBinary(LocalDateTime & x, ReadBuffer & buf) { readPODBinary(x, b
 /// Generic methods to read value in text tab-separated format.
 template <typename T>
 inline typename std::enable_if<std::is_integral<T>::value, void>::type
-readText(T & x, ReadBuffer & buf)
-{
-    if (buf.eof())
-        throwReadAfterEOF();
-    if (*buf.position() == 't' || *buf.position() == 'f')
-    {
-        bool tmp = false;
-        readBoolTextWord(tmp, buf);
-        x = tmp;
-    }
-    else
-        readIntText(x, buf);
-}
+readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
 template <typename T>
 inline typename std::enable_if<std::is_floating_point<T>::value, void>::type
