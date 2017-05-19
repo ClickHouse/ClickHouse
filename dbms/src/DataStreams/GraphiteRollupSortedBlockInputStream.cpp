@@ -112,13 +112,13 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 {
     const DateLUTImpl & date_lut = DateLUT::instance();
 
-    size_t started_rows = 0;
+    size_t started_rows = 0; /// Number of times startNextRow() has been called.
 
     /// Take rows in needed order and put them into `merged_block` until we get `max_block_size` rows.
     ///
-    /// Variables starting with current_* refer to the rows that were popped from the queue previously
-    /// and that will contribute towards current output row.
-    /// Variables starting with next_* refer to the row just popped from the queue.
+    /// Variables starting with current_* refer to the rows previously popped from the queue that will
+    /// contribute towards current output row.
+    /// Variables starting with next_* refer to the row at the top of the queue.
 
     while (!queue.empty())
     {
@@ -233,8 +233,6 @@ void GraphiteRollupSortedBlockInputStream::startNextRow(ColumnPlainPtrs & merged
         next_pattern->function->create(place_for_aggregate_state.data());
         aggregate_state_created = true;
     }
-    else
-        merged_columns[value_column_num]->insertFrom(*cursor->all_columns[value_column_num], cursor->pos);
 
     current_pattern = next_pattern;
 }
@@ -252,6 +250,9 @@ void GraphiteRollupSortedBlockInputStream::finishCurrentRow(ColumnPlainPtrs & me
         current_pattern->function->destroy(place_for_aggregate_state.data());
         aggregate_state_created = false;
     }
+    else
+        merged_columns[value_column_num]->insertFrom(
+                *current_selected_row.columns[value_column_num], current_selected_row.row_num);
 }
 
 
