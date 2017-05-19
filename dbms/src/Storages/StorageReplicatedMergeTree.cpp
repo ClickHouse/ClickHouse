@@ -1564,13 +1564,19 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 {
     setThreadName("ReplMTQueueUpd");
 
+    bool update_in_progress = false;
     while (!shutdown_called)
     {
-        last_queue_update_attempt_time.store(time(nullptr));
+        if (!update_in_progress)
+        {
+            last_queue_update_start_time.store(time(nullptr));
+            update_in_progress = true;
+        }
         try
         {
             pullLogsToQueue(queue_updating_event);
-            last_successful_queue_update_attempt_time.store(time(nullptr));
+            last_queue_update_finish_time.store(time(nullptr));
+            update_in_progress = false;
             queue_updating_event->wait();
         }
         catch (const zkutil::KeeperException & e)
@@ -3275,16 +3281,16 @@ time_t StorageReplicatedMergeTree::getAbsoluteDelay() const
     time_t max_processed_insert_time = 0;
     queue.getInsertTimes(min_unprocessed_insert_time, max_processed_insert_time);
 
-    /// Load in reverse order to preserve consistency (successful update time must be after update start time).
-    /// Probably doesn't matter because pullLogsToQueue() acts as a barrier.
-    time_t successful_queue_update_time = last_successful_queue_update_attempt_time.load();
-    time_t queue_update_time = last_queue_update_attempt_time.load();
+    /// Load start time, then finish time to avoid reporting false delay when start time is updated
+    /// between loading of two variables.
+    time_t queue_update_start_time = last_queue_update_start_time.load();
+    time_t queue_update_finish_time = last_queue_update_finish_time.load();
 
     time_t current_time = time(nullptr);
 
-    if (!queue_update_time)
+    if (!queue_update_finish_time)
     {
-        /// We have not even tried to update queue yet (perhaps replica is readonly).
+        /// We have not updated queue even once yet (perhaps replica is readonly).
         /// As we have no info about the current state of replication log, return effectively infinite delay.
         return current_time;
     }
@@ -3293,12 +3299,12 @@ time_t StorageReplicatedMergeTree::getAbsoluteDelay() const
         /// There are some unprocessed insert entries in queue.
         return (current_time > min_unprocessed_insert_time) ? (current_time - min_unprocessed_insert_time) : 0;
     }
-    else if (queue_update_time > successful_queue_update_time)
+    else if (queue_update_start_time > queue_update_finish_time)
     {
         /// Queue is empty, but there are some in-flight or failed queue update attempts
         /// (likely because of problems with connecting to ZooKeeper).
         /// Return the time passed since last attempt.
-        return (current_time > queue_update_time) ? (current_time - queue_update_time) : 0;
+        return (current_time > queue_update_start_time) ? (current_time - queue_update_start_time) : 0;
     }
     else
     {
