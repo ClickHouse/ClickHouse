@@ -12,14 +12,11 @@ namespace DB
 
 CastTypeBlockInputStream::CastTypeBlockInputStream(
     const Context & context_,
-    BlockInputStreamPtr input_,
-    const Block & in_sample_,
-    const Block & out_sample_)
-    : context(context_)
+    const BlockInputStreamPtr & input_,
+    const Block & reference_definition_)
+    : context(context_), ref_defenition(reference_definition_)
 {
-    collectDifferent(in_sample_, out_sample_);
-    cast_functions.resize(in_sample_.columns());
-    children.push_back(input_);
+    children.emplace_back(input_);
 }
 
 String CastTypeBlockInputStream::getName() const
@@ -29,98 +26,91 @@ String CastTypeBlockInputStream::getName() const
 
 String CastTypeBlockInputStream::getID() const
 {
-    std::stringstream res;
-    res << "CastType(" << children.back()->getID() << ")";
-    return res.str();
+    return "CastType(" + children.back()->getID() + ")";
 }
 
 Block CastTypeBlockInputStream::readImpl()
 {
     Block block = children.back()->read();
 
-    if (!block || cast_types.empty())
+    if (!block)
         return block;
 
-    size_t block_size = block.columns();
-
-    if (block_size != cast_types.size())
+    if (!initialized)
     {
-        LOG_ERROR(log, "Number of columns do not match, skipping cast");
-        return block;
+        initialized = true;
+        initialize(block);
     }
 
+    if (cast_description.empty())
+        return block;
+
+    size_t num_columns = block.columns();
     Block res;
 
-    for (size_t i = 0; i < block_size; ++i)
+    for (size_t col = 0; col < num_columns; ++col)
     {
-        const auto & elem = block.getByPosition(i);
+        const auto & src_column = block.getByPosition(col);
+        auto it = cast_description.find(col);
 
-        if (bool(cast_types[i]))
+        if (it == cast_description.end())
         {
-            const auto & type = cast_types[i]->type;
-            Block temporary_block
-            {
-                {
-                    elem.column,
-                    elem.type,
-                    elem.name
-                },
-                {
-                    std::make_shared<ColumnConstString>(1, type->getName()),
-                    std::make_shared<DataTypeString>(),
-                    ""
-                },
-                {
-                    nullptr,
-                    cast_types[i]->type,
-                    ""
-                }
-            };
-
-            FunctionPtr & cast_function = cast_functions[i];
-
-            /// Initialize function.
-            if (!cast_function)
-            {
-                cast_function = FunctionFactory::instance().get("CAST", context);
-
-                DataTypePtr unused_return_type;
-                ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
-                std::vector<ExpressionAction> unused_prerequisites;
-
-                /// Prepares function to execution. TODO It is not obvious.
-                cast_function->getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
-            }
-
-            cast_function->execute(temporary_block, {0, 1}, 2);
-
-            res.insert({
-                temporary_block.getByPosition(2).column,
-                cast_types[i]->type,
-                cast_types[i]->name});
+            res.insert(src_column);
         }
         else
         {
-            res.insert(elem);
+            CastElement & cast_element = it->second;
+
+            size_t tmp_col = cast_element.tmp_col_offset;
+            ColumnNumbers arguments{tmp_col, tmp_col + 1};
+            tmp_conversion_block.getByPosition(tmp_col).column = src_column.column;
+
+            cast_element.function->execute(tmp_conversion_block, arguments, tmp_col + 2);
+            res.insert(tmp_conversion_block.getByPosition(tmp_col + 2));
         }
     }
 
     return res;
 }
 
-void CastTypeBlockInputStream::collectDifferent(const Block & in_sample, const Block & out_sample)
+
+CastTypeBlockInputStream::CastElement::CastElement(std::shared_ptr<IFunction> && function_, size_t tmp_col_offset_)
+    : function(std::move(function_)), tmp_col_offset(tmp_col_offset_) {}
+
+
+void CastTypeBlockInputStream::initialize(const Block & src_block)
 {
-    size_t in_size = in_sample.columns();
-    cast_types.resize(in_size);
-    for (size_t i = 0; i < in_size; ++i)
+    for (size_t src_col = 0; src_col < src_block.columns(); ++src_col)
     {
-        const auto & in_elem  = in_sample.getByPosition(i);
-        const auto & out_elem = out_sample.getByPosition(i);
+        const auto & src_column = src_block.getByPosition(src_col);
+
+        /// Skip, if it is a problem, it will be detected on the next pipeline stage
+        if (!ref_defenition.has(src_column.name))
+            continue;
+
+        const auto & ref_column = ref_defenition.getByName(src_column.name);
 
         /// Force conversion if source and destination types is different.
-        if (!out_elem.type->equals(*in_elem.type))
+        if (!ref_column.type->equals(*src_column.type))
         {
-            cast_types[i] = NameAndTypePair(out_elem.name, out_elem.type);
+            ColumnWithTypeAndName src_columnn_copy = src_column.cloneEmpty();
+            ColumnWithTypeAndName alias_column(std::make_shared<ColumnConstString>(1, ref_column.type->getName()), std::make_shared<DataTypeString>(), "");
+            ColumnWithTypeAndName result_column(nullptr, ref_column.type->clone(), src_column.name);
+
+            DataTypePtr unused_return_type;
+            std::vector<ExpressionAction> unused_prerequisites;
+            ColumnsWithTypeAndName arguments{src_columnn_copy, alias_column};
+
+            /// Prepares function to execution. TODO It is not obvious.
+            auto cast_function = FunctionFactory::instance().get("CAST", context);
+            cast_function->getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
+
+            tmp_conversion_block.insert(src_column);
+            tmp_conversion_block.insert(alias_column);
+            tmp_conversion_block.insert(result_column);
+
+            size_t tmp_col_offset = cast_description.size() * 3;
+            cast_description.emplace(src_col, CastElement(std::move(cast_function), tmp_col_offset));
         }
     }
 }
