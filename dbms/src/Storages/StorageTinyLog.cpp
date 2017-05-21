@@ -363,7 +363,7 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
 
 
 void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column,
-                                            OffsetColumns & offset_columns, size_t level)
+    OffsetColumns & offset_columns, size_t level)
 {
     if (type.isNullable())
     {
@@ -557,7 +557,7 @@ BlockInputStreams StorageTinyLog::read(
 
 
 BlockOutputStreamPtr StorageTinyLog::write(
-    ASTPtr query, const Settings & settings)
+    const ASTPtr & query, const Settings & settings)
 {
     return std::make_shared<TinyLogBlockOutputStream>(*this);
 }

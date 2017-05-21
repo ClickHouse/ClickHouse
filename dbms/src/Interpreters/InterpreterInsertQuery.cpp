@@ -33,7 +33,7 @@ namespace ErrorCodes
 }
 
 
-InterpreterInsertQuery::InterpreterInsertQuery(ASTPtr query_ptr_, Context & context_)
+InterpreterInsertQuery::InterpreterInsertQuery(const ASTPtr & query_ptr_, const Context & context_)
     : query_ptr(query_ptr_), context(context_)
 {
     ProfileEvents::increment(ProfileEvents::InsertQuery);

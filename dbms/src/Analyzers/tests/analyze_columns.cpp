@@ -35,8 +35,8 @@ try
 
     auto system_database = std::make_shared<DatabaseMemory>("system");
     context.addDatabase("system", system_database);
-    system_database->attachTable("one",            StorageSystemOne::create("one"));
-    system_database->attachTable("numbers",     StorageSystemNumbers::create("numbers"));
+    system_database->attachTable("one", StorageSystemOne::create("one"));
+    system_database->attachTable("numbers", StorageSystemNumbers::create("numbers"));
     context.setCurrentDatabase("system");
 
     AnalyzeLambdas analyze_lambdas;

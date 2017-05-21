@@ -15,7 +15,7 @@ namespace DB
 class InterpreterInsertQuery : public IInterpreter
 {
 public:
-    InterpreterInsertQuery(ASTPtr query_ptr_, Context & context_);
+    InterpreterInsertQuery(const ASTPtr & query_ptr_, const Context & context_);
 
     /** Подготовить запрос к выполнению. Вернуть потоки блоков
       * - поток, в который можно писать данные для выполнения запроса, если INSERT;

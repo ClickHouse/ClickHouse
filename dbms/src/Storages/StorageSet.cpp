@@ -66,7 +66,7 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 
 
 
-BlockOutputStreamPtr StorageSetOrJoinBase::write(ASTPtr query, const Settings & settings)
+BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & query, const Settings & settings)
 {
     ++increment;
     return std::make_shared<SetOrJoinBlockOutputStream>(*this, path, path + "tmp/", toString(increment) + ".bin");

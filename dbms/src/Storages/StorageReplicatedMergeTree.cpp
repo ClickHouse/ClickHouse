@@ -2409,7 +2409,7 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 }
 
 
-BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query, const Settings & settings)
+BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & query, const Settings & settings)
 {
     assertNotReadonly();
 
@@ -3543,11 +3543,12 @@ void StorageReplicatedMergeTree::freezePartition(const Field & partition, const 
 }
 
 
-void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & database_name,
+void StorageReplicatedMergeTree::reshardPartitions(
+    const ASTPtr & query, const String & database_name,
     const Field & first_partition, const Field & last_partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-    const Settings & settings)
+    Context & context)
 {
     auto & resharding_worker = context.getReshardingWorker();
     if (!resharding_worker.isStarted())
