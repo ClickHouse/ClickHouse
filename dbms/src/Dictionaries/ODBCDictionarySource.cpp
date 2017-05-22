@@ -1,8 +1,11 @@
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
 #include <Poco/Data/SessionPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Dictionaries/ODBCDictionarySource.h>
 #include <Dictionaries/ODBCBlockInputStream.h>
 #include <common/logger_useful.h>
+#include <Dictionaries/readInvalidateQuery.h>
 
 
 namespace DB
@@ -99,8 +102,8 @@ bool ODBCDictionarySource::isModified() const
 {
     if (!invalidate_query.empty())
     {
-        auto response = do_invalidate_query(invalidate_query);
-        if (!response.empty() && invalidate_query_response == response)
+        auto response = doInvalidateQuery(invalidate_query);
+        if (invalidate_query_response == response)
             return false;
         invalidate_query_response = response;
     }
@@ -108,55 +111,13 @@ bool ODBCDictionarySource::isModified() const
 }
 
 
-std::string ODBCDictionarySource::do_invalidate_query(const std::string & request) const
+std::string ODBCDictionarySource::doInvalidateQuery(const std::string & request) const
 {
-    std::string response;
-
-    auto getErrorMessage = [& request](const std::string & message)
-    {
-        return message + " (Query = '" + request + "')";
-    };
-
-    try
-    {
-        Poco::Data::Session session = pool->get();
-        Poco::Data::Statement statement = (session << request, Poco::Data::Keywords::now);
-        Poco::Data::RecordSet result(statement);
-        auto iterator = result.begin();
-        if (iterator == result.end())
-        {
-            LOG_ERROR(log, getErrorMessage("Empty response"));
-        }
-        else
-        {
-            const Poco::Data::Row & row = *iterator;
-            const auto & values = row.values();
-            if (values.empty())
-            {
-                LOG_ERROR(log, getErrorMessage("Empty row"));
-            }
-            else
-            {
-                const auto & value = values.front();
-                response = value.toString();
-                LOG_TRACE(log, getErrorMessage("Received value: " + value));
-                if (values.size() > 1)
-                {
-                    LOG_ERROR(log, getErrorMessage("Response contains more than 1 column"));
-                }
-            }
-
-            if (++iterator != result.end())
-            {
-                LOG_ERROR(log, getErrorMessage("Response contains more than 1 row"));
-            }
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, getErrorMessage("ODBCDictionarySource"));
-    }
-    return response;
+    Block sample_block;
+    ColumnPtr column(std::make_shared<ColumnString>());
+    sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
+    ODBCBlockInputStream blockInputStream(pool->get(), request, sample_block, 1);
+    return readInvalidateQuery(blockInputStream);
 }
 
 }

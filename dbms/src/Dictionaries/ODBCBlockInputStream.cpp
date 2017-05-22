@@ -93,24 +93,17 @@ Block ODBCBlockInputStream::readImpl()
             const Poco::Dynamic::Var & value = row[idx];
 
             if (!value.isEmpty())
-            {
-                try {
-                    insertValue(columns[idx], description.types[idx], value);
-                }
-                catch(...) {
-                    tryLogCurrentException(log);
-                    insertDefaultValue(columns[idx], *description.sample_columns[idx]);
-                }
-            }
+                insertValue(columns[idx], description.types[idx], value);
             else
                 insertDefaultValue(columns[idx], *description.sample_columns[idx]);
         }
+
+        ++iterator;
 
         ++num_rows;
         if (num_rows == max_block_size)
             break;
 
-        ++iterator;
     }
 
     return block;

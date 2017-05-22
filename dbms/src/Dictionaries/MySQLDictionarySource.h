@@ -46,7 +46,8 @@ private:
 
     LocalDateTime getLastModification() const;
 
-    std::string do_invalidate_query(const std::string & request) const;
+    // execute invalidate_query. expects single cell in result
+    std::string doInvalidateQuery(const std::string & request) const;
 
     Poco::Logger * log;
     const DictionaryStructure dict_struct;

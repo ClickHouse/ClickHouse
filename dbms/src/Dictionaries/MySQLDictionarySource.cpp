@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
 #include <Common/config.h>
 #if USE_MYSQL
 
@@ -5,6 +7,7 @@
 
 #include <Dictionaries/MySQLDictionarySource.h>
 #include <Dictionaries/MySQLBlockInputStream.h>
+#include <Dictionaries/readInvalidateQuery.h>
 
 
 namespace DB
@@ -76,8 +79,8 @@ bool MySQLDictionarySource::isModified() const
 {
     if (!invalidate_query.empty())
     {
-        auto response = do_invalidate_query(invalidate_query);
-        if (!response.empty() && response == invalidate_query_response)
+        auto response = doInvalidateQuery(invalidate_query);
+        if (response == invalidate_query_response)
             return false;
         invalidate_query_response = response;
         return true;
@@ -173,67 +176,16 @@ LocalDateTime MySQLDictionarySource::getLastModification() const
     return update_time;
 }
 
-std::string MySQLDictionarySource::do_invalidate_query(const std::string & request) const
+std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request) const
 {
-    std::string response;
-
-    auto getErrorMessage = [& request](const std::string & message)
-    {
-        return message + " (Query = '" + request + "')";
-    };
-    try
-    {
-        auto connection = pool.Get();
-        auto query = connection->query(request);
-
-        auto result = query.use();
-
-        size_t fetched_rows = 0;
-        if (auto row = result.fetch())
-        {
-            ++fetched_rows;
-
-            if (row.empty()) {
-                LOG_ERROR(log, getErrorMessage("Empty row"));
-            }
-            else if (row.size() > 1)
-            {
-                LOG_ERROR(log, getErrorMessage("Expected single row"));
-            }
-
-            if (!row.empty())
-            {
-                const auto & value = row[0];
-
-                if (!value.isNull())
-                {
-                    response = value.getString();
-                    LOG_TRACE(log, getErrorMessage("Got value: " + response));
-                }
-                else
-                {
-                    LOG_ERROR(log, getErrorMessage("Got Null value"));
-                }
-            }
-
-            /// fetch remaining rows to avoid "commands out of sync" error
-            while (result.fetch())
-                ++fetched_rows;
-        }
-
-        if (0 == fetched_rows)
-            LOG_ERROR(log, getErrorMessage("Empty response"));
-
-        if (fetched_rows > 1)
-            LOG_ERROR(log, getErrorMessage("Found more than one rows"));
-    }
-    catch (...)
-    {
-        tryLogCurrentException("MySQLDictionarySource");
-    }
-    return response;
+    Block sample_block;
+    ColumnPtr column(std::make_shared<ColumnString>());
+    sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
+    MySQLBlockInputStream blockInputStream(pool.Get(), request, sample_block, 1);
+    return readInvalidateQuery(blockInputStream);
 }
 
 }
 
 #endif
+
