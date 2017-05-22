@@ -131,7 +131,7 @@ public:
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1) override;
 
-    BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
     bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override;
 
@@ -142,11 +142,12 @@ public:
     void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
     void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
 
-    void reshardPartitions(ASTPtr query, const String & database_name,
+    void reshardPartitions(
+        const ASTPtr & query, const String & database_name,
         const Field & first_partition, const Field & last_partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        const Settings & settings) override;
+        Context & context) override;
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
@@ -245,8 +246,8 @@ private:
       * In ZK entries in chronological order. Here it is not necessary.
       */
     ReplicatedMergeTreeQueue queue;
-    std::atomic<time_t> last_queue_update_attempt_time{0};
-    std::atomic<time_t> last_successful_queue_update_attempt_time{0};
+    std::atomic<time_t> last_queue_update_start_time{0};
+    std::atomic<time_t> last_queue_update_finish_time{0};
 
     /** /replicas/me/is_active.
       */

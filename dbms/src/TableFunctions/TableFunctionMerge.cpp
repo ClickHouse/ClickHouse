@@ -72,8 +72,8 @@ StoragePtr TableFunctionMerge::execute(ASTPtr ast_function, Context & context) c
     args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], context);
     args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
 
-    String source_database         = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
-    String table_name_regexp    = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+    String source_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+    String table_name_regexp = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
     return StorageMerge::create(
         getName(),

@@ -185,7 +185,7 @@ public:
       * It is guaranteed that the table structure will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
       */
     virtual BlockOutputStreamPtr write(
-        ASTPtr query,
+        const ASTPtr & query,
         const Settings & settings)
     {
         throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -251,11 +251,12 @@ public:
 
     /** Run the RESHARD PARTITION query.
       */
-    virtual void reshardPartitions(ASTPtr query, const String & database_name,
+    virtual void reshardPartitions(
+        const ASTPtr & query, const String & database_name,
         const Field & first_partition, const Field & last_partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        const Settings & settings)
+        Context & context)
     {
         throw Exception("Method reshardPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

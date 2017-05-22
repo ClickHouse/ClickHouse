@@ -919,7 +919,7 @@ BlockInputStreams StorageLog::read(
 
 
 BlockOutputStreamPtr StorageLog::write(
-    ASTPtr query, const Settings & settings)
+    const ASTPtr & query, const Settings & settings)
 {
     loadMarks();
     return std::make_shared<LogBlockOutputStream>(*this);

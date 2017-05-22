@@ -119,7 +119,7 @@ BlockInputStreams StorageMaterializedView::read(
     return getInnerTable()->read(column_names, query, context, settings, processed_stage, max_block_size, threads);
 }
 
-BlockOutputStreamPtr StorageMaterializedView::write(ASTPtr query, const Settings & settings)
+BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Settings & settings)
 {
     return getInnerTable()->write(query, settings);
 }

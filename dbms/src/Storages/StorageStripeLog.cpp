@@ -283,7 +283,7 @@ BlockInputStreams StorageStripeLog::read(
 
 
 BlockOutputStreamPtr StorageStripeLog::write(
-    ASTPtr query, const Settings & settings)
+    const ASTPtr & query, const Settings & settings)
 {
     return std::make_shared<StripeLogBlockOutputStream>(*this);
 }

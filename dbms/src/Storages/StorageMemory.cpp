@@ -149,7 +149,7 @@ BlockInputStreams StorageMemory::read(
 
 
 BlockOutputStreamPtr StorageMemory::write(
-    ASTPtr query, const Settings & settings)
+    const ASTPtr & query, const Settings & settings)
 {
     return std::make_shared<MemoryBlockOutputStream>(*this);
 }
