@@ -55,17 +55,17 @@ Block CastTypeBlockInputStream::readImpl()
 
         if (it == cast_description.end())
         {
+            // Leave the same column
             res.insert(src_column);
         }
         else
         {
             CastElement & cast_element = it->second;
-
             size_t tmp_col = cast_element.tmp_col_offset;
-            ColumnNumbers arguments{tmp_col, tmp_col + 1};
-            tmp_conversion_block.getByPosition(tmp_col).column = src_column.column;
 
-            cast_element.function->execute(tmp_conversion_block, arguments, tmp_col + 2);
+            tmp_conversion_block.getByPosition(tmp_col).column = src_column.column;
+            cast_element.function->execute(tmp_conversion_block, ColumnNumbers{tmp_col, tmp_col + 1}, tmp_col + 2);
+
             res.insert(tmp_conversion_block.getByPosition(tmp_col + 2));
         }
     }
@@ -93,22 +93,24 @@ void CastTypeBlockInputStream::initialize(const Block & src_block)
         /// Force conversion if source and destination types is different.
         if (!ref_column.type->equals(*src_column.type))
         {
-            ColumnWithTypeAndName src_columnn_copy = src_column.cloneEmpty();
-            ColumnWithTypeAndName alias_column(std::make_shared<ColumnConstString>(1, ref_column.type->getName()), std::make_shared<DataTypeString>(), "");
-            ColumnWithTypeAndName result_column(nullptr, ref_column.type->clone(), src_column.name);
+            ColumnWithTypeAndName res_type_name_column(std::make_shared<ColumnConstString>(1, ref_column.type->getName()), std::make_shared<DataTypeString>(), "");
+            ColumnWithTypeAndName res_blank_column(nullptr, ref_column.type->clone(), src_column.name);
 
-            DataTypePtr unused_return_type;
-            std::vector<ExpressionAction> unused_prerequisites;
-            ColumnsWithTypeAndName arguments{src_columnn_copy, alias_column};
-
-            /// Prepares function to execution. TODO It is not obvious.
+            /// Prepares function to execution
             auto cast_function = FunctionFactory::instance().get("CAST", context);
-            cast_function->getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
+            {
+                DataTypePtr unused_return_type;
+                std::vector<ExpressionAction> unused_prerequisites;
+                ColumnsWithTypeAndName arguments{src_column, res_type_name_column};
+                cast_function->getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
+            }
 
+            /// Prefill arguments and result column for current CAST
             tmp_conversion_block.insert(src_column);
-            tmp_conversion_block.insert(alias_column);
-            tmp_conversion_block.insert(result_column);
+            tmp_conversion_block.insert(res_type_name_column);
+            tmp_conversion_block.insert(res_blank_column);
 
+            /// Index of src_column blank in tmp_conversion_block
             size_t tmp_col_offset = cast_description.size() * 3;
             cast_description.emplace(src_col, CastElement(std::move(cast_function), tmp_col_offset));
         }
