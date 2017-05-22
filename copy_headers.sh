@@ -22,7 +22,7 @@ PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 
 # Опция -mcx16 для того, чтобы выбиралось больше заголовочных файлов (с запасом).
 
-for src_file in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
+for src_file in $($CLANG -M -xc++ -std=gnu++1y -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
     $(cat "$SOURCE_PATH/build/include_directories.txt") \
     "$SOURCE_PATH/dbms/src/Interpreters/SpecializedAggregator.h" |
     tr -d '\\' |
@@ -37,7 +37,7 @@ done
 # Копируем больше заголовочных файлов с интринсиками, так как на серверах, куда будут устанавливаться
 #  заголовочные файлы, будет использоваться опция -march=native.
 
-for i in $(ls -1 $(clang -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep '/lib/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
+for i in $(ls -1 $($CLANG -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep '/lib/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
 do
     cp "$i" "$DST/$i";
 done
