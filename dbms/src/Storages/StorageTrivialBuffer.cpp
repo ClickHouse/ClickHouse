@@ -359,7 +359,7 @@ private:
     StorageTrivialBuffer & buffer;
 };
 
-BlockOutputStreamPtr StorageTrivialBuffer::write(ASTPtr query, const Settings & settings)
+BlockOutputStreamPtr StorageTrivialBuffer::write(const ASTPtr & query, const Settings & settings)
 {
     return std::make_shared<TrivialBufferBlockOutputStream>(*this);
 }
@@ -393,14 +393,18 @@ void StorageTrivialBuffer::shutdown()
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool StorageTrivialBuffer::optimize(const String & partition, bool final, const Settings & settings)
+bool StorageTrivialBuffer::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
 {
     if (!partition.empty())
-        throw Exception("Partition cannot be specified when optimizing table of type Buffer",
+        throw Exception("Partition cannot be specified when optimizing table of type TrivialBuffer",
             ErrorCodes::NOT_IMPLEMENTED);
 
     if (final)
-        throw Exception("FINAL cannot be specified when optimizing table of type Buffer",
+        throw Exception("FINAL cannot be specified when optimizing table of type TrivialBuffer",
+            ErrorCodes::NOT_IMPLEMENTED);
+
+    if (deduplicate)
+        throw Exception("DEDUPLICATE cannot be specified when optimizing table of type TrivialBuffer",
             ErrorCodes::NOT_IMPLEMENTED);
 
     flush(false);
@@ -409,8 +413,8 @@ bool StorageTrivialBuffer::optimize(const String & partition, bool final, const 
 
 
 
-bool StorageTrivialBuffer::checkThresholds(const time_t current_time, const size_t additional_rows,
-                    const size_t additional_bytes) const
+bool StorageTrivialBuffer::checkThresholds(
+    const time_t current_time, const size_t additional_rows, const size_t additional_bytes) const
 {
     time_t time_passed = 0;
     if (first_write_time)
@@ -467,7 +471,8 @@ void StorageTrivialBuffer::flushThread()
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-    } while (!shutdown_event.tryWait(1000));
+    }
+    while (!shutdown_event.tryWait(1000));
 }
 
 void StorageTrivialBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
@@ -532,8 +537,9 @@ void StorageTrivialBuffer::writeBlockToDestination(const Block & block, StorageP
     block_io.out->writeSuffix();
 }
 
-void StorageTrivialBuffer::alter(const AlterCommands & params, const String & database_name,
-                const String & table_name, const Context & context)
+void StorageTrivialBuffer::alter(
+    const AlterCommands & params, const String & database_name,
+    const String & table_name, const Context & context)
 {
     for (const auto & param : params)
         if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)

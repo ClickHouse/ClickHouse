@@ -68,7 +68,7 @@ public:
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1) override;
 
-    BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
     bool checkThresholds(const time_t current_time, const size_t additional_rows = 0,
                 const size_t additional_bytes = 0) const;
@@ -77,7 +77,7 @@ public:
 
     /// Writes all the blocks in buffer into the destination table.
     void shutdown() override;
-    bool optimize(const String & partition, bool final, const Settings & settings) override;
+    bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override;
 
     void rename(const String & new_path_to_db, const String & new_database_name,
             const String & new_table_name) override { name = new_table_name; }
