@@ -1251,8 +1251,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
     if (do_fetch)
     {
-        String covering_part;
-        String replica = findReplicaHavingCoveringPart(entry.new_part_name, true, covering_part);
+        String replica = findReplicaHavingCoveringPart(entry, true);
 
         static std::atomic_uint total_fetches {0};
         if (data.settings.replicated_max_parallel_fetches && total_fetches >= data.settings.replicated_max_parallel_fetches)
@@ -1422,7 +1421,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
             try
             {
-                if (!fetchPart(covering_part, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
+                if (!fetchPart(entry.actual_new_part_name, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
                     return false;
             }
             catch (Exception & e)
@@ -1565,13 +1564,19 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 {
     setThreadName("ReplMTQueueUpd");
 
+    bool update_in_progress = false;
     while (!shutdown_called)
     {
-        last_queue_update_attempt_time.store(time(nullptr));
+        if (!update_in_progress)
+        {
+            last_queue_update_start_time.store(time(nullptr));
+            update_in_progress = true;
+        }
         try
         {
             pullLogsToQueue(queue_updating_event);
-            last_successful_queue_update_attempt_time.store(time(nullptr));
+            last_queue_update_finish_time.store(time(nullptr));
+            update_in_progress = false;
             queue_updating_event->wait();
         }
         catch (const zkutil::KeeperException & e)
@@ -1965,7 +1970,7 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
 }
 
 
-String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const String & part_name, bool active, String & out_covering_part_name)
+String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const LogEntry & entry, bool active)
 {
     auto zookeeper = getZooKeeper();
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
@@ -1985,10 +1990,9 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const String & 
         Strings parts = zookeeper->getChildren(zookeeper_path + "/replicas/" + replica + "/parts");
         for (const String & part_on_replica : parts)
         {
-            if (part_on_replica == part_name || ActiveDataPartSet::contains(part_on_replica, part_name))
+            if (part_on_replica == entry.new_part_name || ActiveDataPartSet::contains(part_on_replica, entry.new_part_name))
             {
-                if (largest_part_found.empty()
-                    || ActiveDataPartSet::contains(part_on_replica, largest_part_found))
+                if (largest_part_found.empty() || ActiveDataPartSet::contains(part_on_replica, largest_part_found))
                 {
                     largest_part_found = part_on_replica;
                 }
@@ -1997,7 +2001,23 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const String & 
 
         if (!largest_part_found.empty())
         {
-            out_covering_part_name = largest_part_found;
+            bool the_same_part = largest_part_found == entry.new_part_name;
+
+            /// Make a check in case if selected part differs from source part
+            if (!the_same_part)
+            {
+                String reject_reason;
+                if (!queue.addFuturePartIfNotCoveredByThem(largest_part_found, entry, reject_reason))
+                {
+                    LOG_INFO(log, "Will not fetch part " << largest_part_found << " covering " << entry.new_part_name << ". " << reject_reason);
+                    return {};
+                }
+            }
+            else
+            {
+                entry.actual_new_part_name = entry.new_part_name;
+            }
+
             return replica;
         }
     }
@@ -2389,7 +2409,7 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 }
 
 
-BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query, const Settings & settings)
+BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & query, const Settings & settings)
 {
     assertNotReadonly();
 
@@ -3261,16 +3281,16 @@ time_t StorageReplicatedMergeTree::getAbsoluteDelay() const
     time_t max_processed_insert_time = 0;
     queue.getInsertTimes(min_unprocessed_insert_time, max_processed_insert_time);
 
-    /// Load in reverse order to preserve consistency (successful update time must be after update start time).
-    /// Probably doesn't matter because pullLogsToQueue() acts as a barrier.
-    time_t successful_queue_update_time = last_successful_queue_update_attempt_time.load();
-    time_t queue_update_time = last_queue_update_attempt_time.load();
+    /// Load start time, then finish time to avoid reporting false delay when start time is updated
+    /// between loading of two variables.
+    time_t queue_update_start_time = last_queue_update_start_time.load();
+    time_t queue_update_finish_time = last_queue_update_finish_time.load();
 
     time_t current_time = time(nullptr);
 
-    if (!queue_update_time)
+    if (!queue_update_finish_time)
     {
-        /// We have not even tried to update queue yet (perhaps replica is readonly).
+        /// We have not updated queue even once yet (perhaps replica is readonly).
         /// As we have no info about the current state of replication log, return effectively infinite delay.
         return current_time;
     }
@@ -3279,12 +3299,12 @@ time_t StorageReplicatedMergeTree::getAbsoluteDelay() const
         /// There are some unprocessed insert entries in queue.
         return (current_time > min_unprocessed_insert_time) ? (current_time - min_unprocessed_insert_time) : 0;
     }
-    else if (queue_update_time > successful_queue_update_time)
+    else if (queue_update_start_time > queue_update_finish_time)
     {
         /// Queue is empty, but there are some in-flight or failed queue update attempts
         /// (likely because of problems with connecting to ZooKeeper).
         /// Return the time passed since last attempt.
-        return (current_time > queue_update_time) ? (current_time - queue_update_time) : 0;
+        return (current_time > queue_update_start_time) ? (current_time - queue_update_start_time) : 0;
     }
     else
     {
@@ -3523,11 +3543,12 @@ void StorageReplicatedMergeTree::freezePartition(const Field & partition, const 
 }
 
 
-void StorageReplicatedMergeTree::reshardPartitions(ASTPtr query, const String & database_name,
+void StorageReplicatedMergeTree::reshardPartitions(
+    const ASTPtr & query, const String & database_name,
     const Field & first_partition, const Field & last_partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-    const Settings & settings)
+    Context & context)
 {
     auto & resharding_worker = context.getReshardingWorker();
     if (!resharding_worker.isStarted())

@@ -131,7 +131,7 @@ public:
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1) override;
 
-    BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
     bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override;
 
@@ -142,11 +142,12 @@ public:
     void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
     void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
 
-    void reshardPartitions(ASTPtr query, const String & database_name,
+    void reshardPartitions(
+        const ASTPtr & query, const String & database_name,
         const Field & first_partition, const Field & last_partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        const Settings & settings) override;
+        Context & context) override;
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
@@ -245,8 +246,8 @@ private:
       * In ZK entries in chronological order. Here it is not necessary.
       */
     ReplicatedMergeTreeQueue queue;
-    std::atomic<time_t> last_queue_update_attempt_time{0};
-    std::atomic<time_t> last_successful_queue_update_attempt_time{0};
+    std::atomic<time_t> last_queue_update_start_time{0};
+    std::atomic<time_t> last_queue_update_finish_time{0};
 
     /** /replicas/me/is_active.
       */
@@ -445,10 +446,10 @@ private:
 
     /** Find replica having specified part or any part that covers it.
       * If active = true, consider only active replicas.
-      * If found, returns replica name and set 'out_covering_part_name' to name of found largest covering part.
+      * If found, returns replica name and set 'entry->actual_new_part_name' to name of found largest covering part.
       * If not found, returns empty string.
       */
-    String findReplicaHavingCoveringPart(const String & part_name, bool active, String & out_covering_part_name);
+    String findReplicaHavingCoveringPart(const LogEntry & entry, bool active);
 
     /** Download the specified part from the specified replica.
       * If `to_detached`, the part is placed in the `detached` directory.
@@ -457,11 +458,11 @@ private:
       */
     bool fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
 
+    /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
     std::mutex currently_fetching_parts_mutex;
 
-    /** With the quorum being tracked, add a replica to the quorum for the part.
-      */
+    /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
 
     AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);

@@ -253,7 +253,7 @@ BlockInputStreams StorageDistributed::read(
 }
 
 
-BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & settings)
+BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
 {
     auto cluster = context.getCluster(cluster_name);
 
@@ -293,11 +293,12 @@ void StorageDistributed::shutdown()
 }
 
 
-void StorageDistributed::reshardPartitions(ASTPtr query, const String & database_name,
+void StorageDistributed::reshardPartitions(
+    const ASTPtr & query, const String & database_name,
     const Field & first_partition, const Field & last_partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-    const Settings & settings)
+    Context & context)
 {
     auto & resharding_worker = context.getReshardingWorker();
     if (!resharding_worker.isStarted())
@@ -377,7 +378,7 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
         ClusterProxy::AlterQueryConstructor alter_query_constructor;
 
         BlockInputStreams streams = ClusterProxy::Query{alter_query_constructor, cluster, alter_query_ptr,
-            context, settings, enable_shard_multiplexing}.execute();
+            context, context.getSettingsRef(), enable_shard_multiplexing}.execute();
 
         /// This callback is called if an exception has occurred while attempting to read
         /// a block from a shard. This is to avoid a potential deadlock if other shards are
@@ -399,7 +400,7 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
         };
 
         streams[0] = std::make_shared<UnionBlockInputStream<>>(
-            streams, nullptr, settings.max_distributed_connections, exception_callback);
+            streams, nullptr, context.getSettingsRef().max_distributed_connections, exception_callback);
         streams.resize(1);
 
         auto stream_ptr = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]);

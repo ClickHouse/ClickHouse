@@ -139,9 +139,8 @@
             -moz-transform: rotate(-45deg);
             -ms-transform: rotate(-45deg);
             -o-transform: rotate(-45deg);
-            background: #fc0;
+            background: #fd0;
             border: 2px solid #000;
-            mix-blend-mode: hard-light;
         }
 
         #github_link {
@@ -770,12 +769,10 @@
 <pre>
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 
-sudo mkdir -p /etc/apt/sources.list.d
-echo "deb http://repo.yandex.ru/clickhouse/<span id="distributive">trusty</span> stable main" |
-&nbsp;&nbsp;&nbsp;&nbsp;sudo tee /etc/apt/sources.list.d/clickhouse.list
+sudo apt-add-repository "deb http://repo.yandex.ru/clickhouse/<span id="distributive">trusty</span> stable main"
 sudo apt-get update
 
-sudo apt-get install clickhouse-server-common clickhouse-client
+sudo apt-get install clickhouse-server-common clickhouse-client -y
 
 sudo service clickhouse-server start
 clickhouse-client
@@ -847,6 +844,7 @@ clickhouse-client
             $('html, body').animate({
                 scrollTop: offset
             }, 500);
+            window.history.replaceState('', document.title, window.location.href.replace(location.hash, '') + this.hash);
         });
 
         var available_distributives = ['xenial', 'trusty', 'precise'];
@@ -862,19 +860,31 @@ clickhouse-client
 </script>
 
 <!-- Yandex.Metrika counter -->
-<script src="https://mc.yandex.ru/metrika/watch.js" type="text/javascript"></script>
 <script type="text/javascript">
-    try {
-        var yaCounter18343495 = new Ya.Metrika({
-            id: 18343495,
-            webvisor: true,
-            clickmap: true,
-            trackLinks: true,
-            accurateTrackBounce: true,
-            trackHash: true
+    (function (d, w, c) {
+        (w[c] = w[c] || []).push(function() {
+            try {
+                w.yaCounter18343495 = new Ya.Metrika2({
+                    id:18343495,
+                    clickmap:true,
+                    trackLinks:true,
+                    accurateTrackBounce:true,
+                    webvisor:true
+                });
+            } catch(e) { }
         });
-    } catch (e) {
-    }
+
+        var n = d.getElementsByTagName("script")[0],
+            s = d.createElement("script"),
+            f = function () { n.parentNode.insertBefore(s, n); };
+        s.type = "text/javascript";
+        s.async = true;
+        s.src = "https://mc.yandex.ru/metrika/tag.js";
+
+        if (w.opera == "[object Opera]") {
+            d.addEventListener("DOMContentLoaded", f, false);
+        } else { f(); }
+    })(document, window, "yandex_metrika_callbacks2");
 </script>
 <noscript>
     <div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt=""/></div>

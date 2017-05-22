@@ -75,7 +75,7 @@ public:
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1) override;
 
-    BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
     void drop() override {}
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
@@ -85,11 +85,12 @@ public:
 
     void shutdown() override;
 
-    void reshardPartitions(ASTPtr query, const String  & database_name,
+    void reshardPartitions(
+        const ASTPtr & query, const String  & database_name,
         const Field & first_partition, const Field & last_partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        const Settings & settings) override;
+        Context & context) override;
 
     /// From each replica, get a description of the corresponding local table.
     BlockInputStreams describe(const Context & context, const Settings & settings);
@@ -145,7 +146,7 @@ private:
     String remote_database;
     String remote_table;
 
-    Context & context;
+    const Context & context;
     Logger * log = &Logger::get("StorageDistributed");
 
     /// Used to implement TableFunctionRemote.

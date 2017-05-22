@@ -46,7 +46,7 @@ public:
         return { std::make_shared<NullBlockInputStream>() };
     }
 
-    BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override
+    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override
     {
         return std::make_shared<NullBlockOutputStream>();
     }

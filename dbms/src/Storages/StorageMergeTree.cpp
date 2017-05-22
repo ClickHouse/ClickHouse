@@ -124,7 +124,7 @@ BlockInputStreams StorageMergeTree::read(
     return reader.read(column_names, query, context, settings, processed_stage, max_block_size, threads, nullptr, 0);
 }
 
-BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query, const Settings & settings)
+BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & query, const Settings & settings)
 {
     return std::make_shared<MergeTreeBlockOutputStream>(*this);
 }

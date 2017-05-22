@@ -70,7 +70,7 @@ BlockIO InterpreterAlterQuery::execute()
             case PartitionCommand::RESHARD_PARTITION:
                 table->reshardPartitions(query_ptr, database_name, command.partition, command.last_partition,
                     command.weighted_zookeeper_paths, command.sharding_key_expr, command.do_copy,
-                    command.coordinator, context.getSettingsRef());
+                    command.coordinator, context);
                 break;
 
             case PartitionCommand::DROP_COLUMN:

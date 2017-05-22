@@ -218,7 +218,7 @@ private:
 };
 
 BlockOutputStreamPtr StorageFile::write(
-    ASTPtr query,
+    const ASTPtr & query,
     const Settings & settings)
 {
     return std::make_shared<StorageFileBlockOutputStream>(*this);
