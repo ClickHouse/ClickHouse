@@ -2,7 +2,7 @@
 
 #include <Poco/Logger.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionAnalyzer.h>    /// SubqueriesForSets
 
 
 namespace Poco { class Logger; }

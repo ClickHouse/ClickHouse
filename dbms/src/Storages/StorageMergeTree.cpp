@@ -8,7 +8,6 @@
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PartLog.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
