@@ -24,7 +24,7 @@ class WriteBuffer;
   */
 struct CollectTables
 {
-    void process(ASTPtr & ast, Context & context, const CollectAliases & aliases);
+    void process(ASTPtr & ast, const Context & context, const CollectAliases & aliases);
 
     enum class Kind
     {
