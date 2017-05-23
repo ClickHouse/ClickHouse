@@ -15,7 +15,7 @@ class TableFunctionShardByHash : public ITableFunction
 {
 public:
     std::string getName() const override { return "shardByHash"; }
-    StoragePtr execute(ASTPtr ast_function, Context & context) const override;
+    StoragePtr execute(ASTPtr ast_function, const Context & context) const override;
 };
 
 }
