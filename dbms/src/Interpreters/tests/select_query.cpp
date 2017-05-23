@@ -1,6 +1,8 @@
 #include <iostream>
 #include <iomanip>
 
+#include <common/DateLUT.h>
+
 #include <Poco/ConsoleChannel.h>
 
 #include <IO/ReadBufferFromIStream.h>
@@ -10,6 +12,7 @@
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Storages/System/StorageSystemOne.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/executeQuery.h>
 #include <Databases/IDatabase.h>
