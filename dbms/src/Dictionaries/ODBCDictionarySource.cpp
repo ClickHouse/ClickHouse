@@ -1,8 +1,11 @@
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
 #include <Poco/Data/SessionPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Dictionaries/ODBCDictionarySource.h>
 #include <Dictionaries/ODBCBlockInputStream.h>
 #include <common/logger_useful.h>
+#include <Dictionaries/readInvalidateQuery.h>
 
 
 namespace DB
@@ -22,7 +25,8 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     where{config.getString(config_prefix + ".where", "")},
     sample_block{sample_block},
     query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},    /// NOTE Better to obtain quoting style via ODBC interface.
-    load_all_query{query_builder.composeLoadAllQuery()}
+    load_all_query{query_builder.composeLoadAllQuery()},
+    invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
 {
     pool = createAndCheckResizePocoSessionPool([&] () { return std::make_shared<Poco::Data::SessionPool>(
         config.getString(config_prefix + ".connector", "ODBC"),
@@ -40,7 +44,8 @@ ODBCDictionarySource::ODBCDictionarySource(const ODBCDictionarySource & other)
     sample_block{other.sample_block},
     pool{other.pool},
     query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},
-    load_all_query{other.load_all_query}
+    load_all_query{other.load_all_query},
+    invalidate_query{other.invalidate_query}, invalidate_query_response{other.invalidate_query_response}
 {
 }
 
@@ -78,11 +83,6 @@ BlockInputStreamPtr ODBCDictionarySource::loadKeys(
     return std::make_shared<ODBCBlockInputStream>(pool->get(), query, sample_block, max_block_size);
 }
 
-bool ODBCDictionarySource::isModified() const
-{
-    return true;
-}
-
 bool ODBCDictionarySource::supportsSelectiveLoad() const
 {
     return true;
@@ -98,5 +98,26 @@ std::string ODBCDictionarySource::toString() const
     return "ODBC: " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
 }
 
+bool ODBCDictionarySource::isModified() const
+{
+    if (!invalidate_query.empty())
+    {
+        auto response = doInvalidateQuery(invalidate_query);
+        if (invalidate_query_response == response)
+            return false;
+        invalidate_query_response = response;
+    }
+    return true;
+}
+
+
+std::string ODBCDictionarySource::doInvalidateQuery(const std::string & request) const
+{
+    Block sample_block;
+    ColumnPtr column(std::make_shared<ColumnString>());
+    sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
+    ODBCBlockInputStream blockInputStream(pool->get(), request, sample_block, 1);
+    return readInvalidateQuery(blockInputStream);
+}
 
 }
