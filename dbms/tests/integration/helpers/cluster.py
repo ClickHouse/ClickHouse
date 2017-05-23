@@ -1,5 +1,6 @@
 import os
 import os.path as p
+import pwd
 import re
 import subprocess
 import shutil
@@ -31,7 +32,7 @@ class ClickHouseCluster:
         self.server_bin_path = server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse')
         self.client_bin_path = client_bin_path or os.environ.get('CLICKHOUSE_TESTS_CLIENT_BIN_PATH', '/usr/bin/clickhouse-client')
 
-        self.project_name = os.getlogin() + p.basename(self.base_dir)
+        self.project_name = pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir)
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r'[^a-z0-9]', '', self.project_name.lower())
 
