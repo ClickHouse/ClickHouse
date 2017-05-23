@@ -255,7 +255,7 @@ btrie_insert_a6(btrie_t *tree, const uint8_t *key, const uint8_t *mask,
     uintptr_t value)
 {
     uint8_t             bit;
-    uint         i;
+    unsigned int        i;
     btrie_node_t  *node, *next;
 
     i = 0;
@@ -337,7 +337,7 @@ int
 btrie_delete_a6(btrie_t *tree, const uint8_t *key, const uint8_t *mask)
 {
     uint8_t             bit;
-    uint         i;
+    unsigned int        i;
     btrie_node_t  *node;
 
     i = 0;
@@ -411,7 +411,7 @@ btrie_find_a6(btrie_t *tree, const uint8_t *key)
 {
     uint8_t             bit;
     uintptr_t          value;
-    uint         i;
+    unsigned int        i;
     btrie_node_t  *node;
 
     i = 0;

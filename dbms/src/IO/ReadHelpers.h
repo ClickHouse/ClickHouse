@@ -216,6 +216,23 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
     x = tmp != '0';
 }
 
+inline void readBoolTextWord(bool & x, ReadBuffer & buf)
+{
+    if (buf.eof())
+        throwReadAfterEOF();
+
+    if (*buf.position() == 't')
+    {
+        assertString("true", buf);
+        x = true;
+    }
+    else
+    {
+        assertString("false", buf);
+        x = false;
+    }
+}
+
 template <typename T, typename ReturnType = void>
 ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {

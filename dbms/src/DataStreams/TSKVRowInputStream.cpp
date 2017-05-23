@@ -10,6 +10,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 }
 
 
@@ -108,6 +109,7 @@ bool TSKVRowInputStream::read(Block & block)
         {
             StringRef name_ref;
             bool has_value = readName(istr, name_ref, name_buf);
+            ssize_t index = -1;
 
             if (has_value)
             {
@@ -126,7 +128,7 @@ bool TSKVRowInputStream::read(Block & block)
                 }
                 else
                 {
-                    size_t index = it->second;
+                    index = it->second;
 
                     if (read_columns[index])
                         throw Exception("Duplicate field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
@@ -159,7 +161,16 @@ bool TSKVRowInputStream::read(Block & block)
                 break;
             }
             else
-                throw Exception("Found garbage after field in TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+            {
+                /// Possibly a garbage was written into column, remove it
+                if (index >= 0)
+                {
+                    block.getByPosition(index).column->popBack(1);
+                    read_columns[index] = false;
+                }
+
+                throw Exception("Found garbage after field in TSKV format: " + name_ref.toString(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+            }
         }
     }
 

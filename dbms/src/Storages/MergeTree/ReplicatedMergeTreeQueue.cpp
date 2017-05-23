@@ -448,6 +448,60 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
 }
 
 
+bool ReplicatedMergeTreeQueue::isNotCoveredByFuturePartsImpl(const String & new_part_name, String & out_reason)
+{
+    /// mutex should been already acquired
+
+    /// Let's check if the same part is now being created by another action.
+    if (future_parts.count(new_part_name))
+    {
+        out_reason = "Not executing log entry for part " + new_part_name
+            + " because another log entry for the same part is being processed. This shouldn't happen often.";
+        return false;
+
+        /** When the corresponding action is completed, then `isNotCoveredByFuturePart` next time, will succeed,
+            *  and queue element will be processed.
+            * Immediately in the `executeLogEntry` function it will be found that we already have a part,
+            *  and queue element will be immediately treated as processed.
+            */
+    }
+
+    /// A more complex check is whether another part is currently created by other action that will cover this part.
+    /// NOTE The above is redundant, but left for a more convenient message in the log.
+    ActiveDataPartSet::Part result_part;
+    ActiveDataPartSet::parsePartName(new_part_name, result_part);
+
+    /// It can slow down when the size of `future_parts` is large. But it can not be large, since `BackgroundProcessingPool` is limited.
+    for (const auto & future_part_name : future_parts)
+    {
+        ActiveDataPartSet::Part future_part;
+        ActiveDataPartSet::parsePartName(future_part_name, future_part);
+
+        if (future_part.contains(result_part))
+        {
+            out_reason = "Not executing log entry for part " + new_part_name
+                + " because another log entry for covering part " + future_part_name + " is being processed.";
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool ReplicatedMergeTreeQueue::addFuturePartIfNotCoveredByThem(const String & part_name, const LogEntry & entry, String & reject_reason)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    if (isNotCoveredByFuturePartsImpl(part_name, reject_reason))
+    {
+        CurrentlyExecuting::setActualPartName(entry, part_name, *this);
+        return true;
+    }
+
+    return false;
+}
+
+
 bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     const LogEntry & entry,
     String & out_postpone_reason,
@@ -458,41 +512,10 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
     if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
     {
-        /// Let's check if the same part is now being created by another action.
-        if (future_parts.count(entry.new_part_name))
+        if (!isNotCoveredByFuturePartsImpl(entry.new_part_name, out_postpone_reason))
         {
-            String reason = "Not executing log entry for part " + entry.new_part_name
-                + " because another log entry for the same part is being processed. This shouldn't happen often.";
-            LOG_DEBUG(log, reason);
-            out_postpone_reason = reason;
+            LOG_DEBUG(log, out_postpone_reason);
             return false;
-
-            /** When the corresponding action is completed, then `shouldExecuteLogEntry` next time, will succeed,
-              *  and queue element will be processed.
-              * Immediately in the `executeLogEntry` function it will be found that we already have a part,
-              *  and queue element will be immediately treated as processed.
-              */
-        }
-
-        /// A more complex check is whether another part is currently created by other action that will cover this part.
-        /// NOTE The above is redundant, but left for a more convenient message in the log.
-        ActiveDataPartSet::Part result_part;
-        ActiveDataPartSet::parsePartName(entry.new_part_name, result_part);
-
-        /// It can slow down when the size of `future_parts` is large. But it can not be large, since `BackgroundProcessingPool` is limited.
-        for (const auto & future_part_name : future_parts)
-        {
-            ActiveDataPartSet::Part future_part;
-            ActiveDataPartSet::parsePartName(future_part_name, future_part);
-
-            if (future_part.contains(result_part))
-            {
-                String reason = "Not executing log entry for part " + entry.new_part_name
-                    + " because another log entry for covering part " + future_part_name + " is being processed.";
-                LOG_DEBUG(log, reason);
-                out_postpone_reason = reason;
-                return false;
-            }
         }
     }
 
@@ -560,6 +583,24 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(ReplicatedMerge
         throw Exception("Tagging already tagged future part " + entry->new_part_name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 }
 
+
+void ReplicatedMergeTreeQueue::CurrentlyExecuting::setActualPartName(const ReplicatedMergeTreeLogEntry & entry,
+                                                                     const String & actual_part_name, ReplicatedMergeTreeQueue & queue)
+{
+    if (!entry.actual_new_part_name.empty())
+        throw Exception("Entry actual part isn't empty yet. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+    entry.actual_new_part_name = actual_part_name;
+
+    /// Check if it is the same (and already added) part.
+    if (entry.actual_new_part_name == entry.new_part_name)
+        return;
+
+    if (!queue.future_parts.insert(entry.actual_new_part_name).second)
+        throw Exception("Attaching already exsisting future part " + entry.actual_new_part_name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+}
+
+
 ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
 {
     std::lock_guard<std::mutex> lock(queue.mutex);
@@ -569,6 +610,14 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
 
     if (!queue.future_parts.erase(entry->new_part_name))
         LOG_ERROR(queue.log, "Untagging already untagged future part " + entry->new_part_name + ". This is a bug.");
+
+    if (!entry->actual_new_part_name.empty())
+    {
+        if (entry->actual_new_part_name != entry->new_part_name && !queue.future_parts.erase(entry->actual_new_part_name))
+            LOG_ERROR(queue.log, "Untagging already untagged future part " + entry->actual_new_part_name + ". This is a bug.");
+
+        entry->actual_new_part_name.clear();
+    }
 }
 
 
@@ -578,7 +627,7 @@ ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToP
 
     LogEntryPtr entry;
 
-    for (Queue::iterator it = queue.begin(); it != queue.end(); ++it)
+    for (auto it = queue.begin(); it != queue.end(); ++it)
     {
         if ((*it)->currently_executing)
             continue;

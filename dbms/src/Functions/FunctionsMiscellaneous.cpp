@@ -255,6 +255,44 @@ public:
 };
 
 
+/// Returns global default value for type of passed argument (example: 0 for numeric types, '' for String).
+class FunctionDefaultValueOfArgumentType : public IFunction
+{
+public:
+    static constexpr auto name = "defaultValueOfArgumentType";
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionDefaultValueOfArgumentType>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool hasSpecialSupportForNulls() const override
+    {
+        return true;
+    }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 1;
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        return arguments[0]->clone();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        IDataType & type = *block.getByPosition(arguments[0]).type;
+        block.getByPosition(result).column = type.createConstColumn(block.rows(), type.getDefault());
+    }
+};
+
+
 class FunctionBlockSize : public IFunction
 {
 public:
@@ -1762,6 +1800,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionVisibleWidth>();
     factory.registerFunction<FunctionToTypeName>();
     factory.registerFunction<FunctionToColumnTypeName>();
+    factory.registerFunction<FunctionDefaultValueOfArgumentType>();
     factory.registerFunction<FunctionBlockSize>();
     factory.registerFunction<FunctionBlockNumber>();
     factory.registerFunction<FunctionRowNumberInBlock>();

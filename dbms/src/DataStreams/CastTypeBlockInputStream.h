@@ -2,10 +2,6 @@
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 
-#include <common/logger_useful.h> 
-#include <experimental/optional>
-#include <vector>
-
 
 namespace DB
 {
@@ -16,10 +12,9 @@ class IFunction;
 class CastTypeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    CastTypeBlockInputStream(const Context & context_,
-                             BlockInputStreamPtr input_,
-                             const Block & in_sample_,
-                             const Block & out_sample_);
+    CastTypeBlockInputStream(const Context & context,
+                             const BlockInputStreamPtr & input,
+                             const Block & reference_definition);
 
     String getName() const override;
 
@@ -29,13 +24,30 @@ protected:
     Block readImpl() override;
 
 private:
-    void collectDifferent(const Block & in_sample, const Block & out_sample);
-
-private:
     const Context & context;
-    std::vector<std::experimental::optional<NameAndTypePair>> cast_types;
-    std::vector<std::shared_ptr<IFunction>> cast_functions;  /// Used to perform type conversions.
-    Logger * log = &Logger::get("CastTypeBlockInputStream");
+    Block ref_defenition;
+
+    /// Initializes cast_description and prepares tmp_conversion_block
+    void initialize(const Block & src_block);
+    bool initialized = false;
+
+    struct CastElement
+    {
+        /// Prepared function to do conversion
+        std::shared_ptr<IFunction> function;
+        /// Position of first function argument in tmp_conversion_block
+        size_t tmp_col_offset;
+
+        CastElement(std::shared_ptr<IFunction> && function_, size_t tmp_col_offset_);
+    };
+
+    /// Describes required conversions on source block
+    /// Contains column numbers in source block that should be converted
+    std::map<size_t, CastElement> cast_description;
+
+    /// Auxiliary block, stores prefilled arguments and result for each CAST function in cast_description
+    /// 3 columns are allocated for each conversion: [blank of source column, column with res type name, blank of res column]
+    Block tmp_conversion_block;
 };
 
 }

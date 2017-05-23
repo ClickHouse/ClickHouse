@@ -37,7 +37,7 @@ public:
     bool supportsParallelReplicas() const override     { return getInnerTable()->supportsParallelReplicas(); }
     bool supportsIndexForIn() const override         { return getInnerTable()->supportsIndexForIn(); }
 
-    BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
     void drop() override;
     bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override;
 

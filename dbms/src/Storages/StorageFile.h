@@ -82,7 +82,7 @@ public:
         unsigned threads = 1) override;
 
     BlockOutputStreamPtr write(
-        ASTPtr query,
+        const ASTPtr & query,
         const Settings & settings) override;
 
     void drop() override;

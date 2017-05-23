@@ -39,7 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INFINITE_LOOP;
-    extern const int BLOCKS_HAS_DIFFERENT_STRUCTURE;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
@@ -198,7 +198,7 @@ static void appendBlock(const Block & from, Block & to)
 
             if (col_from.getName() != col_to.getName())
                 throw Exception("Cannot append block to another: different type of columns at index " + toString(column_no)
-                    + ". Block 1: " + from.dumpStructure() + ". Block 2: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAS_DIFFERENT_STRUCTURE);
+                    + ". Block 1: " + from.dumpStructure() + ". Block 2: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
 
             col_to.insertRangeFrom(col_from, 0, rows);
         }
@@ -347,7 +347,7 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(ASTPtr query, const Settings & settings)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & query, const Settings & settings)
 {
     return std::make_shared<BufferBlockOutputStream>(*this);
 }
