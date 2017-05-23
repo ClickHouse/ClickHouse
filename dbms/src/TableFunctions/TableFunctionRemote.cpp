@@ -179,7 +179,7 @@ static std::vector<String> parseDescription(const String & description, size_t l
 }
 
 
-StoragePtr TableFunctionRemote::execute(ASTPtr ast_function, const Context & context) const
+StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Context & context) const
 {
     ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
