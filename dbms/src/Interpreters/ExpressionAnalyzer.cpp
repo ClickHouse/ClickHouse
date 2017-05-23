@@ -13,6 +13,11 @@
 #include <Parsers/ASTSet.h>
 #include <Parsers/ASTOrderByElement.h>
 
+#include <Analyzers/CollectAliases.h>
+#include <Analyzers/CollectTables.h>
+#include <Analyzers/AnalyzeColumns.h>
+#include <Analyzers/AnalyzeLambdas.h>
+
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -170,12 +175,16 @@ void ExpressionAnalyzer::init()
 
     select_query = typeid_cast<ASTSelectQuery *>(ast.get());
 
-    /// Depending on the user's profile, check for the execution rights
-    /// distributed subqueries inside the IN or JOIN sections and process these subqueries.
+    /// Depending on the user's profile, check for the execution mode
+    /// of distributed subqueries inside the IN or JOIN sections and transform these subqueries if required.
     InJoinSubqueriesPreprocessor(context).process(select_query);
 
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings).perform();
+
+    /// Temporary hack for limited support of qualified column names.
+    if (select_query)
+        replaceQualifiedColumnNames();
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     addASTAliases(ast);
@@ -219,6 +228,30 @@ void ExpressionAnalyzer::init()
     /// the global subquery will be replaced with a temporary table, resulting in aggregate_descriptions
     /// will contain out-of-date information, which will lead to an error when the query is executed.
     analyzeAggregation();
+}
+
+void ExpressionAnalyzer::replaceQualifiedColumnNames()
+{
+    AnalyzeLambdas analyze_lambdas;
+    analyze_lambdas.process(ast);
+
+    CollectAliases collect_aliases;
+    collect_aliases.process(ast);
+
+    CollectTables collect_tables;
+    collect_tables.process(ast, context, collect_aliases);
+
+    AnalyzeColumns analyze_columns;
+    analyze_columns.process(ast, collect_aliases, collect_tables);
+
+    for (auto & elem : analyze_columns.columns)
+    {
+        AnalyzeColumns::ColumnInfo & info = elem.second;
+
+        ASTIdentifier & id = typeid_cast<ASTIdentifier &>(*info.node);
+        id.children.clear();
+        id.name = info.name_in_table;
+    }
 }
 
 void ExpressionAnalyzer::optimizeIfWithConstantCondition()

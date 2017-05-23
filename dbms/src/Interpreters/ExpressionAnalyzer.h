@@ -211,6 +211,11 @@ private:
     static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
     NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, columns); }
 
+    /// Replace qualified column names (`table`.`column`) to simple column names (`column`).
+    /// This is temporary solution, because ambiguoty is not resolved.
+    /// - Until total replace of ExpressionAnalyzer to Analyzers.
+    void replaceQualifiedColumnNames();
+
     /** Из списка всех доступных столбцов таблицы (columns) удалить все ненужные.
       * Заодно, сформировать множество неизвестных столбцов (unknown_required_columns),
       * а также столбцов, добавленных JOIN-ом (columns_added_by_join).
