@@ -31,24 +31,13 @@ public:
 
         bool operator<(const Part & rhs) const
         {
-            if (month != rhs.month)
-                return month < rhs.month;
-
-            if (left != rhs.left)
-                return left < rhs.left;
-            if (right != rhs.right)
-                return right < rhs.right;
-
-            if (level != rhs.level)
-                return level < rhs.level;
-
-            return false;
+            return std::tie(month, left, right, level) < std::tie(rhs.month, rhs.left, rhs.right, rhs.level);
         }
 
-        /// Contains another part (obtained after combining another part with some other)
+        /// Contains another part (obtained after merging another part with some other)
         bool contains(const Part & rhs) const
         {
-            return month == rhs.month        /// Parts for different months are not combined
+            return month == rhs.month        /// Parts for different months are not merged
                 && left_date <= rhs.left_date
                 && right_date >= rhs.right_date
                 && left <= rhs.left

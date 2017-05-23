@@ -19,6 +19,7 @@
 #include <Storages/StorageStripeLog.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageBuffer.h>
+#include <Storages/StorageTrivialBuffer.h>
 #include <Storages/StorageNull.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageMergeTree.h>
@@ -554,6 +555,54 @@ StoragePtr StorageFactory::get(
             materialized_columns, alias_columns, column_defaults,
             context,
             num_buckets, {min_time, min_rows, min_bytes}, {max_time, max_rows, max_bytes},
+            destination_database, destination_table);
+    }
+    else if (name == "TrivialBuffer")
+    {
+        /** TrivialBuffer(db, table, num_blocks_to_deduplicate, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes, path_in_zookeeper)
+          *
+          * db, table - in which table to put data from buffer.
+          * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for pushing out from the buffer.
+          * num_blocks_to_deduplicate - level of parallelism.
+          */
+
+        const std::string error_message_argument_number_mismatch = "Storage TrivialBuffer requires 10 parameters: "
+                " destination database, destination table, num_blocks_to_deduplicate, min_time, max_time, min_rows,"
+                " max_rows, min_bytes, max_bytes, path_in_zookeeper.";
+        ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
+
+        if (args_func.size() != 1)
+            throw Exception(error_message_argument_number_mismatch,
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
+
+        if (args.size() != 10)
+            throw Exception(error_message_argument_number_mismatch,
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
+        args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+
+        String destination_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+        String destination_table    = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+
+        size_t num_blocks_to_deduplicate = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[2]).value);
+
+        time_t min_time = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[3]).value);
+        time_t max_time = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[4]).value);
+        size_t min_rows = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[5]).value);
+        size_t max_rows = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[6]).value);
+        size_t min_bytes = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[7]).value);
+        size_t max_bytes = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[8]).value);
+
+        String path_in_zk_for_deduplication = static_cast<const ASTLiteral &>(*args[9]).value.safeGet<String>();
+
+        return StorageTrivialBuffer::create(
+            table_name, columns,
+            materialized_columns, alias_columns, column_defaults,
+            context, num_blocks_to_deduplicate, path_in_zk_for_deduplication,
+            {min_time, min_rows, min_bytes}, {max_time, max_rows, max_bytes},
             destination_database, destination_table);
     }
     else if (endsWith(name, "MergeTree"))

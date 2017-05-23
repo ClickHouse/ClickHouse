@@ -11,7 +11,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
-    extern const int BLOCKS_HAS_DIFFERENT_STRUCTURE;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
@@ -130,7 +130,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
             {
                 throw Exception("Merging blocks has different names or types of columns:\n"
                     + shared_block_ptr->dumpStructure() + "\nand\n" + merged_block.dumpStructure(),
-                    ErrorCodes::BLOCKS_HAS_DIFFERENT_STRUCTURE);
+                    ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
             }
         }
     }
