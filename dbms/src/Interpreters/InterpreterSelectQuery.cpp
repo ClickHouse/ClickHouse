@@ -194,7 +194,7 @@ void InterpreterSelectQuery::initQueryAnalyzer()
             new ExpressionAnalyzer(p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth, !only_analyze));
 }
 
-InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
+InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_, BlockInputStreamPtr input_)
     : query_ptr(query_ptr_)
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
@@ -207,7 +207,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
     init(input_);
 }
 
-InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, ASTPtr query_ptr_, const Context & context_)
+InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & query_ptr_, const Context & context_)
     : query_ptr(query_ptr_)
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
@@ -219,14 +219,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, ASTPtr query_ptr_
     init({});
 }
 
-InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
+InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_,
     const Names & required_column_names_,
     QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
     : InterpreterSelectQuery(query_ptr_, context_, required_column_names_, {}, to_stage_, subquery_depth_, input_)
 {
 }
 
-InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
+InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_,
     const Names & required_column_names_,
     const NamesAndTypesList & table_column_names_, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
     : query_ptr(query_ptr_)
@@ -343,7 +343,7 @@ Block InterpreterSelectQuery::getSampleBlock()
 }
 
 
-Block InterpreterSelectQuery::getSampleBlock(ASTPtr query_ptr_, const Context & context_)
+Block InterpreterSelectQuery::getSampleBlock(const ASTPtr & query_ptr_, const Context & context_)
 {
     return InterpreterSelectQuery(OnlyAnalyzeTag(), query_ptr_, context_).getSampleBlock();
 }
