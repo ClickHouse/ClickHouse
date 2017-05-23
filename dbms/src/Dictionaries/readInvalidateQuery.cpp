@@ -33,7 +33,7 @@ std::string readInvalidateQuery(IProfilingBlockInputStream & block_input_stream)
     auto column = block.getByPosition(0).column;
     response = column->getDataAt(0).toString();
 
-    while (block = block_input_stream.read())
+    while ((block = block_input_stream.read()))
     {
         if (block.rows() > 0)
             throw Exception("Expected single row in resultset, got at least " + std::to_string(rows + 1), ErrorCodes::TOO_MUCH_ROWS);
