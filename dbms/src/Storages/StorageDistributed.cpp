@@ -128,7 +128,7 @@ StorageDistributed::StorageDistributed(
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
-    Context & context_,
+    const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_)
     : name(name_), columns(columns_),
@@ -152,7 +152,7 @@ StorageDistributed::StorageDistributed(
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
-    Context & context_,
+    const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
@@ -177,7 +177,7 @@ StoragePtr StorageDistributed::create(
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
-    Context & context_,
+    const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_)
 {
@@ -197,7 +197,7 @@ StoragePtr StorageDistributed::create(
     const String & remote_database_,
     const String & remote_table_,
     ClusterPtr & owned_cluster_,
-    Context & context_)
+    const Context & context_)
 {
     auto res = make_shared(
         name_, columns_, remote_database_,
@@ -450,7 +450,7 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 
     /** The functionality of shard_multiplexing is not completed - turn it off.
       * (Because connecting connections to different shards within a single thread is not done in parallel.)
-      * For more information, see https: //███████████.yandex-team.ru/METR-18300
+      * For more information, see https://███████████.yandex-team.ru/METR-18300
       */
     bool enable_shard_multiplexing = false;
 

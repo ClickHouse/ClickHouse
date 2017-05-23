@@ -41,7 +41,7 @@ public:
         const String & remote_database_,    /// database on remote servers.
         const String & remote_table_,        /// The name of the table on the remote servers.
         const String & cluster_name,
-        Context & context_,
+        const Context & context_,
         const ASTPtr & sharding_key_,
         const String & data_path_);
 
@@ -51,7 +51,7 @@ public:
         const String & remote_database_,      /// database on remote servers.
         const String & remote_table_,         /// The name of the table on the remote servers.
         ClusterPtr & owned_cluster_,
-        Context & context_);
+        const Context & context_);
 
     std::string getName() const override { return "Distributed"; }
     std::string getTableName() const override { return name; }
@@ -110,7 +110,7 @@ private:
         const String & remote_database_,
         const String & remote_table_,
         const String & cluster_name_,
-        Context & context_,
+        const Context & context_,
         const ASTPtr & sharding_key_ = nullptr,
         const String & data_path_ = String{});
 
@@ -123,7 +123,7 @@ private:
         const String & remote_database_,
         const String & remote_table_,
         const String & cluster_name_,
-        Context & context_,
+        const Context & context_,
         const ASTPtr & sharding_key_ = nullptr,
         const String & data_path_ = String{});
 
