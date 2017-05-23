@@ -1,7 +1,10 @@
+#include <sstream>
+
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/formatAST.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Storages/StorageFactory.h>
 #include <Databases/DatabasesCommon.h>

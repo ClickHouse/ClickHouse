@@ -5,10 +5,13 @@
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
 
+
 /// General functionality for several different database engines.
 
 namespace DB
 {
+
+class Context;
 
 
 /** Get the row with the table definition based on the CREATE query.

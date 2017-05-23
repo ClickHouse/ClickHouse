@@ -1,6 +1,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 

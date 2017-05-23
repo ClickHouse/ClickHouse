@@ -27,6 +27,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLog.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -56,7 +57,7 @@ namespace ErrorCodes
 }
 
 
-InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & context_)
+InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Context & context_)
     : query_ptr(query_ptr_), context(context_)
 {
 }
