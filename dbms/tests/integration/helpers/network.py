@@ -118,7 +118,10 @@ class _NetworkManager:
         try:
             self._image = self._docker_client.images.get(image_name)
         except docker.errors.ImageNotFound:
-            self._image = self._docker_client.images.build(tag=image_name, path=image_path, rm=True)
+            # Use docker console client instead of python API to work around https://github.com/docker/docker-py/issues/1397
+            subprocess.check_call(
+                ['docker', 'build', '--force-rm', '--tag', image_name, '--network', 'host', image_path])
+            self._image = self._docker_client.images.get(image_name)
 
         self._container = None
 
