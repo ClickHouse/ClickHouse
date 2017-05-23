@@ -16,7 +16,7 @@ namespace DB
 class InterpreterAlterQuery : public IInterpreter
 {
 public:
-    InterpreterAlterQuery(ASTPtr query_ptr_, const Context & context_);
+    InterpreterAlterQuery(const ASTPtr & query_ptr_, const Context & context_);
 
     BlockIO execute() override;
 

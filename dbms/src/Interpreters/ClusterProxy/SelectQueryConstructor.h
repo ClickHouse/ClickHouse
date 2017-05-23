@@ -18,7 +18,7 @@ public:
             QualifiedTableName main_table,
             const Tables & external_tables);
 
-    BlockInputStreamPtr createLocal(ASTPtr query_ast, const Context & context, const Cluster::Address & address) override;
+    BlockInputStreamPtr createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address) override;
     BlockInputStreamPtr createRemote(
             const ConnectionPoolWithFailoverPtr & pool, const std::string & query,
             const Settings & settings, ThrottlerPtr throttler, const Context & context) override;

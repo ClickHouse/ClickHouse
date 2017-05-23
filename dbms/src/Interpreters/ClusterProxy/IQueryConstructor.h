@@ -24,7 +24,7 @@ public:
     virtual ~IQueryConstructor() {}
 
     /// Create an input stream for local query execution.
-    virtual BlockInputStreamPtr createLocal(ASTPtr query_ast, const Context & context, const Cluster::Address & address) = 0;
+    virtual BlockInputStreamPtr createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address) = 0;
     /// Create an input stream for remote query execution on one shard.
     virtual BlockInputStreamPtr createRemote(
             const ConnectionPoolWithFailoverPtr & pool, const std::string & query,

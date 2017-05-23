@@ -28,7 +28,7 @@ BlockExtraInfo toBlockExtraInfo(const Cluster::Address & address)
 namespace ClusterProxy
 {
 
-BlockInputStreamPtr DescribeQueryConstructor::createLocal(ASTPtr query_ast, const Context & context, const Cluster::Address & address)
+BlockInputStreamPtr DescribeQueryConstructor::createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address)
 {
     InterpreterDescribeQuery interpreter{query_ast, context};
     BlockInputStreamPtr stream = interpreter.execute().in;

@@ -31,7 +31,7 @@ namespace ErrorCodes
 }
 
 
-InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, const Context & context_)
+InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, const Context & context_)
     : query_ptr(query_ptr_), context(context_)
 {
 }
