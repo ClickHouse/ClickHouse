@@ -181,8 +181,8 @@ std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request
     Block sample_block;
     ColumnPtr column(std::make_shared<ColumnString>());
     sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    MySQLBlockInputStream blockInputStream(pool.Get(), request, sample_block, 1);
-    return readInvalidateQuery(blockInputStream);
+    MySQLBlockInputStream block_input_stream(pool.Get(), request, sample_block, 1);
+    return readInvalidateQuery(block_input_stream);
 }
 
 }

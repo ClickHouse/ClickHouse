@@ -116,8 +116,8 @@ std::string ODBCDictionarySource::doInvalidateQuery(const std::string & request)
     Block sample_block;
     ColumnPtr column(std::make_shared<ColumnString>());
     sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    ODBCBlockInputStream blockInputStream(pool->get(), request, sample_block, 1);
-    return readInvalidateQuery(blockInputStream);
+    ODBCBlockInputStream block_input_stream(pool->get(), request, sample_block, 1);
+    return readInvalidateQuery(block_input_stream);
 }
 
 }
