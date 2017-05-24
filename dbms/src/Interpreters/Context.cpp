@@ -1,10 +1,11 @@
 #include <map>
 #include <set>
 #include <chrono>
+#include <random>
 
 #include <Poco/Mutex.h>
 #include <Poco/File.h>
-#include <Poco/UUIDGenerator.h>
+#include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
 
 #include <common/logger_useful.h>
@@ -134,8 +135,6 @@ struct ContextShared
     ConfigurationPtr clusters_config;                        /// Soteres updated configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
 
-    Poco::UUIDGenerator uuid_generator;
-
     bool shutdown_called = false;
 
     /// Do not allow simultaneous execution of DDL requests on the same table.
@@ -150,6 +149,8 @@ struct ContextShared
     Stopwatch uptime_watch;
 
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
+
+    std::mt19937_64 rng{randomSeed()};
 
 
     ~ContextShared()
@@ -736,14 +737,43 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
+    auto lock = getLock();
+
     if (!client_info.current_query_id.empty())
         throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
 
     String query_id_to_set = query_id;
-    if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
-        query_id_to_set = shared->uuid_generator.createRandom().toString();
 
-    auto lock = getLock();
+    if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
+    {
+        /// Generate random UUID, but using lower quality RNG,
+        ///  because Poco::UUIDGenerator::generateRandom method is using /dev/random, that is very expensive.
+        /// NOTE: Actually we don't need to use UUIDs for query identifiers.
+        /// We could use any suitable string instead.
+
+        union
+        {
+            char bytes[16];
+            struct
+            {
+                UInt64 a;
+                UInt64 b;
+            };
+        } random;
+
+        random.a = shared->rng();
+        random.b = shared->rng();
+
+        /// Use protected constructor.
+        struct UUID : Poco::UUID
+        {
+            UUID(const char * bytes, Poco::UUID::Version version)
+                : Poco::UUID(bytes, version) {}
+        };
+
+        query_id_to_set = UUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
+    }
+
     client_info.current_query_id = query_id_to_set;
 }
 
