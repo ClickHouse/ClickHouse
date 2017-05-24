@@ -38,7 +38,6 @@ public:
         const Names & column_names,
         ASTPtr query,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
         const size_t max_block_size = DEFAULT_BLOCK_SIZE,
         const unsigned threads = 1) override

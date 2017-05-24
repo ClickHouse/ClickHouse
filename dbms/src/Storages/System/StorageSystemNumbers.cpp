@@ -63,7 +63,6 @@ BlockInputStreams StorageSystemNumbers::read(
     const Names & column_names,
     ASTPtr query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     unsigned threads)

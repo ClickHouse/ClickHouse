@@ -109,18 +109,19 @@ BlockInputStreams StorageMergeTree::read(
     const Names & column_names,
     ASTPtr query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned threads)
 {
     auto & select = typeid_cast<const ASTSelectQuery &>(*query);
 
+    const Settings & settings = context.getSettingsRef();
+
     /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
     if (settings.optimize_move_to_prewhere && select.where_expression && !select.prewhere_expression && !select.final())
         MergeTreeWhereOptimizer{query, context, data, column_names, log};
 
-    return reader.read(column_names, query, context, settings, processed_stage, max_block_size, threads, nullptr, 0);
+    return reader.read(column_names, query, context, processed_stage, max_block_size, threads, nullptr, 0);
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & query, const Settings & settings)

@@ -131,7 +131,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
     ASTPtr query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned threads,
@@ -203,6 +202,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     PKCondition date_condition(query, context, available_real_and_virtual_columns,
         SortDescription(1, SortColumnDescription(data.date_column_name, 1, 1)),
         Block{{DataTypeDate{}.createColumn(), std::make_shared<DataTypeDate>(), data.date_column_name}});
+
+    const Settings & settings = context.getSettingsRef();
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {

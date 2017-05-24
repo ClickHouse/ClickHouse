@@ -845,15 +845,16 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
             actual_query_ptr = query_ptr;
 
         streams = storage->read(required_columns, actual_query_ptr,
-            context, settings, from_stage,
-            max_block_size, max_streams);
+            context, from_stage, max_block_size, max_streams);
 
         if (alias_actions)
+        {
             /// Wrap each stream returned from the table to calculate and add ALIAS columns
             transformStreams([&] (auto & stream)
             {
                 stream = std::make_shared<ExpressionBlockInputStream>(stream, alias_actions);
             });
+        }
 
         transformStreams([&](auto & stream)
         {

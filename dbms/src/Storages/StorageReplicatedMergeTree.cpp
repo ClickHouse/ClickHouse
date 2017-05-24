@@ -2278,11 +2278,12 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     const Names & column_names,
     ASTPtr query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned threads)
 {
+    const Settings & settings = context.getSettingsRef();
+
     /** The table can have two kinds of data
       * - replicated data;
       * - old, non-replicable data - they lie separately and their integrity is not controlled.
@@ -2331,8 +2332,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     if ((settings.parallel_replica_offset == 0) && unreplicated_reader && values.count(0))
     {
         res = unreplicated_reader->read(real_column_names, query,
-                                        context, settings, processed_stage,
-                                        max_block_size, threads, &part_index, 0);
+            context, processed_stage, max_block_size, threads, &part_index, 0);
 
         for (auto & virtual_column : virt_column_names)
         {
@@ -2384,7 +2384,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
         }
 
         auto res2 = reader.read(
-            real_column_names, query, context, settings, processed_stage, max_block_size, threads, &part_index, max_block_number_to_read);
+            real_column_names, query, context, processed_stage, max_block_size, threads, &part_index, max_block_number_to_read);
 
         for (auto & virtual_column : virt_column_names)
         {

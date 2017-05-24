@@ -214,12 +214,13 @@ BlockInputStreams StorageDistributed::read(
     const Names & column_names,
     ASTPtr query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned threads)
 {
     auto cluster = getCluster();
+
+    const Settings & settings = context.getSettingsRef();
 
     size_t result_size = (cluster->getRemoteShardCount() * settings.max_parallel_replicas) + cluster->getLocalShardCount();
 
