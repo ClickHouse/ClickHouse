@@ -22,9 +22,9 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "table",              std::make_shared<DataTypeString>() },
         { "name",               std::make_shared<DataTypeString>() },
         { "type",               std::make_shared<DataTypeString>() },
-        { "default_type",       std::make_shared<DataTypeString>() },
+        { "default_kind",       std::make_shared<DataTypeString>() },
         { "default_expression", std::make_shared<DataTypeString>() },
-        { "data_compressed_bytes",        std::make_shared<DataTypeUInt64>() },
+        { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
         { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>() },
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
     }
@@ -113,7 +113,7 @@ BlockInputStreams StorageSystemColumns::read(
     ColumnPtr table_column = std::make_shared<ColumnString>();
     ColumnPtr name_column = std::make_shared<ColumnString>();
     ColumnPtr type_column = std::make_shared<ColumnString>();
-    ColumnPtr default_type_column = std::make_shared<ColumnString>();
+    ColumnPtr default_kind_column = std::make_shared<ColumnString>();
     ColumnPtr default_expression_column = std::make_shared<ColumnString>();
     ColumnPtr data_compressed_bytes_column = std::make_shared<ColumnUInt64>();
     ColumnPtr data_uncompressed_bytes_column = std::make_shared<ColumnUInt64>();
@@ -181,12 +181,12 @@ BlockInputStreams StorageSystemColumns::read(
                 const auto it = column_defaults.find(column.name);
                 if (it == std::end(column_defaults))
                 {
-                    default_type_column->insertDefault();
+                    default_kind_column->insertDefault();
                     default_expression_column->insertDefault();
                 }
                 else
                 {
-                    default_type_column->insert(toString(it->second.type));
+                    default_kind_column->insert(toString(it->second.type));
                     default_expression_column->insert(queryToString(it->second.expression));
                 }
             }
@@ -215,7 +215,7 @@ BlockInputStreams StorageSystemColumns::read(
     block.insert(ColumnWithTypeAndName(table_column, std::make_shared<DataTypeString>(), "table"));
     block.insert(ColumnWithTypeAndName(name_column, std::make_shared<DataTypeString>(), "name"));
     block.insert(ColumnWithTypeAndName(type_column, std::make_shared<DataTypeString>(), "type"));
-    block.insert(ColumnWithTypeAndName(default_type_column, std::make_shared<DataTypeString>(), "default_type"));
+    block.insert(ColumnWithTypeAndName(default_kind_column, std::make_shared<DataTypeString>(), "default_kind"));
     block.insert(ColumnWithTypeAndName(default_expression_column, std::make_shared<DataTypeString>(), "default_expression"));
     block.insert(ColumnWithTypeAndName(data_compressed_bytes_column, std::make_shared<DataTypeUInt64>(), "data_compressed_bytes"));
     block.insert(ColumnWithTypeAndName(data_uncompressed_bytes_column, std::make_shared<DataTypeUInt64>(), "data_uncompressed_bytes"));
