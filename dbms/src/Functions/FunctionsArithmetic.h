@@ -7,7 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/NumberTraits.h>
-#include <Functions/AccurateComparison.h>
+#include <Core/AccurateComparison.h>
 #include <Core/FieldVisitors.h>
 
 
