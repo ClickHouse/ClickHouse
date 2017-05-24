@@ -167,7 +167,6 @@ private:
     ASTPtr query_ptr;
     ASTSelectQuery & query;
     Context context;
-    size_t original_max_threads; /// В settings настройка max_threads может быть изменена. В original_max_threads сохраняется изначальное значение.
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
