@@ -17,8 +17,8 @@
 
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunction.h>
-#include <Functions/AccurateComparison.h>
 
+#include <Core/AccurateComparison.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
