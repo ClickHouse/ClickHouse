@@ -7,6 +7,10 @@ DST=${1:-.};
 PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 LD=$(command -v gold || command -v ld.gold || command -v ld)
 
+if [ -z "$CLANG" ]; then
+    CLANG=$(which clang)
+fi
+
 if [ ! -x "$CLANG" ]; then
     echo "Not found executable clang."
     exit 1
