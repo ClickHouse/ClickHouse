@@ -39,7 +39,6 @@ private:
         Field column_name;
         bool detach = false; /// true для DETACH PARTITION.
 
-        bool unreplicated = false;
         bool part = false;
 
         String from; /// Для FETCH PARTITION - путь в ZK к шарду, с которого скачивать партицию.
@@ -54,13 +53,12 @@ private:
         /// For FREEZE PARTITION
         String with_name;
 
-        static PartitionCommand dropPartition(const Field & partition, bool detach, bool unreplicated)
+        static PartitionCommand dropPartition(const Field & partition, bool detach)
         {
             PartitionCommand res;
             res.type = DROP_PARTITION;
             res.partition = partition;
             res.detach = detach;
-            res.unreplicated = unreplicated;
             return res;
         }
 
@@ -73,12 +71,11 @@ private:
             return res;
         }
 
-        static PartitionCommand attachPartition(const Field & partition, bool unreplicated, bool part)
+        static PartitionCommand attachPartition(const Field & partition, bool part)
         {
             PartitionCommand res;
             res.type = ATTACH_PARTITION;
             res.partition = partition;
-            res.unreplicated = unreplicated;
             res.part = part;
             return res;
         }

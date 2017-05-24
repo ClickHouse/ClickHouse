@@ -163,9 +163,6 @@ BlockInputStreams StorageSystemColumns::read(
             else if (auto storage_concrete = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
             {
                 column_sizes = storage_concrete->getData().getColumnSizes();
-
-                /// Don't count 'unreplicated' data for simplicity reasons.
-                /// Feature to store 'unreplicated' data in replicated tables is rarely used and was removed from documentation.
             }
         }
 

@@ -91,9 +91,9 @@ public:
         return merge(settings.min_bytes_to_use_direct_io, true, partition, final, deduplicate);
     }
 
-    void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
+    void dropPartition(ASTPtr query, const Field & partition, bool detach, const Settings & settings) override;
     void dropColumnFromPartition(ASTPtr query, const Field & partition, const Field & column_name, const Settings & settings) override;
-    void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
+    void attachPartition(ASTPtr query, const Field & partition, bool part, const Settings & settings) override;
     void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
 
     void drop() override;

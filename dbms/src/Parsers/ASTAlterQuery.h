@@ -63,8 +63,7 @@ public:
         ASTPtr partition;
         bool detach = false; /// true для DETACH PARTITION.
 
-        bool part = false; /// true для ATTACH [UNREPLICATED] PART
-        bool unreplicated = false; /// true для ATTACH UNREPLICATED, DROP UNREPLICATED ...
+        bool part = false; /// true для ATTACH PART
 
         bool do_copy = false; /// для RESHARD PARTITION.
 

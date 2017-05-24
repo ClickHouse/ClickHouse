@@ -12,7 +12,7 @@ namespace DB
   *        [DROP COLUMN col_drop, ...]
   *     [MODIFY COLUMN col_modify type, ...]
   *     [MODIFY PRIMARY KEY (a, b, c...)]
-  *     [DROP|DETACH|ATTACH [UNREPLICATED] PARTITION|PART partition, ...]
+  *     [DROP|DETACH|ATTACH PARTITION|PART partition, ...]
   *     [FETCH PARTITION partition FROM ...]
   *     [FREEZE PARTITION]
   *        [RESHARD [COPY] PARTITION partition

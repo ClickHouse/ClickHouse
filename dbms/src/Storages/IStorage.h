@@ -222,14 +222,14 @@ public:
 
     /** Run the query (DROP|DETACH) PARTITION.
       */
-    virtual void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings)
+    virtual void dropPartition(ASTPtr query, const Field & partition, bool detach, const Settings & settings)
     {
         throw Exception("Method dropPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Run the ATTACH request [UNREPLICATED] (PART|PARTITION).
+    /** Run the ATTACH request (PART|PARTITION).
       */
-    virtual void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings)
+    virtual void attachPartition(ASTPtr query, const Field & partition, bool part, const Settings & settings)
     {
         throw Exception("Method attachPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

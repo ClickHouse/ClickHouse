@@ -453,11 +453,8 @@ void StorageMergeTree::dropColumnFromPartition(ASTPtr query, const Field & parti
         transaction->commit();
 }
 
-void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings)
+void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool detach, const Settings & settings)
 {
-    if (unreplicated)
-        throw Exception("UNREPLICATED option for DROP has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);
-
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = merger.cancel();
@@ -487,11 +484,8 @@ void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool
 }
 
 
-void StorageMergeTree::attachPartition(ASTPtr query, const Field & field, bool unreplicated, bool part, const Settings & settings)
+void StorageMergeTree::attachPartition(ASTPtr query, const Field & field, bool part, const Settings & settings)
 {
-    if (unreplicated)
-        throw Exception("UNREPLICATED option for ATTACH has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);
-
     String partition;
 
     if (part)

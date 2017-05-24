@@ -68,14 +68,9 @@ void ReplicatedMergeTreeAlterThread::run()
             {
                 /// If you need to lock table structure, then suspend merges.
                 MergeTreeDataMerger::Blocker merge_blocker;
-                MergeTreeDataMerger::Blocker unreplicated_merge_blocker;
 
                 if (changed_version || force_recheck_parts)
-                {
                     merge_blocker = storage.merger.cancel();
-                    if (storage.unreplicated_merger)
-                        unreplicated_merge_blocker = storage.unreplicated_merger->cancel();
-                }
 
                 MergeTreeData::DataParts parts;
 
@@ -106,9 +101,6 @@ void ReplicatedMergeTreeAlterThread::run()
                         if (columns_changed)
                         {
                             storage.data.setColumnsList(columns);
-
-                            if (storage.unreplicated_data)
-                                storage.unreplicated_data->setColumnsList(columns);
                         }
 
                         if (materialized_columns_changed)
@@ -131,8 +123,6 @@ void ReplicatedMergeTreeAlterThread::run()
 
                         /// Reinitialize primary key because primary key column types might have changed.
                         storage.data.initPrimaryKey();
-                        if (storage.unreplicated_data)
-                            storage.unreplicated_data->initPrimaryKey();
 
                         LOG_INFO(log, "Applied changes to table.");
                     }
@@ -201,27 +191,6 @@ void ReplicatedMergeTreeAlterThread::run()
 
                     /// Columns sizes could be quietly changed in case of MODIFY/ADD COLUMN
                     storage.data.recalculateColumnSizes();
-
-                    /// The same for non-replicated data.
-                    if (storage.unreplicated_data)
-                    {
-                        parts = storage.unreplicated_data->getDataParts();
-
-                        for (const MergeTreeData::DataPartPtr & part : parts)
-                        {
-                            auto transaction = storage.unreplicated_data->alterDataPart(
-                                part, columns_plus_materialized, storage.data.primary_expr_ast, false);
-
-                            if (!transaction)
-                                continue;
-
-                            ++changed_parts;
-
-                            transaction->commit();
-                        }
-
-                        storage.unreplicated_data->recalculateColumnSizes();
-                    }
 
                     /// List of columns for a specific replica.
                     zookeeper->set(storage.replica_path + "/columns", columns_str);

@@ -174,8 +174,6 @@ void AsynchronousMetrics::update()
                     }
 
                     calculateMax(max_part_count_for_partition, table_replicated_merge_tree->getData().getMaxPartsCountForMonth());
-                    if (auto unreplicated_data = table_replicated_merge_tree->getUnreplicatedData())
-                        calculateMax(max_part_count_for_partition, unreplicated_data->getMaxPartsCountForMonth());
                 }
 
                 if (table_merge_tree)
