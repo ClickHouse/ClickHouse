@@ -487,7 +487,7 @@ void MergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_n
             Poco::File(from).list(files);
 
             LOG_WARNING(storage.log, "Part directory " << to << " already exists"
-                << " and contains " + toString(files.size()) + " files. Remove it.");
+                << " and contains " << files.size() << " files. Removing it.");
 
             to_file.remove(true);
         }

@@ -73,7 +73,8 @@ MergeTreeData::MergeTreeData(
     const String & log_name_,
     bool require_part_metadata_,
     bool attach,
-    BrokenPartCallback broken_part_callback_)
+    BrokenPartCallback broken_part_callback_,
+    PartsCleanCallback parts_clean_callback_)
     : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
     date_column_name(date_column_name_), sampling_expression(sampling_expression_),
     index_granularity(index_granularity_),
@@ -83,6 +84,7 @@ MergeTreeData::MergeTreeData(
     database_name(database_), table_name(table_),
     full_path(full_path_), columns(columns_),
     broken_part_callback(broken_part_callback_),
+    parts_clean_callback(parts_clean_callback_ ? parts_clean_callback_ : [this](){ clearOldParts(); }),
     log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
 {
     /// Check that the date column exists and is of type Date.
@@ -1203,6 +1205,15 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
                 throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
         }
 
+        bool in_all_data_parts;
+        {
+            std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
+            in_all_data_parts = all_data_parts.count(part) != 0;
+        }
+        /// New part can be removed from data_parts but not from file system and ZooKeeper
+        if (in_all_data_parts)
+            clearOldPartsAndRemoveFromZK();
+
         /// Rename the part.
         part->renameTo(new_name);
         part->is_temp = false;
@@ -1305,7 +1316,7 @@ void MergeTreeData::attachPart(const DataPartPtr & part)
 
 void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String & prefix, bool restore_covered, bool move_to_detached)
 {
-    LOG_INFO(log, "Renaming " << part->name << " to " << prefix << part->name << " and detaching it.");
+    LOG_INFO(log, "Renaming " << part->relative_path << " to " << prefix << part->name << " and detaching it.");
 
     std::lock_guard<std::mutex> lock(data_parts_mutex);
     std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
@@ -1763,5 +1774,35 @@ DayNum_t MergeTreeData::getMonthFromPartPrefix(const String & part_prefix)
 {
     return getMonthFromName(part_prefix.substr(0, strlen("YYYYMM")));
 }
+
+
+void MergeTreeData::Transaction::rollback()
+{
+    if (data && (!parts_to_remove_on_rollback.empty() || !parts_to_add_on_rollback.empty()))
+    {
+        std::stringstream ss;
+        if (!parts_to_remove_on_rollback.empty())
+        {
+            ss << " Removing parts:";
+            for (const auto & part : parts_to_remove_on_rollback)
+                ss << " " << part->relative_path;
+            ss << ".";
+        }
+        if (!parts_to_add_on_rollback.empty())
+        {
+            ss << " Adding parts: ";
+            for (const auto & part : parts_to_add_on_rollback)
+                ss << " " << part->relative_path;
+            ss << ".";
+        }
+
+        LOG_DEBUG(data->log, "Undoing transaction." << ss.str());
+
+        data->replaceParts(parts_to_remove_on_rollback, parts_to_add_on_rollback, true);
+
+        clear();
+    }
+}
+
 
 }

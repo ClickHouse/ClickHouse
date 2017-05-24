@@ -31,9 +31,6 @@ private:
     void run();
     void iterate();
 
-    /// Delete old chunks from disk and from ZooKeeper.
-    void clearOldParts();
-
     /// Remove old records from ZooKeeper.
     void clearOldLogs();
 
