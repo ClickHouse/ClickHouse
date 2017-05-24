@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <Interpreters/Settings.h>
+#include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemSettings.h>
 
 
@@ -31,13 +31,14 @@ BlockInputStreams StorageSystemSettings::read(
     const Names & column_names,
     ASTPtr query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned threads)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
+
+    const Settings & settings = context.getSettingsRef();
 
     ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
     ColumnWithTypeAndName col_value{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "value"};

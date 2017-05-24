@@ -157,7 +157,7 @@ public:
       * (Normally, the function only reads the columns from the list, but in other cases,
       *  for example, the request can be partially processed on a remote server.)
       *
-      * settings - settings for one query.
+      * context contains settings for one query.
       * Usually Storage does not care about these settings, since they are used in the interpreter.
       * But, for example, for distributed query processing, the settings are passed to the remote server.
       *
@@ -170,7 +170,6 @@ public:
         const Names & column_names,
         ASTPtr query,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1)
@@ -223,14 +222,14 @@ public:
 
     /** Run the query (DROP|DETACH) PARTITION.
       */
-    virtual void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings)
+    virtual void dropPartition(ASTPtr query, const Field & partition, bool detach, const Settings & settings)
     {
         throw Exception("Method dropPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Run the ATTACH request [UNREPLICATED] (PART|PARTITION).
+    /** Run the ATTACH request (PART|PARTITION).
       */
-    virtual void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings)
+    virtual void attachPartition(ASTPtr query, const Field & partition, bool part, const Settings & settings)
     {
         throw Exception("Method attachPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

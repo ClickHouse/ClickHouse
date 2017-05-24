@@ -157,7 +157,6 @@ private:
     void ignoreWithTotals();
 
     /** Если в запросе SELECT есть секция SETTINGS, то применить настройки из неё.
-      * Затем достать настройки из context и поместить их в settings.
       *
       * Секция SETTINGS - настройки для конкретного запроса.
       * Обычно настройки могут быть переданы другими способами, не внутри запроса.
@@ -168,8 +167,6 @@ private:
     ASTPtr query_ptr;
     ASTSelectQuery & query;
     Context context;
-    Settings settings;
-    size_t original_max_threads; /// В settings настройка max_threads может быть изменена. В original_max_threads сохраняется изначальное значение.
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;

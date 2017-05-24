@@ -70,8 +70,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
     ProfileEvents::increment(ProfileEvents::SelectQuery);
 
     initSettings();
-
-    original_max_threads = settings.max_threads;
+    const Settings & settings = context.getSettingsRef();
 
     if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
         throw Exception("Too deep subqueries. Maximum: " + settings.limits.max_subquery_depth.toString(),
@@ -369,6 +368,8 @@ BlockIO InterpreterSelectQuery::execute()
         /// Constraints apply only to the final result.
         if (to_stage == QueryProcessingStage::Complete)
         {
+            const Settings & settings = context.getSettingsRef();
+
             IProfilingBlockInputStream::LocalLimits limits;
             limits.mode = IProfilingBlockInputStream::LIMITS_CURRENT;
             limits.max_rows_to_read = settings.limits.max_result_rows;
@@ -430,6 +431,8 @@ void InterpreterSelectQuery::executeSingleQuery()
     QueryProcessingStage::Enum from_stage = executeFetchColumns();
 
     LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
+
+    const Settings & settings = context.getSettingsRef();
 
     if (to_stage > QueryProcessingStage::FetchColumns)
     {
@@ -765,6 +768,22 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
     if (query.prewhere_expression && (!storage || !storage->supportsPrewhere()))
         throw Exception(storage ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
 
+    const Settings & settings = context.getSettingsRef();
+
+    /// Limitation on the number of columns to read.
+    if (settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
+        throw Exception("Limit for number of columns to read exceeded. "
+            "Requested: " + toString(required_columns.size())
+            + ", maximum: " + settings.limits.max_columns_to_read.toString(),
+            ErrorCodes::TOO_MUCH_COLUMNS);
+
+    size_t limit_length = 0;
+    size_t limit_offset = 0;
+    getLimitLengthAndOffset(query, limit_length, limit_offset);
+
+    size_t max_block_size = settings.max_block_size;
+    size_t max_streams = settings.max_threads;
+
     /** With distributed query processing, almost no computations are done in the threads,
      *  but wait and receive data from remote servers.
      *  If we have 20 remote servers, and max_threads = 8, then it would not be very good
@@ -777,23 +796,11 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
      *  and there must be an original value of max_threads, not an increased value.
      */
     bool is_remote = false;
-    Settings settings_for_storage = settings;
     if (storage && storage->isRemote())
     {
         is_remote = true;
-        settings.max_threads = settings.max_distributed_connections;
+        max_streams = settings.max_distributed_connections;
     }
-
-    /// Limitation on the number of columns to read.
-    if (settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
-        throw Exception("Limit for number of columns to read exceeded. "
-            "Requested: " + toString(required_columns.size())
-            + ", maximum: " + settings.limits.max_columns_to_read.toString(),
-            ErrorCodes::TOO_MUCH_COLUMNS);
-
-    size_t limit_length = 0;
-    size_t limit_offset = 0;
-    getLimitLengthAndOffset(query, limit_length, limit_offset);
 
     /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY but LIMIT is specified, and limit + offset < max_block_size,
      *  then as the block size we will use limit + offset (not to read more from the table than requested),
@@ -810,8 +817,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         && !query_analyzer->hasAggregation()
         && limit_length + limit_offset < settings.max_block_size)
     {
-        settings.max_block_size = limit_length + limit_offset;
-        settings.max_threads = 1;
+        max_block_size = limit_length + limit_offset;
+        max_streams = 1;
     }
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
@@ -821,8 +828,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
     /// Initialize the initial data streams to which the query transforms are superimposed. Table or subquery?
     if (!interpreter_subquery)
     {
-        size_t max_streams = settings.max_threads;
-
         if (max_streams == 0)
             throw Exception("Logical error: zero number of streams requested", ErrorCodes::LOGICAL_ERROR);
 
@@ -840,15 +845,16 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
             actual_query_ptr = query_ptr;
 
         streams = storage->read(required_columns, actual_query_ptr,
-            context, settings_for_storage, from_stage,
-            settings.max_block_size, max_streams);
+            context, from_stage, max_block_size, max_streams);
 
         if (alias_actions)
+        {
             /// Wrap each stream returned from the table to calculate and add ALIAS columns
             transformStreams([&] (auto & stream)
             {
                 stream = std::make_shared<ExpressionBlockInputStream>(stream, alias_actions);
             });
+        }
 
         transformStreams([&](auto & stream)
         {
@@ -912,6 +918,8 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
     Names key_names;
     AggregateDescriptions aggregates;
     query_analyzer->getAggregateInfo(key_names, aggregates);
+
+    const Settings & settings = context.getSettingsRef();
 
     /** Two-level aggregation is useful in two cases:
       * 1. Parallel aggregation is done, and the results should be measured in parallel.
@@ -980,13 +988,15 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
 
     Aggregator::Params params(key_names, aggregates, overflow_row);
 
+    const Settings & settings = context.getSettingsRef();
+
     if (!settings.distributed_aggregation_memory_efficient)
     {
         /// We union several sources into one, parallelizing the work.
         executeUnion();
 
         /// Now merge the aggregated blocks
-        streams[0] = std::make_shared<MergingAggregatedBlockInputStream>(streams[0], params, final, original_max_threads);
+        streams[0] = std::make_shared<MergingAggregatedBlockInputStream>(streams[0], params, final, settings.max_threads);
     }
     else
     {
@@ -994,7 +1004,7 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
             settings.max_threads,
             settings.aggregation_memory_efficient_merge_threads
                 ? size_t(settings.aggregation_memory_efficient_merge_threads)
-                : original_max_threads);
+                : size_t(settings.max_threads));
 
         streams.resize(1);
     }
@@ -1013,6 +1023,8 @@ void InterpreterSelectQuery::executeHaving(ExpressionActionsPtr expression)
 void InterpreterSelectQuery::executeTotalsAndHaving(bool has_having, ExpressionActionsPtr expression, bool overflow_row)
 {
     executeUnion();
+
+    const Settings & settings = context.getSettingsRef();
 
     streams[0] = std::make_shared<TotalsHavingBlockInputStream>(
         streams[0], overflow_row, expression,
@@ -1069,6 +1081,8 @@ void InterpreterSelectQuery::executeOrder()
     SortDescription order_descr = getSortDescription(query);
     size_t limit = getLimitForSorting(query);
 
+    const Settings & settings = context.getSettingsRef();
+
     transformStreams([&](auto & stream)
     {
         auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
@@ -1098,6 +1112,8 @@ void InterpreterSelectQuery::executeMergeSorted()
 {
     SortDescription order_descr = getSortDescription(query);
     size_t limit = getLimitForSorting(query);
+
+    const Settings & settings = context.getSettingsRef();
 
     /// If there are several streams, then we merge them into one
     if (hasMoreThanOneStream())
@@ -1130,6 +1146,8 @@ void InterpreterSelectQuery::executeDistinct(bool before_order, Names columns)
 {
     if (query.distinct)
     {
+        const Settings & settings = context.getSettingsRef();
+
         size_t limit_length = 0;
         size_t limit_offset = 0;
         getLimitLengthAndOffset(query, limit_length, limit_offset);
@@ -1159,6 +1177,8 @@ void InterpreterSelectQuery::executeUnion()
     /// If there are still several streams, then we combine them into one
     if (hasMoreThanOneStream())
     {
+        const Settings & settings = context.getSettingsRef();
+
         streams[0] = std::make_shared<UnionBlockInputStream<>>(streams, stream_with_non_joined_data, settings.max_threads);
         stream_with_non_joined_data = nullptr;
         streams.resize(1);
@@ -1281,6 +1301,8 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(SubqueriesForSets &
         for (auto & elem : subqueries_for_sets)
             elem.second.table.reset();
 
+    const Settings & settings = context.getSettingsRef();
+
     executeUnion();
     streams[0] = std::make_shared<CreatingSetsBlockInputStream>(streams[0], subqueries_for_sets, settings.limits);
 }
@@ -1318,8 +1340,6 @@ void InterpreterSelectQuery::initSettings()
 {
     if (query.settings)
         InterpreterSetQuery(query.settings, context).executeForCurrentContext();
-
-    settings = context.getSettings();
 }
 
 }

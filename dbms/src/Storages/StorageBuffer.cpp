@@ -131,7 +131,6 @@ BlockInputStreams StorageBuffer::read(
     const Names & column_names,
     ASTPtr query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
     unsigned threads)
@@ -147,13 +146,7 @@ BlockInputStreams StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        /** Turn off the optimization "transfer to PREWHERE",
-          *  since Buffer does not support PREWHERE.
-          */
-        Settings modified_settings = settings;
-        modified_settings.optimize_move_to_prewhere = false;
-
-        streams_from_dst = destination->read(column_names, query, context, modified_settings, processed_stage, max_block_size, threads);
+        streams_from_dst = destination->read(column_names, query, context, processed_stage, max_block_size, threads);
     }
 
     BlockInputStreams streams_from_buffers;

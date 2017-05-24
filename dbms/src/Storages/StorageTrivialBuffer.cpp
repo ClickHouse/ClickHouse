@@ -131,7 +131,6 @@ BlockInputStreams StorageTrivialBuffer::read(
     const Names & column_names,
     ASTPtr query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
     unsigned threads)
@@ -147,15 +146,9 @@ BlockInputStreams StorageTrivialBuffer::read(
 
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.",
-                    ErrorCodes::INFINITE_LOOP);
+                ErrorCodes::INFINITE_LOOP);
 
-        /** TrivialStorageBuffer does not support 'PREWHERE',
-          * so turn off corresponding optimization.
-          */
-        Settings modified_settings = settings;
-        modified_settings.optimize_move_to_prewhere = false;
-
-        streams = destination->read(column_names, query, context, modified_settings,
+        streams = destination->read(column_names, query, context,
             processed_stage, max_block_size, threads);
     }
 
@@ -187,12 +180,12 @@ BlockInputStreams StorageTrivialBuffer::read(
     return streams;
 }
 
-template <typename DeduplicatioController>
-void StorageTrivialBuffer::addBlock(const Block & block, DeduplicatioController & deduplication_controller)
+template <typename DeduplicationController>
+void StorageTrivialBuffer::addBlock(const Block & block, DeduplicationController & deduplication_controller)
 {
     SipHash hash;
     block.updateHash(hash);
-    typename DeduplicatioController::HashType block_hash = DeduplicatioController::getHashFrom(hash);
+    typename DeduplicationController::HashType block_hash = DeduplicationController::getHashFrom(hash);
 
     std::lock_guard<std::mutex> lock(mutex);
     if (!deduplication_controller.contains(block_hash))
