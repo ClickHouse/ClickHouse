@@ -24,13 +24,17 @@ unsigned getNumberOfPhysicalCPUCores()
         throw DB::Exception("Cannot cpu_identify: " + std::string(cpuid_error()), DB::ErrorCodes::CPUID_ERROR);
 
     /// On Xen VMs, libcpuid returns wrong info (zero number of cores). Fallback to alternative method.
-    if (data.num_cores == 0 || data.total_logical_cpus == 0 || data.num_logical_cpus == 0)
+    if (data.num_logical_cpus == 0)
         return std::thread::hardware_concurrency();
 
-    return data.num_cores * data.total_logical_cpus / data.num_logical_cpus;
+    unsigned res = data.num_cores * data.total_logical_cpus / data.num_logical_cpus;
 
-#elif defined(__aarch64__)
-    /// Assuming there are no hyper-threading on the system.
-    return std::thread::hardware_concurrency();
+    /// Also, libcpuid gives strange result on Google Compute Engine VMs.
+    if (res != 0)
+        return res;
 #endif
+
+    /// As a fallback (also for non-x86 architectures) assume there are no hyper-threading on the system.
+    /// (Actually, only Aarch64 is supported).
+    return std::thread::hardware_concurrency();
 }
