@@ -1,3 +1,6 @@
+#include <thread>
+#include <future>
+
 #include <Dictionaries/ExecutableDictionarySource.h>
 
 #include <Common/ShellCommand.h>
@@ -47,17 +50,71 @@ BlockInputStreamPtr ExecutableDictionarySource::loadAll()
     return std::make_shared<OwningBlockInputStream<ShellCommand>>(input_stream, std::move(process));
 }
 
+
+/** A stream, that also runs and waits for background thread
+  * (that will feed data into pipe to be read from the other side of the pipe).
+  */
+class BlockInputStreamWithBackgroundThread : public IProfilingBlockInputStream
+{
+public:
+    BlockInputStreamWithBackgroundThread(
+        const BlockInputStreamPtr & stream_, std::unique_ptr<ShellCommand> && command_,
+        std::packaged_task<void()> && task_)
+        : stream{stream_}, command{std::move(command_)}, task(std::move(task_)),
+        thread([this]{ task(); command->in.close(); })
+    {
+        children.push_back(stream);
+    }
+
+    ~BlockInputStreamWithBackgroundThread() override
+    {
+        if (thread.joinable())
+        {
+            try
+            {
+                readSuffix();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
+
+private:
+    Block readImpl() override { return stream->read(); }
+
+    void readSuffix() override
+    {
+        thread.join();
+        /// To rethrow an exception, if any.
+        task.get_future().get();
+    }
+
+    String getName() const override { return "WithBackgroundThread"; }
+    String getID() const override {  return "WithBackgroundThread(" + stream->getID() + ")"; }
+
+    BlockInputStreamPtr stream;
+    std::unique_ptr<ShellCommand> command;
+    std::packaged_task<void()> task;
+    std::thread thread;
+};
+
+
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
     auto process = ShellCommand::execute(command);
 
     auto output_stream = context.getOutputFormat(format, process->in, sample_block);
-    formatIDs(output_stream, ids);
-    process->in.close();
-
     auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ShellCommand>>(input_stream, std::move(process));
+
+    return std::make_shared<BlockInputStreamWithBackgroundThread>(
+        input_stream, std::move(process), std::packaged_task<void()>(
+        [output_stream, &ids, this]() mutable
+        {
+            formatIDs(output_stream, ids);
+        }));
 }
 
 BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
@@ -67,11 +124,14 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
     auto process = ShellCommand::execute(command);
 
     auto output_stream = context.getOutputFormat(format, process->in, sample_block);
-    formatKeys(dict_struct, output_stream, key_columns, requested_rows);
-    process->in.close();
-
     auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ShellCommand>>(input_stream, std::move(process));
+
+    return std::make_shared<BlockInputStreamWithBackgroundThread>(
+        input_stream, std::move(process), std::packaged_task<void()>(
+        [output_stream, key_columns, &requested_rows, this]() mutable
+        {
+            formatKeys(dict_struct, output_stream, key_columns, requested_rows);
+        }));
 }
 
 bool ExecutableDictionarySource::isModified() const

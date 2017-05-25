@@ -16,19 +16,23 @@ using DictionarySourcePtr = std::unique_ptr<IDictionarySource>;
 class IDictionarySource
 {
 public:
-    /// returns an input stream with all the data available from this source
+    /// Returns an input stream with all the data available from this source.
     virtual BlockInputStreamPtr loadAll() = 0;
 
     /** Indicates whether this source supports "random access" loading of data
-    *    loadId and loadIds can only be used if this function returns true.
-    */
+      *  loadId and loadIds can only be used if this function returns true.
+      */
     virtual bool supportsSelectiveLoad() const = 0;
 
-    /// returns an input stream with the data for a collection of identifiers
+    /** Returns an input stream with the data for a collection of identifiers.
+      * It is guaranteed, that 'ids' array will live at least until all data will be read from returned stream.
+      */
     virtual BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) = 0;
 
-    /** returns an input stream with the data for a collection of composite keys.
-     *    `requested_rows` contains indices of all rows containing unique keys. */
+    /** Returns an input stream with the data for a collection of composite keys.
+      * `requested_rows` contains indices of all rows containing unique keys.
+      * It is guaranteed, that 'requested_rows' array will live at least until all data will be read from returned stream.
+      */
     virtual BlockInputStreamPtr loadKeys(
         const Columns & key_columns, const std::vector<std::size_t> & requested_rows) = 0;
 
