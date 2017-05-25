@@ -30,12 +30,12 @@ using DB::UInt64;
 
 // Case 1. Is pair of floats or pair of ints or pair of uints
 template <typename A, typename B>
-using is_safe_convervsion = std::integral_constant<bool, (std::is_floating_point<A>::value && std::is_floating_point<B>::value)
+using is_safe_conversion = std::integral_constant<bool, (std::is_floating_point<A>::value && std::is_floating_point<B>::value)
     || (std::is_integral<A>::value && std::is_integral<B>::value && !(std::is_signed<A>::value ^ std::is_signed<B>::value))>;
 template <typename A, typename B>
-using bool_if_safe_convervsion = std::enable_if_t<is_safe_convervsion<A, B>::value, bool>;
+using bool_if_safe_conversion = std::enable_if_t<is_safe_conversion<A, B>::value, bool>;
 template <typename A, typename B>
-using bool_if_not_safe_convervsion = std::enable_if_t<!is_safe_convervsion<A, B>::value, bool>;
+using bool_if_not_safe_conversion = std::enable_if_t<!is_safe_conversion<A, B>::value, bool>;
 
 
 /// Case 2. Are params IntXX and UIntYY ?
@@ -144,13 +144,13 @@ inline bool_if_double_can_be_used<TAInt, TAFloat> equalsOpTmpl(TAFloat a, TAInt 
 
 
 template <typename A, typename B>
-inline bool_if_not_safe_convervsion<A, B> greaterOp(A a, B b)
+inline bool_if_not_safe_conversion<A, B> greaterOp(A a, B b)
 {
     return greaterOpTmpl(a, b);
 }
 
 template <typename A, typename B>
-inline bool_if_safe_convervsion<A, B> greaterOp(A a, B b)
+inline bool_if_safe_conversion<A, B> greaterOp(A a, B b)
 {
     return a > b;
 }
@@ -227,13 +227,13 @@ inline bool greaterOp<DB::UInt64, DB::Float32>(DB::UInt64 u, DB::Float32 f)
 
 
 template <typename A, typename B>
-inline bool_if_not_safe_convervsion<A, B> equalsOp(A a, B b)
+inline bool_if_not_safe_conversion<A, B> equalsOp(A a, B b)
 {
     return equalsOpTmpl(a, b);
 }
 
 template <typename A, typename B>
-inline bool_if_safe_convervsion<A, B> equalsOp(A a, B b)
+inline bool_if_safe_conversion<A, B> equalsOp(A a, B b)
 {
     return a == b;
 }
@@ -288,52 +288,52 @@ inline bool equalsOp<DB::Int64, DB::Float32>(DB::Int64 u, DB::Float32 f)
 
 
 template <typename A, typename B>
-inline bool_if_not_safe_convervsion<A, B> notEqualsOp(A a, B b)
+inline bool_if_not_safe_conversion<A, B> notEqualsOp(A a, B b)
 {
     return !equalsOp(a, b);
 }
 
 template <typename A, typename B>
-inline bool_if_safe_convervsion<A, B> notEqualsOp(A a, B b)
+inline bool_if_safe_conversion<A, B> notEqualsOp(A a, B b)
 {
     return a != b;
 }
 
 
 template <typename A, typename B>
-inline bool_if_not_safe_convervsion<A, B> lessOp(A a, B b)
+inline bool_if_not_safe_conversion<A, B> lessOp(A a, B b)
 {
     return greaterOp(b, a);
 }
 
 template <typename A, typename B>
-inline bool_if_safe_convervsion<A, B> lessOp(A a, B b)
+inline bool_if_safe_conversion<A, B> lessOp(A a, B b)
 {
     return a < b;
 }
 
 
 template <typename A, typename B>
-inline bool_if_not_safe_convervsion<A, B> lessOrEqualsOp(A a, B b)
+inline bool_if_not_safe_conversion<A, B> lessOrEqualsOp(A a, B b)
 {
     return !greaterOp(a, b);
 }
 
 template <typename A, typename B>
-inline bool_if_safe_convervsion<A, B> lessOrEqualsOp(A a, B b)
+inline bool_if_safe_conversion<A, B> lessOrEqualsOp(A a, B b)
 {
     return a <= b;
 }
 
 
 template <typename A, typename B>
-inline bool_if_not_safe_convervsion<A, B> greaterOrEqualsOp(A a, B b)
+inline bool_if_not_safe_conversion<A, B> greaterOrEqualsOp(A a, B b)
 {
     return !greaterOp(b, a);
 }
 
 template <typename A, typename B>
-inline bool_if_safe_convervsion<A, B> greaterOrEqualsOp(A a, B b)
+inline bool_if_safe_conversion<A, B> greaterOrEqualsOp(A a, B b)
 {
     return a >= b;
 }

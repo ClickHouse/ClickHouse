@@ -72,7 +72,7 @@ try
 
     QueryProcessingStage::Enum stage;
 
-    BlockInputStreamPtr in = table->read(column_names, 0, context, Settings(), stage)[0];
+    BlockInputStreamPtr in = table->read(column_names, 0, context, stage)[0];
 
     ForkBlockInputStreams fork(in);
 

@@ -109,9 +109,8 @@ static String extractPath(const ASTPtr & query)
 
 BlockInputStreams StorageSystemZooKeeper::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned threads)
@@ -123,20 +122,20 @@ BlockInputStreams StorageSystemZooKeeper::read(
     if (path.empty())
         throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' in WHERE clause.");
 
-    ColumnWithTypeAndName col_name            { std::make_shared<ColumnString>(),    std::make_shared<DataTypeString>(),    "name" };
-    ColumnWithTypeAndName col_value            { std::make_shared<ColumnString>(),    std::make_shared<DataTypeString>(),    "value" };
-    ColumnWithTypeAndName col_czxid            { std::make_shared<ColumnInt64>(),    std::make_shared<DataTypeInt64>(),    "czxid" };
-    ColumnWithTypeAndName col_mzxid            { std::make_shared<ColumnInt64>(),    std::make_shared<DataTypeInt64>(),    "mzxid" };
-    ColumnWithTypeAndName col_ctime            { std::make_shared<ColumnUInt32>(),    std::make_shared<DataTypeDateTime>(), "ctime" };
-    ColumnWithTypeAndName col_mtime            { std::make_shared<ColumnUInt32>(),    std::make_shared<DataTypeDateTime>(), "mtime" };
-    ColumnWithTypeAndName col_version        { std::make_shared<ColumnInt32>(),    std::make_shared<DataTypeInt32>(),    "version" };
-    ColumnWithTypeAndName col_cversion        { std::make_shared<ColumnInt32>(),    std::make_shared<DataTypeInt32>(),    "cversion" };
-    ColumnWithTypeAndName col_aversion        { std::make_shared<ColumnInt32>(),    std::make_shared<DataTypeInt32>(),    "aversion" };
-    ColumnWithTypeAndName col_ephemeralOwner{ std::make_shared<ColumnInt64>(),    std::make_shared<DataTypeInt64>(),    "ephemeralOwner" };
-    ColumnWithTypeAndName col_dataLength    { std::make_shared<ColumnInt32>(),    std::make_shared<DataTypeInt32>(),    "dataLength" };
-    ColumnWithTypeAndName col_numChildren    { std::make_shared<ColumnInt32>(),    std::make_shared<DataTypeInt32>(),    "numChildren" };
-    ColumnWithTypeAndName col_pzxid            { std::make_shared<ColumnInt64>(),    std::make_shared<DataTypeInt64>(),    "pzxid" };
-    ColumnWithTypeAndName col_path            { std::make_shared<ColumnString>(),    std::make_shared<DataTypeString>(),    "path" };
+    ColumnWithTypeAndName col_name           { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(),   "name" };
+    ColumnWithTypeAndName col_value          { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(),   "value" };
+    ColumnWithTypeAndName col_czxid          { std::make_shared<ColumnInt64>(),  std::make_shared<DataTypeInt64>(),    "czxid" };
+    ColumnWithTypeAndName col_mzxid          { std::make_shared<ColumnInt64>(),  std::make_shared<DataTypeInt64>(),    "mzxid" };
+    ColumnWithTypeAndName col_ctime          { std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeDateTime>(), "ctime" };
+    ColumnWithTypeAndName col_mtime          { std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeDateTime>(), "mtime" };
+    ColumnWithTypeAndName col_version        { std::make_shared<ColumnInt32>(),  std::make_shared<DataTypeInt32>(),    "version" };
+    ColumnWithTypeAndName col_cversion       { std::make_shared<ColumnInt32>(),  std::make_shared<DataTypeInt32>(),    "cversion" };
+    ColumnWithTypeAndName col_aversion       { std::make_shared<ColumnInt32>(),  std::make_shared<DataTypeInt32>(),    "aversion" };
+    ColumnWithTypeAndName col_ephemeralOwner { std::make_shared<ColumnInt64>(),  std::make_shared<DataTypeInt64>(),    "ephemeralOwner" };
+    ColumnWithTypeAndName col_dataLength     { std::make_shared<ColumnInt32>(),  std::make_shared<DataTypeInt32>(),    "dataLength" };
+    ColumnWithTypeAndName col_numChildren    { std::make_shared<ColumnInt32>(),  std::make_shared<DataTypeInt32>(),    "numChildren" };
+    ColumnWithTypeAndName col_pzxid          { std::make_shared<ColumnInt64>(),  std::make_shared<DataTypeInt64>(),    "pzxid" };
+    ColumnWithTypeAndName col_path           { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(),   "path" };
 
     zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
@@ -180,7 +179,8 @@ BlockInputStreams StorageSystemZooKeeper::read(
         col_path.column->insert(path);          /// This is the original path. In order to process the request, condition in WHERE should be triggered.
     }
 
-    Block block{
+    Block block
+    {
         col_name,
         col_value,
         col_czxid,

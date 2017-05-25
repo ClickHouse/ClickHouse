@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -107,20 +106,13 @@ StorageMergeTree::~StorageMergeTree()
 
 BlockInputStreams StorageMergeTree::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned threads)
 {
-    auto & select = typeid_cast<const ASTSelectQuery &>(*query);
-
-    /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-    if (settings.optimize_move_to_prewhere && select.where_expression && !select.prewhere_expression && !select.final())
-        MergeTreeWhereOptimizer{query, context, data, column_names, log};
-
-    return reader.read(column_names, query, context, settings, processed_stage, max_block_size, threads, nullptr, 0);
+    return reader.read(column_names, query, context, processed_stage, max_block_size, threads, nullptr, 0);
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & query, const Settings & settings)
@@ -406,7 +398,7 @@ bool StorageMergeTree::mergeTask()
     }
 }
 
-void StorageMergeTree::dropColumnFromPartition(ASTPtr query, const Field & partition, const Field & column_name, const Settings &)
+void StorageMergeTree::dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings &)
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
@@ -452,11 +444,8 @@ void StorageMergeTree::dropColumnFromPartition(ASTPtr query, const Field & parti
         transaction->commit();
 }
 
-void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings)
+void StorageMergeTree::dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings)
 {
-    if (unreplicated)
-        throw Exception("UNREPLICATED option for DROP has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);
-
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = merger.cancel();
@@ -486,11 +475,8 @@ void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool
 }
 
 
-void StorageMergeTree::attachPartition(ASTPtr query, const Field & field, bool unreplicated, bool part, const Settings & settings)
+void StorageMergeTree::attachPartition(const ASTPtr & query, const Field & field, bool part, const Settings & settings)
 {
-    if (unreplicated)
-        throw Exception("UNREPLICATED option for ATTACH has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);
-
     String partition;
 
     if (part)

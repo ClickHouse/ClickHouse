@@ -112,21 +112,18 @@ public:
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
-        if (column_name == "_replicated") return NameAndTypePair("_replicated", std::make_shared<DataTypeUInt8>());
         return data.getColumn(column_name);
     }
 
     bool hasColumn(const String & column_name) const override
     {
-        if (column_name == "_replicated") return true;
         return data.hasColumn(column_name);
     }
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const ASTPtr & query,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1) override;
@@ -137,8 +134,8 @@ public:
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
-    void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
-    void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
+    void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
+    void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
     void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
     void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
 
@@ -161,7 +158,6 @@ public:
 
     MergeTreeData & getData() { return data; }
     const MergeTreeData & getData() const { return data; }
-    MergeTreeData * getUnreplicatedData() { return unreplicated_data.get(); }
 
 
     /** For the system table replicas. */
@@ -204,8 +200,6 @@ public:
     }
 
 private:
-    void dropUnreplicatedPartition(const Field & partition, bool detach, const Settings & settings);
-
     /// Delete old chunks from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK(Logger * log_ = nullptr);
 
@@ -284,12 +278,6 @@ private:
     RemotePartChecker::Client remote_part_checker_client;
 
     zkutil::LeaderElectionPtr leader_election;
-
-    /// To read data from the `unreplicated` directory.
-    std::unique_ptr<MergeTreeData> unreplicated_data;
-    std::unique_ptr<MergeTreeDataSelectExecutor> unreplicated_reader;
-    std::unique_ptr<MergeTreeDataMerger> unreplicated_merger;
-    std::mutex unreplicated_mutex; /// For merge and removal of non-replicable parts.
 
     /// Do I need to complete background threads (except restarting_thread)?
     std::atomic<bool> shutdown_called {false};

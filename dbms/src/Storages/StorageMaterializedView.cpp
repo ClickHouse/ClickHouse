@@ -110,14 +110,13 @@ bool StorageMaterializedView::hasColumn(const String & column_name) const
 
 BlockInputStreams StorageMaterializedView::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned threads)
 {
-    return getInnerTable()->read(column_names, query, context, settings, processed_stage, max_block_size, threads);
+    return getInnerTable()->read(column_names, query, context, processed_stage, max_block_size, threads);
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Settings & settings)

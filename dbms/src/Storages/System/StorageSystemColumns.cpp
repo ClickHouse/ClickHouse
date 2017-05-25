@@ -38,9 +38,8 @@ StoragePtr StorageSystemColumns::create(const std::string & name_)
 
 BlockInputStreams StorageSystemColumns::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned threads)
@@ -164,9 +163,6 @@ BlockInputStreams StorageSystemColumns::read(
             else if (auto storage_concrete = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
             {
                 column_sizes = storage_concrete->getData().getColumnSizes();
-
-                /// Don't count 'unreplicated' data for simplicity reasons.
-                /// Feature to store 'unreplicated' data in replicated tables is rarely used and was removed from documentation.
             }
         }
 

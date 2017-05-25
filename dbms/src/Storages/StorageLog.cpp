@@ -22,7 +22,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 
-#include <Interpreters/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Path.h>
 #include <Poco/DirectoryIterator.h>
@@ -801,13 +801,9 @@ const Marks & StorageLog::getMarksWithRealRowCount() const
 
 
 BlockInputStreams StorageLog::read(
-    size_t from_mark,
-    size_t to_mark,
-    size_t from_null_mark,
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
     unsigned threads)
@@ -829,7 +825,7 @@ BlockInputStreams StorageLog::read(
     {
         /// The computation below reflects the fact that marks
         /// are uniformly distributed among threads.
-        return from_mark + thread * (to_mark - from_mark) / threads;
+        return thread * marks_size / threads;
     };
 
     /// Given a thread, get the parameters that specify the area
@@ -839,23 +835,20 @@ BlockInputStreams StorageLog::read(
     {
         size_t mark_number = mark_from_thread(thread);
 
-        size_t cur_total_row_count = ((thread == 0 && from_mark == 0)
-                    ? 0
-                    : marks[mark_number - 1].rows);
+        size_t cur_total_row_count = thread == 0
+            ? 0
+            : marks[mark_number - 1].rows;
+
         size_t next_total_row_count = marks[mark_from_thread(thread + 1) - 1].rows;
         size_t rows_limit = next_total_row_count - cur_total_row_count;
 
         return std::make_pair(mark_number, rows_limit);
     };
 
-    if (to_mark == std::numeric_limits<size_t>::max())
-        to_mark = marks_size;
+    if (threads > marks_size)
+        threads = marks_size;
 
-    if (to_mark > marks_size || to_mark < from_mark)
-        throw Exception("Marks out of range in StorageLog::read", ErrorCodes::LOGICAL_ERROR);
-
-    if (threads > to_mark - from_mark)
-        threads = to_mark - from_mark;
+    size_t max_read_buffer_size = context.getSettingsRef().max_read_buffer_size;
 
     if (has_nullable_columns)
     {
@@ -865,17 +858,14 @@ BlockInputStreams StorageLog::read(
             size_t rows_limit;
             std::tie(mark_number, rows_limit) = get_reader_parameters(thread);
 
-            /// This works since we have the same number of marks and null marks.
-            size_t null_mark_number = from_null_mark + (mark_number - from_mark);
-
             res.push_back(std::make_shared<LogBlockInputStream>(
                 max_block_size,
                 column_names,
                 *this,
                 mark_number,
-                null_mark_number,
+                mark_number,
                 rows_limit,
-                settings.max_read_buffer_size));
+                max_read_buffer_size));
         }
     }
     else
@@ -892,29 +882,11 @@ BlockInputStreams StorageLog::read(
                 *this,
                 mark_number,
                 rows_limit,
-                settings.max_read_buffer_size));
+                max_read_buffer_size));
         }
     }
 
     return res;
-}
-
-
-BlockInputStreams StorageLog::read(
-    const Names & column_names,
-    ASTPtr query,
-    const Context & context,
-    const Settings & settings,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned threads)
-{
-    return read(
-        0, std::numeric_limits<size_t>::max(),
-        0,
-        column_names,
-        query, context, settings, processed_stage,
-        max_block_size, threads);
 }
 
 

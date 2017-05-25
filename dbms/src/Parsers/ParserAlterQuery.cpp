@@ -14,30 +14,29 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 {
     Pos begin = pos;
 
-    ParserString s_alter(        "ALTER", true, true);
-    ParserString s_table(        "TABLE", true, true);
-    ParserString s_add(            "ADD", true, true);
-    ParserString s_column(        "COLUMN", true, true);
-    ParserString s_after(        "AFTER", true, true);
-    ParserString s_modify(        "MODIFY", true, true);
-    ParserString s_primary(        "PRIMARY", true, true);
-    ParserString s_key(            "KEY", true, true);
-    ParserString s_reshard(        "RESHARD", true, true);
-    ParserString s_drop(        "DROP", true, true);
-    ParserString s_detach(        "DETACH", true, true);
-    ParserString s_attach(        "ATTACH", true, true);
-    ParserString s_fetch(        "FETCH", true, true);
-    ParserString s_freeze(        "FREEZE", true, true);
-    ParserString s_unreplicated("UNREPLICATED", true, true);
-    ParserString s_part(        "PART", true, true);
-    ParserString s_partition(    "PARTITION", true, true);
-    ParserString s_from(        "FROM", true, true);
-    ParserString s_copy(        "COPY", true, true);
-    ParserString s_to(            "TO", true, true);
-    ParserString s_using(        "USING", true, true);
-    ParserString s_coordinate(    "COORDINATE", true, true);
-    ParserString s_with(        "WITH", true, true);
-    ParserString s_name(        "NAME", true, true);
+    ParserString s_alter(     "ALTER", true, true);
+    ParserString s_table(     "TABLE", true, true);
+    ParserString s_add(       "ADD", true, true);
+    ParserString s_column(    "COLUMN", true, true);
+    ParserString s_after(     "AFTER", true, true);
+    ParserString s_modify(    "MODIFY", true, true);
+    ParserString s_primary(   "PRIMARY", true, true);
+    ParserString s_key(       "KEY", true, true);
+    ParserString s_reshard(   "RESHARD", true, true);
+    ParserString s_drop(      "DROP", true, true);
+    ParserString s_detach(    "DETACH", true, true);
+    ParserString s_attach(    "ATTACH", true, true);
+    ParserString s_fetch(     "FETCH", true, true);
+    ParserString s_freeze(    "FREEZE", true, true);
+    ParserString s_part(      "PART", true, true);
+    ParserString s_partition( "PARTITION", true, true);
+    ParserString s_from(      "FROM", true, true);
+    ParserString s_copy(      "COPY", true, true);
+    ParserString s_to(        "TO", true, true);
+    ParserString s_using(     "USING", true, true);
+    ParserString s_coordinate("COORDINATE", true, true);
+    ParserString s_with(      "WITH", true, true);
+    ParserString s_name(      "NAME", true, true);
 
     ParserString s_dot(".");
     ParserString s_comma(",");
@@ -119,24 +118,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
         {
             ws.ignore(pos, end);
 
-            if (s_unreplicated.ignore(pos, end, max_parsed_pos, expected))
-            {
-                params.unreplicated = true;
-                ws.ignore(pos, end);
-
-                if (s_partition.ignore(pos, end, max_parsed_pos, expected))
-                {
-                    ws.ignore(pos, end);
-
-                    if (!parser_literal.parse(pos, end, params.partition, max_parsed_pos, expected))
-                        return false;
-
-                    params.type = ASTAlterQuery::DROP_PARTITION;
-                }
-                else
-                    return false;
-            }
-            else if (s_partition.ignore(pos, end, max_parsed_pos, expected))
+            if (s_partition.ignore(pos, end, max_parsed_pos, expected))
             {
                 ws.ignore(pos, end);
 
@@ -174,12 +156,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
         {
             ws.ignore(pos, end);
 
-            if (s_unreplicated.ignore(pos, end, max_parsed_pos, expected))
-            {
-                params.unreplicated = true;
-                ws.ignore(pos, end);
-            }
-
             if (!s_partition.ignore(pos, end, max_parsed_pos, expected))
                 return false;
 
@@ -194,12 +170,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
         else if (s_attach.ignore(pos, end, max_parsed_pos, expected))
         {
             ws.ignore(pos, end);
-
-            if (s_unreplicated.ignore(pos, end, max_parsed_pos, expected))
-            {
-                params.unreplicated = true;
-                ws.ignore(pos, end);
-            }
 
             if (s_part.ignore(pos, end, max_parsed_pos, expected))
                 params.part = true;

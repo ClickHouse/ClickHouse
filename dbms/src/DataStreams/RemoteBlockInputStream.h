@@ -90,7 +90,7 @@ protected:
     bool hasThrownException() const;
 
 private:
-    void init(const Settings * settings_);
+    void init(const Settings * settings);
 
     void sendQuery();
 
@@ -118,7 +118,6 @@ private:
 
     const String query;
     bool send_settings;
-    Settings settings;
     /// If != nullptr, used to limit network trafic
     ThrottlerPtr throttler;
     /// Temporary tables needed to be sent to remote servers

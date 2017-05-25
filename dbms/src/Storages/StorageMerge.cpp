@@ -95,9 +95,8 @@ bool StorageMerge::hasColumn(const String & column_name) const
 
 BlockInputStreams StorageMerge::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned threads)
@@ -140,8 +139,8 @@ BlockInputStreams StorageMerge::read(
     /** Just in case, turn off optimization "transfer to PREWHERE",
       * since there is no certainty that it works when one of table is MergeTree and other is not.
       */
-    Settings modified_settings = settings;
-    modified_settings.optimize_move_to_prewhere = false;
+    Context modified_context = context;
+    modified_context.getSettingsRef().optimize_move_to_prewhere = false;
 
     size_t tables_count = selected_tables.size();
     size_t curr_table_number = 0;
@@ -166,8 +165,7 @@ BlockInputStreams StorageMerge::read(
             source_streams = table->read(
                 real_column_names,
                 modified_query_ast,
-                context,
-                modified_settings,
+                modified_context,
                 processed_stage_in_source_table,
                 max_block_size,
                 tables_count >= threads ? 1 : (threads / tables_count));
@@ -179,7 +177,7 @@ BlockInputStreams StorageMerge::read(
                     ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
             /// Subordinary tables could have different but convertible types, like numeric types of different width.
-            /// We must return streams with structure equals to structure of Merge table. 
+            /// We must return streams with structure equals to structure of Merge table.
             for (auto & stream : source_streams)
             {
                 /// will throw if some columns not convertible
@@ -195,8 +193,7 @@ BlockInputStreams StorageMerge::read(
                 BlockInputStreams streams = table->read(
                     real_column_names,
                     modified_query_ast,
-                    context,
-                    modified_settings,
+                    modified_context,
                     processed_stage_in_source_table,
                     max_block_size,
                     1);
