@@ -50,7 +50,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadAll()
 
 BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    LOG_TRACE(log, "loadIds " + toString() + " ids=" + std::to_string(ids.size()));
+    LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
     {
@@ -68,7 +68,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
 BlockInputStreamPtr HTTPDictionarySource::loadKeys(
     const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
 {
-    LOG_TRACE(log, "loadKeys " + toString() + " rows=" + std::to_string(requested_rows.size()));
+    LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
     {
