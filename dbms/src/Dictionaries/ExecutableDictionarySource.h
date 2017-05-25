@@ -48,9 +48,4 @@ private:
     const Context & context;
 };
 
-void idsToBuffer(const Context & context, const std::string & format, Block & sample_block, WriteBuffer & out_stream,
-    const std::vector<UInt64> & ids);
-void columnsToBuffer(const Context & context, const std::string & format, Block & sample_block, WriteBuffer & out_buffer,
-    const DictionaryStructure & dict_struct, const ConstColumnPlainPtrs & key_columns);
-
 }

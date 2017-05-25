@@ -3,6 +3,7 @@
 #include <Common/ShellCommand.h>
 #include <Interpreters/Context.h>
 #include <Dictionaries/OwningBlockInputStream.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -42,52 +43,8 @@ BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll " + toString());
     auto process = ShellCommand::execute(command);
-    auto stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ShellCommand>>(stream, std::move(process));
-}
-
-void idsToBuffer(const Context & context, const std::string & format, Block & sample_block, WriteBuffer & out_buffer,
-        const std::vector<UInt64> & ids)
-{
-    ColumnWithTypeAndName column;
-    column.type = std::make_shared<DataTypeUInt64>();
-    column.column = column.type->createColumn();
-
-    for (auto & id : ids)
-    {
-        column.column->insert(id); //CHECKME maybe faster?
-    }
-
-    Block block;
-    block.insert(std::move(column));
-
-    auto stream_out = context.getOutputFormat(format, out_buffer, sample_block);
-    stream_out->writePrefix();
-    stream_out->write(block);
-    stream_out->writeSuffix();
-    stream_out->flush();
-}
-
-void columnsToBuffer(const Context & context, const std::string & format, Block & sample_block, WriteBuffer & out_buffer, const DictionaryStructure & dict_struct, const ConstColumnPlainPtrs & key_columns)
-{
-    Block block;
-
-    const auto keys_size = key_columns.size();
-    for (const auto i : ext::range(0, keys_size))
-    {
-        const auto & key_description = (*dict_struct.key)[i];
-        const auto & key = key_columns[i];
-        ColumnWithTypeAndName column;
-        column.type = key_description.type;
-        column.column = key->clone(); // CHECKME !!
-        block.insert(std::move(column));
-    }
-
-    auto stream_out = context.getOutputFormat(format, out_buffer, sample_block);
-    stream_out->writePrefix();
-    stream_out->write(block);
-    stream_out->writeSuffix();
-    stream_out->flush();
+    auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
+    return std::make_shared<OwningBlockInputStream<ShellCommand>>(input_stream, std::move(process));
 }
 
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -95,13 +52,12 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
     LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
     auto process = ShellCommand::execute(command);
 
-
-
-    idsToBuffer(context, format, sample_block, process->in, ids);
+    auto output_stream = context.getOutputFormat(format, process->in, sample_block);
+    formatIDs(output_stream, ids);
     process->in.close();
 
-    auto stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ShellCommand>>(stream, std::move(process));
+    auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
+    return std::make_shared<OwningBlockInputStream<ShellCommand>>(input_stream, std::move(process));
 }
 
 BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
@@ -110,11 +66,12 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
     LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
     auto process = ShellCommand::execute(command);
 
-    columnsToBuffer(context, format, sample_block, process->in, dict_struct, key_columns);
+    auto output_stream = context.getOutputFormat(format, process->in, sample_block);
+    formatKeys(dict_struct, output_stream, key_columns);
     process->in.close();
 
-    auto stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ShellCommand>>(stream, std::move(process));
+    auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
+    return std::make_shared<OwningBlockInputStream<ShellCommand>>(input_stream, std::move(process));
 }
 
 bool ExecutableDictionarySource::isModified() const
