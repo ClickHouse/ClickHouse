@@ -74,7 +74,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(
     {
         WriteBufferFromOStream out_buffer(ostr);
         auto output_stream = context.getOutputFormat(format, out_buffer, sample_block);
-        formatKeys(dict_struct, output_stream, key_columns);
+        formatKeys(dict_struct, output_stream, key_columns, requested_rows);
     };
 
     Poco::URI uri(url);

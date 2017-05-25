@@ -67,7 +67,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
     auto process = ShellCommand::execute(command);
 
     auto output_stream = context.getOutputFormat(format, process->in, sample_block);
-    formatKeys(dict_struct, output_stream, key_columns);
+    formatKeys(dict_struct, output_stream, key_columns, requested_rows);
     process->in.close();
 
     auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
