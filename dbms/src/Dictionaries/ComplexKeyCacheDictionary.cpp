@@ -655,17 +655,15 @@ void ComplexKeyCacheDictionary::getItemsString(
 template <typename PresentKeyHandler, typename AbsentKeyHandler>
 void ComplexKeyCacheDictionary::update(
     const Columns & in_key_columns, const PODArray<StringRef> & in_keys,
-    const std::vector<size_t> & in_requested_rows, PresentKeyHandler && on_cell_updated,
+    const std::vector<size_t> & in_requested_rows,
+    PresentKeyHandler && on_cell_updated,
     AbsentKeyHandler && on_key_not_found) const
 {
     MapType<bool> remaining_keys{in_requested_rows.size()};
     for (const auto row : in_requested_rows)
         remaining_keys.insert({ in_keys[row], false });
 
-    std::uniform_int_distribution<UInt64> distribution{
-        dict_lifetime.min_sec,
-        dict_lifetime.max_sec
-    };
+    std::uniform_int_distribution<UInt64> distribution(dict_lifetime.min_sec, dict_lifetime.max_sec);
 
     const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
     {
@@ -686,14 +684,14 @@ void ComplexKeyCacheDictionary::update(
                 ext::range(0, keys_size),
                 [&] (const size_t attribute_idx)
                 {
-                    return block.safeGetByPosition(attribute_idx).column.get();
+                    return block.safeGetByPosition(attribute_idx).column;
                 });
 
             const auto attribute_columns = ext::map<Columns>(
                 ext::range(0, attributes_size),
                 [&] (const size_t attribute_idx)
                 {
-                    return block.safeGetByPosition(keys_size + attribute_idx).column.get();
+                    return block.safeGetByPosition(keys_size + attribute_idx).column;
                 });
 
             const auto rows_num = block.rows();

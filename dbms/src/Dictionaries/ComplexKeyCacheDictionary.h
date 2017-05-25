@@ -215,7 +215,8 @@ private:
     template <typename PresentKeyHandler, typename AbsentKeyHandler>
     void update(
         const Columns & in_key_columns, const PODArray<StringRef> & in_keys,
-        const std::vector<std::size_t> & in_requested_rows, PresentKeyHandler && on_cell_updated,
+        const std::vector<std::size_t> & in_requested_rows,
+        PresentKeyHandler && on_cell_updated,
         AbsentKeyHandler && on_key_not_found) const;
 
     UInt64 getCellIdx(const StringRef key) const;

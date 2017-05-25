@@ -749,7 +749,8 @@ void CacheDictionary::getItemsString(
 
 template <typename PresentIdHandler, typename AbsentIdHandler>
 void CacheDictionary::update(
-    const std::vector<Key> & requested_ids, PresentIdHandler && on_cell_updated,
+    const std::vector<Key> & requested_ids,
+    PresentIdHandler && on_cell_updated,
     AbsentIdHandler && on_id_not_found) const
 {
     std::unordered_map<Key, UInt8> remaining_ids{requested_ids.size()};
@@ -782,7 +783,8 @@ void CacheDictionary::update(
             const auto & ids = id_column->getData();
 
             /// cache column pointers
-            const auto column_ptrs = ext::map<std::vector>(ext::range(0, attributes.size()), [&block] (const auto & i) {
+            const auto column_ptrs = ext::map<std::vector>(ext::range(0, attributes.size()), [&block] (size_t i)
+            {
                 return block.safeGetByPosition(i + 1).column.get();
             });
 

@@ -60,7 +60,7 @@ void ExternalResultDescription::init(const Block & sample_block_)
                 ErrorCodes::UNKNOWN_TYPE};
 
         names.emplace_back(column.name);
-        sample_columns.emplace_back(column.column.get());
+        sample_columns.emplace_back(column.column);
     }
 }
 
