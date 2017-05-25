@@ -19,6 +19,6 @@ struct DictionaryStructure;
 void formatIDs(BlockOutputStreamPtr & out, const std::vector<UInt64> & ids);
 
 /// For composite key
-void formatKeys(const DictionaryStructure & dict_struct, BlockOutputStreamPtr & out, const ConstColumnPlainPtrs & key_columns);
+void formatKeys(const DictionaryStructure & dict_struct, BlockOutputStreamPtr & out, const Columns & key_columns);
 
 }

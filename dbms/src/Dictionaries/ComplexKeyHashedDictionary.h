@@ -65,7 +65,7 @@ public:
 
 #define DECLARE(TYPE)\
     void get##TYPE(\
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
         PaddedPODArray<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -80,12 +80,12 @@ public:
 #undef DECLARE
 
     void getString(
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
         ColumnString * out) const;
 
 #define DECLARE(TYPE)\
     void get##TYPE(\
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
         const PaddedPODArray<TYPE> & def, PaddedPODArray<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -100,12 +100,12 @@ public:
 #undef DECLARE
 
     void getString(
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
         const ColumnString * const def, ColumnString * const out) const;
 
 #define DECLARE(TYPE)\
     void get##TYPE(\
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
         const TYPE def, PaddedPODArray<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -120,10 +120,10 @@ public:
 #undef DECLARE
 
     void getString(
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
         const String & def, ColumnString * const out) const;
 
-    void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
+    void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
 private:
     template <typename Value> using ContainerType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
@@ -163,14 +163,14 @@ private:
     template <typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsNumber(
         const Attribute & attribute,
-        const ConstColumnPlainPtrs & key_columns,
+        const Columns & key_columns,
         ValueSetter && set_value,
         DefaultGetter && get_default) const;
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(
         const Attribute & attribute,
-        const ConstColumnPlainPtrs & key_columns,
+        const Columns & key_columns,
         ValueSetter && set_value,
         DefaultGetter && get_default) const;
 
@@ -183,10 +183,10 @@ private:
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
     static StringRef placeKeysInPool(
-        const std::size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool);
+        const std::size_t row, const Columns & key_columns, StringRefs & keys, Arena & pool);
 
     template <typename T>
-    void has(const Attribute & attribute, const ConstColumnPlainPtrs & key_columns, PaddedPODArray<UInt8> & out) const;
+    void has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;
