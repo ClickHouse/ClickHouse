@@ -402,10 +402,14 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         [] (auto & pair) { return pair.first; });
 
     /// request new values
-    update(required_ids, [&] (const auto id, const auto) {
+    update(required_ids,
+    [&] (const auto id, const auto)
+    {
         for (const auto row : outdated_ids[id])
             out[row] = true;
-    }, [&] (const auto id, const auto) {
+    },
+    [&] (const auto id, const auto)
+    {
         for (const auto row : outdated_ids[id])
             out[row] = false;
     });
@@ -594,18 +598,19 @@ void CacheDictionary::getItemsNumberImpl(
         [] (auto & pair) { return pair.first; });
 
     /// request new values
-    update(required_ids, [&] (const auto id, const auto cell_idx)
-        {
-            const auto attribute_value = attribute_array[cell_idx];
+    update(required_ids,
+    [&] (const auto id, const auto cell_idx)
+    {
+        const auto attribute_value = attribute_array[cell_idx];
 
-            for (const auto row : outdated_ids[id])
-                out[row] = attribute_value;
-        },
-        [&] (const auto id, const auto cell_idx)
-        {
-            for (const auto row : outdated_ids[id])
-                out[row] = get_default(row);
-        });
+        for (const auto row : outdated_ids[id])
+            out[row] = attribute_value;
+    },
+    [&] (const auto id, const auto cell_idx)
+    {
+        for (const auto row : outdated_ids[id])
+            out[row] = get_default(row);
+    });
 }
 
 template <typename DefaultGetter>
@@ -715,12 +720,16 @@ void CacheDictionary::getItemsString(
         std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::begin(required_ids),
             [] (auto & pair) { return pair.first; });
 
-        update(required_ids, [&] (const auto id, const auto cell_idx) {
+        update(required_ids,
+        [&] (const auto id, const auto cell_idx)
+        {
             const auto attribute_value = attribute_array[cell_idx];
 
             map[id] = String{attribute_value};
             total_length += (attribute_value.size + 1) * outdated_ids[id].size();
-        }, [&] (const auto id, const auto cell_idx) {
+        },
+        [&] (const auto id, const auto cell_idx)
+        {
             for (const auto row : outdated_ids[id])
                 total_length += get_default(row).size + 1;
         });
