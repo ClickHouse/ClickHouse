@@ -163,10 +163,6 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
         }
     };
 
-    /** `packaged_task` is used so that exceptions are automatically passed to the main thread.
-      * Disadvantage - exceptions fall into the main thread only after the end of all tasks.
-      */
-
     const size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
     size_t num_bunches = (total_tables + bunch_size - 1) / bunch_size;
 

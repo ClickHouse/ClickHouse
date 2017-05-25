@@ -71,7 +71,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(
 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & out_stream) {
         WriteBufferFromOStream out_buffer(out_stream);
-        columnsToBuffer(context, format, sample_block, out_buffer, dict_struct, key_columns, requested_rows);
+        columnsToBuffer(context, format, sample_block, out_buffer, dict_struct, key_columns);
     };
 
     Poco::URI uri(url);

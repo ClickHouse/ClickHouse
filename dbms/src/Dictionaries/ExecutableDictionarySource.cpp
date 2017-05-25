@@ -68,8 +68,7 @@ void idsToBuffer(const Context & context, const std::string & format, Block & sa
     stream_out->flush();
 }
 
-void columnsToBuffer(const Context & context, const std::string & format, Block & sample_block, WriteBuffer & out_buffer, const DictionaryStructure & dict_struct,
-        const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
+void columnsToBuffer(const Context & context, const std::string & format, Block & sample_block, WriteBuffer & out_buffer, const DictionaryStructure & dict_struct, const ConstColumnPlainPtrs & key_columns)
 {
     Block block;
 
@@ -93,8 +92,11 @@ void columnsToBuffer(const Context & context, const std::string & format, Block 
 
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    LOG_TRACE(log, "loadIds " + toString() + " ids=" + std::to_string(ids.size()));
+    LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
     auto process = ShellCommand::execute(command);
+
+
+
     idsToBuffer(context, format, sample_block, process->in, ids);
     process->in.close();
 
@@ -105,10 +107,10 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
 BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
     const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
 {
-    LOG_TRACE(log, "loadKeys " + toString() + " rows=" + std::to_string(requested_rows.size()));
+    LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
     auto process = ShellCommand::execute(command);
 
-    columnsToBuffer(context, format, sample_block, process->in, dict_struct, key_columns, requested_rows);
+    columnsToBuffer(context, format, sample_block, process->in, dict_struct, key_columns);
     process->in.close();
 
     auto stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
