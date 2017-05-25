@@ -2,7 +2,7 @@
 
 #include <Poco/Net/HTTPRequest.h>
 #include <Interpreters/Context.h>
-#include <Dictionaries/OwningBlockInputStream.h>
+#include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataTypes/DataTypesNumber.h>

@@ -2,7 +2,7 @@
 
 #include <Common/ShellCommand.h>
 #include <Interpreters/Context.h>
-#include <Dictionaries/OwningBlockInputStream.h>
+#include <DataStreams/OwningBlockInputStream.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 
 #include <DataStreams/IBlockOutputStream.h>
