@@ -95,7 +95,7 @@ bool StorageMerge::hasColumn(const String & column_name) const
 
 BlockInputStreams StorageMerge::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -177,7 +177,7 @@ BlockInputStreams StorageMerge::read(
                     ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
             /// Subordinary tables could have different but convertible types, like numeric types of different width.
-            /// We must return streams with structure equals to structure of Merge table. 
+            /// We must return streams with structure equals to structure of Merge table.
             for (auto & stream : source_streams)
             {
                 /// will throw if some columns not convertible

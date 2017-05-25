@@ -110,7 +110,7 @@ bool StorageMaterializedView::hasColumn(const String & column_name) const
 
 BlockInputStreams StorageMaterializedView::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,

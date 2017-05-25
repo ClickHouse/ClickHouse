@@ -36,7 +36,7 @@ StoragePtr StorageSystemTables::create(const std::string & name_)
 }
 
 
-static ColumnWithTypeAndName getFilteredDatabases(ASTPtr query, const Context & context)
+static ColumnWithTypeAndName getFilteredDatabases(const ASTPtr & query, const Context & context)
 {
     ColumnWithTypeAndName column;
     column.name = "database";
@@ -57,7 +57,7 @@ static ColumnWithTypeAndName getFilteredDatabases(ASTPtr query, const Context & 
 
 BlockInputStreams StorageSystemTables::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,

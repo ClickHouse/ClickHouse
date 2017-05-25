@@ -32,8 +32,11 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageMergeTree.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -843,6 +846,23 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         }
         else
             actual_query_ptr = query_ptr;
+
+        /// PREWHERE optimization
+        {
+            auto optimize_prewhere = [&](auto & merge_tree)
+            {
+                const ASTSelectQuery & actual_select = typeid_cast<const ASTSelectQuery &>(*actual_query_ptr);
+
+                /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
+                if (settings.optimize_move_to_prewhere && actual_select.where_expression && !actual_select.prewhere_expression && !actual_select.final())
+                    MergeTreeWhereOptimizer{actual_query_ptr, context, merge_tree.getData(), required_columns, log};
+            };
+
+            if (const StorageMergeTree * merge_tree = typeid_cast<const StorageMergeTree *>(storage.get()))
+                optimize_prewhere(*merge_tree);
+            else if (const StorageReplicatedMergeTree * merge_tree = typeid_cast<const StorageReplicatedMergeTree *>(storage.get()))
+                optimize_prewhere(*merge_tree);
+        }
 
         streams = storage->read(required_columns, actual_query_ptr,
             context, from_stage, max_block_size, max_streams);

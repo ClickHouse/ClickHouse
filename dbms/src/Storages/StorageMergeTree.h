@@ -76,7 +76,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const ASTPtr & query,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
@@ -91,9 +91,9 @@ public:
         return merge(settings.min_bytes_to_use_direct_io, true, partition, final, deduplicate);
     }
 
-    void dropPartition(ASTPtr query, const Field & partition, bool detach, const Settings & settings) override;
-    void dropColumnFromPartition(ASTPtr query, const Field & partition, const Field & column_name, const Settings & settings) override;
-    void attachPartition(ASTPtr query, const Field & partition, bool part, const Settings & settings) override;
+    void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
+    void dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
+    void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
     void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
 
     void drop() override;

@@ -61,7 +61,7 @@ StoragePtr StorageSystemNumbers::create(const std::string & name_, bool multithr
 
 BlockInputStreams StorageSystemNumbers::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,

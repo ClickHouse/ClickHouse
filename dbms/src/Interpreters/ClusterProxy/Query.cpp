@@ -15,7 +15,7 @@ namespace ClusterProxy
 {
 
 Query::Query(IQueryConstructor & query_constructor_, const ClusterPtr & cluster_,
-    ASTPtr query_ast_, const Context & context_, const Settings & settings_, bool enable_shard_multiplexing_)
+    const ASTPtr & query_ast_, const Context & context_, const Settings & settings_, bool enable_shard_multiplexing_)
     : query_constructor{query_constructor_}, cluster{cluster_}, query_ast{query_ast_},
     context{context_}, settings{settings_}, enable_shard_multiplexing{enable_shard_multiplexing_}
 {

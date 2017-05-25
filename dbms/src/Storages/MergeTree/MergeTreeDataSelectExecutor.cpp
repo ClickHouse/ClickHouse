@@ -129,7 +129,7 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
 
 BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,

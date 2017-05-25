@@ -122,7 +122,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const ASTPtr & query,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
@@ -134,8 +134,8 @@ public:
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
-    void dropPartition(ASTPtr query, const Field & partition, bool detach, const Settings & settings) override;
-    void attachPartition(ASTPtr query, const Field & partition, bool part, const Settings & settings) override;
+    void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
+    void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
     void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
     void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
 

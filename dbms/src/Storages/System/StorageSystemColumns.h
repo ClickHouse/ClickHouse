@@ -23,7 +23,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const ASTPtr & query,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size = DEFAULT_BLOCK_SIZE,

@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/ReshardingWorker.h>
 
@@ -2242,19 +2241,13 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
 
 BlockInputStreams StorageReplicatedMergeTree::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned threads)
 {
     const Settings & settings = context.getSettingsRef();
-
-    auto & select = typeid_cast<const ASTSelectQuery &>(*query);
-
-    /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-    if (settings.optimize_move_to_prewhere && select.where_expression && !select.prewhere_expression && !select.final())
-        MergeTreeWhereOptimizer{query, context, data, column_names, log};
 
     size_t part_index = 0;
 
@@ -2561,7 +2554,7 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 left, UIn
 
 
 void StorageReplicatedMergeTree::dropPartition(
-    ASTPtr query, const Field & field, bool detach, const Settings & settings)
+    const ASTPtr & query, const Field & field, bool detach, const Settings & settings)
 {
     assertNotReadonly();
 
@@ -2662,7 +2655,7 @@ void StorageReplicatedMergeTree::dropPartition(
 }
 
 
-void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & field, bool attach_part, const Settings & settings)
+void StorageReplicatedMergeTree::attachPartition(const ASTPtr & query, const Field & field, bool attach_part, const Settings & settings)
 {
     assertNotReadonly();
 

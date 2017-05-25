@@ -71,7 +71,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const ASTPtr & query,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
@@ -118,18 +118,6 @@ protected:
 
     /// Can be called with any state of `rwlock`.
     size_t marksCount();
-
-    BlockInputStreams read(
-        size_t from_mark,
-        size_t to_mark,
-        size_t from_null_mark,
-        const Names & column_names,
-        ASTPtr query,
-        const Context & context,
-        const Settings & settings,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1);
 
 private:
     Files_t files; /// name -> data

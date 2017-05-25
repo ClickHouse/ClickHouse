@@ -168,7 +168,7 @@ public:
       */
     virtual BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const ASTPtr & query,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
@@ -215,21 +215,21 @@ public:
     }
 
     /** Execute DROP COLUMN ... FROM PARTITION query witch drops column from given partition. */
-    virtual void dropColumnFromPartition(ASTPtr query, const Field & partition, const Field & column_name, const Settings & settings)
+    virtual void dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
     {
         throw Exception("Method dropColumnFromPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the query (DROP|DETACH) PARTITION.
       */
-    virtual void dropPartition(ASTPtr query, const Field & partition, bool detach, const Settings & settings)
+    virtual void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings)
     {
         throw Exception("Method dropPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the ATTACH request (PART|PARTITION).
       */
-    virtual void attachPartition(ASTPtr query, const Field & partition, bool part, const Settings & settings)
+    virtual void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings)
     {
         throw Exception("Method attachPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -317,9 +317,6 @@ private:
       */
     mutable Poco::RWLock structure_lock;
 };
-
-using StorageVector = std::vector<StoragePtr>;
-using StorageList = std::list<StoragePtr>;
 
 /// table name -> table
 using Tables = std::map<String, StoragePtr>;
