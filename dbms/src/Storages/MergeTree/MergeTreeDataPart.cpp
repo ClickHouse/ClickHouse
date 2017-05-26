@@ -373,7 +373,6 @@ size_t MergeTreeDataPart::getExactSizeRows() const
 
 String MergeTreeDataPart::getFullPath() const
 {
-    // return storage.full_path + (is_sharded ? ("reshard/" + DB::toString(shard_no) + "/") : "") + name + "/";
     return storage.full_path + relative_path + "/";
 }
 
@@ -523,7 +522,6 @@ void MergeTreeDataPart::renameAddPrefix(bool to_detached, const String & prefix)
         }
     }
 
-    //const_cast<MergeTreeDataPart *>(this)->renameTo(dst_name());
     renameTo(dst_name());
 }
 
