@@ -220,7 +220,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         context_, primary_expr_ast_, date_column_name_,
         sampling_expression_, index_granularity_, merging_params_,
         settings_, database_name_ + "." + table_name, true, attach,
-        [this] (const std::string & name) { enqueuePartForCheck(name); }),
+        [this] (const std::string & name) { enqueuePartForCheck(name); },
+        [this] () { clearOldPartsAndRemoveFromZK(); }
+        ),
     reader(data), writer(data, context), merger(data, context.getBackgroundPool()), fetcher(data), sharded_partition_uploader_client(*this),
     shutdown_event(false), part_check_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
@@ -2167,7 +2169,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     }
     else
     {
-        Poco::File(data.getFullPath() + "detached/tmp_" + part_name).renameTo(data.getFullPath() + "detached/" + part_name);
+        part->renameTo("detached/" + part_name);
     }
 
     ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);
@@ -3753,5 +3755,50 @@ bool StorageReplicatedMergeTree::checkSpaceForResharding(const ReplicaToSpaceInf
 
     return true;
 }
+
+
+void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
+{
+    /// Critical section is not required (since grabOldParts() returns unique part set on each call)
+
+    Logger * log = log_ ? log_ : this->log;
+
+    auto table_lock = lockStructure(false);
+    auto zookeeper = getZooKeeper();
+
+    MergeTreeData::DataPartsVector parts = data.grabOldParts();
+    size_t count = parts.size();
+
+    if (!count)
+        return;
+
+    try
+    {
+        while (!parts.empty())
+        {
+            MergeTreeData::DataPartPtr & part = parts.back();
+
+            LOG_DEBUG(log, "Removing " << part->name);
+
+            zkutil::Ops ops;
+            removePartFromZooKeeper(part->name, ops);
+            auto code = zookeeper->tryMulti(ops);
+            if (code != ZOK)
+                LOG_WARNING(log, "Couldn't remove " << part->name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(code));
+
+            part->remove();
+            parts.pop_back();
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        data.addOldParts(parts);
+        throw;
+    }
+
+    LOG_DEBUG(log, "Removed " << count << " old parts");
+}
+
 
 }

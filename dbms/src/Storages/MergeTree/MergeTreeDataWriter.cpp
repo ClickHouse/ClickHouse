@@ -105,19 +105,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 
     size_t part_size = (block.rows() + data.index_granularity - 1) / data.index_granularity;
 
-
-    String part_name = ActiveDataPartSet::getPartName(
-        DayNum_t(min_date), DayNum_t(max_date),
-        temp_index, temp_index, 0);
-    String tmp_part_name = "tmp_" + part_name;
-
-    String part_tmp_path = data.getFullPath() + tmp_part_name + "/";
-
-    Poco::File(part_tmp_path).createDirectories();
+    static const String TMP_PREFIX = "tmpinsert_";
+    String part_name = ActiveDataPartSet::getPartName(DayNum_t(min_date), DayNum_t(max_date), temp_index, temp_index, 0);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
-    new_data_part->name = tmp_part_name;
+    new_data_part->name = part_name;
+    new_data_part->relative_path = TMP_PREFIX + part_name;
     new_data_part->is_temp = true;
+
+    Poco::File(new_data_part->getFullPath()).createDirectories();
 
     /// If you need to compute some columns to sort, we do it.
     if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
@@ -142,7 +138,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
     }
 
     NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());
-    MergedBlockOutputStream out(data, part_tmp_path, columns, CompressionMethod::LZ4);
+    MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, CompressionMethod::LZ4);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
@@ -159,7 +155,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
     new_data_part->columns = columns;
     new_data_part->checksums = checksums;
     new_data_part->index.swap(out.getIndex());
-    new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(part_tmp_path);
+    new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_data_part->getFullPath());
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());

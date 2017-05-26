@@ -44,7 +44,7 @@ void ReplicatedMergeTreeCleanupThread::run()
 
 void ReplicatedMergeTreeCleanupThread::iterate()
 {
-    clearOldParts();
+    storage.clearOldPartsAndRemoveFromZK(log);
     storage.data.clearOldTemporaryDirectories();
 
     if (storage.is_leader_node)
@@ -52,46 +52,6 @@ void ReplicatedMergeTreeCleanupThread::iterate()
         clearOldLogs();
         clearOldBlocks();
     }
-}
-
-
-void ReplicatedMergeTreeCleanupThread::clearOldParts()
-{
-    auto table_lock = storage.lockStructure(false);
-    auto zookeeper = storage.getZooKeeper();
-
-    MergeTreeData::DataPartsVector parts = storage.data.grabOldParts();
-    size_t count = parts.size();
-
-    if (!count)
-        return;
-
-    try
-    {
-        while (!parts.empty())
-        {
-            MergeTreeData::DataPartPtr & part = parts.back();
-
-            LOG_DEBUG(log, "Removing " << part->name);
-
-            zkutil::Ops ops;
-            storage.removePartFromZooKeeper(part->name, ops);
-            auto code = zookeeper->tryMulti(ops);
-            if (code != ZOK)
-                LOG_WARNING(log, "Couldn't remove " << part->name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(code));
-
-            part->remove();
-            parts.pop_back();
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        storage.data.addOldParts(parts);
-        throw;
-    }
-
-    LOG_DEBUG(log, "Removed " << count << " old parts");
 }
 
 
