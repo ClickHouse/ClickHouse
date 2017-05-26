@@ -474,7 +474,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
     size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplicate)
 {
-    static const String TMP_PREFIX = "tmpmerge_";
+    static const String TMP_PREFIX = "tmp_merge_";
 
     if (isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);

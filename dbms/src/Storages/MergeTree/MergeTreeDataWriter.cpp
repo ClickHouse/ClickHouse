@@ -105,7 +105,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 
     size_t part_size = (block.rows() + data.index_granularity - 1) / data.index_granularity;
 
-    static const String TMP_PREFIX = "tmpinsert_";
+    static const String TMP_PREFIX = "tmp_insert_";
     String part_name = ActiveDataPartSet::getPartName(DayNum_t(min_date), DayNum_t(max_date), temp_index, temp_index, 0);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);

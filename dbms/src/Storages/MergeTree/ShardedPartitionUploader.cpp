@@ -50,7 +50,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
     std::string part_name = params.get("path");
     std::string replica_path = params.get("endpoint");
 
-    static const String TMP_PREFIX = "tmpreshardedfetch_";
+    static const String TMP_PREFIX = "tmp_resharded_fetch_";
     String relative_part_name = String("detached/") + TMP_PREFIX + part_name;
     String absolute_part_path = data.getFullPath() + relative_part_name + "/";
     Poco::File part_file{absolute_part_path};

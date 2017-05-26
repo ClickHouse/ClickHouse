@@ -110,7 +110,7 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
     MergeTreeData & storage;
 
     /// A directory path (realative to storage's path) where part data is actually stored
-    /// Examples: 'detached/tmpfetch_<name>', 'tmp_<name>', '<name>'
+    /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
     mutable String relative_path;
 
     size_t size = 0;                        /// in number of marks.
