@@ -113,7 +113,6 @@ class ClickHouseCluster:
 
         for instance in self.instances.values():
             instance.docker_client = None
-            instance.docker_id = None
             instance.ip_address = None
             instance.client = None
 
