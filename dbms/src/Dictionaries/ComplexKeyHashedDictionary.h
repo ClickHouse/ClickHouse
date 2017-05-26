@@ -16,6 +16,7 @@
 namespace DB
 {
 
+
 class ComplexKeyHashedDictionary final : public IDictionaryBase
 {
 public:

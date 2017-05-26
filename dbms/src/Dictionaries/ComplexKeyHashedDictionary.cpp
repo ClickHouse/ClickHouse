@@ -538,7 +538,7 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys(const Attribute& attr
 BlockInputStreamPtr ComplexKeyHashedDictionary::getBlockInputStream(const Names & column_names) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<ComplexKeyHashedDictionary, UInt64>;
-    return std::move(std::make_unique<BlockInputStreamType>(*this, getKeys(), column_names));
+    return std::move(std::make_unique<BlockInputStreamType>(shared_from_this(), 2, getKeys(), column_names));
 }
 
 

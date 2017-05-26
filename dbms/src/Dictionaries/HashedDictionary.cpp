@@ -515,7 +515,7 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
 BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_names) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<HashedDictionary, Key>;
-    auto block_input_stream = std::make_unique<BlockInputStreamType>(*this, getIds(), column_names);
+    auto block_input_stream = std::make_unique<BlockInputStreamType>(shared_from_this(), 2, getIds(), column_names);
     return BlockInputStreamPtr(std::move(block_input_stream));
 }
 

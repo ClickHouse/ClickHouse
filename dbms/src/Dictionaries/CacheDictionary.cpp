@@ -954,7 +954,7 @@ CacheDictionary::Attribute & CacheDictionary::getAttribute(const std::string & a
 
 bool CacheDictionary::isEmptyCell(const UInt64 idx) const
 {
-    return (idx != zero_cell_idx && cells[idx].id == 0) || (cells[idx].data 
+    return (idx != zero_cell_idx && cells[idx].id == 0) || (cells[idx].data
         == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t()));
 }
 
@@ -977,7 +977,7 @@ PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
 BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_names) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<CacheDictionary, Key>;
-    auto block_input_stream = std::make_unique<BlockInputStreamType>(*this, getCachedIds(), column_names);
+    auto block_input_stream = std::make_unique<BlockInputStreamType>(shared_from_this(), 2, getCachedIds(), column_names);
     return BlockInputStreamPtr(std::move(block_input_stream));
 }
 

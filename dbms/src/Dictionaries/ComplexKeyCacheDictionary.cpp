@@ -974,7 +974,7 @@ StringRef ComplexKeyCacheDictionary::copyKey(const StringRef key) const
 
 bool ComplexKeyCacheDictionary::isEmptyCell(const UInt64 idx) const
 {
-    return (cells[idx].key == StringRef{} && (idx != zero_cell_idx 
+    return (cells[idx].key == StringRef{} && (idx != zero_cell_idx
         || cells[idx].data == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t())));
 }
 
@@ -990,7 +990,7 @@ BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names &
     }
 
     using BlockInputStreamType = DictionaryBlockInputStream<ComplexKeyCacheDictionary, UInt64>;
-    return std::move(std::make_unique<BlockInputStreamType>(*this, keys, column_names));
+    return std::move(std::make_unique<BlockInputStreamType>(shared_from_this(), 2, keys, column_names));
 }
 
 

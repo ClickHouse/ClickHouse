@@ -22,7 +22,7 @@ struct DictionaryStructure;
 class ColumnString;
 
 
-struct IDictionaryBase
+struct IDictionaryBase : public std::enable_shared_from_this<IDictionaryBase>
 {
     using Key = UInt64;
 
