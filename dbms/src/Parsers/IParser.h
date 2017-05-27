@@ -14,23 +14,23 @@ namespace DB
 using Expected = const char *;
 
 
-/** Интерфейс для классов-парсеров
+/** Interface for parser classes
   */
 class IParser
 {
 public:
     using Pos = const char *;
 
-    /** Получить текст о том, что парсит этот парсер. */
+    /** Get the text of this parser parses. */
     virtual const char * getName() const = 0;
 
-    /** Распарсить кусок текста с позиции pos, но не дальше конца строки (end - позиция после конца строки),
-      * переместить указатель pos на максимальное место, до которого удалось распарсить,
-      * вернуть в случае успеха true и результат в node, если он нужен, иначе false,
-      * в expected записать, что ожидалось в максимальной позиции,
-      *  до которой удалось распарсить, если парсинг был неуспешным,
-      *  или что парсит этот парсер, если парсинг был успешным.
-      * Строка, в которую входит диапазон [begin, end) может быть не 0-terminated.
+    /** Parse piece of text from position `pos`, but not beyond end of line (`end` - position after end of line),
+      * move pointer `pos` to the maximum position to which it was possible to parse,
+      * in case of success return `true` and the result in `node` if it is needed, otherwise false,
+      * in `expected` write what was expected in the maximum position,
+      *  to which it was possible to parse if parsing was unsuccessful,
+      *  or what this parser parse if parsing was successful.
+      * The string to which the [begin, end) range is included may be not 0-terminated.
       */
     virtual bool parse(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) = 0;
 
@@ -47,7 +47,7 @@ public:
         return ignore(pos, end, max_parsed_pos, expected);
     }
 
-    /** То же самое, но не двигать позицию и не записывать результат в node.
+    /** The same, but do not move the position and do not write the result to node.
       */
     bool check(Pos & pos, Pos end, Pos & max_parsed_pos, Expected & expected)
     {

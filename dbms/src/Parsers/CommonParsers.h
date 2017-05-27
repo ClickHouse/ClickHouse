@@ -5,9 +5,9 @@
 namespace DB
 {
 
-/** Если прямо сейчас не s, то ошибка.
-  * Если word_boundary установлен в true, и последний символ строки - словарный (\w),
-  *  то проверяется, что последующий символ строки не словарный.
+/** If right now is not `s`, then an error.
+  * If word_boundary is set to true, and the last character of the string - word (\w),
+  *  then it is checked that the next character in the string is not a word character.
   */
 class ParserString : public IParserBase
 {
@@ -27,7 +27,7 @@ protected:
 };
 
 
-/** пробельные символы
+/** whitespace characters
   */
 class ParserWhiteSpace : public IParserBase
 {
@@ -61,7 +61,7 @@ protected:
 };
 
 
-/** комментарии '--' или c-style
+/** comments '--' or c-style
   */
 class ParserComment : public IParserBase
 {
