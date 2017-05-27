@@ -8,12 +8,12 @@ namespace DB
 {
 
 
-/** CREATE TABLE или ATTACH TABLE запрос
+/** CREATE TABLE or ATTACH TABLE query
   */
 class ASTCreateQuery : public IAST
 {
 public:
-    bool attach{false};    /// Запрос ATTACH TABLE, а не CREATE TABLE.
+    bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
     bool if_not_exists{false};
     bool is_view{false};
     bool is_materialized_view{false};
@@ -23,7 +23,7 @@ public:
     String table;
     ASTPtr columns;
     ASTPtr storage;
-    ASTPtr inner_storage;    /// Внутренний engine для запроса CREATE MATERIALIZED VIEW
+    ASTPtr inner_storage;    /// Internal engine for the CREATE MATERIALIZED VIEW query
     String as_database;
     String as_table;
     ASTPtr select;
@@ -31,7 +31,7 @@ public:
     ASTCreateQuery() = default;
     ASTCreateQuery(const StringRange range_) : IAST(range_) {}
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
 
     ASTPtr clone() const override
