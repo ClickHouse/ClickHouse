@@ -13,7 +13,7 @@
 
 namespace DB
 {
-/** Функции работы со строками:
+/** String functions
   *
   * length, empty, notEmpty,
   * concat, substring, lower, upper, reverse
@@ -26,11 +26,11 @@ namespace DB
   * s, c1, c2        -> s:        substring, substringUTF8
   * s, c1, c2, s2    -> s:        replace, replaceUTF8
   *
-  * Функции поиска строк и регулярных выражений расположены отдельно.
-  * Функции работы с URL расположены отдельно.
-  * Функции кодирования строк, конвертации в другие типы расположены отдельно.
+  * The search functions for strings and regular expressions are located separately.
+  * URL functions are located separately.
+  * String encoding functions, converting to other types are located separately.
   *
-  * Функции length, empty, notEmpty, reverse также работают с массивами.
+  * The functions length, empty, notEmpty, reverse also work with arrays.
   */
 
 
@@ -89,10 +89,10 @@ inline void UTF8CyrillicToCase(const UInt8 *& src, const UInt8 * const src_end, 
 }
 
 
-/** Если строка содержит текст в кодировке UTF-8 - перевести его в нижний (верхний) регистр.
-  * Замечание: предполагается, что после перевода символа в другой регистр,
-  *  длина его мультибайтовой последовательности в UTF-8 не меняется.
-  * Иначе - поведение не определено.
+/** If the string contains UTF-8 encoded text, convert it to the lower (upper) case.
+  * Note: It is assumed that after the character is converted to another case,
+  *  the length of its multibyte sequence in UTF-8 does not change.
+  * Otherwise, the behavior is undefined.
   */
 template <char not_case_lower_bound,
     char not_case_upper_bound,

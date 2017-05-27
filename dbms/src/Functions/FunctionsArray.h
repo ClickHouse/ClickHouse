@@ -35,28 +35,28 @@ namespace ErrorCodes
 }
 
 
-/** Функции по работе с массивами:
+/** Array functions:
   *
-  * array(с1, с2, ...) - создать массив из констант.
-  * arrayElement(arr, i) - получить элемент массива по индексу.
-  *  Индекс начинается с 1. Также индекс может быть отрицательным - тогда он считается с конца массива.
-  * has(arr, x) - есть ли в массиве элемент x.
-  * indexOf(arr, x) - возвращает индекс элемента x (начиная с 1), если он есть в массиве, или 0, если его нет.
-  * arrayEnumerate(arr) - возаращает массив [1,2,3,..., length(arr)]
+  * array(c1, c2, ...) - create an array of constants.
+  * arrayElement(arr, i) - get the array element by index.
+  * The index begins with 1. Also, the index can be negative - then it is counted from the end of the array.
+  * has(arr, x) - whether there is an element x in the array.
+  * indexOf(arr, x) - returns the index of the element x (starting with 1), if it exists in the array, or 0 if it is not.
+  * arrayEnumerate(arr) - Returns the array [1,2,3,..., length(arr)]
   *
-  * arrayUniq(arr) - считает количество разных элементов в массиве,
-  * arrayUniq(arr1, arr2, ...) - считает количество разных кортежей из элементов на соответствующих позициях в нескольких массивах.
+  * arrayUniq(arr) - counts the number of different elements in the array,
+  * arrayUniq(arr1, arr2, ...) - counts the number of different tuples from the elements in the corresponding positions in several arrays.
   *
   * arrayEnumerateUniq(arr)
-  *  - возаращает массив,  параллельный данному, где для каждого элемента указано,
-  *  какой он по счету среди элементов с таким значением.
-  *  Например: arrayEnumerateUniq([10, 20, 10, 30]) = [1,  1,  2,  1]
+  *  - outputs an array parallel to this, where for each element specified
+  *  how much times this element was encountered before among elements with the same value.
+  *  For example: arrayEnumerateUniq([10, 20, 10, 30]) = [1, 1, 2, 1]
   * arrayEnumerateUniq(arr1, arr2...)
-  *  - для кортежей из элементов на соответствующих позициях в нескольких массивах.
+  *  - for tuples from elements in the corresponding positions in several arrays.
   *
-  * emptyArrayToSingle(arr) - заменить пустые массивы на массивы из одного элемента со значением "по-умолчанию".
+  * emptyArrayToSingle(arr) - replace empty arrays with arrays of one element with a default value.
   *
-  * arrayReduce('agg', arr1, ...) - применить агрегатную функцию agg к массивам arr1...
+  * arrayReduce('agg', arr1, ...) - apply the aggregate function `agg` to arrays `arr1...`
   */
 
 
@@ -142,7 +142,7 @@ private:
     template <typename IndexType>
     bool executeArgument(Block & block, const ColumnNumbers & arguments, size_t result, ArrayImpl::NullMapBuilder & builder);
 
-    /** Для массива кортежей функция вычисляется покомпонентно - для каждого элемента кортежа.
+    /** For a tuple array, the function is evaluated component-wise for each element of the tuple.
       */
     bool executeTuple(Block & block, const ColumnNumbers & arguments, size_t result);
 };
@@ -159,7 +159,7 @@ struct IndexToOne
 struct IndexIdentity
 {
     using ResultType = UInt64;
-    /// Индекс возвращается начиная с единицы.
+    /// The index is returned starting from 1.
     static bool apply(size_t j, ResultType & current) { current = j + 1; return false; }
 };
 
@@ -1181,8 +1181,8 @@ public:
 };
 
 
-/// Считает количество разных элементов в массиве, или количество разных кортежей из элементов на соответствующих позициях в нескольких массивах.
-/// NOTE Реализация частично совпадает с arrayEnumerateUniq.
+/// Counts the number of different elements in the array, or the number of different tuples from the elements at the corresponding positions in several arrays.
+/// NOTE The implementation partially matches arrayEnumerateUniq.
 class FunctionArrayUniq : public IFunction
 {
 public:
@@ -1199,7 +1199,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
-    /// Изначально выделить кусок памяти для 512 элементов.
+    /// Initially allocate a piece of memory for 512 elements.
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     template <typename T>
@@ -1239,7 +1239,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
-    /// Изначально выделить кусок памяти для 512 элементов.
+    /// Initially allocate a piece of memory for 512 elements.
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     template <typename T>

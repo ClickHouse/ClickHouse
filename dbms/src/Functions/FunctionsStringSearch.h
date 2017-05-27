@@ -10,31 +10,31 @@
 namespace DB
 {
 
-/** Функции поиска и замены в строках:
+/** Search and replace functions in strings:
   *
-  * position(haystack, needle)    - обычный поиск подстроки в строке, возвращает позицию (в байтах) найденной подстроки, начиная с 1, или 0, если подстрока не найдена.
-  * positionUTF8(haystack, needle) - то же самое, но позиция вычисляется в кодовых точках, при условии, что строка в кодировке UTF-8.
+  * position(haystack, needle)     - the normal search for a substring in a string, returns the position (in bytes) of the found substring starting with 1, or 0 if no substring is found.
+  * positionUTF8(haystack, needle) - the same, but the position is calculated at code points, provided that the string is encoded in UTF-8.
   * positionCaseInsensitive(haystack, needle)
   * positionCaseInsensitiveUTF8(haystack, needle)
   *
-  * like(haystack, pattern)        - поиск по регулярному выражению LIKE; возвращает 0 или 1. Регистронезависимое, но только для латиницы.
+  * like(haystack, pattern)        - search by the regular expression LIKE; Returns 0 or 1. Case-insensitive, but only for Latin.
   * notLike(haystack, pattern)
   *
-  * match(haystack, pattern)    - поиск по регулярному выражению re2; возвращает 0 или 1.
+  * match(haystack, pattern)       - search by regular expression re2; Returns 0 or 1.
   *
-  * Применяет регексп re2 и достаёт:
-  * - первый subpattern, если в regexp-е есть subpattern;
-  * - нулевой subpattern (сматчившуюся часть, иначе);
-  * - если не сматчилось - пустую строку.
+  * Applies regexp re2 and pulls:
+  * - the first subpattern, if the regexp has a subpattern;
+  * - the zero subpattern (the match part, otherwise);
+  * - if not match - an empty string.
   * extract(haystack, pattern)
   *
-  * replaceOne(haystack, pattern, replacement) - замена шаблона по заданным правилам, только первое вхождение.
-  * replaceAll(haystack, pattern, replacement) - замена шаблона по заданным правилам, все вхождения.
+  * replaceOne(haystack, pattern, replacement) - replacing the pattern with the specified rules, only the first occurrence.
+  * replaceAll(haystack, pattern, replacement) - replacing the pattern with the specified rules, all occurrences.
   *
-  * replaceRegexpOne(haystack, pattern, replacement) - замена шаблона по заданному регекспу, только первое вхождение.
-  * replaceRegexpAll(haystack, pattern, replacement) - замена шаблона по заданному регекспу, все вхождения.
+  * replaceRegexpOne(haystack, pattern, replacement) - replaces the pattern with the specified regexp, only the first occurrence.
+  * replaceRegexpAll(haystack, pattern, replacement) - replaces the pattern with the specified type, all occurrences.
   *
-  * Внимание! На данный момент, аргументы needle, pattern, n, replacement обязаны быть константами.
+  * Warning! At this point, the arguments needle, pattern, n, replacement must be constants.
   */
 
 
