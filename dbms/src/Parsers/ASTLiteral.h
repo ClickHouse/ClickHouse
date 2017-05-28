@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/** Литерал (атомарный) - число, строка, NULL
+/** Literal (atomic) - number, string, NULL
   */
 class ASTLiteral : public ASTWithAlias
 {
@@ -20,7 +20,7 @@ public:
 
     String getColumnName() const override;
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return "Literal_" + applyVisitor(FieldVisitorDump(), value); }
 
     ASTPtr clone() const override { return std::make_shared<ASTLiteral>(*this); }

@@ -7,12 +7,12 @@ namespace DB
 {
 
 
-/** Базовый класс для AST, которые могут содержать алиас (идентификаторы, литералы, функции).
+/** Base class for AST, which can contain an alias (identifiers, literals, functions).
   */
 class ASTWithAlias : public IAST
 {
 public:
-    /// Алиас, если есть, или пустая строка.
+    /// The alias, if any, or an empty string.
     String alias;
 
     using IAST::IAST;
@@ -21,7 +21,7 @@ public:
     String tryGetAlias() const override             { return alias; }
     void setAlias(const String & to) override         { alias = to; }
 
-    /// Вызывает formatImplWithoutAlias, а также выводит алиас. Если надо - заключает всё выражение в скобки.
+    /// Calls formatImplWithoutAlias, and also outputs an alias. If necessary, encloses the entire expression in brackets.
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override final;
 
     virtual void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;

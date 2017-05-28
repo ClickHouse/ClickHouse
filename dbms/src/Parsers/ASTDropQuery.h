@@ -7,12 +7,12 @@ namespace DB
 {
 
 
-/** DROP запрос
+/** DROP query
   */
 class ASTDropQuery : public IAST
 {
 public:
-    bool detach{false};    /// Запрос DETACH, а не DROP.
+    bool detach{false};    /// DETACH query, not DROP.
     bool if_exists{false};
     String database;
     String table;
@@ -20,7 +20,7 @@ public:
     ASTDropQuery() = default;
     ASTDropQuery(const StringRange range_) : IAST(range_) {}
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return (detach ? "DetachQuery_" : "DropQuery_") + database + "_" + table; };
 
     ASTPtr clone() const override { return std::make_shared<ASTDropQuery>(*this); }

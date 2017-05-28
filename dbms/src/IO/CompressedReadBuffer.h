@@ -23,7 +23,7 @@ public:
 
     size_t readBig(char * to, size_t n) override;
 
-    /// Сжатый размер текущего блока.
+    /// The compressed size of the current block.
     size_t getSizeCompressed() const
     {
         return size_compressed;
