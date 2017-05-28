@@ -60,7 +60,7 @@ namespace mysqlxx
 namespace DB
 {
 
-/// Вывести mysqlxx::Row в tab-separated виде
+/// Output mysqlxx::Row in tab-separated form
 inline void writeEscapedRow(const mysqlxx::Row & row, WriteBuffer & buf)
 {
     for (size_t i = 0; i < row.size(); ++i)

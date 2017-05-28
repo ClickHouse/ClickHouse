@@ -9,8 +9,8 @@
 namespace DB
 {
 
-/** Пишет данные в строку.
-  * Замечение: перед использованием полученной строки, уничтожте этот объект.
+/** Writes the data to a string.
+  * Note: before using the resulting string, destroy this object.
   */
 class WriteBufferFromString : public WriteBuffer
 {

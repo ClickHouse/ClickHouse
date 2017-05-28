@@ -17,7 +17,7 @@ constexpr auto DEFAULT_REMOTE_WRITE_BUFFER_SEND_TIMEOUT = 1800;
 
 }
 
-/** Позволяет писать файл на удалённый сервер.
+/** Allows you to write a file to a remote server.
   */
 class InterserverWriteBuffer final : public WriteBuffer
 {
@@ -44,10 +44,10 @@ private:
     std::string path;
 
     Poco::Net::HTTPClientSession session;
-    std::ostream * ostr;    /// этим владеет session
+    std::ostream * ostr;    /// this is owned by session
     std::unique_ptr<WriteBuffer> impl;
 
-    /// Отправили все данные и переименовали файл
+    /// Sent all the data and renamed the file
     bool finalized = false;
 };
 
