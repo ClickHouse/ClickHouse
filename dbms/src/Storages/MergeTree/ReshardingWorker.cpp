@@ -959,7 +959,7 @@ void ReshardingWorker::publishShardedPartitions()
 
     ThreadPool pool(remote_count);
 
-    using Tasks = std::vector<std::packaged_task<bool()> >;
+    using Tasks = std::vector<std::packaged_task<bool()>>;
     Tasks tasks(remote_count);
 
     ReplicatedMergeTreeAddress local_address{zookeeper->get(storage.replica_path + "/host")};
@@ -1114,7 +1114,7 @@ void ReshardingWorker::commit()
     size_t pool_size = operation_count;
     ThreadPool pool(pool_size);
 
-    using Tasks = std::vector<std::packaged_task<void()> >;
+    using Tasks = std::vector<std::packaged_task<void()>>;
     Tasks tasks(pool_size);
 
     try
@@ -1312,7 +1312,7 @@ bool ReshardingWorker::checkAttachLogRecord(LogRecord & log_record)
 
     ThreadPool pool(task_info_list.size());
 
-    using Tasks = std::vector<std::packaged_task<RemotePartChecker::Status()> >;
+    using Tasks = std::vector<std::packaged_task<RemotePartChecker::Status()>>;
     Tasks tasks(task_info_list.size());
 
     try

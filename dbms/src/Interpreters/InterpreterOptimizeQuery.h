@@ -1,19 +1,22 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 
 
 namespace DB
 {
 
+class Context;
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
-/** Просто вызвать метод optimize у таблицы.
+
+/** Just call method "optimize" for table.
   */
 class InterpreterOptimizeQuery : public IInterpreter
 {
 public:
-    InterpreterOptimizeQuery(ASTPtr query_ptr_, Context & context_)
+    InterpreterOptimizeQuery(const ASTPtr & query_ptr_, Context & context_)
         : query_ptr(query_ptr_), context(context_)
     {
     }
@@ -22,7 +25,7 @@ public:
 
 private:
     ASTPtr query_ptr;
-    Context context;
+    Context & context;
 };
 
 

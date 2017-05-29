@@ -26,7 +26,7 @@ class Query
 {
 public:
     Query(IQueryConstructor & query_constructor_, const ClusterPtr & cluster_,
-        ASTPtr query_ast_, const Context & context_, const Settings & settings_, bool enable_shard_multiplexing_);
+        const ASTPtr & query_ast_, const Context & context_, const Settings & settings_, bool enable_shard_multiplexing_);
 
     /// For each location at which we perform the query, create an input stream
     /// from which we can fetch the result.

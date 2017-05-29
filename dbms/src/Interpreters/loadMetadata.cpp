@@ -12,6 +12,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
 
 #include <IO/ReadBufferFromFile.h>
@@ -87,7 +88,14 @@ void loadMetadata(Context & context)
         else
             database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database);
 
-        executeCreateQuery(database_attach_query, context, database, it->path(), thread_pool, has_force_restore_data_flag);
+        bool force_restore_data = has_force_restore_data_flag;
+
+        /// For special system database, always restore data
+        ///  to not fail on loading query_log and part_log tables, if they are corrupted.
+        if (database == "system")
+            force_restore_data = true;
+
+        executeCreateQuery(database_attach_query, context, database, it->path(), thread_pool, force_restore_data);
     }
 
     thread_pool.wait();

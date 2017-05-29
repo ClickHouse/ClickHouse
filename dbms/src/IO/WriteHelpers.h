@@ -31,7 +31,7 @@ namespace ErrorCodes
     extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
 }
 
-/// Функции-помошники для форматированной записи
+/// Helper functions for formatted and binary output.
 
 inline void writeChar(char x, WriteBuffer & buf)
 {
@@ -41,7 +41,7 @@ inline void writeChar(char x, WriteBuffer & buf)
 }
 
 
-/// Запись POD-типа в native формате
+/// Write POD-type in native format. It's recommended to use only with packed (dense) data types.
 template <typename T>
 inline void writePODBinary(const T & x, WriteBuffer & buf)
 {

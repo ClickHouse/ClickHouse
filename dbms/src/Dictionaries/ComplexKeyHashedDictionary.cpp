@@ -43,7 +43,7 @@ ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(const ComplexKeyHashedDic
 
 #define DECLARE(TYPE)\
 void ComplexKeyHashedDictionary::get##TYPE(\
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
     PaddedPODArray<TYPE> & out) const\
 {\
     dict_struct.validateKeyTypes(key_types);\
@@ -73,7 +73,7 @@ DECLARE(Float64)
 #undef DECLARE
 
 void ComplexKeyHashedDictionary::getString(
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
     ColumnString * out) const
 {
     dict_struct.validateKeyTypes(key_types);
@@ -93,7 +93,7 @@ void ComplexKeyHashedDictionary::getString(
 
 #define DECLARE(TYPE)\
 void ComplexKeyHashedDictionary::get##TYPE(\
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
     const PaddedPODArray<TYPE> & def, PaddedPODArray<TYPE> & out) const\
 {\
     dict_struct.validateKeyTypes(key_types);\
@@ -121,7 +121,7 @@ DECLARE(Float64)
 #undef DECLARE
 
 void ComplexKeyHashedDictionary::getString(
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
     const ColumnString * const def, ColumnString * const out) const
 {
     dict_struct.validateKeyTypes(key_types);
@@ -139,7 +139,7 @@ void ComplexKeyHashedDictionary::getString(
 
 #define DECLARE(TYPE)\
 void ComplexKeyHashedDictionary::get##TYPE(\
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
     const TYPE def, PaddedPODArray<TYPE> & out) const\
 {\
     dict_struct.validateKeyTypes(key_types);\
@@ -167,7 +167,7 @@ DECLARE(Float64)
 #undef DECLARE
 
 void ComplexKeyHashedDictionary::getString(
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
     const String & def, ColumnString * const out) const
 {
     dict_struct.validateKeyTypes(key_types);
@@ -183,7 +183,7 @@ void ComplexKeyHashedDictionary::getString(
         [&] (const std::size_t) { return StringRef{def}; });
 }
 
-void ComplexKeyHashedDictionary::has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
+void ComplexKeyHashedDictionary::has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
 {
     dict_struct.validateKeyTypes(key_types);
 
@@ -238,14 +238,14 @@ void ComplexKeyHashedDictionary::loadData()
         const auto rows = block.rows();
         element_count += rows;
 
-        const auto key_column_ptrs = ext::map<ConstColumnPlainPtrs>(ext::range(0, keys_size),
+        const auto key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size),
             [&] (const std::size_t attribute_idx) {
-                return block.safeGetByPosition(attribute_idx).column.get();
+                return block.safeGetByPosition(attribute_idx).column;
             });
 
-        const auto attribute_column_ptrs = ext::map<ConstColumnPlainPtrs>(ext::range(0, attributes_size),
+        const auto attribute_column_ptrs = ext::map<Columns>(ext::range(0, attributes_size),
             [&] (const std::size_t attribute_idx) {
-                return block.safeGetByPosition(keys_size + attribute_idx).column.get();
+                return block.safeGetByPosition(keys_size + attribute_idx).column;
             });
 
         for (const auto row_idx : ext::range(0, rows))
@@ -357,7 +357,7 @@ ComplexKeyHashedDictionary::Attribute ComplexKeyHashedDictionary::createAttribut
 template <typename OutputType, typename ValueSetter, typename DefaultGetter>
 void ComplexKeyHashedDictionary::getItemsNumber(
     const Attribute & attribute,
-    const ConstColumnPlainPtrs & key_columns,
+    const Columns & key_columns,
     ValueSetter && set_value,
     DefaultGetter && get_default) const
 {
@@ -383,7 +383,7 @@ void ComplexKeyHashedDictionary::getItemsNumber(
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 void ComplexKeyHashedDictionary::getItemsImpl(
     const Attribute & attribute,
-    const ConstColumnPlainPtrs & key_columns,
+    const Columns & key_columns,
     ValueSetter && set_value,
     DefaultGetter && get_default) const
 {
@@ -457,7 +457,7 @@ const ComplexKeyHashedDictionary::Attribute & ComplexKeyHashedDictionary::getAtt
 }
 
 StringRef ComplexKeyHashedDictionary::placeKeysInPool(
-    const std::size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
+    const std::size_t row, const Columns & key_columns, StringRefs & keys, Arena & pool)
 {
     const auto keys_size = key_columns.size();
     size_t sum_keys_size{};
@@ -480,7 +480,7 @@ StringRef ComplexKeyHashedDictionary::placeKeysInPool(
 }
 
 template <typename T>
-void ComplexKeyHashedDictionary::has(const Attribute & attribute, const ConstColumnPlainPtrs & key_columns, PaddedPODArray<UInt8> & out) const
+void ComplexKeyHashedDictionary::has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const
 {
     const auto & attr = *std::get<ContainerPtrType<T>>(attribute.maps);
     const auto keys_size = key_columns.size();

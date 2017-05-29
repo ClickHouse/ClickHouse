@@ -5,6 +5,7 @@
 
 #include <IO/WriteBufferFromFileDescriptor.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/executeQuery.h>
 

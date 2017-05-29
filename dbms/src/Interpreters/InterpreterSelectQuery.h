@@ -41,14 +41,14 @@ public:
      */
 
     InterpreterSelectQuery(
-        ASTPtr query_ptr_,
+        const ASTPtr & query_ptr_,
         const Context & context_,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
         BlockInputStreamPtr input = nullptr);
 
     InterpreterSelectQuery(
-        ASTPtr query_ptr_,
+        const ASTPtr & query_ptr_,
         const Context & context_,
         const Names & required_column_names,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
@@ -56,7 +56,7 @@ public:
         BlockInputStreamPtr input = nullptr);
 
     InterpreterSelectQuery(
-        ASTPtr query_ptr_,
+        const ASTPtr & query_ptr_,
         const Context & context_,
         const Names & required_column_names,
         const NamesAndTypesList & table_column_names_,
@@ -79,7 +79,7 @@ public:
     Block getSampleBlock();
 
     static Block getSampleBlock(
-        ASTPtr query_ptr_,
+        const ASTPtr & query_ptr_,
         const Context & context_);
 
 private:
@@ -90,7 +90,7 @@ private:
     struct OnlyAnalyzeTag {};
     InterpreterSelectQuery(
         OnlyAnalyzeTag,
-        ASTPtr query_ptr_,
+        const ASTPtr & query_ptr_,
         const Context & context_);
 
     void init(BlockInputStreamPtr input, const Names & required_column_names = Names{});
@@ -157,7 +157,6 @@ private:
     void ignoreWithTotals();
 
     /** Если в запросе SELECT есть секция SETTINGS, то применить настройки из неё.
-      * Затем достать настройки из context и поместить их в settings.
       *
       * Секция SETTINGS - настройки для конкретного запроса.
       * Обычно настройки могут быть переданы другими способами, не внутри запроса.
@@ -168,8 +167,6 @@ private:
     ASTPtr query_ptr;
     ASTSelectQuery & query;
     Context context;
-    Settings settings;
-    size_t original_max_threads; /// В settings настройка max_threads может быть изменена. В original_max_threads сохраняется изначальное значение.
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;

@@ -146,7 +146,8 @@ static std::vector<String> parseDescription(const String & description, size_t l
                     }
                     buffer.push_back(cur);
                 }
-            } else if (have_splitter) /// If there is a current delimiter inside, then generate a set of resulting rows
+            }
+            else if (have_splitter) /// If there is a current delimiter inside, then generate a set of resulting rows
                 buffer = parseDescription(description, i + 1, m, separator, max_addresses);
             else                     /// Otherwise just copy, spawn will occur when you call with the correct delimiter
                 buffer.push_back(description.substr(i, m - i + 1));
@@ -168,15 +169,17 @@ static std::vector<String> parseDescription(const String & description, size_t l
             append(cur, buffer, max_addresses);
         }
     }
+
     res.insert(res.end(), cur.begin(), cur.end());
     if (res.size() > max_addresses)
         throw Exception("Storage Distributed, first argument generates too many result addresses",
-                        ErrorCodes::BAD_ARGUMENTS);
+            ErrorCodes::BAD_ARGUMENTS);
+
     return res;
 }
 
 
-StoragePtr TableFunctionRemote::execute(ASTPtr ast_function, Context & context) const
+StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Context & context) const
 {
     ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 

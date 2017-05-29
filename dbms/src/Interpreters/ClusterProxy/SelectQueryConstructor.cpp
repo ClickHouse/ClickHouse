@@ -26,7 +26,7 @@ SelectQueryConstructor::SelectQueryConstructor(
 {
 }
 
-BlockInputStreamPtr SelectQueryConstructor::createLocal(ASTPtr query_ast, const Context & context, const Cluster::Address & address)
+BlockInputStreamPtr SelectQueryConstructor::createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address)
 {
     InterpreterSelectQuery interpreter{query_ast, context, processed_stage};
     BlockInputStreamPtr stream = interpreter.execute().in;

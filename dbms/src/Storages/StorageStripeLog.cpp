@@ -29,7 +29,7 @@
 
 #include <Columns/ColumnArray.h>
 
-#include <Interpreters/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <Storages/StorageStripeLog.h>
 #include <Poco/DirectoryIterator.h>
@@ -239,9 +239,8 @@ void StorageStripeLog::rename(const String & new_path_to_db, const String & new_
 
 BlockInputStreams StorageStripeLog::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     unsigned threads)
@@ -273,7 +272,8 @@ BlockInputStreams StorageStripeLog::read(
         std::advance(begin, thread * size / threads);
         std::advance(end, (thread + 1) * size / threads);
 
-        res.emplace_back(std::make_shared<StripeLogBlockInputStream>(column_names_set, *this, settings.max_read_buffer_size, index, begin, end));
+        res.emplace_back(std::make_shared<StripeLogBlockInputStream>(
+            column_names_set, *this, context.getSettingsRef().max_read_buffer_size, index, begin, end));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.

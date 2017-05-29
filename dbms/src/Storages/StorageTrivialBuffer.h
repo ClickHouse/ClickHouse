@@ -61,9 +61,8 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const ASTPtr & query,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1) override;
@@ -83,7 +82,7 @@ public:
             const String & new_table_name) override { name = new_table_name; }
 
     bool supportsSampling() const override { return true; }
-    bool supportsPrewhere() const override { return true; }
+    bool supportsPrewhere() const override { return false; }
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
     bool supportsParallelReplicas() const override { return true; }
@@ -220,8 +219,8 @@ private:
         const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
         const String & destination_database_, const String & destination_table_);
 
-    template <typename DeduplicatioController>
-    void addBlock(const Block & block, DeduplicatioController & deduplication_controller);
+    template <typename DeduplicationController>
+    void addBlock(const Block & block, DeduplicationController & deduplication_controller);
     /// Parameter 'table' is passed because it's sometimes pre-computed. It should
     /// conform the 'destination_table'.
     void writeBlockToDestination(const Block & block, StoragePtr table);

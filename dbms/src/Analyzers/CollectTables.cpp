@@ -49,7 +49,7 @@ static CollectTables::TableInfo processOrdinaryTable(const ASTPtr & ast_database
 }
 
 
-static CollectTables::TableInfo processTableFunction(const ASTPtr & ast_table_function, Context & context)
+static CollectTables::TableInfo processTableFunction(const ASTPtr & ast_table_function, const Context & context)
 {
     const ASTFunction & function = typeid_cast<const ASTFunction &>(*ast_table_function);
 
@@ -78,7 +78,7 @@ static CollectTables::TableInfo processNoTables(const Context & context)
 }
 
 
-static CollectTables::TableInfo processSubquery(ASTPtr & ast_subquery, Context & context)
+static CollectTables::TableInfo processSubquery(ASTPtr & ast_subquery, const Context & context)
 {
     AnalyzeResultOfQuery analyzer;
     analyzer.process(typeid_cast<ASTSubquery &>(*ast_subquery).children.at(0), context);
@@ -91,7 +91,7 @@ static CollectTables::TableInfo processSubquery(ASTPtr & ast_subquery, Context &
 }
 
 
-void CollectTables::process(ASTPtr & ast, Context & context, const CollectAliases & aliases)
+void CollectTables::process(ASTPtr & ast, const Context & context, const CollectAliases & aliases)
 {
     const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(ast.get());
     if (!select)

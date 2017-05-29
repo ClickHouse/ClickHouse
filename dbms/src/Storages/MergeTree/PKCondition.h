@@ -202,7 +202,7 @@ class PKCondition
 {
 public:
     /// Does not include the SAMPLE section. all_columns - the set of all columns of the table.
-    PKCondition(ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr,
+    PKCondition(const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr,
         const Block & pk_sample_block);
 
     /// Whether the condition is feasible in the key range.
@@ -274,7 +274,7 @@ public:
     static Block getBlockWithConstants(
         const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns);
 
-    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, ASTPtr & node)>;
+    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const ASTPtr & node)>;
     static const AtomMap atom_map;
 
 private:
@@ -290,8 +290,8 @@ private:
 
     bool mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, const DataTypes & data_types) const;
 
-    void traverseAST(ASTPtr & node, const Context & context, Block & block_with_constants);
-    bool atomFromAST(ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
+    void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
+    bool atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
     bool operatorFromAST(const ASTFunction * func, RPNElement & out);
 
     /** Is node the primary key column

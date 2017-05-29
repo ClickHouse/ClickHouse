@@ -379,8 +379,17 @@ void processImpl(ASTPtr & ast, AnalyzeColumns::Columns & columns, const CollectA
 
 void AnalyzeColumns::process(ASTPtr & ast, const CollectAliases & aliases, const CollectTables & tables)
 {
+    /// If this is SELECT query, don't go into FORMAT and SETTINGS clauses
+    /// - they contain identifiers that are not columns.
+    const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(ast.get());
+
     for (auto & child : ast->children)
+    {
+        if (select && (child.get() == select->format.get() || child.get() == select->settings.get()))
+            continue;
+
         processImpl(child, columns, aliases, tables);
+    }
 }
 
 

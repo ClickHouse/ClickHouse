@@ -128,14 +128,14 @@ void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & st
         }
         else if (p.type == ASTAlterQuery::ATTACH_PARTITION)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ATTACH " << (p.unreplicated ? "UNREPLICATED " : "")
-            << (p.part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ATTACH "
+                << (p.part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
             p.partition->formatImpl(settings, state, frame);
         }
         else if (p.type == ASTAlterQuery::FETCH_PARTITION)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FETCH " << (p.unreplicated ? "UNREPLICATED " : "")
-            << "PARTITION " << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FETCH "
+                << "PARTITION " << (settings.hilite ? hilite_none : "");
             p.partition->formatImpl(settings, state, frame);
             settings.ostr << (settings.hilite ? hilite_keyword : "")
                 << " FROM " << (settings.hilite ? hilite_none : "") << std::quoted(p.from, '\'');

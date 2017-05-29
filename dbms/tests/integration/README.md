@@ -6,10 +6,11 @@ This directory contains tests that involve several ClickHouse instances, custom 
 
 Prerequisites:
 * [docker](https://www.docker.com/community-edition#/download). Minimum required API version: 1.25, check with `docker version`.
+* [pip](https://pypi.python.org/pypi/pip). To install: `sudo apt-get install python-pip`
 * [docker-compose](https://docs.docker.com/compose/). To install: `sudo pip install docker-compose`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo pip install pytest`
 
-If you want to run the tests under a non-privileged user, you must add this user to `docker` group: `sudo usermod -aG docker $USER`.
+If you want to run the tests under a non-privileged user, you must add this user to `docker` group: `sudo usermod -aG docker $USER` and re-login.
 
 Run the tests with the `pytest` command. To select which tests to run, use: `pytest -k <test_name_pattern>`
 

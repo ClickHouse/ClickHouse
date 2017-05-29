@@ -1,5 +1,6 @@
 #include <IO/ReadBufferFromString.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 
@@ -10,17 +11,9 @@
 namespace DB
 {
 
-
 BlockIO InterpreterShowProcesslistQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), context, true);
+    return executeQuery("SELECT * FROM system.processes", context, true);
 }
-
-
-String InterpreterShowProcesslistQuery::getRewrittenQuery()
-{
-    return "SELECT * FROM system.processes";
-}
-
 
 }

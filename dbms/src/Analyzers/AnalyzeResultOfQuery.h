@@ -19,7 +19,7 @@ class Context;
   */
 struct AnalyzeResultOfQuery
 {
-    void process(ASTPtr & ast, Context & context);
+    void process(ASTPtr & ast, const Context & context);
 
     /// Block will have non-nullptr columns for constant expressions.
     Block result;

@@ -31,7 +31,7 @@ namespace ErrorCodes
 }
 
 
-InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, const Context & context_)
+InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, const Context & context_)
     : query_ptr(query_ptr_), context(context_)
 {
 }
@@ -52,11 +52,11 @@ BlockIO InterpreterAlterQuery::execute()
         switch (command.type)
         {
             case PartitionCommand::DROP_PARTITION:
-                table->dropPartition(query_ptr, command.partition, command.detach, command.unreplicated, context.getSettingsRef());
+                table->dropPartition(query_ptr, command.partition, command.detach, context.getSettingsRef());
                 break;
 
             case PartitionCommand::ATTACH_PARTITION:
-                table->attachPartition(query_ptr, command.partition, command.unreplicated, command.part, context.getSettingsRef());
+                table->attachPartition(query_ptr, command.partition, command.part, context.getSettingsRef());
                 break;
 
             case PartitionCommand::FETCH_PARTITION:
@@ -173,12 +173,12 @@ void InterpreterAlterQuery::parseAlter(
         else if (params.type == ASTAlterQuery::DROP_PARTITION)
         {
             const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-            out_partition_commands.emplace_back(PartitionCommand::dropPartition(partition, params.detach, params.unreplicated));
+            out_partition_commands.emplace_back(PartitionCommand::dropPartition(partition, params.detach));
         }
         else if (params.type == ASTAlterQuery::ATTACH_PARTITION)
         {
             const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-            out_partition_commands.emplace_back(PartitionCommand::attachPartition(partition, params.unreplicated, params.part));
+            out_partition_commands.emplace_back(PartitionCommand::attachPartition(partition, params.part));
         }
         else if (params.type == ASTAlterQuery::FETCH_PARTITION)
         {

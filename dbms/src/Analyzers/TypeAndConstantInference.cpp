@@ -56,7 +56,7 @@ using LambdaParameters = std::unordered_map<String, DataTypePtr>;
 
 
 void processImpl(
-    ASTPtr & ast, Context & context,
+    ASTPtr & ast, const Context & context,
     CollectAliases & aliases, const AnalyzeColumns & columns,
     TypeAndConstantInference::Info & info,
     const AnalyzeLambdas & lambdas);
@@ -76,7 +76,7 @@ void processLiteral(const String & column_name, const ASTPtr & ast, TypeAndConst
 
 
 void processIdentifier(const String & column_name, const ASTPtr & ast, TypeAndConstantInference::Info & info,
-    Context & context, CollectAliases & aliases, const AnalyzeColumns & columns,
+    const Context & context, CollectAliases & aliases, const AnalyzeColumns & columns,
     const AnalyzeLambdas & lambdas)
 {
     /// Column from table
@@ -258,7 +258,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
 
 
 void processScalarSubquery(const String & column_name, ASTPtr & ast, TypeAndConstantInference::Info & info,
-    Context & context)
+    const Context & context)
 {
     ASTSubquery * subquery = static_cast<ASTSubquery *>(ast.get());
 
@@ -316,7 +316,7 @@ void processScalarSubquery(const String & column_name, ASTPtr & ast, TypeAndCons
 
 
 void processHigherOrderFunction(const String & column_name,
-    ASTPtr & ast, Context & context,
+    ASTPtr & ast, const Context & context,
     CollectAliases & aliases, const AnalyzeColumns & columns,
     TypeAndConstantInference::Info & info,
     const AnalyzeLambdas & lambdas)
@@ -395,7 +395,7 @@ void processHigherOrderFunction(const String & column_name,
 
 
 void processImpl(
-    ASTPtr & ast, Context & context,
+    ASTPtr & ast, const Context & context,
     CollectAliases & aliases, const AnalyzeColumns & columns,
     TypeAndConstantInference::Info & info,
     const AnalyzeLambdas & lambdas)
@@ -468,7 +468,7 @@ void processImpl(
 }
 
 
-void TypeAndConstantInference::process(ASTPtr & ast, Context & context,
+void TypeAndConstantInference::process(ASTPtr & ast, const Context & context,
     CollectAliases & aliases, const AnalyzeColumns & columns, const AnalyzeLambdas & lambdas)
 {
     processImpl(ast, context, aliases, columns, info, lambdas);
