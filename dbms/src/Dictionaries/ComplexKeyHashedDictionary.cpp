@@ -529,16 +529,17 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys(const Attribute& attr
 {
     const ContainerType<T> & attr = *std::get<ContainerPtrType<T>>(attribute.maps);
     std::vector<StringRef> keys;
+    keys.reserve(attr.size());
     for (const auto & key : attr)
         keys.push_back(key.first);
 
     return keys;
 }
 
-BlockInputStreamPtr ComplexKeyHashedDictionary::getBlockInputStream(const Names & column_names) const
+BlockInputStreamPtr ComplexKeyHashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<ComplexKeyHashedDictionary, UInt64>;
-    return std::move(std::make_unique<BlockInputStreamType>(shared_from_this(), 2, getKeys(), column_names));
+    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getKeys(), column_names);
 }
 
 

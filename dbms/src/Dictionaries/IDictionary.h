@@ -55,7 +55,7 @@ struct IDictionaryBase : public std::enable_shared_from_this<IDictionaryBase>
 
     virtual bool isInjective(const std::string & attribute_name) const = 0;
 
-    virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names) const = 0;
+    virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
 
     virtual ~IDictionaryBase() = default;
 };

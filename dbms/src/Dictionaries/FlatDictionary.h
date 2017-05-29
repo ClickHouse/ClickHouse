@@ -125,7 +125,7 @@ public:
 
     void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
     template <typename Value> using ContainerType = PaddedPODArray<Value>;

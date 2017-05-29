@@ -539,11 +539,10 @@ PaddedPODArray<FlatDictionary::Key> FlatDictionary::getIds() const
     return ids;
 }
 
-BlockInputStreamPtr FlatDictionary::getBlockInputStream(const Names & column_names) const
+BlockInputStreamPtr FlatDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<FlatDictionary, Key>;
-    auto block_input_stream = std::make_unique<BlockInputStreamType>(shared_from_this(), 2, getIds() ,column_names);
-    return BlockInputStreamPtr(std::move(block_input_stream));
+    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds() ,column_names);
 }
 
 

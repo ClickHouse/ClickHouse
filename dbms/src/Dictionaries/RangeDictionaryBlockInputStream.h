@@ -27,7 +27,9 @@ public:
         DictionatyPtr dictionary, size_t max_block_size, const Names & column_names, PaddedPODArray<Key> && ids,
         PaddedPODArray<UInt16> && start_dates, PaddedPODArray<UInt16> && end_dates);
 
-    String getName() const override { return "RangeDictionaryBlockInputStream"; }
+    String getName() const override {
+        return "RangeDictionaryBlockInputStream";
+    }
 
 protected:
     Block getBlock(size_t start, size_t length) const override;
@@ -35,7 +37,7 @@ protected:
 private:
     template <class Type>
     using DictionaryGetter = void (DictionaryType::*)(const std::string &, const PaddedPODArray<Key> &,
-                                                      const PaddedPODArray<UInt16> &, PaddedPODArray<Type> &) const;
+                             const PaddedPODArray<UInt16> &, PaddedPODArray<Type> &) const;
 
     template <class AttributeType>
     ColumnPtr getColumnFromAttribute(DictionaryGetter<AttributeType> getter,
@@ -68,8 +70,8 @@ RangeDictionaryBlockInputStream<DictionaryType, Key>::RangeDictionaryBlockInputS
     DictionatyPtr dictionary, size_t max_column_size, const Names & column_names, PaddedPODArray<Key> && ids,
     PaddedPODArray<UInt16> && start_dates, PaddedPODArray<UInt16> && end_dates)
     : DictionaryBlockInputStreamBase(ids.size(), max_column_size),
-    dictionary(dictionary), column_names(column_names),
-    ids(std::move(ids)), start_dates(std::move(start_dates)), end_dates(std::move(end_dates))
+      dictionary(dictionary), column_names(column_names),
+      ids(std::move(ids)), start_dates(std::move(start_dates)), end_dates(std::move(end_dates))
 {
 }
 
@@ -164,22 +166,43 @@ Block RangeDictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
         if (names.find(attribute.name) != names.end())
         {
             ColumnPtr column;
-            #define GET_COLUMN_FORM_ATTRIBUTE(TYPE)\
+#define GET_COLUMN_FORM_ATTRIBUTE(TYPE)\
             column = getColumnFromAttribute<TYPE>(&DictionaryType::get##TYPE, ids, start_dates, attribute, *dictionary)
             switch (attribute.underlying_type)
             {
-                case AttributeUnderlyingType::UInt8: GET_COLUMN_FORM_ATTRIBUTE(UInt8); break;
-                case AttributeUnderlyingType::UInt16: GET_COLUMN_FORM_ATTRIBUTE(UInt16); break;
-                case AttributeUnderlyingType::UInt32: GET_COLUMN_FORM_ATTRIBUTE(UInt32); break;
-                case AttributeUnderlyingType::UInt64: GET_COLUMN_FORM_ATTRIBUTE(UInt64); break;
-                case AttributeUnderlyingType::Int8: GET_COLUMN_FORM_ATTRIBUTE(Int8); break;
-                case AttributeUnderlyingType::Int16: GET_COLUMN_FORM_ATTRIBUTE(Int16); break;
-                case AttributeUnderlyingType::Int32: GET_COLUMN_FORM_ATTRIBUTE(Int32); break;
-                case AttributeUnderlyingType::Int64: GET_COLUMN_FORM_ATTRIBUTE(Int64); break;
-                case AttributeUnderlyingType::Float32: GET_COLUMN_FORM_ATTRIBUTE(Float32); break;
-                case AttributeUnderlyingType::Float64: GET_COLUMN_FORM_ATTRIBUTE(Float64); break;
-                case AttributeUnderlyingType::String:
-                    column = getColumnFromAttributeString(ids, start_dates, attribute, *dictionary); break;
+            case AttributeUnderlyingType::UInt8:
+                GET_COLUMN_FORM_ATTRIBUTE(UInt8);
+                break;
+            case AttributeUnderlyingType::UInt16:
+                GET_COLUMN_FORM_ATTRIBUTE(UInt16);
+                break;
+            case AttributeUnderlyingType::UInt32:
+                GET_COLUMN_FORM_ATTRIBUTE(UInt32);
+                break;
+            case AttributeUnderlyingType::UInt64:
+                GET_COLUMN_FORM_ATTRIBUTE(UInt64);
+                break;
+            case AttributeUnderlyingType::Int8:
+                GET_COLUMN_FORM_ATTRIBUTE(Int8);
+                break;
+            case AttributeUnderlyingType::Int16:
+                GET_COLUMN_FORM_ATTRIBUTE(Int16);
+                break;
+            case AttributeUnderlyingType::Int32:
+                GET_COLUMN_FORM_ATTRIBUTE(Int32);
+                break;
+            case AttributeUnderlyingType::Int64:
+                GET_COLUMN_FORM_ATTRIBUTE(Int64);
+                break;
+            case AttributeUnderlyingType::Float32:
+                GET_COLUMN_FORM_ATTRIBUTE(Float32);
+                break;
+            case AttributeUnderlyingType::Float64:
+                GET_COLUMN_FORM_ATTRIBUTE(Float64);
+                break;
+            case AttributeUnderlyingType::String:
+                column = getColumnFromAttributeString(ids, start_dates, attribute, *dictionary);
+                break;
             }
 
             columns.emplace_back(column, attribute.type, attribute.name);

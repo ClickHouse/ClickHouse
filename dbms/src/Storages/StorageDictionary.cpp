@@ -56,16 +56,15 @@ StorageDictionary::StorageDictionary(
 
 BlockInputStreams StorageDictionary::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr& query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned threads)
 {
     processed_stage = QueryProcessingStage::Complete;
     auto dictionary = external_dictionaries.getDictionary(dictionary_name);
-    return BlockInputStreams{dictionary->getBlockInputStream(column_names)};
+    return BlockInputStreams{dictionary->getBlockInputStream(column_names, max_block_size)};
 }
 
 NamesAndTypes StorageDictionary::getNamesAndTypesFromDictionaryStructure(Ptr dictionary) const

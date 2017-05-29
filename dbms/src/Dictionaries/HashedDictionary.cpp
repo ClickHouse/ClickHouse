@@ -485,6 +485,7 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds(const Attribute &
     const HashMap<UInt64, T> & attr = *std::get<CollectionPtrType<T>>(attribute.maps);
 
     PaddedPODArray<Key> ids;
+    ids.reserve(attr.size());
     for (const auto & value : attr) {
         ids.push_back(value.first);
     }
@@ -512,11 +513,10 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
     return PaddedPODArray<Key>();
 }
 
-BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_names) const
+BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<HashedDictionary, Key>;
-    auto block_input_stream = std::make_unique<BlockInputStreamType>(shared_from_this(), 2, getIds(), column_names);
-    return BlockInputStreamPtr(std::move(block_input_stream));
+    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds(), column_names);
 }
 
 }

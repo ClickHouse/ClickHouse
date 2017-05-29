@@ -381,6 +381,10 @@ void RangeHashedDictionary::getIdsAndDates(const Attribute& attribute, PaddedPOD
 {
     const HashMap<UInt64, Values<T>> & attr = *std::get<Ptr<T>>(attribute.maps);
 
+    ids.reserve(attr.size());
+    start_dates.reserve(attr.size());
+    end_dates.reserve(attr.size());
+
     for (const auto & key : attr) {
         ids.push_back(key.first);
         for (const auto & value : key.second)
@@ -391,7 +395,7 @@ void RangeHashedDictionary::getIdsAndDates(const Attribute& attribute, PaddedPOD
     }
 }
 
-BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & column_names) const
+BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     PaddedPODArray<Key> ids;
     PaddedPODArray<UInt16> start_dates;
@@ -400,9 +404,8 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & col
 
     using BlockInputStreamType = RangeDictionaryBlockInputStream<RangeHashedDictionary, Key>;
     auto dict_ptr = std::static_pointer_cast<const RangeHashedDictionary>(shared_from_this());
-    auto block_input_stream = std::make_unique<BlockInputStreamType>(
-        dict_ptr, 2, column_names, std::move(ids), std::move(start_dates), std::move(end_dates));
-    return BlockInputStreamPtr(std::move(block_input_stream));
+    return std::make_shared<BlockInputStreamType>(
+        dict_ptr, max_block_size, column_names, std::move(ids), std::move(start_dates), std::move(end_dates));
 }
 
 

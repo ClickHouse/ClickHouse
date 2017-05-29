@@ -913,25 +913,23 @@ void ComplexKeyCacheDictionary::freeKey(const StringRef key) const
 
 template <typename Pool>
 StringRef ComplexKeyCacheDictionary::placeKeysInPool(
-    const size_t row, const Columns & key_columns, StringRefs & keys, Arena & pool)
+    const size_t row, const Columns & key_columns, StringRefs & keys, Pool & pool)
 {
     const auto keys_size = key_columns.size();
     size_t sum_keys_size{};
 
-    Arena arena;
-    const char * block_start = nullptr;
     for (size_t j = 0; j < keys_size; ++j)
     {
-        keys[j] = key_columns[j]->serializeValueIntoArena(row, arena, block_start);
+        keys[j].size = key_columns[j]->getSerializedSize(row);
         sum_keys_size += keys[j].size;
     }
 
     auto place = pool.alloc(sum_keys_size);
-    memcpy(place, block_start, sum_keys_size);
 
     auto key_start = place;
     for (size_t j = 0; j < keys_size; ++j)
     {
+        key_columns[j]->serializeValue(row, key_start);
         keys[j].data = key_start;
         key_start += keys[j].size;
     }
@@ -976,7 +974,7 @@ bool ComplexKeyCacheDictionary::isEmptyCell(const UInt64 idx) const
         || cells[idx].data == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t())));
 }
 
-BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names & column_names) const
+BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     std::vector<StringRef> keys;
     {
@@ -988,7 +986,7 @@ BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names &
     }
 
     using BlockInputStreamType = DictionaryBlockInputStream<ComplexKeyCacheDictionary, UInt64>;
-    return std::move(std::make_unique<BlockInputStreamType>(shared_from_this(), 2, keys, column_names));
+    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, keys, column_names);
 }
 
 

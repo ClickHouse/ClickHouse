@@ -59,8 +59,6 @@ public:
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names) const override;
-
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
@@ -139,6 +137,8 @@ public:
         ColumnString * const out) const;
 
     void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
+
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
     template <typename Value> using ContainerType = Value[];

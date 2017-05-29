@@ -79,7 +79,7 @@ public:
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
         ColumnString * out) const;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
     struct Range : std::pair<UInt16, UInt16>
