@@ -15,7 +15,7 @@ namespace DB
 class CompressedReadBufferFromFile : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
 {
 private:
- `  /** At any time, one of two things is true:
+      /** At any time, one of two things is true:
       * a) size_compressed = 0
       * b)
       *  - `working_buffer` contains the entire block.
