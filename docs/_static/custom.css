@@ -1,5 +1,8 @@
+div.document, div.footer {
+	width: 1240px;
+}
 div.sphinxsidebarwrapper {
-        padding: 2px 10px;
+	padding: 2px 10px;
 }
 
 div.sphinxsidebarwrapper p.logo {
