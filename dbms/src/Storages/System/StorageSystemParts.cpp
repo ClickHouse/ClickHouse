@@ -1,3 +1,4 @@
+#include <Storages/StorageLog.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -7,6 +8,7 @@
 #include <Storages/System/StorageSystemParts.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageLog.h>
 #include <Common/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 
@@ -23,6 +25,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
         {"name",                std::make_shared<DataTypeString>()},
         {"active",              std::make_shared<DataTypeUInt8>()},
         {"marks",               std::make_shared<DataTypeUInt64>()},
+        {"marks_size",          std::make_shared<DataTypeUInt64>()},
         {"rows",                std::make_shared<DataTypeUInt64>()},
         {"bytes",               std::make_shared<DataTypeUInt64>()},
         {"modification_time",   std::make_shared<DataTypeDateTime>()},
@@ -213,6 +216,7 @@ BlockInputStreams StorageSystemParts::read(
             block.getByPosition(i++).column->insert(part->name);
             block.getByPosition(i++).column->insert(static_cast<UInt64>(active_parts.count(part)));
             block.getByPosition(i++).column->insert(part->size);
+            block.getByPosition(i++).column->insert(part->size * part->columns.size() * sizeof(Mark));
             block.getByPosition(i++).column->insert(part->getExactSizeRows());
             block.getByPosition(i++).column->insert(static_cast<size_t>(part->size_in_bytes));
             block.getByPosition(i++).column->insert(part->modification_time);
