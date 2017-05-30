@@ -16,7 +16,6 @@
 #include <tuple>
 #include <random>
 
-class A;
 
 namespace DB
 {

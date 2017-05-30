@@ -505,7 +505,7 @@ void ComplexKeyHashedDictionary::has(const Attribute & attribute, const Columns 
 
 std::vector<StringRef> ComplexKeyHashedDictionary::getKeys() const
 {
-    const Attribute& attribute = attributes.front();
+    const Attribute & attribute = attributes.front();
 
     switch (attribute.type)
     {
@@ -525,7 +525,7 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys() const
 }
 
 template <typename T>
-std::vector<StringRef> ComplexKeyHashedDictionary::getKeys(const Attribute& attribute) const
+std::vector<StringRef> ComplexKeyHashedDictionary::getKeys(const Attribute & attribute) const
 {
     const ContainerType<T> & attr = *std::get<ContainerPtrType<T>>(attribute.maps);
     std::vector<StringRef> keys;
