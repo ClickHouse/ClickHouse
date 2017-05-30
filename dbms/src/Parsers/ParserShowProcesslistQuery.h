@@ -10,7 +10,7 @@
 namespace DB
 {
 
-/** Запрос SHOW PROCESSLIST
+/** Query SHOW PROCESSLIST
   */
 class ParserShowProcesslistQuery : public IParserBase
 {

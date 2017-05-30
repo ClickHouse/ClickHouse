@@ -35,7 +35,7 @@ struct ReplicatedMergeTreeLogEntryData
         GET_PART,       /// Get the part from another replica.
         MERGE_PARTS,    /// Merge the parts.
         DROP_RANGE,     /// Delete the parts in the specified month in the specified number range.
-        ATTACH_PART,    /// Move a part from the `detached` or `unreplicated` directory.
+        ATTACH_PART,    /// Move a part from the `detached` directory.
     };
 
     String typeToString() const
@@ -72,10 +72,8 @@ struct ReplicatedMergeTreeLogEntryData
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
 
-    /// For ATTACH_PART, the name of the part in the `detached` or `unreplicated` directory.
+    /// For ATTACH_PART, the name of the part in the `detached` directory.
     String source_part_name;
-    /// Must be moved from the `unreplicated` directory, not `detached`.
-    bool attach_unreplicated = false;
 
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     bool currently_executing = false;    /// Whether the action is executing now.

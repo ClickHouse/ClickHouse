@@ -4,7 +4,7 @@
 
 namespace DB
 {
-/** Запрос вида
+/** Query of form
  * CHECK [TABLE] [database.]table
  */
 class ParserCheckQuery : public IParserBase

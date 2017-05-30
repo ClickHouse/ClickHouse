@@ -1,5 +1,6 @@
 #include <Parsers/ASTRenameQuery.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
 
@@ -9,7 +10,7 @@ namespace DB
 {
 
 
-InterpreterRenameQuery::InterpreterRenameQuery(ASTPtr query_ptr_, Context & context_)
+InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_)
     : query_ptr(query_ptr_), context(context_)
 {
 }

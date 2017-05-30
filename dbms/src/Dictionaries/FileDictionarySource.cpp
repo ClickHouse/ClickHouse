@@ -1,5 +1,5 @@
 #include <Interpreters/Context.h>
-#include <Dictionaries/OwningBlockInputStream.h>
+#include <DataStreams/OwningBlockInputStream.h>
 #include <Dictionaries/FileDictionarySource.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Poco/File.h>

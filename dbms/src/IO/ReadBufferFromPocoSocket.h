@@ -9,16 +9,16 @@
 namespace DB
 {
 
-/** Работает с готовым Poco::Net::Socket. Операции блокирующие.
+/** Works with the ready Poco::Net::Socket. Blocking operations.
   */
 class ReadBufferFromPocoSocket : public BufferWithOwnMemory<ReadBuffer>
 {
 protected:
     Poco::Net::Socket & socket;
 
-    /** Для сообщений об ошибках. Нужно получать этот адрес заранее, так как,
-      *  например, если соединение разорвано, то адрес уже будет получить нельзя
-      *  (getpeername вернёт ошибку).
+    /** For error messages. It is necessary to receive this address in advance, because,
+      *  for example, if the connection is broken, the address will not be received anymore
+      *  (getpeername will return an error).
       */
     Poco::Net::SocketAddress peer_address;
 

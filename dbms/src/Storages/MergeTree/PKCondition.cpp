@@ -100,7 +100,7 @@ const PKCondition::AtomMap PKCondition::atom_map
 {
     {
         "notEquals",
-        [] (RPNElement & out, const Field & value, ASTPtr &)
+        [] (RPNElement & out, const Field & value, const ASTPtr &)
         {
             out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
             out.range = Range(value);
@@ -109,7 +109,7 @@ const PKCondition::AtomMap PKCondition::atom_map
     },
     {
         "equals",
-        [] (RPNElement & out, const Field & value, ASTPtr &)
+        [] (RPNElement & out, const Field & value, const ASTPtr &)
         {
             out.function = RPNElement::FUNCTION_IN_RANGE;
             out.range = Range(value);
@@ -118,7 +118,7 @@ const PKCondition::AtomMap PKCondition::atom_map
     },
     {
         "less",
-        [] (RPNElement & out, const Field & value, ASTPtr &)
+        [] (RPNElement & out, const Field & value, const ASTPtr &)
         {
             out.function = RPNElement::FUNCTION_IN_RANGE;
             out.range = Range::createRightBounded(value, false);
@@ -127,7 +127,7 @@ const PKCondition::AtomMap PKCondition::atom_map
     },
     {
         "greater",
-        [] (RPNElement & out, const Field & value, ASTPtr &)
+        [] (RPNElement & out, const Field & value, const ASTPtr &)
         {
             out.function = RPNElement::FUNCTION_IN_RANGE;
             out.range = Range::createLeftBounded(value, false);
@@ -136,7 +136,7 @@ const PKCondition::AtomMap PKCondition::atom_map
     },
     {
         "lessOrEquals",
-        [] (RPNElement & out, const Field & value, ASTPtr &)
+        [] (RPNElement & out, const Field & value, const ASTPtr &)
         {
             out.function = RPNElement::FUNCTION_IN_RANGE;
             out.range = Range::createRightBounded(value, true);
@@ -145,7 +145,7 @@ const PKCondition::AtomMap PKCondition::atom_map
     },
     {
         "greaterOrEquals",
-        [] (RPNElement & out, const Field & value, ASTPtr &)
+        [] (RPNElement & out, const Field & value, const ASTPtr &)
         {
             out.function = RPNElement::FUNCTION_IN_RANGE;
             out.range = Range::createLeftBounded(value, true);
@@ -154,7 +154,7 @@ const PKCondition::AtomMap PKCondition::atom_map
     },
     {
         "in",
-        [] (RPNElement & out, const Field &, ASTPtr & node)
+        [] (RPNElement & out, const Field &, const ASTPtr & node)
         {
             out.function = RPNElement::FUNCTION_IN_SET;
             out.in_function = node;
@@ -163,7 +163,7 @@ const PKCondition::AtomMap PKCondition::atom_map
     },
     {
         "notIn",
-        [] (RPNElement & out, const Field &, ASTPtr & node)
+        [] (RPNElement & out, const Field &, const ASTPtr & node)
         {
             out.function = RPNElement::FUNCTION_NOT_IN_SET;
             out.in_function = node;
@@ -172,7 +172,7 @@ const PKCondition::AtomMap PKCondition::atom_map
     },
     {
         "like",
-        [] (RPNElement & out, const Field & value, ASTPtr & node)
+        [] (RPNElement & out, const Field & value, const ASTPtr &)
         {
             if (value.getType() != Field::Types::String)
                 return false;
@@ -218,7 +218,7 @@ Block PKCondition::getBlockWithConstants(
 }
 
 
-PKCondition::PKCondition(ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns,
+PKCondition::PKCondition(const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns,
                          const SortDescription & sort_descr_, const Block & pk_sample_block_)
     : sort_descr(sort_descr_), pk_sample_block(pk_sample_block_)
 {
@@ -235,7 +235,7 @@ PKCondition::PKCondition(ASTPtr & query, const Context & context, const NamesAnd
     Block block_with_constants = getBlockWithConstants(query, context, all_columns);
 
     /// Trasform WHERE section to Reverse Polish notation
-    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*query);
+    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query);
     if (select.where_expression)
     {
         traverseAST(select.where_expression, context, block_with_constants);
@@ -297,7 +297,7 @@ static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field
         return false;
 }
 
-void PKCondition::traverseAST(ASTPtr & node, const Context & context, Block & block_with_constants)
+void PKCondition::traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants)
 {
     RPNElement element;
 
@@ -417,7 +417,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 }
 
 
-bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
+bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
 {
     /** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of primary key,
       *  or itself, wrapped in a chain of possibly-monotone functions,
@@ -484,7 +484,11 @@ bool PKCondition::atomFromAST(ASTPtr & node, const Context & context, Block & bl
         if (atom_it == std::end(atom_map))
             return false;
 
-        if (!is_set_const) /// Set args are already casted inside Set::createFromAST
+        bool cast_not_needed =
+            is_set_const /// Set args are already casted inside Set::createFromAST
+            || (key_expr_type->behavesAsNumber() && const_type->behavesAsNumber()); /// Numbers are accurately compared without cast.
+
+        if (!cast_not_needed)
             castValueToType(key_expr_type, const_value, const_type, node);
 
         return atom_it->second(out, const_value, node);
@@ -576,7 +580,7 @@ static void applyFunction(
   * A pair of marks specifies a segment with respect to the order over the tuples.
   * Denote it like this: [ x1 y1 z1 .. x2 y2 z2 ],
   *  where x1 y1 z1 - tuple - value of primary key in left border of segment;
-  *      x2 y2 z2 - tuple - value of primary key in right boundary of segment.
+  *        x2 y2 z2 - tuple - value of primary key in right boundary of segment.
   * In this section there are data between these marks.
   *
   * Or, the last mark specifies the range open on the right: [ a b c .. + inf )
@@ -695,7 +699,7 @@ bool PKCondition::mayBeTrueInRange(
 {
     std::vector<Range> key_ranges(used_key_size, Range());
 
-/*    std::cerr << "Checking for: [";
+/*  std::cerr << "Checking for: [";
     for (size_t i = 0; i != used_key_size; ++i)
         std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_pk[i]);
     std::cerr << " ... ";
@@ -714,7 +718,7 @@ bool PKCondition::mayBeTrueInRange(
     {
         auto res = mayBeTrueInRangeImpl(key_ranges, data_types);
 
-/*        std::cerr << "Parallelogram: ";
+/*      std::cerr << "Parallelogram: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
             std::cerr << (i != 0 ? " x " : "") << key_ranges[i].toString();
         std::cerr << ": " << res << "\n";*/

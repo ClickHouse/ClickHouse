@@ -9,7 +9,7 @@ struct ASTCheckQuery : public ASTQueryWithOutput
 {
     ASTCheckQuery(StringRange range_ = StringRange()) : ASTQueryWithOutput(range_) {};
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return ("CheckQuery_" + database + "_" + table); };
 
     ASTPtr clone() const override

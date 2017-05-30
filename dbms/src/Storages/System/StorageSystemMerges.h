@@ -23,9 +23,8 @@ public:
     const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const ASTPtr & query,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1) override;

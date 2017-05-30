@@ -51,7 +51,7 @@ TrieDictionary::~TrieDictionary()
 
 #define DECLARE(TYPE)\
 void TrieDictionary::get##TYPE(\
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
     PaddedPODArray<TYPE> & out) const\
 {\
     validateKeyTypes(key_types);\
@@ -81,7 +81,7 @@ DECLARE(Float64)
 #undef DECLARE
 
 void TrieDictionary::getString(
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
     ColumnString * out) const
 {
     validateKeyTypes(key_types);
@@ -101,7 +101,7 @@ void TrieDictionary::getString(
 
 #define DECLARE(TYPE)\
 void TrieDictionary::get##TYPE(\
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
     const PaddedPODArray<TYPE> & def, PaddedPODArray<TYPE> & out) const\
 {\
     validateKeyTypes(key_types);\
@@ -129,7 +129,7 @@ DECLARE(Float64)
 #undef DECLARE
 
 void TrieDictionary::getString(
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
     const ColumnString * const def, ColumnString * const out) const
 {
     validateKeyTypes(key_types);
@@ -147,7 +147,7 @@ void TrieDictionary::getString(
 
 #define DECLARE(TYPE)\
 void TrieDictionary::get##TYPE(\
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
     const TYPE def, PaddedPODArray<TYPE> & out) const\
 {\
     validateKeyTypes(key_types);\
@@ -175,7 +175,7 @@ DECLARE(Float64)
 #undef DECLARE
 
 void TrieDictionary::getString(
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
     const String & def, ColumnString * const out) const
 {
     validateKeyTypes(key_types);
@@ -191,7 +191,7 @@ void TrieDictionary::getString(
         [&] (const std::size_t) { return StringRef{def}; });
 }
 
-void TrieDictionary::has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
+void TrieDictionary::has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
 {
     validateKeyTypes(key_types);
 
@@ -246,14 +246,16 @@ void TrieDictionary::loadData()
         const auto rows = block.rows();
         element_count += rows;
 
-        const auto key_column_ptrs = ext::map<ConstColumnPlainPtrs>(ext::range(0, keys_size),
-            [&] (const std::size_t attribute_idx) {
-                return block.safeGetByPosition(attribute_idx).column.get();
+        const auto key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size),
+            [&] (const std::size_t attribute_idx)
+            {
+                return block.safeGetByPosition(attribute_idx).column;
             });
 
-        const auto attribute_column_ptrs = ext::map<ConstColumnPlainPtrs>(ext::range(0, attributes_size),
-            [&] (const std::size_t attribute_idx) {
-                return block.safeGetByPosition(keys_size + attribute_idx).column.get();
+        const auto attribute_column_ptrs = ext::map<Columns>(ext::range(0, attributes_size),
+            [&] (const std::size_t attribute_idx)
+            {
+                return block.safeGetByPosition(keys_size + attribute_idx).column;
             });
 
         for (const auto row_idx : ext::range(0, rows))
@@ -373,7 +375,7 @@ TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const Attribut
 template <typename OutputType, typename ValueSetter, typename DefaultGetter>
 void TrieDictionary::getItemsNumber(
     const Attribute & attribute,
-    const ConstColumnPlainPtrs & key_columns,
+    const Columns & key_columns,
     ValueSetter && set_value,
     DefaultGetter && get_default) const
 {
@@ -399,7 +401,7 @@ void TrieDictionary::getItemsNumber(
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 void TrieDictionary::getItemsImpl(
     const Attribute & attribute,
-    const ConstColumnPlainPtrs & key_columns,
+    const Columns & key_columns,
     ValueSetter && set_value,
     DefaultGetter && get_default) const
 {
@@ -514,7 +516,7 @@ const TrieDictionary::Attribute & TrieDictionary::getAttribute(const std::string
 }
 
 template <typename T>
-void TrieDictionary::has(const Attribute & attribute, const ConstColumnPlainPtrs & key_columns, PaddedPODArray<UInt8> & out) const
+void TrieDictionary::has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const
 {
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();

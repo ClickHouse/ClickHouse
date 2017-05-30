@@ -3,6 +3,7 @@
 #include <memory>
 #include <unordered_map>
 #include <set>
+#include <boost/noncopyable.hpp>
 #include <Core/Block.h>
 
 
@@ -30,12 +31,9 @@ using IdentifierNameSet = std::set<std::string>;
  *  Otherwise any condition with minimal summary column size can be transferred to PREWHERE, if only
  *  its relative size (summary column size divided by query column size) is less than `max_columns_relative_size`.
  */
-class MergeTreeWhereOptimizer
+class MergeTreeWhereOptimizer : private boost::noncopyable
 {
 public:
-    MergeTreeWhereOptimizer(const MergeTreeWhereOptimizer&) = delete;
-    MergeTreeWhereOptimizer& operator=(const MergeTreeWhereOptimizer&) = delete;
-
     MergeTreeWhereOptimizer(
         ASTPtr & query, const Context & context, const MergeTreeData & data, const Names & column_names,
         Poco::Logger * log);

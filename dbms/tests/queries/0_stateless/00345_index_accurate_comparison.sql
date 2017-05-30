@@ -15,5 +15,6 @@ select * from test.index where key = -1;
 OPTIMIZE TABLE test.index;
 select * from test.index where key = 1;
 select * from test.index where key = -1;
+select * from test.index where key < -0.5;
 
 DROP TABLE test.index;

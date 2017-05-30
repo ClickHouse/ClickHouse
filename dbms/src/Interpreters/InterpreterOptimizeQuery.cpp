@@ -1,5 +1,6 @@
 #include <Storages/IStorage.h>
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
 
 

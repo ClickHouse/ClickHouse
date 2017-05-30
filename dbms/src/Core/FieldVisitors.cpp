@@ -196,39 +196,4 @@ void FieldVisitorHash::operator() (const Array & x) const
         applyVisitor(*this, elem);
 }
 
-
-UInt64 stringToDateOrDateTime(const String & s)
-{
-    if (s.size() == strlen("YYYY-MM-DD"))
-        return stringToDate(s);
-    else
-        return stringToDateTime(s);
-}
-
-
-DayNum_t stringToDate(const String & s)
-{
-    ReadBufferFromString in(s);
-    DayNum_t date{};
-
-    readDateText(date, in);
-    if (!in.eof())
-        throw Exception("String is too long for Date: " + s);
-
-    return date;
-}
-
-UInt64 stringToDateTime(const String & s)
-{
-    ReadBufferFromString in(s);
-    time_t date_time{};
-
-    readDateTimeText(date_time, in);
-    if (!in.eof())
-        throw Exception("String is too long for DateTime: " + s);
-
-    return UInt64(date_time);
-}
-
-
 }

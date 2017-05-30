@@ -1,4 +1,4 @@
-#include <numeric>
+#include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -137,10 +137,9 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
     return new_query;
 }
 
-bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
+bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context)
 {
-    query = query->clone();
-    const ASTSelectQuery & select = typeid_cast<ASTSelectQuery & >(*query);
+    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery & >(*query);
     if (!select.where_expression && !select.prewhere_expression)
         return false;
 
@@ -170,7 +169,7 @@ bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
         filter_column = converted;
     const IColumn::Filter & filter = dynamic_cast<ColumnUInt8 &>(*filter_column).getData();
 
-    if (std::accumulate(filter.begin(), filter.end(), 0ul) == filter.size())
+    if (countBytesInFilter(filter) == 0)
         return false;
 
     for (size_t i = 0; i < block.columns(); ++i)

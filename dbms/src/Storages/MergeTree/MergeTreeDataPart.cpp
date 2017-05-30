@@ -15,7 +15,10 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Poco/File.h>
+#include <Poco/Path.h>
+#include <Poco/DirectoryIterator.h>
 
+#include <common/logger_useful.h>
 
 #define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
 
@@ -370,7 +373,17 @@ size_t MergeTreeDataPart::getExactSizeRows() const
 
 String MergeTreeDataPart::getFullPath() const
 {
-    return storage.full_path + (is_sharded ? ("reshard/" + DB::toString(shard_no) + "/") : "") + name + "/";
+    return storage.full_path + relative_path + "/";
+}
+
+String MergeTreeDataPart::getNameWithPrefix() const
+{
+    String res = Poco::Path(relative_path).getFileName();
+
+    if (res.empty())
+        throw Exception("relative_path " + relative_path + " of part " + name + " is invalid or not set", ErrorCodes::LOGICAL_ERROR);
+
+    return res;
 }
 
 
@@ -386,7 +399,7 @@ MergeTreeDataPart::~MergeTreeDataPart()
             if (!dir.exists())
                 return;
 
-            if (!startsWith(name,"tmp"))
+            if (!startsWith(getNameWithPrefix(), "tmp"))
             {
                 LOG_ERROR(storage.log, "~DataPart() should remove part " << path
                     << " but its name doesn't start with tmp. Too suspicious, keeping the part.");
@@ -418,7 +431,7 @@ size_t MergeTreeDataPart::calcTotalSize(const String & from)
 void MergeTreeDataPart::remove() const
 {
     String from = storage.full_path + name;
-    String to = storage.full_path + "tmp2_" + name;
+    String to = storage.full_path + "tmp_delete_" + name;
 
     Poco::File from_dir{from};
     Poco::File to_dir{to};
@@ -454,15 +467,40 @@ void MergeTreeDataPart::remove() const
     to_dir.remove(true);
 }
 
-void MergeTreeDataPart::renameTo(const String & new_name) const
-{
-    String from = storage.full_path + name + "/";
-    String to = storage.full_path + new_name + "/";
 
-    Poco::File f(from);
-    f.setLastModified(Poco::Timestamp::fromEpochTime(time(0)));
-    f.renameTo(to);
+void MergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const
+{
+    String from = getFullPath();
+    String to = storage.full_path + new_relative_path + "/";
+
+    Poco::File from_file(from);
+    if (!from_file.exists())
+        throw Exception("Part directory " + from + " doesn't exists. Most likely it is logical error.", ErrorCodes::FILE_DOESNT_EXIST);
+
+    Poco::File to_file(to);
+    if (to_file.exists())
+    {
+        if (remove_new_dir_if_exists)
+        {
+            Names files;
+            Poco::File(from).list(files);
+
+            LOG_WARNING(storage.log, "Part directory " << to << " already exists"
+                << " and contains " << files.size() << " files. Removing it.");
+
+            to_file.remove(true);
+        }
+        else
+        {
+            throw Exception("part directory " + to + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+        }
+    }
+
+    from_file.setLastModified(Poco::Timestamp::fromEpochTime(time(0)));
+    from_file.renameTo(to);
+    relative_path = new_relative_path;
 }
+
 
 void MergeTreeDataPart::renameAddPrefix(bool to_detached, const String & prefix) const
 {

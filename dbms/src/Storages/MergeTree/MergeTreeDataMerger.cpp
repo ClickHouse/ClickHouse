@@ -474,14 +474,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
     size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplicate)
 {
+    static const String TMP_PREFIX = "tmp_merge_";
+
     if (isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
-    LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << merged_name);
+    LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << TMP_PREFIX + merged_name);
 
-    String merged_dir = data.getFullPath() + merged_name;
-    if (Poco::File(merged_dir).exists())
-        throw Exception("Directory " + merged_dir + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+    String new_part_tmp_path = data.getFullPath() + TMP_PREFIX + merged_name + "/";
+    if (Poco::File(new_part_tmp_path).exists())
+        throw Exception("Directory " + new_part_tmp_path + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     merge_entry->num_parts = parts.size();
 
@@ -508,7 +510,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
     ActiveDataPartSet::parsePartName(merged_name, *new_data_part);
-    new_data_part->name = "tmp_" + merged_name;
+    new_data_part->name = merged_name;
+    new_data_part->relative_path = TMP_PREFIX + merged_name;
     new_data_part->is_temp = true;
 
     size_t sum_input_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity;
@@ -600,8 +603,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
     if (deduplicate && merged_stream->isGroupedOutput())
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, Limits(), 0 /*limit_hint*/, Names());
-
-    String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
 
     auto compression_method = data.context.chooseCompressionMethod(
         merge_entry->total_size_bytes_compressed,
@@ -910,36 +911,18 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
     /// Sharding of merged blocks.
 
+    /// A very rough estimate for the compressed data size of each sharded partition.
+    /// Actually it all depends on the properties of the expression for sharding.
+    UInt64 per_shard_size_bytes_compressed = merge_entry->total_size_bytes_compressed / static_cast<double>(job.paths.size());
+    auto compression_method = data.context.chooseCompressionMethod(
+        per_shard_size_bytes_compressed,
+        static_cast<double>(per_shard_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
+
     /// For blocks numbering.
     SimpleIncrement increment(job.block_number);
 
     /// Create a new part for each shard.
     MergeTreeData::PerShardDataParts per_shard_data_parts;
-
-    per_shard_data_parts.reserve(job.paths.size());
-    for (size_t shard_no = 0; shard_no < job.paths.size(); ++shard_no)
-    {
-        Int64 temp_index = increment.get();
-
-        MergeTreeData::MutableDataPartPtr data_part = std::make_shared<MergeTreeData::DataPart>(data);
-        data_part->name = "tmp_" + merged_name;
-        data_part->is_temp = true;
-        data_part->left_date = std::numeric_limits<UInt16>::max();
-        data_part->right_date = std::numeric_limits<UInt16>::min();
-        data_part->month = month;
-        data_part->left = temp_index;
-        data_part->right = temp_index;
-        data_part->level = 0;
-        per_shard_data_parts.emplace(shard_no, data_part);
-    }
-
-    /// A very rough estimate for the compressed data size of each sharded partition.
-    /// Actually it all depends on the properties of the expression for sharding.
-    UInt64 per_shard_size_bytes_compressed = merge_entry->total_size_bytes_compressed / static_cast<double>(job.paths.size());
-
-    auto compression_method = data.context.chooseCompressionMethod(
-        per_shard_size_bytes_compressed,
-        static_cast<double>(per_shard_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
 
     using MergedBlockOutputStreamPtr = std::unique_ptr<MergedBlockOutputStream>;
     using PerShardOutput = std::unordered_map<size_t, MergedBlockOutputStreamPtr>;
@@ -947,15 +930,32 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
     /// Create a stream for each shard that writes the corresponding sharded blocks.
     PerShardOutput per_shard_output;
 
+    per_shard_data_parts.reserve(job.paths.size());
     per_shard_output.reserve(job.paths.size());
+
     for (size_t shard_no = 0; shard_no < job.paths.size(); ++shard_no)
     {
-        std::string new_part_tmp_path = data.getFullPath() + "reshard/" + toString(shard_no) + "/tmp_" + merged_name + "/";
+        Int64 temp_index = increment.get();
+
+        MergeTreeData::MutableDataPartPtr data_part = std::make_shared<MergeTreeData::DataPart>(data);
+        data_part->name = merged_name;
+        data_part->relative_path = "reshard/" + toString(shard_no) + "/tmp_" + merged_name;
+        data_part->is_temp = true;
+        data_part->left_date = std::numeric_limits<UInt16>::max();
+        data_part->right_date = std::numeric_limits<UInt16>::min();
+        data_part->month = month;
+        data_part->left = temp_index;
+        data_part->right = temp_index;
+        data_part->level = 0;
+
+        String new_part_tmp_path = data_part->getFullPath();
         Poco::File(new_part_tmp_path).createDirectories();
 
         MergedBlockOutputStreamPtr output_stream;
         output_stream = std::make_unique<MergedBlockOutputStream>(
             data, new_part_tmp_path, column_names_and_types, compression_method, merged_column_to_size, aio_threshold);
+
+        per_shard_data_parts.emplace(shard_no, std::move(data_part));
         per_shard_output.emplace(shard_no, std::move(output_stream));
     }
 
@@ -1081,13 +1081,14 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
     {
         size_t shard_no = entry.first;
         MergeTreeData::MutableDataPartPtr & part_from_shard = entry.second;
-        part_from_shard->is_temp = false;
-        std::string prefix = data.getFullPath() + "reshard/" + toString(shard_no) + "/";
-        std::string old_name = part_from_shard->name;
+
         std::string new_name = ActiveDataPartSet::getPartName(part_from_shard->left_date,
             part_from_shard->right_date, part_from_shard->left, part_from_shard->right, part_from_shard->level);
+        std::string new_relative_path = "reshard/" + toString(shard_no) + "/" + new_name;
+
+        part_from_shard->renameTo(new_relative_path);
         part_from_shard->name = new_name;
-        Poco::File(prefix + old_name).renameTo(prefix + new_name);
+        part_from_shard->is_temp = false;
     }
 
     LOG_TRACE(log, "Resharded the partition " << job.partition);

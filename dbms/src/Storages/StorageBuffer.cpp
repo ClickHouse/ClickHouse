@@ -39,7 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INFINITE_LOOP;
-    extern const int BLOCKS_HAS_DIFFERENT_STRUCTURE;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
@@ -129,9 +129,8 @@ private:
 
 BlockInputStreams StorageBuffer::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
     unsigned threads)
@@ -147,13 +146,7 @@ BlockInputStreams StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        /** Turn off the optimization "transfer to PREWHERE",
-          *  since Buffer does not support PREWHERE.
-          */
-        Settings modified_settings = settings;
-        modified_settings.optimize_move_to_prewhere = false;
-
-        streams_from_dst = destination->read(column_names, query, context, modified_settings, processed_stage, max_block_size, threads);
+        streams_from_dst = destination->read(column_names, query, context, processed_stage, max_block_size, threads);
     }
 
     BlockInputStreams streams_from_buffers;
@@ -198,7 +191,7 @@ static void appendBlock(const Block & from, Block & to)
 
             if (col_from.getName() != col_to.getName())
                 throw Exception("Cannot append block to another: different type of columns at index " + toString(column_no)
-                    + ". Block 1: " + from.dumpStructure() + ". Block 2: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAS_DIFFERENT_STRUCTURE);
+                    + ". Block 1: " + from.dumpStructure() + ". Block 2: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
 
             col_to.insertRangeFrom(col_from, 0, rows);
         }

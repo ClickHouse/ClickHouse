@@ -41,6 +41,8 @@ private:
 
     const std::size_t max_block_size;
     ExternalResultDescription description;
+
+    Poco::Logger * log;
 };
 
 }

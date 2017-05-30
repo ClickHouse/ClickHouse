@@ -20,7 +20,7 @@ namespace ErrorCodes
 }
 
 
-void AnalyzeResultOfQuery::process(ASTPtr & ast, Context & context)
+void AnalyzeResultOfQuery::process(ASTPtr & ast, const Context & context)
 {
     const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(ast.get());
     if (!select)

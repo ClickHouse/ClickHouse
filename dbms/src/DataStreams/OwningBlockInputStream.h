@@ -8,8 +8,8 @@ namespace DB
 {
 
 /** Provides reading from a Buffer, taking exclusive ownership over it's lifetime,
-*    simplifies usage of ReadBufferFromFile (no need to manage buffer lifetime) etc.
-*/
+  *    simplifies usage of ReadBufferFromFile (no need to manage buffer lifetime) etc.
+  */
 template <typename OwnType>
 class OwningBlockInputStream : public IProfilingBlockInputStream
 {

@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
 #include <Common/config.h>
 #if USE_MYSQL
 
@@ -5,6 +7,7 @@
 
 #include <Dictionaries/MySQLDictionarySource.h>
 #include <Dictionaries/MySQLBlockInputStream.h>
+#include <Dictionaries/readInvalidateQuery.h>
 
 
 namespace DB
@@ -26,7 +29,8 @@ MySQLDictionarySource::MySQLDictionarySource(const DictionaryStructure & dict_st
     sample_block{sample_block},
     pool{config, config_prefix},
     query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
-    load_all_query{query_builder.composeLoadAllQuery()}
+    load_all_query{query_builder.composeLoadAllQuery()},
+    invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
 {
 }
 
@@ -41,7 +45,8 @@ MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other
     sample_block{other.sample_block},
     pool{other.pool},
     query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
-    load_all_query{other.load_all_query}, last_modification{other.last_modification}
+    load_all_query{other.load_all_query}, last_modification{other.last_modification},
+    invalidate_query{other.invalidate_query}, invalidate_query_response{other.invalidate_query_response}
 {
 }
 
@@ -62,7 +67,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & i
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadKeys(
-    const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
+    const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
 
@@ -72,6 +77,15 @@ BlockInputStreamPtr MySQLDictionarySource::loadKeys(
 
 bool MySQLDictionarySource::isModified() const
 {
+    if (!invalidate_query.empty())
+    {
+        auto response = doInvalidateQuery(invalidate_query);
+        if (response == invalidate_query_response)
+            return false;
+        invalidate_query_response = response;
+        return true;
+    }
+
     if (dont_check_update_time)
         return true;
 
@@ -162,7 +176,16 @@ LocalDateTime MySQLDictionarySource::getLastModification() const
     return update_time;
 }
 
+std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request) const
+{
+    Block sample_block;
+    ColumnPtr column(std::make_shared<ColumnString>());
+    sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
+    MySQLBlockInputStream block_input_stream(pool.Get(), request, sample_block, 1);
+    return readInvalidateQuery(block_input_stream);
+}
 
 }
 
 #endif
+

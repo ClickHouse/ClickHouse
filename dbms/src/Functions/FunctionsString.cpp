@@ -102,6 +102,7 @@ struct LengthImpl
 
 /** If the string is UTF-8 encoded text, it returns the length of the text in code points.
   * (not in characters: the length of the text "ё" can be either 1 or 2, depending on the normalization)
+ * (not in characters: the length of the text "" can be either 1 or 2, depending on the normalization)
   * Otherwise, the behavior is undefined.
   */
 struct LengthUTF8Impl

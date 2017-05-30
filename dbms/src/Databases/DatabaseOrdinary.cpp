@@ -7,6 +7,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -161,10 +162,6 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
             loadTable(context, path, *this, name, data_path, table, has_force_restore_data_flag);
         }
     };
-
-    /** `packaged_task` is used so that exceptions are automatically passed to the main thread.
-      * Disadvantage - exceptions fall into the main thread only after the end of all tasks.
-      */
 
     const size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
     size_t num_bunches = (total_tables + bunch_size - 1) / bunch_size;

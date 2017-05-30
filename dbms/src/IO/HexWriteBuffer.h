@@ -4,14 +4,14 @@
 #include <IO/WriteBuffer.h>
 
 
-/// Так как HexWriteBuffer часто создаётся во внутреннем цикле, сделаем у него размер буфера маленьким.
+/// Since HexWriteBuffer is often created in the inner loop, we'll make its buffer size small.
 #define DBMS_HEX_WRITE_BUFFER_SIZE 32
 
 
 namespace DB
 {
 
-/** Всё что в него пишут, переводит в HEX (большими буквами) и пишет в другой WriteBuffer.
+/** Everything that is written into it, translates to HEX (in capital letters) and writes to another WriteBuffer.
   */
 class HexWriteBuffer : public WriteBuffer
 {

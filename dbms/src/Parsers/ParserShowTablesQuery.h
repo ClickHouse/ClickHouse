@@ -6,9 +6,9 @@
 namespace DB
 {
 
-/** Запрос типа такого:
+/** Query like this:
   * SHOW TABLES [FROM db] [[NOT] LIKE 'str']
-  * или
+  * or
   * SHOW DATABASES.
   */
 class ParserShowTablesQuery : public IParserBase

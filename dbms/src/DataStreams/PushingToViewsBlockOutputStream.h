@@ -18,7 +18,7 @@ namespace DB
 class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
-    PushingToViewsBlockOutputStream(String database, String table, const Context & context_, ASTPtr query_ptr_)
+    PushingToViewsBlockOutputStream(String database, String table, const Context & context_, const ASTPtr & query_ptr_)
         : context(context_), query_ptr(query_ptr_)
     {
         storage = context.getTable(database, table);

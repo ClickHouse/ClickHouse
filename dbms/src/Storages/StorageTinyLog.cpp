@@ -28,7 +28,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 
-#include <Interpreters/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <Storages/StorageTinyLog.h>
 #include <Poco/DirectoryIterator.h>
@@ -543,16 +543,16 @@ void StorageTinyLog::rename(const String & new_path_to_db, const String & new_da
 
 BlockInputStreams StorageTinyLog::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned threads)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
-    return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(max_block_size, column_names, *this, settings.max_read_buffer_size));
+    return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(
+        max_block_size, column_names, *this, context.getSettingsRef().max_read_buffer_size));
 }
 
 

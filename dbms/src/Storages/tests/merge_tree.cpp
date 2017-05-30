@@ -97,7 +97,7 @@ try
         if (!parser.parse(begin, end, select, max_parsed_pos, expected))
             throw Poco::Exception("Cannot parse " + primary_expr_str);
 
-        BlockInputStreamPtr in = table->read(column_names, select, context, Settings(), stage)[0];
+        BlockInputStreamPtr in = table->read(column_names, select, context, stage)[0];
 
         Block sample;
         {

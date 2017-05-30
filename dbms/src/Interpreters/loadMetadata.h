@@ -1,15 +1,12 @@
 #pragma once
 
-#include <Interpreters/Context.h>
-
 
 namespace DB
 {
 
+class Context;
 
-/** Загружает определения таблиц и БД и добавляет их в контекст.
-  */
+/// Load tables and add them to context.
 void loadMetadata(Context & context);
-
 
 }

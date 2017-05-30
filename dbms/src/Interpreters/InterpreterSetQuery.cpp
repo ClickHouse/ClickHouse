@@ -1,4 +1,5 @@
 #include <Parsers/ASTSetQuery.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
 
 
@@ -13,7 +14,7 @@ namespace ErrorCodes
 
 BlockIO InterpreterSetQuery::execute()
 {
-    ASTSetQuery & ast = typeid_cast<ASTSetQuery &>(*query_ptr);
+    const ASTSetQuery & ast = typeid_cast<const ASTSetQuery &>(*query_ptr);
     Context & target = ast.global ? context.getGlobalContext() : context.getSessionContext();
     executeImpl(ast, target);
     return {};
@@ -22,12 +23,12 @@ BlockIO InterpreterSetQuery::execute()
 
 void InterpreterSetQuery::executeForCurrentContext()
 {
-    ASTSetQuery & ast = typeid_cast<ASTSetQuery &>(*query_ptr);
+    const ASTSetQuery & ast = typeid_cast<const ASTSetQuery &>(*query_ptr);
     executeImpl(ast, context);
 }
 
 
-void InterpreterSetQuery::executeImpl(ASTSetQuery & ast, Context & target)
+void InterpreterSetQuery::executeImpl(const ASTSetQuery & ast, Context & target)
 {
     /** The `readonly` value is understood as follows:
       * 0 - everything allowed.

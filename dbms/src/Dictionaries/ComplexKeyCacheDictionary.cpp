@@ -69,7 +69,7 @@ ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(const ComplexKeyCacheDictio
 
 #define DECLARE(TYPE)\
 void ComplexKeyCacheDictionary::get##TYPE(\
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
     PaddedPODArray<TYPE> & out) const\
 {\
     dict_struct.validateKeyTypes(key_types);\
@@ -97,7 +97,7 @@ DECLARE(Float64)
 #undef DECLARE
 
 void ComplexKeyCacheDictionary::getString(
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
     ColumnString * out) const
 {
     dict_struct.validateKeyTypes(key_types);
@@ -115,7 +115,7 @@ void ComplexKeyCacheDictionary::getString(
 
 #define DECLARE(TYPE)\
 void ComplexKeyCacheDictionary::get##TYPE(\
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
     const PaddedPODArray<TYPE> & def, PaddedPODArray<TYPE> & out) const\
 {\
     dict_struct.validateKeyTypes(key_types);\
@@ -141,7 +141,7 @@ DECLARE(Float64)
 #undef DECLARE
 
 void ComplexKeyCacheDictionary::getString(
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
     const ColumnString * const def, ColumnString * const out) const
 {
     dict_struct.validateKeyTypes(key_types);
@@ -157,7 +157,7 @@ void ComplexKeyCacheDictionary::getString(
 
 #define DECLARE(TYPE)\
 void ComplexKeyCacheDictionary::get##TYPE(\
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
     const TYPE def, PaddedPODArray<TYPE> & out) const\
 {\
     dict_struct.validateKeyTypes(key_types);\
@@ -183,7 +183,7 @@ DECLARE(Float64)
 #undef DECLARE
 
 void ComplexKeyCacheDictionary::getString(
-    const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
     const String & def, ColumnString * const out) const
 {
     dict_struct.validateKeyTypes(key_types);
@@ -243,7 +243,7 @@ ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx(con
 }
 
 
-void ComplexKeyCacheDictionary::has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
+void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
 {
     dict_struct.validateKeyTypes(key_types);
 
@@ -409,7 +409,7 @@ ComplexKeyCacheDictionary::Attribute ComplexKeyCacheDictionary::createAttributeW
 template <typename OutputType, typename DefaultGetter>
 void ComplexKeyCacheDictionary::getItemsNumber(
     Attribute & attribute,
-    const ConstColumnPlainPtrs & key_columns,
+    const Columns & key_columns,
     PaddedPODArray<OutputType> & out,
     DefaultGetter && get_default) const
 {
@@ -435,7 +435,7 @@ void ComplexKeyCacheDictionary::getItemsNumber(
 template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void ComplexKeyCacheDictionary::getItemsNumberImpl(
     Attribute & attribute,
-    const ConstColumnPlainPtrs & key_columns,
+    const Columns & key_columns,
     PaddedPODArray<OutputType> & out,
     DefaultGetter && get_default) const
 {
@@ -513,7 +513,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
 
 template <typename DefaultGetter>
 void ComplexKeyCacheDictionary::getItemsString(
-    Attribute & attribute, const ConstColumnPlainPtrs & key_columns, ColumnString * out,
+    Attribute & attribute, const Columns & key_columns, ColumnString * out,
     DefaultGetter && get_default) const
 {
     const auto rows_num = key_columns.front()->size();
@@ -654,18 +654,16 @@ void ComplexKeyCacheDictionary::getItemsString(
 
 template <typename PresentKeyHandler, typename AbsentKeyHandler>
 void ComplexKeyCacheDictionary::update(
-    const ConstColumnPlainPtrs & in_key_columns, const PODArray<StringRef> & in_keys,
-    const std::vector<size_t> & in_requested_rows, PresentKeyHandler && on_cell_updated,
+    const Columns & in_key_columns, const PODArray<StringRef> & in_keys,
+    const std::vector<size_t> & in_requested_rows,
+    PresentKeyHandler && on_cell_updated,
     AbsentKeyHandler && on_key_not_found) const
 {
     MapType<bool> remaining_keys{in_requested_rows.size()};
     for (const auto row : in_requested_rows)
         remaining_keys.insert({ in_keys[row], false });
 
-    std::uniform_int_distribution<UInt64> distribution{
-        dict_lifetime.min_sec,
-        dict_lifetime.max_sec
-    };
+    std::uniform_int_distribution<UInt64> distribution(dict_lifetime.min_sec, dict_lifetime.max_sec);
 
     const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
     {
@@ -682,18 +680,18 @@ void ComplexKeyCacheDictionary::update(
         while (const auto block = stream->read())
         {
             /// cache column pointers
-            const auto key_columns = ext::map<ConstColumnPlainPtrs>(
+            const auto key_columns = ext::map<Columns>(
                 ext::range(0, keys_size),
                 [&] (const size_t attribute_idx)
                 {
-                    return block.safeGetByPosition(attribute_idx).column.get();
+                    return block.safeGetByPosition(attribute_idx).column;
                 });
 
-            const auto attribute_columns = ext::map<ConstColumnPlainPtrs>(
+            const auto attribute_columns = ext::map<Columns>(
                 ext::range(0, attributes_size),
                 [&] (const size_t attribute_idx)
                 {
-                    return block.safeGetByPosition(keys_size + attribute_idx).column.get();
+                    return block.safeGetByPosition(keys_size + attribute_idx).column;
                 });
 
             const auto rows_num = block.rows();
@@ -896,7 +894,7 @@ ComplexKeyCacheDictionary::Attribute & ComplexKeyCacheDictionary::getAttribute(c
     return attributes[it->second];
 }
 
-StringRef ComplexKeyCacheDictionary::allocKey(const size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys) const
+StringRef ComplexKeyCacheDictionary::allocKey(const size_t row, const Columns & key_columns, StringRefs & keys) const
 {
     if (key_size_is_fixed)
         return placeKeysInFixedSizePool(row, key_columns);
@@ -914,7 +912,7 @@ void ComplexKeyCacheDictionary::freeKey(const StringRef key) const
 
 template <typename Arena>
 StringRef ComplexKeyCacheDictionary::placeKeysInPool(
-    const size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
+    const size_t row, const Columns & key_columns, StringRefs & keys, Arena & pool)
 {
     const auto keys_size = key_columns.size();
     size_t sum_keys_size{};
@@ -937,7 +935,7 @@ StringRef ComplexKeyCacheDictionary::placeKeysInPool(
 }
 
 StringRef ComplexKeyCacheDictionary::placeKeysInFixedSizePool(
-    const size_t row, const ConstColumnPlainPtrs & key_columns) const
+    const size_t row, const Columns & key_columns) const
 {
     const auto res = fixed_size_keys_pool->alloc();
     auto place = res;

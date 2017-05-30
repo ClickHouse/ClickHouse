@@ -6,8 +6,8 @@
 namespace DB
 {
 
-/** Коэффициент сэмплирования вида 0.1 или 1/10.
-  * Парсится как рациональное число без преобразования в IEEE-754.
+/** Sampling factor of the form 0.1 or 1/10.
+  * It is parsed as a rational number without conversion to IEEE-754.
   */
 class ParserSampleRatio : public IParserBase
 {

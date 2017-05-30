@@ -2,6 +2,7 @@
 
 #include <Common/escapeForFileName.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
@@ -18,7 +19,7 @@ namespace ErrorCodes
 }
 
 
-InterpreterDropQuery::InterpreterDropQuery(ASTPtr query_ptr_, Context & context_)
+InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, Context & context_)
     : query_ptr(query_ptr_), context(context_)
 {
 }
