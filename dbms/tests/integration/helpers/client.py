@@ -1,6 +1,7 @@
 import errno
 import subprocess as sp
 from threading import Timer
+import tempfile
 
 
 class Client:
@@ -9,36 +10,62 @@ class Client:
         self.port = port
         self.command = [command, '--host', self.host, '--port', str(self.port)]
 
-    def query(self, sql, stdin=None, timeout=10.0):
+
+    def query(self, sql, stdin=None, timeout=None):
+        return QueryRequest(self, sql, stdin, timeout).get_answer()
+
+
+    def get_query_request(self, sql, stdin=None, timeout=None):
+        return QueryRequest(self, sql, stdin, timeout)
+
+
+class QueryRequest:
+    def __init__(self, client, sql, stdin=None, timeout=None):
+        self.client = client
+
+        command = self.client.command[:]
         if stdin is None:
-            command = self.command + ['--multiquery']
+            command += ['--multiquery']
             stdin = sql
         else:
-            command = self.command + ['--query', sql]
+            command += ['--query', sql]
 
-        process = sp.Popen(command, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE)
+        # Write data to tmp file to avoid PIPEs and execution blocking
+        stdin_file = tempfile.TemporaryFile()
+        stdin_file.write(stdin)
+        stdin_file.seek(0)
+        self.stdout_file = tempfile.TemporaryFile()
+        self.stderr_file = tempfile.TemporaryFile()
 
-        timer = None
+        #print " ".join(command), "\nQuery:", sql
+
+        self.process = sp.Popen(command, stdin=stdin_file, stdout=self.stdout_file, stderr=self.stderr_file)
+
+        self.timer = None
+        self.process_finished_before_timeout = True
         if timeout is not None:
             def kill_process():
-                try:
-                    process.kill()
-                except OSError as e:
-                    if e.errno != errno.ESRCH:
-                        raise
+                if self.process.poll() is None:
+                    self.process.kill()
+                    self.process_finished_before_timeout = False
 
-            timer = Timer(timeout, kill_process)
-            timer.start()
+            self.timer = Timer(timeout, kill_process)
+            self.timer.start()
 
-        stdout, stderr = process.communicate(stdin)
 
-        if timer is not None:
-            if timer.finished.is_set():
-                raise Exception('Client timed out!')
-            else:
-                timer.cancel()
+    def get_answer(self):
+        self.process.wait()
+        self.stdout_file.seek(0)
+        self.stderr_file.seek(0)
 
-        if process.returncode != 0:
-            raise Exception('Client failed! return code: {}, stderr: {}'.format(process.returncode, stderr))
+        stdout = self.stdout_file.read()
+        stderr = self.stderr_file.read()
+
+        if self.process.returncode != 0 or stderr:
+            raise Exception('Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
+
+        if self.timer is not None and not self.process_finished_before_timeout:
+            raise Exception('Client timed out!')
 
         return stdout
+

@@ -47,14 +47,16 @@ protected:
                 << (if_exists ? "IF EXISTS " : "")
                 << (settings.hilite ? hilite_none : "")
                 << backQuoteIfNeed(database);
-            return;
+            formatOnCluster(settings);
         }
-
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-            << (detach ? "DETACH TABLE " : "DROP TABLE ")
-            << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "")
-            << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
-        formatOnCluster(settings);
+        else
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "")
+                << (detach ? "DETACH TABLE " : "DROP TABLE ")
+                << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "")
+                << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+            formatOnCluster(settings);
+        }
     }
 };
 

@@ -275,7 +275,9 @@ struct Settings
    /** Suppose max_replica_delay_for_distributed_queries is set and all replicas for the queried table are stale. \
      * If this setting is enabled, the query will be performed anyway, otherwise the error will be reported. \
      */ \
-    M(SettingBool, fallback_to_stale_replicas_for_distributed_queries, 1)
+    M(SettingBool, fallback_to_stale_replicas_for_distributed_queries, 1) \
+    /** For development and testing purposes only still */ \
+    M(SettingBool, distributed_ddl_allow_replicated_alter, 0)
 
 
     /// Possible limits for query execution.

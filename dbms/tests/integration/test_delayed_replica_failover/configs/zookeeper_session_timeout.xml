@@ -1,0 +1,5 @@
+<yandex>
+    <zookeeper>
+        <session_timeout_ms replace="1">2000</session_timeout_ms>
+    </zookeeper>
+</yandex>

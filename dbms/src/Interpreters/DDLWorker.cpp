@@ -32,6 +32,8 @@
 #include <zkutil/Lock.h>
 #include <Poco/Timestamp.h>
 
+#include <experimental/optional>
+
 
 namespace DB
 {
@@ -52,9 +54,9 @@ struct DDLLogEntry
 {
     String query;
     Strings hosts;
-    String initiator;
+    String initiator; // optional
 
-    static constexpr char CURRENT_VERSION = '1';
+    static constexpr int CURRENT_VERSION = '1';
 
     String toString()
     {
@@ -62,8 +64,7 @@ struct DDLLogEntry
         {
             WriteBufferFromString wb(res);
 
-            writeChar(CURRENT_VERSION, wb);
-            wb << "\n";
+            wb << "version: " << CURRENT_VERSION << "\n";
             wb << "query: " << query << "\n";
             wb << "hosts: " << hosts << "\n";
             wb << "initiator: " << initiator << "\n";
@@ -76,22 +77,27 @@ struct DDLLogEntry
     {
         ReadBufferFromString rb(data);
 
-        char version;
-        readChar(version, rb);
+        int version;
+        rb >> "version: " >> version >> "\n";
+
         if (version != CURRENT_VERSION)
             throw Exception("Unknown DDLLogEntry format version: " + version, ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
-        rb >> "\n";
         rb >> "query: " >> query >> "\n";
         rb >> "hosts: " >> hosts >> "\n";
-        rb >> "initiator: " >> initiator >> "\n";
+
+        if (!rb.eof())
+            rb >> "initiator: " >> initiator >> "\n";
+        else
+            initiator.clear();
 
         assertEOF(rb);
     }
 };
 
 
-static const std::pair<ssize_t, ssize_t> tryGetShardAndHostNum(const Cluster::AddressesWithFailover & cluster, const String & host_name, UInt16 port)
+using ShardAndHostNum = std::experimental::optional<std::pair<size_t, size_t>>;
+static ShardAndHostNum tryGetShardAndHostNum(const Cluster::AddressesWithFailover & cluster, const String & host_name, UInt16 port)
 {
     for (size_t shard_num = 0; shard_num < cluster.size(); ++shard_num)
     {
@@ -99,11 +105,11 @@ static const std::pair<ssize_t, ssize_t> tryGetShardAndHostNum(const Cluster::Ad
         {
             const Cluster::Address & address = cluster[shard_num][host_num];
             if (address.host_name == host_name && address.port == port)
-                return {shard_num, host_num};
+                return std::make_pair(shard_num, host_num);
         }
     }
 
-    return {-1, -1};
+    return {};
 }
 
 
@@ -130,7 +136,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_)
 
     host_name = getFQDNOrHostName();
     port = context.getTCPPort();
-    host_id = host_name + ':' + DB::toString(port);
+    host_id = Cluster::Address::toString(host_name, port);
 
     event_queue_updated = std::make_shared<Poco::Event>();
 
@@ -263,13 +269,15 @@ void DDLWorker::processTask(const DDLLogEntry & node, const std::string & node_n
             String cluster_name = query->cluster;
             auto cluster = context.getCluster(cluster_name);
 
-            ssize_t shard_num, host_num;
-            std::tie(shard_num, host_num) = tryGetShardAndHostNum(cluster->getShardsWithFailoverAddresses(), host_name, port);
-            if (shard_num < 0 || host_num < 0)
+            auto shard_host_num = tryGetShardAndHostNum(cluster->getShardsWithFailoverAddresses(), host_name, port);
+            if (!shard_host_num)
             {
                 throw Exception("Cannot find own address (" + host_id + ") in cluster " + cluster_name + " configuration",
                                 ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
             }
+
+            size_t shard_num = shard_host_num->first;
+            size_t host_num = shard_host_num->second;
 
             const auto & host_address = cluster->getShardsWithFailoverAddresses().at(shard_num).at(host_num);
             ASTPtr rewritten_ast = query->getRewrittenASTWithoutOnCluster(host_address.default_database);
@@ -353,7 +361,8 @@ void DDLWorker::processTaskAlter(
         ///  current secver aquires lock, executes replicated alter,
         ///  losts zookeeper connection and doesn't have time to create /executed node, second server executes replicated alter again
         /// To avoid this problem alter() method of replicated tables should be changed and takes into account ddl query id tag.
-        throw Exception("Distributed DDL alters don't work properly yet", ErrorCodes::NOT_IMPLEMENTED);
+        if (!context.getSettingsRef().distributed_ddl_allow_replicated_alter)
+            throw Exception("Distributed DDL alters don't work properly yet", ErrorCodes::NOT_IMPLEMENTED);
 
         Strings replica_names;
         for (const auto & address : cluster->getShardsWithFailoverAddresses().at(shard_num))
@@ -581,7 +590,7 @@ public:
 
             auto elapsed_seconds = watch.elapsedSeconds();
             if (elapsed_seconds > timeout_seconds)
-                throw Exception("Watching query is executing too long (" + toString(elapsed_seconds) + " sec.)", ErrorCodes::TIMEOUT_EXCEEDED);
+                throw Exception("Watching query is executing too long (" + toString(std::round(elapsed_seconds)) + " sec.)", ErrorCodes::TIMEOUT_EXCEEDED);
 
             if (num_hosts_finished != 0 || try_number != 0)
                 std::this_thread::sleep_for(std::chrono::milliseconds(50 * std::min(20LU, try_number + 1)));

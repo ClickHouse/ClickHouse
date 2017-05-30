@@ -11,3 +11,7 @@ class TSV:
 
     def diff(self, other):
         return list(line.rstrip() for line in difflib.context_diff(self.lines, other.lines))[2:]
+
+    @staticmethod
+    def toMat(contents):
+        return [line.split("\t") for line in contents.split("\n") if line.strip()]

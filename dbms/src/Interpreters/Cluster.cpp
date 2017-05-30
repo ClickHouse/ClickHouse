@@ -41,15 +41,6 @@ inline bool isLocal(const Cluster::Address & address)
     return address.default_database.empty() && isLocalAddress(address.resolved_address);
 }
 
-inline std::string addressToDirName(const Cluster::Address & address)
-{
-    return
-        escapeForFileName(address.user) +
-        (address.password.empty() ? "" : (':' + escapeForFileName(address.password))) + '@' +
-        escapeForFileName(address.resolved_address.host().toString()) + ':' +
-        std::to_string(address.resolved_address.port()) +
-        (address.default_database.empty() ? "" : ('#' + escapeForFileName(address.default_database)));
-}
 
 /// To cache DNS requests.
 Poco::Net::SocketAddress resolveSocketAddressImpl1(const String & host, UInt16 port)
@@ -109,10 +100,28 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
     }
 }
 
+
 String Cluster::Address::toString() const
 {
-    return host_name + ':' + DB::toString(port);
+    return toString(host_name, port);
 }
+
+String Cluster::Address::toString(const String & host_name, UInt16 port)
+{
+    return escapeForFileName(host_name) + ':' + DB::toString(port);
+}
+
+
+String Cluster::Address::toStringFull() const
+{
+    return
+        escapeForFileName(user) +
+        (password.empty() ? "" : (':' + escapeForFileName(password))) + '@' +
+        escapeForFileName(resolved_address.host().toString()) + ':' +
+        std::to_string(resolved_address.port()) +
+        (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)));
+}
+
 
 /// Implementation of Clusters class
 
@@ -201,7 +210,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                 info.local_addresses.push_back(address);
             else
             {
-                info.dir_names.push_back(addressToDirName(address));
+                info.dir_names.push_back(address.toStringFull());
                 ConnectionPoolPtrs pools;
                 pools.push_back(std::make_shared<ConnectionPool>(
                     settings.distributed_connections_pool_size,
@@ -235,7 +244,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
             if (weight == 0)
                 continue;
 
-            const auto internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
+            bool internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
 
             /** in case of internal_replication we will be appending names to
              *  the first element of vector; otherwise we will just .emplace_back
@@ -258,14 +267,14 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                     {
                         if (internal_replication)
                         {
-                            auto dir_name = addressToDirName(replica_addresses.back());
+                            auto dir_name = replica_addresses.back().toStringFull();
                             if (first)
                                 dir_names.emplace_back(std::move(dir_name));
                             else
                                 dir_names.front() += "," + dir_name;
                         }
                         else
-                            dir_names.emplace_back(addressToDirName(replica_addresses.back()));
+                            dir_names.emplace_back(replica_addresses.back().toStringFull());
 
                         if (first) first = false;
                     }
@@ -302,7 +311,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                         std::move(replicas), settings.load_balancing, settings.connections_with_failover_max_tries);
 
             slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
-            shards_info.push_back({std::move(dir_names), current_shard_num, weight, shard_local_addresses, shard_pool});
+            shards_info.push_back({std::move(dir_names), current_shard_num, weight, shard_local_addresses, shard_pool, internal_replication});
         }
         else
             throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);

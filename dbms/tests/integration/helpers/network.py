@@ -22,11 +22,19 @@ class PartitionManager:
     def __init__(self):
         self._iptables_rules = []
 
-    def isolate_instance_from_zk(self, instance, action='DROP'):
+
+    def drop_instance_zk_connections(self, instance, action='DROP'):
         self._check_instance(instance)
 
         self._add_rule({'source': instance.ip_address, 'destination_port': 2181, 'action': action})
         self._add_rule({'destination': instance.ip_address, 'source_port': 2181, 'action': action})
+
+    def restore_instance_zk_connections(self, instance, action='DROP'):
+        self._check_instance(instance)
+
+        self._delete_rule({'source': instance.ip_address, 'destination_port': 2181, 'action': action})
+        self._delete_rule({'destination': instance.ip_address, 'source_port': 2181, 'action': action})
+
 
     def partition_instances(self, left, right, action='DROP'):
         self._check_instance(left)
@@ -35,10 +43,12 @@ class PartitionManager:
         self._add_rule({'source': left.ip_address, 'destination': right.ip_address, 'action': action})
         self._add_rule({'source': right.ip_address, 'destination': left.ip_address, 'action': action})
 
+
     def heal_all(self):
         while self._iptables_rules:
             rule = self._iptables_rules.pop()
             _NetworkManager.get().delete_iptables_rule(**rule)
+
 
     @staticmethod
     def _check_instance(instance):
@@ -48,6 +58,10 @@ class PartitionManager:
     def _add_rule(self, rule):
         _NetworkManager.get().add_iptables_rule(**rule)
         self._iptables_rules.append(rule)
+
+    def _delete_rule(self, rule):
+        _NetworkManager.get().delete_iptables_rule(**rule)
+        self._iptables_rules.remove(rule)
 
     def __enter__(self):
         return self

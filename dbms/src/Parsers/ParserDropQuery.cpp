@@ -55,6 +55,14 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
 
         if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
             return false;
+
+        ws.ignore(pos, end);
+
+        if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+                return false;
+        }
     }
     else
     {
