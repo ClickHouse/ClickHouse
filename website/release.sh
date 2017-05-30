@@ -18,6 +18,7 @@ then
     docker build -t "${FULL_NAME}" "${BASE_DIR}"
     docker tag "${FULL_NAME}" "${REMOTE_NAME}"
     DOCKER_HASH=$(docker push "${REMOTE_NAME}" | tail -1 | awk '{print $3;}')
+    docker rmi "${FULL_NAME}"
 fi
 
 QLOUD_ENDPOINT="https://platform.yandex-team.ru/api/v1"
