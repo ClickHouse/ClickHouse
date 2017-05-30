@@ -468,7 +468,7 @@ SELECT
     bar(flights, 0, 20000, 40)
 FROM ontime WHERE Year = 2015 GROUP BY OriginCityName, DestCityName ORDER BY flights DESC LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/a85/18a/200/a8518a200d6d405a95ee80ea1c8e1c90.png"/>
+                    <img src="images/tutorial/a8518a200d6d405a95ee80ea1c8e1c90.png"/>
 <pre>
 SELECT
     OriginCityName &lt; DestCityName ? OriginCityName : DestCityName AS a,
@@ -477,7 +477,7 @@ SELECT
     bar(flights, 0, 40000, 40)
 FROM ontime WHERE Year = 2015 GROUP BY a, b ORDER BY flights DESC LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/d35/78d/b55/d3578db55e304bd7b5eba818abdb53f5.png"/></div>
+                    <img src="images/tutorial/d3578db55e304bd7b5eba818abdb53f5.png"/></div>
             </div>
         </li>
         <li>
@@ -487,7 +487,7 @@ FROM ontime WHERE Year = 2015 GROUP BY a, b ORDER BY flights DESC LIMIT 20
 SELECT OriginCityName, count(*) AS flights
 FROM ontime GROUP BY OriginCityName ORDER BY flights DESC LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/ef4/141/f34/ef4141f348234773a5349c4bd3e8f804.png"/></div>
+                    <img src="images/tutorial/ef4141f348234773a5349c4bd3e8f804.png"/></div>
             </div>
         </li>
         <li>
@@ -498,7 +498,7 @@ FROM ontime GROUP BY OriginCityName ORDER BY flights DESC LIMIT 20
 SELECT OriginCityName, uniq(Dest) AS u
 FROM ontime GROUP BY OriginCityName ORDER BY u DESC LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/240/9f4/9d1/2409f49d11fb4aa1b8b5ff34cf9ca75d.png"/></div>
+                    <img src="images/tutorial/2409f49d11fb4aa1b8b5ff34cf9ca75d.png"/></div>
             </div>
         </li>
         <li>
@@ -508,7 +508,7 @@ FROM ontime GROUP BY OriginCityName ORDER BY u DESC LIMIT 20
 SELECT DayOfWeek, count() AS c, avg(DepDelay &gt;  60) AS delays
 FROM ontime GROUP BY DayOfWeek ORDER BY DayOfWeek
 </pre>
-                    <img src="https://habrastorage.org/files/885/e50/793/885e507930e34b7c8f788d25e7ca2bcf.png"/></div>
+                    <img src="images/tutorial/885e507930e34b7c8f788d25e7ca2bcf.png"/></div>
             </div>
         </li>
         <li>
@@ -523,7 +523,7 @@ HAVING c &gt;  100000
 ORDER BY delays DESC
 LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/ac2/926/56d/ac292656d03946d0aba35c75783a31f2.png"/></div>
+                    <img src="images/tutorial/ac292656d03946d0aba35c75783a31f2.png"/></div>
             </div>
         </li>
         <li>
@@ -536,7 +536,7 @@ GROUP BY OriginCityName, DestCityName
 ORDER BY duration DESC
 LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/7b3/c2e/685/7b3c2e685832439b8c373bf2015131d2.png"/></div>
+                    <img src="images/tutorial/7b3c2e685832439b8c373bf2015131d2.png"/></div>
             </div>
         </li>
         <li>
@@ -546,7 +546,7 @@ LIMIT 20
 SELECT Carrier, count() AS c, round(quantileTDigest(0.99)(DepDelay), 2) AS q
 FROM ontime GROUP BY Carrier ORDER BY q DESC
 </pre>
-                    <img src="https://habrastorage.org/files/49c/332/e3d/49c332e3d93146ba8f46beef6b2b02b0.png"/></div>
+                    <img src="images/tutorial/49c332e3d93146ba8f46beef6b2b02b0.png"/></div>
             </div>
         </li>
         <li>
@@ -556,7 +556,7 @@ FROM ontime GROUP BY Carrier ORDER BY q DESC
 SELECT Carrier, min(Year), max(Year), count()
 FROM ontime GROUP BY Carrier HAVING max(Year) &lt; 2015 ORDER BY count() DESC
 </pre>
-                    <img src="https://habrastorage.org/files/249/56f/1a2/24956f1a2efc48d78212586958aa036c.png"/></div>
+                    <img src="images/tutorial/24956f1a2efc48d78212586958aa036c.png"/></div>
             </div>
         </li>
         <li>
@@ -574,7 +574,7 @@ GROUP BY DestCityName
 HAVING c2014 &gt;  10000 AND c2015 &gt;  1000 AND diff &gt;  1
 ORDER BY diff DESC
 </pre>
-                    <img src="https://habrastorage.org/files/f31/32f/4d1/f3132f4d1c0d42eab26d9111afe7771a.png"/></div>
+                    <img src="images/tutorial/f3132f4d1c0d42eab26d9111afe7771a.png"/></div>
             </div>
         </li>
         <li>
@@ -601,7 +601,7 @@ GROUP BY DestCityName
 ORDER BY avg_month_diff DESC
 LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/26b/2c7/aae/26b2c7aae21a4c76800cb1c7a33a374d.png"/></div>
+                    <img src="images/tutorial/26b2c7aae21a4c76800cb1c7a33a374d.png"/></div>
             </div>
         </li>
     </ul>
@@ -672,7 +672,7 @@ LIMIT 20
     <p>As you could expect heavy queries are executed N times faster being launched on 3 servers instead of one.</p>
     <div class="spoiler"><a class="spoiler_title">See here</a>
         <div class="spoiler_body">
-            <img src="https://habrastorage.org/files/ece/020/129/ece020129fdf4a18a6e75daf2e699cb9.png"/>
+            <img src="images/tutorial/ece020129fdf4a18a6e75daf2e699cb9.png"/>
 
             <p>You may have noticed that quantiles calculation are slightly different. This happens due to <a
                     href="https://github.com/tdunning/t-digest/raw/master/docs/t-digest-paper/histo.pdf">t-digest</a>
