@@ -35,6 +35,8 @@
   * tests' descriptions and launches it.
   */
 namespace FS = boost::filesystem;
+using String = std::string;
+const String FOUR_SPACES = "    ";
 
 namespace DB
 {
@@ -45,187 +47,76 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
 }
 
-const std::string FOUR_SPACES = "    ";
-
-bool isNumber(const std::string & str)
-{
-    if (str.empty())
-    {
-        return false;
-    }
-
-    size_t dots_counter = 0;
-
-    if (str[0] == '.' || str[str.size() - 1] == '.')
-    {
-        return false;
-    }
-
-    for (char chr : str)
-    {
-        if (chr == '.')
-        {
-            if (dots_counter)
-                return false;
-            else
-                ++dots_counter;
-            continue;
-        }
-
-        if (chr < '0' || chr > '9')
-        {
-            return false;
-        }
-    }
-
-    return true;
+static String pad(size_t padding) {
+    return String(padding * 4, ' ');
 }
 
 class JSONString
 {
 private:
-    std::map<std::string, std::string> content;
-    std::string current_key;
-    size_t _padding = 1;
+    std::map<String, String> content;
+    size_t padding;
 
 public:
-    JSONString(){};
-    JSONString(size_t padding) : _padding(padding){};
+    JSONString(size_t padding_ = 1) : padding(padding_){};
 
-    JSONString & operator[](const std::string & key)
+    void set(const String key, String value, bool wrap = true)
     {
-        current_key = key;
-        return *this;
+        if (value.empty())
+            value = "null";
+
+        bool reserved = (value[0] == '[' || value[0] == '{' || value == "null");
+        if (!reserved && wrap)
+            value = '\"' + value + '\"';
+
+        content[key] = value;
     }
 
     template <typename T>
-    typename std::enable_if<std::is_arithmetic<T>::value, JSONString &>::type operator[](const T key)
+    typename std::enable_if<std::is_arithmetic<T>::value>::type set(const String key, T value)
     {
-        current_key = std::to_string(key);
-        return *this;
+        set(key, std::to_string(value), /*wrap= */false);
     }
 
-    void set(std::string value)
+    void set(const String key, const std::vector<JSONString> & run_infos)
     {
-        if (current_key.empty())
-        {
-            throw "cannot use set without key";
-        }
-
-        if (value.empty())
-        {
-            value = "null";
-        }
-
-        bool reserved = (value[0] == '[' || value[0] == '{' || value == "null");
-
-        if (!reserved && !isNumber(value))
-        {
-            value = '\"' + value + '\"';
-        }
-
-        content[current_key] = value;
-        current_key = "";
-    }
-
-    void set(const JSONString & inner_json)
-    {
-        set(inner_json.constructOutput());
-    }
-
-    void set(const std::vector<JSONString> & run_infos)
-    {
-        if (current_key.empty())
-        {
-            throw "cannot use set without key";
-        }
-
-        content[current_key] = "[\n";
+        String value = "[\n";
 
         for (size_t i = 0; i < run_infos.size(); ++i)
         {
-            for (size_t i = 0; i < _padding + 1; ++i)
-            {
-                content[current_key] += FOUR_SPACES;
-            }
-            content[current_key] += run_infos[i].constructOutput(_padding + 2);
-
+            value += pad(padding + 1) + run_infos[i].asString(padding + 2);
             if (i != run_infos.size() - 1)
-            {
-                content[current_key] += ',';
-            }
+                value += ',';
 
-            content[current_key] += "\n";
+            value += "\n";
         }
 
-        for (size_t i = 0; i < _padding; ++i)
-        {
-            content[current_key] += FOUR_SPACES;
-        }
-        content[current_key] += ']';
-        current_key = "";
+        value += pad(padding) + ']';
+        content[key] = value;
     }
 
-    template <typename T>
-    typename std::enable_if<std::is_arithmetic<T>::value, void>::type set(T value)
+    String asString() const { return asString(padding); }
+    String asString(size_t padding) const
     {
-        set(std::to_string(value));
-    }
-    std::string constructOutput() const
-    {
-        return constructOutput(_padding);
-    }
-
-    std::string constructOutput(size_t padding) const
-    {
-        std::string output = "{";
-
-        bool first = true;
+        String repr = "{";
 
         for (auto it = content.begin(); it != content.end(); ++it)
         {
-            if (!first)
-            {
-                output += ',';
-            }
-            else
-            {
-                first = false;
-            }
-
-            output += "\n";
-            for (size_t i = 0; i < padding; ++i)
-            {
-                output += FOUR_SPACES;
-            }
-
-            std::string key = '\"' + it->first + '\"';
-            std::string value = it->second;
-
-            output += key + ": " + value;
+            if (it != content.begin())
+                repr += ',';
+            /// construct "key": "value" string with padding
+            repr += "\n" + pad(padding) + '\"' + it->first + '\"' + ": " + it->second;
         }
 
-        output += "\n";
-        for (size_t i = 0; i < padding - 1; ++i)
-        {
-            output += FOUR_SPACES;
-        }
-        output += "}";
-        return output;
+        repr += "\n" + pad(padding - 1) + '}';
+        return repr;
     }
 };
 
-std::ostream & operator<<(std::ostream & stream, const JSONString & json_obj)
+enum class PriorityType
 {
-    stream << json_obj.constructOutput();
-
-    return stream;
-}
-
-enum PriorityType
-{
-    min,
-    max
+    Min,
+    Max
 };
 
 struct CriterionWithPriority
@@ -248,16 +139,16 @@ class StopCriterions
 {
 private:
     using AbstractConfiguration = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
-    using Keys = std::vector<std::string>;
+    using Keys = std::vector<String>;
 
-    void initializeStruct(const std::string & priority, const AbstractConfiguration & stop_criterions_view)
+    void initializeStruct(const String & priority, const AbstractConfiguration & stop_criterions_view)
     {
         Keys keys;
         stop_criterions_view->keys(priority, keys);
 
-        PriorityType priority_type = (priority == "min" ? min : max);
+        PriorityType priority_type = (priority == "min" ? PriorityType::Min : PriorityType::Max);
 
-        for (const std::string & key : keys)
+        for (const String & key : keys)
         {
             if (key == "timeout_ms")
             {
@@ -296,7 +187,7 @@ private:
             }
             else
             {
-                throw Poco::Exception("Met unkown stop criterion: " + key, 1);
+                throw DB::Exception("Met unkown stop criterion: " + key, 1);
             }
 
             if (priority == "min")
@@ -411,7 +302,7 @@ struct Stats
 
     bool ready = false; // check if a query wasn't interrupted by SIGINT
 
-    std::string getStatisticByName(const std::string & statistic_name)
+    String getStatisticByName(const String & statistic_name)
     {
         if (statistic_name == "min_time")
         {
@@ -419,7 +310,7 @@ struct Stats
         }
         if (statistic_name == "quantiles")
         {
-            std::string result = "\n";
+            String result = "\n";
 
             for (double percent = 10; percent <= 90; percent += 10)
             {
@@ -580,13 +471,13 @@ struct Stats
     }
 };
 
-double Stats::avg_rows_speed_precision = 0.001;
+double Stats::avg_rows_speed_precision  = 0.001;
 double Stats::avg_bytes_speed_precision = 0.001;
 
 class PerformanceTest
 {
 public:
-    using Strings = std::vector<std::string>;
+    using Strings = std::vector<String>;
 
     PerformanceTest(
         const String & host_,
@@ -595,7 +486,7 @@ public:
         const String & user_,
         const String & password_,
         const bool & lite_output_,
-        const std::string & profiles_file_,
+        const String & profiles_file_,
         Strings && input_files_,
         Strings && tests_tags_,
         Strings && skip_tags_,
@@ -618,7 +509,7 @@ public:
     {
         if (input_files.size() < 1)
         {
-            throw Poco::Exception("No tests were specified", 0);
+            throw DB::Exception("No tests were specified", 0);
         }
 
         std::cerr << std::fixed << std::setprecision(3);
@@ -628,16 +519,16 @@ public:
 
 private:
     unsigned concurrency;
-    std::string test_name;
+    String test_name;
 
-    using Query = std::string;
+    using Query = String;
     using Queries = std::vector<Query>;
     using QueriesWithIndexes = std::vector<std::pair<Query, size_t>>;
     Queries queries;
 
     Connection connection;
 
-    using Keys = std::vector<std::string>;
+    using Keys = std::vector<String>;
 
     Settings settings;
 
@@ -649,18 +540,18 @@ private:
     using AbstractConfig = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
     using Config = Poco::AutoPtr<XMLConfiguration>;
 
-    using Paths = std::vector<std::string>;
-    using StringToVector = std::map<std::string, std::vector<std::string>>;
+    using Paths = std::vector<String>;
+    using StringToVector = std::map<String, std::vector<String>>;
     StringToVector substitutions;
 
-    using StringKeyValue = std::map<std::string, std::string>;
+    using StringKeyValue = std::map<String, String>;
     std::vector<StringKeyValue> substitutions_maps;
 
     bool gotSIGINT;
     std::vector<StopCriterions> stop_criterions;
-    std::string main_metric;
+    String main_metric;
     bool lite_output;
-    std::string profiles_file;
+    String profiles_file;
 
     Strings input_files;
     std::vector<Config> tests_configurations;
@@ -672,26 +563,26 @@ private:
     Strings tests_names_regexp;
     Strings skip_names_regexp;
 
-    #define incFulfilledCriterions(index, CRITERION)                                                          \
-    if (!stop_criterions[index].CRITERION.fulfilled)                                                          \
-    {                                                                                                         \
-        stop_criterions[index].CRITERION.priority == min ? ++stop_criterions[index].fulfilled_criterions_min  \
-                                                         : ++stop_criterions[index].fulfilled_criterions_max; \
-        stop_criterions[index].CRITERION.fulfilled = true;                                                    \
+    #define incFulfilledCriterions(index, CRITERION)                                                                        \
+    if (!stop_criterions[index].CRITERION.fulfilled)                                                                        \
+    {                                                                                                                       \
+        stop_criterions[index].CRITERION.priority == PriorityType::Min ? ++stop_criterions[index].fulfilled_criterions_min  \
+                                                                       : ++stop_criterions[index].fulfilled_criterions_max; \
+        stop_criterions[index].CRITERION.fulfilled = true;                                                                  \
     }
 
-    enum ExecutionType
+    enum class ExecutionType
     {
-        loop,
-        once
+        Loop,
+        Once
     };
     ExecutionType exec_type;
 
-    enum FilterType
+    enum class FilterType
     {
-        tag,
-        name,
-        name_regexp
+        Tag,
+        Name,
+        Name_regexp
     };
 
     size_t times_to_run = 1;
@@ -700,13 +591,13 @@ private:
     /// Removes configurations that has a given value. If leave is true, the logic is reversed.
     void removeConfigurationsIf(std::vector<Config> & configs, FilterType filter_type, const Strings & values, bool leave = false)
     {
-        std::function<bool(Config &)> checker = [&filter_type, &values, &leave](Config & config) {
+        auto checker = [&filter_type, &values, &leave](Config & config) {
             if (values.size() == 0)
                 return false;
 
             bool remove_or_not = false;
 
-            if (filter_type == tag)
+            if (filter_type == FilterType::Tag)
             {
                 Keys tags_keys;
                 config->keys("tags", tags_keys);
@@ -715,21 +606,21 @@ private:
                 for (size_t i = 0; i != tags_keys.size(); ++i)
                     tags[i] = config->getString("tags.tag[" + std::to_string(i) + "]");
 
-                for (const std::string & config_tag : tags) {
+                for (const String & config_tag : tags) {
                     if (std::find(values.begin(), values.end(), config_tag) != values.end())
                         remove_or_not = true;
                 }
             }
 
-            if (filter_type == name)
+            if (filter_type == FilterType::Name)
             {
                 remove_or_not = (std::find(values.begin(), values.end(), config->getString("name", "")) != values.end());
             }
 
-            if (filter_type == name_regexp)
+            if (filter_type == FilterType::Name_regexp)
             {
-                std::string config_name = config->getString("name", "");
-                std::function<bool(const std::string &)> regex_checker = [&config_name](const std::string & name_regexp) {
+                String config_name = config->getString("name", "");
+                auto regex_checker = [&config_name](const String & name_regexp) {
                     std::regex pattern(name_regexp);
                     return std::regex_search(config_name, pattern);
                 };
@@ -751,15 +642,15 @@ private:
     void filterConfigurations()
     {
         /// Leave tests:
-        removeConfigurationsIf(tests_configurations, FilterType::tag, tests_tags, true);
-        removeConfigurationsIf(tests_configurations, FilterType::name, tests_names, true);
-        removeConfigurationsIf(tests_configurations, FilterType::name_regexp, tests_names_regexp, true);
+        removeConfigurationsIf(tests_configurations, FilterType::Tag, tests_tags, true);
+        removeConfigurationsIf(tests_configurations, FilterType::Name, tests_names, true);
+        removeConfigurationsIf(tests_configurations, FilterType::Name_regexp, tests_names_regexp, true);
 
 
         /// Skip tests
-        removeConfigurationsIf(tests_configurations, FilterType::tag, skip_tags, false);
-        removeConfigurationsIf(tests_configurations, FilterType::name, skip_names, false);
-        removeConfigurationsIf(tests_configurations, FilterType::name_regexp, skip_names_regexp, false);
+        removeConfigurationsIf(tests_configurations, FilterType::Tag, skip_tags, false);
+        removeConfigurationsIf(tests_configurations, FilterType::Name, skip_names, false);
+        removeConfigurationsIf(tests_configurations, FilterType::Name_regexp, skip_names_regexp, false);
     }
 
     /// Checks specified preconditions per test (process cache, table existence, etc.)
@@ -772,11 +663,13 @@ private:
         config->keys("preconditions", preconditions);
         size_t table_precondition_index = 0;
 
-        for (const std::string & precondition : preconditions)
+        for (const String & precondition : preconditions)
         {
             if (precondition == "reset_cpu_cache")
-                if (system("(>&2 echo 'Flushing cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')"))
+                if (system("(>&2 echo 'Flushing cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')")) {
                     std::cerr << "Failed to flush cache" << std::endl;
+                    return false;
+                }
 
             if (precondition == "ram_size")
             {
@@ -801,9 +694,9 @@ private:
 
             if (precondition == "table_exists")
             {
-                std::string precondition_key = "preconditions.table_exists[" + std::to_string(table_precondition_index++) + "]";
-                std::string table_to_check = config->getString(precondition_key);
-                std::string query = "EXISTS TABLE " + table_to_check + ";";
+                String precondition_key = "preconditions.table_exists[" + std::to_string(table_precondition_index++) + "]";
+                String table_to_check = config->getString(precondition_key);
+                String query = "EXISTS TABLE " + table_to_check + ";";
 
                 size_t exist = 0;
 
@@ -842,7 +735,7 @@ private:
 
         for (size_t i = 0; i != input_files.size(); ++i)
         {
-            const std::string path = input_files[i];
+            const String path = input_files[i];
             tests_configurations[i] = Config(new XMLConfiguration(path));
         }
 
@@ -860,7 +753,7 @@ private:
                     continue;
                 }
 
-                std::string output = runTest(test_config);
+                String output = runTest(test_config);
                 if (lite_output)
                     std::cout << output << std::endl;
                 else
@@ -885,16 +778,16 @@ private:
         }
     }
 
-    void extractSettings(const Config & config, const std::string & key,
+    void extractSettings(const Config & config, const String & key,
                          const Strings & settings_list,
-                         std::map<std::string, std::string> settings_to_apply)
+                         std::map<String, String> settings_to_apply)
     {
-        for (const std::string & setup : settings_list)
+        for (const String & setup : settings_list)
         {
             if (setup == "profile")
                 continue;
 
-            std::string value = config->getString(key + "." + setup);
+            String value = config->getString(key + "." + setup);
             if (value.empty())
                 value = "true";
 
@@ -902,7 +795,7 @@ private:
         }
     }
 
-    std::string runTest(Config & test_config)
+    String runTest(Config & test_config)
     {
         queries.clear();
 
@@ -911,7 +804,7 @@ private:
 
         if (test_config->has("settings"))
         {
-            std::map<std::string, std::string> settings_to_apply;
+            std::map<String, String> settings_to_apply;
             Keys config_settings;
             test_config->keys("settings", config_settings);
 
@@ -920,7 +813,7 @@ private:
             {
                 if (!profiles_file.empty())
                 {
-                    std::string profile_name = test_config->getString("settings.profile");
+                    String profile_name = test_config->getString("settings.profile");
                     Config profiles_config(new XMLConfiguration(profiles_file));
 
                     Keys profile_settings;
@@ -935,7 +828,7 @@ private:
             /// This macro goes through all settings in the Settings.h
             /// and, if found any settings in test's xml configuration
             /// with the same name, sets its value to settings
-            std::map<std::string, std::string>::iterator it;
+            std::map<String, String>::iterator it;
             #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
                 it = settings_to_apply.find(#NAME);      \
                 if (it != settings_to_apply.end())       \
@@ -961,12 +854,12 @@ private:
 
         if (!test_config->has("query") && !test_config->has("query_file"))
         {
-            throw Poco::Exception("Missing query fields in test's config: " + test_name, 1);
+            throw DB::Exception("Missing query fields in test's config: " + test_name, 1);
         }
 
         if (test_config->has("query") && test_config->has("query_file"))
         {
-            throw Poco::Exception("Found both query and query_file fields. Choose only one", 1);
+            throw DB::Exception("Found both query and query_file fields. Choose only one", 1);
         }
 
         if (test_config->has("query"))
@@ -974,9 +867,9 @@ private:
 
         if (test_config->has("query_file"))
         {
-            const std::string filename = test_config->getString("query_file");
+            const String filename = test_config->getString("query_file");
             if (filename.empty())
-                throw Poco::Exception("Empty file name", 1);
+                throw DB::Exception("Empty file name", 1);
 
             bool tsv = FS::path(filename).extension().string() == ".tsv";
 
@@ -993,13 +886,13 @@ private:
 
         if (queries.empty())
         {
-            throw Poco::Exception("Did not find any query to execute: " + test_name, 1);
+            throw DB::Exception("Did not find any query to execute: " + test_name, 1);
         }
 
         if (test_config->has("substitutions"))
         {
             if (queries.size() > 1)
-                throw Poco::Exception("Only one query is allowed when using substitutions", 1);
+                throw DB::Exception("Only one query is allowed when using substitutions", 1);
 
             /// Make "subconfig" of inner xml block
             AbstractConfig substitutions_view(test_config->createView("substitutions"));
@@ -1010,16 +903,16 @@ private:
 
         if (!test_config->has("type"))
         {
-            throw Poco::Exception("Missing type property in config: " + test_name, 1);
+            throw DB::Exception("Missing type property in config: " + test_name, 1);
         }
 
-        std::string config_exec_type = test_config->getString("type");
+        String config_exec_type = test_config->getString("type");
         if (config_exec_type == "loop")
-            exec_type = loop;
+            exec_type = ExecutionType::Loop;
         else if (config_exec_type == "once")
-            exec_type = once;
+            exec_type = ExecutionType::Once;
         else
-            throw Poco::Exception("Unknown type " + config_exec_type + " in :" + test_name, 1);
+            throw DB::Exception("Unknown type " + config_exec_type + " in :" + test_name, 1);
 
         if (test_config->has("times_to_run"))
         {
@@ -1038,7 +931,7 @@ private:
         }
         else
         {
-            throw Poco::Exception("No termination conditions were found in config", 1);
+            throw DB::Exception("No termination conditions were found in config", 1);
         }
 
         AbstractConfig metrics_view(test_config->createView("metrics"));
@@ -1061,7 +954,7 @@ private:
         else
         {
             if (lite_output)
-                throw Poco::Exception("Specify main_metric for lite output", 1);
+                throw DB::Exception("Specify main_metric for lite output", 1);
         }
 
         if (metrics.size() > 0)
@@ -1097,29 +990,29 @@ private:
 
     void checkMetricsInput(const Strings & metrics) const
     {
-        std::vector<std::string> loop_metrics
+        std::vector<String> loop_metrics
             = {"min_time", "quantiles", "total_time", "queries_per_second", "rows_per_second", "bytes_per_second"};
 
-        std::vector<std::string> non_loop_metrics
+        std::vector<String> non_loop_metrics
             = {"max_rows_per_second", "max_bytes_per_second", "avg_rows_per_second", "avg_bytes_per_second"};
 
-        if (exec_type == loop)
+        if (exec_type == ExecutionType::Loop)
         {
-            for (const std::string & metric : metrics)
+            for (const String & metric : metrics)
             {
                 if (std::find(non_loop_metrics.begin(), non_loop_metrics.end(), metric) != non_loop_metrics.end())
                 {
-                    throw Poco::Exception("Wrong type of metric for loop execution type (" + metric + ")", 1);
+                    throw DB::Exception("Wrong type of metric for loop execution type (" + metric + ")", 1);
                 }
             }
         }
         else
         {
-            for (const std::string & metric : metrics)
+            for (const String & metric : metrics)
             {
                 if (std::find(loop_metrics.begin(), loop_metrics.end(), metric) != loop_metrics.end())
                 {
-                    throw Poco::Exception("Wrong type of metric for non-loop execution type (" + metric + ")", 1);
+                    throw DB::Exception("Wrong type of metric for non-loop execution type (" + metric + ")", 1);
                 }
             }
         }
@@ -1138,7 +1031,7 @@ private:
             statistics[statistic_index].clear();
             execute(query, statistic_index);
 
-            if (exec_type == loop)
+            if (exec_type == ExecutionType::Loop)
             {
                 while (!gotSIGINT)
                 {
@@ -1286,10 +1179,10 @@ private:
 
             /// Property values for substitution will be stored in a vector
             /// accessible by property name
-            std::vector<std::string> xml_values;
+            std::vector<String> xml_values;
             xml_substitution->keys("values", xml_values);
 
-            std::string name = xml_substitution->getString("name");
+            String name = xml_substitution->getString("name");
 
             for (size_t j = 0; j != xml_values.size(); ++j)
             {
@@ -1298,15 +1191,15 @@ private:
         }
     }
 
-    std::vector<std::string> formatQueries(const std::string & query, StringToVector substitutions)
+    std::vector<String> formatQueries(const String & query, StringToVector substitutions)
     {
-        std::vector<std::string> queries;
+        std::vector<String> queries;
 
         StringToVector::iterator substitutions_first = substitutions.begin();
         StringToVector::iterator substitutions_last = substitutions.end();
         --substitutions_last;
 
-        std::map<std::string, std::string> substitutions_map;
+        std::map<String, String> substitutions_map;
 
         runThroughAllOptionsAndPush(substitutions_first, substitutions_last, query, queries, substitutions_map);
 
@@ -1317,25 +1210,25 @@ private:
     /// and replaces property {names} by their values
     void runThroughAllOptionsAndPush(StringToVector::iterator substitutions_left,
         StringToVector::iterator substitutions_right,
-        const std::string & template_query,
-        std::vector<std::string> & queries,
+        const String & template_query,
+        std::vector<String> & queries,
         const StringKeyValue & template_substitutions_map = StringKeyValue())
     {
-        std::string name = substitutions_left->first;
-        std::vector<std::string> values = substitutions_left->second;
+        String name = substitutions_left->first;
+        std::vector<String> values = substitutions_left->second;
 
-        for (const std::string & value : values)
+        for (const String & value : values)
         {
             /// Copy query string for each unique permutation
             Query query = template_query;
             StringKeyValue substitutions_map = template_substitutions_map;
             size_t substr_pos = 0;
 
-            while (substr_pos != std::string::npos)
+            while (substr_pos != String::npos)
             {
                 substr_pos = query.find("{" + name + "}");
 
-                if (substr_pos != std::string::npos)
+                if (substr_pos != String::npos)
                 {
                     query.replace(substr_pos, 1 + name.length() + 1, value);
                 }
@@ -1360,21 +1253,21 @@ private:
     }
 
 public:
-    std::string constructTotalInfo(Strings metrics)
+    String constructTotalInfo(Strings metrics)
     {
         JSONString json_output;
-        std::string hostname;
+        String hostname;
 
         char hostname_buffer[256];
         if (gethostname(hostname_buffer, 256) == 0)
         {
-            hostname = std::string(hostname_buffer);
+            hostname = String(hostname_buffer);
         }
 
-        json_output["hostname"].set(hostname);
-        json_output["Number of CPUs"].set(sysconf(_SC_NPROCESSORS_ONLN));
-        json_output["test_name"].set(test_name);
-        json_output["main_metric"].set(main_metric);
+        json_output.set("hostname", hostname);
+        json_output.set("cpu_num", sysconf(_SC_NPROCESSORS_ONLN));
+        json_output.set("test_name", test_name);
+        json_output.set("main_metric", main_metric);
 
         if (substitutions.size())
         {
@@ -1382,10 +1275,10 @@ public:
 
             for (auto it = substitutions.begin(); it != substitutions.end(); ++it)
             {
-                std::string parameter = it->first;
-                std::vector<std::string> values = it->second;
+                String parameter = it->first;
+                std::vector<String> values = it->second;
 
-                std::string array_string = "[";
+                String array_string = "[";
                 for (size_t i = 0; i != values.size(); ++i)
                 {
                     array_string += '\"' + values[i] + '\"';
@@ -1396,10 +1289,10 @@ public:
                 }
                 array_string += ']';
 
-                json_parameters[parameter].set(array_string);
+                json_parameters.set(parameter, array_string);
             }
 
-            json_output["parameters"].set(json_parameters);
+            json_output.set("parameters", json_parameters.asString());
         }
 
         std::vector<JSONString> run_infos;
@@ -1418,75 +1311,79 @@ public:
 
                     for (auto it = substitutions_maps[query_index].begin(); it != substitutions_maps[query_index].end(); ++it)
                     {
-                        parameters[it->first].set(it->second);
+                        parameters.set(it->first, it->second);
                     }
 
-                    runJSON["parameters"].set(parameters);
+                    runJSON.set("parameters", parameters.asString());
                 }
 
-                if (exec_type == loop)
+                if (exec_type == ExecutionType::Loop)
                 {
                     /// in seconds
                     if (std::find(metrics.begin(), metrics.end(), "min_time") != metrics.end())
-                        runJSON["min_time"].set(statistics[number_of_launch].min_time / double(1000));
+                        runJSON.set("min_time", statistics[number_of_launch].min_time / double(1000));
 
                     if (std::find(metrics.begin(), metrics.end(), "quantiles") != metrics.end())
                     {
                         JSONString quantiles(4); /// here, 4 is the size of \t padding
                         for (double percent = 10; percent <= 90; percent += 10)
                         {
-                            quantiles[percent / 100].set(statistics[number_of_launch].sampler.quantileInterpolated(percent / 100.0));
-                        }
-                        quantiles[0.95].set(statistics[number_of_launch].sampler.quantileInterpolated(95 / 100.0));
-                        quantiles[0.99].set(statistics[number_of_launch].sampler.quantileInterpolated(99 / 100.0));
-                        quantiles[0.999].set(statistics[number_of_launch].sampler.quantileInterpolated(99.9 / 100.0));
-                        quantiles[0.9999].set(statistics[number_of_launch].sampler.quantileInterpolated(99.99 / 100.0));
+                            String quantile_key = std::to_string(percent / 100.0);
+                            while (quantile_key.back() == '0')
+                                quantile_key.pop_back();
 
-                        runJSON["quantiles"].set(quantiles);
+                            quantiles.set(quantile_key, statistics[number_of_launch].sampler.quantileInterpolated(percent / 100.0));
+                        }
+                        quantiles.set("0.95",   statistics[number_of_launch].sampler.quantileInterpolated(95    / 100.0));
+                        quantiles.set("0.99",   statistics[number_of_launch].sampler.quantileInterpolated(99    / 100.0));
+                        quantiles.set("0.999",  statistics[number_of_launch].sampler.quantileInterpolated(99.9  / 100.0));
+                        quantiles.set("0.9999", statistics[number_of_launch].sampler.quantileInterpolated(99.99 / 100.0));
+
+                        runJSON.set("quantiles", quantiles.asString());
                     }
 
                     if (std::find(metrics.begin(), metrics.end(), "total_time") != metrics.end())
-                        runJSON["total_time"].set(statistics[number_of_launch].total_time);
+                        runJSON.set("total_time", statistics[number_of_launch].total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "queries_per_second") != metrics.end())
-                        runJSON["queries_per_second"].set(double(statistics[number_of_launch].queries) /
+                        runJSON.set("queries_per_second", double(statistics[number_of_launch].queries) /
                                                           statistics[number_of_launch].total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "rows_per_second") != metrics.end())
-                        runJSON["rows_per_second"].set(double(statistics[number_of_launch].rows_read) /
+                        runJSON.set("rows_per_second", double(statistics[number_of_launch].rows_read) /
                                                        statistics[number_of_launch].total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "bytes_per_second") != metrics.end())
-                        runJSON["bytes_per_second"].set(double(statistics[number_of_launch].bytes_read) /
+                        runJSON.set("bytes_per_second", double(statistics[number_of_launch].bytes_read) /
                                                         statistics[number_of_launch].total_time);
                 }
                 else
                 {
                     if (std::find(metrics.begin(), metrics.end(), "max_rows_per_second") != metrics.end())
-                        runJSON["max_rows_per_second"].set(statistics[number_of_launch].max_rows_speed);
+                        runJSON.set("max_rows_per_second", statistics[number_of_launch].max_rows_speed);
 
                     if (std::find(metrics.begin(), metrics.end(), "max_bytes_per_second") != metrics.end())
-                        runJSON["max_bytes_per_second"].set(statistics[number_of_launch].max_bytes_speed);
+                        runJSON.set("max_bytes_per_second", statistics[number_of_launch].max_bytes_speed);
 
                     if (std::find(metrics.begin(), metrics.end(), "avg_rows_per_second") != metrics.end())
-                        runJSON["avg_rows_per_second"].set(statistics[number_of_launch].avg_rows_speed_value);
+                        runJSON.set("avg_rows_per_second", statistics[number_of_launch].avg_rows_speed_value);
 
                     if (std::find(metrics.begin(), metrics.end(), "avg_bytes_per_second") != metrics.end())
-                        runJSON["avg_bytes_per_second"].set(statistics[number_of_launch].avg_bytes_speed_value);
+                        runJSON.set("avg_bytes_per_second", statistics[number_of_launch].avg_bytes_speed_value);
                 }
 
                 run_infos.push_back(runJSON);
             }
         }
 
-        json_output["runs"].set(run_infos);
+        json_output.set("runs", run_infos);
 
-        return json_output.constructOutput();
+        return json_output.asString();
     }
 
-    std::string minOutput(const std::string & main_metric)
+    String minOutput(const String & main_metric)
     {
-        std::string output;
+        String output;
 
         for (size_t query_index = 0; query_index < queries.size(); ++query_index)
         {
@@ -1514,7 +1411,7 @@ public:
 };
 }
 
-void getFilesFromDir(FS::path && dir, std::vector<std::string> & input_files)
+static void getFilesFromDir(const FS::path & dir, std::vector<String> & input_files)
 {
     if (dir.extension().string() == ".xml")
         std::cerr << "Warning: \"" + dir.string() + "\" is a directory, but has .xml extension" << std::endl;
@@ -1535,18 +1432,18 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
     try
     {
         using boost::program_options::value;
-        using Strings = std::vector<std::string>;
+        using Strings = std::vector<String>;
 
         boost::program_options::options_description desc("Allowed options");
         desc.add_options()
             ("help",                                                                     "produce help message")
             ("lite",                                                                     "use lite version of output")
-            ("profiles-file",        value<std::string>()->default_value(""),            "Specify a file with global profiles")
-            ("host,h",               value<std::string>()->default_value("localhost"),   "")
+            ("profiles-file",        value<String>()->default_value(""),            "Specify a file with global profiles")
+            ("host,h",               value<String>()->default_value("localhost"),   "")
             ("port",                 value<UInt16>()->default_value(9000),               "")
-            ("database",             value<std::string>()->default_value("default"),     "")
-            ("user",                 value<std::string>()->default_value("default"),     "")
-            ("password",             value<std::string>()->default_value(""),            "")
+            ("database",             value<String>()->default_value("default"),     "")
+            ("user",                 value<String>()->default_value("default"),     "")
+            ("password",             value<String>()->default_value(""),            "")
             ("tags",                 value<Strings>()->multitoken(),                     "Run only tests with tag")
             ("skip-tags",            value<Strings>()->multitoken(),                     "Do not run tests with tag")
             ("names",                value<Strings>()->multitoken(),                     "Run tests with specific name")
@@ -1556,7 +1453,7 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
 
         /// These options will not be displayed in --help
         boost::program_options::options_description hidden("Hidden options");
-        hidden.add_options()("input-files", value<std::vector<std::string>>(), "");
+        hidden.add_options()("input-files", value<std::vector<String>>(), "");
 
         /// But they will be legit, though. And they must be given without name
         boost::program_options::positional_options_description positional;
@@ -1582,32 +1479,33 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
         if (!options.count("input-files"))
         {
             std::cerr << "Trying to find tests in current folder" << std::endl;
+            FS::path curr_dir(".");
 
-            getFilesFromDir(FS::path("."), input_files);
+            getFilesFromDir(curr_dir, input_files);
 
             if (input_files.empty())
-                throw Poco::Exception("Did not find any xml files", 1);
+                throw DB::Exception("Did not find any xml files", 1);
         }
         else
         {
             input_files = options["input-files"].as<Strings>();
 
-            for (const std::string filename : input_files)
+            for (const String filename : input_files)
             {
                 FS::path file(filename);
 
                 if (!FS::exists(file))
-                    throw Poco::Exception("File \"" + filename + "\" does not exist", 1);
+                    throw DB::Exception("File \"" + filename + "\" does not exist", 1);
 
                 if (FS::is_directory(file))
                 {
-                    input_files.erase( std::remove(input_files.begin(), input_files.end(), filename) , input_files.end());
-                    getFilesFromDir(std::move(file), input_files);
+                    input_files.erase( std::remove(input_files.begin(), input_files.end(), filename) , input_files.end() );
+                    getFilesFromDir(file, input_files);
                 }
                 else
                 {
                     if (file.extension().string() != ".xml")
-                        throw Poco::Exception("File \"" + filename + "\" does not have .xml extension", 1);
+                        throw DB::Exception("File \"" + filename + "\" does not have .xml extension", 1);
                 }
             }
         }
@@ -1632,13 +1530,13 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
             : Strings({});
 
         PerformanceTest performanceTest(
-            options["host"].as<std::string>(),
+            options["host"].as<String>(),
             options["port"].as<UInt16>(),
-            options["database"].as<std::string>(),
-            options["user"].as<std::string>(),
-            options["password"].as<std::string>(),
+            options["database"].as<String>(),
+            options["user"].as<String>(),
+            options["password"].as<String>(),
             options.count("lite") > 0,
-            options["profiles-file"].as<std::string>(),
+            options["profiles-file"].as<String>(),
             std::move(input_files),
             std::move(tests_tags),
             std::move(skip_tags),
@@ -1648,32 +1546,10 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
             std::move(skip_names_regexp)
         );
     }
-    catch (const Exception & e)
-    {
-        std::string text = e.displayText();
-
-        std::cerr << "Code: " << e.code() << ". " << text << "\n\n";
-
-        /// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
-        if (std::string::npos == text.find("Stack trace"))
-            std::cerr << "Stack trace:\n" << e.getStackTrace().toString();
-
-        return e.code();
-    }
-    catch (const Poco::Exception & e)
-    {
-        std::cerr << "Poco::Exception: " << e.displayText() << "\n";
-        return ErrorCodes::POCO_EXCEPTION;
-    }
-    catch (const std::exception & e)
-    {
-        std::cerr << "std::exception: " << e.what() << "\n";
-        return ErrorCodes::STD_EXCEPTION;
-    }
     catch (...)
     {
-        std::cerr << "Unknown exception\n";
-        return ErrorCodes::UNKNOWN_EXCEPTION;
+        std::cout << getCurrentExceptionMessage(/*with stacktrace = */true) << std::endl;
+        return getCurrentExceptionCode();
     }
 
     return 0;
