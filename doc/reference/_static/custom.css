@@ -25,6 +25,10 @@ input {
     margin-bottom: 4px;
 }
 
+a.reference {
+	border-bottom: none;
+}
+
 @font-face {
 	font-family: 'Yandex Sans Text Web';
 	src: url(https://yastatic.net/adv-www/_/yy5JveR58JFkc97waf-xp0i6_jM.eot);
