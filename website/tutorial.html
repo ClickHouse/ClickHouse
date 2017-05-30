@@ -225,15 +225,15 @@
             ClickHouse from sources</a> and then install.</p>
 
     <p><b>clickhouse-client</b> package contains <a
-            href="/reference_en.html#Command-line%20client">clickhouse-client</a> application —
+            href="docs/en/interfaces/cli.html">clickhouse-client</a> application —
         interactive ClickHouse client. <b>clickhouse-server-base</b> contains a clickhouse-server binary file. <b>clickhouse-server-common</b>
         — contains config files for the clickhouse-server.</p>
 
     <p>Server config files are located in /etc/clickhouse-server/. Before getting to work please notice the <b>path</b>
         element in config. <b>Path</b>&nbsp;determines the location for data storage. It's not really handy to directly
         edit <b>config.xml</b> file considering package updates. Recommended way is to override the config elements in
-        <a href="/reference_en.html#Configuration%20files">files of config.d directory</a>.
-        Also you may want to <a href="/reference_en.html#Access%20rights">set up access
+        <a href="docs/en/configuration_files.html">files of config.d directory</a>.
+        Also you may want to <a href="docs/en/access_rights.html">set up access
             rights</a> at the start.</p>
 
     <p><b>clickhouse-server</b> won't be launched automatically after package installation. It won't be automatically
@@ -395,7 +395,7 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
         </div>
     </div>
 
-    <p>Now we have a table of <a href="/reference_en.html#MergeTree">MergeTree type</a>.
+    <p>Now we have a table of <a href="docs/en/table_engines/mergetree.html">MergeTree type</a>.
         MergeTree table type is recommended for usage in production. Table of this kind has a primary key used for
         incremental sort of table data. This allows fast execution of queries in ranges of a primary key.</p>
 
@@ -415,15 +415,15 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
 
     <h3>Load data</h3>
     <pre>xz -v -c -d &lt; ontime.csv.xz | clickhouse-client --query="INSERT INTO ontime FORMAT CSV"</pre>
-    <p>ClickHouse INSERT query allows to load data in any <a href="/reference_en.html#Formats">supported
+    <p>ClickHouse INSERT query allows to load data in any <a href="docs/en/formats/index.html">supported
         format</a>. Data load requires just O(1) RAM consumption. INSERT query can receive any data volume as input.
         It's strongly recommended to insert data with <a
-                href="/reference_en.html#Performance%20on%20data%20insertion.">not too small
+                href="docs/en/introduction/performance.html#performance-on-data-insertion">not too small
             size blocks</a>. Notice that insert of blocks with size up to max_insert_block_size (= 1&nbsp;048&nbsp;576
         rows by default) is an atomic operation: data block will be inserted completely or not inserted at all. In case
         of disconnect during insert operation you may not know if the block was inserted successfully. To achieve
         exactly-once semantics ClickHouse supports idempotency for <a
-                href="/reference_en.html#Data%20replication">replicated tables</a>. This means
+                href="docs/en/table_engines/replication.html">replicated tables</a>. This means
         that you may retry insert of the same data block (possibly on a different replicas) but this block will be
         inserted just once. Anyway in this guide we will load data from our localhost so we may not take care about data
         blocks generation and exactly-once semantics.</p>
@@ -434,7 +434,7 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
     <p>Our sample dataset is a bit not optimal. There are two reasons.</p>
 
     <p>The first is that String data type is used in cases when <a
-            href="/reference_en.html#Enum">Enum</a> or numeric type would fit best.</p>
+            href="docs/en/data_types/enum.html">Enum</a> or numeric type would fit best.</p>
 
     <p class="tip"><b>⚖</b> When set of possible values is determined and known to be small. (E.g. OS name, browser
         vendors etc.) it's&nbsp;recommended to use Enums or numbers to improve performance.
@@ -445,9 +445,10 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
         which DateTime handling functions may be not efficient.</p>
 
     <p class="tip"><b>✯</b> ClickHouse <a
-            href="/reference_en.html#Functions%20for%20working%20with%20dates%20and%20times">functions
+            href="docs/en/functions/date_time_functions.html">functions
         for operating with DateTime fields</a> are well-optimized so such redundancy is not required. Anyway much
-        columns is not a reason to worry — ClickHouse is a <a href="https://en.wikipedia.org/wiki/Column-oriented_DBMS">column-oriented
+        columns is not a reason to worry — ClickHouse is a <a href="https://en.wikipedia.org/wiki/Column-oriented_DBMS"
+        rel="external nofollow">column-oriented
             DBMS</a>. This allows you to have as much fields as you need. Hundreds of columns in a table is fine for
         ClickHouse.</p>
 
@@ -710,9 +711,9 @@ LIMIT 20
         </div>
     </div>
 
-    <p>To enable replication <a href="http://zookeeper.apache.org/">ZooKeeper</a> is required. ClickHouse will take care
-        of data consistency on all replicas and run restore procedure after failure automatically. It's recommended to
-        deploy ZooKeeper cluster to separate servers.</p>
+    <p>To enable replication <a href="http://zookeeper.apache.org/" rel="external nofollow">ZooKeeper</a> is required.
+        ClickHouse will take care of data consistency on all replicas and run restore procedure after failure
+        automatically. It's recommended to deploy ZooKeeper cluster to separate servers.</p>
 
     <p>ZooKeeper is not a requirement — in some simple cases you can duplicate the data by writing it into all the
         replicas from your application code. This approach is not recommended — in this case ClickHouse is not able to
@@ -760,7 +761,7 @@ ENGINE = ReplicatedMergeTree(
     (Year, FlightDate),
     8192);
 </pre>
-    <p>Here we use <a href="/reference_en.html#ReplicatedMergeTree">ReplicatedMergeTree</a>
+    <p>Here we use <a href="docs/en/table_engines/replication.html#replicatedmergetree">ReplicatedMergeTree</a>
         table type. In parameters we specify ZooKeeper path containing shard and replica identifiers.</p>
 
     <pre>INSERT INTO ontime_replica SELECT * FROM ontime;</pre>
@@ -790,10 +791,6 @@ ENGINE = ReplicatedMergeTree(
 
 <script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
 <script type="text/javascript">
-    function getParams() {
-        var matches = document.cookie.match(/yandex_login=([\w\-]+)/);
-        return (matches && matches.length == 2) ? {"login": matches[1]} : {};
-    }
     $('.spoiler_title').click(function () {
         $(this).next('.spoiler_body').toggle(100);
     });

@@ -36,7 +36,7 @@ gulp.task('reference', [], function () {
 });
 
 gulp.task('docs', [], function () {
-    run('cd ' + docsDir + '; make');
+    run('cd ' + docsDir + '; make', {});
     return gulp.src(paths.docs)
         .pipe(gulp.dest(outputDir + '/docs'))
         .pipe(connect.reload())
@@ -87,6 +87,7 @@ gulp.task('images', [], function () {
 
 gulp.task('watch', function () {
     gulp.watch(paths.htmls, ['htmls']);
+    gulp.watch(paths.htmls, ['reference']);
     gulp.watch(paths.scripts, ['scripts']);
     gulp.watch(paths.images, ['images']);
 });
