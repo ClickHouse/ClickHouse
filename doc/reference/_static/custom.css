@@ -8,7 +8,7 @@ div.sphinxsidebarwrapper {
 div.sphinxsidebarwrapper p.logo {
     float: left;
     text-align: left;
-    margin: -4px 4px 0 0px;
+    margin: -4px 4px 0 0;
 }
 
 div.sphinxsidebar a {
