@@ -57,7 +57,11 @@ StorageMergeTree::StorageMergeTree(
 {
     data.loadDataParts(has_force_restore_data_flag);
     data.clearOldParts();
-    data.clearOldTemporaryDirectories();
+
+    /// Temporary directories contain unfinalized results of Merges (after forced restart)
+    ///  and don't allow to reinitialize them, so delete each of them immediately
+    data.clearOldTemporaryDirectories(0);
+
     increment.set(data.getMaxDataPartIndex());
 }
 
