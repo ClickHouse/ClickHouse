@@ -1,4 +1,4 @@
-#include <Storages/StorageLog.h>
+#include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -8,10 +8,8 @@
 #include <Storages/System/StorageSystemParts.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageLog.h>
 #include <Common/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
-
 
 namespace DB
 {
@@ -216,7 +214,17 @@ BlockInputStreams StorageSystemParts::read(
             block.getByPosition(i++).column->insert(part->name);
             block.getByPosition(i++).column->insert(static_cast<UInt64>(active_parts.count(part)));
             block.getByPosition(i++).column->insert(part->size);
-            block.getByPosition(i++).column->insert(part->size * part->columns.size() * sizeof(Mark));
+
+            size_t marks_size = 0;
+            for (const NameAndTypePair & it : part->columns)
+            {
+                String name = escapeForFileName(it.name);
+                auto checksum = part->checksums.files.find(name + ".mrk");
+                if (checksum != part->checksums.files.end())
+                    marks_size += checksum->second.file_size;
+            }
+            block.getByPosition(i++).column->insert(marks_size);
+
             block.getByPosition(i++).column->insert(part->getExactSizeRows());
             block.getByPosition(i++).column->insert(static_cast<size_t>(part->size_in_bytes));
             block.getByPosition(i++).column->insert(part->modification_time);
