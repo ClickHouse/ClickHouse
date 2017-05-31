@@ -91,7 +91,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
 int getCurrentExceptionCode();
 
 
-/// An execution status of any piece of code
+/// An execution status of any piece of code, contains return code and optional error
 struct ExecutionStatus
 {
     int code = 0;

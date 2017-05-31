@@ -259,7 +259,7 @@ std::string ExecutionStatus::serializeText() const
     std::string res;
     {
         WriteBufferFromString wb(res);
-        wb << code << "\n" << message;
+        wb << code << "\n" << escape << message;
     }
     return res;
 }
@@ -267,7 +267,7 @@ std::string ExecutionStatus::serializeText() const
 void ExecutionStatus::deserializeText(const std::string & data)
 {
     ReadBufferFromString rb(data);
-    rb >> code >> "\n" >> message;
+    rb >> code >> "\n" >> escape >> message;
 }
 
 ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message)

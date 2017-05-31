@@ -177,11 +177,7 @@ private:
 };
 
 
-<<<<<<< HEAD
-/// Quota the identifier with backquotes, if required.
-=======
 /// Surrounds an identifier by back quotes if it is necessary.
->>>>>>> Parsers refactoring. [#CLICKHOUSE-5]
 String backQuoteIfNeed(const String & x);
 
 

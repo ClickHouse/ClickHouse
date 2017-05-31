@@ -65,7 +65,7 @@ private:
     std::string queue_dir;      /// dir with queue of queries
     std::string master_dir;     /// dir with queries was initiated by the server
 
-    /// Used to omit already processed nodes;
+    /// Used to omit already processed nodes. Maybe usage of set is more obvious.
     std::string last_processed_node_name;
 
     std::shared_ptr<zkutil::ZooKeeper> zookeeper;
@@ -76,12 +76,15 @@ private:
     ExecutionStatus current_node_execution_status;
 
     std::shared_ptr<Poco::Event> event_queue_updated;
-    std::atomic<bool> stop_flag;
+    std::atomic<bool> stop_flag{false};
     std::thread thread;
 
     size_t last_cleanup_time_seconds = 0;
-    static constexpr size_t node_max_lifetime_seconds = 60; // 7 * 24 * 60 * 60;
-    static constexpr size_t cleanup_min_period_seconds = 60;
+
+    /// Delete node if its age is greater than that
+    static const size_t node_max_lifetime_seconds;
+    /// Cleaning starts after new node event is received if the last cleaning wasn't made sooner than N seconds ago
+    static const size_t cleanup_min_period_seconds;
 
     friend class DDLQueryStatusInputSream;
 };

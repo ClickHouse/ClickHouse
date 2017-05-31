@@ -50,6 +50,10 @@ namespace ErrorCodes
 }
 
 
+const size_t DDLWorker::node_max_lifetime_seconds = 7 * 24 * 60 * 60; // week
+const size_t DDLWorker::cleanup_min_period_seconds = 60; // minute
+
+
 struct DDLLogEntry
 {
     String query;
@@ -65,7 +69,7 @@ struct DDLLogEntry
             WriteBufferFromString wb(res);
 
             wb << "version: " << CURRENT_VERSION << "\n";
-            wb << "query: " << query << "\n";
+            wb << "query: " << escape << query << "\n";
             wb << "hosts: " << hosts << "\n";
             wb << "initiator: " << initiator << "\n";
         }
@@ -83,7 +87,7 @@ struct DDLLogEntry
         if (version != CURRENT_VERSION)
             throw Exception("Unknown DDLLogEntry format version: " + version, ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
-        rb >> "query: " >> query >> "\n";
+        rb >> "query: " >> escape >> query >> "\n";
         rb >> "hosts: " >> hosts >> "\n";
 
         if (!rb.eof())
@@ -128,7 +132,7 @@ static bool isSupportedAlterType(int type)
 
 
 DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_)
-    : context(context_), stop_flag(false)
+    : context(context_)
 {
     queue_dir = zk_root_dir;
     if (queue_dir.back() == '/')
@@ -169,7 +173,9 @@ void DDLWorker::processTasks()
 
     for (auto it = begin_node; it != queue_nodes.end(); ++it)
     {
-        String node_data, node_name = *it, node_path = queue_dir + "/" + node_name;
+        const String & node_name = *it;
+        String node_path = queue_dir + "/" + node_name;
+        String node_data;
 
         if (!zookeeper->tryGet(node_path, node_data))
         {
