@@ -3,7 +3,6 @@
 #include <Core/Field.h>
 #include <Core/StringRef.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <Dictionaries/IDictionarySource.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/PODArray.h>
 #include <memory>
@@ -20,6 +19,9 @@ using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 struct DictionaryLifetime;
 struct DictionaryStructure;
 class ColumnString;
+
+class IBlockInputStream;
+using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
 
 struct IDictionaryBase : public std::enable_shared_from_this<IDictionaryBase>
