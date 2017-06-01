@@ -378,6 +378,10 @@ private:
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
 
+    /// Like removePartFromZooKeeper, but handles NONODE and remove node anyway, see CLICKHOUSE-3040
+    /// Use it only in non-critical places for cleaning.
+    void removePossiblyIncompletePartNodeFromZooKeeper(const String & part_name, const zkutil::ZooKeeperPtr & zookeeper);
+
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);
 
