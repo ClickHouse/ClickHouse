@@ -60,7 +60,7 @@ struct DDLLogEntry
     Strings hosts;
     String initiator; // optional
 
-    static constexpr int CURRENT_VERSION = '1';
+    static constexpr int CURRENT_VERSION = 1;
 
     String toString()
     {
@@ -68,7 +68,8 @@ struct DDLLogEntry
         {
             WriteBufferFromString wb(res);
 
-            wb << "version: " << CURRENT_VERSION << "\n";
+            auto version = CURRENT_VERSION;
+            wb << "version: " << version << "\n";
             wb << "query: " << escape << query << "\n";
             wb << "hosts: " << hosts << "\n";
             wb << "initiator: " << initiator << "\n";
