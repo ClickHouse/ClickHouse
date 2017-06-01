@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/** Запрос типа такого:
+/** Query like this:
   * SET [GLOBAL] name1 = value1, name2 = value2, ...
   */
 class ParserSetQuery : public IParserBase
@@ -19,7 +19,7 @@ protected:
     const char * getName() const { return "SET query"; }
     bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 
-    /// Парсить список name = value пар, без SET [GLOBAL].
+    /// Parse the list `name = value` pairs, without SET [GLOBAL].
     bool parse_only_internals;
 };
 

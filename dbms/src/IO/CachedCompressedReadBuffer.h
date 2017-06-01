@@ -12,11 +12,11 @@ namespace DB
 {
 
 
-/** Буфер для чтения из сжатого файла с использованием кэша разжатых блоков.
-  * Кэш внешний - передаётся в качестве аргумента в конструктор.
-  * Позволяет увеличить производительность в случае, когда часто читаются одни и те же блоки.
-  * Недостатки:
-  * - в случае, если нужно читать много данных подряд, но из них только часть закэширована, приходится делать seek-и.
+/** A buffer for reading from a compressed file using the cache of decompressed blocks.
+  * The external cache is passed as an argument to the constructor.
+  * Allows you to increase performance in cases where the same blocks are often read.
+  * Disadvantages:
+  * - in case you need to read a lot of data in a row, but of them only a part is cached, you have to do seek-and.
   */
 class CachedCompressedReadBuffer : public CompressedReadBufferBase, public ReadBuffer
 {
@@ -30,13 +30,13 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> file_in;
     size_t file_pos;
 
-    /// Кусок данных из кэша, или кусок считанных данных, который мы положим в кэш.
+    /// A piece of data from the cache, or a piece of read data that we put into the cache.
     UncompressedCache::MappedPtr owned_cell;
 
     void initInput();
     bool nextImpl() override;
 
-    /// Передаётся в file_in.
+    /// Passed into file_in.
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type;
 

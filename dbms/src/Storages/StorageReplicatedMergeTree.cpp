@@ -289,6 +289,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         checkTableStructure(skip_sanity_checks, true);
         checkParts(skip_sanity_checks);
+
+        /// Temporary directories contain unfinalized results of Merges or Fetches (after forced restart)
+        ///  and don't allow to reinitialize them, so delete each of them immediately
+        data.clearOldTemporaryDirectories(0);
     }
 
     createNewZooKeeperNodes();

@@ -7,16 +7,16 @@
 namespace DB
 {
 
-/** Пишет данные в другой буфер, заменяя невалидные UTF-8 последовательности на указанную последовательность.
-    * Если записывается уже валидный UTF-8, работает быстрее.
-    * Замечение: перед использованием полученной строки, уничтожте этот объект.
+/** Writes the data to another buffer, replacing the invalid UTF-8 sequences with the specified sequence.
+    * If the valid UTF-8 is already written, it works faster.
+    * Note: before using the resulting string, destroy this object.
     */
 class WriteBufferValidUTF8 : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
     WriteBuffer & output_buffer;
     bool group_replacements;
-    /// Последний записанный символ был replacement.
+    /// The last recorded character was `replacement`.
     bool just_put_replacement = false;
     std::string replacement;
 

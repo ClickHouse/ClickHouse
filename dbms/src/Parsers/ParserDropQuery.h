@@ -7,10 +7,10 @@
 namespace DB
 {
 
-/** Запрос типа такого:
+/** Query like this:
   * DROP|DETACH TABLE [IF EXISTS] [db.]name
   *
-  * Или:
+  * Or:
   * DROP DATABASE [IF EXISTS] db
   */
 class ParserDropQuery : public IParserBase

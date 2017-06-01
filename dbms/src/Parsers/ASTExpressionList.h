@@ -38,7 +38,7 @@ public:
         }
     }
 
-    /** Вывести список выражений в секциях запроса SELECT - по одному выражению на строку.
+    /** Output a list of expressions in the SELECT query sections - one expression per line.
       */
     void formatImplMultiline(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
     {

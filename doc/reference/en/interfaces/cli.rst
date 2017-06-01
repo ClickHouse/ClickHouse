@@ -1,6 +1,6 @@
 Command-line client
 -----------------------
-Для работы из командной строки вы можете использовать clickhouse-client:
+To work for command line you can use ``clickhouse-client``:
 ::
     $ clickhouse-client
     ClickHouse client version 0.0.26176.

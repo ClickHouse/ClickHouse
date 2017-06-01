@@ -472,7 +472,7 @@ static bool isOldPartDirectory(Poco::File & directory, time_t threshold)
 }
 
 
-void MergeTreeData::clearOldTemporaryDirectories()
+void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock<std::mutex> lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -480,6 +480,9 @@ void MergeTreeData::clearOldTemporaryDirectories()
         return;
 
     time_t current_time = time(0);
+    ssize_t deadline = (custom_directories_lifetime_seconds >= 0)
+        ? current_time - custom_directories_lifetime_seconds
+        : current_time - settings.temporary_directories_lifetime;
 
     /// Delete temporary directories older than a day.
     Poco::DirectoryIterator end;
@@ -491,7 +494,7 @@ void MergeTreeData::clearOldTemporaryDirectories()
 
             try
             {
-                if (tmp_dir.isDirectory() && isOldPartDirectory(tmp_dir, current_time - settings.temporary_directories_lifetime))
+                if (tmp_dir.isDirectory() && isOldPartDirectory(tmp_dir, deadline))
                 {
                     LOG_WARNING(log, "Removing temporary directory " << full_path << it.name());
                     Poco::File(full_path + it.name()).remove(true);

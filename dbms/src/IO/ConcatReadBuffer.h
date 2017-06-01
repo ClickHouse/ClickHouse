@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/** Читает из конкатенации нескольких ReadBuffer-ов
+/** Reads from the concatenation of multiple ReadBuffers
   */
 class ConcatReadBuffer : public ReadBuffer
 {
@@ -24,7 +24,7 @@ protected:
         if (buffers.end() == current)
             return false;
 
-        /// Первое чтение
+        /// First reading
         if (working_buffer.size() == 0 && (*current)->hasPendingData())
         {
             working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
@@ -37,7 +37,7 @@ protected:
             if (buffers.end() == current)
                 return false;
 
-            /// Пропускаем закончившиеся буферы; если буфер не закончился, но курсор на конце, то прочитаем следующую порцию данных.
+            /// We skip the filled up buffers; if the buffer is not filled in, but the cursor is at the end, then read the next piece of data.
             while ((*current)->eof())
             {
                 ++current;
