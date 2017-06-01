@@ -10,14 +10,17 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
+#include <Common/hex.h>
 #include <Common/Volnitsky.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
 
-/** Functions for retrieving visit parameters.
- *  Implemented via templates from FunctionsStringSearch.h.
+/** Functions for retrieving "visit parameters".
+ * Visit parameters in Yandex.Metrika are a special kind of JSONs.
+ * These functions are applicable to almost any JSONs.
+ * Implemented via templates from FunctionsStringSearch.h.
  *
  * Check if there is a parameter
  *         visitParamHas
@@ -140,50 +143,12 @@ struct ExtractRaw
 
 struct ExtractString
 {
-    static bool tryParseDigit(UInt8 c, UInt8 & res)
+    static UInt64 unhexCodePoint(const UInt8 * pos)
     {
-        if ('0' <= c && c <= '9')
-        {
-            res = c - '0';
-            return true;
-        }
-        if ('A' <= c && c <= 'Z')
-        {
-            res = c - ('A' - 10);
-            return true;
-        }
-        if ('a' <= c && c <= 'z')
-        {
-            res = c - ('a' - 10);
-            return true;
-        }
-        return false;
-    }
-
-    static bool tryUnhex(const UInt8 * pos, const UInt8 * end, int & res)
-    {
-        if (pos + 3 >= end)
-            return false;
-
-        res = 0;
-        {
-            UInt8 major, minor;
-            if (!tryParseDigit(*(pos++), major))
-                return false;
-            if (!tryParseDigit(*(pos++), minor))
-                return false;
-            res |= (major << 4) | minor;
-        }
-        res <<= 8;
-        {
-            UInt8 major, minor;
-            if (!tryParseDigit(*(pos++), major))
-                return false;
-            if (!tryParseDigit(*(pos++), minor))
-                return false;
-            res |= (major << 4) | minor;
-        }
-        return true;
+        return unhex(pos[0]) * 0xFFF
+             + unhex(pos[1]) * 0xFF
+             + unhex(pos[2]) * 0xF
+             + unhex(pos[3]);
     }
 
     static bool tryExtract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
@@ -231,20 +196,25 @@ struct ExtractString
                         {
                             ++pos;
 
-                            int unicode;
-                            if (!tryUnhex(pos, end, unicode))
+                            if (pos + 4 > end)
                                 return false;
+
+                            UInt16 code_point = unhexCodePoint(pos);
                             pos += 3;
 
-                            res_data.resize(res_data.size() + 6);    /// the maximum size of the UTF8 multibyte sequence
+                            static constexpr size_t max_code_point_byte_length = 4;
+
+                            size_t old_size = res_data.size();
+                            res_data.resize(old_size + max_code_point_byte_length);
 
                             Poco::UTF8Encoding utf8;
-                            int length = utf8.convert(unicode, const_cast<UInt8 *>(&res_data[0]) + res_data.size() - 6, 6);
+                            int length = utf8.convert(code_point,
+                                &res_data[old_size], max_code_point_byte_length);
 
                             if (!length)
                                 return false;
 
-                            res_data.resize(res_data.size() - 6 + length);
+                            res_data.resize(old_size + length);
                             break;
                         }
                         default:

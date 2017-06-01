@@ -1001,32 +1001,32 @@ public:
         const DataTypeTuple * right_tuple = nullptr;
 
         false
-            || (right_is_date         = typeid_cast<const DataTypeDate *>(arguments[1].get()))
-            || (right_is_date_time     = typeid_cast<const DataTypeDateTime *>(arguments[1].get()))
-            || (right_is_enum8         = typeid_cast<const DataTypeEnum8 *>(arguments[1].get()))
-            || (right_is_enum16     = typeid_cast<const DataTypeEnum16 *>(arguments[1].get()))
-            || (right_is_string     = typeid_cast<const DataTypeString *>(arguments[1].get()))
+            || (right_is_date = typeid_cast<const DataTypeDate *>(arguments[1].get()))
+            || (right_is_date_time = typeid_cast<const DataTypeDateTime *>(arguments[1].get()))
+            || (right_is_enum8 = typeid_cast<const DataTypeEnum8 *>(arguments[1].get()))
+            || (right_is_enum16 = typeid_cast<const DataTypeEnum16 *>(arguments[1].get()))
+            || (right_is_string = typeid_cast<const DataTypeString *>(arguments[1].get()))
             || (right_is_fixed_string = typeid_cast<const DataTypeFixedString *>(arguments[1].get()))
-            || (right_tuple         = typeid_cast<const DataTypeTuple *>(arguments[1].get()));
+            || (right_tuple = typeid_cast<const DataTypeTuple *>(arguments[1].get()));
 
         const bool right_is_enum = right_is_enum8 || right_is_enum16;
 
-        if (!(    (arguments[0]->behavesAsNumber() && arguments[1]->behavesAsNumber() && !(left_is_enum ^ right_is_enum))
-            ||    ((left_is_string || left_is_fixed_string) && (right_is_string || right_is_fixed_string))
-            ||    (left_is_date && right_is_date)
-            ||    (left_is_date && right_is_string)    /// You can compare the date, datetime and an enumeration with a constant string.
-            ||    (left_is_string && right_is_date)
-            ||    (left_is_date_time && right_is_date_time)
-            ||    (left_is_date_time && right_is_string)
-            ||    (left_is_string && right_is_date_time)
-            ||    (left_is_date_time && right_is_date_time)
-            ||    (left_is_date_time && right_is_string)
-            ||    (left_is_string && right_is_date_time)
-            ||    (left_is_enum && right_is_enum && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
-            ||    (left_is_enum && right_is_string)
-            ||    (left_is_string && right_is_enum)
-            ||    (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
-            ||  (arguments[0]->equals(*arguments[1]))))
+        if (!((arguments[0]->behavesAsNumber() && arguments[1]->behavesAsNumber() && !(left_is_enum ^ right_is_enum))
+            || ((left_is_string || left_is_fixed_string) && (right_is_string || right_is_fixed_string))
+            || (left_is_date && right_is_date)
+            || (left_is_date && right_is_string)    /// You can compare the date, datetime and an enumeration with a constant string.
+            || (left_is_string && right_is_date)
+            || (left_is_date_time && right_is_date_time)
+            || (left_is_date_time && right_is_string)
+            || (left_is_string && right_is_date_time)
+            || (left_is_date_time && right_is_date_time)
+            || (left_is_date_time && right_is_string)
+            || (left_is_string && right_is_date_time)
+            || (left_is_enum && right_is_enum && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
+            || (left_is_enum && right_is_string)
+            || (left_is_string && right_is_enum)
+            || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+            || (arguments[0]->equals(*arguments[1]))))
             throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
                 " of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1052,16 +1052,16 @@ public:
 
         if (left_is_num && right_is_num)
         {
-            if (!(    executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<UInt16>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<UInt32>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<UInt64>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Int8>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Int16>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Int32>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Int64>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Float32>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Float64>(block, result, col_left_untyped, col_right_untyped)))
+            if (!( executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<UInt16>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<UInt32>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<UInt64>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int8>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int16>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int32>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int64>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Float32>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Float64>(block, result, col_left_untyped, col_right_untyped)))
                 throw Exception("Illegal column " + col_left_untyped->getName()
                     + " of first argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
@@ -1077,15 +1077,15 @@ public:
                 block, result, col_left_untyped, col_right_untyped,
                 col_with_type_and_name_left.type, col_with_type_and_name_right.type,
                 left_is_num, right_is_num);
-}
+    }
 };
 
 
-using FunctionEquals = FunctionComparison<EqualsOp,             NameEquals>            ;
-using FunctionNotEquals = FunctionComparison<NotEqualsOp,         NameNotEquals>        ;
-using FunctionLess = FunctionComparison<LessOp,                 NameLess>            ;
-using FunctionGreater = FunctionComparison<GreaterOp,             NameGreater>        ;
-using FunctionLessOrEquals = FunctionComparison<LessOrEqualsOp,         NameLessOrEquals>    ;
-using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp,    NameGreaterOrEquals>;
+using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
+using FunctionNotEquals = FunctionComparison<NotEqualsOp, NameNotEquals>;
+using FunctionLess = FunctionComparison<LessOp, NameLess>;
+using FunctionGreater = FunctionComparison<GreaterOp, NameGreater>;
+using FunctionLessOrEquals = FunctionComparison<LessOrEqualsOp, NameLessOrEquals>;
+using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>;
 
 }
