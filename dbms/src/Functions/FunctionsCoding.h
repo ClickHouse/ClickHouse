@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Common/hex.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -24,23 +24,21 @@
 namespace DB
 {
 
-/** Функции кодирования:
+/** Encoding functions:
   *
-  * IPv4NumToString(num) - См. ниже.
-  * IPv4StringToNum(string) - Преобразуют, например, '192.168.0.1' в 3232235521 и наоборот.
+  * IPv4NumToString (num) - See below.
+  * IPv4StringToNum(string) - Convert, for example, '192.168.0.1' to 3232235521 and vice versa.
   *
-  * hex(x) -    Возвращает hex; буквы заглавные; префиксов 0x или суффиксов h нет.
-  *             Для чисел возвращает строку переменной длины - hex в "человеческом" (big endian) формате, с вырезанием старших нулей, но только по целым байтам. Для дат и дат-с-временем - как для чисел.
-  *             Например, hex(257) = '0101'.
-  * unhex(string) -    Возвращает строку, hex от которой равен string с точностью до регистра и отбрасывания одного ведущего нуля.
-  *                 Если такой строки не существует, оставляет за собой право вернуть любой мусор.
+  * hex(x) - Returns hex; capital letters; there are no prefixes 0x or suffixes h.
+  *          For numbers, returns a variable-length string - hex in the "human" (big endian) format, with the leading zeros being cut,
+  *          but only by whole bytes. For dates and datetimes - the same as for numbers.
+  *          For example, hex(257) = '0101'.
+  * unhex(string) - Returns a string, hex of which is equal to `string` with regard of case and discarding one leading zero.
+  *                 If such a string does not exist, could return arbitary implementation specific value.
   *
-  * bitmaskToArray(x) - Возвращает массив степеней двойки в двоичной записи x. Например, bitmaskToArray(50) = [2, 16, 32].
+  * bitmaskToArray(x) - Returns an array of powers of two in the binary form of x. For example, bitmaskToArray(50) = [2, 16, 32].
   */
 
-
-/// Включая нулевой символ в конце.
-#define MAX_UINT_HEX_LENGTH 20
 
 const auto ipv4_bytes_length = 4;
 const auto ipv6_bytes_length = 16;
@@ -56,9 +54,6 @@ private:
         return value >= base ? 1 + int_log(value / base, base, value % base || carry) : value % base > 1 || carry;
     }
 
-    /// mapping of digits up to base 16
-    static constexpr auto && digits = "0123456789abcdef";
-
     /// print integer in desired base, faster than sprintf
     template <uint32_t base, typename T, uint32_t buffer_size = sizeof(T) * int_log(256, base, false)>
     static void print_integer(char *& out, T value)
@@ -72,7 +67,7 @@ private:
 
             while (value > 0)
             {
-                *ptr++ = digits[value % base];
+                *ptr++ = hexLowercase(value % base);
                 value /= base;
             }
 
@@ -664,16 +659,16 @@ public:
     {
         char * begin = out;
 
-        /// Запишем все задом наперед.
+        /// Write everything backwards.
         for (size_t offset = 0; offset <= 24; offset += 8)
         {
             if (offset > 0)
                 *(out++) = '.';
 
-            /// Достаем очередной байт.
+            /// Get the next byte.
             UInt32 value = (ip >> offset) & static_cast<UInt32>(255);
 
-            /// Быстрее, чем sprintf.
+            /// Faster than sprintf.
             if (value == 0)
             {
                 *(out++) = '0';
@@ -688,7 +683,7 @@ public:
             }
         }
 
-        /// И развернем.
+        /// And reverse.
         std::reverse(begin, out);
 
         *(out++) = '\0';
@@ -708,7 +703,7 @@ public:
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(vec_in.size() * INET_ADDRSTRLEN); /// самое длинное значение: 255.255.255.255\0
+            vec_res.resize(vec_in.size() * INET_ADDRSTRLEN); /// the longest value is: 255.255.255.255\0
             offsets_res.resize(vec_in.size());
             char * begin = reinterpret_cast<char *>(&vec_res[0]);
             char * pos = begin;
@@ -847,16 +842,16 @@ public:
         for (auto i = 0; i < 3; ++i)
             *(out++) = 'x';
 
-        /// Запишем все задом наперед.
+        /// Write everything backwards.
         for (size_t offset = 8; offset <= 24; offset += 8)
         {
             if (offset > 0)
                 *(out++) = '.';
 
-            /// Достаем очередной байт.
+            /// Get the next byte.
             UInt32 value = (ip >> offset) & static_cast<UInt32>(255);
 
-            /// Быстрее, чем sprintf.
+            /// Faster than sprintf.
             if (value == 0)
             {
                 *(out++) = '0';
@@ -871,7 +866,7 @@ public:
             }
         }
 
-        /// И развернем.
+        /// And reverse.
         std::reverse(begin, out);
 
         *(out++) = '\0';
@@ -891,7 +886,7 @@ public:
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(vec_in.size() * INET_ADDRSTRLEN); /// самое длинное значение: 255.255.255.255\0
+            vec_res.resize(vec_in.size() * INET_ADDRSTRLEN); /// the longest value is: 255.255.255.255\0
             offsets_res.resize(vec_in.size());
             char * begin = reinterpret_cast<char *>(&vec_res[0]);
             char * pos = begin;
@@ -1012,19 +1007,16 @@ public:
     {
         char * begin = out;
 
-        /// mapping of digits up to base 16
-        static char digits[] = "0123456789ABCDEF";
-
-        /// Запишем все задом наперед.
+        /// Write everything backwards.
         for (size_t offset = 0; offset <= 40; offset += 8)
         {
             if (offset > 0)
                 *(out++) = ':';
 
-            /// Достаем очередной байт.
+            /// Get the next byte.
             UInt64 value = (mac >> offset) & static_cast<UInt64>(255);
 
-            /// Быстрее, чем sprintf.
+            /// Faster than sprintf.
             if (value < 16)
             {
                 *(out++) = '0';
@@ -1037,13 +1029,13 @@ public:
             {
                 while (value > 0)
                 {
-                    *(out++) = digits[value % 16];
+                    *(out++) = hexUppercase(value % 16);
                     value /= 16;
                 }
             }
         }
 
-        /// И развернем.
+        /// And reverse.
         std::reverse(begin, out);
 
         *(out++) = '\0';
@@ -1063,7 +1055,7 @@ public:
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(vec_in.size() * 18); /// самое длинное значение: xx:xx:xx:xx:xx:xx\0
+            vec_res.resize(vec_in.size() * 18); /// the longest value is: xx:xx:xx:xx:xx:xx\0
             offsets_res.resize(vec_in.size());
             char * begin = reinterpret_cast<char *>(&vec_res[0]);
             char * pos = begin;
@@ -1595,20 +1587,19 @@ public:
     template <typename T>
     void executeOneUInt(T x, char *& out)
     {
-        const char digit[17] = "0123456789ABCDEF";
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
         {
             UInt8 byte = static_cast<UInt8>((x >> offset) & 255);
 
-            /// Ведущие нули.
+            /// Leading zeros.
             if (byte == 0 && !was_nonzero && offset)
                 continue;
 
             was_nonzero = true;
 
-            *(out++) = digit[byte >> 4];
-            *(out++) = digit[byte & 15];
+            *(out++) = hexUppercase(byte / 16);
+            *(out++) = hexUppercase(byte % 16);
         }
         *(out++) = '\0';
     }
@@ -1618,6 +1609,8 @@ public:
     {
         const ColumnVector<T> * col_vec = typeid_cast<const ColumnVector<T> *>(col);
         const ColumnConst<T> * col_const = typeid_cast<const ColumnConst<T> *>(col);
+
+        static constexpr size_t MAX_UINT_HEX_LENGTH = sizeof(T) * 2 + 1;    /// Including trailing zero byte.
 
         if (col_vec)
         {
@@ -1630,12 +1623,12 @@ public:
 
             size_t size = in_vec.size();
             out_offsets.resize(size);
-            out_vec.resize(size * 3 + MAX_UINT_HEX_LENGTH);
+            out_vec.resize(size * 3 + MAX_UINT_HEX_LENGTH); /// 3 is length of one byte in hex plus zero byte.
 
             size_t pos = 0;
             for (size_t i = 0; i < size; ++i)
             {
-                /// Ручной экспоненциальный рост, чтобы не полагаться на линейное амортизированное время работы resize (его никто не гарантирует).
+                /// Manual exponential growth, so as not to rely on the linear amortized work time of `resize` (no one guarantees it).
                 if (pos + MAX_UINT_HEX_LENGTH > out_vec.size())
                     out_vec.resize(out_vec.size() * 2 + MAX_UINT_HEX_LENGTH);
 
@@ -1669,12 +1662,11 @@ public:
 
     void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
     {
-        const char digit[17] = "0123456789ABCDEF";
         while (pos < end)
         {
             UInt8 byte = *(pos++);
-            *(out++) = digit[byte >> 4];
-            *(out++) = digit[byte & 15];
+            *(out++) = hexUppercase(byte / 16);
+            *(out++) = hexUppercase(byte % 16);
         }
         *(out++) = '\0';
     }
@@ -1718,13 +1710,13 @@ public:
 
             return true;
         }
-        else if(col_const_in)
+        else if (col_const_in)
         {
             const std::string & src = col_const_in->getData();
             std::string res(src.size() * 2, '\0');
             char * pos = &res[0];
             const UInt8 * src_ptr = reinterpret_cast<const UInt8 *>(src.c_str());
-            /// Запишем ноль в res[res.size()]. Начиная с C++11, это корректно.
+            /// Let's write zero into res[res.size()]. Starting with C++ 11, this is correct.
             executeOneString(src_ptr, src_ptr + src.size(), pos);
 
             col_res = std::make_shared<ColumnConstString>(col_const_in->size(), res);
@@ -1828,28 +1820,26 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    UInt8 undigitUnsafe(char c)
-    {
-        if (c <= '9')
-            return c - '0';
-        if (c <= 'Z')
-            return c - ('A' - 10);
-        return c - ('a' - 10);
-    }
-
     void unhexOne(const char * pos, const char * end, char *& out)
     {
         if ((end - pos) & 1)
         {
-            *(out++) = undigitUnsafe(*(pos++));
+            *out = unhex(*pos);
+            ++out;
+            ++pos;
         }
         while (pos < end)
         {
-            UInt8 major = undigitUnsafe(*(pos++));
-            UInt8 minor = undigitUnsafe(*(pos++));
-            *(out++) = (major << 4) | minor;
+            UInt8 major = unhex(*pos);
+            ++pos;
+            UInt8 minor = unhex(*pos);
+            ++pos;
+
+            *out = (major << 4) | minor;
+            ++out;
         }
-        *(out++) = '\0';
+        *out = '\0';
+        ++out;
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override

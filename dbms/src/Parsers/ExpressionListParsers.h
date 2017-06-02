@@ -9,13 +9,13 @@
 namespace DB
 {
 
-/** Идущие подряд пары строк: оператор и соответствующая ему функция. Например, "+" -> "plus".
-  * Порядок парсинга операторов имеет значение.
+/** Consequent pairs of rows: the operator and the corresponding function. For example, "+" -> "plus".
+  * The parsing order of the operators is significant.
   */
 using Operators_t = const char **;
 
 
-/** Список элементов, разделённых чем-либо. */
+/** List of elements separated by something. */
 class ParserList : public IParserBase
 {
 public:
@@ -33,8 +33,8 @@ private:
 };
 
 
-/** Выражение с инфиксным бинарным лево-ассоциативным оператором.
-  * Например, a + b - c + d.
+/** An expression with an infix binary left-associative operator.
+  * For example, a + b - c + d.
   */
 class ParserLeftAssociativeBinaryOperatorList : public IParserBase
 {
@@ -44,7 +44,7 @@ private:
     ParserPtr remaining_elem_parser;
 
 public:
-    /** operators_ - допустимые операторы и соответствующие им функции
+    /** `operators_` - allowed operators and their corresponding functions
       */
     ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, ParserPtr && first_elem_parser_)
         : operators(operators_), first_elem_parser(std::move(first_elem_parser_))
@@ -65,8 +65,8 @@ protected:
 };
 
 
-/** Выражение с инфиксным оператором произвольной арности.
-  * Например, a AND b AND c AND d.
+/** Expression with an infix operator of arbitrary arity.
+  * For example, a AND b AND c AND d.
   */
 class ParserVariableArityOperatorList : public IParserBase
 {
@@ -88,8 +88,8 @@ protected:
 };
 
 
-/** Выражение с префиксным унарным оператором.
-  * Например, NOT x.
+/** An expression with a prefix unary operator.
+  * Example, NOT x.
   */
 class ParserPrefixUnaryOperatorExpression : public IParserBase
 {
@@ -98,7 +98,7 @@ private:
     ParserPtr elem_parser;
 
 public:
-    /** operators_ - допустимые операторы и соответствующие им функции
+    /** `operators_` - allowed operators and their corresponding functions
       */
     ParserPrefixUnaryOperatorExpression(Operators_t operators_, ParserPtr && elem_parser_)
         : operators(operators_), elem_parser(std::move(elem_parser_))
@@ -336,7 +336,7 @@ protected:
 };
 
 
-/** Список выражений, разделённых запятыми, возможно пустой. */
+/** A comma-separated list of expressions, probably empty. */
 class ParserExpressionList : public IParserBase
 {
 public:

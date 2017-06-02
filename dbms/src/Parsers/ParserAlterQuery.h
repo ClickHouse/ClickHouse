@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** Запрос типа такого:
+/** Query like this:
   * ALTER TABLE [db.]name
   *     [ADD COLUMN col_name type [AFTER col_after],]
   *        [DROP COLUMN col_drop, ...]

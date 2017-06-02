@@ -216,7 +216,7 @@ struct StdDevPopImpl
 
 }
 
-/** If `compute_marginal_moments` flag is set this class provides the heir
+/** If `compute_marginal_moments` flag is set this class provides the successor
   * CovarianceData support of marginal moments for calculating the correlation.
   */
 template<bool compute_marginal_moments>

@@ -24,7 +24,7 @@ public:
     virtual std::string getFileName() const = 0;
     virtual int getFD() const = 0;
 
-    /// Есть возможность получать информацию о времени каждого чтения.
+    /// It is possible to get information about the time of each reading.
     struct ProfileInfo
     {
         size_t bytes_requested;
@@ -34,7 +34,7 @@ public:
 
     using ProfileCallback = std::function<void(ProfileInfo)>;
 
-    /// CLOCK_MONOTONIC_COARSE более чем достаточно для отслеживания долгих чтений - например, залипаний на секунды.
+    /// CLOCK_MONOTONIC_COARSE is more than enough to track long reads - for example, hanging for a second.
     void setProfileCallback(const ProfileCallback & profile_callback_, clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE)
     {
         profile_callback = profile_callback_;

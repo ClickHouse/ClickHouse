@@ -29,20 +29,20 @@
 namespace DB
 {
 
-/** Функции сравнения: ==, !=, <, >, <=, >=.
-  * Функции сравнения возвращают всегда 0 или 1 (UInt8).
+/** Comparison functions: ==, !=, <, >, <=, >=.
+  * The comparison functions always return 0 or 1 (UInt8).
   *
-  * Сравнивать можно следующие типы:
-  * - числа;
-  * - строки и фиксированные строки;
-  * - даты;
-  * - даты-с-временем;
-  *   внутри каждой группы, но не из разных групп;
-  * - кортежи (сравнение лексикографическое).
+  * You can compare the following types:
+  * - numbers;
+  * - strings and fixed strings;
+  * - dates;
+  * - datetimes;
+  *   within each group, but not from different groups;
+  * - tuples (lexicographic comparison).
   *
-  * Исключение: можно сравнивать дату и дату-с-временем с константной строкой. Пример: EventDate = '2015-01-01'.
+  * Exception: You can compare the date and datetime with a constant string. Example: EventDate = '2015-01-01'.
   *
-  * TODO Массивы.
+  * TODO Arrays.
   */
 
 template <typename A, typename B> struct EqualsOp
@@ -94,9 +94,9 @@ struct NumComparisonImpl
     /// If you don't specify NO_INLINE, the compiler will inline this function, but we don't need this as this function contains tight loop inside.
     static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<UInt8> & c)
     {
-        /** GCC 4.8.2 векторизует цикл только если его записать в такой форме.
-          * В данном случае, если сделать цикл по индексу массива (код будет выглядеть проще),
-          *  цикл не будет векторизовываться.
+        /** GCC 4.8.2 vectorizes a loop only if it is written in this form.
+          * In this case, if you loop through the array index (the code will look simpler),
+          *  the loop will not be vectorized.
           */
 
         size_t size = a.size();
@@ -178,7 +178,7 @@ struct StringComparisonImpl
         {
             if (i == 0)
             {
-                /// Завершающий ноль в меньшей по длине строке входит в сравнение.
+                /// The trailing zero in the smaller string is included in the comparison.
                 c[i] = Op::apply(memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0], b_offsets[0])), 0);
             }
             else
@@ -742,7 +742,7 @@ private:
         Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
         const DataTypePtr & left_type, const DataTypePtr & right_type, bool left_is_num, bool right_is_num)
     {
-        /// Уже не такой и особый случай - сравнение дат, дат-с-временем и перечислений со строковой константой.
+        /// This is no longer very special case - comparing dates, datetimes, and enumerations with a string constant.
         const IColumn * column_string_untyped = !left_is_num ? col_left_untyped : col_right_untyped;
         const IColumn * column_number = left_is_num ? col_left_untyped : col_right_untyped;
         const IDataType * number_type = left_is_num ? left_type.get() : right_type.get();
@@ -817,7 +817,7 @@ private:
 
     void executeTuple(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
     {
-        /** Сравнивать кортежи будем лексикографически. Это делается следующим образом:
+        /** We will lexicographically compare the tuples. This is done as follows:
           * x == y : x1 == y1 && x2 == y2 ...
           * x != y : x1 != y1 || x2 != y2 ...
           *
@@ -825,7 +825,7 @@ private:
           * x > y:   x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn > yn))
           * x <= y:  x1 < y1 || (x1 == y1 && (x2 < y2 || (x2 == y2 ... && xn <= yn))
           *
-           * Рекурсивная запись:
+          * Recursive record:
           * x <= y:  x1 < y1 || (x1 == y1 && x_tail <= y_tail)
           *
           * x >= y:  x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn >= yn))
@@ -874,12 +874,12 @@ private:
             tmp_block.insert(x->getData().safeGetByPosition(i));
             tmp_block.insert(y->getData().safeGetByPosition(i));
 
-            /// Сравнение элементов.
+            /// Comparison of the elements.
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
             func_compare.execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2);
         }
 
-        /// Логическая свёртка.
+        /// Logical convolution.
         tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 
         ColumnNumbers convolution_args(tuple_size);
@@ -901,7 +901,7 @@ private:
 
         Block tmp_block;
 
-        /// Попарное сравнение на неравенство всех элементов; на равенство всех элементов кроме последнего.
+        /// Pairwise comparison of the inequality of all elements; on the equality of all elements except the last.
         for (size_t i = 0; i < tuple_size; ++i)
         {
             tmp_block.insert(x->getData().safeGetByPosition(i));
@@ -921,7 +921,7 @@ private:
                 func_compare_tail.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2);
         }
 
-        /// Комбинирование. Сложный код - сделайте рисунок. Можно заменить на рекурсивное сравнение кортежей.
+        /// Combination. Complex code - make a drawing. It can be replaced by a recursive comparison of tuples.
         size_t i = tuple_size - 1;
         while (i > 0)
         {
@@ -970,7 +970,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    /// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         bool left_is_date = false;
@@ -1001,32 +1001,32 @@ public:
         const DataTypeTuple * right_tuple = nullptr;
 
         false
-            || (right_is_date         = typeid_cast<const DataTypeDate *>(arguments[1].get()))
-            || (right_is_date_time     = typeid_cast<const DataTypeDateTime *>(arguments[1].get()))
-            || (right_is_enum8         = typeid_cast<const DataTypeEnum8 *>(arguments[1].get()))
-            || (right_is_enum16     = typeid_cast<const DataTypeEnum16 *>(arguments[1].get()))
-            || (right_is_string     = typeid_cast<const DataTypeString *>(arguments[1].get()))
+            || (right_is_date = typeid_cast<const DataTypeDate *>(arguments[1].get()))
+            || (right_is_date_time = typeid_cast<const DataTypeDateTime *>(arguments[1].get()))
+            || (right_is_enum8 = typeid_cast<const DataTypeEnum8 *>(arguments[1].get()))
+            || (right_is_enum16 = typeid_cast<const DataTypeEnum16 *>(arguments[1].get()))
+            || (right_is_string = typeid_cast<const DataTypeString *>(arguments[1].get()))
             || (right_is_fixed_string = typeid_cast<const DataTypeFixedString *>(arguments[1].get()))
-            || (right_tuple         = typeid_cast<const DataTypeTuple *>(arguments[1].get()));
+            || (right_tuple = typeid_cast<const DataTypeTuple *>(arguments[1].get()));
 
         const bool right_is_enum = right_is_enum8 || right_is_enum16;
 
-        if (!(    (arguments[0]->behavesAsNumber() && arguments[1]->behavesAsNumber() && !(left_is_enum ^ right_is_enum))
-            ||    ((left_is_string || left_is_fixed_string) && (right_is_string || right_is_fixed_string))
-            ||    (left_is_date && right_is_date)
-            ||    (left_is_date && right_is_string)    /// Можно сравнивать дату, дату-с-временем и перечисление с константной строкой.
-            ||    (left_is_string && right_is_date)
-            ||    (left_is_date_time && right_is_date_time)
-            ||    (left_is_date_time && right_is_string)
-            ||    (left_is_string && right_is_date_time)
-            ||    (left_is_date_time && right_is_date_time)
-            ||    (left_is_date_time && right_is_string)
-            ||    (left_is_string && right_is_date_time)
-            ||    (left_is_enum && right_is_enum && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
-            ||    (left_is_enum && right_is_string)
-            ||    (left_is_string && right_is_enum)
-            ||    (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
-            ||  (arguments[0]->equals(*arguments[1]))))
+        if (!((arguments[0]->behavesAsNumber() && arguments[1]->behavesAsNumber() && !(left_is_enum ^ right_is_enum))
+            || ((left_is_string || left_is_fixed_string) && (right_is_string || right_is_fixed_string))
+            || (left_is_date && right_is_date)
+            || (left_is_date && right_is_string)    /// You can compare the date, datetime and an enumeration with a constant string.
+            || (left_is_string && right_is_date)
+            || (left_is_date_time && right_is_date_time)
+            || (left_is_date_time && right_is_string)
+            || (left_is_string && right_is_date_time)
+            || (left_is_date_time && right_is_date_time)
+            || (left_is_date_time && right_is_string)
+            || (left_is_string && right_is_date_time)
+            || (left_is_enum && right_is_enum && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
+            || (left_is_enum && right_is_string)
+            || (left_is_string && right_is_enum)
+            || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+            || (arguments[0]->equals(*arguments[1]))))
             throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
                 " of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1052,16 +1052,16 @@ public:
 
         if (left_is_num && right_is_num)
         {
-            if (!(    executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<UInt16>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<UInt32>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<UInt64>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Int8>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Int16>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Int32>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Int64>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Float32>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Float64>(block, result, col_left_untyped, col_right_untyped)))
+            if (!( executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<UInt16>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<UInt32>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<UInt64>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int8>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int16>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int32>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int64>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Float32>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Float64>(block, result, col_left_untyped, col_right_untyped)))
                 throw Exception("Illegal column " + col_left_untyped->getName()
                     + " of first argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
@@ -1077,15 +1077,15 @@ public:
                 block, result, col_left_untyped, col_right_untyped,
                 col_with_type_and_name_left.type, col_with_type_and_name_right.type,
                 left_is_num, right_is_num);
-}
+    }
 };
 
 
-using FunctionEquals = FunctionComparison<EqualsOp,             NameEquals>            ;
-using FunctionNotEquals = FunctionComparison<NotEqualsOp,         NameNotEquals>        ;
-using FunctionLess = FunctionComparison<LessOp,                 NameLess>            ;
-using FunctionGreater = FunctionComparison<GreaterOp,             NameGreater>        ;
-using FunctionLessOrEquals = FunctionComparison<LessOrEqualsOp,         NameLessOrEquals>    ;
-using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp,    NameGreaterOrEquals>;
+using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
+using FunctionNotEquals = FunctionComparison<NotEqualsOp, NameNotEquals>;
+using FunctionLess = FunctionComparison<LessOp, NameLess>;
+using FunctionGreater = FunctionComparison<GreaterOp, NameGreater>;
+using FunctionLessOrEquals = FunctionComparison<LessOrEqualsOp, NameLessOrEquals>;
+using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>;
 
 }

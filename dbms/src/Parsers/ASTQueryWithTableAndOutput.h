@@ -8,7 +8,7 @@ namespace DB
 {
 
 
-/** Запрос с указанием названия таблицы и, возможно, БД и секцией FORMAT.
+/** Query specifying table name and, possibly, the database and the FORMAT section.
     */
 class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 {
@@ -28,7 +28,7 @@ protected:
 };
 
 
-/// Объявляет класс-наследник ASTQueryWithTableAndOutput с реализованными методами getID и clone.
+/// Declares the inheritance class of ASTQueryWithTableAndOutput with the implementation of methods getID and clone.
 #define DEFINE_AST_QUERY_WITH_TABLE_AND_OUTPUT(Name, ID, Query) \
     class Name : public ASTQueryWithTableAndOutput \
     { \

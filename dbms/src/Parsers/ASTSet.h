@@ -8,8 +8,8 @@ namespace DB
 
 class Set;
 
-/** Множество. В процессе вычисления, на множество заменяется выражение в секции IN
-  *  - подзапрос или явное перечисление значений.
+/** The set. During the calculation, the expression in the IN section is replaced by the set
+  *  - a subquery or an explicit enumeration of values.
   */
 class ASTSet : public IAST
 {
@@ -27,8 +27,8 @@ public:
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        /** Подготовленное множество. В пользовательских запросах такого не бывает, но такое бывает после промежуточных преобразований запроса.
-          * Выведем его не по-настоящему (это не будет корректным запросом, но покажет, что здесь было множество).
+        /** Prepared set. In user requests, this does not happen, but this happens after the intermediate query transformation.
+          * Output it for not real (this will not be a valid query, but it will show that there was a set).
           */
         settings.ostr << (settings.hilite ? hilite_keyword : "")
             << "(...)"

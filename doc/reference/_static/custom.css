@@ -1,11 +1,14 @@
+div.document, div.footer {
+	width: 1240px;
+}
 div.sphinxsidebarwrapper {
-        padding: 2px 10px;
+	padding: 2px 10px;
 }
 
 div.sphinxsidebarwrapper p.logo {
     float: left;
     text-align: left;
-    margin: -4px 4px 0 0px;
+    margin: -4px 4px 0 0;
 }
 
 div.sphinxsidebar a {
@@ -20,6 +23,10 @@ pre {
 input {
     display: block;
     margin-bottom: 4px;
+}
+
+a.reference {
+	border-bottom: none;
 }
 
 @font-face {

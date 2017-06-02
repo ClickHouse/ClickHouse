@@ -195,7 +195,7 @@ protected:
     QuotaForIntervals * quota = nullptr;    /// If nullptr - the quota is not used.
     double prev_elapsed = 0;
 
-    /// The heirs must implement this function.
+    /// The successors must implement this function.
     virtual Block readImpl() = 0;
 
     /// Here you can do a preliminary initialization.

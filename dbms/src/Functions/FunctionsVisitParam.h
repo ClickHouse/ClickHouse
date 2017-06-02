@@ -10,26 +10,29 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
+#include <Common/hex.h>
 #include <Common/Volnitsky.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
 
-/** Функции для извлечения параметров визитов.
- *  Реализованы через шаблоны из FunctionsStringSearch.h.
+/** Functions for retrieving "visit parameters".
+ * Visit parameters in Yandex.Metrika are a special kind of JSONs.
+ * These functions are applicable to almost any JSONs.
+ * Implemented via templates from FunctionsStringSearch.h.
  *
- * Проверить есть ли параметр
+ * Check if there is a parameter
  *         visitParamHas
  *
- * Извлечь числовое значение параметра
+ * Retrieve the numeric value of the parameter
  *         visitParamExtractUInt
  *         visitParamExtractInt
  *         visitParamExtractFloat
  *         visitParamExtractBool
  *
- * Извлечь строкое значение параметра
- *         visitParamExtractString - значение разэскейпливается
+ * Retrieve the string value of the parameter
+ *         visitParamExtractString - unescape value
  *         visitParamExtractRaw
  */
 
@@ -55,7 +58,7 @@ struct ExtractNumericType
     {
         ReadBufferFromMemory in(begin, end - begin);
 
-        /// Учимся читать числа в двойных кавычках
+        /// Read numbers in double quotes
         if (!in.eof() && *in.position() == '"')
             ++in.position();
 
@@ -140,50 +143,12 @@ struct ExtractRaw
 
 struct ExtractString
 {
-    static bool tryParseDigit(UInt8 c, UInt8 & res)
+    static UInt64 unhexCodePoint(const UInt8 * pos)
     {
-        if ('0' <= c && c <= '9')
-        {
-            res = c - '0';
-            return true;
-        }
-        if ('A' <= c && c <= 'Z')
-        {
-            res = c - ('A' - 10);
-            return true;
-        }
-        if ('a' <= c && c <= 'z')
-        {
-            res = c - ('a' - 10);
-            return true;
-        }
-        return false;
-    }
-
-    static bool tryUnhex(const UInt8 * pos, const UInt8 * end, int & res)
-    {
-        if (pos + 3 >= end)
-            return false;
-
-        res = 0;
-        {
-            UInt8 major, minor;
-            if (!tryParseDigit(*(pos++), major))
-                return false;
-            if (!tryParseDigit(*(pos++), minor))
-                return false;
-            res |= (major << 4) | minor;
-        }
-        res <<= 8;
-        {
-            UInt8 major, minor;
-            if (!tryParseDigit(*(pos++), major))
-                return false;
-            if (!tryParseDigit(*(pos++), minor))
-                return false;
-            res |= (major << 4) | minor;
-        }
-        return true;
+        return unhex(pos[0]) * 0xFFF
+             + unhex(pos[1]) * 0xFF
+             + unhex(pos[2]) * 0xF
+             + unhex(pos[3]);
     }
 
     static bool tryExtract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
@@ -231,20 +196,25 @@ struct ExtractString
                         {
                             ++pos;
 
-                            int unicode;
-                            if (!tryUnhex(pos, end, unicode))
+                            if (pos + 4 > end)
                                 return false;
+
+                            UInt16 code_point = unhexCodePoint(pos);
                             pos += 3;
 
-                            res_data.resize(res_data.size() + 6);    /// максимальный размер UTF8 многобайтовой последовательности
+                            static constexpr size_t max_code_point_byte_length = 4;
+
+                            size_t old_size = res_data.size();
+                            res_data.resize(old_size + max_code_point_byte_length);
 
                             Poco::UTF8Encoding utf8;
-                            int length = utf8.convert(unicode, const_cast<UInt8 *>(&res_data[0]) + res_data.size() - 6, 6);
+                            int length = utf8.convert(code_point,
+                                &res_data[old_size], max_code_point_byte_length);
 
                             if (!length)
                                 return false;
 
-                            res_data.resize(res_data.size() - 6 + length);
+                            res_data.resize(old_size + length);
                             break;
                         }
                         default:
@@ -274,47 +244,47 @@ struct ExtractString
 };
 
 
-/** Ищет вхождения поля в параметре визитов и вызывает ParamExtractor
- * на каждое вхождение поля, передавая ему указатель на часть строки,
- * где начинается вхождение значения поля.
- * ParamExtractor должен распарсить и вернуть значение нужного типа.
+/** Searches for occurrences of a field in the visit parameter and calls ParamExtractor
+ * for each occurrence of the field, passing it a pointer to the part of the string,
+ * where the occurrence of the field value begins.
+ * ParamExtractor must parse and return the value of the desired type.
  *
- * Если поле не было найдено или полю соответствует некорректное значение,
- * то используется значение по умолчанию - 0.
+ * If a field was not found or an incorrect value is associated with the field,
+ * then the default value used - 0.
  */
 template <typename ParamExtractor>
 struct ExtractParamImpl
 {
     using ResultType = typename ParamExtractor::ResultType;
 
-    /// Предполагается, что res нужного размера и инициализирован нулями.
+    /// It is assumed that `res` is the correct size and initialized with zeros.
     static void vector_constant(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
         std::string needle,
         PaddedPODArray<ResultType> & res)
     {
-        /// Ищем параметр просто как подстроку вида "name":
+        /// We are looking for a parameter simply as a substring of the form "name"
         needle = "\"" + needle + "\":";
 
         const UInt8 * begin = &data[0];
         const UInt8 * pos = begin;
         const UInt8 * end = pos + data.size();
 
-        /// Текущий индекс в массиве строк.
+        /// The current index in the string array.
         size_t i = 0;
 
         Volnitsky searcher(needle.data(), needle.size(), end - pos);
 
-        /// Искать будем следующее вхождение сразу во всех строках.
+        /// We will search for the next occurrence in all strings at once.
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
-            /// Определим, к какому индексу оно относится.
+            /// Let's determine which index it belongs to.
             while (begin + offsets[i] <= pos)
             {
                 res[i] = 0;
                 ++i;
             }
 
-            /// Проверяем, что вхождение не переходит через границы строк.
+            /// We check that the entry does not pass through the boundaries of strings.
             if (pos + needle.size() < begin + offsets[i])
                 res[i] = ParamExtractor::extract(pos + needle.size(), begin + offsets[i]);
             else
@@ -358,7 +328,7 @@ struct ExtractParamImpl
 };
 
 
-/** Для случая когда тип поля, которое нужно извлечь - строка.
+/** For the case where the type of field to extract is a string.
  */
 template<typename ParamExtractor>
 struct ExtractParamToStringImpl
@@ -367,26 +337,26 @@ struct ExtractParamToStringImpl
                        std::string needle,
                        ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
     {
-        /// Константа 5 взята из функции, выполняющей похожую задачу FunctionsStringSearch.h::ExtractImpl
+        /// Constant 5 is taken from a function that performs a similar task FunctionsStringSearch.h::ExtractImpl
         res_data.reserve(data.size()  / 5);
         res_offsets.resize(offsets.size());
 
-        /// Ищем параметр просто как подстроку вида "name":
+        /// We are looking for a parameter simply as a substring of the form "name"
         needle = "\"" + needle + "\":";
 
         const UInt8 * begin = &data[0];
         const UInt8 * pos = begin;
         const UInt8 * end = pos + data.size();
 
-        /// Текущий индекс в массиве строк.
+        /// The current index in the string array.
         size_t i = 0;
 
         Volnitsky searcher(needle.data(), needle.size(), end - pos);
 
-        /// Искать будем следующее вхождение сразу во всех строках.
+        /// We will search for the next occurrence in all strings at once.
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
-            /// Определим, к какому индексу оно относится.
+            /// Determine which index it belongs to.
             while (begin + offsets[i] <= pos)
             {
                 res_data.push_back(0);
@@ -394,7 +364,7 @@ struct ExtractParamToStringImpl
                 ++i;
             }
 
-            /// Проверяем, что вхождение не переходит через границы строк.
+            /// We check that the entry does not pass through the boundaries of strings.
             if (pos + needle.size() < begin + offsets[i])
                 ParamExtractor::extract(pos + needle.size(), begin + offsets[i], res_data);
 

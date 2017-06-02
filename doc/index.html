@@ -293,7 +293,7 @@
 
     <h2>Fast</h2>
 
-    <p>ClickHouse’s performance <a href="benchmark.html">exceeds</a> comparable column-oriented DBMS currently available on the market. It&nbsp;processes hundreds of millions to more than a billion rows and tens of gigabytes of data per single server per second.</p>
+    <p>ClickHouse’s performance <a href="benchmark.html">exceeds</a> comparable column-oriented DBMS currently available on the market. It&nbsp;processes hundreds of millions to more than a billion rows and tens of gigabytes of data per single server per second.</p>
 
     <p>ClickHouse uses all available hardware to its full potential to process each query as fast as possible. The peak processing performance for a single query (after decompression, only used columns) stands at more than 2&nbsp;terabytes per second.</p>
 
@@ -475,6 +475,11 @@ clickhouse-client
 
     if (location.hash == "#download") {
         show_download_block();
+    }
+
+    var hostParts = window.location.host.split('.');
+    if (hostParts.length > 2) {
+        window.location.host = hostParts[0] + '.' + hostParts[1];
     }
 
     if (location.hash == "#feedback") {

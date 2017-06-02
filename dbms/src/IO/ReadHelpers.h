@@ -64,21 +64,6 @@ inline char parseEscapeSequence(char c)
     }
 }
 
-inline char unhex(char c)
-{
-    switch (c)
-    {
-        case '0' ... '9':
-            return c - '0';
-        case 'a' ... 'f':
-            return c - 'a' + 10;
-        case 'A' ... 'F':
-            return c - 'A' + 10;
-        default:
-            return 0;
-    }
-}
-
 
 /// These functions are located in VarInt.h
 /// inline void throwReadAfterEOF()

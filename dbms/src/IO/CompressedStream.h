@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-/** Общие дефайны */
+/** Common Defines */
 
 #define DBMS_MAX_COMPRESSED_SIZE 0x40000000ULL    /// 1GB
 
@@ -13,42 +13,42 @@
 namespace DB
 {
 
-/** Метод сжатия */
+/** Compression method */
 enum class CompressionMethod
 {
     QuickLZ = 0,
     LZ4 = 1,
-    LZ4HC = 2,        /// Формат такой же, как у LZ4. Разница только при сжатии.
-    ZSTD = 3,        /// Экспериментальный алгоритм: https://github.com/Cyan4973/zstd
+    LZ4HC = 2,        /// The format is the same as for LZ4. The difference is only in compression.
+    ZSTD = 3,         /// Experimental algorithm: https://github.com/Cyan4973/zstd
 };
 
-/** Формат сжатого блока следующий:
+/** The compressed block format is as follows:
   *
-  * Первые 16 байт - чексумма от всех остальных байт блока. Сейчас используется только CityHash128.
-  * В дальнейшем можно предусмотреть другие чексуммы, хотя сделать их другого размера не получится.
+  * The first 16 bytes are the checksum from all other bytes of the block. Now only CityHash128 is used.
+  * In the future, you can provide other checksums, although it will not be possible to make them different in size.
   *
-  * Следующий байт определяет алгоритм сжатия. Далее всё зависит от алгоритма.
+  * The next byte specifies the compression algorithm. Then everything depends on the algorithm.
   *
-  * Первые 4 варианта совместимы с QuickLZ level 1.
-  * То есть, если значение первого байта < 4, для разжатия достаточно использовать функцию qlz_level1_decompress.
+  * The first 4 options are compatible with QuickLZ level 1.
+  * That is, if the value of the first byte is < 4, it is enough to use qlz_level1_decompress function to decompress.
   *
-  * 0x00 - несжатые данные, маленький блок. Далее один байт - размер сжатых данных, с учётом заголовка; один байт - размер несжатых данных.
-  * 0x01 - сжатые данные, QuickLZ level 1, маленький блок. Далее два байта аналогично.
-  * 0x02 - несжатые данные, большой блок. Далее 4 байта - размер сжатых данных, с учётом заголовка; 4 байта - размер несжатых данных.
-  * 0x03 - сжатые данные, QuickLZ level 1, большой блок. Далее 8 байт аналогично.
+  * 0x00 - uncompressed data, small block. Next, one byte - compressed data size, including header; one byte - uncompressed data size.
+  * 0x01 - compressed data, QuickLZ level 1, small block. Then two bytes are similar.
+  * 0x02 - uncompressed data, large block. Then 4 bytes - compressed data size, including header; 4 bytes uncompressed data size.
+  * 0x03 - compressed data, QuickLZ level 1, large block. Then 8 bytes are similar.
   *
-  * 0x82 - LZ4 или LZ4HC (они имеют одинаковый формат).
-  *        Далее 4 байта - размер сжатых данных, с учётом заголовка; 4 байта - размер несжатых данных.
+  * 0x82 - LZ4 or LZ4HC (they have the same format).
+  *        Next 4 bytes - the size of the compressed data, taking into account the header; 4 bytes is the size of the uncompressed data.
   *
-  * NOTE: Почему 0x82?
-  * Изначально использовался только QuickLZ. Потом был добавлен LZ4.
-  * Старший бит выставлен, чтобы отличить от QuickLZ, а второй бит выставлен для совместимости,
-  *  чтобы работали функции qlz_size_compressed, qlz_size_decompressed.
-  * Хотя сейчас такая совместимость уже не актуальна.
+  * NOTE: Why is 0x82?
+  * Originally only QuickLZ was used. Then LZ4 was added.
+  * The high bit is set to distinguish from QuickLZ, and the second bit is set for compatibility,
+  *  for the functions qlz_size_compressed, qlz_size_decompressed to work.
+  * Although now such compatibility is no longer relevant.
   *
   * 0x90 - ZSTD
   *
-  * Все размеры - little endian.
+  * All sizes are little endian.
   */
 
 enum class CompressionMethodByte : uint8_t

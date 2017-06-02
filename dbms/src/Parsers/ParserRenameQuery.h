@@ -7,9 +7,9 @@
 namespace DB
 {
 
-/** Запрос типа такого:
+/** Query like this:
   * RENAME TABLE [db.]name TO [db.]name, [db.]name TO [db.]name, ...
-  * (Переименовываться может произвольное количество таблиц.)
+  * (An arbitrary number of tables can be renamed.)
   */
 class ParserRenameQuery : public IParserBase
 {

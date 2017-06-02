@@ -6,7 +6,8 @@
 #include <Poco/Mutex.h>
 #include <Poco/Semaphore.h>
 
-#include <Core/Types.h>
+#include <common/Types.h>
+
 
 namespace detail
 {
@@ -66,8 +67,8 @@ public:
         fill_count.set();
     }
 
-    template <class ... Args>
-    void emplace(Args && ... args)
+    template <typename... Args>
+    void emplace(Args &&... args)
     {
         empty_count.wait();
         {
@@ -88,7 +89,7 @@ public:
         empty_count.set();
     }
 
-    bool tryPush(const T & x, DB::UInt64 milliseconds = 0)
+    bool tryPush(const T & x, UInt64 milliseconds = 0)
     {
         if (empty_count.tryWait(milliseconds))
         {
@@ -102,8 +103,8 @@ public:
         return false;
     }
 
-    template <class ... Args>
-    bool tryEmplace(DB::UInt64 milliseconds, Args && ... args)
+    template <typename... Args>
+    bool tryEmplace(UInt64 milliseconds, Args &&... args)
     {
         if (empty_count.tryWait(milliseconds))
         {
@@ -117,7 +118,7 @@ public:
         return false;
     }
 
-    bool tryPop(T & x, DB::UInt64 milliseconds = 0)
+    bool tryPop(T & x, UInt64 milliseconds = 0)
     {
         if (fill_count.tryWait(milliseconds))
         {
