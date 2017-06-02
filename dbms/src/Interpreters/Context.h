@@ -89,21 +89,21 @@ private:
 
     ClientInfo client_info;
 
-    std::shared_ptr<QuotaForIntervals> quota;    /// Current quota. By default - empty quota, that have no limits.
+    std::shared_ptr<QuotaForIntervals> quota;     /// Current quota. By default - empty quota, that have no limits.
     String current_database;
     Settings settings;                            /// Setting for query execution.
     using ProgressCallback = std::function<void(const Progress & progress)>;
-    ProgressCallback progress_callback;            /// Callback for tracking progress of query execution.
+    ProgressCallback progress_callback;           /// Callback for tracking progress of query execution.
     ProcessListElement * process_list_elem = nullptr;    /// For tracking total resource usage for query.
 
-    String default_format;    /// Format, used when server formats data by itself and if query does not have FORMAT specification.
+    String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
-    Tables external_tables;                    /// Temporary tables.
-    Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
-    Context * global_context = nullptr;        /// Global context or nullptr. Could be equal to this.
+    Tables external_tables;              /// Temporary tables.
+    Context * session_context = nullptr; /// Session context or nullptr. Could be equal to this.
+    Context * global_context = nullptr;  /// Global context or nullptr. Could be equal to this.
 
-    UInt64 close_cycle = 0;
-    bool used = false;
+    UInt64 session_close_cycle = 0;
+    bool session_is_used = false;
 
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
@@ -222,12 +222,11 @@ public:
     const Databases getDatabases() const;
     Databases getDatabases();
 
-    using SessionKey = std::pair<String, String>;
-
     std::shared_ptr<Context> acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check) const;
     void releaseSession(const String & session_id, std::chrono::steady_clock::duration timeout);
-    std::chrono::steady_clock::duration closeSessions() const;
 
+    /// Close sessions, that has been expired. Returns how long to wait for next session to be expired, if no new sessions will be added.
+    std::chrono::steady_clock::duration closeSessions() const;
 
     /// For methods below you may need to acquire a lock by yourself.
     std::unique_lock<Poco::Mutex> getLock() const;
@@ -324,6 +323,9 @@ public:
     String getDefaultProfileName() const;
     void setDefaultProfileName(const String & name);
 
+    /// User name and session identifier. Named sessions are local to users.
+    using SessionKey = std::pair<String, String>;
+
 private:
     /** Проверить, имеет ли текущий клиент доступ к заданной базе данных.
       * Если доступ запрещён, кинуть исключение.
@@ -337,7 +339,9 @@ private:
     StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 
     SessionKey getSessionKey(const String & session_id) const;
-    void scheduleClose(const SessionKey & key, std::chrono::steady_clock::duration timeout);
+
+    /// Session will be closed after specified timeout.
+    void scheduleCloseSession(const SessionKey & key, std::chrono::steady_clock::duration timeout);
 };
 
 

@@ -105,7 +105,7 @@ struct ContextShared
 
     String path;                                            /// Path to the data directory, with a slash at the end.
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
-    String flags_path;                                        ///
+    String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
     Databases databases;                                    /// List of databases and tables in them.
     TableFunctionFactory table_function_factory;            /// Table functions.
     FormatFactory format_factory;                           /// Formats.
@@ -123,16 +123,19 @@ struct ContextShared
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     BackgroundProcessingPoolPtr background_pool;            /// The thread pool for the background work performed by the tables.
     ReshardingWorkerPtr resharding_worker;
-    Macros macros;                                            /// Substitutions extracted from config.
-    std::unique_ptr<Compiler> compiler;                        /// Used for dynamic compilation of queries' parts if it necessary.
+    Macros macros;                                          /// Substitutions from config. Can be used for parameters of ReplicatedMergeTree.
+    std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::unique_ptr<QueryLog> query_log;                    /// Used to log queries.
-    std::shared_ptr<PartLog> part_log;                        /// Used to log operations with parts
+    std::shared_ptr<PartLog> part_log;                      /// Used to log operations with parts
     /// Rules for selecting the compression method, depending on the size of the part.
     mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
-    std::unique_ptr<MergeTreeSettings> merge_tree_settings;    /// Settings of MergeTree* engines.
-    size_t max_table_size_to_drop = 50000000000lu;            /// Protects MergeTree tables from accidental DROP (50GB by default)
+    std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
+    size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
 
-    class SessionKeyHash {
+    /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
+
+    class SessionKeyHash
+    {
     public:
         size_t operator()(const Context::SessionKey & key) const
         {
@@ -272,14 +275,14 @@ Context::SessionKey Context::getSessionKey(const String & session_id) const
 }
 
 
-void Context::scheduleClose(const Context::SessionKey & key, std::chrono::steady_clock::duration timeout)
+void Context::scheduleCloseSession(const Context::SessionKey & key, std::chrono::steady_clock::duration timeout)
 {
     const UInt64 close_index = timeout / shared->close_interval + 1;
     const auto new_close_cycle = shared->close_cycle + close_index;
 
-    if (close_cycle != new_close_cycle)
+    if (session_close_cycle != new_close_cycle)
     {
-        close_cycle = new_close_cycle;
+        session_close_cycle = new_close_cycle;
         if (shared->close_times.size() < close_index + 1)
             shared->close_times.resize(close_index + 1);
         shared->close_times[close_index].emplace_back(key);
@@ -301,7 +304,7 @@ std::shared_ptr<Context> Context::acquireSession(const String & session_id, std:
 
         auto new_session = std::make_shared<Context>(*global_context);
 
-        new_session->scheduleClose(key, timeout);
+        new_session->scheduleCloseSession(key, timeout);
 
         it = shared->sessions.insert(std::make_pair(key, std::move(new_session))).first;
     }
@@ -312,9 +315,9 @@ std::shared_ptr<Context> Context::acquireSession(const String & session_id, std:
 
     const auto & session = it->second;
 
-    if (session->used)
+    if (session->session_is_used)
         throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
-    session->used = true;
+    session->session_is_used = true;
 
     session->client_info = client_info;
 
@@ -326,9 +329,8 @@ void Context::releaseSession(const String & session_id, std::chrono::steady_cloc
 {
     auto lock = getLock();
 
-    used = false;
-
-    scheduleClose(getSessionKey(session_id), timeout);
+    session_is_used = false;
+    scheduleCloseSession(getSessionKey(session_id), timeout);
 }
 
 
@@ -343,7 +345,7 @@ std::chrono::steady_clock::duration Context::closeSessions() const
 
     const auto current_cycle = shared->close_cycle;
 
-    ++(shared->close_cycle);
+    ++shared->close_cycle;
     shared->close_cycle_time = now + shared->close_interval;
 
     if (shared->close_times.empty())
@@ -355,10 +357,10 @@ std::chrono::steady_clock::duration Context::closeSessions() const
     {
         const auto session = shared->sessions.find(key);
 
-        if (session != shared->sessions.end() && session->second->close_cycle <= current_cycle)
+        if (session != shared->sessions.end() && session->second->session_close_cycle <= current_cycle)
         {
-            if (session->second->used)
-                session->second->scheduleClose(key, std::chrono::seconds(0));
+            if (session->second->session_is_used)
+                session->second->scheduleCloseSession(key, std::chrono::seconds(0));
             else
                 shared->sessions.erase(session);
         }
