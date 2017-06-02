@@ -378,7 +378,7 @@ private:
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
 
-    /// Like removePartFromZooKeeper, but handles NONODE and remove node anyway, see CLICKHOUSE-3040
+    /// Like removePartFromZooKeeper, but handles absence of some nodes and remove other nodes anyway, see CLICKHOUSE-3040
     /// Use it only in non-critical places for cleaning.
     void removePossiblyIncompletePartNodeFromZooKeeper(const String & part_name, zkutil::Ops & ops, const zkutil::ZooKeeperPtr & zookeeper);
 
