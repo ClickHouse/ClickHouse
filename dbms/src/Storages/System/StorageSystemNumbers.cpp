@@ -65,17 +65,17 @@ BlockInputStreams StorageSystemNumbers::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    unsigned threads)
+    unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
     if (!multithreaded)
-        threads = 1;
+        num_streams = 1;
 
-    BlockInputStreams res(threads);
-    for (size_t i = 0; i < threads; ++i)
-        res[i] = std::make_shared<NumbersBlockInputStream>(max_block_size, i * max_block_size, threads * max_block_size);
+    BlockInputStreams res(num_streams);
+    for (size_t i = 0; i < num_streams; ++i)
+        res[i] = std::make_shared<NumbersBlockInputStream>(max_block_size, i * max_block_size, num_streams * max_block_size);
 
     return res;
 }

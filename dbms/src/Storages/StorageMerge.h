@@ -52,8 +52,8 @@ public:
         const ASTPtr & query,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
     void drop() override {}
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }

@@ -118,7 +118,7 @@ BlockInputStreams StorageMemory::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
-    unsigned threads)
+    unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -127,18 +127,18 @@ BlockInputStreams StorageMemory::read(
 
     size_t size = data.size();
 
-    if (threads > size)
-        threads = size;
+    if (num_streams > size)
+        num_streams = size;
 
     BlockInputStreams res;
 
-    for (size_t thread = 0; thread < threads; ++thread)
+    for (size_t stream = 0; stream < num_streams; ++stream)
     {
         BlocksList::iterator begin = data.begin();
         BlocksList::iterator end = data.begin();
 
-        std::advance(begin, thread * size / threads);
-        std::advance(end, (thread + 1) * size / threads);
+        std::advance(begin, stream * size / num_streams);
+        std::advance(end, (stream + 1) * size / num_streams);
 
         res.push_back(std::make_shared<MemoryBlockInputStream>(column_names, begin, end));
     }

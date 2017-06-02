@@ -135,7 +135,7 @@ BlockInputStreams StorageSystemGraphite::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
-    unsigned threads)
+    unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

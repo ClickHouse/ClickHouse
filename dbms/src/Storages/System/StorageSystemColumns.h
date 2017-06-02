@@ -26,8 +26,8 @@ public:
         const ASTPtr & query,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
 private:
     StorageSystemColumns(const std::string & name_);

@@ -2247,7 +2247,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     const Settings & settings = context.getSettingsRef();
 
@@ -2295,7 +2295,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     }
 
     return reader.read(
-        column_names, query, context, processed_stage, max_block_size, threads, &part_index, max_block_number_to_read);
+        column_names, query, context, processed_stage, max_block_size, num_streams, &part_index, max_block_number_to_read);
 }
 
 
