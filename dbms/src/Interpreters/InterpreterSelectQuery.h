@@ -17,27 +17,27 @@ class ASTSelectQuery;
 struct SubqueryForSet;
 
 
-/** Интерпретирует запрос SELECT. Возвращает поток блоков с результатами выполнения запроса до стадии to_stage.
+/** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
   */
 class InterpreterSelectQuery : public IInterpreter
 {
 public:
-    /** to_stage
-     * - стадия, до которой нужно выполнить запрос. По-умолчанию - до конца.
-     *   Можно выполнить до промежуточного состояния агрегации, которые объединяются с разных серверов при распределённой обработке запроса.
+    /** `to_stage`
+     * - the stage to which the query is to be executed. By default - till to the end.
+     *   You can perform till the intermediate aggregation state, which are combined from different servers for distributed query processing.
      *
      * subquery_depth
-     * - для контроля ограничений на глубину вложенности подзапросов. Для подзапросов передаётся значение, увеличенное на единицу.
+     * - to control the restrictions on the depth of nesting of subqueries. For subqueries, a value that is incremented by one is passed.
      *
      * input
-     * - если задан - читать не из таблицы, указанной в запросе, а из готового источника.
+     * - if given - read not from the table specified in the query, but from ready source.
      *
      * required_column_names
-     * - удалить из запроса все столбцы кроме указанных - используется для удаления ненужных столбцов из подзапросов.
+     * - delete all columns except the specified ones from the query - it is used to delete unnecessary columns from subqueries.
      *
      * table_column_names
-     * - список доступных столбцов таблицы.
-     *   Используется, например, совместно с указанием input.
+     * - the list of available columns of the table.
+     *   Used, for example, with reference to `input`.
      */
 
     InterpreterSelectQuery(
@@ -66,12 +66,12 @@ public:
 
     ~InterpreterSelectQuery();
 
-    /** Выполнить запрос, возможно являющиийся цепочкой UNION ALL.
-     *  Получить поток блоков для чтения
+    /** Execute a query, possibly part of UNION ALL chain.
+     *  Get the stream of blocks to read
      */
     BlockIO execute() override;
 
-    /** Выполнить запрос без объединения потоков, если это возможно.
+    /** Execute the query without union of threads, if it is possible.
      */
     const BlockInputStreams & executeWithoutUnion();
 
@@ -84,8 +84,8 @@ public:
 
 private:
     /**
-     * - Оптимизация, если объект создаётся только, чтобы вызвать getSampleBlock(): учитываем только первый SELECT цепочки UNION ALL, потому что
-     *   первый SELECT достаточен для определения нужных столбцов.
+     * - Optimization if an object is created only to call getSampleBlock(): consider only the first SELECT of the UNION ALL chain, because
+     *   the first SELECT is sufficient to determine the required columns.
      */
     struct OnlyAnalyzeTag {};
     InterpreterSelectQuery(
@@ -97,12 +97,12 @@ private:
     void basicInit(BlockInputStreamPtr input);
     void initQueryAnalyzer();
 
-    /// Выполнить один запрос SELECT из цепочки UNION ALL.
+    /// Execute one SELECT query from the UNION ALL chain.
     void executeSingleQuery();
 
-    /** Оставить в каждом запросе цепочки UNION ALL только нужные столбцы секции SELECT.
-     *  Однако, если используется хоть один DISTINCT в цепочке, то все столбцы считаются нужными,
-     *   так как иначе DISTINCT работал бы по-другому.
+    /** Leave only the necessary columns of the SELECT section in each query of the UNION ALL chain.
+     *  However, if you use at least one DISTINCT in the chain, then all the columns are considered necessary,
+     *   since otherwise DISTINCT would work differently.
      *
      *  Always leave arrayJoin, because it changes number of rows.
      *
@@ -112,23 +112,23 @@ private:
      */
     void rewriteExpressionList(const Names & required_column_names);
 
-    /// Содержит ли запрос хотя бы один астериск?
+    /// Does the request contain at least one asterisk?
     bool hasAsterisk() const;
 
-    // Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
+    // Rename the columns of each query for the UNION ALL chain into the same names as in the first query.
     void renameColumns();
 
-    /** Из какой таблицы читать. При JOIN, возвращается "левая" таблица.
+    /** From which table to read. With JOIN, the "left" table is returned.
      */
     void getDatabaseAndTableNames(String & database_name, String & table_name);
 
-    /** Выбрать из списка столбцов какой-нибудь, лучше - минимального размера.
+    /** Select from the list of columns any, better - with minimum size.
      */
     String getAnyColumn();
 
-    /// Разные стадии выполнения запроса.
+    /// Different stages of query execution.
 
-    /// Вынимает данные из таблицы. Возвращает стадию, до которой запрос был обработан в Storage.
+    /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
     QueryProcessingStage::Enum executeFetchColumns();
 
     void executeWhere(ExpressionActionsPtr expression);
@@ -156,11 +156,11 @@ private:
 
     void ignoreWithTotals();
 
-    /** Если в запросе SELECT есть секция SETTINGS, то применить настройки из неё.
+    /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
       *
-      * Секция SETTINGS - настройки для конкретного запроса.
-      * Обычно настройки могут быть переданы другими способами, не внутри запроса.
-      * Но использование такой секции оправдано, если нужно задать настройки для одного подзапроса.
+      * Section SETTINGS - settings for a specific query.
+      * Normally, the settings can be passed in other ways, not inside the query.
+      * But the use of this section is justified if you need to set the settings for one subquery.
       */
     void initSettings();
 
@@ -172,33 +172,33 @@ private:
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
     NamesAndTypesList table_column_names;
 
-    /** Потоки данных.
-      * Исходные потоки данных получаются в функции executeFetchColumns.
-      * Затем они преобразуются (оборачиваются в другие потоки) с помощью функций execute*,
-      *  чтобы получить целый конвейер выполнения запроса.
+    /** Streams of data.
+      * The source data streams are produced in the executeFetchColumns function.
+      * Then they are converted (wrapped in other streams) using the `execute*` functions,
+      *  to get the whole pipeline running the query.
       */
     BlockInputStreams streams;
 
-    /** При выполнении FULL или RIGHT JOIN, здесь будет поток данных, из которого можно прочитать "неприсоединённые" строки.
-      * Он имеет особое значение, так как чтение из него должно осуществляться после чтения из основных потоков.
-      * Он подклеивается к основным потокам в UnionBlockInputStream или ParallelAggregatingBlockInputStream.
+    /** When executing FULL or RIGHT JOIN, there will be a data stream from which you can read "not joined" rows.
+      * It has a special meaning, since reading from it should be done after reading from the main streams.
+      * It is joined to the main streams in UnionBlockInputStream or ParallelAggregatingBlockInputStream.
       */
     BlockInputStreamPtr stream_with_non_joined_data;
 
-    /// Являемся ли мы первым запросом SELECT цепочки UNION ALL?
+    /// Is it the first SELECT query of the UNION ALL chain?
     bool is_first_select_inside_union_all;
 
-    /// Объект создан только для анализа запроса.
+    /// The object was created only for query analysis.
     bool only_analyze = false;
 
-    /// Следующий запрос SELECT в цепочке UNION ALL, если есть.
+    /// The next SELECT query in the UNION ALL chain, if any.
     std::unique_ptr<InterpreterSelectQuery> next_select_in_union_all;
 
-    /// Таблица, откуда читать данные, если не подзапрос.
+    /// Table from where to read data, if not subquery.
     StoragePtr storage;
     TableStructureReadLockPtr table_lock;
 
-    /// Выполнить объединение потоков внутри запроса SELECT?
+    /// Do union of streams within a SELECT query?
     bool union_within_single_query = false;
 
     Poco::Logger * log;

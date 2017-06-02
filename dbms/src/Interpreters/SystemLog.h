@@ -267,7 +267,7 @@ void SystemLog<LogElement>::prepareTable()
 
         if (!blocksHaveEqualStructure(actual, expected))
         {
-            /// Переименовываем существующую таблицу.
+            /// Rename the existing table.
             int suffix = 0;
             while (context.isTableExist(database_name, table_name + "_" + toString(suffix)))
                 ++suffix;
@@ -293,7 +293,7 @@ void SystemLog<LogElement>::prepareTable()
 
             InterpreterRenameQuery(rename, context).execute();
 
-            /// Нужная таблица будет создана.
+            /// The required table will be created.
             table = nullptr;
         }
         else
@@ -302,7 +302,7 @@ void SystemLog<LogElement>::prepareTable()
 
     if (!table)
     {
-        /// Создаём таблицу.
+        /// Create the table.
         LOG_DEBUG(log, "Creating new table " << description << " for " + LogElement::name());
 
         auto create = std::make_shared<ASTCreateQuery>();
