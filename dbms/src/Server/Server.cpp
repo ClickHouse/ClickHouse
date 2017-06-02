@@ -652,6 +652,8 @@ int Server::main(const std::vector<std::string> & args)
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(async_metrics, graphite_key));
         }
 
+        SessionCleaner session_cleaner(*global_context);
+
         waitForTerminationRequest();
     }
 
