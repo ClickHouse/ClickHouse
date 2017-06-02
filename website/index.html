@@ -847,6 +847,11 @@ clickhouse-client
             window.history.replaceState('', document.title, window.location.href.replace(location.hash, '') + this.hash);
         });
 
+        var hostParts = window.location.host.split('.');
+        if (hostParts.length > 2) {
+            window.location.host = hostParts[0] + '.' + hostParts[1];
+        }
+
         var available_distributives = ['xenial', 'trusty', 'precise'];
         available_distributives.forEach(function (name) {
             $('#ubuntu_' + name).on('click', function () {

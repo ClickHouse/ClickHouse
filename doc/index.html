@@ -477,11 +477,6 @@ clickhouse-client
         show_download_block();
     }
 
-    var hostParts = window.location.host.split('.');
-    if (hostParts.length > 2) {
-        window.location.host = hostParts[0] + '.' + hostParts[1];
-    }
-
     if (location.hash == "#feedback") {
         var class_name = 'feedback_form';
         block_visible[class_name] ? hideBlock(class_name) : showBlock(class_name);
