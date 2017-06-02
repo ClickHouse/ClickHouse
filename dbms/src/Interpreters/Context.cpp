@@ -1,8 +1,8 @@
 #include <map>
 #include <set>
-#include <chrono>
 #include <random>
 
+#include <boost/functional/hash/hash.hpp>
 #include <Poco/Mutex.h>
 #include <Poco/File.h>
 #include <Poco/UUID.h>
@@ -12,6 +12,7 @@
 
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
+#include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <DataStreams/FormatFactory.h>
@@ -75,6 +76,8 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int DDL_GUARD_IS_ACTIVE;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
+    extern const int SESSION_NOT_FOUND;
+    extern const int SESSION_IS_LOCKED;
 }
 
 class TableFunctionFactory;
@@ -128,6 +131,25 @@ struct ContextShared
     mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
     std::unique_ptr<MergeTreeSettings> merge_tree_settings;    /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;            /// Protects MergeTree tables from accidental DROP (50GB by default)
+
+    class SessionKeyHash {
+    public:
+        size_t operator()(const Context::SessionKey & key) const
+        {
+            size_t seed = 0;
+            boost::hash_combine(seed, key.first);
+            boost::hash_combine(seed, key.second);
+            return seed;
+        }
+    };
+
+    using Sessions = std::unordered_map<Context::SessionKey, std::shared_ptr<Context>, SessionKeyHash>;
+    using CloseTimes = std::deque<std::vector<Context::SessionKey>>;
+    mutable Sessions sessions;
+    mutable CloseTimes close_times;
+    std::chrono::steady_clock::duration close_interval = std::chrono::seconds(1);
+    std::chrono::steady_clock::time_point close_cycle_time = std::chrono::steady_clock::now();
+    UInt64 close_cycle = 0;
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -236,6 +258,115 @@ Databases Context::getDatabases()
 {
     auto lock = getLock();
     return shared->databases;
+}
+
+
+Context::SessionKey Context::getSessionKey(const String & session_id) const
+{
+    auto & user_name = client_info.current_user;
+
+    if (user_name.empty())
+        throw Exception("Empty user name.", ErrorCodes::LOGICAL_ERROR);
+
+    return SessionKey(user_name, session_id);
+}
+
+
+void Context::scheduleClose(const Context::SessionKey & key, std::chrono::steady_clock::duration timeout)
+{
+    const UInt64 close_index = timeout / shared->close_interval + 1;
+    const auto new_close_cycle = shared->close_cycle + close_index;
+
+    if (close_cycle != new_close_cycle)
+    {
+        close_cycle = new_close_cycle;
+        if (shared->close_times.size() < close_index + 1)
+            shared->close_times.resize(close_index + 1);
+        shared->close_times[close_index].emplace_back(key);
+    }
+}
+
+
+std::shared_ptr<Context> Context::acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check) const
+{
+    auto lock = getLock();
+
+    const auto & key = getSessionKey(session_id);
+    auto it = shared->sessions.find(key);
+
+    if (it == shared->sessions.end())
+    {
+        if (session_check)
+            throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
+
+        auto new_session = std::make_shared<Context>(*global_context);
+
+        new_session->scheduleClose(key, timeout);
+
+        it = shared->sessions.insert(std::make_pair(key, std::move(new_session))).first;
+    }
+    else if (it->second->client_info.current_user != client_info.current_user)
+    {
+        throw Exception("Session belongs to a different user", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    const auto & session = it->second;
+
+    if (session->used)
+        throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
+    session->used = true;
+
+    session->client_info = client_info;
+
+    return session;
+}
+
+
+void Context::releaseSession(const String & session_id, std::chrono::steady_clock::duration timeout)
+{
+    auto lock = getLock();
+
+    used = false;
+
+    scheduleClose(getSessionKey(session_id), timeout);
+}
+
+
+std::chrono::steady_clock::duration Context::closeSessions() const
+{
+    auto lock = getLock();
+
+    const auto now = std::chrono::steady_clock::now();
+
+    if (now < shared->close_cycle_time)
+        return shared->close_cycle_time - now;
+
+    const auto current_cycle = shared->close_cycle;
+
+    ++(shared->close_cycle);
+    shared->close_cycle_time = now + shared->close_interval;
+
+    if (shared->close_times.empty())
+        return shared->close_interval;
+
+    auto & sessions_to_close = shared->close_times.front();
+
+    for (const auto & key : sessions_to_close)
+    {
+        const auto session = shared->sessions.find(key);
+
+        if (session != shared->sessions.end() && session->second->close_cycle <= current_cycle)
+        {
+            if (session->second->used)
+                session->second->scheduleClose(key, std::chrono::seconds(0));
+            else
+                shared->sessions.erase(session);
+        }
+    }
+
+    shared->close_times.pop_front();
+
+    return shared->close_interval;
 }
 
 
@@ -1253,6 +1384,41 @@ String Context::getDefaultProfileName() const
 void Context::setDefaultProfileName(const String & name)
 {
     shared->default_profile_name = name;
+}
+
+
+SessionCleaner::~SessionCleaner()
+{
+    try
+    {
+        {
+            std::lock_guard<std::mutex> lock{mutex};
+            quit = true;
+        }
+
+        cond.notify_one();
+
+        thread.join();
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void SessionCleaner::run()
+{
+    setThreadName("HTTPSessionCleaner");
+
+    std::unique_lock<std::mutex> lock{mutex};
+
+    while (true)
+    {
+        auto interval = context.closeSessions();
+
+        if (cond.wait_for(lock, interval, [this]() -> bool { return quit; }))
+            break;
+    }
 }
 
 

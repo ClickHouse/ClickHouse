@@ -1,7 +1,11 @@
 #pragma once
 
+#include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <thread>
 
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
@@ -97,6 +101,9 @@ private:
     Tables external_tables;                    /// Temporary tables.
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;        /// Global context or nullptr. Could be equal to this.
+
+    UInt64 close_cycle = 0;
+    bool used = false;
 
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
@@ -215,6 +222,12 @@ public:
     const Databases getDatabases() const;
     Databases getDatabases();
 
+    using SessionKey = std::pair<String, String>;
+
+    std::shared_ptr<Context> acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check) const;
+    void releaseSession(const String & session_id, std::chrono::steady_clock::duration timeout);
+    std::chrono::steady_clock::duration closeSessions() const;
+
 
     /// For methods below you may need to acquire a lock by yourself.
     std::unique_lock<Poco::Mutex> getLock() const;
@@ -322,6 +335,9 @@ private:
     const ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
+
+    SessionKey getSessionKey(const String & session_id) const;
+    void scheduleClose(const SessionKey & key, std::chrono::steady_clock::duration timeout);
 };
 
 
@@ -341,6 +357,27 @@ private:
     Map & map;
     Map::iterator it;
     std::mutex & mutex;
+};
+
+
+class SessionCleaner
+{
+public:
+    SessionCleaner(Context & context_)
+        : context{context_}
+    {
+    }
+    ~SessionCleaner();
+
+private:
+    void run();
+
+    Context & context;
+
+    std::mutex mutex;
+    std::condition_variable cond;
+    std::thread thread{&SessionCleaner::run, this};
+    std::atomic<bool> quit{false};
 };
 
 }
