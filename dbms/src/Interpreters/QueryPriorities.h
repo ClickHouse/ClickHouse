@@ -60,7 +60,7 @@ private:
 
         while (true)
         {
-            /// Если ли хотя бы один более приоритетный запрос?
+            /// Is there at least one more priority query?
             bool found = false;
             for (const auto & value : container)
             {

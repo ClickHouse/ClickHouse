@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_INTERSERVER_IO_ENDPOINT;
 }
 
-/** Местонахождение сервиса.
+/** Location of the service.
   */
 struct InterserverIOEndpointLocation
 {
@@ -32,7 +32,7 @@ public:
     {
     }
 
-    /// Создаёт местонахождение на основе его сериализованного представления.
+    /// Creates a location based on its serialized representation.
     InterserverIOEndpointLocation(const std::string & serialized_location)
     {
         ReadBufferFromString buf(serialized_location);
@@ -42,7 +42,7 @@ public:
         assertEOF(buf);
     }
 
-    /// Сериализует местонахождение.
+    /// Serializes the location.
     std::string toString() const
     {
         std::string serialized_location;
@@ -60,7 +60,7 @@ public:
     UInt16 port;
 };
 
-/** Обработчик запросов от других серверов.
+/** Query processor from other servers.
   */
 class InterserverIOEndpoint
 {
@@ -72,15 +72,15 @@ public:
     void cancel() { is_cancelled = true; }
 
 protected:
-    /// Нужно остановить передачу данных.
+    /// You need to stop the data transfer.
     std::atomic<bool> is_cancelled {false};
 };
 
 using InterserverIOEndpointPtr = std::shared_ptr<InterserverIOEndpoint>;
 
 
-/** Сюда можно зарегистрировать сервис, обрататывающий запросы от других серверов.
-  * Используется для передачи кусков в ReplicatedMergeTree.
+/** Here you can register a service that processes requests from other servers.
+  * Used to transfer chunks in ReplicatedMergeTree.
   */
 class InterserverIOHandler
 {
@@ -116,7 +116,7 @@ private:
     std::mutex mutex;
 };
 
-/// В конструкторе вызывает addEndpoint, в деструкторе - removeEndpoint.
+/// In the constructor calls `addEndpoint`, in the destructor - `removeEndpoint`.
 class InterserverIOEndpointHolder
 {
 public:
@@ -136,8 +136,8 @@ public:
         try
         {
             handler.removeEndpoint(name);
-            /// После уничтожения объекта, endpoint ещё может жить, так как владение им захватывается на время обработки запроса,
-            /// см. InterserverIOHTTPHandler.cpp
+            /// After destroying the object, `endpoint` can still live, since its ownership is acquired during the processing of the request,
+            /// see InterserverIOHTTPHandler.cpp
         }
         catch (...)
         {
