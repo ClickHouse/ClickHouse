@@ -161,8 +161,8 @@ public:
       * Usually Storage does not care about these settings, since they are used in the interpreter.
       * But, for example, for distributed query processing, the settings are passed to the remote server.
       *
-      * threads - a recommendation, how many threads to return,
-      *  if the storage can return a different number of threads.
+      * num_streams - a recommendation, how many streams to return,
+      *  if the storage can return a different number of streams.
       *
       * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
       */
@@ -171,8 +171,8 @@ public:
         const ASTPtr & query,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1)
+        size_t max_block_size,
+        unsigned num_streams)
     {
         throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

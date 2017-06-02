@@ -216,7 +216,7 @@ BlockInputStreams StorageDistributed::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     auto cluster = getCluster();
 

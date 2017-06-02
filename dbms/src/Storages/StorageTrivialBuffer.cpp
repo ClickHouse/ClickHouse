@@ -133,7 +133,7 @@ BlockInputStreams StorageTrivialBuffer::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
-    unsigned threads)
+    unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -149,22 +149,22 @@ BlockInputStreams StorageTrivialBuffer::read(
                 ErrorCodes::INFINITE_LOOP);
 
         streams = destination->read(column_names, query, context,
-            processed_stage, max_block_size, threads);
+                                    processed_stage, max_block_size, num_streams);
     }
 
     BlockInputStreams streams_from_buffers;
     std::lock_guard<std::mutex> lock(mutex);
     size_t size = data.size();
-    if (threads > size)
-        threads = size;
+    if (num_streams > size)
+        num_streams = size;
 
-    for (size_t thread = 0; thread < threads; ++thread)
+    for (size_t stream = 0; stream < num_streams; ++stream)
     {
         BlocksList::iterator begin = data.begin();
         BlocksList::iterator end = data.begin();
 
-        std::advance(begin, thread * size / threads);
-        std::advance(end, (thread + 1) * size / threads);
+        std::advance(begin, stream * size / num_streams);
+        std::advance(end, (stream + 1) * size / num_streams);
 
         streams_from_buffers.push_back(std::make_shared<TrivialBufferBlockInputStream>(column_names, begin, end, *this));
     }

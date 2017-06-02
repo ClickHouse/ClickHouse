@@ -39,8 +39,8 @@ public:
         const ASTPtr & query,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
-        const size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        const unsigned threads = 1) override
+        size_t max_block_size,
+        unsigned num_streams) override
     {
         return { std::make_shared<NullBlockInputStream>() };
     }

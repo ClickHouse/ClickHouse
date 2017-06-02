@@ -1,3 +1,4 @@
+#include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -9,7 +10,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
-
 
 namespace DB
 {
@@ -23,6 +23,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
         {"name",                std::make_shared<DataTypeString>()},
         {"active",              std::make_shared<DataTypeUInt8>()},
         {"marks",               std::make_shared<DataTypeUInt64>()},
+        {"marks_size",          std::make_shared<DataTypeUInt64>()},
         {"rows",                std::make_shared<DataTypeUInt64>()},
         {"bytes",               std::make_shared<DataTypeUInt64>()},
         {"modification_time",   std::make_shared<DataTypeDateTime>()},
@@ -55,7 +56,7 @@ BlockInputStreams StorageSystemParts::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -213,6 +214,17 @@ BlockInputStreams StorageSystemParts::read(
             block.getByPosition(i++).column->insert(part->name);
             block.getByPosition(i++).column->insert(static_cast<UInt64>(active_parts.count(part)));
             block.getByPosition(i++).column->insert(part->size);
+
+            size_t marks_size = 0;
+            for (const NameAndTypePair & it : part->columns)
+            {
+                String name = escapeForFileName(it.name);
+                auto checksum = part->checksums.files.find(name + ".mrk");
+                if (checksum != part->checksums.files.end())
+                    marks_size += checksum->second.file_size;
+            }
+            block.getByPosition(i++).column->insert(marks_size);
+
             block.getByPosition(i++).column->insert(part->getExactSizeRows());
             block.getByPosition(i++).column->insert(static_cast<size_t>(part->size_in_bytes));
             block.getByPosition(i++).column->insert(part->modification_time);

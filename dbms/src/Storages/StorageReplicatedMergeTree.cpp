@@ -289,6 +289,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         checkTableStructure(skip_sanity_checks, true);
         checkParts(skip_sanity_checks);
+
+        /// Temporary directories contain unfinalized results of Merges or Fetches (after forced restart)
+        ///  and don't allow to reinitialize them, so delete each of them immediately
+        data.clearOldTemporaryDirectories(0);
     }
 
     createNewZooKeeperNodes();
@@ -874,7 +878,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         LOG_ERROR(log, "Removing unexpectedly merged local part from ZooKeeper: " << name);
 
         zkutil::Ops ops;
-        removePartFromZooKeeper(name, ops);
+        removePossiblyIncompletePartNodeFromZooKeeper(name, ops, zookeeper);
         zookeeper->multi(ops);
     }
 
@@ -891,7 +895,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 
         /// We assume that this occurs before the queue is loaded (queue.initialize).
         zkutil::Ops ops;
-        removePartFromZooKeeper(name, ops);
+        removePossiblyIncompletePartNodeFromZooKeeper(name, ops, zookeeper);
         ops.emplace_back(std::make_unique<zkutil::Op::Create>(
             replica_path + "/queue/queue-", log_entry.toString(), zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
         zookeeper->multi(ops);
@@ -1872,6 +1876,25 @@ void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_nam
 }
 
 
+/// Workarond for known ZooKeeper problem, see CLICKHOUSE-3040 and ZOOKEEPER-2362
+/// Multi operation was non-atomic on special wrongly-patched version of ZooKeeper
+/// (occasionally used in AdFox) in case of exceeded quota.
+void StorageReplicatedMergeTree::removePossiblyIncompletePartNodeFromZooKeeper(const String & part_name, zkutil::Ops & ops, const zkutil::ZooKeeperPtr & zookeeper)
+{
+    String part_path = replica_path + "/parts/" + part_name;
+    Names children_ = zookeeper->getChildren(part_path);
+    NameSet children(children_.begin(), children_.end());
+
+    if (children.size() != 2)
+        LOG_WARNING(log, "Will remove incomplete part node " << part_path << " from ZooKeeper");
+
+    if (children.count("checksums"))
+        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(part_path + "/checksums", -1));
+    if (children.count("columns"))
+        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(part_path + "/columns", -1));
+    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(part_path, -1));
+}
+
 void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name)
 {
     auto zookeeper = getZooKeeper();
@@ -2247,7 +2270,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     const Settings & settings = context.getSettingsRef();
 
@@ -2295,7 +2318,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     }
 
     return reader.read(
-        column_names, query, context, processed_stage, max_block_size, threads, &part_index, max_block_number_to_read);
+        column_names, query, context, processed_stage, max_block_size, num_streams, &part_index, max_block_number_to_read);
 }
 
 
@@ -3780,11 +3803,16 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
 
             LOG_DEBUG(log, "Removing " << part->name);
 
-            zkutil::Ops ops;
-            removePartFromZooKeeper(part->name, ops);
-            auto code = zookeeper->tryMulti(ops);
-            if (code != ZOK)
-                LOG_WARNING(log, "Couldn't remove " << part->name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(code));
+            try
+            {
+                zkutil::Ops ops;
+                removePossiblyIncompletePartNodeFromZooKeeper(part->name, ops, zookeeper);
+                zookeeper->multi(ops);
+            }
+            catch (const zkutil::KeeperException & e)
+            {
+                LOG_WARNING(log, "Couldn't remove " << part->name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(e.code));
+            }
 
             part->remove();
             parts.pop_back();

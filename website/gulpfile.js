@@ -51,8 +51,8 @@ gulp.task('reference', [], function () {
 
 gulp.task('docstxt', [], function () {
     run('cd ' + docsDir + '; make');
-    return gulp.src(paths.docs + 'txt')
-        .pipe(gulp.dest(outputDir + '/docs'))
+    return gulp.src(paths.docs)
+        .pipe(gulp.dest(outputDir + '/../docs'))
 });
 
 gulp.task('docs', ['docstxt'], function () {

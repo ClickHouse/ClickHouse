@@ -126,7 +126,7 @@ int main(int argc, char ** argv)
 
         QueryProcessingStage::Enum stage;
 
-        BlockInputStreamPtr in = table->read(column_names, 0, context, stage)[0];
+        BlockInputStreamPtr in = table->read(column_names, 0, context, stage, 8192, 1)[0];
         in = std::make_shared<FilterBlockInputStream>(in, expression, 4);
         //in = std::make_shared<LimitBlockInputStream>(in, 10, 0);
 

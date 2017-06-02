@@ -57,7 +57,11 @@ StorageMergeTree::StorageMergeTree(
 {
     data.loadDataParts(has_force_restore_data_flag);
     data.clearOldParts();
-    data.clearOldTemporaryDirectories();
+
+    /// Temporary directories contain unfinalized results of Merges (after forced restart)
+    ///  and don't allow to reinitialize them, so delete each of them immediately
+    data.clearOldTemporaryDirectories(0);
+
     increment.set(data.getMaxDataPartIndex());
 }
 
@@ -110,9 +114,9 @@ BlockInputStreams StorageMergeTree::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
-    return reader.read(column_names, query, context, processed_stage, max_block_size, threads, nullptr, 0);
+    return reader.read(column_names, query, context, processed_stage, max_block_size, num_streams, nullptr, 0);
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & query, const Settings & settings)

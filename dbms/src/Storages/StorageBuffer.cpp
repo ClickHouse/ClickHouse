@@ -133,7 +133,7 @@ BlockInputStreams StorageBuffer::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
-    unsigned threads)
+    unsigned num_streams)
 {
     processed_stage = QueryProcessingStage::FetchColumns;
 
@@ -146,7 +146,7 @@ BlockInputStreams StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        streams_from_dst = destination->read(column_names, query, context, processed_stage, max_block_size, threads);
+        streams_from_dst = destination->read(column_names, query, context, processed_stage, max_block_size, num_streams);
     }
 
     BlockInputStreams streams_from_buffers;
