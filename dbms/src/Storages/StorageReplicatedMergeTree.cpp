@@ -1877,6 +1877,8 @@ void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_nam
 
 
 /// Workarond for known ZooKeeper problem, see CLICKHOUSE-3040 and ZOOKEEPER-2362
+/// Multi operation was non-atomic on special wrongly-patched version of ZooKeeper
+/// (occasionally used in AdFox) in case of exceeded quota.
 void StorageReplicatedMergeTree::removePossiblyIncompletePartNodeFromZooKeeper(const String & part_name, zkutil::Ops & ops, const zkutil::ZooKeeperPtr & zookeeper)
 {
     String part_path = replica_path + "/parts/" + part_name;
