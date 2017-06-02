@@ -876,10 +876,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (const String & name : expected_parts)
     {
         LOG_ERROR(log, "Removing unexpectedly merged local part from ZooKeeper: " << name);
-
-        zkutil::Ops ops;
-        removePartFromZooKeeper(name, ops);
-        zookeeper->multi(ops);
+        removePossiblyIncompletePartNodeFromZooKeeper(name, zookeeper);
     }
 
     /// Add to the queue job to pick up the missing parts from other replicas and remove from ZK the information that we have them.
@@ -894,11 +891,8 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         log_entry.create_time = tryGetPartCreateTime(zookeeper, replica_path, name);
 
         /// We assume that this occurs before the queue is loaded (queue.initialize).
-        zkutil::Ops ops;
-        removePartFromZooKeeper(name, ops);
-        ops.emplace_back(std::make_unique<zkutil::Op::Create>(
-            replica_path + "/queue/queue-", log_entry.toString(), zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
-        zookeeper->multi(ops);
+        zookeeper->create(replica_path + "/queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential);
+        removePossiblyIncompletePartNodeFromZooKeeper(name, zookeeper);
     }
 
     /// Remove extra local parts.
@@ -1875,6 +1869,28 @@ void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_nam
     ops.emplace_back(std::make_unique<zkutil::Op::Remove>(part_path, -1));
 }
 
+
+/// Workarond for known ZooKeeper problem, see CLICKHOUSE-3040 and ZOOKEEPER-2362
+void StorageReplicatedMergeTree::removePossiblyIncompletePartNodeFromZooKeeper(const String & part_name, const zkutil::ZooKeeperPtr & zookeeper)
+{
+    try
+    {
+        zkutil::Ops ops;
+        removePartFromZooKeeper(part_name, ops);
+        zookeeper->multi(ops);
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        if (e.code == ZNONODE)
+        {
+            String part_path = replica_path + "/parts/" + part_name;
+            LOG_WARNING(log, "Removing partially written part node " << part_path << " from ZooKeeper");
+            zookeeper->removeRecursive(part_path);
+        }
+        else
+            throw;
+    }
+}
 
 void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name)
 {
@@ -3784,11 +3800,14 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
 
             LOG_DEBUG(log, "Removing " << part->name);
 
-            zkutil::Ops ops;
-            removePartFromZooKeeper(part->name, ops);
-            auto code = zookeeper->tryMulti(ops);
-            if (code != ZOK)
-                LOG_WARNING(log, "Couldn't remove " << part->name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(code));
+            try
+            {
+                removePossiblyIncompletePartNodeFromZooKeeper(part->name, zookeeper);
+            }
+            catch (const zkutil::KeeperException & e)
+            {
+                LOG_WARNING(log, "Couldn't remove " << part->name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(e.code));
+            }
 
             part->remove();
             parts.pop_back();
