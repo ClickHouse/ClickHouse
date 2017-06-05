@@ -1180,7 +1180,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 merger.renameMergedTemporaryPart(parts, part, entry.new_part_name, &transaction);
                 getZooKeeper()->multi(ops);        /// After long merge, get fresh ZK handle, because previous session may be expired.
 
-                if (std::shared_ptr<PartLog> part_log = context.getPartLog())
+                if (auto part_log = context.getPartLog(database_name, table_name))
                 {
                     PartLogElement elem;
                     elem.event_time = time(0);
@@ -2141,7 +2141,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
         MergeTreeData::Transaction transaction;
         auto removed_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
 
-        if (std::shared_ptr<PartLog> part_log = context.getPartLog())
+        if (auto part_log = context.getPartLog(database_name, table_name))
         {
             PartLogElement elem;
             elem.event_time = time(0);

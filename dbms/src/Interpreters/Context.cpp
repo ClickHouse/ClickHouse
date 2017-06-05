@@ -34,6 +34,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/Compiler.h>
+#include <Interpreters/SystemLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
@@ -46,6 +47,7 @@
 
 #include <Common/ConfigProcessor.h>
 #include <zkutil/ZooKeeper.h>
+#include <common/logger_useful.h>
 
 
 namespace ProfileEvents
@@ -125,8 +127,6 @@ struct ContextShared
     ReshardingWorkerPtr resharding_worker;
     Macros macros;                                          /// Substitutions from config. Can be used for parameters of ReplicatedMergeTree.
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
-    std::unique_ptr<QueryLog> query_log;                    /// Used to log queries.
-    std::shared_ptr<PartLog> part_log;                      /// Used to log operations with parts
     /// Rules for selecting the compression method, depending on the size of the part.
     mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
     std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
@@ -199,9 +199,6 @@ struct ContextShared
             return;
         shutdown_called = true;
 
-        query_log.reset();
-        part_log.reset();
-
         /** At this point, some tables may have threads that block our mutex.
           * To complete them correctly, we will copy the current list of tables,
           *  and ask them all to finish their work.
@@ -228,11 +225,23 @@ struct ContextShared
 
 Context::Context()
     : shared(new ContextShared),
-    quota(new QuotaForIntervals)
+    quota(new QuotaForIntervals),
+    system_logs(new SystemLogs)
 {
 }
 
-Context::~Context() = default;
+Context::~Context()
+{
+    try
+    {
+        /// Destroy system logs while at least one Context is alive
+        system_logs.reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 
 const TableFunctionFactory & Context::getTableFunctionFactory() const            { return shared->table_function_factory; }
@@ -1208,10 +1217,13 @@ QueryLog & Context::getQueryLog()
 {
     auto lock = getLock();
 
-    if (!shared->query_log)
+    if (!system_logs)
+        throw Exception("Query log have been already shutdown", ErrorCodes::LOGICAL_ERROR);
+
+    if (!system_logs->query_log)
     {
         if (shared->shutdown_called)
-            throw Exception("Will not get query_log because shutdown was called", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
 
         if (!global_context)
             throw Exception("Logical error: no global context for query log", ErrorCodes::LOGICAL_ERROR);
@@ -1223,15 +1235,15 @@ QueryLog & Context::getQueryLog()
         size_t flush_interval_milliseconds = config.getUInt64(
                 "query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
 
-        shared->query_log = std::make_unique<QueryLog>(
+        system_logs->query_log = std::make_unique<QueryLog>(
             *global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
     }
 
-    return *shared->query_log;
+    return *system_logs->query_log;
 }
 
 
-std::shared_ptr<PartLog> Context::getPartLog()
+PartLog * Context::getPartLog(const String & database, const String & table)
 {
     auto lock = getLock();
 
@@ -1239,23 +1251,33 @@ std::shared_ptr<PartLog> Context::getPartLog()
     if (!config.has("part_log"))
         return nullptr;
 
-    if (!shared->part_log)
+    /// System logs are shutdown
+    if (!system_logs)
+        return nullptr;
+
+    String part_log_database = config.getString("part_log.database", "system");
+    String part_log_table = config.getString("part_log.table", "part_log");
+
+    /// Will not log system.part_log itself.
+    /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing
+    if (database == part_log_database && table == part_log_table)
+        return nullptr;
+
+    if (!system_logs->part_log)
     {
         if (shared->shutdown_called)
-            throw Exception("Will not get part_log because shutdown was called", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Logical error: part log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
 
         if (!global_context)
             throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
 
-        String database = config.getString("part_log.database", "system");
-        String table = config.getString("part_log.table", "part_log");
         size_t flush_interval_milliseconds = config.getUInt64(
                 "part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
-        shared->part_log = std::make_unique<PartLog>(
-            *global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+        system_logs->part_log = std::make_unique<PartLog>(*global_context, part_log_database, part_log_table,
+                                                     "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
     }
 
-    return shared->part_log;
+    return system_logs->part_log.get();
 }
 
 
@@ -1362,6 +1384,7 @@ time_t Context::getUptimeSeconds() const
 
 void Context::shutdown()
 {
+    system_logs.reset();
     shared->shutdown();
 }
 

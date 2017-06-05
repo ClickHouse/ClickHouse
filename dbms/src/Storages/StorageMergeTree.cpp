@@ -346,7 +346,7 @@ bool StorageMergeTree::merge(
 
     merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
 
-    if (std::shared_ptr<PartLog> part_log = context.getPartLog())
+    if (auto part_log = context.getPartLog(database_name, table_name))
     {
         PartLogElement elem;
         elem.event_time = time(0);

@@ -65,6 +65,8 @@ class IBlockOutputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 class Block;
+struct SystemLogs;
+using SystemLogsPtr = std::shared_ptr<SystemLogs>;
 
 
 /// (database name, table name)
@@ -89,21 +91,20 @@ private:
 
     ClientInfo client_info;
 
-    std::shared_ptr<QuotaForIntervals> quota;     /// Current quota. By default - empty quota, that have no limits.
+    std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
     String current_database;
-    Settings settings;                            /// Setting for query execution.
+    Settings settings;                                  /// Setting for query execution.
     using ProgressCallback = std::function<void(const Progress & progress)>;
-    ProgressCallback progress_callback;           /// Callback for tracking progress of query execution.
-    ProcessListElement * process_list_elem = nullptr;    /// For tracking total resource usage for query.
+    ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
+    ProcessListElement * process_list_elem = nullptr;   /// For tracking total resource usage for query.
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
-    Tables external_tables;              /// Temporary tables.
-    Context * session_context = nullptr; /// Session context or nullptr. Could be equal to this.
-    Context * global_context = nullptr;  /// Global context or nullptr. Could be equal to this.
+    Tables external_tables;                 /// Temporary tables.
+    Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
+    Context * global_context = nullptr;     /// Global context or nullptr. Could be equal to this.
+    SystemLogsPtr system_logs;              /// Used to log queries and operations on parts
 
-    UInt64 session_close_cycle = 0;
-    bool session_is_used = false;
 
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
@@ -294,7 +295,10 @@ public:
 
     Compiler & getCompiler();
     QueryLog & getQueryLog();
-    std::shared_ptr<PartLog> getPartLog();
+
+    /// Returns an object used to log opertaions with parts if it possible.
+    /// Provide table name to make required cheks.
+    PartLog * getPartLog(const String & database, const String & table);
     const MergeTreeSettings & getMergeTreeSettings();
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
@@ -311,8 +315,8 @@ public:
 
     enum class ApplicationType
     {
-        SERVER,            /// The program is run as clickhouse-server daemon (default behavior)
-        CLIENT,            /// clickhouse-client
+        SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
+        CLIENT,         /// clickhouse-client
         LOCAL_SERVER    /// clickhouse-local
     };
 
