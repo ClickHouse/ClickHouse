@@ -433,9 +433,9 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 
 
 void MergeTreeReader::readData(
-        const String & name, const IDataType & type, IColumn & column,
-        size_t from_mark, size_t max_rows_to_read,
-        size_t level, bool read_offsets)
+    const String & name, const IDataType & type, IColumn & column,
+    size_t from_mark, size_t max_rows_to_read,
+    size_t level, bool read_offsets)
 {
     if (type.isNullable())
     {
