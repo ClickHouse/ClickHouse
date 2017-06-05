@@ -504,11 +504,17 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
     const User & user_props = shared->users.get(name, password, address.host());
 
-    /// Firstly set default settings from default profile
+    /// 1) Set default (hardcoded) settings values, ignoring global_context settings from which it was copied
+    settings = Settings();
+
+    /// 2) Apply settings from default profile
     auto default_profile_name = getDefaultProfileName();
     if (user_props.profile != default_profile_name)
         settings.setProfile(default_profile_name, *shared->users_config);
+
+    /// 3) Apply settings from current user
     settings.setProfile(user_props.profile, *shared->users_config);
+
     setQuota(user_props.quota, quota_key, name, address.host());
 
     client_info.current_user = name;
