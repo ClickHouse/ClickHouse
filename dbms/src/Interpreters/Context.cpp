@@ -224,9 +224,9 @@ struct ContextShared
 
 
 Context::Context()
-    : shared(new ContextShared),
-    quota(new QuotaForIntervals),
-    system_logs(new SystemLogs)
+    : shared(std::make_shared<ContextShared>()),
+    quota(std::make_shared<QuotaForIntervals>()),
+    system_logs(std::make_shared<SystemLogs>())
 {
 }
 

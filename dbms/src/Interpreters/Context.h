@@ -105,6 +105,8 @@ private:
     Context * global_context = nullptr;     /// Global context or nullptr. Could be equal to this.
     SystemLogsPtr system_logs;              /// Used to log queries and operations on parts
 
+    UInt64 session_close_cycle = 0;
+    bool session_is_used = false;
 
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
