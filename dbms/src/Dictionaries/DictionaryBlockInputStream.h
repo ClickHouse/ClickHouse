@@ -29,6 +29,17 @@ public:
     DictionaryBlockInputStream(std::shared_ptr<const IDictionaryBase> dictionary, size_t max_block_size,
                                const std::vector<StringRef> & keys, const Names & column_names);
 
+    using GetColumnsFunction =
+        std::function<ColumnsWithTypeAndName(const Columns &, const std::vector<DictionaryAttribute>& attributes)>;
+    // Used to separate key columns format for storage and view.
+    // Calls get_key_columns_function to get key column for dictionary get fuction call
+    // and get_view_columns_function to get key representation.
+    // Now used in trie dictionary, where columns are stored as ip and mask, and are showed as string
+    DictionaryBlockInputStream(std::shared_ptr<const IDictionaryBase> dictionary, size_t max_block_size,
+                               const Columns & data_columns, const Names & column_names,
+                               GetColumnsFunction && get_key_columns_function,
+                               GetColumnsFunction && get_view_columns_function);
+
     String getName() const override {
         return "DictionaryBlockInputStream";
     }
@@ -72,7 +83,8 @@ private:
                     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
 
     template <template <class> class Getter, class StringGetter>
-    Block fillBlock(const PaddedPODArray<Key>& ids, const ColumnsWithTypeAndName& keys) const;
+    Block fillBlock(const PaddedPODArray<Key> & ids, const Columns & keys,
+                    const DataTypes & types, ColumnsWithTypeAndName && view) const;
 
 
     template <class AttributeType, class Getter>
@@ -94,7 +106,12 @@ private:
     ColumnsWithTypeAndName key_columns;
     Poco::Logger * logger;
     Block (DictionaryBlockInputStream<DictionaryType, Key>::*fillBlockFunction)(
-        const PaddedPODArray<Key>& ids, const ColumnsWithTypeAndName& keys) const;
+        const PaddedPODArray<Key>& ids, const Columns& keys,
+        const DataTypes & types, ColumnsWithTypeAndName && view) const;
+
+    Columns data_columns;
+    GetColumnsFunction get_key_columns_function;
+    GetColumnsFunction get_view_columns_function;
 };
 
 template <class DictionaryType, class Key>
@@ -123,21 +140,59 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
 }
 
 template <class DictionaryType, class Key>
+DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
+    std::shared_ptr<const IDictionaryBase> dictionary, size_t max_block_size,
+    const Columns & data_columns, const Names & column_names,
+    GetColumnsFunction && get_key_columns_function,
+    GetColumnsFunction && get_view_columns_function)
+    : DictionaryBlockInputStreamBase(data_columns.front()->size(), max_block_size),
+      dictionary(std::static_pointer_cast<const DictionaryType>(dictionary)), column_names(column_names),
+      logger(&Poco::Logger::get("DictionaryBlockInputStream")),
+      fillBlockFunction(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<GetterByKey, StringGetterByKey>),
+      data_columns(data_columns),
+      get_key_columns_function(get_key_columns_function), get_view_columns_function(get_view_columns_function)
+{
+}
+
+template <class DictionaryType, class Key>
 Block DictionaryBlockInputStream<DictionaryType, Key>::getBlock(size_t start, size_t length) const
 {
-    if (ids.empty())
+    if (!key_columns.empty())
     {
-        ColumnsWithTypeAndName columns;
+        Columns columns;
+        ColumnsWithTypeAndName view_columns;
         columns.reserve(key_columns.size());
         for (const auto & key_column : key_columns)
-            columns.emplace_back(key_column.column->cut(start, length), key_column.type, key_column.name);
-        // throw std::to_string(columns.size()) + " " + std::to_string(columns[0].column->size());
-        return (this->*fillBlockFunction)({}, columns);
+        {
+            auto column = key_column.column->cut(start, length);
+            columns.emplace_back(column);
+            view_columns.emplace_back(column, key_column.type, key_column.name);
+        }
+        return (this->*fillBlockFunction)({}, columns, {}, std::move(view_columns));
+    }
+    else if(!ids.empty())
+    {
+        PaddedPODArray<Key> block_ids(ids.begin() + start, ids.begin() + start + length);
+        return (this->*fillBlockFunction)(block_ids, {}, {}, {});
     }
     else
     {
-        PaddedPODArray<Key> block_ids(ids.begin() + start, ids.begin() + start + length);
-        return (this->*fillBlockFunction)(block_ids, {});
+        Columns columns;
+        columns.reserve(data_columns.size());
+        for (const auto & data_column : data_columns)
+            columns.push_back(data_column->cut(start, length));
+        const DictionaryStructure& dictionaty_structure = dictionary->getStructure();
+        const auto & attributes = *dictionaty_structure.key;
+        ColumnsWithTypeAndName keys_with_type_and_name = get_key_columns_function(columns, attributes);
+        ColumnsWithTypeAndName view_with_type_and_name = get_view_columns_function(columns, attributes);
+        DataTypes types;
+        columns.clear();
+        for (const auto & key_column : keys_with_type_and_name)
+        {
+            columns.push_back(key_column.column);
+            types.push_back(key_column.type);
+        }
+        return (this->*fillBlockFunction)({}, columns, types, std::move(view_with_type_and_name));
     }
 }
 
@@ -184,28 +239,27 @@ void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
 template <class DictionaryType, class Key>
 template <template <class> class Getter, class StringGetter>
 Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
-    const PaddedPODArray<Key>& ids, const ColumnsWithTypeAndName& keys) const
+    const PaddedPODArray<Key>& ids, const Columns& keys, const DataTypes & types, ColumnsWithTypeAndName && view) const
 {
     std::unordered_set<std::string> names(column_names.begin(), column_names.end());
 
-    Columns key_columns;
-    DataTypes data_types;
-    key_columns.reserve(keys.size());
-    for (const auto& key : keys)
-    {
-        key_columns.push_back(key.column);
-        data_types.push_back(key.type);
-    }
+    DataTypes data_types = types;
+    ColumnsWithTypeAndName block_columns;
 
-    ColumnsWithTypeAndName columns;
+    data_types.reserve(keys.size());
+    const DictionaryStructure& dictionaty_structure = dictionary->getStructure();
+    if (data_types.empty() && dictionaty_structure.key)
+        for (const auto key : *dictionaty_structure.key)
+            data_types.push_back(key.type);
+
+    for (const auto & column : view)
+        if (names.find(column.name) != names.end())
+            block_columns.push_back(column);
+
     const DictionaryStructure& structure = dictionary->getStructure();
 
     if (structure.id && names.find(structure.id->name) != names.end())
-        columns.emplace_back(getColumnFromIds(ids), std::make_shared<DataTypeUInt64>(), structure.id->name);
-
-    for (const auto & key : keys)
-        if (names.find(key.name) != names.end())
-            columns.push_back(key);
+        block_columns.emplace_back(getColumnFromIds(ids), std::make_shared<DataTypeUInt64>(), structure.id->name);
 
     for (const auto idx : ext::range(0, structure.attributes.size()))
     {
@@ -215,7 +269,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
             ColumnPtr column;
 #define GET_COLUMN_FORM_ATTRIBUTE(TYPE) \
                 column = getColumnFromAttribute<TYPE, Getter<TYPE>>( \
-                &DictionaryType::get##TYPE, ids, key_columns, data_types, attribute, *dictionary)
+                &DictionaryType::get##TYPE, ids, keys, data_types, attribute, *dictionary)
             switch (attribute.underlying_type)
             {
             case AttributeUnderlyingType::UInt8:
@@ -251,15 +305,15 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
             case AttributeUnderlyingType::String:
             {
                 column = getColumnFromStringAttribute<StringGetter>(
-                             &DictionaryType::getString, ids, key_columns, data_types, attribute, *dictionary);
+                             &DictionaryType::getString, ids, keys, data_types, attribute, *dictionary);
                 break;
             }
             }
 
-            columns.emplace_back(column, attribute.type, attribute.name);
+            block_columns.emplace_back(column, attribute.type, attribute.name);
         }
     }
-    return Block(columns);
+    return Block(block_columns);
 }
 
 template <class DictionaryType, class Key>
@@ -356,8 +410,6 @@ void DictionaryBlockInputStream<DictionaryType, Key>::fillKeyColumns(
         auto ptr = key.data;
         for (const auto & column : columns)
             ptr = column.column->deserializeAndInsertFromArena(ptr);
-        if (ptr != key.data + key.size)
-            throw Exception("DictionaryBlockInputStream: unable to deserialize data");
     }
 }
 
