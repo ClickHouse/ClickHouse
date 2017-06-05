@@ -2,7 +2,7 @@
 
 #include <Core/Field.h>
 #include <Core/StringRef.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <Core/Names.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/PODArray.h>
 #include <memory>
