@@ -273,12 +273,12 @@ Examples: ``uniqArrayIf(arr, cond)``,  ``quantilesTimingArrayIf(level1, level2)(
 
 -State combinator
 ------------
-If this combinator is used, the aggregate function returns a non-finished value (for example, in the case of the uniq function, the number of unique values), and the intermediate aggregation state (for example, in the case of the uniq function, a hash table for calculating the number of unique values) AggregateFunction (...) and can be used for further processing or can be stored in a table for subsequent pre-aggregation - see the sections "AggregatingMergeTree" and "functions for working with intermediate aggregation states".
+If this combinator is used, the aggregate function returns a non-completed/non-finished value (for example, in the case of the ``uniq`` function, the number of unique values), and the intermediate aggregation state (for example, in the case of the ``uniq`` function, a hash table for calculating the number of unique values), which has type of ``AggregateFunction(...)`` and can be used for further processing or can be saved to a table for subsequent pre-aggregation - see the sections "AggregatingMergeTree" and "functions for working with intermediate aggregation states".
 
 -Merge combinator
 ------------
-In the case of using this combinator, the aggregate function will take as an argument the intermediate state of aggregation, pre-aggregate (combine together) these states, and return the finished value.
+In the case of using this combinator, the aggregate function will take as an argument the intermediate state of an aggregation, pre-aggregate (combine together) these states, and return the finished/complete value.
 
 -MergeState combinator
 ----------------
-Merges the intermediate aggregation states, similar to the -Merge combo, but returns a non-ready value, and an intermediate aggregation state, similar to the -State combinator.
+Merges the intermediate aggregation states, similar to the -Merge combinator, but returns a non-complete value, but an intermediate aggregation state, similar to the -State combinator.
