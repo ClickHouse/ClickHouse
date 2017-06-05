@@ -161,7 +161,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->size_in_bytes);
 
-    if (std::shared_ptr<PartLog> part_log = context.getPartLog())
+    if (auto part_log = context.getPartLog(data.getDatabaseName(), data.getTableName()))
     {
         PartLogElement elem;
         elem.event_time = time(0);
