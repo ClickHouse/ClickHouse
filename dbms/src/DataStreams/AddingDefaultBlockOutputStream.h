@@ -21,7 +21,7 @@ public:
         BlockOutputStreamPtr output_,
         NamesAndTypesListPtr required_columns_,
         const ColumnDefaults & column_defaults_,
-        const Context & context_,
+        Context & context_,
         bool only_explicit_column_defaults_)
         : output(output_), required_columns(required_columns_),
           column_defaults(column_defaults_), context(context_),
@@ -40,7 +40,7 @@ private:
     BlockOutputStreamPtr output;
     NamesAndTypesListPtr required_columns;
     const ColumnDefaults column_defaults;
-    Context context;
+    const Context & context;
     bool only_explicit_column_defaults;
 };
 
