@@ -4,7 +4,7 @@
 #include <Common/NetException.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequest.h>
 

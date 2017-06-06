@@ -25,7 +25,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Functions/IFunction.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace DB

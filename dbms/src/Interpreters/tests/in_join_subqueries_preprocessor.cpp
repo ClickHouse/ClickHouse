@@ -1,4 +1,4 @@
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>

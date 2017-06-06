@@ -52,7 +52,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <DataTypes/DataTypeFactory.h>
 
 

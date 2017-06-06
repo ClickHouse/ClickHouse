@@ -40,8 +40,8 @@
 
 #include <Common/ThreadPool.h>
 
-#include <ext/range.hpp>
-#include <ext/scope_guard.hpp>
+#include <ext/range.h>
+#include <ext/scope_guard.h>
 
 #include <cfenv>
 #include <ctime>

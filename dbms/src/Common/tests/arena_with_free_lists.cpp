@@ -11,8 +11,8 @@
 #include <memory>
 #include <array>
 #include <sys/resource.h>
-#include <ext/bit_cast.hpp>
-#include <ext/size.hpp>
+#include <ext/bit_cast.h>
+#include <ext/size.h>
 #include <Common/Arena.h>
 
 #include <Core/StringRef.h>

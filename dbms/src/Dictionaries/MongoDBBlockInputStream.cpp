@@ -17,7 +17,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <Core/FieldVisitors.h>
 
 

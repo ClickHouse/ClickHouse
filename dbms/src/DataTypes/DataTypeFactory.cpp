@@ -26,7 +26,7 @@
 #include <Parsers/parseQuery.h>
 #include <DataTypes/DataTypeEnum.h>
 
-#include <ext/map.hpp>
+#include <ext/map.h>
 
 
 namespace DB

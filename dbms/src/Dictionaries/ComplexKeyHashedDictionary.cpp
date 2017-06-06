@@ -1,5 +1,5 @@
-#include <ext/map.hpp>
-#include <ext/range.hpp>
+#include <ext/map.h>
+#include <ext/range.h>
 #include <Dictionaries/ComplexKeyHashedDictionary.h>
 
 

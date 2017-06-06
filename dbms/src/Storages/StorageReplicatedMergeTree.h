@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 #include <atomic>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>

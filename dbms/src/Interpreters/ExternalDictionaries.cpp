@@ -4,7 +4,7 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Common/StringUtils.h>
 #include <Common/MemoryTracker.h>
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Glob.h>
 #include <Poco/File.h>

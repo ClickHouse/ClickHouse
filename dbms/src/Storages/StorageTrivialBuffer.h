@@ -6,7 +6,7 @@
 #include <Common/SipHash.h>
 #include <Core/NamesAndTypes.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 #include <Poco/Event.h>
 #include <Storages/IStorage.h>
 
