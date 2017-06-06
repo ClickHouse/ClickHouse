@@ -4,7 +4,7 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/File.h>
 
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 
 #include <Common/ExternalTable.h>
 #include <Common/StringUtils.h>

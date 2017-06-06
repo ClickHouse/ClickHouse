@@ -33,8 +33,8 @@ try
     auto system_database = std::make_shared<DatabaseMemory>("system");
     context.addDatabase("system", system_database);
     context.setCurrentDatabase("system");
-    system_database->attachTable("one",            StorageSystemOne::create("one"));
-    system_database->attachTable("numbers",     StorageSystemNumbers::create("numbers"));
+    system_database->attachTable("one", StorageSystemOne::create("one"));
+    system_database->attachTable("numbers", StorageSystemNumbers::create("numbers", false));
 
     CollectAliases collect_aliases;
     collect_aliases.process(ast);

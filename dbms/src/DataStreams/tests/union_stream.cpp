@@ -25,7 +25,7 @@ using namespace DB;
 void test1()
 {
     Context context;
-    StoragePtr table = StorageSystemNumbers::create("numbers");
+    StoragePtr table = StorageSystemNumbers::create("numbers", false);
 
     Names column_names;
     column_names.push_back("number");
@@ -55,7 +55,7 @@ void test1()
 void test2()
 {
     Context context;
-    StoragePtr table = StorageSystemNumbers::create("numbers");
+    StoragePtr table = StorageSystemNumbers::create("numbers", false);
 
     Names column_names;
     column_names.push_back("number");

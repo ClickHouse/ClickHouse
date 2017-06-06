@@ -15,23 +15,6 @@ namespace ErrorCodes
 }
 
 
-StoragePtr StorageView::create(
-    const String & table_name_,
-    const String & database_name_,
-    Context & context_,
-    ASTPtr & query_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_)
-{
-    return make_shared(
-        table_name_, database_name_, context_, query_,
-        columns_, materialized_columns_, alias_columns_, column_defaults_
-    );
-}
-
-
 StorageView::StorageView(
     const String & table_name_,
     const String & database_name_,

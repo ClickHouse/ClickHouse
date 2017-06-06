@@ -21,11 +21,6 @@ StorageSystemSettings::StorageSystemSettings(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemSettings::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemSettings::read(
     const Names & column_names,

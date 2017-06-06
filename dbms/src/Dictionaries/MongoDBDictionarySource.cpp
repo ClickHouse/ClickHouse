@@ -15,7 +15,7 @@
 #include <Dictionaries/MongoDBDictionarySource.h>
 #include <Dictionaries/MongoDBBlockInputStream.h>
 #include <Core/FieldVisitors.h>
-#include <ext/enumerate.hpp>
+#include <ext/enumerate.h>
 
 
 namespace DB

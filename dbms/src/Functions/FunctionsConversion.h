@@ -1,8 +1,8 @@
 #pragma once
 
-#include <ext/enumerate.hpp>
-#include <ext/collection_cast.hpp>
-#include <ext/range.hpp>
+#include <ext/enumerate.h>
+#include <ext/collection_cast.h>
+#include <ext/range.h>
 #include <type_traits>
 
 #include <IO/WriteBufferFromVector.h>

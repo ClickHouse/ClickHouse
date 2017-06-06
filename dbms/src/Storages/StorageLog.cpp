@@ -589,35 +589,6 @@ StorageLog::StorageLog(
         null_marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_NULL_MARKS_FILE_NAME);
 }
 
-StoragePtr StorageLog::create(
-    const std::string & path_,
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    size_t max_compress_block_size_)
-{
-    return make_shared(
-        path_, name_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_,
-        max_compress_block_size_
-    );
-}
-
-StoragePtr StorageLog::create(
-    const std::string & path_,
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    size_t max_compress_block_size_)
-{
-    return make_shared(
-        path_, name_, columns_,
-        NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{},
-        max_compress_block_size_
-    );
-}
-
 
 void StorageLog::addFile(const String & column_name, const IDataType & type, size_t level)
 {

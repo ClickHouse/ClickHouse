@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
@@ -12,28 +12,11 @@ namespace DB
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
-class StorageMerge : private ext::shared_ptr_helper<StorageMerge>, public IStorage
+class StorageMerge : public ext::shared_ptr_helper<StorageMerge>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageMerge>;
 
 public:
-    static StoragePtr create(
-        const std::string & name_,            /// The name of the table.
-        NamesAndTypesListPtr columns_,        /// List of columns.
-        const String & source_database_,      /// In which database to look for source tables.
-        const String & table_name_regexp_,    /// Regex names of source tables.
-        const Context & context_);            /// Known tables.
-
-    static StoragePtr create(
-        const std::string & name_,            /// The name of the table.
-        NamesAndTypesListPtr columns_,        /// List of columns.
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        const String & source_database_,    /// In which database to look for source tables.
-        const String & table_name_regexp_,    /// Regex names of source tables.
-        const Context & context_);            /// Known tables.
-
     std::string getName() const override { return "Merge"; }
     std::string getTableName() const override { return name; }
 
@@ -70,11 +53,11 @@ private:
     const Context & context;
 
     StorageMerge(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const String & source_database_,
-        const String & table_name_regexp_,
-        const Context & context_);
+        const std::string & name_,            /// The name of the table.
+        NamesAndTypesListPtr columns_,        /// List of columns.
+        const String & source_database_,      /// In which database to look for source tables.
+        const String & table_name_regexp_,    /// Regex names of source tables.
+        const Context & context_);            /// Known tables.
 
     StorageMerge(
         const std::string & name_,

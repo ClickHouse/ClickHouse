@@ -30,11 +30,6 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemTables::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 static ColumnWithTypeAndName getFilteredDatabases(const ASTPtr & query, const Context & context)
 {

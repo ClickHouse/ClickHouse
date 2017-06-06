@@ -40,8 +40,8 @@
 
 #include <Common/ThreadPool.h>
 
-#include <ext/range.hpp>
-#include <ext/scope_guard.hpp>
+#include <ext/range.h>
+#include <ext/scope_guard.h>
 
 #include <cfenv>
 #include <ctime>
@@ -221,8 +221,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         sampling_expression_, index_granularity_, merging_params_,
         settings_, database_name_ + "." + table_name, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); },
-        [this] () { clearOldPartsAndRemoveFromZK(); }
-        ),
+        [this] () { clearOldPartsAndRemoveFromZK(); }),
     reader(data), writer(data, context), merger(data, context.getBackgroundPool()), fetcher(data), sharded_partition_uploader_client(*this),
     shutdown_event(false), part_check_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
@@ -296,16 +295,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     createNewZooKeeperNodes();
-
-    queue.initialize(
-        zookeeper_path, replica_path,
-        database_name + "." + table_name + " (ReplicatedMergeTreeQueue)",
-        data.getDataParts(), current_zookeeper);
-
-    queue.pullLogsToQueue(current_zookeeper, nullptr);
-
-    /// In this thread replica will be activated.
-    restarting_thread = std::make_unique<ReplicatedMergeTreeRestartingThread>(*this);
 }
 
 
@@ -2199,6 +2188,23 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     LOG_DEBUG(log, "Fetched part " << part_name << " from " << replica_path << (to_detached ? " (to 'detached' directory)" : ""));
     return true;
+}
+
+
+void StorageReplicatedMergeTree::startup()
+{
+    if (is_readonly)
+        return;
+
+    queue.initialize(
+        zookeeper_path, replica_path,
+        database_name + "." + table_name + " (ReplicatedMergeTreeQueue)",
+        data.getDataParts(), current_zookeeper);
+
+    queue.pullLogsToQueue(current_zookeeper, nullptr);
+
+    /// In this thread replica will be activated.
+    restarting_thread = std::make_unique<ReplicatedMergeTreeRestartingThread>(*this);
 }
 
 

@@ -6,12 +6,12 @@ namespace ext
 {
 
 template <class F> class scope_guard {
-	const F function;
+    const F function;
 
 public:
-	constexpr scope_guard(const F & function) : function{function} {}
-	constexpr scope_guard(F && function) : function{std::move(function)} {}
-	~scope_guard() { function(); }
+    constexpr scope_guard(const F & function) : function{function} {}
+    constexpr scope_guard(F && function) : function{std::move(function)} {}
+    ~scope_guard() { function(); }
 };
 
 template <class F>

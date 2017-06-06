@@ -13,7 +13,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Poco/Ext/ThreadNumber.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace ProfileEvents
@@ -43,23 +43,6 @@ namespace ErrorCodes
 }
 
 
-StoragePtr StorageTrivialBuffer::create(const std::string & name_, NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    Context & context_, const size_t num_blocks_to_deduplicate_,
-    const String & path_in_zk_for_deduplication_,
-    const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-    const String & destination_database_, const String & destination_table_)
-{
-    return make_shared(
-        name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
-        context_, num_blocks_to_deduplicate_, path_in_zk_for_deduplication_,
-        min_thresholds_, max_thresholds_,
-        destination_database_, destination_table_);
-}
-
-
 StorageTrivialBuffer::StorageTrivialBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
@@ -77,8 +60,7 @@ StorageTrivialBuffer::StorageTrivialBuffer(const std::string & name_, NamesAndTy
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
     destination_database(destination_database_), destination_table(destination_table_),
     no_destination(destination_database.empty() && destination_table.empty()),
-    log(&Logger::get("TrivialBuffer (" + name + ")")),
-    flush_thread(&StorageTrivialBuffer::flushThread, this)
+    log(&Logger::get("TrivialBuffer (" + name + ")"))
 {
     zookeeper->createAncestors(path_in_zk_for_deduplication);
     zookeeper->createOrUpdate(path_in_zk_for_deduplication, {}, zkutil::CreateMode::Persistent);
@@ -357,6 +339,12 @@ BlockOutputStreamPtr StorageTrivialBuffer::write(const ASTPtr & query, const Set
     return std::make_shared<TrivialBufferBlockOutputStream>(*this);
 }
 
+void StorageTrivialBuffer::startup()
+{
+    flush_thread = std::thread(&StorageTrivialBuffer::flushThread, this);
+}
+
+
 void StorageTrivialBuffer::shutdown()
 {
     shutdown_event.set();
@@ -421,7 +409,7 @@ bool StorageTrivialBuffer::checkThresholds(
 }
 
 bool StorageTrivialBuffer::checkThresholdsImpl(const size_t rows, const size_t bytes,
-                    const time_t time_passed) const
+    const time_t time_passed) const
 {
     if (time_passed > min_thresholds.time && rows > min_thresholds.rows && bytes > min_thresholds.bytes)
     {

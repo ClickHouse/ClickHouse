@@ -3,7 +3,7 @@
 #include <map>
 #include <tuple>
 #include <mutex>
-#include <ext/function_traits.hpp>
+#include <ext/function_traits.h>
 
 
 /** The simplest cache for a free function.

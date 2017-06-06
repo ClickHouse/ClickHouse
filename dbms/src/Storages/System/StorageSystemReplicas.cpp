@@ -46,11 +46,6 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemReplicas::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemReplicas::read(
     const Names & column_names,

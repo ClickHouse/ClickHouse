@@ -2,7 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/ColumnConst.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace DB

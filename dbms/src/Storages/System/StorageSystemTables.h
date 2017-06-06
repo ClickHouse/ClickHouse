@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -12,13 +12,10 @@ class Context;
 
 /** Implements the system table `tables`, which allows you to get information about all tables.
   */
-class StorageSystemTables : private ext::shared_ptr_helper<StorageSystemTables>, public IStorage
+class StorageSystemTables : public ext::shared_ptr_helper<StorageSystemTables>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageSystemTables>;
-
 public:
-    static StoragePtr create(const std::string & name_);
-
     std::string getName() const override { return "SystemTables"; }
     std::string getTableName() const override { return name; }
 

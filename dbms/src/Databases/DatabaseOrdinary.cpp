@@ -183,6 +183,60 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
 
     if (thread_pool)
         thread_pool->wait();
+
+    /// After all tables was basically initialized, startup them.
+    startupTables(thread_pool);
+}
+
+
+void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
+{
+    LOG_INFO(log, "Starting up tables.");
+
+    StopwatchWithLock watch;
+    std::atomic<size_t> tables_processed {0};
+    size_t total_tables = tables.size();
+
+    auto task_function = [&](Tables::iterator begin, Tables::iterator end)
+    {
+        for (Tables::iterator it = begin; it != end; ++it)
+        {
+            if ((++tables_processed) % PRINT_MESSAGE_EACH_N_TABLES == 0
+                || watch.lockTestAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+            {
+                LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
+                watch.restart();
+            }
+
+            it->second->startup();
+        }
+    };
+
+    const size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
+    size_t num_bunches = (total_tables + bunch_size - 1) / bunch_size;
+
+    Tables::iterator begin = tables.begin();
+    for (size_t i = 0; i < num_bunches; ++i)
+    {
+        auto end = begin;
+
+        if (i + 1 == num_bunches)
+            end = tables.end();
+        else
+            std::advance(end, bunch_size);
+
+        auto task = std::bind(task_function, begin, end);
+
+        if (thread_pool)
+            thread_pool->schedule(task);
+        else
+            task();
+
+        begin = end;
+    }
+
+    if (thread_pool)
+        thread_pool->wait();
 }
 
 

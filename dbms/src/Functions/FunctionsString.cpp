@@ -1,6 +1,6 @@
 ﻿#include <Functions/FunctionsString.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>

@@ -13,7 +13,7 @@
 #include <common/logger_useful.h>
 #include <Poco/Ext/ThreadNumber.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace ProfileEvents
@@ -43,20 +43,6 @@ namespace ErrorCodes
 }
 
 
-StoragePtr StorageBuffer::create(const std::string & name_, NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    Context & context_,
-    size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-    const String & destination_database_, const String & destination_table_)
-{
-    return make_shared(
-        name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
-        context_, num_shards_, min_thresholds_, max_thresholds_, destination_database_, destination_table_);
-}
-
-
 StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
@@ -70,8 +56,7 @@ StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr col
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
     destination_database(destination_database_), destination_table(destination_table_),
     no_destination(destination_database.empty() && destination_table.empty()),
-    log(&Logger::get("StorageBuffer (" + name + ")")),
-    flush_thread(&StorageBuffer::flushThread, this)
+    log(&Logger::get("StorageBuffer (" + name + ")"))
 {
 }
 
@@ -343,6 +328,12 @@ private:
 BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & query, const Settings & settings)
 {
     return std::make_shared<BufferBlockOutputStream>(*this);
+}
+
+
+void StorageBuffer::startup()
+{
+    flush_thread = std::thread(&StorageBuffer::flushThread, this);
 }
 
 

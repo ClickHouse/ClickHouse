@@ -52,7 +52,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <DataTypes/DataTypeFactory.h>
 
 
@@ -534,6 +534,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
     NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample.getColumnsList());
 
     StoragePtr external_storage = StorageMemory::create(external_table_name, columns);
+    external_storage->startup();
 
     /** There are two ways to perform distributed GLOBAL subqueries.
       *

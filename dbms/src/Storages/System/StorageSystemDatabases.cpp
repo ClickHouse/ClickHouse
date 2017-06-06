@@ -20,11 +20,6 @@ StorageSystemDatabases::StorageSystemDatabases(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemDatabases::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemDatabases::read(
     const Names & column_names,
