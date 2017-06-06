@@ -6,16 +6,11 @@
 namespace DB
 {
 
-/// Provides information about graphite configuration.
-class StorageSystemGraphite
-    : private ext::shared_ptr_helper<StorageSystemGraphite>
-    , public IStorage
+/// Provides information about Graphite configuration.
+class StorageSystemGraphite : public ext::shared_ptr_helper<StorageSystemGraphite>, public IStorage
 {
-    friend class ext::shared_ptr_helper<StorageSystemGraphite>;
-
+friend class ext::shared_ptr_helper<StorageSystemGraphite>;
 public:
-    static StoragePtr create(const std::string & name_);
-
     std::string getName() const override { return "SystemGraphite"; }
     std::string getTableName() const override { return name; }
     const NamesAndTypesList & getColumnsListImpl() const override { return columns; }

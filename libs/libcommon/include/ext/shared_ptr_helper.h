@@ -28,7 +28,7 @@ protected:
     };
 
     /// see std::allocate_shared
-    template <typename TAlloc, typename ... TArgs>
+    template <typename TAlloc, typename... TArgs>
     static std::shared_ptr<T> allocate_shared(const TAlloc & alloc, TArgs &&... args)
     {
         using AllocTraits = std::allocator_traits<TAlloc>;
@@ -52,10 +52,19 @@ protected:
             alloc_copy);
     }
 
-    template <typename ... TArgs>
+    template <typename... TArgs>
     static std::shared_ptr<T> make_shared(TArgs &&... args)
     {
         return allocate_shared(std::allocator<TNoConst>(), std::forward<TArgs>(args)...);
+    }
+
+public:
+
+    /// Default implementation of 'create' method just use make_shared.
+    template <typename... TArgs>
+    static std::shared_ptr<T> create(TArgs &&... args)
+    {
+        return make_shared(std::forward<TArgs>(args)...);
     }
 };
 

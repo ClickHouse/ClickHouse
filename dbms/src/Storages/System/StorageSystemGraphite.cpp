@@ -124,10 +124,6 @@ StorageSystemGraphite::StorageSystemGraphite(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemGraphite::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
 
 BlockInputStreams StorageSystemGraphite::read(
     const Names & column_names,

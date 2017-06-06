@@ -65,30 +65,6 @@ StorageMergeTree::StorageMergeTree(
     increment.set(data.getMaxDataPartIndex());
 }
 
-StoragePtr StorageMergeTree::create(
-    const String & path_, const String & database_name_, const String & table_name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    bool attach,
-    Context & context_,
-    ASTPtr & primary_expr_ast_,
-    const String & date_column_name_,
-    const ASTPtr & sampling_expression_,
-    size_t index_granularity_,
-    const MergeTreeData::MergingParams & merging_params_,
-    bool has_force_restore_data_flag_,
-    const MergeTreeSettings & settings_)
-{
-    return make_shared(
-        path_, database_name_, table_name_,
-        columns_, materialized_columns_, alias_columns_, column_defaults_, attach,
-        context_, primary_expr_ast_, date_column_name_,
-        sampling_expression_, index_granularity_, merging_params_, has_force_restore_data_flag_, settings_
-    );
-}
-
 
 void StorageMergeTree::startup()
 {

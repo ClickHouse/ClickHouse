@@ -13,13 +13,11 @@ class Context;
 
 /** Implements system table asynchronous_metrics, which allows to get values of periodically (asynchronously) updated metrics.
   */
-class StorageSystemAsynchronousMetrics : private ext::shared_ptr_helper<StorageSystemAsynchronousMetrics>, public IStorage
+class StorageSystemAsynchronousMetrics : public ext::shared_ptr_helper<StorageSystemAsynchronousMetrics>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageSystemAsynchronousMetrics>;
 
 public:
-    static StoragePtr create(const std::string & name_, const AsynchronousMetrics & async_metrics_);
-
     std::string getName() const override { return "SystemAsynchronousMetrics"; }
     std::string getTableName() const override { return name; }
 

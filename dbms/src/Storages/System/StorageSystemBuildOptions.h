@@ -12,13 +12,11 @@ class Context;
 
 /** System table "build_options" with many params used for clickhouse building
   */
-class StorageSystemBuildOptions : private ext::shared_ptr_helper<StorageSystemBuildOptions>, public IStorage
+class StorageSystemBuildOptions : public ext::shared_ptr_helper<StorageSystemBuildOptions>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageSystemBuildOptions>;
 
 public:
-    static StoragePtr create(const std::string & name_);
-
     std::string getName() const override { return "SystemBuildOptions"; }
     std::string getTableName() const override { return name; }
 

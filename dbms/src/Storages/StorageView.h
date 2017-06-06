@@ -9,21 +9,11 @@
 namespace DB
 {
 
-class StorageView : private ext::shared_ptr_helper<StorageView>, public IStorage
+class StorageView : public ext::shared_ptr_helper<StorageView>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageView>;
 
 public:
-    static StoragePtr create(
-        const String & table_name_,
-        const String & database_name_,
-        Context & context_,
-        ASTPtr & query_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_);
-
     std::string getName() const override { return "View"; }
     std::string getTableName() const override { return table_name; }
     const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }

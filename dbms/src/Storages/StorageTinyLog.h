@@ -17,28 +17,13 @@ namespace DB
 /** Implements a repository that is suitable for small pieces of the log.
   * It differs from StorageLog in the absence of mark files.
   */
-class StorageTinyLog : private ext::shared_ptr_helper<StorageTinyLog>, public IStorage
+class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageTinyLog>;
 friend class TinyLogBlockInputStream;
 friend class TinyLogBlockOutputStream;
 
 public:
-    /** hook the table with the appropriate name, along the appropriate path (with / at the end),
-      *  (the correctness of names and paths is not verified)
-      *  consisting of the specified columns.
-      * If not specified `attach` - create a directory if it does not exist.
-      */
-    static StoragePtr create(
-        const std::string & path_,
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        bool attach,
-        size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
-
     std::string getName() const override { return "TinyLog"; }
     std::string getTableName() const override { return name; }
 
@@ -90,7 +75,7 @@ private:
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         bool attach,
-        size_t max_compress_block_size_);
+        size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
 
     void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 };

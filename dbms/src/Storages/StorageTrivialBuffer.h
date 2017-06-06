@@ -31,7 +31,7 @@ class Context;
   * The data in the buffer is not replicated, logged or stored. After hard reset of the
   * server, the data is lost.
   */
-class StorageTrivialBuffer : private ext::shared_ptr_helper<StorageTrivialBuffer>, public IStorage
+class StorageTrivialBuffer : public ext::shared_ptr_helper<StorageTrivialBuffer>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageTrivialBuffer>;
 friend class TrivialBufferBlockInputStream;
@@ -44,15 +44,6 @@ public:
         size_t rows;    /// Number of rows in buffer.
         size_t bytes;    /// Number of bytes (incompressed) in buffer.
     };
-
-    static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        Context & context_, size_t num_blocks_to_deduplicate_,
-        const String & path_in_zk_for_deduplication_,
-        const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-        const String & destination_database_, const String & destination_table_);
 
     std::string getName() const override { return "TrivialBuffer"; }
     std::string getTableName() const override { return name; }

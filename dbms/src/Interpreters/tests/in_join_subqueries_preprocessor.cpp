@@ -27,16 +27,11 @@ namespace DB
 
 
 /// Simplified version of the StorageDistributed class.
-class StorageDistributedFake : private ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
+class StorageDistributedFake : public ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
 {
 friend class ext::shared_ptr_helper<StorageDistributedFake>;
 
 public:
-    static DB::StoragePtr create(const std::string & remote_database_, const std::string & remote_table_, size_t shard_count_)
-    {
-        return make_shared(remote_database_, remote_table_, shard_count_);
-    }
-
     std::string getName() const override { return "DistributedFake"; }
     bool isRemote() const override { return true; }
     size_t getShardCount() const { return shard_count; }

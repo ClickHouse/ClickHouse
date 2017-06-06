@@ -21,27 +21,22 @@ namespace DB
 StorageSystemZooKeeper::StorageSystemZooKeeper(const std::string & name_)
     : name(name_)
     , columns{
-        { "name",             std::make_shared<DataTypeString>()    },
-        { "value",             std::make_shared<DataTypeString>()    },
-        { "czxid",            std::make_shared<DataTypeInt64>()    },
-        { "mzxid",            std::make_shared<DataTypeInt64>()    },
-        { "ctime",            std::make_shared<DataTypeDateTime>()},
-        { "mtime",            std::make_shared<DataTypeDateTime>()},
-        { "version",        std::make_shared<DataTypeInt32>()    },
-        { "cversion",        std::make_shared<DataTypeInt32>()    },
-        { "aversion",        std::make_shared<DataTypeInt32>()    },
-        { "ephemeralOwner",    std::make_shared<DataTypeInt64>()    },
-        { "dataLength",        std::make_shared<DataTypeInt32>()    },
-        { "numChildren",    std::make_shared<DataTypeInt32>()    },
-        { "pzxid",            std::make_shared<DataTypeInt64>()    },
-        { "path",             std::make_shared<DataTypeString>()    },
+        { "name",           std::make_shared<DataTypeString>() },
+        { "value",          std::make_shared<DataTypeString>() },
+        { "czxid",          std::make_shared<DataTypeInt64>() },
+        { "mzxid",          std::make_shared<DataTypeInt64>() },
+        { "ctime",          std::make_shared<DataTypeDateTime>() },
+        { "mtime",          std::make_shared<DataTypeDateTime>() },
+        { "version",        std::make_shared<DataTypeInt32>() },
+        { "cversion",       std::make_shared<DataTypeInt32>() },
+        { "aversion",       std::make_shared<DataTypeInt32>() },
+        { "ephemeralOwner", std::make_shared<DataTypeInt64>() },
+        { "dataLength",     std::make_shared<DataTypeInt32>() },
+        { "numChildren",    std::make_shared<DataTypeInt32>() },
+        { "pzxid",          std::make_shared<DataTypeInt64>() },
+        { "path",           std::make_shared<DataTypeString>() },
     }
 {
-}
-
-StoragePtr StorageSystemZooKeeper::create(const std::string & name_)
-{
-    return make_shared(name_);
 }
 
 

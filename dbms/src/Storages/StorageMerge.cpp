@@ -50,35 +50,6 @@ StorageMerge::StorageMerge(
 {
 }
 
-StoragePtr StorageMerge::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const String & source_database_,
-    const String & table_name_regexp_,
-    const Context & context_)
-{
-    return make_shared(
-        name_, columns_,
-        source_database_, table_name_regexp_, context_
-    );
-}
-
-StoragePtr StorageMerge::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    const String & source_database_,
-    const String & table_name_regexp_,
-    const Context & context_)
-{
-    return make_shared(
-        name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
-        source_database_, table_name_regexp_, context_
-    );
-}
-
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const
 {
     auto type = VirtualColumnFactory::tryGetType(column_name);

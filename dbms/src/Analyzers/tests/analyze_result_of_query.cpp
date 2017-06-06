@@ -33,7 +33,7 @@ try
     context.addDatabase("system", system_database);
     context.setCurrentDatabase("system");
     system_database->attachTable("one", StorageSystemOne::create("one"));
-    system_database->attachTable("numbers", StorageSystemNumbers::create("numbers"));
+    system_database->attachTable("numbers", StorageSystemNumbers::create("numbers", false));
 
     AnalyzeResultOfQuery analyzer;
     analyzer.process(ast, context);

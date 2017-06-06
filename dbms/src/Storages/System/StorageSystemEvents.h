@@ -12,13 +12,10 @@ class Context;
 
 /** Implements `events` system table, which allows you to obtain information for profiling.
   */
-class StorageSystemEvents : private ext::shared_ptr_helper<StorageSystemEvents>, public IStorage
+class StorageSystemEvents : public ext::shared_ptr_helper<StorageSystemEvents>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageSystemEvents>;
-
 public:
-    static StoragePtr create(const std::string & name_);
-
     std::string getName() const override { return "SystemEvents"; }
     std::string getTableName() const override { return name; }
 

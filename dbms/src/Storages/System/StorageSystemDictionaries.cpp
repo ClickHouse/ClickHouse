@@ -39,10 +39,6 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
 {
 }
 
-StoragePtr StorageSystemDictionaries::create(const std::string & name)
-{
-    return make_shared(name);
-}
 
 BlockInputStreams StorageSystemDictionaries::read(
     const Names & column_names,

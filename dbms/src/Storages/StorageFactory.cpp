@@ -554,7 +554,9 @@ StoragePtr StorageFactory::get(
             table_name, columns,
             materialized_columns, alias_columns, column_defaults,
             context,
-            num_buckets, {min_time, min_rows, min_bytes}, {max_time, max_rows, max_bytes},
+            num_buckets,
+            StorageBuffer::Thresholds{min_time, min_rows, min_bytes},
+            StorageBuffer::Thresholds{max_time, max_rows, max_bytes},
             destination_database, destination_table);
     }
     else if (name == "TrivialBuffer")
@@ -602,7 +604,8 @@ StoragePtr StorageFactory::get(
             table_name, columns,
             materialized_columns, alias_columns, column_defaults,
             context, num_blocks_to_deduplicate, path_in_zk_for_deduplication,
-            {min_time, min_rows, min_bytes}, {max_time, max_rows, max_bytes},
+            StorageTrivialBuffer::Thresholds{min_time, min_rows, min_bytes},
+            StorageTrivialBuffer::Thresholds{max_time, max_rows, max_bytes},
             destination_database, destination_table);
     }
     else if (endsWith(name, "MergeTree"))

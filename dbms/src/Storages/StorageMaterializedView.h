@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class StorageMaterializedView : private ext::shared_ptr_helper<StorageMaterializedView>, public StorageView
+class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public StorageView
 {
 friend class ext::shared_ptr_helper<StorageMaterializedView>;
 

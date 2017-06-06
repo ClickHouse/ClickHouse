@@ -52,11 +52,6 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemProcesses::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemProcesses::read(
     const Names & column_names,

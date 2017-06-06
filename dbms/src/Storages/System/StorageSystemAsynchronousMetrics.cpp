@@ -23,11 +23,6 @@ StorageSystemAsynchronousMetrics::StorageSystemAsynchronousMetrics(const std::st
 {
 }
 
-StoragePtr StorageSystemAsynchronousMetrics::create(const std::string & name_, const AsynchronousMetrics & async_metrics_)
-{
-    return make_shared(name_, async_metrics_);
-}
-
 
 BlockInputStreams StorageSystemAsynchronousMetrics::read(
     const Names & column_names,

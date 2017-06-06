@@ -43,23 +43,6 @@ namespace ErrorCodes
 }
 
 
-StoragePtr StorageTrivialBuffer::create(const std::string & name_, NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    Context & context_, const size_t num_blocks_to_deduplicate_,
-    const String & path_in_zk_for_deduplication_,
-    const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-    const String & destination_database_, const String & destination_table_)
-{
-    return make_shared(
-        name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
-        context_, num_blocks_to_deduplicate_, path_in_zk_for_deduplication_,
-        min_thresholds_, max_thresholds_,
-        destination_database_, destination_table_);
-}
-
-
 StorageTrivialBuffer::StorageTrivialBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,

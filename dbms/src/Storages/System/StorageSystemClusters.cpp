@@ -29,10 +29,6 @@ StorageSystemClusters::StorageSystemClusters(const std::string & name_, Context 
 {
 }
 
-StoragePtr StorageSystemClusters::create(const std::string & name_, Context & context_)
-{
-    return make_shared(name_, context_);
-}
 
 BlockInputStreams StorageSystemClusters::read(
     const Names & column_names,

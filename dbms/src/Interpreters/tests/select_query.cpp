@@ -41,7 +41,7 @@ try
     context.addDatabase("system", system);
     system->loadTables(context, nullptr, false);
     system->attachTable("one", StorageSystemOne::create("one"));
-    system->attachTable("numbers", StorageSystemNumbers::create("numbers"));
+    system->attachTable("numbers", StorageSystemNumbers::create("numbers", false));
     context.setCurrentDatabase("default");
 
     ReadBufferFromIStream in(std::cin);

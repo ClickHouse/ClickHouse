@@ -43,20 +43,6 @@ namespace ErrorCodes
 }
 
 
-StoragePtr StorageBuffer::create(const std::string & name_, NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    Context & context_,
-    size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-    const String & destination_database_, const String & destination_table_)
-{
-    return make_shared(
-        name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
-        context_, num_shards_, min_thresholds_, max_thresholds_, destination_database_, destination_table_);
-}
-
-
 StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,

@@ -15,11 +15,6 @@ StorageSystemOne::StorageSystemOne(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemOne::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemOne::read(
     const Names & column_names,

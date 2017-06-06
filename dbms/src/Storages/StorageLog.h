@@ -38,32 +38,13 @@ using Marks = std::vector<Mark>;
   * Keys are not supported.
   * The data is stored in a compressed form.
   */
-class StorageLog : private ext::shared_ptr_helper<StorageLog>, public IStorage
+class StorageLog : public ext::shared_ptr_helper<StorageLog>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageLog>;
 friend class LogBlockInputStream;
 friend class LogBlockOutputStream;
 
 public:
-    /** hook the table with the appropriate name, along the appropriate path (with / at the end),
-      *  (the correctness of names and paths is not verified)
-      *  consisting of the specified columns; Create files if they do not exist.
-      */
-    static StoragePtr create(
-        const std::string & path_,
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
-
-    static StoragePtr create(
-        const std::string & path_,
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
-
     std::string getName() const override { return "Log"; }
     std::string getTableName() const override { return name; }
 
@@ -102,6 +83,10 @@ protected:
 
     Poco::RWLock rwlock;
 
+    /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
+      *  (the correctness of names and paths is not verified)
+      *  consisting of the specified columns; Create files if they do not exist.
+      */
     StorageLog(
         const std::string & path_,
         const std::string & name_,

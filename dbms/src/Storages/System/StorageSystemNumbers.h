@@ -14,13 +14,10 @@ class Context;
   * The table contains the only column number UInt64.
   * From this table, you can read all natural numbers, starting from 0 (to 2^64 - 1, and then again).
   */
-class StorageSystemNumbers : private ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
+class StorageSystemNumbers : public ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageSystemNumbers>;
-
 public:
-    static StoragePtr create(const std::string & name_, bool multithreaded_ = false);
-
     std::string getName() const override { return "SystemNumbers"; }
     std::string getTableName() const override { return name; }
 
