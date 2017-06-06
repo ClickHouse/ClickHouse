@@ -48,6 +48,7 @@ public:
         bool has_force_restore_data_flag,
         const MergeTreeSettings & settings_);
 
+    void startup() override;
     void shutdown() override;
     ~StorageMergeTree() override;
 

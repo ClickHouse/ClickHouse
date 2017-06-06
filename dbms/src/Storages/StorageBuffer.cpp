@@ -70,8 +70,7 @@ StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr col
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
     destination_database(destination_database_), destination_table(destination_table_),
     no_destination(destination_database.empty() && destination_table.empty()),
-    log(&Logger::get("StorageBuffer (" + name + ")")),
-    flush_thread(&StorageBuffer::flushThread, this)
+    log(&Logger::get("StorageBuffer (" + name + ")"))
 {
 }
 
@@ -343,6 +342,12 @@ private:
 BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & query, const Settings & settings)
 {
     return std::make_shared<BufferBlockOutputStream>(*this);
+}
+
+
+void StorageBuffer::startup()
+{
+    flush_thread = std::thread(&StorageBuffer::flushThread, this);
 }
 
 

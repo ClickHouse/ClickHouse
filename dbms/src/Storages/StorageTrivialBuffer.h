@@ -74,7 +74,9 @@ public:
     bool checkThresholdsImpl(const size_t rows, const size_t bytes,
                 const time_t time_passed) const;
 
-    /// Writes all the blocks in buffer into the destination table.
+    /// Start flushing thread.
+    void startup() override;
+    /// Writes all the blocks in buffer into the destination table. Stop flushing thread.
     void shutdown() override;
     bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override;
 
@@ -89,7 +91,7 @@ public:
 
     /// Does not check or alter the structure of dependent table.
     void alter(const AlterCommands & params, const String & database_name,
-            const String & table_name, const Context & context) override;
+        const String & table_name, const Context & context) override;
 
     class ZookeeperDeduplicationController
     {

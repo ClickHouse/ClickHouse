@@ -75,12 +75,14 @@ StoragePtr TableFunctionMerge::execute(const ASTPtr & ast_function, const Contex
     String source_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
     String table_name_regexp = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
-    return StorageMerge::create(
+    auto res = StorageMerge::create(
         getName(),
         std::make_shared<NamesAndTypesList>(chooseColumns(source_database, table_name_regexp, context)),
         source_database,
         table_name_regexp,
         context);
+    res->startup();
+    return res;
 }
 
 }

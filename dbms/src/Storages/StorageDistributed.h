@@ -82,6 +82,7 @@ public:
     /// the structure of the sub-table is not checked
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
+    void startup() override;
     void shutdown() override;
 
     void reshardPartitions(
@@ -135,9 +136,6 @@ private:
     void requireDirectoryMonitor(const std::string & name);
 
     ClusterPtr getCluster() const;
-
-    /// Get monotonically increasing string to name files with data to be written to remote servers.
-    String getMonotonicFileName();
 
 
     String name;

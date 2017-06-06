@@ -74,7 +74,7 @@ class StorageReplicatedMergeTree : private ext::shared_ptr_helper<StorageReplica
 friend class ext::shared_ptr_helper<StorageReplicatedMergeTree>;
 
 public:
-    /** If !attach, either creates a new table in ZK, or adds a replica to an existing table.
+    /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
     static StoragePtr create(
         const String & zookeeper_path_,
@@ -94,6 +94,7 @@ public:
         bool has_force_restore_data_flag,
         const MergeTreeSettings & settings_);
 
+    void startup() override;
     void shutdown() override;
     ~StorageReplicatedMergeTree() override;
 

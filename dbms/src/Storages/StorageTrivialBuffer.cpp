@@ -77,8 +77,7 @@ StorageTrivialBuffer::StorageTrivialBuffer(const std::string & name_, NamesAndTy
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
     destination_database(destination_database_), destination_table(destination_table_),
     no_destination(destination_database.empty() && destination_table.empty()),
-    log(&Logger::get("TrivialBuffer (" + name + ")")),
-    flush_thread(&StorageTrivialBuffer::flushThread, this)
+    log(&Logger::get("TrivialBuffer (" + name + ")"))
 {
     zookeeper->createAncestors(path_in_zk_for_deduplication);
     zookeeper->createOrUpdate(path_in_zk_for_deduplication, {}, zkutil::CreateMode::Persistent);
@@ -357,6 +356,12 @@ BlockOutputStreamPtr StorageTrivialBuffer::write(const ASTPtr & query, const Set
     return std::make_shared<TrivialBufferBlockOutputStream>(*this);
 }
 
+void StorageTrivialBuffer::startup()
+{
+    flush_thread = std::thread(&StorageTrivialBuffer::flushThread, this);
+}
+
+
 void StorageTrivialBuffer::shutdown()
 {
     shutdown_event.set();
@@ -421,7 +426,7 @@ bool StorageTrivialBuffer::checkThresholds(
 }
 
 bool StorageTrivialBuffer::checkThresholdsImpl(const size_t rows, const size_t bytes,
-                    const time_t time_passed) const
+    const time_t time_passed) const
 {
     if (time_passed > min_thresholds.time && rows > min_thresholds.rows && bytes > min_thresholds.bytes)
     {

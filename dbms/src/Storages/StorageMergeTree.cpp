@@ -58,7 +58,7 @@ StorageMergeTree::StorageMergeTree(
     data.loadDataParts(has_force_restore_data_flag);
     data.clearOldParts();
 
-    /// Temporary directories contain unfinalized results of Merges (after forced restart)
+    /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
     data.clearOldTemporaryDirectories(0);
 
@@ -81,15 +81,18 @@ StoragePtr StorageMergeTree::create(
     bool has_force_restore_data_flag_,
     const MergeTreeSettings & settings_)
 {
-    auto res = make_shared(
+    return make_shared(
         path_, database_name_, table_name_,
         columns_, materialized_columns_, alias_columns_, column_defaults_, attach,
         context_, primary_expr_ast_, date_column_name_,
         sampling_expression_, index_granularity_, merging_params_, has_force_restore_data_flag_, settings_
     );
-    res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res.get()));
+}
 
-    return res;
+
+void StorageMergeTree::startup()
+{
+    merge_task_handle = background_pool.addTask([this] { return mergeTask(); });
 }
 
 

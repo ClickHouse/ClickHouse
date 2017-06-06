@@ -138,8 +138,6 @@ StorageDistributed::StorageDistributed(
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
-    createDirectoryMonitors();
-    initializeFileNamesIncrement(path, file_names_increment);
 }
 
 
@@ -163,8 +161,6 @@ StorageDistributed::StorageDistributed(
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
-    createDirectoryMonitors();
-    initializeFileNamesIncrement(path, file_names_increment);
 }
 
 
@@ -186,8 +182,7 @@ StoragePtr StorageDistributed::create(
         materialized_columns_, alias_columns_, column_defaults_,
         remote_database_, remote_table_,
         cluster_name_, context_,
-        sharding_key_, data_path_
-    );
+        sharding_key_, data_path_);
 }
 
 
@@ -201,8 +196,7 @@ StoragePtr StorageDistributed::create(
 {
     auto res = make_shared(
         name_, columns_, remote_database_,
-        remote_table_, String{}, context_
-    );
+        remote_table_, String{}, context_);
 
     res->owned_cluster = owned_cluster_;
 
@@ -285,6 +279,13 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
     context.getDatabase(database_name)->alterTable(
         context, table_name,
         *columns, materialized_columns, alias_columns, column_defaults, {});
+}
+
+
+void StorageDistributed::startup()
+{
+    createDirectoryMonitors();
+    initializeFileNamesIncrement(path, file_names_increment);
 }
 
 

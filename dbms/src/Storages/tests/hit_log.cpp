@@ -99,6 +99,7 @@ try
     /// create a hit log table
 
     StoragePtr table = StorageLog::create("./", "HitLog", std::make_shared<NamesAndTypesList>(names_and_types_list));
+    table->startup();
 
     /// create a description of how to read data from the tab separated dump
 

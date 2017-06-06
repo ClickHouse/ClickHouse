@@ -48,6 +48,7 @@ try
         names_and_types, {}, {}, ColumnDefaults{}, false,
         context, primary_expr, "d",
         nullptr, 101, params, false, {});
+    table->startup();
 
     /// write into it
     {

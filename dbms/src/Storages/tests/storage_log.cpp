@@ -25,6 +25,7 @@ try
     names_and_types->push_back(NameAndTypePair("b", std::make_shared<DataTypeUInt8>()));
 
     StoragePtr table = StorageLog::create("./", "test", names_and_types);
+    table->startup();
 
     /// write into it
     {
