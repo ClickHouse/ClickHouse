@@ -32,20 +32,9 @@ class StorageDistributed : public ext::shared_ptr_helper<StorageDistributed>, pu
     friend class StorageDistributedDirectoryMonitor;
 
 public:
-    static StoragePtr create(
-        const std::string & name_,            /// The name of the table.
-        NamesAndTypesListPtr columns_,        /// List of columns.
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        const String & remote_database_,    /// database on remote servers.
-        const String & remote_table_,        /// The name of the table on the remote servers.
-        const String & cluster_name,
-        const Context & context_,
-        const ASTPtr & sharding_key_,
-        const String & data_path_);
+    ~StorageDistributed() override;
 
-    static StoragePtr create(
+    static StoragePtr createWithOwnCluster(
         const std::string & name_,            /// The name of the table.
         NamesAndTypesListPtr columns_,        /// List of columns.
         const String & remote_database_,      /// database on remote servers.

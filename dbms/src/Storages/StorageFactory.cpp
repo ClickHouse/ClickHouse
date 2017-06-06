@@ -518,7 +518,7 @@ StoragePtr StorageFactory::get(
           *
           * db, table - in which table to put data from buffer.
           * num_buckets - level of parallelism.
-          * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for pushing out from the buffer.
+          * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for flushing the buffer.
           */
 
         ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;

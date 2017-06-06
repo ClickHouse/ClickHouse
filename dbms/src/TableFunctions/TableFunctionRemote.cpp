@@ -274,7 +274,7 @@ StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Conte
 
     auto cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password);
 
-    auto res = StorageDistributed::create(
+    auto res = StorageDistributed::createWithOwnCluster(
         getName(),
         std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*cluster, remote_database, remote_table, context)),
         remote_database,

@@ -122,6 +122,10 @@ void initializeFileNamesIncrement(const std::string & path, SimpleIncrement & in
 }
 
 
+/// For destruction of std::unique_ptr of type that is incomplete in class definition.
+StorageDistributed::~StorageDistributed() = default;
+
+
 StorageDistributed::StorageDistributed(
     const std::string & name_,
     NamesAndTypesListPtr columns_,
@@ -164,29 +168,7 @@ StorageDistributed::StorageDistributed(
 }
 
 
-StoragePtr StorageDistributed::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    const String & remote_database_,
-    const String & remote_table_,
-    const String & cluster_name_,
-    const Context & context_,
-    const ASTPtr & sharding_key_,
-    const String & data_path_)
-{
-    return make_shared(
-        name_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_,
-        remote_database_, remote_table_,
-        cluster_name_, context_,
-        sharding_key_, data_path_);
-}
-
-
-StoragePtr StorageDistributed::create(
+StoragePtr StorageDistributed::createWithOwnCluster(
     const std::string & name_,
     NamesAndTypesListPtr columns_,
     const String & remote_database_,
