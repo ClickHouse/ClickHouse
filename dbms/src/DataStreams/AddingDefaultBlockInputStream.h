@@ -59,7 +59,7 @@ protected:
 private:
     NamesAndTypesListPtr required_columns;
     const ColumnDefaults column_defaults;
-    const Context & context;
+    Context context;
 };
 
 }
