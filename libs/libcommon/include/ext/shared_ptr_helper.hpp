@@ -12,51 +12,51 @@ template <typename T>
 class shared_ptr_helper
 {
 protected:
-	typedef typename std::remove_const<T>::type TNoConst;
+    typedef typename std::remove_const<T>::type TNoConst;
 
-	template <typename TAlloc>
-	struct Deleter
-	{
-		void operator()(typename TAlloc::value_type * ptr)
-		{
-			using AllocTraits = std::allocator_traits<TAlloc>;
-			ptr->~TNoConst();
-			AllocTraits::deallocate(alloc, ptr, 1);
-		}
+    template <typename TAlloc>
+    struct Deleter
+    {
+        void operator()(typename TAlloc::value_type * ptr)
+        {
+            using AllocTraits = std::allocator_traits<TAlloc>;
+            ptr->~TNoConst();
+            AllocTraits::deallocate(alloc, ptr, 1);
+        }
 
-		TAlloc alloc;
-	};
+        TAlloc alloc;
+    };
 
-	/// see std::allocate_shared
-	template <typename TAlloc, typename ... TArgs>
-	static std::shared_ptr<T> allocate_shared(const TAlloc & alloc, TArgs &&... args)
-	{
-		using AllocTraits = std::allocator_traits<TAlloc>;
-		TAlloc alloc_copy(alloc);
+    /// see std::allocate_shared
+    template <typename TAlloc, typename ... TArgs>
+    static std::shared_ptr<T> allocate_shared(const TAlloc & alloc, TArgs &&... args)
+    {
+        using AllocTraits = std::allocator_traits<TAlloc>;
+        TAlloc alloc_copy(alloc);
 
-		auto ptr = AllocTraits::allocate(alloc_copy, 1);
+        auto ptr = AllocTraits::allocate(alloc_copy, 1);
 
-		try
-		{
-			new (ptr) TNoConst(std::forward<TArgs>(args)...);
-		}
-		catch (...)
-		{
-			AllocTraits::deallocate(alloc_copy, ptr, 1);
-			throw;
-		}
+        try
+        {
+            new (ptr) TNoConst(std::forward<TArgs>(args)...);
+        }
+        catch (...)
+        {
+            AllocTraits::deallocate(alloc_copy, ptr, 1);
+            throw;
+        }
 
-		return std::shared_ptr<TNoConst>(
-			ptr,
-			Deleter<TAlloc>(),
-			alloc_copy);
-	}
+        return std::shared_ptr<TNoConst>(
+            ptr,
+            Deleter<TAlloc>(),
+            alloc_copy);
+    }
 
-	template <typename ... TArgs>
-	static std::shared_ptr<T> make_shared(TArgs &&... args)
-	{
-		return allocate_shared(std::allocator<TNoConst>(), std::forward<TArgs>(args)...);
-	}
+    template <typename ... TArgs>
+    static std::shared_ptr<T> make_shared(TArgs &&... args)
+    {
+        return allocate_shared(std::allocator<TNoConst>(), std::forward<TArgs>(args)...);
+    }
 };
 
 }
