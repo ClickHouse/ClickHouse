@@ -18,7 +18,7 @@
 #include <Functions/ObjectPool.h>
 #include <Common/StringUtils.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 #include <unordered_map>
 #include <numeric>

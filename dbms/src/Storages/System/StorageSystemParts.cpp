@@ -44,11 +44,6 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemParts::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemParts::read(
     const Names & column_names,

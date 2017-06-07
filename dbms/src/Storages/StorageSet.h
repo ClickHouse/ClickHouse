@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 
@@ -14,7 +14,7 @@ using SetPtr = std::shared_ptr<Set>;
 
 /** Common part of StorageSet and StorageJoin.
   */
-class StorageSetOrJoinBase : private ext::shared_ptr_helper<StorageSetOrJoinBase>, public IStorage
+class StorageSetOrJoinBase : public ext::shared_ptr_helper<StorageSetOrJoinBase>, public IStorage
 {
     friend class ext::shared_ptr_helper<StorageSetOrJoinBase>;
     friend class SetOrJoinBlockOutputStream;
@@ -59,7 +59,7 @@ private:
   *  and also written to a file-backup, for recovery after a restart.
   * Reading from the table is not possible directly - it is possible to specify only the right part of the IN statement.
   */
-class StorageSet : private ext::shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
+class StorageSet : public ext::shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
 {
 friend class ext::shared_ptr_helper<StorageSet>;
 

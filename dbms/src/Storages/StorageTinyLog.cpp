@@ -464,24 +464,6 @@ StorageTinyLog::StorageTinyLog(
 }
 
 
-StoragePtr StorageTinyLog::create(
-    const std::string & path_,
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    bool attach,
-    size_t max_compress_block_size_)
-{
-    return make_shared(
-        path_, name_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_,
-        attach, max_compress_block_size_
-    );
-}
-
-
 void StorageTinyLog::addFile(const String & column_name, const IDataType & type, size_t level)
 {
     if (files.end() != files.find(column_name))

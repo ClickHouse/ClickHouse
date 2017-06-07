@@ -16,7 +16,7 @@ namespace DB
   */
 struct Settings
 {
-    /// For initialization from empty initializer-list to be "value initialization", not "aggregate initialization" in С++14.
+    /// For initialization from empty initializer-list to be "value initialization", not "aggregate initialization" in C++14.
     /// http://en.cppreference.com/w/cpp/language/aggregate_initialization
     Settings() {}
 
@@ -145,7 +145,7 @@ struct Settings
     M(SettingBool, force_index_by_date, 0) \
     M(SettingBool, force_primary_key, 0) \
     \
-    /** In the INSERT query with specified columns, fill in the default values ​​only for columns with explicit DEFAULTs. */ \
+    /** In the INSERT query with specified columns, fill in the default values only for columns with explicit DEFAULTs. */ \
     M(SettingBool, strict_insert_defaults, 0) \
     \
     /** If the maximum size of mark_cache is exceeded, delete only records older than mark_cache_min_lifetime seconds. */ \

@@ -21,11 +21,6 @@ StorageSystemMetrics::StorageSystemMetrics(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemMetrics::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemMetrics::read(
     const Names & column_names,

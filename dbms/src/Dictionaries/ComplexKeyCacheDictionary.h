@@ -9,9 +9,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
 #include <Core/StringRef.h>
-#include <ext/scope_guard.hpp>
-#include <ext/bit_cast.hpp>
-#include <ext/map.hpp>
+#include <ext/scope_guard.h>
+#include <ext/bit_cast.h>
+#include <ext/map.h>
 #include <Poco/RWLock.h>
 #include <atomic>
 #include <chrono>

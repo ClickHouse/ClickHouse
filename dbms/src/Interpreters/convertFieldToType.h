@@ -8,12 +8,12 @@ namespace DB
 
 class IDataType;
 
-/** Используется для интерпретации выражений в множестве в IN,
-  *  а также в запросе вида INSERT ... VALUES ...
+/** Used to interpret expressions in a set in IN,
+  *  and also in the query of the form INSERT ... VALUES ...
   *
-  * Чтобы корректно работали выражения вида 1.0 IN (1) или чтобы 1 IN (1, 2.0, 2.5, -1) работало так же, как 1 IN (1, 2).
-  * Проверяет совместимость типов, проверяет попадание значений в диапазон допустимых значений типа, делает преобразование типа.
-  * Если значение не попадает в диапазон - возвращает Null.
+  * To work correctly with expressions of the form `1.0 IN (1)` or, for example, `1 IN (1, 2.0, 2.5, -1)` work the same way as `1 IN (1, 2)`.
+  * Checks for the compatibility of types, checks values fall in the range of valid values of the type, makes type conversion.
+  * If the value does not fall into the range - returns Null.
   */
 Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr);
 

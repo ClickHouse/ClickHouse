@@ -6,7 +6,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
 #include <memory>
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace DB

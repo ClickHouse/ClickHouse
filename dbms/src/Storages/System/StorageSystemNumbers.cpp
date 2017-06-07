@@ -53,11 +53,6 @@ StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multi
 {
 }
 
-StoragePtr StorageSystemNumbers::create(const std::string & name_, bool multithreaded_)
-{
-    return make_shared(name_, multithreaded_);
-}
-
 
 BlockInputStreams StorageSystemNumbers::read(
     const Names & column_names,

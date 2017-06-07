@@ -19,11 +19,6 @@ StorageSystemBuildOptions::StorageSystemBuildOptions(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemBuildOptions::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemBuildOptions::read(
     const Names & column_names,

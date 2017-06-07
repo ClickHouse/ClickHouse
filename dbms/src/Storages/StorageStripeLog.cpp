@@ -206,23 +206,6 @@ StorageStripeLog::StorageStripeLog(
     }
 }
 
-StoragePtr StorageStripeLog::create(
-    const std::string & path_,
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    bool attach,
-    size_t max_compress_block_size_)
-{
-    return make_shared(
-        path_, name_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_,
-        attach, max_compress_block_size_
-    );
-}
-
 
 void StorageStripeLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {

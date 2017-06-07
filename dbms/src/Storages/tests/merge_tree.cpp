@@ -45,9 +45,10 @@ try
 
     StoragePtr table = StorageMergeTree::create(
         "./", "default", "test",
-        names_and_types, {}, {}, ColumnDefaults{}, false,
+        names_and_types, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, false,
         context, primary_expr, "d",
-        nullptr, 101, params, false, {});
+        ASTPtr{}, 101, params, false, MergeTreeSettings{});
+    table->startup();
 
     /// write into it
     {

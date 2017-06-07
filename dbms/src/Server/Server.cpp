@@ -9,7 +9,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/ZooKeeperNodeCache.h>
 #include <Common/Macros.h>

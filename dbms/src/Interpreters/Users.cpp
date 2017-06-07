@@ -21,7 +21,7 @@
 
 #include <common/logger_useful.h>
 
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 
 
 namespace DB

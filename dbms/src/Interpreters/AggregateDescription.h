@@ -11,10 +11,10 @@ namespace DB
 struct AggregateDescription
 {
     AggregateFunctionPtr function;
-    Array parameters;        /// Параметры (параметрической) агрегатной функции.
+    Array parameters;        /// Parameters of the (parametric) aggregate function.
     ColumnNumbers arguments;
-    Names argument_names;    /// Используются, если arguments не заданы.
-    String column_name;        /// Какое имя использовать для столбца со значениями агрегатной функции
+    Names argument_names;    /// used if no `arguments` are specified.
+    String column_name;      /// What name to use for a column with aggregate function values
 };
 
 using AggregateDescriptions = std::vector<AggregateDescription>;

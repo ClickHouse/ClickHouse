@@ -22,10 +22,6 @@ StorageSystemFunctions::StorageSystemFunctions(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemFunctions::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
 
 BlockInputStreams StorageSystemFunctions::read(
     const Names & column_names,

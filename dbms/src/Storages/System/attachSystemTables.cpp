@@ -26,7 +26,7 @@ namespace DB
 void attachSystemTablesLocal(DatabasePtr system_database)
 {
     system_database->attachTable("one", StorageSystemOne::create("one"));
-    system_database->attachTable("numbers", StorageSystemNumbers::create("numbers"));
+    system_database->attachTable("numbers", StorageSystemNumbers::create("numbers", false));
     system_database->attachTable("numbers_mt", StorageSystemNumbers::create("numbers_mt", true));
     system_database->attachTable("databases", StorageSystemDatabases::create("databases"));
     system_database->attachTable("tables", StorageSystemTables::create("tables"));

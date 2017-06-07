@@ -4,7 +4,7 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/File.h>
 
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 
 #include <Common/ExternalTable.h>
 #include <Common/StringUtils.h>
@@ -80,6 +80,7 @@ namespace ErrorCodes
     extern const int INVALID_SESSION_TIMEOUT;
 }
 
+
 static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int exception_code)
 {
     using namespace Poco::Net;
@@ -127,29 +128,20 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
 
 static std::chrono::steady_clock::duration parseSessionTimeout(const HTMLForm & params)
 {
-    int session_timeout;
+    const auto & config = Poco::Util::Application::instance().config();
+    unsigned session_timeout = config.getInt("default_session_timeout", 60);
 
     if (params.has("session_timeout"))
     {
-        auto max_session_timeout = Poco::Util::Application::instance().config().getInt("max_session_timeout", 3600);
-        auto session_timeout_str = params.get("session_timeout");
+        unsigned max_session_timeout = config.getUInt("max_session_timeout", 3600);
+        std::string session_timeout_str = params.get("session_timeout");
 
-        try
-        {
-            session_timeout = std::stoi(session_timeout_str);
-        }
-        catch (...)
-        {
-            session_timeout = -1;
-        }
+        session_timeout = parse<unsigned>(session_timeout_str);
 
-        if (session_timeout < 0 || max_session_timeout < session_timeout)
-            throw Exception("Invalid session timeout '" + session_timeout_str + "', valid values are integers from 0 to " + std::to_string(max_session_timeout),
+        if (session_timeout > max_session_timeout)
+            throw Exception("Session timeout '" + session_timeout_str + "' is larger than max_session_timeout: " + toString(max_session_timeout)
+                + ". Maximum session timeout could be modified in configuration file.",
                 ErrorCodes::INVALID_SESSION_TIMEOUT);
-    }
-    else
-    {
-        session_timeout = Poco::Util::Application::instance().config().getInt("default_session_timeout", 60);
     }
 
     return std::chrono::seconds(session_timeout);
@@ -196,6 +188,7 @@ HTTPHandler::HTTPHandler(Server & server_)
 {
 }
 
+
 void HTTPHandler::processQuery(
     Poco::Net::HTTPServerRequest & request,
     HTMLForm & params,
@@ -212,7 +205,6 @@ void HTTPHandler::processQuery(
     std::string query_param = params.get("query", "");
     if (!query_param.empty())
         query_param += '\n';
-
 
     /// User name and password can be passed using query parameters or using HTTP Basic auth (both methods are insecure).
     /// The user and password can be passed by headers (similar to X-Auth-*), which is used by load balancers to pass authentication information
@@ -235,6 +227,9 @@ void HTTPHandler::processQuery(
 
     context.setUser(user, password, request.clientAddress(), quota_key);
     context.setCurrentQueryId(query_id);
+
+    /// The user could specify session identifier and session timeout.
+    /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
 
     std::shared_ptr<Context> session;
     String session_id;
