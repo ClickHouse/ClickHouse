@@ -1,9 +1,5 @@
-import time
-import datetime
 import pytest
 import os
-import sys
-import difflib
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -45,17 +41,14 @@ def started_cluster():
 
 @pytest.fixture(params=[
     # name, keys, use_parent
-    ('clickhouse_cache', ('id',), True),
     ('clickhouse_hashed', ('id',), True),
     ('clickhouse_flat', ('id',), True),
     ('clickhouse_complex_integers_key_hashed', ('key0', 'key1'), False),
-    ('clickhouse_complex_integers_key_cache', ('key0', 'key1'), False),
     ('clickhouse_complex_mixed_key_hashed', ('key0_str', 'key1'), False),
-    ('clickhouse_complex_mixed_key_cache', ('key0_str', 'key1'), False)
 ],
-    ids=['clickhouse_cache', 'clickhouse_hashed', 'clickhouse_flat',
-         'clickhouse_complex_integers_key_hashed', 'clickhouse_complex_integers_key_cache',
-         'clickhouse_complex_mixed_key_hashed', 'clickhouse_complex_mixed_key_cache']
+    ids=['clickhouse_hashed', 'clickhouse_flat',
+         'clickhouse_complex_integers_key_hashed',
+         'clickhouse_complex_mixed_key_hashed']
 )
 def dictionary_structure(started_cluster, request):
     return request.param
@@ -71,12 +64,11 @@ def test_select_all(dictionary_structure):
     '''.format(name))
 
     create_query = "CREATE TABLE test.{0} ({1}) engine = Dictionary({0})".format(name, structure)
-    result = TSV(query(create_query))
+    TSV(query(create_query))
 
-    # query("select dictGetUInt8('clickhouse_cache', 'UInt8_', toUInt64(0))")
     result = TSV(query('select * from test.{0}'.format(name)))
 
-    diff = test_table.compare_by_keys(keys, result.lines, use_parent, add_not_found_rows=False)
+    diff = test_table.compare_by_keys(keys, result.lines, use_parent, add_not_found_rows=True)
     print test_table.process_diff(diff)
     assert not diff
 
@@ -93,7 +85,7 @@ def cached_dictionary_structure(started_cluster, request):
     return request.param
 
 
-def test_select_from_cached(cached_dictionary_structure):
+def test_select_all_from_cached(cached_dictionary_structure):
     name, keys, use_parent = cached_dictionary_structure
     query = instance.query
 
