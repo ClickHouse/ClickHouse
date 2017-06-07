@@ -642,12 +642,12 @@ private:
             if (set_query)
             {
                 /// Save all changes in settings to avoid losing them if the connection is lost.
-                for (ASTSetQuery::Changes::const_iterator it = set_query->changes.begin(); it != set_query->changes.end(); ++it)
+                for (const auto & change : set_query->changes)
                 {
-                    if (it->name ==    "profile")
-                        current_profile = it->value.safeGet<String>();
+                    if (change.name == "profile")
+                        current_profile = change.value.safeGet<String>();
                     else
-                        context.setSetting(it->name, it->value);
+                        context.setSetting(change.name, change.value);
                 }
             }
 

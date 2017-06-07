@@ -133,6 +133,8 @@ public:
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
+    /// Compute and set actual user settings, client_info.current_user should be set
+    void calculateUserSettings();
 
     ClientInfo & getClientInfo() { return client_info; };
     const ClientInfo & getClientInfo() const { return client_info; };
