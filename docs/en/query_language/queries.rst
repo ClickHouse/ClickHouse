@@ -518,10 +518,8 @@ SET
 Lets you set the 'param' setting to 'value'. You can also make all the settings from the specified settings profile in a single query. To do this, specify 'profile' as the setting name. For more information, see the section "Settings". The setting is made for the session, or for the server (globally) if GLOBAL is specified.
 When making a global setting, the setting is not applied to sessions already running, including the current session. It will only be used for new sessions.
 
-Settings made using SET GLOBAL have a lower priority compared with settings made in the config file in the user profile. In other words, user settings can't be overridden by SET GLOBAL.
-
-When the server is restarted, global settings made using SET GLOBAL are lost.
-To make settings that persist after a server restart, you can only use the server's config file. (This can't be done using a SET query.)
+When the server is restarted, settings made using SET are lost.
+To make settings that persist after a server restart, you can only use the server's config file.
 
 OPTIMIZE
 ~~~~~~~~
