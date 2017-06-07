@@ -848,7 +848,7 @@ clickhouse-client
         });
 
         var hostParts = window.location.host.split('.');
-        if (hostParts.length > 2) {
+        if (hostParts.length > 2 && hostParts[0] != 'test') {
             window.location.host = hostParts[0] + '.' + hostParts[1];
         }
 
