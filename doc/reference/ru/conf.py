@@ -125,7 +125,7 @@ html_theme_options = {
     'link': '#08f',
     'link_hover': 'red',
     'extra_nav_links': collections.OrderedDict([
-        ('Switch to English 🇬🇧', '/docs/en/'),
+        ('Switch to English <img id="svg-flag" src="/docs/ru/_static/en.svg" width="20" height="12" />', '/docs/en/'),
         ('Документация на одной странице', '/docs/ru/single/'),
         ('Главная страница сайта', '/'),
         ('GitHub', 'https://github.com/yandex/ClickHouse'),
