@@ -384,7 +384,7 @@ public:
     void update(size_t from)
     {
         if (index >= size)
-            throw Exception{"Internal errror", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Logical error: index passes to NullMapBuilder is out of range of column.", ErrorCodes::LOGICAL_ERROR};
 
         bool is_null;
         if (src_nullable_col != nullptr)
@@ -401,7 +401,7 @@ public:
     void update()
     {
         if (index >= size)
-            throw Exception{"Internal errror", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Logical error: index passes to NullMapBuilder is out of range of column.", ErrorCodes::LOGICAL_ERROR};
 
         auto & null_map_data = static_cast<ColumnUInt8 &>(*sink_null_map).getData();
         null_map_data[index] = 0;
@@ -904,8 +904,6 @@ bool FunctionArrayElement::executeConstConst(Block & block, const ColumnNumbers 
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
     Field value = col_array->getData().at(real_index);
-    if (value.isNull())
-        value = DataTypeString{}.getDefault();
 
     block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(
         block.rows(),
