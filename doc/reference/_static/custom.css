@@ -34,6 +34,10 @@ input[type="submit"] {
 	background: #fc0;
 }
 
+#svg-flag {
+	border: 1px solid #eee;
+}
+
 @font-face {
 	font-family: 'Yandex Sans Text Web';
 	src: url(https://yastatic.net/adv-www/_/yy5JveR58JFkc97waf-xp0i6_jM.eot);
