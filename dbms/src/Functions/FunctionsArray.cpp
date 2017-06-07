@@ -892,7 +892,7 @@ bool FunctionArrayElement::executeConstConst(Block & block, const ColumnNumbers 
     if (!col_array)
         return false;
 
-    const DB::Array & array = col_array->getData();
+    const Array & array = col_array->getData();
     size_t array_size = array.size();
     size_t real_index = 0;
 
@@ -903,9 +903,13 @@ bool FunctionArrayElement::executeConstConst(Block & block, const ColumnNumbers 
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
-    Field value = col_array->getData().at(real_index);
+    Field value;
+    if (real_index < array_size)
+        value = array.at(real_index);
+    else
+        value = block.getByPosition(result).type->getDefault();
 
-    block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(
+    block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
         block.rows(),
         value);
 
@@ -924,7 +928,7 @@ bool FunctionArrayElement::executeConst(Block & block, const ColumnNumbers & arg
     if (!col_array)
         return false;
 
-    const DB::Array & array = col_array->getData();
+    const Array & array = col_array->getData();
     size_t array_size = array.size();
 
     block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createColumn();
