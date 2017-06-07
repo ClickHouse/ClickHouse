@@ -43,16 +43,16 @@ add_library (common
     include/common/strong_typedef.h
     include/common/JSON.h
 
-    include/ext/bit_cast.hpp
-    include/ext/collection_cast.hpp
-    include/ext/enumerate.hpp
-    include/ext/function_traits.hpp
-    include/ext/identity.hpp
-    include/ext/map.hpp
-    include/ext/range.hpp
-    include/ext/scope_guard.hpp
-    include/ext/size.hpp
-    include/ext/unlock_guard.hpp
+    include/ext/bit_cast.h
+    include/ext/collection_cast.h
+    include/ext/enumerate.h
+    include/ext/function_traits.h
+    include/ext/identity.h
+    include/ext/map.h
+    include/ext/range.h
+    include/ext/scope_guard.h
+    include/ext/size.h
+    include/ext/unlock_guard.h
 
     ${CONFIG_COMMON}
 )
