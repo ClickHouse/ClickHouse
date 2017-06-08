@@ -316,7 +316,12 @@
                rel="external nofollow">LHCb experiment</a> by CERN</li>
     </ul>
 
-    <h2>Viable Applications</h2>
+    <h2>When to use ClickHouse</h2>
+
+    <p>For analytics over stream of clean, well structured and immutable events or logs.
+        It is recommended to put each such stream into a single wide fact table with pre-joined dimensions.
+    </p>
+    <p>Some examples of viable applications:</p>
 
     <ul class="dashed">
         <li>Web and App analytics</li>
@@ -330,10 +335,13 @@
         <li>Internet of Things</li>
     </ul>
 
-    <h2>Workloads NOT Suitable for ClickHouse</h2>
+    <h2>When <span class="red">NOT</span> to use ClickHouse</h2>
 
     <ul class="dashed">
-        <li>Web and App analytics</li>
+        <li>Transactional workloads (OLTP)</li>
+        <li>Key-value access with high request rate</li>
+        <li>Blob or document storage</li>
+        <li>Over-normalized data</li>
     </ul>
 
     <h2 id="highly-reliable">Highly Reliable</h2>

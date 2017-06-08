@@ -335,6 +335,7 @@ ul.dashed > li:before {
 
 .red {
     fill: #f00;
+    color: #f00;
 }
 
 @media (max-width: 1023px) {
