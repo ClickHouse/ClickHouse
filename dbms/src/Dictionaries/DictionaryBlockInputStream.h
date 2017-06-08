@@ -7,7 +7,7 @@
 #include <Dictionaries/DictionaryBlockInputStreamBase.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <common/logger_useful.h>
 #include <Core/Names.h>
 

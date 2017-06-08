@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <common/MultiVersion.h>
