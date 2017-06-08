@@ -25,7 +25,7 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 #include <Dictionaries/TrieDictionary.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace DB

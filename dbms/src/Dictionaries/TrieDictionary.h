@@ -7,7 +7,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <btrie.h>
 #include <atomic>
 #include <memory>

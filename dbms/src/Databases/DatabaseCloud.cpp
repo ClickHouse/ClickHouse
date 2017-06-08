@@ -414,6 +414,8 @@ StoragePtr DatabaseCloud::tryGetTable(const String & table_name)
                 definition, name, data_path, context, false,
                 "in zookeeper node " + zookeeper_path + "/table_definitions/" + hashToHex(table_hash));
 
+            table->startup();
+
             local_tables_cache.emplace(table_name, table);
             return table;
         }

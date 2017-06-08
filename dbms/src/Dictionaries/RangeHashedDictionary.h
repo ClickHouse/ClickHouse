@@ -5,7 +5,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <atomic>
 #include <memory>
 #include <tuple>

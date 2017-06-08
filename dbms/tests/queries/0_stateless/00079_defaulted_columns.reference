@@ -5,6 +5,7 @@ col3	UInt64	MATERIALIZED	col1 + 2
 col4	UInt64	ALIAS	col1 + 3
 10	11
 12	13
+99
 payload	String		
 date	Date	MATERIALIZED	today()
 key	UInt64	MATERIALIZED	0 * rand()

@@ -159,7 +159,7 @@ BlockInputStreams StorageFile::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
-    unsigned threads)
+    unsigned num_streams)
 {
     return BlockInputStreams(1, std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size));
 }

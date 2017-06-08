@@ -4,9 +4,9 @@
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataTypes/DataTypeTuple.h>
 
-#include <ext/map.hpp>
-#include <ext/enumerate.hpp>
-#include <ext/range.hpp>
+#include <ext/map.h>
+#include <ext/enumerate.h>
+#include <ext/range.h>
 
 
 namespace DB

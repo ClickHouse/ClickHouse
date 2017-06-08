@@ -9,7 +9,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/ZooKeeperNodeCache.h>
 #include <Common/Macros.h>
@@ -651,6 +651,8 @@ int Server::main(const std::vector<std::string> & args)
         {
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(async_metrics, graphite_key));
         }
+
+        SessionCleaner session_cleaner(*global_context);
 
         waitForTerminationRequest();
     }

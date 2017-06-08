@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-/** SET запрос
+/** SET query
   */
 class ASTSetQuery : public IAST
 {
@@ -23,12 +23,12 @@ public:
     using Changes = std::vector<Change>;
     Changes changes;
 
-    bool global;    /// Если запрос SET GLOBAL.
+    bool global;    /// If the query is SET GLOBAL.
 
     ASTSetQuery() = default;
     ASTSetQuery(const StringRange range_) : IAST(range_) {}
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return "Set"; };
 
     ASTPtr clone() const override { return std::make_shared<ASTSetQuery>(*this); }

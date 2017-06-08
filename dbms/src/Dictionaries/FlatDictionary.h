@@ -5,8 +5,8 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
-#include <ext/range.hpp>
-#include <ext/size.hpp>
+#include <ext/range.h>
+#include <ext/size.h>
 #include <atomic>
 #include <vector>
 #include <tuple>

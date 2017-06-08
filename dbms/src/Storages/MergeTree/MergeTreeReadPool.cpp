@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace ProfileEvents

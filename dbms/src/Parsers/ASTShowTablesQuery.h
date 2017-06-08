@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-/** Запрос SHOW TABLES или SHOW DATABASES
+/** Query SHOW TABLES or SHOW DATABASES
   */
 class ASTShowTablesQuery : public ASTQueryWithOutput
 {
@@ -22,7 +22,7 @@ public:
     ASTShowTablesQuery() = default;
     ASTShowTablesQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return "ShowTables"; };
 
     ASTPtr clone() const override

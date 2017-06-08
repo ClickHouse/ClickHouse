@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int CANNOT_PARSE_NUMBER;
 }
 
 /// Helper functions for formatted input.
@@ -61,21 +62,6 @@ inline char parseEscapeSequence(char c)
             return '\0';
         default:
             return c;
-    }
-}
-
-inline char unhex(char c)
-{
-    switch (c)
-    {
-        case '0' ... '9':
-            return c - '0';
-        case 'a' ... 'f':
-            return c - 'a' + 10;
-        case 'A' ... 'F':
-            return c - 'A' + 10;
-        default:
-            return 0;
     }
 }
 
@@ -258,7 +244,12 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 if (std::is_signed<T>::value)
                     negative = true;
                 else
-                    return ReturnType(false);
+                {
+                    if (throw_exception)
+                        throw Exception("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
+                    else
+                        return ReturnType(false);
+                }
                 break;
             case '0':
             case '1':
@@ -902,6 +893,7 @@ inline T parse(const char * data, size_t size)
     T res;
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
+    assertEOF(buf);
     return res;
 }
 

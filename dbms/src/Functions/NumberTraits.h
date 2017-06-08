@@ -18,8 +18,8 @@
 namespace DB
 {
 
-/** Позволяет получить тип результата применения функций +, -, *, /, %, div (целочисленное деление).
-  * Правила отличаются от используемых в C++.
+/** Allows get the result type of the functions +, -, *, /, %, div (integer division).
+  * The rules are different from those used in C++.
   */
 
 namespace NumberTraits
@@ -162,11 +162,11 @@ struct UpdateNullity
     >::Type;
 };
 
-/** Результат сложения или умножения вычисляется по следующим правилам:
-    * - если один из аргументов с плавающей запятой, то результат - с плавающей запятой, иначе - целый;
-    * - если одно из аргументов со знаком, то результат - со знаком, иначе - без знака;
-    * - результат содержит больше бит (не только значащих), чем максимум в аргументах
-    *   (например, UInt8 + Int32 = Int64).
+/** The result of addition or multiplication is calculated according to the following rules:
+    * - if one of the arguments is floating-point, the result is a floating point, otherwise - the whole;
+    * - if one of the arguments is signed, the result is signed, otherwise it is unsigned;
+    * - the result contains more bits (not only meaningful) than the maximum in the arguments
+    *   (for example, UInt8 + Int32 = Int64).
     */
 template <typename A, typename B> struct ResultOfAdditionMultiplication
 {
@@ -186,14 +186,14 @@ template <typename A, typename B> struct ResultOfSubtraction
         typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type Type;
 };
 
-/** При делении всегда получается число с плавающей запятой.
+/** When dividing, you always get a floating-point number.
     */
 template <typename A, typename B> struct ResultOfFloatingPointDivision
 {
     using Type = Float64;
 };
 
-/** При целочисленном делении получается число, битность которого равна делимому.
+/** For integer division, we get a number with the same number of bits as in divisible.
     */
 template <typename A, typename B> struct ResultOfIntegerDivision
 {
@@ -204,7 +204,7 @@ template <typename A, typename B> struct ResultOfIntegerDivision
         typename boost::mpl::or_<typename Traits<A>::Nullity, typename Traits<B>::Nullity>::type>::Type Type;
 };
 
-/** При взятии остатка получается число, битность которого равна делителю.
+/** Division with remainder you get a number with the same number of bits as in divisor.
     */
 template <typename A, typename B> struct ResultOfModulo
 {
@@ -236,7 +236,7 @@ template <typename A> struct ResultOfAbs
         typename Traits<A>::Nullity>::Type Type;
 };
 
-/** При побитовых операциях получается целое число, битность которого равна максимальной из битностей аргументов.
+/** For bitwise operations, an integer is obtained with number of bits is equal to the maximum of the arguments.
     */
 template <typename A, typename B> struct ResultOfBit
 {
@@ -265,7 +265,7 @@ template <typename A> struct ResultOfBitNot
 };
 
 
-/** Приведение типов для функции if:
+/** Type casting for `if` function:
     * 1)     void,      Type ->  Type
     * 2)  UInt<x>,   UInt<y> ->  UInt<max(x,y)>
     * 3)   Int<x>,    Int<y> ->   Int<max(x,y)>
@@ -294,7 +294,7 @@ struct ResultOfIf
             typename Construct<
                 Signed,
                 Floating,
-                typename boost::mpl::max< /// Этот максимум нужен только потому что if_ всегда вычисляет все аргументы.
+                typename boost::mpl::max< /// This maximum is needed only because `if_` always evaluates all arguments.
                     typename boost::mpl::max<
                         typename boost::mpl::if_<
                             typename Traits<A>::Floatness,
@@ -334,7 +334,7 @@ struct ResultOfIf
         >::Type>::type>::type>::type>::type Type;
 };
 
-/** Перед применением оператора % и побитовых операций, операнды приводятся к целым числам. */
+/** Before applying operator `%` and bitwise operations, operands are casted to whole numbers. */
 template <typename A> struct ToInteger
 {
     typedef typename Construct<

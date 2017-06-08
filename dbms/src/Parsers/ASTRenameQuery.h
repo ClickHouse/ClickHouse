@@ -7,7 +7,7 @@ namespace DB
 {
 
 
-/** RENAME запрос
+/** RENAME query
   */
 class ASTRenameQuery : public IAST
 {
@@ -30,7 +30,7 @@ public:
     ASTRenameQuery() = default;
     ASTRenameQuery(const StringRange range_) : IAST(range_) {}
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return "Rename"; };
 
     ASTPtr clone() const override { return std::make_shared<ASTRenameQuery>(*this); }

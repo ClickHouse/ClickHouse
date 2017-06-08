@@ -1,6 +1,6 @@
 #include <stack>
-#include <ext/map.hpp>
-#include <ext/range.hpp>
+#include <ext/map.h>
+#include <ext/range.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/ByteOrder.h>
 #include <Dictionaries/TrieDictionary.h>

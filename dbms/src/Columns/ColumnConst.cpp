@@ -10,7 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <ext/enumerate.hpp>
+#include <ext/enumerate.h>
 
 
 namespace DB

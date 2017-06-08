@@ -305,12 +305,13 @@ size_t MergeTreeDataPart::getColumnUncompressedSize(const String & name) const
 
 
 /** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
-    *    If no checksums are present returns the name of the first physically existing column. */
+  * If no checksums are present returns the name of the first physically existing column.
+  */
 String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 {
     const auto & columns = storage.getColumnsList();
     const std::string * minimum_size_column = nullptr;
-    auto minimum_size = std::numeric_limits<size_t>::max();
+    size_t minimum_size = std::numeric_limits<size_t>::max();
 
     for (const auto & column : columns)
     {

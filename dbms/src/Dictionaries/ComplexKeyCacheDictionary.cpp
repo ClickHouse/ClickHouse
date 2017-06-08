@@ -6,7 +6,7 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace ProfileEvents

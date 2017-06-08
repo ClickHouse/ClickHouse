@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNull.h>
 #include <Common/Exception.h>
-#include <ext/size.hpp>
+#include <ext/size.h>
 
 
 namespace DB

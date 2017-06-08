@@ -14,9 +14,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Dictionaries/CacheDictionary.h>
 #include <Dictionaries/DictionaryBlockInputStream.h>
-#include <ext/size.hpp>
-#include <ext/range.hpp>
-#include <ext/map.hpp>
+#include <ext/size.h>
+#include <ext/range.h>
+#include <ext/map.h>
 
 
 namespace ProfileEvents

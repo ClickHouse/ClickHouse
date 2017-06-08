@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/** Запрос OPTIMIZE TABLE [db.]name [PARTITION partition] [FINAL] [DEDUPLICATE]
+/** Query OPTIMIZE TABLE [db.]name [PARTITION partition] [FINAL] [DEDUPLICATE]
   */
 class ParserOptimizeQuery : public IParserBase
 {

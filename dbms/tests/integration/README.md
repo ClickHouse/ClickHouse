@@ -5,6 +5,7 @@ This directory contains tests that involve several ClickHouse instances, custom 
 ### Running
 
 Prerequisites:
+* Ubuntu 14.04 (Trusty).
 * [docker](https://www.docker.com/community-edition#/download). Minimum required API version: 1.25, check with `docker version`.
 * [pip](https://pypi.python.org/pypi/pip). To install: `sudo apt-get install python-pip`
 * [docker-compose](https://docs.docker.com/compose/). To install: `sudo pip install docker-compose`

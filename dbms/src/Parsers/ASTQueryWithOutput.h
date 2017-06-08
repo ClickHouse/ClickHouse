@@ -28,7 +28,7 @@ protected:
 };
 
 
-/// Объявляет класс-наследник ASTQueryWithOutput с реализованными методами getID и clone.
+/// Declares the class-successor of ASTQueryWithOutput with implemented methods getID and clone.
 #define DEFINE_AST_QUERY_WITH_OUTPUT(Name, ID, Query) \
 class Name : public ASTQueryWithOutput \
 { \

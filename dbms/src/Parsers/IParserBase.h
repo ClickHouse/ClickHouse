@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** Базовый класс для большинства парсеров
+/** Base class for most parsers
   */
 class IParserBase : public IParser
 {

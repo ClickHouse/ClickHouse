@@ -3,7 +3,7 @@
 #include <Core/Types.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
-#include <ext/bit_cast.hpp>
+#include <ext/bit_cast.h>
 #include <Core/StringRef.h>
 
 

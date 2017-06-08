@@ -29,10 +29,6 @@ StorageSystemClusters::StorageSystemClusters(const std::string & name_, Context 
 {
 }
 
-StoragePtr StorageSystemClusters::create(const std::string & name_, Context & context_)
-{
-    return make_shared(name_, context_);
-}
 
 BlockInputStreams StorageSystemClusters::read(
     const Names & column_names,
@@ -40,7 +36,7 @@ BlockInputStreams StorageSystemClusters::read(
     const Context & context_,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

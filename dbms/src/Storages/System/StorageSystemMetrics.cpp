@@ -21,11 +21,6 @@ StorageSystemMetrics::StorageSystemMetrics(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemMetrics::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemMetrics::read(
     const Names & column_names,
@@ -33,7 +28,7 @@ BlockInputStreams StorageSystemMetrics::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
