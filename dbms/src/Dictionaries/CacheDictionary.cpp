@@ -977,7 +977,7 @@ PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
     for (size_t idx = 0; idx < cells.size(); ++idx)
     {
         auto & cell = cells[idx];
-        if (!isEmptyCell(idx))
+        if (!isEmptyCell(idx) && !cells[idx].isDefault())
         {
             array.push_back(cell.id);
         }

@@ -266,7 +266,7 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
         /// fetch up-to-date values, decide which ones require update
         for (const auto row : ext::range(0, rows_num))
         {
-            const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+            const StringRef key = placeKeysInPool(row, key_columns, keys, *dict_struct.key, temporary_keys_pool);
             keys_array[row] = key;
             const auto find_result = findCellIdx(key, now);
             const auto & cell_idx = find_result.cell_idx;
@@ -458,7 +458,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
         /// fetch up-to-date values, decide which ones require update
         for (const auto row : ext::range(0, rows_num))
         {
-            const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+            const StringRef key = placeKeysInPool(row, key_columns, keys, *dict_struct.key, temporary_keys_pool);
             keys_array[row] = key;
             const auto find_result = findCellIdx(key, now);
 
@@ -537,7 +537,7 @@ void ComplexKeyCacheDictionary::getItemsString(
         /// fetch up-to-date values, discard on fail
         for (const auto row : ext::range(0, rows_num))
         {
-            const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+            const StringRef key = placeKeysInPool(row, key_columns, keys, *dict_struct.key, temporary_keys_pool);
             SCOPE_EXIT(temporary_keys_pool.rollback(key.size));
             const auto find_result = findCellIdx(key, now);
 
@@ -582,7 +582,7 @@ void ComplexKeyCacheDictionary::getItemsString(
         const auto now = std::chrono::system_clock::now();
         for (const auto row : ext::range(0, rows_num))
         {
-            const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+            const StringRef key = placeKeysInPool(row, key_columns, keys, *dict_struct.key, temporary_keys_pool);
             keys_array[row] = key;
             const auto find_result = findCellIdx(key, now);
 
@@ -900,7 +900,7 @@ StringRef ComplexKeyCacheDictionary::allocKey(const size_t row, const Columns & 
     if (key_size_is_fixed)
         return placeKeysInFixedSizePool(row, key_columns);
 
-    return placeKeysInPool(row, key_columns, keys, *keys_pool);
+    return placeKeysInPool(row, key_columns, keys, *dict_struct.key, *keys_pool);
 }
 
 void ComplexKeyCacheDictionary::freeKey(const StringRef key) const
@@ -913,15 +913,18 @@ void ComplexKeyCacheDictionary::freeKey(const StringRef key) const
 
 template <typename Pool>
 StringRef ComplexKeyCacheDictionary::placeKeysInPool(
-    const size_t row, const Columns & key_columns, StringRefs & keys, Pool & pool)
+    const size_t row, const Columns & key_columns, StringRefs & keys,
+    const std::vector<DictionaryAttribute> & key_attributes, Pool & pool)
 {
     const auto keys_size = key_columns.size();
     size_t sum_keys_size{};
 
     for (size_t j = 0; j < keys_size; ++j)
     {
-        keys[j].size = key_columns[j]->getSerializedSize(row);
+        keys[j] = key_columns[j]->getDataAt(row);
         sum_keys_size += keys[j].size;
+        if (key_attributes[j].underlying_type == AttributeUnderlyingType::String)
+            sum_keys_size += sizeof(size_t) + 1;
     }
 
     auto place = pool.alloc(sum_keys_size);
@@ -929,9 +932,25 @@ StringRef ComplexKeyCacheDictionary::placeKeysInPool(
     auto key_start = place;
     for (size_t j = 0; j < keys_size; ++j)
     {
-        key_columns[j]->serializeValue(row, key_start);
-        keys[j].data = key_start;
-        key_start += keys[j].size;
+        if (key_attributes[j].underlying_type == AttributeUnderlyingType::String)
+        {
+            auto start = key_start;
+            auto key_size = keys[j].size + 1;
+            memcpy(key_start, &key_size, sizeof(size_t));
+            key_start += sizeof(size_t);
+            memcpy(key_start, keys[j].data, keys[j].size);
+            key_start += keys[j].size;
+            *key_start = '\0';
+            ++key_start;
+            keys[j].data = start;
+            keys[j].size += sizeof(size_t) + 1;
+        }
+        else
+        {
+            memcpy(key_start, keys[j].data, keys[j].size);
+            keys[j].data = key_start;
+            key_start += keys[j].size;
+        }
     }
 
     return { place, sum_keys_size };
@@ -981,13 +1000,13 @@ BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names &
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
         for (auto idx : ext::range(0, cells.size()))
-            if (!isEmptyCell(idx))
+            if (!isEmptyCell(idx)
+                && !cells[idx].isDefault())
                 keys.push_back(cells[idx].key);
     }
 
     using BlockInputStreamType = DictionaryBlockInputStream<ComplexKeyCacheDictionary, UInt64>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, keys, column_names);
 }
-
 
 }

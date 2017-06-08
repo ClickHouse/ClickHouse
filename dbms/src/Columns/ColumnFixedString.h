@@ -93,10 +93,6 @@ public:
         chars.resize_assume_reserved(chars.size() - n * elems);
     }
 
-    size_t getSerializedSize(size_t n) const override;
-
-    void serializeValue(size_t n, char * buffer) const override;
-
     StringRef serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;

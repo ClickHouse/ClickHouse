@@ -27,17 +27,6 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
-template <typename T>
-size_t ColumnVector<T>::getSerializedSize(size_t n) const
-{
-    return sizeof(T);
-}
-
-template <typename T>
-void ColumnVector<T>::serializeValue(size_t n, char * buffer) const
-{
-    memcpy(buffer, &data[n], sizeof(T));
-}
 
 template <typename T>
 StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const

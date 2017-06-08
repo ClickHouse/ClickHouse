@@ -235,7 +235,8 @@ private:
 
     template <typename Arena>
     static StringRef placeKeysInPool(
-        const std::size_t row, const Columns & key_columns, StringRefs & keys, Arena & pool);
+        const std::size_t row, const Columns & key_columns, StringRefs & keys,
+        const std::vector<DictionaryAttribute> & key_attributes, Arena & pool);
 
     StringRef placeKeysInFixedSizePool(
         const std::size_t row, const Columns & key_columns) const;

@@ -158,20 +158,6 @@ public:
         offsets.resize_assume_reserved(offsets.size() - n);
     }
 
-    size_t getSerializedSize(size_t n) const override
-    {
-        return sizeof(size_t) + sizeAt(n);
-    }
-
-    void serializeValue(size_t n, char * buffer) const override
-    {
-        size_t string_size = sizeAt(n);
-        size_t offset = offsetAt(n);
-
-        memcpy(buffer, &string_size, sizeof(string_size));
-        memcpy(buffer + sizeof(string_size), &chars[offset], string_size);
-    }
-
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
     {
         size_t string_size = sizeAt(n);
