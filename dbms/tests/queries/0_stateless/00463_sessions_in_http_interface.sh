@@ -44,7 +44,7 @@ check "$url$session&session_check=0" "$select" "Exception" 0 "session_check=0 do
 request $url$session "SET max_rows_to_read=7777777"
 
 check "$url$session&session_timeout=string" "$select" "Exception.*Invalid session timeout" 1 "Non-numeric value accepted as a timeout."
-check "$url$session&session_timeout=3601" "$select" "Exception.*Invalid session timeout" 1 "More then 3600 seconds accepted as a timeout."
+check "$url$session&session_timeout=3601" "$select" "Exception.*Maximum session timeout*" 1 "More then 3600 seconds accepted as a timeout."
 check "$url$session&session_timeout=-1" "$select" "Exception.*Invalid session timeout" 1 "Negative timeout accepted."
 check "$url$session&session_timeout=0" "$select" "Exception" 0 "Zero timeout not accepted."
 check "$url$session&session_timeout=3600" "$select" "Exception" 0 "3600 second timeout not accepted."
