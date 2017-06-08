@@ -1,6 +1,8 @@
 The Yandex.Metrica task
 ----------------------------------
 
+ClickHouse currently powers `Yandex.Metrica <https://metrica.yandex.com/>`_, world's `second largest <http://w3techs.com/technologies/overview/traffic_analysis/all>`_ web analytics platform, with over 13 trillion database records and over 20 billion events a day, generating customized reports on the fly directly from non-aggregated data.
+
 We need to get custom reports based on hits and sessions, with custom segments set by the user. Data for the reports is updated in real-time. Queries must be run immediately (in online mode). We must be able to build reports for any time period. Complex aggregates must be calculated, such as the number of unique visitors.
 At this time (April 2014), Yandex.Metrica receives approximately 12 billion events (pageviews and mouse clicks) daily. All these events must be stored in order to build custom reports. A single query may require scanning hundreds of millions of rows over a few seconds, or millions of rows in no more than a few hundred milliseconds.
 
