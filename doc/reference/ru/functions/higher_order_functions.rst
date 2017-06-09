@@ -26,18 +26,24 @@ arrayFilter(func, arr1, ...)
 .. code-block:: sql
 
   SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
-  
+
+..
+
   ┌─res───────────┐
   │ ['abc World'] │
   └───────────────┘
-  
+
+.. code-block:: sql
+
   SELECT
       arrayFilter(
           (i, x) -> x LIKE '%World%',
           arrayEnumerate(arr),
           ['Hello', 'abc World'] AS arr)
       AS res
-  
+
+..
+
   ┌─res─┐
   │ [2] │
   └─────┘

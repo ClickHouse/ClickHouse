@@ -4,7 +4,7 @@ system.dictionaries
 Содержит информацию о внешних словарях.
 
 Столбцы:
-::
+..
 
   name String                   - имя словаря
   type String                   - тип словаря: Flat, Hashed, Cache

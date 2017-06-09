@@ -6,7 +6,9 @@ JSON
 .. code-block:: sql
 
   SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
-  
+
+.. code-block:: json
+
   {
           "meta":
           [

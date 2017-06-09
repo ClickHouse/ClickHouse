@@ -100,7 +100,7 @@ Creates an array from different argument values. Memory consumption is the same 
 
 quantile(level)(x)
 ------------------
-Approximates the 'level' quantile. 'level' is a constant, a floating-point number from 0 to 1. We recommend using a 'level' value in the range of 0.01 .. 0.99.
+Approximates the 'level' quantile. 'level' is a constant, a floating-point number from 0 to 1. We recommend using a 'level' value in the range of ``0.01 .. 0.99``.
 Don't use a 'level' value equal to 0 or 1 - use the 'min' and 'max' functions for these cases.
 
 The algorithm is the same as for the 'median' function. Actually, 'quantile' and 'median' are internally the same function. You can use the 'quantile' function without parameters - in this case, it calculates the median, and you can use the 'median' function with parameters - in this case, it calculates the quantile of the set level.
@@ -157,7 +157,7 @@ The result is an array containing the corresponding number of values.
 
 varSamp(x)
 ----------
-Calculates the amount Σ((x - x̅)2) / (n - 1), where 'n' is the sample size and 'x̅' is the average value of 'x'.
+Calculates the amount ``Σ((x - x̅)2) / (n - 1)``, where 'n' is the sample size and 'x̅' is the average value of 'x'.
 
 It represents an unbiased estimate of the variance of a random variable, if the values passed to the function are a sample of this random amount.
 
@@ -165,7 +165,7 @@ Returns Float64. If n <= 1, it returns +∞.
 
 varPop(x)
 ---------
-Calculates the amount Σ((x - x̅)2) / n, where 'n' is the sample size and 'x̅' is the average value of 'x'.
+Calculates the amount ``Σ((x - x̅)2) / n``, where 'n' is the sample size and 'x̅' is the average value of 'x'.
 
 In other words, dispersion for a set of values. Returns Float64.
 
@@ -181,17 +181,17 @@ The result is equal to the square root of 'varPop(x)'.
 
 covarSamp(x, y)
 ---------------
-Calculates the value of Σ((x - x̅)(y - y̅)) / (n - 1).
+Calculates the value of ``Σ((x - x̅)(y - y̅)) / (n - 1)``.
 
 Returns Float64. If n <= 1, it returns +∞.
 
 covarPop(x, y)
 --------------
-Calculates the value of Σ((x - x̅)(y - y̅)) / n.
+Calculates the value of ``Σ((x - x̅)(y - y̅)) / n``.
 
 corr(x, y)
 ----------
-Calculates the Pearson correlation coefficient: Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)2) * Σ((y - y̅)2)).
+Calculates the Pearson correlation coefficient: ``Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)2) * Σ((y - y̅)2))``.
 
 Parametric aggregate functions
 ==============================
@@ -208,7 +208,7 @@ Pattern matching for event chains.
 The function collects a sequence of events in RAM. Then it checks whether this sequence matches the pattern.
 It returns UInt8 - 0 if the pattern isn't matched, or 1 if it matches.
 
-Example: sequenceMatch('(?1).*(?2)')(EventTime, URL LIKE '%company%', URL LIKE '%cart%')
+Example: ``sequenceMatch('(?1).*(?2)')(EventTime, URL LIKE '%company%', URL LIKE '%cart%')``
 - whether there was a chain of events in which pages with the address in company were visited earlier than pages with the address in cart.
 
 This is a degenerate example. You could write it using other aggregate functions:

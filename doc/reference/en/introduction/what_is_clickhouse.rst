@@ -52,16 +52,17 @@ It is easy to see that the OLAP scenario is very different from other popular sc
 Columnar-oriented databases are better suited to OLAP scenarios (at least 100 times better in processing speed for most queries), for the following reasons:
 
 1. For I/O.
-1.1. For an analytical query, only a small number of table columns need to be read. In a column-oriented database, you can read just the data you need. For example, if you need 5 columns out of 100, you can expect a 20-fold reduction in I/O.
-1.2. Since data is read in packets, it is easier to compress. Data in columns is also easier to compress. This further reduces the I/O volume.
-1.3. Due to the reduced I/O, more data fits in the system cache.
+-----------
+#. For an analytical query, only a small number of table columns need to be read. In a column-oriented database, you can read just the data you need. For example, if you need 5 columns out of 100, you can expect a 20-fold reduction in I/O.
+#. Since data is read in packets, it is easier to compress. Data in columns is also easier to compress. This further reduces the I/O volume.
+#. Due to the reduced I/O, more data fits in the system cache.
 
 For example, the query "count the number of records for each advertising platform" requires reading one "advertising platform ID" column, which takes up 1 byte uncompressed. If most of the traffic was not from advertising platforms, you can expect at least 10-fold compression of this column. When using a quick compression algorithm, data decompression is possible at a speed of at least several gigabytes of uncompressed data per second. In other words, this query can be processed at a speed of approximately several billion rows per second on a single server. This speed is actually achieved in practice.
 
 Example:
 ..
 
-    milovidov@████████.yandex.ru:~$ clickhouse-client
+    milovidov@hostname:~$ clickhouse-client
     ClickHouse client version 0.0.52053.
     Connecting to localhost:9000.
     Connected to ClickHouse server version 0.0.52053.
@@ -104,6 +105,7 @@ Example:
     :)
     
 2. For CPU.
+-----------
 Since executing a query requires processing a large number of rows, it helps to dispatch all operations for entire vectors instead of for separate rows, or to implement the query engine so that there is almost no dispatching cost. If you don't do this, with any half-decent disk subsystem, the query interpreter inevitably stalls the CPU.
 It makes sense to both store data in columns and process it, when possible, by columns.
 

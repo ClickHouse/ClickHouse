@@ -57,6 +57,7 @@ replaceRegexpAll(haystack, pattern, replacement)
 This does the same thing, but replaces all the occurrences. Example:
 
 .. code-block:: sql
+
   SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 
 ..
@@ -69,6 +70,7 @@ As an exception, if a regular expression worked on an empty substring, the repla
 Example:
 
 .. code-block:: sql
+
   SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 
 ..

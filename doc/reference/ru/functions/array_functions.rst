@@ -92,7 +92,9 @@ arrayEnumerate(arr)
       arrayEnumerate(GoalsReached) AS num
   WHERE CounterID = 160656
   LIMIT 10
-  
+
+..
+
   ┌─Reaches─┬──Hits─┐
   │   95606 │ 31406 │
   └─────────┴───────┘
@@ -106,7 +108,9 @@ arrayEnumerate(arr)
       count() AS Hits
   FROM test.hits
   WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
-  
+
+..
+
   ┌─Reaches─┬──Hits─┐
   │   95606 │ 31406 │
   └─────────┴───────┘
@@ -135,7 +139,9 @@ arrayEnumerateUniq(arr, ...)
   GROUP BY GoalID
   ORDER BY Reaches DESC
   LIMIT 10
-  
+
+..
+
   ┌──GoalID─┬─Reaches─┬─Visits─┐
   │   53225 │    3214 │   1097 │
   │ 2825062 │    3188 │   1097 │
@@ -156,7 +162,9 @@ arrayEnumerateUniq(arr, ...)
 .. code-block:: sql
   
   SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
-  
+
+..
+
   ┌─res───────────┐
   │ [1,2,1,1,2,1] │
   └───────────────┘
