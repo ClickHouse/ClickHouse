@@ -52,7 +52,7 @@ It is easy to see that the OLAP scenario is very different from other popular sc
 Columnar-oriented databases are better suited to OLAP scenarios (at least 100 times better in processing speed for most queries), for the following reasons:
 
 1. For I/O.
------------
+
 #. For an analytical query, only a small number of table columns need to be read. In a column-oriented database, you can read just the data you need. For example, if you need 5 columns out of 100, you can expect a 20-fold reduction in I/O.
 #. Since data is read in packets, it is easier to compress. Data in columns is also easier to compress. This further reduces the I/O volume.
 #. Due to the reduced I/O, more data fits in the system cache.
@@ -105,7 +105,7 @@ Example:
     :)
     
 2. For CPU.
------------
+
 Since executing a query requires processing a large number of rows, it helps to dispatch all operations for entire vectors instead of for separate rows, or to implement the query engine so that there is almost no dispatching cost. If you don't do this, with any half-decent disk subsystem, the query interpreter inevitably stalls the CPU.
 It makes sense to both store data in columns and process it, when possible, by columns.
 
