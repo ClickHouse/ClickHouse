@@ -39,7 +39,7 @@ Converts a region to an area (type 5 in the geobase). In every other way, this f
   FROM system.numbers
   LIMIT 15
 
-..
+.. code-block:: text
 
   ┌─regionToName(regionToArea(toUInt32(number), \'ua\'), \'en\')─┐
   │                                                              │
@@ -69,7 +69,7 @@ Converts a region to a federal district (type 4 in the geobase). In every other 
   FROM system.numbers
   LIMIT 15
 
-..
+.. code-block:: text
 
   ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'), \'en\')─┐
   │                                                                  │

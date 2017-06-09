@@ -27,7 +27,7 @@ arrayFilter(func, arr1, ...)
 
   SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 
-..
+.. code-block:: text
 
   ┌─res───────────┐
   │ ['abc World'] │
@@ -42,7 +42,7 @@ arrayFilter(func, arr1, ...)
           ['Hello', 'abc World'] AS arr)
       AS res
 
-..
+.. code-block:: text
 
   ┌─res─┐
   │ [2] │

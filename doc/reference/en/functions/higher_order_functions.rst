@@ -27,7 +27,7 @@ Examples:
 
   SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 
-..
+.. code-block:: text
 
   ┌─res───────────┐
   │ ['abc World'] │
@@ -42,7 +42,7 @@ Examples:
           ['Hello', 'abc World'] AS arr)
       AS res
 
-..
+.. code-block:: text
 
   ┌─res─┐
   │ [2] │

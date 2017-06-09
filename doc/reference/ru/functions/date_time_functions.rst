@@ -13,7 +13,7 @@
       toDate(time, 'Asia/Yekaterinburg') AS date_yekat,
       toString(time, 'US/Samoa') AS time_samoa
 
-..
+.. code-block:: text
 
   ┌────────────────time─┬─date_local─┬─date_yekat─┬─time_samoa──────────┐
   │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-16 │ 2016-06-15 09:00:00 │

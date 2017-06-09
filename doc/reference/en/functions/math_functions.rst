@@ -53,7 +53,7 @@ Example (three sigma rule):
 
   SELECT erf(3 / sqrt(2))
 
-..
+.. code-block:: text
 
   ┌─erf(divide(3, sqrt(2)))─┐
   │      0.9973002039367398 │

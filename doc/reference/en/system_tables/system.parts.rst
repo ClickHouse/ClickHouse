@@ -3,7 +3,7 @@ system.parts
 Contains information about parts of a table in the MergeTree family.
 
 Columns:
-..
+.. code-block:: text
 
   database String            - Name of the database where the table that this part belongs to is located.
   table String               - Name of the table that this part belongs to.

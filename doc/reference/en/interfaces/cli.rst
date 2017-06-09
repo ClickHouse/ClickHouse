@@ -38,7 +38,7 @@ Only works in non-interactive mode.
 ``--stacktrace`` - If specified, also prints the stack trace if an exception occurs.
 ``--config-file`` - Name of the configuration file that has additional settings or changed defaults for the settings listed above.
 By default, files are searched for in this order:
-..
+.. code-block:: text
 
     ./clickhouse-client.xml
     ~/./clickhouse-client/config.xml

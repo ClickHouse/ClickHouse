@@ -39,7 +39,7 @@ The TabSeparated format supports outputting total values (when using WITH TOTALS
 
   SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated
 
-..
+.. code-block:: text
 
   2014-03-17      1406958
   2014-03-18      1383658

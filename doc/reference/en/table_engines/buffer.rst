@@ -2,7 +2,7 @@ Buffer
 ------
 
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
-..
+.. code-block:: text
 
   Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
 

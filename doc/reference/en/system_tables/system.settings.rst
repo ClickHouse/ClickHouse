@@ -4,7 +4,7 @@ system.settings
 Contains information about settings that are currently in use (i.e. used for executing the query you are using to read from the system.settings table).
 
 Columns:
-..
+.. code-block:: text
 
   name String   - Setting name.
   value String  - Setting value.

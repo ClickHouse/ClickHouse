@@ -79,7 +79,7 @@ bar
   GROUP BY h
   ORDER BY h ASC
 
-..
+.. code-block:: text
   
   ┌──h─┬──────c─┬─bar────────────────┐
   │  0 │ 292907 │ █████████▋         │
@@ -147,7 +147,7 @@ transform
   GROUP BY title
   ORDER BY c DESC
 
-..
+.. code-block:: text
 
   ┌─title─────┬──────c─┐
   │ Яндекс    │ 498635 │
@@ -177,7 +177,7 @@ transform
   ORDER BY count() DESC
   LIMIT 10
 
-..
+.. code-block:: text
   
   ┌─s──────────────┬───────c─┐
   │                │ 2906259 │
@@ -204,7 +204,7 @@ formatReadableSize(x)
       arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
       formatReadableSize(filesize_bytes) AS filesize
 
-..
+.. code-block:: text
   
   ┌─filesize_bytes─┬─filesize───┐
   │              1 │ 1.00 B     │
@@ -260,7 +260,7 @@ runningDifference(x)
       LIMIT 5
   )
 
-..
+.. code-block:: text
   
   ┌─EventID─┬───────────EventTime─┬─delta─┐
   │    1106 │ 2016-11-24 00:00:04 │     0 │

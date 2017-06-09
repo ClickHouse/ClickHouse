@@ -30,7 +30,7 @@ Example 1. Converting the date to American format:
   LIMIT 7
   FORMAT TabSeparated
 
-..
+.. code-block:: text
 
   2014-03-17      03/17/2014
   2014-03-18      03/18/2014
@@ -46,7 +46,7 @@ Example 2. Copy the string ten times:
 
   SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
 
-..
+.. code-block:: text
 
   ┌─res────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
   │ Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World! │
@@ -60,7 +60,7 @@ This does the same thing, but replaces all the occurrences. Example:
 
   SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 
-..
+.. code-block:: text
 
   ┌─res────────────────────────┐
   │ HHeelllloo,,  WWoorrlldd!! │
@@ -73,7 +73,7 @@ Example:
 
   SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 
-..
+.. code-block:: text
 
   ┌─res─────────────────┐
   │ here: Hello, World! │

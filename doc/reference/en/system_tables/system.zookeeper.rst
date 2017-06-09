@@ -9,7 +9,7 @@ To output data for all root nodes, write path = '/'.
 If the path specified in 'path' doesn't exist, an exception will be thrown.
 
 Columns:
-..
+.. code-block:: text
 
   name String          - Name of the node.
   path String          - Path to the node.
@@ -28,7 +28,7 @@ Columns:
 
 Example:
 
-..
+.. code-block:: text
 
   SELECT *
   FROM system.zookeeper

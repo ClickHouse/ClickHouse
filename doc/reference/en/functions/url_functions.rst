@@ -73,7 +73,7 @@ URLPathHierarchy(URL)
 """""""""""""""""""""
 The same thing, but without the protocol and host in the result. The / element (root) is not included. Example:
 This function is used for implementing tree-view reports by URL in Yandex.Metrica.
-..
+.. code-block:: text
 
   URLPathHierarchy('https://example.com/browse/CONV-6788') =
   [

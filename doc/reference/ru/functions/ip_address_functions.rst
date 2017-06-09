@@ -25,7 +25,7 @@ IPv4NumToStringClassC(num)
   ORDER BY c DESC
   LIMIT 10
 
-..
+.. code-block:: text
 
   ┌─k──────────────┬─────c─┐
   │ 83.149.9.xxx   │ 26238 │
@@ -51,7 +51,7 @@ IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.22
 
   SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
 
-..
+.. code-block:: text
 
   ┌─addr─────────┐
   │ 2a02:6b8::11 │
@@ -68,7 +68,7 @@ IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.22
   ORDER BY c DESC
   LIMIT 10
 
-..
+.. code-block:: text
 
   ┌─IPv6NumToString(ClientIP6)──────────────┬─────c─┐
   │ 2a02:2168:aaa:bbbb::2                   │ 24695 │
@@ -94,7 +94,7 @@ IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.22
   ORDER BY c DESC
   LIMIT 10
 
-..
+.. code-block:: text
   
   ┌─IPv6NumToString(ClientIP6)─┬──────c─┐
   │ ::ffff:94.26.111.111       │ 747440 │

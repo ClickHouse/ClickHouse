@@ -642,7 +642,7 @@ Allows executing JOIN with an array or nested data structure. The intent is simi
 
 ARRAY JOIN is essentially INNER JOIN with an array. Example:
 
-..
+.. code-block:: text
 
     :) CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory
 
@@ -703,7 +703,7 @@ An alias can be specified for an array in the ARRAY JOIN clause. In this case, a
     FROM arrays_test
     ARRAY JOIN arr AS a
 
-..
+.. code-block:: text
 
     ┌─s─────┬─arr─────┬─a─┐
     │ Hello │ [1,2]   │ 1 │
@@ -718,7 +718,7 @@ An alias can be specified for an array in the ARRAY JOIN clause. In this case, a
 Multiple arrays of the same size can be comma-separated in the ARRAY JOIN clause. In this case, JOIN is performed with them simultaneously (the direct sum, not the direct product).
 Example:
 
-..
+.. code-block:: text
 
     :) SELECT s, arr, a, num, mapped FROM arrays_test ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped
 
@@ -754,7 +754,7 @@ Example:
 
 ARRAY JOIN also works with nested data structures. Example:
 
-..
+.. code-block:: text
 
     :) CREATE TABLE nested_test (s String, nest Nested(x UInt8, y UInt32)) ENGINE = Memory
 
@@ -809,7 +809,7 @@ ARRAY JOIN also works with nested data structures. Example:
 
 When specifying names of nested data structures in ARRAY JOIN, the meaning is the same as ARRAY JOIN with all the array elements that it consists of. Example:
 
-..
+.. code-block:: text
 
     :) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x, nest.y
 
@@ -837,7 +837,7 @@ This variation also makes sense:
     FROM nested_test
     ARRAY JOIN `nest.x`
 
-..
+.. code-block:: text
 
     ┌─s─────┬─nest.x─┬─nest.y─────┐
     │ Hello │      1 │ [10,20]    │
@@ -859,7 +859,7 @@ An alias may be used for a nested data structure, in order to select either the 
     FROM nested_test
     ARRAY JOIN nest AS n
 
-..
+.. code-block:: text
 
     ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┐
     │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │
@@ -881,7 +881,7 @@ Example of using the arrayEnumerate function:
     FROM nested_test
     ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
 
-..
+.. code-block:: text
 
     ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┬─num─┐
     │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │   1 │
@@ -962,7 +962,7 @@ Example:
     ORDER BY hits DESC
     LIMIT 10
 
-..
+.. code-block:: text
 
     ┌─CounterID─┬───hits─┬─visits─┐
     │   1143050 │ 523264 │  13665 │
@@ -1270,7 +1270,7 @@ Example:
     GROUP BY EventDate
     ORDER BY EventDate ASC
 
-..
+.. code-block:: text
 
     ┌──EventDate─┬────ratio─┐
     │ 2014-03-17 │        1 │

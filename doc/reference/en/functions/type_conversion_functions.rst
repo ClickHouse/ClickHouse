@@ -44,19 +44,19 @@ To do transformations on DateTime in given time zone, pass second argument with 
       now() AS now_local,
       toString(now(), 'Asia/Yekaterinburg') AS now_yekat
 
-..
+.. code-block:: text
 
   ┌───────────now_local─┬─now_yekat───────────┐
   │ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
   └─────────────────────┴─────────────────────┘
 
 To format DateTime in given time zone:
-..
+.. code-block:: text
 
   toString(now(), 'Asia/Yekaterinburg')
   
 To get unix timestamp for string with datetime in specified time zone:
-..
+.. code-block:: text
 
   toUnixTimestamp('2000-01-01 00:00:00', 'Asia/Yekaterinburg')
 
@@ -117,7 +117,7 @@ Example:
       CAST(timestamp, 'String') AS string,
       CAST(timestamp, 'FixedString(22)') AS fixed_string
 
-..
+.. code-block:: text
 
   ┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
   │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │

@@ -23,7 +23,7 @@
 ~~~~~~~~~~~~~~~~~~~~
 
 Пропишите в `/etc/apt/sources.list` (или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`) репозитории:
-..
+.. code-block:: text
 
     deb http://repo.yandex.ru/clickhouse/trusty stable main
 
@@ -51,13 +51,13 @@ ClickHouse содержит настройки ограничения досту
 
 Вы можете собрать пакеты и установить их.
 Также вы можете использовать программы без установки пакетов.
-..
+.. code-block:: text
 
     Клиент: dbms/src/Client/
     Сервер: dbms/src/Server/
 
 Для сервера создаёте директории с данными, например:
-..
+.. code-block:: text
 
     /opt/clickhouse/data/default/
     /opt/clickhouse/metadata/default/

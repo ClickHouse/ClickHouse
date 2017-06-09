@@ -75,7 +75,7 @@ ReplicatedSummingMergeTree
 Также добавляются два параметра в начало списка параметров - путь к таблице в ZooKeeper, имя реплики в ZooKeeper.
 
 Пример:
-..
+.. code-block:: text
 
   ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
 

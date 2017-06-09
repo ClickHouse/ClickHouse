@@ -3,7 +3,7 @@ system.clusters
 
 Contains information about clusters available in the config file and the servers in them.
 Columns:
-..
+.. code-block:: text
 
   cluster String      - Cluster name.
   shard_num UInt32    - Number of a shard in the cluster, starting from 1.

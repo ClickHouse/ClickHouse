@@ -4,7 +4,7 @@ Merge
 The Merge engine (not to be confused with MergeTree) does not store data itself, but allows reading from any number of other tables simultaneously.
 Reading is automatically parallelized. Writing to a table is not supported. When reading, the indexes of tables that are actually being read are used, if they exist.
 The Merge engine accepts parameters: the database name and a regular expression for tables. Example:
-..
+.. code-block:: text
 
   Merge(hits, '^WatchLog')
 

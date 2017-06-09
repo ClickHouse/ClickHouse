@@ -21,7 +21,7 @@ Installing from packages
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 In `/etc/apt/sources.list` (or in a separate `/etc/apt/sources.list.d/clickhouse.list` file), add the repository: 
-..
+.. code-block:: text
 
     deb http://repo.yandex.ru/clickhouse/trusty stable main
 
@@ -47,13 +47,13 @@ Installing from source
 To build, follow the instructions in build.md (for Linux) or in build_osx.md (for Mac OS X).
 
 You can compile packages and install them. You can also use programs without installing packages.
-..
+.. code-block:: text
 
     Client: dbms/src/Client/
     Server: dbms/src/Server/
 
 For the server, create a catalog with data, such as:
-..
+.. code-block:: text
 
     /opt/clickhouse/data/default/
     /opt/clickhouse/metadata/default/
