@@ -83,6 +83,7 @@ body {
 
 #navbar-inner {
     max-width: 1280px;
+    height: 50px;
     margin: 4px auto;
 }
 
