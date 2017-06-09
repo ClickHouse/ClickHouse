@@ -4,12 +4,12 @@ External dictionaries
 It is possible to add your own dictionaries from various data sources. The data source for a dictionary can be a file in the local file system, the ClickHouse server, or a MySQL server.
 A dictionary can be stored completely in RAM and updated regularly, or it can be partially cached in RAM and dynamically load missing values.
 
-The configuration of external dictionaries is in a separate file or files specified in the 'dictionaries_config' configuration parameter.
+The configuration of external dictionaries is in a separate file or files specified in the ``dictionaries_config`` configuration parameter.
 This parameter contains the absolute or relative path to the file with the dictionary configuration. A relative path is relative to the directory with the server config file. The path can contain wildcards * and ?, in which case all matching files are found. Example: dictionaries/*.xml.
 
 The dictionary configuration, as well as the set of files with the configuration, can be updated without restarting the server. The server checks updates every 5 seconds. This means that dictionaries can be enabled dynamically.
 
-Dictionaries can be created when starting the server, or at first use. This is defined by the 'dictionaries_lazy_load' parameter in the main server config file. This parameter is optional, 'true' by default. If set to 'true', each dictionary is created at first use. If dictionary creation failed, the function that was using the dictionary throws an exception. If 'false', all dictionaries are created when the server starts, and if there is an error, the server shuts down.
+Dictionaries can be created when starting the server, or at first use. This is defined by the ``dictionaries_lazy_load`` parameter in the main server config file. This parameter is optional, 'true' by default. If set to 'true', each dictionary is created at first use. If dictionary creation failed, the function that was using the dictionary throws an exception. If 'false', all dictionaries are created when the server starts, and if there is an error, the server shuts down.
 
 The dictionary config file has the following format:
 
