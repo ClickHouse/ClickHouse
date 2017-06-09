@@ -4,19 +4,19 @@ Aggregate functions
 count()
 -------
 Counts the number of rows. Accepts zero arguments and returns UInt64.
-The syntax COUNT(DISTINCT x) is not supported. The separate 'uniq' aggregate function exists for this purpose.
+The syntax ``COUNT(DISTINCT x)`` is not supported. The separate ``uniq`` aggregate function exists for this purpose.
 
-A 'SELECT count() FROM table' query is not optimized, because the number of entries in the table is not stored separately. It will select some small column from the table and count the number of values in it.
+A ``SELECT count() FROM table`` query is not optimized, because the number of entries in the table is not stored separately. It will select some small column from the table and count the number of values in it.
 
 any(x)
 ------
 Selects the first encountered value.
 The query can be executed in any order and even in a different order each time, so the result of this function is indeterminate.
-To get a determinate result, you can use the 'min' or 'max' function instead of 'any'.
+To get a determinate result, you can use the ``min`` or ``max`` function instead of ``any``.
 
-In some cases, you can rely on the order of execution. This applies to cases when SELECT comes from a subquery that uses ORDER BY.
+In some cases, you can rely on the order of execution. This applies to cases when ``SELECT`` comes from a subquery that uses ``ORDER BY``.
 
-When a SELECT query has the GROUP BY clause or at least one aggregate function, ClickHouse (in contrast to MySQL) requires that all expressions in the SELECT, HAVING, and ORDER BY clauses be calculated from keys or from aggregate functions. That is, each column selected from the table must be used either in keys, or inside aggregate functions. To get behavior like in MySQL, you can put the other columns in the 'any' aggregate function.
+When a SELECT query has the GROUP BY clause or at least one aggregate function, ClickHouse (in contrast to for example MySQL) requires that all expressions in the ``SELECT``, ``HAVING`` and ``ORDER BY`` clauses be calculated from keys or from aggregate functions. That is, each column selected from the table must be used either in keys, or inside aggregate functions. To get behavior like in MySQL, you can put the other columns in the ``any`` aggregate function.
 
 anyLast(x)
 ----------
@@ -55,74 +55,74 @@ uniq(x)
 Calculates the approximate number of different values of the argument. Works for numbers, strings, dates, and dates with times.
 
 Uses an adaptive sampling algorithm: for the calculation state, it uses a sample of element hash values with a size up to 65535.
-Compared with the widely known HyperLogLog algorithm, this algorithm is less effective in terms of accuracy and memory consumption (even up to proportionality), but it is adaptive. This means that with fairly high accuracy, it consumes less memory during simultaneous computation of cardinality for a large number of data sets whose cardinality has power law distribution (i.e. in cases when most of the data sets are small). This algorithm is also very accurate for data sets with small cardinality (up to 65536) and very efficient on CPU (when computing not too many of these functions, using 'uniq' is almost as fast as using other aggregate functions).
+Compared with the widely known `HyperLogLog <https://en.wikipedia.org/wiki/HyperLogLog>`_ algorithm, this algorithm is less effective in terms of accuracy and memory consumption (even up to proportionality), but it is adaptive. This means that with fairly high accuracy, it consumes less memory during simultaneous computation of cardinality for a large number of data sets whose cardinality has power law distribution (i.e. in cases when most of the data sets are small). This algorithm is also very accurate for data sets with small cardinality (up to 65536) and very efficient on CPU (when computing not too many of these functions, using ``uniq`` is almost as fast as using other aggregate functions).
 
 There is no compensation for the bias of an estimate, so for large data sets the results are systematically deflated. This function is normally used for computing the number of unique visitors in Yandex.Metrica, so this bias does not play a role.
 
-The result is determinate (it doesn't depend on the order of query execution).
+The result is deterministic (it does not depend on the order of query execution).
 
 uniqCombined(x)
 ---------------
 Approximately computes the number of different values ​​of the argument. Works for numbers, strings, dates, date-with-time, for several arguments and arguments-tuples.
 
-A combination of three algorithms is used: an array, a hash table and HyperLogLog with an error correction table. The memory consumption is several times smaller than the uniq function, and the accuracy is several times higher. The speed of operation is slightly lower than that of the uniq function, but sometimes it can be even higher - in the case of distributed requests, in which a large number of aggregation states are transmitted over the network. The maximum state size is 96 KiB (HyperLogLog of 217 6-bit cells).
+A combination of three algorithms is used: an array, a hash table and `HyperLogLog <https://en.wikipedia.org/wiki/HyperLogLog>`_ with an error correction table. The memory consumption is several times smaller than the ``uniq`` function, and the accuracy is several times higher. The speed of operation is slightly lower than that of the ``uniq`` function, but sometimes it can be even higher - in the case of distributed requests, in which a large number of aggregation states are transmitted over the network. The maximum state size is 96 KiB (HyperLogLog of 217 6-bit cells).
 
 The result is deterministic (it does not depend on the order of query execution).
 
-The uniqCombined function is a good default choice for calculating the number of different values.
+The ``uniqCombined`` function is a good default choice for calculating the number of different values.
 
 uniqHLL12(x)
 ------------
-Uses the HyperLogLog algorithm to approximate the number of different values of the argument. It uses 212 5-bit cells. The size of the state is slightly more than 2.5 KB.
+Uses the `HyperLogLog <https://en.wikipedia.org/wiki/HyperLogLog>`_ algorithm to approximate the number of different values of the argument. It uses 212 5-bit cells. The size of the state is slightly more than 2.5 KB.
 
-The result is determinate (it doesn't depend on the order of query execution).
+The result is deterministic (it does not depend on the order of query execution).
 
 In most cases, use the 'uniq' function. You should only use this function if you understand its advantages well.
 
 uniqExact(x)
 ------------
 Calculates the number of different values of the argument, exactly.
-There is no reason to fear approximations, so it's better to use the 'uniq' function.
-You should use the 'uniqExact' function if you definitely need an exact result.
+There is no reason to fear approximations, so it's better to use the ``uniq`` function.
+You should use the ``uniqExact`` function if you definitely need an exact result.
 
-The 'uniqExact' function uses more memory than the 'uniq' function, because the size of the state has unbounded growth as the number of different values increases.
+The ``uniqExact`` function uses more memory than the ``uniq`` function, because the size of the state has unbounded growth as the number of different values increases.
 
 groupArray(x)
 -------------
 Creates an array of argument values.
 Values can be added to the array in any (indeterminate) order.
 
-In some cases, you can rely on the order of execution. This applies to cases when SELECT comes from a subquery that uses ORDER BY.
+In some cases, you can rely on the order of execution. This applies to cases when ``SELECT`` comes from a subquery that uses ``ORDER BY``.
 
 groupUniqArray(x)
 -----------------
-Creates an array from different argument values. Memory consumption is the same as for the 'uniqExact' function.
+Creates an array from different argument values. Memory consumption is the same as for the ``uniqExact`` function.
 
 quantile(level)(x)
 ------------------
-Approximates the 'level' quantile. 'level' is a constant, a floating-point number from 0 to 1. We recommend using a 'level' value in the range of ``0.01 .. 0.99``.
+Approximates the 'level' quantile. 'level' is a constant, a floating-point number from 0 to 1. We recommend using a 'level' value in the range of 0.01..0.99.
 Don't use a 'level' value equal to 0 or 1 - use the 'min' and 'max' functions for these cases.
 
-The algorithm is the same as for the 'median' function. Actually, 'quantile' and 'median' are internally the same function. You can use the 'quantile' function without parameters - in this case, it calculates the median, and you can use the 'median' function with parameters - in this case, it calculates the quantile of the set level.
+The algorithm is the same as for the ``median`` function. Actually, ``quantile`` and ``median`` are internally the same function. You can use the ``quantile`` function without parameters - in this case, it calculates the median, and you can use the ``median`` function with parameters - in this case, it calculates the quantile of the set level.
 
-When using multiple 'quantile' and 'median' functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the 'quantiles' function.
+When using multiple ``quantile` and ``median`` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the ``quantiles`` function.
 
 quantileDeterministic(level)(x, determinator)
 ---------------------------------------------
-Calculates the quantile of 'level' using the same algorithm as the 'medianDeterministic' function.
+Calculates the quantile of 'level' using the same algorithm as the ``medianDeterministic`` function.
 
 
 quantileTiming(level)(x)
 ------------------------
-Calculates the quantile of 'level' using the same algorithm as the 'medianTiming' function.
+Calculates the quantile of 'level' using the same algorithm as the ``medianTiming`` function.
 
 quantileTimingWeighted(level)(x, weight)
 ----------------------------------------
-Calculates the quantile of 'level' using the same algorithm as the 'medianTimingWeighted' function.
+Calculates the quantile of 'level' using the same algorithm as the ``medianTimingWeighted`` function.
 
 quantileExact(level)(x)
 -----------------------
-Computes the level quantile exactly. To do this, all transferred values are added to an array, which is then partially sorted. Therefore, the function consumes O (n) memory, where n is the number of transferred values. However, for a small number of values, the function is very effective.
+Computes the level quantile exactly. To do this, all transferred values are added to an array, which is then partially sorted. Therefore, the function consumes O(n) memory, where n is the number of transferred values. However, for a small number of values, the function is very effective.
 
 quantileExactWeighted(level)(x, weight)
 ---------------------------------------
@@ -132,7 +132,7 @@ The algorithm is a hash table. Because of this, in case the transmitted values �
 
 quantileTDigest(level)(x)
 -------------------------
-Computes the level quantile approximatively, using the t-digest algorithm. The maximum error is 1%. The memory consumption per state is proportional to the logarithm of the number of transmitted values.
+Computes the level quantile approximately, using the `t-digest <https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf>`_ algorithm. The maximum error is 1%. The memory consumption per state is proportional to the logarithm of the number of transmitted values.
 
 The performance of the function is below quantile, quantileTiming. By the ratio of state size and accuracy, the function is significantly better than quantile.
 
@@ -140,11 +140,11 @@ The result depends on the order in which the query is executed, and is nondeterm
 
 median
 ------
-Approximates the median. Also see the similar 'quantile' function.
+Approximates the median. Also see the similar ``quantile`` function.
 Works for numbers, dates, and dates with times.
 For numbers it returns Float64, for dates - a date, and for dates with times - a date with time.
 
-Uses reservoir sampling with a reservoir size up to 8192.
+Uses `reservoir sampling <https://en.wikipedia.org/wiki/Reservoir_sampling>`_ with a reservoir size up to 8192.
 If necessary, the result is output with linear approximation from the two neighboring values.
 This algorithm proved to be more practical than another well-known algorithm - QDigest.
 
@@ -171,12 +171,12 @@ In other words, dispersion for a set of values. Returns Float64.
 
 stddevSamp(x)
 -------------
-The result is equal to the square root of 'varSamp(x)'.
+The result is equal to the square root of ``varSamp(x)``.
 
 
 stddevPop(x)
 ------------
-The result is equal to the square root of 'varPop(x)'.
+The result is equal to the square root of ``varPop(x)``.
 
 
 covarSamp(x, y)
@@ -211,8 +211,12 @@ It returns UInt8 - 0 if the pattern isn't matched, or 1 if it matches.
 Example: ``sequenceMatch('(?1).*(?2)')(EventTime, URL LIKE '%company%', URL LIKE '%cart%')``
 - whether there was a chain of events in which pages with the address in company were visited earlier than pages with the address in cart.
 
-This is a degenerate example. You could write it using other aggregate functions:
-minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
+This is a simple example. You could write it using other aggregate functions:
+
+.. code-block:: sql
+
+    minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
+
 However, there is no such solution for more complex situations.
 
 Pattern syntax:
