@@ -1,6 +1,6 @@
 
 Documentation
------------------
+-------------
 
 .. toctree::
     :maxdepth: 6

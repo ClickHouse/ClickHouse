@@ -1,5 +1,5 @@
 Type conversion functions
-----------------------------
+-------------------------
 
 toUInt8, toUInt16, toUInt32, toUInt64
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -57,7 +57,7 @@ To get unix timestamp for string with datetime in specified time zone:
   toUnixTimestamp('2000-01-01 00:00:00', 'Asia/Yekaterinburg')
 
 toFixedString(s, N)
-~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
 Converts a String type argument to a FixedString(N) type (a string with fixed length N). N must be a constant. If the string has fewer bytes than N, it is passed with null bytes to the right. If the string has more bytes than N, an exception is thrown.
 
 toStringCutToZero(s)

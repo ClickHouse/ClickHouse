@@ -1,5 +1,5 @@
 arrayJoin function
----------------
+------------------
 This is a very unusual function.
 
 Normal functions don't change a set of rows, but just change the values in each row (map). Aggregate functions compress a set of rows (fold or reduce).

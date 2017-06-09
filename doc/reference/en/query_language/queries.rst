@@ -37,7 +37,7 @@ Creates a table with a structure like the result of the ``SELECT`` query, with t
 In all cases, if IF NOT EXISTS is specified, the query won't return an error if the table already exists. In this case, the query won't do anything.
 
 Default values
-"""""""""""""""""""""
+""""""""""""""
 The column description can specify an expression for a default value, in one of the following ways:
 ``DEFAULT expr``, ``MATERIALIZED expr``, ``ALIAS expr``.
 Example: ``URLDomain String DEFAULT domain(URL)``.
@@ -73,7 +73,7 @@ If you add a new column to a table but later change its default expression, the 
 It is not possible to set default values for elements in nested data structures.
 
 Temporary tables
-"""""""""""""""""
+""""""""""""""""
 In all cases, if TEMPORARY is specified, a temporary table will be created. Temporary tables have the following characteristics:
 - Temporary tables disappear when the session ends, including if the connection is lost.
 - A temporary table is created with the Memory engine. The other table engines are not supported.
@@ -84,7 +84,7 @@ In all cases, if TEMPORARY is specified, a temporary table will be created. Temp
 In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed (GLOBAL) IN. For more information, see the appropriate sections.
 
 CREATE VIEW
-~~~~~~~~~~~~
+~~~~~~~~~~~
 ``CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [ENGINE = engine] [POPULATE] AS SELECT ...``
 
 Creates a view. There are two types of views: normal and MATERIALIZED.
@@ -164,7 +164,7 @@ ALTER
 The ALTER query is only supported for *MergeTree type tables, as well as for Merge and Distributed types. The query has several variations.
 
 Column manipulations
-""""""""""""""""""""""""
+""""""""""""""""""""
 Lets you change the table structure. 
 ::
     ALTER TABLE [db].name ADD|DROP|MODIFY COLUMN ...
@@ -223,7 +223,7 @@ For tables that don't store data themselves (Merge and Distributed), ALTER just 
 The ALTER query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All ALTER queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
 Manipulations with partitions and parts
-""""""""""""""""""""""""""""""""""
+"""""""""""""""""""""""""""""""""""""""
 Only works for tables in the MergeTree family. The following operations are available:
 
 * ``DETACH PARTITION`` - Move a partition to the 'detached' directory and forget it.
@@ -328,7 +328,7 @@ In this way, data from the backup will be added to the table.
 Restoring from a backup doesn't require stopping the server.
 
 Backups and replication
-"""""""""""""""""""
+"""""""""""""""""""""""
 Replication provides protection from device failures. If all data disappeared on one of your replicas, follow the instructions in the "Restoration after failure" section to restore it.
 
 For protection from device failures, you must use replication. For more information about replication, see the section "Data replication".
@@ -351,7 +351,7 @@ Before downloading, the system checks that the partition exists and the table st
 The ALTER ... FETCH PARTITION query is not replicated. The partition will be downloaded to the 'detached' directory only on the local server. Note that if after this you use the ALTER TABLE ... ATTACH query to add data to the table, the data will be added on all replicas (on one of the replicas it will be added from the 'detached' directory, and on the rest it will be loaded from neighboring replicas).
 
 Synchronicity of ALTER queries
-"""""""""""""""""""""""""""
+""""""""""""""""""""""""""""""
 For non-replicatable tables, all ALTER queries are performed synchronously. For replicatable tables, the query just adds instructions for the appropriate actions to ZooKeeper, and the actions themselves are performed as soon as possible. However, the query can wait for these actions to be completed on all the replicas.
 
 For ``ALTER ... ATTACH|DETACH|DROP`` queries, you can use the ``'replication_alter_partitions_sync'`` setting to set up waiting.
@@ -1030,7 +1030,7 @@ GROUP BY is not supported for array columns.
 A constant can't be specified as arguments for aggregate functions. Example: sum(1). Instead of this, you can get rid of the constant. Example: ``count()``.
 
 WITH TOTALS modifier
-^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^
 
 If the WITH TOTALS modifier is specified, another row will be calculated. This row will have key columns containing default values (zeros or empty lines), and columns of aggregate functions with the values calculated across all the rows (the "total" values).
 
@@ -1056,7 +1056,7 @@ If 'max_rows_to_group_by' and 'group_by_overflow_mode = 'any'' are not used, all
 You can use WITH TOTALS in subqueries, including subqueries in the JOIN clause. In this case, the respective total values are combined.
 
 external memory GROUP BY
-^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 It is possible to turn on spilling temporary data to disk to limit memory consumption during the execution of GROUP BY. Value of ``max_bytes_before_external_group_by`` setting determines the maximum memory consumption before temporary data is dumped to the file system. If it is 0 (the default value), the feature is turned off.
 
@@ -1071,7 +1071,7 @@ If external aggregation is turned on and total memory consumption was less than 
 If you have an ORDER BY clause with some small LIMIT after a GROUP BY, then ORDER BY will not consume significant amount of memory. But if no LIMIT is provided, don't forget to turn on external sorting (``max_bytes_before_external_sort``).
 
 LIMIT N BY modifier
-^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^
 
 LIMIT ``N`` BY ``COLUMNS`` allows you to restrict top ``N`` rows per each group of ``COLUMNS``. ``LIMIT N BY`` is unrelated to ``LIMIT`` clause. Key for ``LIMIT N BY`` could contain arbitrary number of columns or expressions.
 
@@ -1255,7 +1255,7 @@ Example:
 A subquery in the IN clause is always run just one time on a single server. There are no dependent subqueries.
 
 Distributed subqueries
-"""""""""""""""""""""""""
+""""""""""""""""""""""
 
 There are two versions of INs with subqueries (and for JOINs): the regular ``IN`` / ``JOIN``, and ``GLOBAL IN`` / ``GLOBAL JOIN``. They differ in how they are run for distributed query processing.
 
@@ -1349,7 +1349,7 @@ This is more optimal than using the normal IN. However, keep the following point
 It also makes sense to specify a local table in the GLOBAL IN clause, in case this local table is only available on the requestor server and you want to use data from it on remote servers.
 
 Extreme values
-""""""""""""""""""""""
+""""""""""""""
 
 In addition to results, you can also get minimum and maximum values for the results columns. To do this, set the 'extremes' setting to '1'. Minimums and maximums are calculated for numeric types, dates, and dates with times. For other columns, the default values are output.
 
@@ -1360,7 +1360,7 @@ In JSON* formats, the extreme values are output in a separate 'extremes' field. 
 Extreme values are calculated for rows that have passed through LIMIT. However, when using 'LIMIT offset, size', the rows before 'offset' are included in 'extremes'. In stream requests, the result may also include a small number of rows that passed through LIMIT.
 
 Notes
-"""""""""
+"""""
 
 The GROUP BY and ORDER BY clauses do not support positional arguments. This contradicts MySQL, but conforms to standard SQL.
 For example, ``'GROUP BY 1, 2'`` will be interpreted as grouping by constants (i.e. aggregation of all rows into one).

@@ -1,5 +1,5 @@
 Usage in Yandex.Metrica and other Yandex services
-------------------------------------------
+-------------------------------------------------
 
 ClickHouse is used for multiple purposes in Yandex.Metrica. Its main task is to build reports in online mode using non-aggregated data. It uses a cluster of 374 servers, which store over 20.3 trillion rows in the database. The volume of compressed data, without counting duplication and replication, is about 2 PB. The volume of uncompressed data (in TSV format) would be approximately 17 PB.
 

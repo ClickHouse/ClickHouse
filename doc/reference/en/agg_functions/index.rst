@@ -1,5 +1,5 @@
 Aggregate functions
-==================
+===================
 
 count()
 -------
@@ -28,7 +28,7 @@ min(x)
 Calculates the minimum.
 
 max(x)
------
+------
 Calculates the maximum
 
 argMin(arg, val)
@@ -36,11 +36,11 @@ argMin(arg, val)
 Calculates the 'arg' value for a minimal 'val' value. If there are several different values of 'arg' for minimal values of 'val', the first of these values encountered is output.
 
 argMax(arg, val)
----------------
+----------------
 Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
 
 sum(x)
--------
+------
 Calculates the sum.
 Only works for numbers.
 
@@ -51,7 +51,7 @@ Only works for numbers.
 The result is always Float64.
 
 uniq(x)
---------
+-------
 Calculates the approximate number of different values of the argument. Works for numbers, strings, dates, and dates with times.
 
 Uses an adaptive sampling algorithm: for the calculation state, it uses a sample of element hash values with a size up to 65535.
@@ -62,7 +62,7 @@ There is no compensation for the bias of an estimate, so for large data sets the
 The result is determinate (it doesn't depend on the order of query execution).
 
 uniqCombined(x)
---------------
+---------------
 Approximately computes the number of different values ​​of the argument. Works for numbers, strings, dates, date-with-time, for several arguments and arguments-tuples.
 
 A combination of three algorithms is used: an array, a hash table and HyperLogLog with an error correction table. The memory consumption is several times smaller than the uniq function, and the accuracy is several times higher. The speed of operation is slightly lower than that of the uniq function, but sometimes it can be even higher - in the case of distributed requests, in which a large number of aggregation states are transmitted over the network. The maximum state size is 96 KiB (HyperLogLog of 217 6-bit cells).
@@ -88,7 +88,7 @@ You should use the 'uniqExact' function if you definitely need an exact result.
 The 'uniqExact' function uses more memory than the 'uniq' function, because the size of the state has unbounded growth as the number of different values increases.
 
 groupArray(x)
-------------
+-------------
 Creates an array of argument values.
 Values can be added to the array in any (indeterminate) order.
 
@@ -108,30 +108,30 @@ The algorithm is the same as for the 'median' function. Actually, 'quantile' and
 When using multiple 'quantile' and 'median' functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the 'quantiles' function.
 
 quantileDeterministic(level)(x, determinator)
---------------
+---------------------------------------------
 Calculates the quantile of 'level' using the same algorithm as the 'medianDeterministic' function.
 
 
 quantileTiming(level)(x)
----------------
+------------------------
 Calculates the quantile of 'level' using the same algorithm as the 'medianTiming' function.
 
 quantileTimingWeighted(level)(x, weight)
----------------
+----------------------------------------
 Calculates the quantile of 'level' using the same algorithm as the 'medianTimingWeighted' function.
 
 quantileExact(level)(x)
-------------
+-----------------------
 Computes the level quantile exactly. To do this, all transferred values are added to an array, which is then partially sorted. Therefore, the function consumes O (n) memory, where n is the number of transferred values. However, for a small number of values, the function is very effective.
 
 quantileExactWeighted(level)(x, weight)
-----------------
+---------------------------------------
 Computes the level quantile exactly. In this case, each value is taken into account with the weight weight - as if it is present weight once. The arguments of the function can be considered as histograms, where the value "x" corresponds to the "column" of the histogram of the height weight, and the function itself can be considered as the summation of histograms.
 
 The algorithm is a hash table. Because of this, in case the transmitted values ​​are often repeated, the function consumes less RAM than the quantileExact. You can use this function instead of quantileExact, specifying the number 1 as the weight.
 
 quantileTDigest(level)(x)
--------------
+-------------------------
 Computes the level quantile approximatively, using the t-digest algorithm. The maximum error is 1%. The memory consumption per state is proportional to the logarithm of the number of transmitted values.
 
 The performance of the function is below quantile, quantileTiming. By the ratio of state size and accuracy, the function is significantly better than quantile.
@@ -151,12 +151,12 @@ This algorithm proved to be more practical than another well-known algorithm - Q
 The result depends on the order of running the query, and is nondeterministic.
 
 quantiles(level1, level2, ...)(x)
----------------
+---------------------------------
 Approximates quantiles of all specified levels.
 The result is an array containing the corresponding number of values.
 
 varSamp(x)
---------
+----------
 Calculates the amount Σ((x - x̅)2) / (n - 1), where 'n' is the sample size and 'x̅' is the average value of 'x'.
 
 It represents an unbiased estimate of the variance of a random variable, if the values passed to the function are a sample of this random amount.
@@ -170,35 +170,35 @@ Calculates the amount Σ((x - x̅)2) / n, where 'n' is the sample size and 'x̅'
 In other words, dispersion for a set of values. Returns Float64.
 
 stddevSamp(x)
------------
+-------------
 The result is equal to the square root of 'varSamp(x)'.
 
 
 stddevPop(x)
----------
+------------
 The result is equal to the square root of 'varPop(x)'.
 
 
 covarSamp(x, y)
-----------
+---------------
 Calculates the value of Σ((x - x̅)(y - y̅)) / (n - 1).
 
 Returns Float64. If n <= 1, it returns +∞.
 
 covarPop(x, y)
-----------
+--------------
 Calculates the value of Σ((x - x̅)(y - y̅)) / n.
 
 corr(x, y)
----------
+----------
 Calculates the Pearson correlation coefficient: Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)2) * Σ((y - y̅)2)).
 
 Parametric aggregate functions
-================
+==============================
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters - constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
 sequenceMatch(pattern)(time, cond1, cond2, ...)
-------------
+-----------------------------------------------
 Pattern matching for event chains.
 
 'pattern' is a string containing a pattern to match. The pattern is similar to a regular expression.
@@ -226,12 +226,12 @@ Any number may be specified in place of 1800.
 Events that occur during the same second may be put in the chain in any order. This may affect the result of the function.
 
 sequenceCount(pattern)(time, cond1, cond2, ...)
-------------------
+-----------------------------------------------
 Similar to the sequenceMatch function, but it does not return the fact that there is a chain of events, and UInt64 is the number of strings found.
 Chains are searched without overlapping. That is, the following chain can start only after the end of the previous one.
 
 uniqUpTo(N)(x)
--------------
+--------------
 Calculates the number of different argument values, if it is less than or equal to N.
 If the number of different argument values is greater than N, it returns N + 1.
 
@@ -247,12 +247,12 @@ Problem: Generate a report that shows only keywords that produced at least 5 uni
 Solution: Write in the query ``GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5``
 
 Aggregate function combinators
-=======================
+==============================
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 There are ``If`` and ``Array`` combinators. See the sections below.
 
--If combinator. Conditional aggregate functions
----------------------
+If combinator. Conditional aggregate functions
+----------------------------------------------
 The suffix ``-If`` can be appended to the name of any aggregate function. In this case, the aggregate function accepts an extra argument - a condition (Uint8 type). The aggregate function processes only the rows that trigger the condition. If the condition was not triggered even once, it returns a default value (usually zeros or empty strings).
 
 Examples: ``sumIf(column, cond)``, ``countIf(cond)``, ``avgIf(x, cond)``, ``quantilesTimingIf(level1, level2)(x, cond)``, ``argMinIf(arg, val, cond)`` and so on.
@@ -260,8 +260,8 @@ Examples: ``sumIf(column, cond)``, ``countIf(cond)``, ``avgIf(x, cond)``, ``quan
 You can use aggregate functions to calculate aggregates for multiple conditions at once, without using subqueries and JOINs.
 For example, in Yandex.Metrica, we use conditional aggregate functions for implementing segment comparison functionality.
 
--Array combinator. Aggregate functions for array arguments
------------------
+Array combinator. Aggregate functions for array arguments
+---------------------------------------------------------
 The -Array suffix can be appended to any aggregate function. In this case, the aggregate function takes arguments of the 'Array(T)' type (arrays) instead of 'T' type arguments. If the aggregate function accepts multiple arguments, this must be arrays of equal lengths. When processing arrays, the aggregate function works like the original aggregate function across all array elements.
 
 Example 1: ``sumArray(arr)`` - Totals all the elements of all 'arr' arrays. In this example, it could have been written more simply: sum(arraySum(arr)).
@@ -271,14 +271,14 @@ Example 2: ``uniqArray(arr)`` - Count the number of unique elements in all 'arr'
 The ``-If`` and ``-Array`` combinators can be used together. However, 'Array' must come first, then 'If'. 
 Examples: ``uniqArrayIf(arr, cond)``,  ``quantilesTimingArrayIf(level1, level2)(arr, cond)``. Due to this order, the 'cond' argument can't be an array.
 
--State combinator
-------------
+State combinator
+----------------
 If this combinator is used, the aggregate function returns a non-completed/non-finished value (for example, in the case of the ``uniq`` function, the number of unique values), and the intermediate aggregation state (for example, in the case of the ``uniq`` function, a hash table for calculating the number of unique values), which has type of ``AggregateFunction(...)`` and can be used for further processing or can be saved to a table for subsequent pre-aggregation - see the sections "AggregatingMergeTree" and "functions for working with intermediate aggregation states".
 
--Merge combinator
-------------
+Merge combinator
+----------------
 In the case of using this combinator, the aggregate function will take as an argument the intermediate state of an aggregation, pre-aggregate (combine together) these states, and return the finished/complete value.
 
--MergeState combinator
-----------------
+MergeState combinator
+---------------------
 Merges the intermediate aggregation states, similar to the -Merge combinator, but returns a non-complete value, but an intermediate aggregation state, similar to the -State combinator.

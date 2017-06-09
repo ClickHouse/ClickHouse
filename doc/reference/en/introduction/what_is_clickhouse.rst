@@ -1,5 +1,5 @@
 What is ClickHouse?
-====================
+===================
 
 ClickHouse is a columnar DBMS for OLAP.
 
@@ -104,8 +104,8 @@ Since executing a query requires processing a large number of rows, it helps to 
 It makes sense to both store data in columns and process it, when possible, by columns.
 
 There are two ways to do this:
-1. A vector engine. All operations are written for vectors, instead of for separate values. This means you don't need to call operations very often, and dispatching costs are negligible. Operation code contains an optimized internal cycle.
-2. Code generation. The code generated for the query has all the indirect calls in it.
+#. A vector engine. All operations are written for vectors, instead of for separate values. This means you don't need to call operations very often, and dispatching costs are negligible. Operation code contains an optimized internal cycle.
+#. Code generation. The code generated for the query has all the indirect calls in it.
 
 This is not done in "normal" databases, because it doesn't make sense when running simple queries. However, there are exceptions. For example, MemSQL uses code generation to reduce latency when processing SQL queries. (For comparison, analytical DBMSs require optimization of throughput, not latency.)
 

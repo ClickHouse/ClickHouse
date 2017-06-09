@@ -1,5 +1,5 @@
 Functions for searching and replacing in strings
----------------------------------
+------------------------------------------------
 
 replaceOne(haystack, pattern, replacement)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

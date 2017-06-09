@@ -1,5 +1,5 @@
 Internal dictionaries
-------------------
+---------------------
 
 ClickHouse contains a built-in feature for working with a geobase.
 
@@ -9,7 +9,7 @@ This allows you to:
  * Check whether a region is part of another region.
  * Get a chain of parent regions.
 
-All the functions support "translocality," the ability to simultaneously use different perspectives on region ownership. For more information, see the section "Functions for working with Yandex.Metrica dictionaries".
+All the functions support "translocality", the ability to simultaneously use different perspectives on region ownership. For more information, see the section "Functions for working with Yandex.Metrica dictionaries".
 
 The internal dictionaries are disabled in the default package.
 To enable them, uncomment the parameters ``path_to_regions_hierarchy_file`` and ``path_to_regions_names_files`` in the server config file.

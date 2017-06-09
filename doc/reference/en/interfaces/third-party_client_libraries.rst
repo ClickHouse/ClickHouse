@@ -1,5 +1,5 @@
 Third-party client libraries
---------------------------------------
+----------------------------
 
 There exist third-party client libraries for ClickHouse:
 

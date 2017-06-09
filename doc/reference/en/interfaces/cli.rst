@@ -1,5 +1,5 @@
 Command-line client
------------------------
+-------------------
 To work for command line you can use ``clickhouse-client``:
 ::
     $ clickhouse-client

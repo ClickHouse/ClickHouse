@@ -1,5 +1,5 @@
 The Yandex.Metrica task
-----------------------------------
+-----------------------
 
 ClickHouse currently powers `Yandex.Metrica <https://metrica.yandex.com/>`_, world's `second largest <http://w3techs.com/technologies/overview/traffic_analysis/all>`_ web analytics platform, with over 13 trillion database records and over 20 billion events a day, generating customized reports on the fly directly from non-aggregated data.
 
@@ -7,7 +7,7 @@ We need to get custom reports based on hits and sessions, with custom segments s
 At this time (April 2014), Yandex.Metrica receives approximately 12 billion events (pageviews and mouse clicks) daily. All these events must be stored in order to build custom reports. A single query may require scanning hundreds of millions of rows over a few seconds, or millions of rows in no more than a few hundred milliseconds.
 
 Aggregated and non-aggregated data
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 There is a popular opinion that in order to effectively calculate statistics, you must aggregate data, since this reduces the volume of data.
 
 But data aggregation is a very limited solution, for the following reasons:

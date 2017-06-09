@@ -1,5 +1,5 @@
 Set
-----
+---
 
 A data set that is always in RAM. It is intended for use on the right side of the IN operator (see the section "IN operators").
 

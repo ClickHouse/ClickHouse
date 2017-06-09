@@ -1,5 +1,5 @@
 Data replication
------------------
+----------------
 
 ReplicatedMergeTree
 ~~~~~~~~~~~~~~~~~~~
@@ -66,7 +66,7 @@ You can have any number of replicas of the same data. Yandex.Metrica uses double
 The system monitors data synchronicity on replicas and is able to recover after a failure. Failover is automatic (for small differences in data) or semi-automatic (when data differs too much, which may indicate a configuration error).
 
 Creating replicated tables
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The ``'Replicated'`` prefix is added to the table engine name. For example, ``ReplicatedMergeTree``.
 
@@ -106,7 +106,7 @@ If you add a new replica after the table already contains some data on other rep
 To delete a replica, run DROP TABLE. However, only one replica is deleted - the one that resides on the server where you run the query.
 
 Recovery after failures
-~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
 
 If ZooKeeper is unavailable when a server starts, replicated tables switch to read-only mode. The system periodically attempts to connect to ZooKeeper.
 
@@ -129,7 +129,7 @@ To start recovery, create the node ``/path_to_table/replica_name/flags/force_res
 Then launch the server. On start, the server deletes these flags and starts recovery.
 
 Recovery after complete data loss
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If all data and metadata disappeared from one of the servers, follow these steps for recovery:
 

@@ -1,5 +1,5 @@
 Functions for working with arrays
------------------------------
+---------------------------------
 
 empty
 ~~~~~
@@ -20,38 +20,38 @@ The result type is UInt64.
 The function also works for strings.
 
 emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64
-~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 emptyArrayInt8, emptyArrayInt16, emptyArrayInt32, emptyArrayInt64
-~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 emptyArrayFloat32, emptyArrayFloat64
-~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 emptyArrayDate, emptyArrayDateTime
-~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 emptyArrayString
-~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~
 Accepts zero arguments and returns an empty array of the appropriate type.
 
 emptyArrayToSingle
-~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 Accepts an empty array as argument and returns an array of one element equal to the default value.
 
 range(N)
-~~~~~~~
+~~~~~~~~
 Returns an array of numbers from 0 to N-1.
 Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
 
 array(x1, ...), оператор [x1, ...]
-~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Creates an array from the function arguments.
 The arguments must be constants and have types that have the smallest common type. At least one argument must be passed, because otherwise it isn't clear which type of array to create. That is, you can't use this function to create an empty array (to do that, use the 'emptyArray*' function described above).
 Returns an 'Array(T)' type result, where 'T' is the smallest common type out of the passed arguments.
 
 arrayElement(arr, n), оператор arr[n]
-~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Get the element with the index 'n' from the array 'arr'.
 'n' should be any integer type.
 Indexes in an array begin from one.
@@ -62,21 +62,21 @@ If the index goes beyond the array bounds:
 - otherwise, a default value is returned (0 for numbers, an empty string for strings, etc.).
 
 has(arr, elem)
-~~~~~~~~~~~
+~~~~~~~~~~~~~~
 Checks whether the 'arr' array has the 'elem' element.
 Returns 0 if the the element is not in the array, or 1 if it is.
 'elem' must be a constant.
 
 indexOf(arr, x)
-~~~~~~~~~~
+~~~~~~~~~~~~~~~
 Returns the index of the 'x' element (starting from 1) if it is in the array, or 0 if it is not.
 
 countEqual(arr, x)
-~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 Returns the number of elements in the array equal to 'x'. Equivalent to ``arrayCount(elem -> elem = x, arr)``.
 
 arrayEnumerate(arr)
-~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
 Returns the array ``[1, 2, 3, ..., length(arr)]``
 
 This function is normally used together with ARRAY JOIN. It allows counting something just once for each array after applying ARRAY JOIN. Example:
@@ -114,7 +114,7 @@ In this example, Reaches is the number of conversions (the strings received afte
 This function can also be used in higher-order functions. For example, you can use it to get array indexes for elements that match a condition.
 
 arrayEnumerateUniq(arr, ...)
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Returns an array the same size as the source array, indicating for each element what its position is among elements with the same value.
 For example: ``arrayEnumerateUniq([10, 20, 10, 30]) = [1,  1,  2,  1]``.
 
@@ -172,5 +172,5 @@ If multiple arrays of the same size are passed as arguments to the function, ret
 If you need an array of the unique elements, you can use ``arrayReduce('groupUniqArray', arr)``.
 
 arrayJoin(arr)
-~~~~~~~~
+~~~~~~~~~~~~~~
 A special function. See the section "arrayJoin function".

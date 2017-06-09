@@ -1,8 +1,8 @@
 Getting started
-=============
+===============
     
 System requirements
------------------
+-------------------
 
 This is not a cross-platform system. It requires Linux Ubuntu Precise (12.04) or newer, x86_64 architecture with SSE 4.2 instruction set.
 To test for SSE 4.2 support, do:
@@ -13,12 +13,12 @@ We recommend using Ubuntu Trusty or Ubuntu Xenial or Ubuntu Precise.
 The terminal must use UTF-8 encoding (the default in Ubuntu).
 
 Installation
------------------
+------------
 
 For testing and development, the system can be installed on a single server or on a desktop computer.
 
 Installing from packages
-~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 In `/etc/apt/sources.list` (or in a separate `/etc/apt/sources.list.d/clickhouse.list` file), add the repository: 
 ::
@@ -41,7 +41,7 @@ ClickHouse contains access restriction settings. They are located in the 'users.
 By default, access is allowed from everywhere for the default user without a password. See 'user/default/networks'. For more information, see the section "Configuration files".
 
 Installing from source
-~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 To build, follow the instructions in build.md (for Linux) or in build_osx.md (for Mac OS X).
 
 You can compile packages and install them. You can also use programs without installing packages.
@@ -60,14 +60,14 @@ Run 'chown' for the desired user.
 Note the path to logs in the server config (src/dbms/src/Server/config.xml).
 
 Other methods of installation
-~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The Docker image is located here: https://hub.docker.com/r/yandex/clickhouse-server/
 
 There is Gentoo overlay located here: https://github.com/kmeaw/clickhouse-overlay
 
 
 Launch
--------
+------
 
 To start the server (as a daemon), run:
 ::

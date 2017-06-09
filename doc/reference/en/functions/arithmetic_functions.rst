@@ -1,5 +1,5 @@
 Arithmetic functions
-======================
+====================
 
 For all arithmetic functions, the result type is calculated as the smallest number type that the result fits in, if there is such a type. The minimum is taken simultaneously based on the number of bits, whether it is signed, and whether it floats. If there are not enough bits, the highest bit type is taken.
 
@@ -34,7 +34,7 @@ multiply(a, b), a * b operator
 Calculates the product of the numbers.
 
 divide(a, b), a / b operator
------------------------------
+----------------------------
 Calculates the quotient of the numbers. The result type is always a floating-point type.
 It is not integer division. For integer division, use the 'intDiv' function.
 When dividing by zero you get 'inf', '-inf', or 'nan'.
