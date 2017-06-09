@@ -83,6 +83,11 @@ Block MergeSortingBlockInputStream::readImpl()
                 removeConstantsFromSortDescription(sample_block, description);
             }
 
+            /// If there were only const columns in sort description, then there is no need to sort.
+            /// Return the blocks as is.
+            if (description.empty())
+                return block;
+
             removeConstantsFromBlock(block);
 
             blocks.push_back(block);
