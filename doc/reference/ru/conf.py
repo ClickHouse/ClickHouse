@@ -128,7 +128,8 @@ html_theme_options = {
         ('Switch to English <img id="svg-flag" src="/docs/ru/_static/en.svg" width="20" height="12" />', '/docs/en/'),
         ('Документация на одной странице', '/docs/ru/single/'),
         ('Главная страница сайта', '/'),
-        ('GitHub', 'https://github.com/yandex/ClickHouse'),
+        ('Репозиторий ClickHouse', 'https://github.com/yandex/ClickHouse'),
+        ('Редактировать страницу', '#edit'),
     ])
 }
 
@@ -290,3 +291,6 @@ texinfo_documents = [
 
 # If true, do not generate a @detailmenu in the "Top" node's menu.
 #texinfo_no_detailmenu = False
+
+def setup(app):
+    app.add_javascript('custom.js')
