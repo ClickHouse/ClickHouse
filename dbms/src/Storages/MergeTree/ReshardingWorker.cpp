@@ -420,16 +420,12 @@ void ReshardingWorker::trackAndPerform()
             else
                 LOG_ERROR(log, ex.message());
         }
-        catch (const std::exception & ex)
-        {
-            LOG_ERROR(log, ex.what());
-        }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        while (true)
+        while (!must_stop)
         {
             try
             {
@@ -460,10 +456,6 @@ void ReshardingWorker::trackAndPerform()
                 else
                     LOG_ERROR(log, ex.message());
             }
-            catch (const std::exception & ex)
-            {
-                LOG_ERROR(log, ex.what());
-            }
             catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -475,13 +467,9 @@ void ReshardingWorker::trackAndPerform()
         if (ex.code() != ErrorCodes::ABORTED)
             error_msg = ex.message();
     }
-    catch (const std::exception & ex)
-    {
-        error_msg = ex.what();
-    }
     catch (...)
     {
-        error_msg = "unspecified";
+        error_msg = getCurrentExceptionMessage(false);
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
@@ -769,18 +757,10 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
             LOG_ERROR(log, dumped_coordinator_state);
         throw;
     }
-    catch (const std::exception & ex)
-    {
-        /// An error has occurred on this performer.
-        handle_exception("Resharding job cancelled", ex.what());
-        if (current_job.isCoordinated())
-            LOG_ERROR(log, dumped_coordinator_state);
-        throw;
-    }
     catch (...)
     {
         /// An error has occurred on this performer.
-        handle_exception("Resharding job cancelled", "An unspecified error has occurred");
+        handle_exception("Resharding job cancelled", getCurrentExceptionMessage(false));
         if (current_job.isCoordinated())
             LOG_ERROR(log, dumped_coordinator_state);
         throw;
