@@ -12,7 +12,7 @@ protocol
 Возвращает протокол. Примеры: http, ftp, mailto, magnet...
 
 domain
-"""""""
+""""""
 Возвращает домен.
 
 domainWithoutWWW
