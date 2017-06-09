@@ -5,7 +5,7 @@ Contains information and status for replicated tables residing on the local serv
 
 Example:
 
-.. code-block:: sql
+..
 
   SELECT *
   FROM system.replicas
@@ -34,8 +34,8 @@ Example:
   total_replicas:     2
   active_replicas:    2
 
-Столбцы:
-::
+Columns:
+..
   database:          Database name.
   table:              Table name.
   engine:             Table engine name.

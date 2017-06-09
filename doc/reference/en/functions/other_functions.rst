@@ -76,7 +76,9 @@ The band is drawn with accuracy to one eighth of a symbol. Example:
   FROM test.hits
   GROUP BY h
   ORDER BY h ASC
-  
+
+..
+
   ┌──h─┬──────c─┬─bar────────────────┐
   │  0 │ 292907 │ █████████▋         │
   │  1 │ 180563 │ ██████             │
@@ -142,7 +144,9 @@ Example:
   WHERE SearchEngineID != 0
   GROUP BY title
   ORDER BY c DESC
-  
+
+..
+
   ┌─title─────┬──────c─┐
   │ Яндекс    │ 498635 │
   │ Google    │ 229872 │
@@ -170,7 +174,9 @@ Example:
   GROUP BY domain(Referer)
   ORDER BY count() DESC
   LIMIT 10
-  
+
+..
+
   ┌─s──────────────┬───────c─┐
   │                │ 2906259 │
   │ www.yandex     │  867767 │
@@ -195,7 +201,9 @@ Example:
   SELECT
       arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
       formatReadableSize(filesize_bytes) AS filesize
-  
+
+..
+
   ┌─filesize_bytes─┬─filesize───┐
   │              1 │ 1.00 B     │
   │           1024 │ 1.00 KiB   │
@@ -249,7 +257,9 @@ Example:
       ORDER BY EventTime ASC
       LIMIT 5
   )
-  
+
+..
+
   ┌─EventID─┬───────────EventTime─┬─delta─┐
   │    1106 │ 2016-11-24 00:00:04 │     0 │
   │    1107 │ 2016-11-24 00:00:05 │     1 │

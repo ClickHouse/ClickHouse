@@ -4,7 +4,8 @@ Queries
 CREATE DATABASE
 ~~~~~~~~~~~~~~~
 Creates the 'db_name' database.
-::
+.. code-block:: sql
+
     CREATE DATABASE [IF NOT EXISTS] db_name
 
 A database is just a directory for tables.
@@ -13,7 +14,8 @@ If "IF NOT EXISTS" is included, the query won't return an error if the database 
 CREATE TABLE
 ~~~~~~~~~~~~
 The ``CREATE TABLE`` query can have several forms.
-::
+.. code-block:: sql
+
     CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name
     (
         name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -25,11 +27,13 @@ Creates a table named 'name' in the 'db' database or the current database if 'db
 
 A column description is ``name type`` in the simplest case. For example: ``RegionID UInt32``.
 Expressions can also be defined for default values (see below).
-::
+.. code-block:: sql
+
     CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the 'db2.name2' table.
-::
+.. code-block:: sql
+
     CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 
 Creates a table with a structure like the result of the ``SELECT`` query, with the 'engine' engine, and fills it with data from SELECT.
@@ -92,14 +96,17 @@ Creates a view. There are two types of views: normal and MATERIALIZED.
 Normal views don't store any data, but just perform a read from another table. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the FROM clause.
 
 As an example, assume you've created a view:
-::
+.. code-block:: sql
+
     CREATE VIEW view AS SELECT ...
 and written a query:
-::
+.. code-block:: sql
+
     SELECT a, b, c FROM view
     
 This query is fully equivalent to using the subquery:
-::
+.. code-block:: sql
+
     SELECT a, b, c FROM (SELECT ...)
 
 Materialized views store data transformed by the corresponding SELECT query.
@@ -130,21 +137,24 @@ This query is used when starting the server. The server stores table metadata as
 DROP
 ~~~~
 This query has two types: ``DROP DATABASE`` and ``DROP TABLE``.
-::
+.. code-block:: sql
+
     DROP DATABASE [IF EXISTS] db
 
 Deletes all tables inside the 'db' database, then deletes the 'db' database itself.
 If IF EXISTS is specified, it doesn't return an error if the database doesn't exist.
-::
+.. code-block:: sql
+
     DROP TABLE [IF EXISTS] [db.]name
 
 Deletes the table.
-If IF EXISTS is specified, it doesn't return an error if the table doesn't exist or the database doesn't exist.
+If ``IF EXISTS`` is specified, it doesn't return an error if the table doesn't exist or the database doesn't exist.
 
 DETACH
 ~~~~~~
 Deletes information about the table from the server. The server stops knowing about the table's existence.
-::
+.. code-block:: sql
+
     DETACH TABLE [IF EXISTS] [db.]name
 
 This does not delete the table's data or metadata. On the next server launch, the server will read the metadata and find out about the table again. Similarly, a "detached" table can be re-attached using the ATTACH query (with the exception of system tables, which do not have metadata stored for them).
@@ -154,7 +164,8 @@ There is no DETACH DATABASE query.
 RENAME
 ~~~~~~
 Renames one or more tables.
-::
+.. code-block:: sql
+
     RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ...
 
  All tables are renamed under global locking. Renaming tables is a light operation. If you indicated another database after TO, the table will be moved to this database. However, the directories with databases must reside in the same file system (otherwise, an error is returned).
@@ -166,13 +177,15 @@ The ALTER query is only supported for *MergeTree type tables, as well as for Mer
 Column manipulations
 """"""""""""""""""""
 Lets you change the table structure. 
-::
+.. code-block:: sql
+
     ALTER TABLE [db].name ADD|DROP|MODIFY COLUMN ...
 
 In the query, specify a list of one or more comma-separated actions. Each action is an operation on a column.
 
 The following actions are supported:
-::
+.. code-block:: sql
+
     ADD COLUMN name [type] [default_expr] [AFTER name_after]
 
 Adds a new column to the table with the specified name, type, and default expression (see the section "Default expressions"). If you specify 'AFTER name_after' (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, 'name_after' can be the name of a column that is added in one of the previous actions.
@@ -248,7 +261,8 @@ Another way to view a set of parts and partitions is to go into the directory wi
 The directory with data is
 /var/lib/clickhouse/data/database/table/,
 where /var/lib/clickhouse/ is the path to ClickHouse data, 'database' is the database name, and 'table' is the table name. Example:
-::
+.. code-block:: bash
+
     $ ls -l /var/lib/clickhouse/data/test/visits/
     total 48
     drwxrwxrwx 2 clickhouse clickhouse 20480 мая   13 02:58 20140317_20140323_2_2_0
@@ -271,8 +285,9 @@ Each part corresponds to a single partition and contains data for a single month
 On an operating server, you can't manually change the set of parts or their data on the file system, since the server won't know about it. For non-replicated tables, you can do this when the server is stopped, but we don't recommended it. For replicated tables, the set of parts can't be changed in any case.
 
 The 'detached' directory contains parts that are not used by the server - detached from the table using the ALTER ... DETACH query. Parts that are damaged are also moved to this directory, instead of deleting them. You can add, delete, or modify the data in the 'detached' directory at any time - the server won't know about this until you make the ALTER TABLE ... ATTACH query.
-::
-ALTER TABLE [db.]table DETACH PARTITION 'name'
+.. code-block:: sql
+
+    ALTER TABLE [db.]table DETACH PARTITION 'name'
 
 Move all data for partitions named 'name' to the 'detached' directory and forget about them.
 The partition name is specified in YYYYMM format. It can be indicated in single quotes or without them.
@@ -280,11 +295,13 @@ The partition name is specified in YYYYMM format. It can be indicated in single 
 After the query is executed, you can do whatever you want with the data in the 'detached' directory — delete it from the file system, or just leave it.
 
 The query is replicated - data will be moved to the 'detached' directory and forgotten on all replicas. The query can only be sent to a leader replica. To find out if a replica is a leader, perform SELECT to the 'system.replicas' system table. Alternatively, it is easier to make a query on all replicas, and all except one will throw an exception.
-::
+.. code-block:: sql
+
     ALTER TABLE [db.]table DROP PARTITION 'name'
 
 Similar to the DETACH operation. Deletes data from the table. Data parts will be tagged as inactive and will be completely deleted in approximately 10 minutes. The query is replicated - data will be deleted on all replicas.
-::
+.. code-block:: sql
+
     ALTER TABLE [db.]table ATTACH PARTITION|PART 'name'
 
 Adds data to the table from the 'detached' directory.
@@ -294,7 +311,8 @@ It is possible to add data for an entire partition or a separate part. For a par
 The query is replicated. Each replica checks whether there is data in the 'detached' directory. If there is data, it checks the integrity, verifies that it matches the data on the server that initiated the query, and then adds it if everything is correct. If not, it downloads data from the query requestor replica, or from another replica where the data has already been added.
 
 So you can put data in the 'detached' directory on one replica, and use the ALTER ... ATTACH query to add it to the table on all replicas.
-::
+.. code-block:: sql
+
     ALTER TABLE [db.]table FREEZE PARTITION 'name'
 
 Creates a local backup of one or multiple partitions. The name can be the full name of the partition (for example, 201403), or its prefix (for example, 2014) - then the backup will be created for all the corresponding partitions.
@@ -334,7 +352,8 @@ Replication provides protection from device failures. If all data disappeared on
 For protection from device failures, you must use replication. For more information about replication, see the section "Data replication".
 
 Backups protect against human error (accidentally deleting data, deleting the wrong data or in the wrong cluster, or corrupting data). For high-volume databases, it can be difficult to copy backups to remote servers. In such cases, to protect from human error, you can keep a backup on the same server (it will reside in /var/lib/clickhouse/shadow/).
-::
+.. code-block:: sql
+
   ALTER TABLE [db.]table FETCH PARTITION 'name' FROM 'path-in-zookeeper'
 
 This query only works for replicatable tables.
@@ -623,7 +642,7 @@ Allows executing JOIN with an array or nested data structure. The intent is simi
 
 ARRAY JOIN is essentially INNER JOIN with an array. Example:
 
-.. code-block:: sql
+..
 
     :) CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory
 
@@ -684,6 +703,8 @@ An alias can be specified for an array in the ARRAY JOIN clause. In this case, a
     FROM arrays_test
     ARRAY JOIN arr AS a
 
+..
+
     ┌─s─────┬─arr─────┬─a─┐
     │ Hello │ [1,2]   │ 1 │
     │ Hello │ [1,2]   │ 2 │
@@ -697,7 +718,7 @@ An alias can be specified for an array in the ARRAY JOIN clause. In this case, a
 Multiple arrays of the same size can be comma-separated in the ARRAY JOIN clause. In this case, JOIN is performed with them simultaneously (the direct sum, not the direct product).
 Example:
 
-.. code-block:: sql
+..
 
     :) SELECT s, arr, a, num, mapped FROM arrays_test ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped
 
@@ -733,7 +754,7 @@ Example:
 
 ARRAY JOIN also works with nested data structures. Example:
 
-.. code-block:: sql
+..
 
     :) CREATE TABLE nested_test (s String, nest Nested(x UInt8, y UInt32)) ENGINE = Memory
 
@@ -788,7 +809,7 @@ ARRAY JOIN also works with nested data structures. Example:
 
 When specifying names of nested data structures in ARRAY JOIN, the meaning is the same as ARRAY JOIN with all the array elements that it consists of. Example:
 
-.. code-block:: sql
+..
 
     :) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x, nest.y
 
@@ -816,6 +837,8 @@ This variation also makes sense:
     FROM nested_test
     ARRAY JOIN `nest.x`
 
+..
+
     ┌─s─────┬─nest.x─┬─nest.y─────┐
     │ Hello │      1 │ [10,20]    │
     │ Hello │      2 │ [10,20]    │
@@ -836,6 +859,8 @@ An alias may be used for a nested data structure, in order to select either the 
     FROM nested_test
     ARRAY JOIN nest AS n
 
+..
+
     ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┐
     │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │
     │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │
@@ -855,6 +880,8 @@ Example of using the arrayEnumerate function:
     SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
     FROM nested_test
     ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
+
+..
 
     ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┬─num─┐
     │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │   1 │
@@ -934,6 +961,8 @@ Example:
     ) USING CounterID
     ORDER BY hits DESC
     LIMIT 10
+
+..
 
     ┌─CounterID─┬───hits─┬─visits─┐
     │   1143050 │ 523264 │  13665 │
@@ -1240,6 +1269,8 @@ Example:
     FROM test.hits
     GROUP BY EventDate
     ORDER BY EventDate ASC
+
+..
 
     ┌──EventDate─┬────ratio─┐
     │ 2014-03-17 │        1 │

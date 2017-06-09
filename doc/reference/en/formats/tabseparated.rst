@@ -35,9 +35,11 @@ The TabSeparated format is convenient for processing data using custom programs 
 
 The TabSeparated format supports outputting total values (when using WITH TOTALS) and extreme values (when 'extremes' is set to 1). In these cases, the total values and extremes are output after the main data. The main result, total values, and extremes are separated from each other by an empty line. Example:
 
-``SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
-
 .. code-block:: sql
+
+  SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated
+
+..
 
   2014-03-17      1406958
   2014-03-18      1383658

@@ -7,7 +7,6 @@ In this section we discuss regular functions. For aggregate functions, see the s
 * - There is a third type of function that the 'arrayJoin' function belongs to; table functions can also be mentioned separately.
 
 
-
 .. toctree::
     :glob:
 

@@ -38,7 +38,9 @@ Converts a region to an area (type 5 in the geobase). In every other way, this f
   SELECT DISTINCT regionToName(regionToArea(toUInt32(number), 'ua'), 'en')
   FROM system.numbers
   LIMIT 15
-  
+
+..
+
   ┌─regionToName(regionToArea(toUInt32(number), \'ua\'), \'en\')─┐
   │                                                              │
   │ Moscow and Moscow region                                     │
@@ -66,7 +68,9 @@ Converts a region to a federal district (type 4 in the geobase). In every other 
   SELECT DISTINCT regionToName(regionToDistrict(toUInt32(number), 'ua'), 'en')
   FROM system.numbers
   LIMIT 15
-  
+
+..
+
   ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'), \'en\')─┐
   │                                                                  │
   │ Central                                                          │

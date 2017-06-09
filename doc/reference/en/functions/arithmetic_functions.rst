@@ -3,12 +3,14 @@ Arithmetic functions
 
 For all arithmetic functions, the result type is calculated as the smallest number type that the result fits in, if there is such a type. The minimum is taken simultaneously based on the number of bits, whether it is signed, and whether it floats. If there are not enough bits, the highest bit type is taken.
 
-Example
+Example:
 
 .. code-block:: sql
 
-  :) SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0 + 0 + 0)
-  
+  SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0 + 0 + 0)
+
+..
+
   ┌─toTypeName(0)─┬─toTypeName(plus(0, 0))─┬─toTypeName(plus(plus(0, 0), 0))─┬─toTypeName(plus(plus(plus(0, 0), 0), 0))─┐
   │ UInt8         │ UInt16                 │ UInt32                          │ UInt64                                   │
   └───────────────┴────────────────────────┴─────────────────────────────────┴──────────────────────────────────────────┘

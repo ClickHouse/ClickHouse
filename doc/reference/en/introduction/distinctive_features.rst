@@ -58,5 +58,5 @@ This lets us use the system as the back-end for a web interface. Low latency mea
 
 14. Data replication and support for data integrity on replicas.
 ----------------------------------------------------------------
-Uses asynchronous multimaster replication. After being written to any available replica, data is distributed to all the remaining replicas. The system maintains identical data on different replicas. Data is restored automatically after a failure, or using a "button" for complex cases.
+Uses asynchronous multi-master replication. After being written to any available replica, data is distributed to all the remaining replicas. The system maintains identical data on different replicas. Data is restored automatically after a failure, or using a "button" for complex cases.
 For more information, see the section "Data replication".

@@ -21,13 +21,15 @@ Installing from packages
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 In `/etc/apt/sources.list` (or in a separate `/etc/apt/sources.list.d/clickhouse.list` file), add the repository: 
-::
+..
+
     deb http://repo.yandex.ru/clickhouse/trusty stable main
 
 For other Ubuntu versions, replace `trusty` to `xenial` or `precise`.
 
 Then run:
-::
+.. code-block:: bash
+
     sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
     sudo apt-get update
     sudo apt-get install clickhouse-client clickhouse-server-common
@@ -45,12 +47,14 @@ Installing from source
 To build, follow the instructions in build.md (for Linux) or in build_osx.md (for Mac OS X).
 
 You can compile packages and install them. You can also use programs without installing packages.
-::
+..
+
     Client: dbms/src/Client/
     Server: dbms/src/Server/
 
 For the server, create a catalog with data, such as:
-::
+..
+
     /opt/clickhouse/data/default/
     /opt/clickhouse/metadata/default/
     
@@ -70,7 +74,8 @@ Launch
 ------
 
 To start the server (as a daemon), run:
-::
+.. code-block:: bash
+
     sudo service clickhouse-server start
     
 View the logs in the catalog `/var/log/clickhouse-server/`
@@ -78,25 +83,29 @@ View the logs in the catalog `/var/log/clickhouse-server/`
 If the server doesn't start, check the configurations in the file `/etc/clickhouse-server/config.xml`
 
 You can also launch the server from the console:
-::
+.. code-block:: bash
+
     clickhouse-server --config-file=/etc/clickhouse-server/config.xml
     
 In this case, the log will be printed to the console, which is convenient during development. If the configuration file is in the current directory, you don't need to specify the '--config-file' parameter. By default, it uses './config.xml'.
 
 You can use the command-line client to connect to the server:
-::
+.. code-block:: bash
+
     clickhouse-client
 
 The default parameters indicate connecting with localhost:9000 on behalf of the user 'default' without a password.
 The client can be used for connecting to a remote server. For example:
-::
+.. code-block:: bash
+
     clickhouse-client --host=example.com
     
 For more information, see the section "Command-line client".
 
 Checking the system:
-::
-    milovidov@milovidov-Latitude-E6320:~/work/metrica/src/dbms/src/Client$ ./clickhouse-client
+.. code-block:: bash
+
+    milovidov@hostname:~/work/metrica/src/dbms/src/Client$ ./clickhouse-client
     ClickHouse client version 0.0.18749.
     Connecting to localhost:9000.
     Connected to ClickHouse server version 0.0.18749.

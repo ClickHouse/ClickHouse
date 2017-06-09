@@ -92,7 +92,9 @@ This function is normally used together with ARRAY JOIN. It allows counting some
       arrayEnumerate(GoalsReached) AS num
   WHERE CounterID = 160656
   LIMIT 10
-  
+
+..
+
   ┌─Reaches─┬──Hits─┐
   │   95606 │ 31406 │
   └─────────┴───────┘
@@ -106,7 +108,9 @@ In this example, Reaches is the number of conversions (the strings received afte
       count() AS Hits
   FROM test.hits
   WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
-  
+
+..
+
   ┌─Reaches─┬──Hits─┐
   │   95606 │ 31406 │
   └─────────┴───────┘
@@ -134,7 +138,9 @@ This function is useful when using ARRAY JOIN and aggregation of array elements.
   GROUP BY GoalID
   ORDER BY Reaches DESC
   LIMIT 10
-  
+
+..
+
   ┌──GoalID─┬─Reaches─┬─Visits─┐
   │   53225 │    3214 │   1097 │
   │ 2825062 │    3188 │   1097 │
@@ -157,7 +163,9 @@ The arrayEnumerateUniq function can take multiple arrays of the same size as arg
 .. code-block:: sql
   
   SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
-  
+
+..
+
   ┌─res───────────┐
   │ [1,2,1,1,2,1] │
   └───────────────┘

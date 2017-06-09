@@ -4,7 +4,8 @@ system.settings
 Contains information about settings that are currently in use (i.e. used for executing the query you are using to read from the system.settings table).
 
 Columns:
-::
+..
+
   name String   - Setting name.
   value String  - Setting value.
   changed UInt8 - Whether the setting was explicitly defined in the config or explicitly changed.

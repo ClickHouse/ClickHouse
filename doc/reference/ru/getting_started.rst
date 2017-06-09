@@ -115,7 +115,7 @@ Gentoo overlay: https://github.com/kmeaw/clickhouse-overlay
 
 .. code-block:: bash
 
-    milovidov@milovidov-Latitude-E6320:~/work/metrica/src/dbms/src/Client$ ./clickhouse-client
+    milovidov@hostname:~/work/metrica/src/dbms/src/Client$ ./clickhouse-client
     ClickHouse client version 0.0.18749.
     Connecting to localhost:9000.
     Connected to ClickHouse server version 0.0.18749.

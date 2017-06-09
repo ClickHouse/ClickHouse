@@ -4,7 +4,8 @@ system.dictionaries
 Contains information about external dictionaries.
 
 Columns:
-::
+..
+
   name String                   - Dictionary name.
   type String                   - Dictionary type: Flat, Hashed, Cache.
   origin String                 - Path to the config file where the dictionary is described.

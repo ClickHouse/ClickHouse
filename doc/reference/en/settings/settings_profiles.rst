@@ -6,9 +6,10 @@ To apply all the settings in a profile, set 'profile'. Example:
 
   SET profile = 'web'
   
-- Load the 'web' profile. That is, set all the options belonging to the 'web' profile.
+Load the 'web' profile. That is, set all the options belonging to the 'web' profile.
 
 Settings profiles are declared in the user config file. This is normally 'users.xml'.
+
 Example:
 
 .. code-block:: xml

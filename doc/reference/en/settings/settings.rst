@@ -26,7 +26,7 @@ The maximum number of query processing threads
 This parameter applies to threads that perform the same stages of the query execution pipeline in parallel.
 For example, if reading from a table, evaluating expressions with functions, filtering with WHERE and pre-aggregating for GROUP BY can all be done in parallel using at least ``max_threads`` number of threads, then 'max_threads' are used.
 
-By default, ``8``.
+By default, 8.
 
 If less than one SELECT query is normally run on a server at a time, set this parameter to a value slightly less than the actual number of processor cores.
 

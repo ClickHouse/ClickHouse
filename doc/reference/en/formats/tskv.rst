@@ -2,7 +2,8 @@ TSKV
 ----
 
 Similar to TabSeparated, but displays data in name=value format. Names are displayed just as in TabSeparated. Additionally, a ``=`` symbol is displayed.
-::
+..
+
   SearchPhrase=   count()=8267016
   SearchPhrase=bathroom interior    count()=2166
   SearchPhrase=yandex     count()=1655

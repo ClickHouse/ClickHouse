@@ -73,7 +73,8 @@ The ``'Replicated'`` prefix is added to the table engine name. For example, ``Re
 Two parameters are also added in the beginning of the parameters list - the path to the table in ZooKeeper, and the replica name in ZooKeeper.
 
 Example:
-::
+..
+
   ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
 
 As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the 'macros' section of the config file. Example:
@@ -145,7 +146,7 @@ An alternative recovery option is to delete information about the lost replica f
 There is no restriction on network bandwidth during recovery. Keep this in mind if you are restoring many replicas at once.
 
 Converting from MergeTree to ReplicatedMergeTree
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 From here on, we use ``MergeTree`` to refer to all the table engines in the ``MergeTree`` family, including ``ReplicatedMergeTree``.
 
@@ -160,7 +161,7 @@ Then run ALTER TABLE ATTACH PART on one of the replicas to add these data parts 
 If exactly the same parts exist on the other replicas, they are added to the working set on them. If not, the parts are downloaded from the replica that has them.
 
 Converting from ReplicatedMergeTree to MergeTree
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Create a MergeTree table with a different name. Move all the data from the directory with the ReplicatedMergeTree table data to the new table's data directory. Then delete the ReplicatedMergeTree table and restart the server.
 
@@ -170,6 +171,6 @@ If you want to get rid of a ReplicatedMergeTree table without launching the serv
 After this, you can launch the server, create a MergeTree table, move the data to its directory, and then restart the server.
 
 Recovery when metadata in the ZooKeeper cluster is lost or damaged
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you lost ZooKeeper, you can save data by moving it to an unreplicated table as described above.

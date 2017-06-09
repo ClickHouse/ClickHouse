@@ -3,7 +3,8 @@ Syntax
 
 There are two types of parsers in the system: a full SQL parser (a recursive descent parser), and a data format parser (a fast stream parser). In all cases except the INSERT query, only the full SQL parser is used.
 The INSERT query uses both parsers:
-::
+.. code-block:: sql
+
   INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 The ``INSERT INTO t VALUES`` fragment is parsed by the full parser, and the data ``(1, 'Hello, world'), (2, 'abc'), (3, 'def')`` is parsed by the fast stream parser.
@@ -82,7 +83,8 @@ Data types and table engines in the ``CREATE`` query are written the same way as
 Synonyms
 ~~~~~~~~
 In the SELECT query, expressions can specify synonyms using the AS keyword. Any expression is placed to the left of AS. The identifier name for the synonym is placed to the right of AS. As opposed to standard SQL, synonyms are not only declared on the top level of expressions:
-::
+.. code-block:: sql
+
      SELECT (1 AS n) + 2, n
 
 In contrast to standard SQL, synonyms can be used in all parts of a query, not just ``SELECT``.

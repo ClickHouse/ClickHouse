@@ -4,16 +4,20 @@ Functions for working with dates and times
 Time Zone Support
 
 All functions for working with the date and time for which this makes sense, can take a second, optional argument - the time zone name. Example: Asia / Yekaterinburg. In this case, they do not use the local time zone (the default), but the specified one.
+
 .. code-block:: sql
   SELECT
       toDateTime('2016-06-15 23:00:00') AS time,
       toDate(time) AS date_local,
       toDate(time, 'Asia/Yekaterinburg') AS date_yekat,
       toString(time, 'US/Samoa') AS time_samoa
-  
+
+..
+
   ┌────────────────time─┬─date_local─┬─date_yekat─┬─time_samoa──────────┐
   │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-16 │ 2016-06-15 09:00:00 │
   └─────────────────────┴────────────┴────────────┴─────────────────────┘
+
 Only time zones are supported, different from UTC for an integer number of hours.
 
 toYear
@@ -137,5 +141,5 @@ This function is specific to Yandex.Metrica, since half an hour is the minimum a
 timeSlots(StartTime, Duration)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 For a time interval starting at 'StartTime' and continuing for 'Duration' seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the half hour.
-For example, timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600)) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')].
-This is necessary for searching for pageviews in the corresponding session.
+For example, ``timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600)) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')]``.
+This is necessary for searching for page views in the corresponding session.
