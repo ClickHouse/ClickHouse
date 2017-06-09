@@ -252,7 +252,9 @@ A partition in a table is data for a single calendar month. This is determined b
 A "part" in the table is part of the data from a single partition, sorted by the primary key.
 
 You can use the ``system.parts`` table to view the set of table parts and partitions:
-::
+
+.. code-block:: text
+
     SELECT * FROM system.parts WHERE active
 
 ``active`` - Only count active parts. Inactive parts are, for example, source parts remaining after merging to a larger part - these parts are deleted approximately 10 minutes after merging.

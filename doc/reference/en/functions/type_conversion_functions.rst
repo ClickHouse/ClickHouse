@@ -26,7 +26,9 @@ When converting dates to numbers or vice versa, the date corresponds to the numb
 When converting dates with times to numbers or vice versa, the date with time corresponds to the number of seconds since the beginning of the Unix epoch.
 
 Formats of date and date with time for toDate/toDateTime functions are defined as follows:
-::
+
+.. code-block:: text
+
   YYYY-MM-DD
   YYYY-MM-DD hh:mm:ss
 

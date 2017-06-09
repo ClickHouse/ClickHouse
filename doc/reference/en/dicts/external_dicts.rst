@@ -160,7 +160,9 @@ range_hashed
 The table lists some data for date ranges, for each key. To give the possibility to extract this data for a given key, for a given date.
 
 Example: in the table there are discounts for each advertiser in the form:
-::
+
+.. code-block:: text
+
   advertiser id    discount start date    end date    value
   123                 2015-01-01                     2015-01-15    0.15
   123                 2015-01-16                     2015-01-31    0.25

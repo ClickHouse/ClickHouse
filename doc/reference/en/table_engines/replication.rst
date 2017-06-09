@@ -124,7 +124,9 @@ When the server starts (or establishes a new session with ZooKeeper), it only ch
 If the local set of data differs too much from the expected one, a safety mechanism is triggered. The server enters this in the log and refuses to launch. The reason for this is that this case may indicate a configuration error, such as if a replica on a shard was accidentally configured like a replica on a different shard. However, the thresholds for this mechanism are set fairly low, and this situation might occur during normal failure recovery. In this case, data is restored semi-automatically - by "pushing a button".
 
 To start recovery, create the node ``/path_to_table/replica_name/flags/force_restore_data`` in ZooKeeper with any content or run command to recover all replicated tables:
-::
+
+.. code-block:: text
+
   sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Then launch the server. On start, the server deletes these flags and starts recovery.

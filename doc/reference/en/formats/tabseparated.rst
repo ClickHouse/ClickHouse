@@ -17,7 +17,9 @@ During a parsing operation, incorrect dates and dates with times can be parsed w
 As an exception, parsing DateTime is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. The result is not time zone-dependent. The formats ``YYYY-MM-DD hh:mm:ss`` and ``NNNNNNNNNN`` are differentiated automatically.
 
 Strings are parsed and formatted with backslash-escaped special characters. The following escape sequences are used while formatting: ``\b``, ``\f``, ``\r``, ``\n``, ``\t``, ``\0``, ``\'``, and ``\\``. For parsing, also supported \a, \v and \xHH (hex escape sequence) and any sequences of the type \c where c is any character (these sequences are converted to c). This means that parsing supports formats where a line break can be written as \n or as \ and a line break. For example, the string 'Hello world' with a line break between the words instead of a space can be retrieved in any of the following variations:
-::
+
+.. code-block:: text
+
   Hello\nworld
 
   Hello\

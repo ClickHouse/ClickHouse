@@ -4,7 +4,9 @@ JSONCompact
 Differs from ``JSON`` only in that data rows are output in arrays, not in objects. 
 
 Example: 
-::
+
+.. code-block:: text
+
   {
           "meta":
           [

@@ -6,7 +6,9 @@ System requirements
 
 This is not a cross-platform system. It requires Linux Ubuntu Precise (12.04) or newer, x86_64 architecture with SSE 4.2 instruction set.
 To test for SSE 4.2 support, do:
-::
+
+.. code-block:: text
+
     grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 
 We recommend using Ubuntu Trusty or Ubuntu Xenial or Ubuntu Precise.
