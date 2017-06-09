@@ -165,11 +165,15 @@ struct ColumnString::less
     less(const ColumnString & parent_) : parent(parent_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        int res = strcmp(
-            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]),
-            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]));
+        size_t left_len = parent.sizeAt(lhs);
+        size_t right_len = parent.sizeAt(rhs);
 
-        return positive ? (res < 0) : (res > 0);
+        int res = memcmp(&parent.chars[parent.offsetAt(lhs)], &parent.chars[parent.offsetAt(rhs)], std::min(left_len, right_len));
+
+        if (res != 0)
+            return positive ? (res < 0) : (res > 0);
+        else
+            return positive ? (left_len < right_len) : (left_len > right_len);
     }
 };
 
