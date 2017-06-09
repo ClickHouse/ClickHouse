@@ -114,17 +114,3 @@ Checking the system:
     :)
 
 Congratulations, it works!
-
-Test data
----------------
-If you are Yandex employee, you can use Yandex.Metrica test data to explore the system's capabilities. You can find instructions for using the test data here.
-
-Otherwise, you could use one of available public datasets, described here.
-
-
-If you have questions
----------------------
-If you are Yandex employee, use internal ClickHouse maillist.
-You can subscribe to this list to get announcements, information on new developments, and questions that other users have.
-
-Otherwise, you could ask questions on Stack Overflow; discuss in Google Groups; or send private message to developers to address clickhouse-feedback@yandex-team.com.
