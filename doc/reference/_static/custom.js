@@ -25,4 +25,14 @@ $(function() {
             win.focus();
         }
     });
+
+    $('a[href="#en"]').on('click', function(e) {
+        e.preventDefault();
+        window.location = window.location.toString().replace('/ru/', '/en/');
+    });
+
+    $('a[href="#ru"]').on('click', function(e) {
+        e.preventDefault();
+        window.location = window.location.toString().replace('/en/', '/ru/');
+    });
 });
