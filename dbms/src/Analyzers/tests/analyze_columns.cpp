@@ -2,6 +2,7 @@
 #include <Analyzers/CollectTables.h>
 #include <Analyzers/AnalyzeColumns.h>
 #include <Analyzers/AnalyzeLambdas.h>
+#include <Analyzers/ExecuteTableFunctions.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/formatAST.h>
@@ -45,8 +46,11 @@ try
     CollectAliases collect_aliases;
     collect_aliases.process(ast);
 
+    ExecuteTableFunctions execute_table_functions;
+    execute_table_functions.process(ast, context);
+
     CollectTables collect_tables;
-    collect_tables.process(ast, context, collect_aliases);
+    collect_tables.process(ast, context, collect_aliases, execute_table_functions);
 
     AnalyzeColumns analyze_columns;
     analyze_columns.process(ast, collect_aliases, collect_tables);
