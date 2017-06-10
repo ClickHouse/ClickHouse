@@ -139,7 +139,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
         if (query_table && typeid_cast<const ASTFunction *>(query_table.get()))
         {
             /// Get the table function
-            TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(typeid_cast<const ASTFunction *>(query_table.get())->name, context);
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(typeid_cast<const ASTFunction *>(query_table.get())->name, context);
             /// Run it and remember the result
             storage = table_function_ptr->execute(query_table, context);
         }

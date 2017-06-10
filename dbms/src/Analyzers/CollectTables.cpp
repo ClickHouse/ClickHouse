@@ -3,7 +3,6 @@
 #include <Analyzers/ExecuteTableFunctions.h>
 #include <Analyzers/AnalyzeResultOfQuery.h>
 #include <Interpreters/Context.h>
-#include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>

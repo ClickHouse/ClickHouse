@@ -40,6 +40,7 @@
 
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -215,6 +216,7 @@ int Server::main(const std::vector<std::string> & args)
 
     registerFunctions();
     registerAggregateFunctions();
+    registerTableFunctions();
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...

@@ -32,7 +32,7 @@ static void processTableFunction(const ASTPtr & ast_table_function, const Contex
         return;
 
     /// Obtain table function
-    TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(function.name, context);
+    TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(function.name, context);
     /// Execute it and store result
     StoragePtr table = table_function_ptr->execute(ast_table_function, context);
     result_map[ast_hash] = table;

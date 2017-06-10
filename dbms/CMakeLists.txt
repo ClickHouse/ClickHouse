@@ -42,7 +42,6 @@ set(dbms_headers)
 set(dbms_sources)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
-add_headers_and_sources(dbms src/TableFunctions)
 add_headers_and_sources(dbms src/Parsers)
 add_headers_and_sources(dbms src/Analyzers)
 add_headers_and_sources(dbms src/Core)
@@ -70,9 +69,8 @@ list (APPEND dbms_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
 list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/DataTypeTraits.cpp)
 list (APPEND dbms_headers src/Functions/IFunction.h   src/Functions/FunctionFactory.h   src/Functions/DataTypeTraits.h)
+
 list (APPEND dbms_sources
-    src/AggregateFunctions/AggregateFunctionFactory.cpp
-    src/AggregateFunctions/AggregateFunctionState.cpp
     src/AggregateFunctions/AggregateFunctionFactory.cpp
     src/AggregateFunctions/AggregateFunctionState.cpp
     src/AggregateFunctions/AggregateFunctionArray.cpp
@@ -80,13 +78,10 @@ list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionForEach.cpp
     src/AggregateFunctions/AggregateFunctionIf.cpp
     src/AggregateFunctions/AggregateFunctionMerge.cpp
-    src/AggregateFunctions/AggregateFunctionCount.cpp
-)
+    src/AggregateFunctions/AggregateFunctionCount.cpp)
 
 list (APPEND dbms_headers
     src/AggregateFunctions/IAggregateFunction.h
-    src/AggregateFunctions/AggregateFunctionFactory.h
-    src/AggregateFunctions/AggregateFunctionState.h
     src/AggregateFunctions/AggregateFunctionFactory.h
     src/AggregateFunctions/AggregateFunctionState.h
     src/AggregateFunctions/AggregateFunctionArray.h
@@ -94,8 +89,10 @@ list (APPEND dbms_headers
     src/AggregateFunctions/AggregateFunctionForEach.h
     src/AggregateFunctions/AggregateFunctionIf.h
     src/AggregateFunctions/AggregateFunctionMerge.h
-    src/AggregateFunctions/AggregateFunctionCount.h
-)
+    src/AggregateFunctions/AggregateFunctionCount.h)
+
+list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
+list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
 
 
 list(REMOVE_ITEM dbms_sources

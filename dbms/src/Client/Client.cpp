@@ -191,6 +191,7 @@ private:
         APPLY_FOR_LIMITS(EXTRACT_LIMIT)
 #undef EXTRACT_LIMIT
 
+        /// FIXME Why do we need this?
         registerFunctions();
         registerAggregateFunctions();
     }

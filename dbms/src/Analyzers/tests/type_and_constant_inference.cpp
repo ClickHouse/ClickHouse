@@ -17,6 +17,7 @@
 #include <Databases/DatabaseMemory.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <TableFunctions/registerTableFunctions.h>
 
 
 /// Parses query from stdin and print data types of expressions; and for constant expressions, print its values.
@@ -28,6 +29,7 @@ try
 
     registerFunctions();
     registerAggregateFunctions();
+    registerTableFunctions();
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
