@@ -14,7 +14,8 @@ namespace DB
 class TableFunctionShardByHash : public ITableFunction
 {
 public:
-    std::string getName() const override { return "shardByHash"; }
+    static constexpr auto name = "shardByHash";
+    std::string getName() const override { return name; }
     StoragePtr execute(const ASTPtr & ast_function, const Context & context) const override;
 };
 

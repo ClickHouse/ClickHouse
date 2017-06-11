@@ -1344,7 +1344,7 @@ public:
 class FunctionArrayReverse : public IFunction
 {
 public:
-    static constexpr auto name = "reverse";
+    static constexpr auto name = "arrayReverse";
     static FunctionPtr create(const Context & context);
 
     String getName() const override;

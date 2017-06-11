@@ -16,8 +16,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <DataStreams/FormatFactory.h>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
@@ -82,8 +80,6 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED;
 }
 
-class TableFunctionFactory;
-
 
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
@@ -109,7 +105,6 @@ struct ContextShared
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
     Databases databases;                                    /// List of databases and tables in them.
-    TableFunctionFactory table_function_factory;            /// Table functions.
     FormatFactory format_factory;                           /// Formats.
     mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaeis. Have lazy initialization.
     mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
@@ -244,7 +239,6 @@ Context::~Context()
 }
 
 
-const TableFunctionFactory & Context::getTableFunctionFactory() const            { return shared->table_function_factory; }
 InterserverIOHandler & Context::getInterserverIOHandler()                        { return shared->interserver_io_handler; }
 
 std::unique_lock<Poco::Mutex> Context::getLock() const

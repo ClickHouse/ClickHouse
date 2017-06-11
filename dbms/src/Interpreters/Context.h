@@ -33,8 +33,6 @@ namespace DB
 
 struct ContextShared;
 class QuotaForIntervals;
-class TableFunctionFactory;
-class AggregateFunctionFactory;
 class EmbeddedDictionaries;
 class ExternalDictionaries;
 class InterserverIOHandler;
@@ -196,7 +194,6 @@ public:
     /// Set a setting by name. Read the value in text form from a string (for example, from a config, or from a URL parameter).
     void setSetting(const String & name, const std::string & value);
 
-    const TableFunctionFactory & getTableFunctionFactory() const;
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;
     void tryCreateEmbeddedDictionaries() const;
