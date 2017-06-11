@@ -38,7 +38,7 @@
 
 #include <memory>
 
-#include <boost/filesystem.hpp>
+#include <experimental/filesystem>
 
 
 namespace DB
@@ -86,13 +86,15 @@ UInt64 getMaximumFileNumber(const std::string & path)
 {
     UInt64 res = 0;
 
-    boost::filesystem::recursive_directory_iterator begin(path);
-    boost::filesystem::recursive_directory_iterator end;
+    namespace fs = std::experimental::filesystem;
+
+    fs::recursive_directory_iterator begin(path);
+    fs::recursive_directory_iterator end;
     for (auto it = begin; it != end; ++it)
     {
         const auto & path = it->path();
 
-        if (it->status().type() != boost::filesystem::regular_file || !endsWith(path.filename().string(), ".bin"))
+        if (it->status().type() != fs::file_type::regular || !endsWith(path.filename().string(), ".bin"))
             continue;
 
         UInt64 num = 0;
@@ -473,10 +475,12 @@ void StorageDistributed::createDirectoryMonitors()
 
     Poco::File{path}.createDirectory();
 
-    boost::filesystem::directory_iterator begin(path);
-    boost::filesystem::directory_iterator end;
+    namespace fs = std::experimental::filesystem;
+
+    fs::directory_iterator begin(path);
+    fs::directory_iterator end;
     for (auto it = begin; it != end; ++it)
-        if (it->status().type() == boost::filesystem::directory_file)
+        if (it->status().type() == fs::file_type::directory)
             createDirectoryMonitor(it->path().filename().string());
 }
 

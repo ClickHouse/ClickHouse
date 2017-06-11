@@ -1,7 +1,7 @@
 #include <IO/ReadBufferAIO.h>
 #include <Core/Defines.h>
 
-#include <boost/filesystem.hpp>
+#include <experimental/filesystem>
 
 #include <vector>
 #include <iostream>
@@ -45,7 +45,7 @@ bool test20(const std::string & filename, const std::string & buf);
 
 void run()
 {
-    namespace fs = boost::filesystem;
+    namespace fs = std::filesystem;
 
     std::string filename;
     std::string buf;

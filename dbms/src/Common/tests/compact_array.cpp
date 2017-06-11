@@ -8,7 +8,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 
-#include <boost/filesystem.hpp>
+#include <experimental/filesystem>
 
 #include <string>
 #include <iostream>
@@ -17,7 +17,7 @@
 #include <unistd.h>
 #include <cstdlib>
 
-namespace fs = boost::filesystem;
+namespace fs = std::experimental::filesystem;
 
 std::string createTmpPath(const std::string & filename)
 {

@@ -1,7 +1,7 @@
 #include <IO/WriteBufferAIO.h>
 #include <Core/Defines.h>
 
-#include <boost/filesystem.hpp>
+#include <experimental/filesystem>
 
 #include <iostream>
 #include <fstream>
@@ -11,7 +11,7 @@
 namespace
 {
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 void run();
 void die(const std::string & msg);

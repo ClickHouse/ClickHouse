@@ -5,6 +5,8 @@
 #include <Poco/SHA1Engine.h>
 #include <Poco/DigestStream.h>
 #include <fstream>
+#include <experimental/filesystem>
+
 
 namespace
 {
@@ -24,7 +26,7 @@ Poco::DigestEngine::Digest calcSHA1(const std::string & path)
 
 std::string determineDefaultTimeZone()
 {
-    namespace fs = boost::filesystem;
+    namespace fs = std::experimental::filesystem;
 
     const char * tzdir_env_var = std::getenv("TZDIR");
     fs::path tz_database_path = tzdir_env_var ? tzdir_env_var : "/usr/share/zoneinfo/";
@@ -73,11 +75,11 @@ std::string determineDefaultTimeZone()
             {
                 /// Some timezone databases contain copies of toplevel tzdata files in the posix/ directory
                 /// and tzdata files with leap seconds in the right/ directory. Skip them.
-                candidate_it.no_push();
+                candidate_it.disable_recursion_pending();
                 continue;
             }
 
-            if (candidate_it->status().type() != fs::regular_file || path.filename() == "localtime")
+            if (candidate_it->status().type() != fs::file_type::regular || path.filename() == "localtime")
                 continue;
 
             if (fs::file_size(path) == tzfile_size && calcSHA1(path.native()) == tzfile_sha1)

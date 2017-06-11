@@ -81,7 +81,7 @@ target_link_libraries (
     pocoext
     cctz
     ${Boost_SYSTEM_LIBRARY}
-    ${Boost_FILESYSTEM_LIBRARY}
+    libstdc++fs.a
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
     ${RT_LIBRARIES})
