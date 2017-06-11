@@ -309,16 +309,6 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
                 };
 
                 FunctionCast func_cast(context);
-
-                {
-                    DataTypePtr unused_return_type;
-                    ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
-                    std::vector<ExpressionAction> unused_prerequisites;
-
-                    /// Prepares function to execution. TODO It is not obvious.
-                    func_cast.getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
-                }
-
                 func_cast.execute(temporary_block, {0, 1}, 2);
                 preprocessed_column = temporary_block.getByPosition(2).column;
             }
@@ -2741,30 +2731,29 @@ String FunctionArrayReduce::getName() const
     return name;
 }
 
-void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
-    const ColumnsWithTypeAndName & arguments,
-    DataTypePtr & out_return_type,
-    std::vector<ExpressionAction> & out_prerequisites)
+DataTypePtr FunctionArrayReduce::getReturnTypeDependingOnConstantArgumentsImpl(const Block & arguments)
 {
     /// The first argument is a constant string with the name of the aggregate function (possibly with parameters in parentheses, for example: "quantile(0.99)").
 
-    if (arguments.size() < 2)
+    size_t num_arguments = arguments.columns();
+
+    if (num_arguments < 2)
         throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-            + toString(arguments.size()) + ", should be at least 2.",
+            + toString(num_arguments) + ", should be at least 2.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ColumnConstString * aggregate_function_name_column = typeid_cast<const ColumnConstString *>(arguments[0].column.get());
+    const ColumnConstString * aggregate_function_name_column = typeid_cast<const ColumnConstString *>(arguments.getByPosition(0).column.get());
     if (!aggregate_function_name_column)
         throw Exception("First argument for function " + getName() + " must be constant string: name of aggregate function.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    DataTypes argument_types(arguments.size() - 1);
-    for (size_t i = 1, size = arguments.size(); i < size; ++i)
+    DataTypes argument_types(num_arguments - 1);
+    for (size_t i = 1, size = num_arguments; i < size; ++i)
     {
-        const DataTypeArray * arg = typeid_cast<const DataTypeArray *>(arguments[i].type.get());
+        const DataTypeArray * arg = typeid_cast<const DataTypeArray *>(arguments.getByPosition(i).type.get());
         if (!arg)
             throw Exception("Argument " + toString(i) + " for function " + getName() + " must be an array but it has type "
-                + arguments[i].type->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                + arguments.getByPosition(i).type->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         argument_types[i - 1] = arg->getNestedType()->clone();
     }
@@ -2827,7 +2816,7 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
         aggregate_function->setArguments(argument_types);
     }
 
-    out_return_type = aggregate_function->getReturnType();
+    return aggregate_function->getReturnType();
 }
 
 

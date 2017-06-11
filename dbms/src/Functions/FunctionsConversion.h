@@ -900,23 +900,17 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isInjective(const Block &) override { return true; }
 
-    /** Get the result type by argument types and constant argument values.
-      * If the function does not apply to these arguments, throw an exception.
-      * For non-constant columns arguments[i].column = nullptr.
-      */
-    void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
-        DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> & out_prerequisites) override
+    bool isReturnTypeDependOnConstantArguments() const override { return true; };
+    DataTypePtr getReturnTypeDependingOnConstantArgumentsImpl(const Block & arguments) override
     {
-        if (!arguments[1].column)
+        if (!arguments.getByPosition(1).column)
             throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-        if (!typeid_cast<const DataTypeString *>(arguments[0].type.get()) &&
-            !typeid_cast<const DataTypeFixedString *>(arguments[0].type.get()))
+        if (!typeid_cast<const DataTypeString *>(arguments.getByPosition(0).type.get()) &&
+            !typeid_cast<const DataTypeFixedString *>(arguments.getByPosition(0).type.get()))
             throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
 
-        const size_t n = getSize(arguments[1]);
-
-        out_return_type = std::make_shared<DataTypeFixedString>(n);
+        const size_t n = getSize(arguments.getByPosition(1));
+        return std::make_shared<DataTypeFixedString>(n);
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -990,7 +984,7 @@ public:
 
 private:
     template <typename T>
-    bool getSizeTyped(const ColumnWithTypeAndName & column, size_t & out_size)
+    static bool getSizeTyped(const ColumnWithTypeAndName & column, size_t & out_size)
     {
         if (!typeid_cast<const DataTypeNumber<T> *>(column.type.get()))
             return false;
@@ -1004,7 +998,7 @@ private:
         return true;
     }
 
-    size_t getSize(const ColumnWithTypeAndName & column)
+    static size_t getSize(const ColumnWithTypeAndName & column)
     {
         size_t res;
         if (getSizeTyped<UInt8>(column, res) ||
@@ -1178,35 +1172,38 @@ template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
 {
 };
 
-struct NameToUInt8OrZero         { static constexpr auto name = "toUInt8OrZero"; };
-struct NameToUInt16OrZero         { static constexpr auto name = "toUInt16OrZero"; };
-struct NameToUInt32OrZero         { static constexpr auto name = "toUInt32OrZero"; };
-struct NameToUInt64OrZero         { static constexpr auto name = "toUInt64OrZero"; };
+struct NameToUInt8OrZero        { static constexpr auto name = "toUInt8OrZero"; };
+struct NameToUInt16OrZero       { static constexpr auto name = "toUInt16OrZero"; };
+struct NameToUInt32OrZero       { static constexpr auto name = "toUInt32OrZero"; };
+struct NameToUInt64OrZero       { static constexpr auto name = "toUInt64OrZero"; };
 struct NameToInt8OrZero         { static constexpr auto name = "toInt8OrZero"; };
-struct NameToInt16OrZero         { static constexpr auto name = "toInt16OrZero"; };
+struct NameToInt16OrZero        { static constexpr auto name = "toInt16OrZero"; };
 struct NameToInt32OrZero        { static constexpr auto name = "toInt32OrZero"; };
 struct NameToInt64OrZero        { static constexpr auto name = "toInt64OrZero"; };
-struct NameToFloat32OrZero        { static constexpr auto name = "toFloat32OrZero"; };
-struct NameToFloat64OrZero        { static constexpr auto name = "toFloat64OrZero"; };
+struct NameToFloat32OrZero      { static constexpr auto name = "toFloat32OrZero"; };
+struct NameToFloat64OrZero      { static constexpr auto name = "toFloat64OrZero"; };
 
-using FunctionToUInt8OrZero     = FunctionConvertOrZero<DataTypeUInt8,        NameToUInt8OrZero>;
-using FunctionToUInt16OrZero     = FunctionConvertOrZero<DataTypeUInt16,        NameToUInt16OrZero>;
-using FunctionToUInt32OrZero     = FunctionConvertOrZero<DataTypeUInt32,        NameToUInt32OrZero>;
-using FunctionToUInt64OrZero     = FunctionConvertOrZero<DataTypeUInt64,        NameToUInt64OrZero>;
-using FunctionToInt8OrZero         = FunctionConvertOrZero<DataTypeInt8,        NameToInt8OrZero>;
-using FunctionToInt16OrZero     = FunctionConvertOrZero<DataTypeInt16,        NameToInt16OrZero>;
-using FunctionToInt32OrZero     = FunctionConvertOrZero<DataTypeInt32,        NameToInt32OrZero>;
-using FunctionToInt64OrZero     = FunctionConvertOrZero<DataTypeInt64,        NameToInt64OrZero>;
-using FunctionToFloat32OrZero     = FunctionConvertOrZero<DataTypeFloat32,    NameToFloat32OrZero>;
-using FunctionToFloat64OrZero     = FunctionConvertOrZero<DataTypeFloat64,    NameToFloat64OrZero>;
+using FunctionToUInt8OrZero     = FunctionConvertOrZero<DataTypeUInt8,      NameToUInt8OrZero>;
+using FunctionToUInt16OrZero    = FunctionConvertOrZero<DataTypeUInt16,     NameToUInt16OrZero>;
+using FunctionToUInt32OrZero    = FunctionConvertOrZero<DataTypeUInt32,     NameToUInt32OrZero>;
+using FunctionToUInt64OrZero    = FunctionConvertOrZero<DataTypeUInt64,     NameToUInt64OrZero>;
+using FunctionToInt8OrZero      = FunctionConvertOrZero<DataTypeInt8,       NameToInt8OrZero>;
+using FunctionToInt16OrZero     = FunctionConvertOrZero<DataTypeInt16,      NameToInt16OrZero>;
+using FunctionToInt32OrZero     = FunctionConvertOrZero<DataTypeInt32,      NameToInt32OrZero>;
+using FunctionToInt64OrZero     = FunctionConvertOrZero<DataTypeInt64,      NameToInt64OrZero>;
+using FunctionToFloat32OrZero   = FunctionConvertOrZero<DataTypeFloat32,    NameToFloat32OrZero>;
+using FunctionToFloat64OrZero   = FunctionConvertOrZero<DataTypeFloat64,    NameToFloat64OrZero>;
 
 
 class FunctionCast final : public IFunction
 {
-    using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
+private:
     const Context & context;
+
+    using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
     WrapperType wrapper_function;
     std::function<Monotonicity(const IDataType &, const Field &, const Field &)> monotonicity_for_range;
+    std::mutex mutex;
 
 public:
     FunctionCast(const Context & context) : context(context) {}
@@ -1524,10 +1521,11 @@ private:
 
     WrapperType prepare(const DataTypePtr & from_type, const IDataType * const to_type, const uint64_t action)
     {
-        auto wrapper = prepareImpl((action & Action::CONVERT_NULL) ?
-                                        std::make_shared<DataTypeUInt8>() :
-                                        from_type,
-                                    to_type);
+        auto wrapper = prepareImpl(
+            (action & Action::CONVERT_NULL)
+                ? std::make_shared<DataTypeUInt8>()
+                : from_type,
+            to_type);
 
         if (action & Action::WRAP_RESULT_INTO_NULLABLE)
         {
@@ -1541,7 +1539,7 @@ private:
 
                 Block tmp_block;
                 if (action & Action::UNWRAP_NULLABLE_INPUT)
-                    tmp_block = createBlockWithNestedColumns(block, arguments);
+                    tmp_block = unwrapNullable(block, arguments, result);
                 else if (action & Action::CONVERT_NULL)
                 {
                     /// The input is replaced by a trivial UInt8 column
@@ -1695,70 +1693,76 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> & out_prerequisites) override
+    bool isReturnTypeDependOnConstantArguments() const override { return true; };
+    DataTypePtr getReturnTypeDependingOnConstantArgumentsImpl(const Block & arguments) override
     {
-        const auto type_col = typeid_cast<const ColumnConstString *>(arguments.back().column.get());
+        const auto type_col = typeid_cast<const ColumnConstString *>(arguments.getByPosition(1).column.get());
         if (!type_col)
             throw Exception("Second argument to " + getName() + " must be a constant string describing type",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        out_return_type = DataTypeFactory::instance().get(type_col->getData());
-
-        /// Determine whether pre-processing and/or post-processing must take
-        /// place during conversion.
-        uint64_t action = Action::NONE;
-        const auto & from_type = arguments.front().type;
-
-        if (from_type->isNullable())
-            action |= Action::UNWRAP_NULLABLE_INPUT;
-        else if (from_type->isNull() && !out_return_type->isNull())
-            action |= Action::CONVERT_NULL;
-
-        if (out_return_type->isNullable())
-            action |= Action::WRAP_RESULT_INTO_NULLABLE;
-
-        /// Check that the requested conversion is allowed.
-        if (!(action & Action::WRAP_RESULT_INTO_NULLABLE))
-        {
-            if (action & Action::CONVERT_NULL)
-                throw Exception{"Cannot convert NULL into a non-nullable type",
-                    ErrorCodes::CANNOT_CONVERT_TYPE};
-            else if (action & Action::UNWRAP_NULLABLE_INPUT)
-                throw Exception{"Cannot convert data from a nullable type to a non-nullable type",
-                    ErrorCodes::CANNOT_CONVERT_TYPE};
-        }
-
-        DataTypePtr from_inner_type;
-        const IDataType * to_inner_type;
-
-        /// Create the requested conversion.
-        if (action & Action::WRAP_RESULT_INTO_NULLABLE)
-        {
-            if (action & Action::UNWRAP_NULLABLE_INPUT)
-            {
-                const auto & nullable_type = static_cast<const DataTypeNullable &>(*from_type);
-                from_inner_type = nullable_type.getNestedType();
-            }
-            else
-                from_inner_type = from_type;
-
-            const auto & nullable_type = static_cast<const DataTypeNullable &>(*out_return_type);
-            to_inner_type = nullable_type.getNestedType().get();
-        }
-        else
-        {
-            from_inner_type = from_type;
-            to_inner_type = out_return_type.get();
-        }
-
-        wrapper_function = prepare(from_inner_type, to_inner_type, action);
-        prepareMonotonicityInformation(from_inner_type, to_inner_type);
+        return DataTypeFactory::instance().get(type_col->getData());
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
+        /// Prepare function for execution.
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+
+            /// Determine whether pre-processing and/or post-processing must take
+            /// place during conversion.
+            uint64_t action = Action::NONE;
+            const DataTypePtr & from_type = block.getByPosition(arguments[0]).type;
+
+            const auto & res_type = block.getByPosition(result).type;
+
+            if (from_type->isNullable())
+                action |= Action::UNWRAP_NULLABLE_INPUT;
+            else if (from_type->isNull() && !res_type->isNull())
+                action |= Action::CONVERT_NULL;
+
+            if (res_type->isNullable())
+                action |= Action::WRAP_RESULT_INTO_NULLABLE;
+
+            /// Check that the requested conversion is allowed.
+            if (!(action & Action::WRAP_RESULT_INTO_NULLABLE))
+            {
+                if (action & Action::CONVERT_NULL)
+                    throw Exception{"Cannot convert NULL into a non-nullable type",
+                        ErrorCodes::CANNOT_CONVERT_TYPE};
+                else if (action & Action::UNWRAP_NULLABLE_INPUT)
+                    throw Exception{"Cannot convert data from a nullable type to a non-nullable type",
+                        ErrorCodes::CANNOT_CONVERT_TYPE};
+            }
+
+            DataTypePtr from_inner_type;
+            const IDataType * to_inner_type;
+
+            /// Create the requested conversion.
+            if (action & Action::WRAP_RESULT_INTO_NULLABLE)
+            {
+                if (action & Action::UNWRAP_NULLABLE_INPUT)
+                {
+                    const auto & nullable_type = static_cast<const DataTypeNullable &>(*from_type);
+                    from_inner_type = nullable_type.getNestedType();
+                }
+                else
+                    from_inner_type = from_type;
+
+                const auto & nullable_type = static_cast<const DataTypeNullable &>(*res_type);
+                to_inner_type = nullable_type.getNestedType().get();
+            }
+            else
+            {
+                from_inner_type = from_type;
+                to_inner_type = res_type.get();
+            }
+
+            wrapper_function = prepare(from_inner_type, to_inner_type, action);
+            prepareMonotonicityInformation(from_inner_type, to_inner_type);
+        }
+
         /// drop second argument, pass others
         ColumnNumbers new_arguments{arguments.front()};
         if (arguments.size() > 2)

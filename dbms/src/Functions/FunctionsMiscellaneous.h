@@ -50,7 +50,7 @@ public:
 
 
 /** Creates an array, multiplying the column (the first argument) by the number of elements in the array (the second argument).
-  * Used only as prerequisites for higher-order functions.
+  * Used as implementation detail of higher-order functions.
   */
 class FunctionReplicate : public IFunction
 {

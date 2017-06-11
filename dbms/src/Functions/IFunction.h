@@ -40,12 +40,6 @@ struct ExpressionAction;
 class IFunction
 {
 public:
-    /** The successor of IFunction must implement:
-      * - getName
-      * - either getReturnType, or getReturnTypeAndPrerequisites
-      * - one of the overloads of `execute`.
-      */
-
     /// Get the main function name.
     virtual String getName() const = 0;
 
@@ -97,8 +91,21 @@ public:
       */
     virtual bool isDeterministicInScopeOfQuery() { return true; }
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
-    /// Overloading for those who do not need prerequisites and values of constant arguments. Not called from outside.
+
+    /** Returns true if the function implementation directly handles the arguments
+      *  that correspond to nullable columns and null columns.
+      *
+      * Otherwise, implementation is the following:
+      * - call getReturnTypeImpl and executeImpl methods on arguments with stripped NULL-mask;
+      * - if at least one argument is Nullable, then return type will be also Nullable;
+      * - calculate NULL-mask by logic or of NULL-masks of arguments and apply this mask to the result.
+      */
+    virtual bool hasSpecialSupportForNulls() const { return false; }
+
+
+    /** Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
+      * Overloading for those who do not values of constant arguments.
+      */
     DataTypePtr getReturnType(const DataTypes & arguments) const;
 
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const
@@ -106,27 +113,22 @@ public:
         throw Exception("getReturnType is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Get the result type by argument types and constant argument values.
-      * If the function does not apply to these arguments, throw an exception.
-      * You can also return a description of the additional columns that are required to perform the function.
-      * For non-constant columns `arguments[i].column = nullptr`.
-      * Meaningful element types in out_prerequisites: APPLY_FUNCTION, ADD_COLUMN.
-      */
-    void getReturnTypeAndPrerequisites(
-        const ColumnsWithTypeAndName & arguments,
-        DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> & out_prerequisites);
 
-    virtual void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments,
-        DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> & out_prerequisites)
-    {
-        DataTypes types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            types[i] = arguments[i].type;
-        out_return_type = getReturnTypeImpl(types);
-    }
+    /** Some rare functions have return type different depending on constant arguments.
+      * Example: tupleElement, toFixedString.
+      * For this functions, you must override getReturnTypeDependingOnConstantArgumentsImpl.
+      * Default implementations just call getReturnType.
+      */
+
+    virtual bool isReturnTypeDependOnConstantArguments() const { return false; };
+
+    /** These functions are non-const, because they could prepare some state for further execution.
+      * (This is controversial and should be removed.)
+      */
+    DataTypePtr getReturnTypeDependingOnConstantArguments(const Block & arguments);
+
+    virtual DataTypePtr getReturnTypeDependingOnConstantArgumentsImpl(const Block & arguments);
+
 
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
     /// You pass data types with empty DataTypeExpression for lambda arguments.
@@ -138,27 +140,15 @@ public:
         throw Exception("Function " + getName() + " can't have lambda-expressions as arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    /// Execute the function on the block. Note: can be called simultaneously from several threads, for one object.
-    /// Overloading for those who do not need `prerequisites`. Not called from outside.
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result);
 
-    /// Execute the function above the block. Note: can be called simultaneously from several threads, for one object.
-    /// `prerequisites` go in the same order as `out_prerequisites` obtained from getReturnTypeAndPrerequisites.
-    void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result);
+    /// Execute the function on the block. Note: can be called simultaneously from several threads, for one object.
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result);
 
     virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         throw Exception("executeImpl is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result)
-    {
-        executeImpl(block, arguments, result);
-    }
-
-    /// Returns true if the function implementation directly handles the arguments
-    /// that correspond to nullable columns and null columns.
-    virtual bool hasSpecialSupportForNulls() const { return false; }
 
     /** Lets you know if the function is monotonic in a range of values.
       * This is used to work with the index in a sorted chunk of data.
@@ -186,46 +176,13 @@ public:
     }
 
     virtual ~IFunction() {}
-
-protected:
-    /// Returns the copy of a given block in which each column specified in
-    /// the "arguments" parameter is replaced with its respective nested
-    /// column if it is nullable.
-    static Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args);
-    /// Similar function as above. Additionally transform the result type if needed.
-    static Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result);
-
-private:
-    /// Strategy to apply when executing a function.
-    enum Strategy
-    {
-        /// Merely perform the function on its columns.
-        DIRECTLY_EXECUTE = 0,
-        /// If at least one argument is nullable, call the function implementation
-        /// with a block in which nullable columns that correspond to function arguments
-        /// have been replaced with their respective nested columns. Subsequently, the
-        /// result column is wrapped into a nullable column.
-        PROCESS_NULLABLE_COLUMNS,
-        /// If at least one argument is NULL, return NULL.
-        RETURN_NULL
-    };
-
-private:
-    /// Choose the strategy for performing the function.
-    Strategy chooseStrategy(const Block & block, const ColumnNumbers & args);
-
-    /// If required by the specified strategy, process the given block, then
-    /// return the processed block. Otherwise return an empty block.
-    Block preProcessBlock(Strategy strategy, const Block & block, const ColumnNumbers & args,
-        size_t result);
-
-    /// If required by the specified strategy, post-process the result column.
-    void postProcessResult(Strategy strategy, Block & block, const Block & processed_block,
-        const ColumnNumbers & args, size_t result);
 };
 
 
 using FunctionPtr = std::shared_ptr<IFunction>;
+
+
+Block unwrapNullable(const Block & block, const ColumnNumbers & args, size_t result);
 
 
 }

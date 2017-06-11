@@ -744,16 +744,17 @@ public:
         return 2;
     }
 
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites) override
+    bool isReturnTypeDependOnConstantArguments() const override { return true; };
+
+    DataTypePtr getReturnTypeDependingOnConstantArgumentsImpl(const Block & arguments) override
     {
-        const ColumnConstUInt8 * index_col = typeid_cast<const ColumnConstUInt8 *>(&*arguments[1].column);
+        const ColumnConstUInt8 * index_col = typeid_cast<const ColumnConstUInt8 *>(arguments.getByPosition(1).column.get());
         if (!index_col)
             throw Exception("Second argument to " + getName() + " must be a constant UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         size_t index = index_col->getData();
 
-        const DataTypeTuple * tuple = typeid_cast<const DataTypeTuple *>(&*arguments[0].type);
+        const DataTypeTuple * tuple = typeid_cast<const DataTypeTuple *>(arguments.getByPosition(0).type.get());
         if (!tuple)
             throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -765,7 +766,7 @@ public:
         if (index > elems.size())
             throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
 
-        out_return_type = elems[index - 1]->clone();
+        return elems[index - 1]->clone();
     }
 
     /// apply function to the block.
@@ -1690,8 +1691,7 @@ public:
         return name;
     }
 
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites) override;
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
@@ -1746,31 +1746,30 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
 }
 
 
-void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
-    const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites)
+DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    static const std::string arg_pos_description[] = {"First", "Second", "Third"};
-    for (size_t i = 0; i < getNumberOfArguments(); ++i)
-    {
-        const ColumnWithTypeAndName & argument = arguments[i];
-
-        const ColumnConstString * column = typeid_cast<const ColumnConstString *>(argument.column.get());
-        if (!column)
-        {
-            throw Exception(arg_pos_description[i] + " argument for function " + getName() + " must be const String.",
+    for (const auto & type : arguments)
+        if (!typeid_cast<const DataTypeString *>(type.get()))
+            throw Exception("All arguments for function " + getName() + " must be constants of type String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-    }
 
-    out_return_type = std::make_shared<DataTypeUInt8>();
+    return std::make_shared<DataTypeUInt8>();
 }
 
 
 void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    auto get_string_from_block = [&](size_t column_pos) -> const String & {
+    auto get_string_from_block = [&](size_t column_pos) -> const String &
+    {
         ColumnPtr column = block.safeGetByPosition(column_pos).column;
         const ColumnConstString * const_column = typeid_cast<const ColumnConstString *>(column.get());
+
+        if (!column)
+        {
+            throw Exception("All arguments for function " + getName() + " must be constants.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
         return const_column->getData();
     };
 

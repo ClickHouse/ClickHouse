@@ -5,6 +5,9 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ExpressionActions.h>
 
+#include <numeric>
+
+
 namespace DB
 {
 
@@ -31,119 +34,45 @@ void createNullMap(Block & block, const ColumnNumbers & args, size_t result)
     }
 }
 
-/// In a set of objects (columns of a block / set of columns / set of data types),
-/// are there any "special" (i.e. nullable or null) objects?
-enum class Category
+
+struct NullPresence
 {
-    /// No nullable objects. No null objects.
-    IS_ORDINARY = 0,
-    /// At least one nullable object. No null objects.
-    IS_NULLABLE,
-    /// At least one null object.
-    IS_NULL
+    bool has_nullable = false;
+    bool has_null = false;
 };
+
+void getNullPresence(const IDataType & type, NullPresence & res)
+{
+    res.has_null |= type.isNull();
+    res.has_nullable |= type.isNullable();
+}
 
 /// Check if a block contains at least one special column, in the sense
 /// defined above, among the specified columns.
-Category blockHasSpecialColumns(const Block & block, const ColumnNumbers & args)
+NullPresence getNullPresence(const Block & block, const ColumnNumbers & args)
 {
-    bool found_nullable = false;
-    bool found_null = false;
-
+    NullPresence res;
     for (const auto & arg : args)
-    {
-        const auto & elem = block.getByPosition(arg);
-
-        if (!found_null && elem.column->isNull())
-        {
-            found_null = true;
-            break;
-        }
-        else if (!found_nullable && elem.column->isNullable())
-            found_nullable = true;
-    }
-
-    if (found_null)
-        return Category::IS_NULL;
-    else if (found_nullable)
-        return Category::IS_NULLABLE;
-    else
-        return Category::IS_ORDINARY;
+        getNullPresence(*block.getByPosition(arg).type, res);
+    return res;
 }
 
-/// Check if at least one column is special in the sense defined above.
-Category hasSpecialColumns(const ColumnsWithTypeAndName & args)
+NullPresence getNullPresence(const Block & block)
 {
-    bool found_nullable = false;
-    bool found_null = false;
-
-    for (const auto & arg : args)
-    {
-        if (!found_null && arg.type->isNull())
-        {
-            found_null = true;
-            break;
-        }
-        else if (!found_nullable && arg.type->isNullable())
-            found_nullable = true;
-    }
-
-    if (found_null)
-        return Category::IS_NULL;
-    else if (found_nullable)
-        return Category::IS_NULLABLE;
-    else
-        return Category::IS_ORDINARY;
+    NullPresence res;
+    for (size_t arg = 0, size = block.columns(); arg < size; ++arg)
+        getNullPresence(*block.getByPosition(arg).type, res);
+    return res;
 }
 
-/// Check if at least one data type is special in the sense defined above.
-Category hasSpecialDataTypes(const DataTypes & args)
+NullPresence getNullPresence(const DataTypes & args)
 {
-    bool found_nullable = false;
-    bool found_null = false;
-
+    NullPresence res;
     for (const auto & arg : args)
-    {
-        if (!found_null && arg->isNull())
-        {
-            found_null = true;
-            break;
-        }
-        else if (!found_nullable && arg->isNullable())
-            found_nullable = true;
-    }
-
-    if (found_null)
-        return Category::IS_NULL;
-    else if (found_nullable)
-        return Category::IS_NULLABLE;
-    else
-        return Category::IS_ORDINARY;
+        getNullPresence(*arg, res);
+    return res;
 }
 
-/// Turn the specified set of columns into their respective nested columns.
-ColumnsWithTypeAndName toNestedColumns(const ColumnsWithTypeAndName & args)
-{
-    ColumnsWithTypeAndName new_args;
-    new_args.reserve(args.size());
-
-    for (const auto & arg : args)
-    {
-        if (arg.type->isNullable())
-        {
-            auto nullable_col = static_cast<const ColumnNullable *>(arg.column.get());
-            ColumnPtr nested_col = (nullable_col != nullptr) ? nullable_col->getNestedColumn() : nullptr;
-            auto nullable_type = static_cast<const DataTypeNullable *>(arg.type.get());
-            DataTypePtr nested_type = nullable_type->getNestedType();
-
-            new_args.emplace_back(nested_col, nested_type, arg.name);
-        }
-        else
-            new_args.emplace_back(arg.column, arg.type, arg.name);
-    }
-
-    return new_args;
-}
 
 /// Turn the specified set of data types into their respective nested data types.
 DataTypes toNestedDataTypes(const DataTypes & args)
@@ -166,201 +95,34 @@ DataTypes toNestedDataTypes(const DataTypes & args)
     return new_args;
 }
 
-}
 
-
-void IFunction::checkNumberOfArguments(size_t number_of_arguments) const
+/// If required by the specified strategy, process the given block, then
+/// return the processed block. Otherwise return an empty block.
+Block preProcessBlock(NullPresence null_presence, const Block & block, const ColumnNumbers & args, size_t result)
 {
-    if (isVariadic())
-        return;
-
-    size_t expected_number_of_arguments = getNumberOfArguments();
-
-    if (number_of_arguments != expected_number_of_arguments)
-        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-            + toString(number_of_arguments) + ", should be " + toString(expected_number_of_arguments),
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-}
-
-
-DataTypePtr IFunction::getReturnType(const DataTypes & arguments) const
-{
-    checkNumberOfArguments(arguments.size());
-
-    auto category = hasSpecialDataTypes(arguments);
-
-    switch (category)
-    {
-        case Category::IS_ORDINARY:
-            break;
-
-        case Category::IS_NULL:
-            if (!hasSpecialSupportForNulls())
-                return std::make_shared<DataTypeNull>();
-            break;
-
-        case Category::IS_NULLABLE:
-            if (!hasSpecialSupportForNulls())
-                return getReturnTypeImpl(toNestedDataTypes(arguments));
-            break;
-    }
-
-    return getReturnTypeImpl(arguments);
-}
-
-
-void IFunction::getReturnTypeAndPrerequisites(
-    const ColumnsWithTypeAndName & arguments,
-    DataTypePtr & out_return_type,
-    std::vector<ExpressionAction> & out_prerequisites)
-{
-    checkNumberOfArguments(arguments.size());
-
-    auto category = hasSpecialColumns(arguments);
-
-    switch (category)
-    {
-        case Category::IS_ORDINARY:
-            break;
-
-        case Category::IS_NULL:
-            if (!hasSpecialSupportForNulls())
-            {
-                out_return_type = std::make_shared<DataTypeNull>();
-                return;
-            }
-            break;
-
-        case Category::IS_NULLABLE:
-            if (!hasSpecialSupportForNulls())
-            {
-                const ColumnsWithTypeAndName new_args = toNestedColumns(arguments);
-                getReturnTypeAndPrerequisitesImpl(new_args, out_return_type, out_prerequisites);
-                out_return_type = std::make_shared<DataTypeNullable>(out_return_type);
-                return;
-            }
-            break;
-    }
-
-    getReturnTypeAndPrerequisitesImpl(arguments, out_return_type, out_prerequisites);
-}
-
-
-void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
-{
-    checkNumberOfArguments(arguments.size());
-
-    auto category = hasSpecialDataTypes(arguments);
-
-    switch (category)
-    {
-        case Category::IS_ORDINARY:
-            break;
-
-        case Category::IS_NULL:
-            if (!hasSpecialSupportForNulls())
-                return;
-            break;
-
-        case Category::IS_NULLABLE:
-            if (!hasSpecialSupportForNulls())
-            {
-                DataTypes new_args = toNestedDataTypes(arguments);
-                getLambdaArgumentTypesImpl(new_args);
-                arguments = std::move(new_args);
-                return;
-            }
-            break;
-    }
-
-    getLambdaArgumentTypesImpl(arguments);
-}
-
-
-void IFunction::execute(Block & block, const ColumnNumbers & args, size_t result)
-{
-    auto strategy = chooseStrategy(block, args);
-    Block processed_block = preProcessBlock(strategy, block, args, result);
-
-    if (strategy != RETURN_NULL)
-    {
-        Block & src = processed_block ? processed_block : block;
-        executeImpl(src, args, result);
-    }
-
-    postProcessResult(strategy, block, processed_block, args, result);
-}
-
-
-void IFunction::execute(Block & block, const ColumnNumbers & args, const ColumnNumbers & prerequisites, size_t result)
-{
-    auto strategy = chooseStrategy(block, args);
-    Block processed_block = preProcessBlock(strategy, block, args, result);
-
-    if (strategy != RETURN_NULL)
-    {
-        Block & src = processed_block ? processed_block : block;
-        executeImpl(src, args, prerequisites, result);
-    }
-
-    postProcessResult(strategy, block, processed_block, args, result);
-}
-
-
-IFunction::Strategy IFunction::chooseStrategy(const Block & block, const ColumnNumbers & args)
-{
-    auto category = blockHasSpecialColumns(block, args);
-
-    switch (category)
-    {
-        case Category::IS_ORDINARY:
-            break;
-
-        case Category::IS_NULL:
-            if (!hasSpecialSupportForNulls())
-                return RETURN_NULL;
-            break;
-
-        case Category::IS_NULLABLE:
-            if (!hasSpecialSupportForNulls())
-                return PROCESS_NULLABLE_COLUMNS;
-            break;
-    }
-
-    return DIRECTLY_EXECUTE;
-}
-
-
-Block IFunction::preProcessBlock(Strategy strategy, const Block & block, const ColumnNumbers & args, size_t result)
-{
-    if (strategy == DIRECTLY_EXECUTE)
+    if (null_presence.has_null)
         return {};
-    else if (strategy == RETURN_NULL)
-        return {};
-    else if (strategy == PROCESS_NULLABLE_COLUMNS)
+    else if (null_presence.has_nullable)
     {
         /// Run the function on a block whose nullable columns have been replaced
         /// with their respective nested columns.
-        return createBlockWithNestedColumns(block, args, result);
+        return unwrapNullable(block, args, result);
     }
     else
-        throw Exception{"IFunction: logical error, unknown execution strategy.", ErrorCodes::LOGICAL_ERROR};
+        return {};
 }
 
-
-void IFunction::postProcessResult(Strategy strategy, Block & block, const Block & processed_block,
+/// If required by the specified strategy, post-process the result column.
+void postProcessResult(NullPresence null_presence, Block & block, const Block & processed_block,
     const ColumnNumbers & args, size_t result)
 {
-    if (strategy == DIRECTLY_EXECUTE)
-    {
-    }
-    else if (strategy == RETURN_NULL)
+    if (null_presence.has_null)
     {
         /// We have found at least one NULL argument. Therefore we return NULL.
         ColumnWithTypeAndName & dest_col = block.safeGetByPosition(result);
-        dest_col.column =  std::make_shared<ColumnNull>(block.rows(), Null());
+        dest_col.column = std::make_shared<ColumnNull>(block.rows(), Null());
     }
-    else if (strategy == PROCESS_NULLABLE_COLUMNS)
+    else if (null_presence.has_nullable)
     {
         const ColumnWithTypeAndName & source_col = processed_block.safeGetByPosition(result);
         ColumnWithTypeAndName & dest_col = block.safeGetByPosition(result);
@@ -373,14 +135,15 @@ void IFunction::postProcessResult(Strategy strategy, Block & block, const Block 
         /// nullable columns.
         createNullMap(block, args, result);
     }
-    else
-        throw Exception{"IFunction: logical error, unknown execution strategy.", ErrorCodes::LOGICAL_ERROR};
+}
+
 }
 
 
-Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers args)
+Block unwrapNullable(const Block & block, const ColumnNumbers & args, size_t result)
 {
-    std::sort(args.begin(), args.end());
+    ColumnNumbers args_sorted = args;
+    std::sort(args_sorted.begin(), args_sorted.end());
 
     Block res;
 
@@ -390,45 +153,7 @@ Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers
         const auto & col = block.getByPosition(i);
         bool is_inserted = false;
 
-        if ((j < args.size()) && (i == args[j]))
-        {
-            ++j;
-
-            if (col.column->isNullable())
-            {
-                auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
-                const ColumnPtr & nested_col = nullable_col->getNestedColumn();
-
-                auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
-                const DataTypePtr & nested_type = nullable_type->getNestedType();
-
-                res.insert(i, {nested_col, nested_type, col.name});
-
-                is_inserted = true;
-            }
-        }
-
-        if (!is_inserted)
-            res.insert(i, col);
-    }
-
-    return res;
-}
-
-
-Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result)
-{
-    std::sort(args.begin(), args.end());
-
-    Block res;
-
-    size_t j = 0;
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        const auto & col = block.getByPosition(i);
-        bool is_inserted = false;
-
-        if ((j < args.size()) && (i == args[j]))
+        if ((j < args_sorted.size()) && (i == args_sorted[j]))
         {
             ++j;
 
@@ -462,6 +187,117 @@ Block IFunction::createBlockWithNestedColumns(const Block & block, ColumnNumbers
     }
 
     return res;
+}
+
+
+void IFunction::checkNumberOfArguments(size_t number_of_arguments) const
+{
+    if (isVariadic())
+        return;
+
+    size_t expected_number_of_arguments = getNumberOfArguments();
+
+    if (number_of_arguments != expected_number_of_arguments)
+        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+            + toString(number_of_arguments) + ", should be " + toString(expected_number_of_arguments),
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+}
+
+
+DataTypePtr IFunction::getReturnType(const DataTypes & arguments) const
+{
+    checkNumberOfArguments(arguments.size());
+
+    if (!hasSpecialSupportForNulls())
+        return getReturnTypeImpl(arguments);
+
+    NullPresence null_presence = getNullPresence(arguments);
+
+    if (null_presence.has_null)
+        return std::make_shared<DataTypeNull>();
+
+    if (null_presence.has_nullable)
+        return getReturnTypeImpl(toNestedDataTypes(arguments));
+
+    return getReturnTypeImpl(arguments);
+}
+
+
+DataTypePtr IFunction::getReturnTypeDependingOnConstantArguments(const Block & arguments)
+{
+    checkNumberOfArguments(arguments.columns());
+
+    if (!hasSpecialSupportForNulls())
+        return getReturnTypeDependingOnConstantArgumentsImpl(arguments);
+
+    NullPresence null_presence = getNullPresence(arguments);
+
+    if (null_presence.has_null)
+        return std::make_shared<DataTypeNull>();
+
+    if (null_presence.has_nullable)
+    {
+        ColumnNumbers all_columns(arguments.columns());
+        std::iota(all_columns.begin(), all_columns.end(), 0);
+        return getReturnTypeDependingOnConstantArgumentsImpl(unwrapNullable(arguments, all_columns, arguments.columns()));
+    }
+
+    return getReturnTypeDependingOnConstantArgumentsImpl(arguments);
+}
+
+
+DataTypePtr IFunction::getReturnTypeDependingOnConstantArgumentsImpl(const Block & arguments)
+{
+    size_t num_columns = arguments.columns();
+    DataTypes arg_types(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        arg_types[i] = arguments.getByPosition(i).type;
+    return getReturnTypeImpl(arg_types);
+}
+
+
+void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
+{
+    checkNumberOfArguments(arguments.size());
+
+    if (!hasSpecialSupportForNulls())
+    {
+        getLambdaArgumentTypesImpl(arguments);
+        return;
+    }
+
+    NullPresence null_presence = getNullPresence(arguments);
+
+    if (null_presence.has_null)
+        return;
+
+    if (null_presence.has_nullable)
+    {
+        DataTypes new_args = toNestedDataTypes(arguments);
+        getLambdaArgumentTypesImpl(new_args);
+        arguments = std::move(new_args);
+        return;
+    }
+
+    getLambdaArgumentTypesImpl(arguments);
+}
+
+
+void IFunction::execute(Block & block, const ColumnNumbers & args, size_t result)
+{
+    NullPresence null_presence;
+    if (hasSpecialSupportForNulls())
+        null_presence = getNullPresence(block, args);
+
+    Block processed_block = preProcessBlock(null_presence, block, args, result);
+
+    if (!null_presence.has_null)
+    {
+        Block & src = processed_block ? processed_block : block;
+        executeImpl(src, args, result);
+    }
+
+    postProcessResult(null_presence, block, processed_block, args, result);
 }
 
 }

@@ -1,7 +1,6 @@
 #include <DataStreams/CastTypeBlockInputStream.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
@@ -96,14 +95,7 @@ void CastTypeBlockInputStream::initialize(const Block & src_block)
             ColumnWithTypeAndName res_type_name_column(std::make_shared<ColumnConstString>(1, ref_column.type->getName()), std::make_shared<DataTypeString>(), "");
             ColumnWithTypeAndName res_blank_column(nullptr, ref_column.type->clone(), src_column.name);
 
-            /// Prepares function to execution
             auto cast_function = FunctionFactory::instance().get("CAST", context);
-            {
-                DataTypePtr unused_return_type;
-                std::vector<ExpressionAction> unused_prerequisites;
-                ColumnsWithTypeAndName arguments{src_column, res_type_name_column};
-                cast_function->getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
-            }
 
             /// Prefill arguments and result column for current CAST
             tmp_conversion_block.insert(src_column);

@@ -692,44 +692,46 @@ public:
         }
     }
 
-    void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
-                                        DataTypePtr & out_return_type,
-                                        ExpressionActions::Actions & out_prerequisites) override
-    {
-        size_t min_args = Impl::needExpression() ? 2 : 1;
-        if (arguments.size() < min_args)
-            throw Exception("Function " + getName() + " needs at least "
-                            + toString(min_args) + " argument; passed "
-                            + toString(arguments.size()) + ".",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    bool isReturnTypeDependOnConstantArguments() const override { return true; };
 
-        if (arguments.size() == 1)
+    DataTypePtr getReturnTypeDependingOnConstantArgumentsImpl(const Block & arguments) override
+    {
+        size_t num_args = arguments.columns();
+        size_t min_args = Impl::needExpression() ? 2 : 1;
+
+        if (num_args < min_args)
+            throw Exception("Function " + getName() + " needs at least "
+                + toString(min_args) + " argument; passed "
+                + toString(num_args) + ".",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if (num_args == 1)
         {
-            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[0].type);
+            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments.getByPosition(0).type.get());
 
             if (!array_type)
                 throw Exception("The only argument for function " + getName() + " must be array. Found "
-                                + arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    + arguments.getByPosition(0).type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             DataTypePtr nested_type = array_type->getNestedType();
 
-            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(&*nested_type))
+            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(nested_type.get()))
                 throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
-                                + arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    + arguments.getByPosition(0).type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            out_return_type = Impl::getReturnType(nested_type, nested_type);
+            return Impl::getReturnType(nested_type, nested_type);
         }
         else
         {
-            if (arguments.size() > 2 && Impl::needOneArray())
+            if (num_args > 2 && Impl::needOneArray())
                 throw Exception("Function " + getName() + " needs one array argument.",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            if (!arguments[0].column)
+            if (!arguments.getByPosition(0).column)
                 throw Exception("Type of first argument for function " + getName() + " must be an expression.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const ColumnExpression * column_expression = typeid_cast<const ColumnExpression *>(arguments[0].column.get());
+            const ColumnExpression * column_expression = typeid_cast<const ColumnExpression *>(arguments.getByPosition(0).column.get());
 
             if (!column_expression)
                 throw Exception("Column of first argument for function " + getName() + " must be an expression.",
@@ -737,35 +739,17 @@ public:
 
             /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
-            /// Let's add to the block all the columns mentioned in the expression, multiplied into an array parallel to the one being processed.
-            const ExpressionActions & expression = *column_expression->getExpression();
-            const NamesAndTypesList & required_columns = expression.getRequiredColumnsWithTypes();
-
-            Names argument_name_vector = column_expression->getArgumentNames();
-            NameSet argument_names(argument_name_vector.begin(), argument_name_vector.end());
-
-            for (const auto & required_column : required_columns)
-            {
-                if (argument_names.count(required_column.name))
-                    continue;
-                Names replicate_arguments;
-                replicate_arguments.push_back(required_column.name);
-                replicate_arguments.push_back(arguments[1].name);
-                out_prerequisites.push_back(ExpressionAction::applyFunction(std::make_shared<FunctionReplicate>(), replicate_arguments));
-            }
-
             DataTypePtr return_type = column_expression->getReturnType();
-            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(&*return_type))
+            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(return_type.get()))
                 throw Exception("Expression for function " + getName() + " must return UInt8, found "
-                                + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const DataTypeArray * first_array_type = typeid_cast<const DataTypeArray *>(&*arguments[1].type);
-
-            out_return_type = Impl::getReturnType(return_type, first_array_type->getNestedType());
+            const DataTypeArray & first_array_type = typeid_cast<const DataTypeArray &>(*arguments.getByPosition(1).type);
+            return Impl::getReturnType(return_type, first_array_type.getNestedType());
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         if (arguments.size() == 1)
         {
@@ -791,13 +775,13 @@ public:
                 throw Exception("First argument for function " + getName() + " must be an expression.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            ColumnExpression * column_expression = typeid_cast<ColumnExpression *>(column_with_type_and_name.column.get());
+            ColumnExpression & column_expression = typeid_cast<ColumnExpression &>(*column_with_type_and_name.column);
 
             ColumnPtr offsets_column;
 
             Block temp_block;
-            const ExpressionActions & expression = *column_expression->getExpression();
-            NamesAndTypes expression_arguments = column_expression->getArguments();
+            const ExpressionActions & expression = *column_expression.getExpression();
+            NamesAndTypes expression_arguments = column_expression.getArguments();
             NameSet argument_names;
 
             ColumnPtr column_first_array_ptr;
@@ -848,10 +832,9 @@ public:
                 argument_names.insert(argument_name);
             }
 
-            /// Put all the necessary columns multiplied by the sizes of arrays into the block.
+            /// Put all the necessary columns with values replicated by the sizes of arrays into the block.
 
             Names required_columns = expression.getRequiredColumns();
-            size_t prerequisite_index = 0;
 
             for (size_t i = 0; i < required_columns.size(); ++i)
             {
@@ -860,34 +843,45 @@ public:
                 if (argument_names.count(name))
                     continue;
 
-                ColumnWithTypeAndName replicated_column = block.safeGetByPosition(prerequisites[prerequisite_index]);
+                FunctionReplicate function_replicate;
+
+                Block function_replicate_block;
+                function_replicate_block.insert(block.getByName(name));
+                function_replicate_block.insert(block.getByPosition(arguments[1])); /// First array.
+
+                DataTypes function_replicate_argument_types{
+                    function_replicate_block.getByPosition(0).type,
+                    function_replicate_block.getByPosition(1).type };
+
+                function_replicate_block.insert({ nullptr, function_replicate.getReturnType(function_replicate_argument_types), "" });
+
+                FunctionReplicate().execute(function_replicate_block, {0, 1}, 2);
+                ColumnWithTypeAndName replicated_column = function_replicate_block.getByPosition(2);
 
                 replicated_column.name = name;
                 replicated_column.column = typeid_cast<ColumnArray &>(*replicated_column.column).getDataPtr();
                 replicated_column.type = typeid_cast<const DataTypeArray &>(*replicated_column.type).getNestedType(),
                 temp_block.insert(std::move(replicated_column));
-
-                ++prerequisite_index;
             }
 
             expression.execute(temp_block);
 
-            block.safeGetByPosition(result).column = Impl::execute(*column_first_array, temp_block.getByName(column_expression->getReturnName()).column);
+            block.safeGetByPosition(result).column = Impl::execute(*column_first_array, temp_block.getByName(column_expression.getReturnName()).column);
         }
     }
 };
 
 
-struct NameArrayMap            { static constexpr auto name = "arrayMap"; };
-struct NameArrayFilter        { static constexpr auto name = "arrayFilter"; };
-struct NameArrayCount        { static constexpr auto name = "arrayCount"; };
-struct NameArrayExists        { static constexpr auto name = "arrayExists"; };
-struct NameArrayAll            { static constexpr auto name = "arrayAll"; };
-struct NameArraySum            { static constexpr auto name = "arraySum"; };
-struct NameArrayFirst        { static constexpr auto name = "arrayFirst"; };
-struct NameArrayFirstIndex    { static constexpr auto name = "arrayFirstIndex"; };
+struct NameArrayMap         { static constexpr auto name = "arrayMap"; };
+struct NameArrayFilter      { static constexpr auto name = "arrayFilter"; };
+struct NameArrayCount       { static constexpr auto name = "arrayCount"; };
+struct NameArrayExists      { static constexpr auto name = "arrayExists"; };
+struct NameArrayAll         { static constexpr auto name = "arrayAll"; };
+struct NameArraySum         { static constexpr auto name = "arraySum"; };
+struct NameArrayFirst       { static constexpr auto name = "arrayFirst"; };
+struct NameArrayFirstIndex  { static constexpr auto name = "arrayFirstIndex"; };
 struct NameArraySort        { static constexpr auto name = "arraySort"; };
-struct NameArrayReverseSort    { static constexpr auto name = "arrayReverseSort"; };
+struct NameArrayReverseSort { static constexpr auto name = "arrayReverseSort"; };
 
 using FunctionArrayMap = FunctionArrayMapped<ArrayMapImpl, NameArrayMap>;
 using FunctionArrayFilter = FunctionArrayMapped<ArrayFilterImpl, NameArrayFilter>;

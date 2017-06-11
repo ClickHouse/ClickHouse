@@ -134,7 +134,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
         args_to_transform.push_back(args[i]);
     args_to_transform.push_back(args[else_arg]);
 
-    Block block_with_nested_cols = createBlockWithNestedColumns(block, args_to_transform);
+    Block block_with_nested_cols = unwrapNullable(block, args_to_transform, result);
 
     /// Create an object that will incrementally build the null map of the
     /// result column to be returned.

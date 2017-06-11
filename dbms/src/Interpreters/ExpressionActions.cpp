@@ -33,7 +33,6 @@ Names ExpressionAction::getNeededColumns() const
 {
     Names res = argument_names;
 
-    res.insert(res.end(), prerequisite_names.begin(), prerequisite_names.end());
     res.insert(res.end(), array_joined_columns.begin(), array_joined_columns.end());
 
     for (const auto & column : projection)
@@ -140,35 +139,6 @@ ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join
 }
 
 
-ExpressionActions::Actions ExpressionAction::getPrerequisites(Block & sample_block)
-{
-    ExpressionActions::Actions res;
-
-    if (type == APPLY_FUNCTION)
-    {
-        if (sample_block.has(result_name))
-            throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
-
-        ColumnsWithTypeAndName arguments(argument_names.size());
-        for (size_t i = 0; i < argument_names.size(); ++i)
-        {
-            if (!sample_block.has(argument_names[i]))
-                throw Exception("Unknown identifier: '" + argument_names[i] + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
-            arguments[i] = sample_block.getByName(argument_names[i]);
-        }
-
-        function->getReturnTypeAndPrerequisites(arguments, result_type, res);
-
-        for (size_t i = 0; i < res.size(); ++i)
-        {
-            if (res[i].result_name != "")
-                prerequisite_names.push_back(res[i].result_name);
-        }
-    }
-
-    return res;
-}
-
 void ExpressionAction::prepare(Block & sample_block)
 {
 //    std::cerr << "preparing: " << toString() << std::endl;
@@ -198,15 +168,6 @@ void ExpressionAction::prepare(Block & sample_block)
                     all_const = false;
             }
 
-            ColumnNumbers prerequisites(prerequisite_names.size());
-            for (size_t i = 0; i < prerequisite_names.size(); ++i)
-            {
-                prerequisites[i] = sample_block.getPositionByName(prerequisite_names[i]);
-                ColumnPtr col = sample_block.safeGetByPosition(prerequisites[i]).column;
-                if (!col || !col->isConst())
-                    all_const = false;
-            }
-
             ColumnPtr new_column;
 
             /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
@@ -219,7 +180,7 @@ void ExpressionAction::prepare(Block & sample_block)
                 new_column.type = result_type;
                 sample_block.insert(std::move(new_column));
 
-                function->execute(sample_block, arguments, prerequisites, result_position);
+                function->execute(sample_block, arguments, result_position);
 
                 /// If the result is not a constant, just in case, we will consider the result as unknown.
                 ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
@@ -329,19 +290,11 @@ void ExpressionAction::execute(Block & block) const
                 arguments[i] = block.getPositionByName(argument_names[i]);
             }
 
-            ColumnNumbers prerequisites(prerequisite_names.size());
-            for (size_t i = 0; i < prerequisite_names.size(); ++i)
-            {
-                if (!block.has(prerequisite_names[i]))
-                    throw Exception("Not found column: '" + prerequisite_names[i] + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-                prerequisites[i] = block.getPositionByName(prerequisite_names[i]);
-            }
-
             size_t num_columns_without_result = block.columns();
             block.insert({ nullptr, result_type, result_name});
 
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
-            function->execute(block, arguments, prerequisites, num_columns_without_result);
+            function->execute(block, arguments, num_columns_without_result);
 
             break;
         }
@@ -576,40 +529,45 @@ void ExpressionActions::addInput(const NameAndTypePair & column)
 
 void ExpressionActions::add(const ExpressionAction & action, Names & out_new_columns)
 {
-    NameSet temp_names;
-    addImpl(action, temp_names, out_new_columns);
+    addImpl(action, out_new_columns);
 }
 
 void ExpressionActions::add(const ExpressionAction & action)
 {
-    NameSet temp_names;
     Names new_names;
-    addImpl(action, temp_names, new_names);
+    addImpl(action, new_names);
 }
 
-void ExpressionActions::addImpl(ExpressionAction action, NameSet & current_names, Names & new_names)
+void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
 {
     if (sample_block.has(action.result_name))
         return;
-
-    if (current_names.count(action.result_name))
-        throw Exception("Cyclic function prerequisites: " + action.result_name, ErrorCodes::LOGICAL_ERROR);
-
-    current_names.insert(action.result_name);
 
     if (action.result_name != "")
         new_names.push_back(action.result_name);
     new_names.insert(new_names.end(), action.array_joined_columns.begin(), action.array_joined_columns.end());
 
-    Actions prerequisites = action.getPrerequisites(sample_block);
+    /// Calculate result_type.
+    if (action.type == ExpressionAction::APPLY_FUNCTION)
+    {
+        if (sample_block.has(action.result_name))
+            throw Exception("Column '" + action.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
-    for (size_t i = 0; i < prerequisites.size(); ++i)
-        addImpl(prerequisites[i], current_names, new_names);
+        Block arguments;
+        for (const auto & arg_name : action.argument_names)
+        {
+            if (!sample_block.has(arg_name))
+                throw Exception("Unknown identifier: '" + arg_name + "' in argument of function '" + action.function->getName() + "'",
+                    ErrorCodes::UNKNOWN_IDENTIFIER);
+
+            arguments.insert(sample_block.getByName(arg_name));
+        }
+
+        action.result_type = action.function->getReturnTypeDependingOnConstantArguments(arguments);
+    }
 
     action.prepare(sample_block);
     actions.push_back(action);
-
-    current_names.erase(action.result_name);
 }
 
 void ExpressionActions::prependProjectInput()
@@ -874,9 +832,6 @@ void ExpressionActions::finalize(const Names & output_columns)
         for (const auto & name : action.argument_names)
             ++columns_refcount[name];
 
-        for (const auto & name : action.prerequisite_names)
-            ++columns_refcount[name];
-
         for (const auto & name_alias : action.projection)
             ++columns_refcount[name_alias.first];
     }
@@ -903,9 +858,6 @@ void ExpressionActions::finalize(const Names & output_columns)
             process(action.source_name);
 
         for (const auto & name : action.argument_names)
-            process(name);
-
-        for (const auto & name : action.prerequisite_names)
             process(name);
 
         /// For `projection`, there is no reduction in `refcount`, because the `project` action replaces the names of the columns, in effect, already deleting them under the old names.
