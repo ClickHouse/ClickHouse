@@ -43,8 +43,8 @@ public:
     {
         static_assert(std::is_same<decltype(&Function::create), Creator>::value, "Function::create has incorrect type");
 
-        if (!functions.emplace(Function::name, &Function::create).second)
-            throw Exception("FunctionFactory: the function name '" + std::string(Function::name) + "' is not unique",
+        if (!functions.emplace(std::string(Function::name), &Function::create).second)
+            throw Exception("FunctionFactory: the function name is not unique",
                 ErrorCodes::LOGICAL_ERROR);
     }
 };
