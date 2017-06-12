@@ -23,8 +23,8 @@ namespace ErrorCodes
 
 
 ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
-    StorageReplicatedMergeTree & storage_, const String & insert_id_, size_t quorum_, size_t quorum_timeout_ms_)
-    : storage(storage_), insert_id(insert_id_), quorum(quorum_), quorum_timeout_ms(quorum_timeout_ms_),
+    StorageReplicatedMergeTree & storage_, size_t quorum_, size_t quorum_timeout_ms_)
+    : storage(storage_), quorum(quorum_), quorum_timeout_ms(quorum_timeout_ms_),
     log(&Logger::get(storage.data.getLogName() + " (Replicated OutputStream)"))
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
@@ -110,7 +110,6 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
         assertSessionIsNotExpired(zookeeper);
 
         ++block_index;
-        String block_id = insert_id.empty() ? "" : insert_id + "__" + toString(block_index);
         String month_name = toString(DateLUT::instance().toNumYYYYMMDD(DayNum_t(current_block.min_date)) / 100);
 
         AbandonableLockInZooKeeper block_number_lock = storage.allocateBlockNumber(month_name);    /// 2 RTT
@@ -132,16 +131,8 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         String checksum(hash_value.bytes, 16);
 
-        /// If no ID is specified in query, we take the hash from the data as ID. That is, do not insert the same data twice.
-        /// NOTE: If you do not need this deduplication, you can leave `block_id` empty instead.
-        ///       Setting or syntax in the query (for example, `ID = null`) could be done for this.
-        if (block_id.empty())
-        {
-            block_id = toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
-
-            if (block_id.empty())
-                throw Exception("Logical error: block_id is empty.", ErrorCodes::LOGICAL_ERROR);
-        }
+        /// We take the hash from the data as ID. That is, do not insert the same data twice.
+        String block_id = toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 
         LOG_DEBUG(log, "Wrote block " << part_number << " with ID " << block_id << ", " << current_block.block.rows() << " rows");
 
@@ -253,12 +244,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
                     /// If the data is different from the ones that were inserted earlier with the same ID, throw an exception.
                     if (expected_checksum != checksum)
-                    {
-                        if (!insert_id.empty())
-                            throw Exception("Attempt to insert block with same ID but different checksum", ErrorCodes::CHECKSUM_DOESNT_MATCH);
-                        else
-                            throw Exception("Logical error: got ZNODEEXISTS while inserting data, block ID is derived from checksum but checksum doesn't match", ErrorCodes::LOGICAL_ERROR);
-                    }
+                        throw Exception("Logical error: got ZNODEEXISTS while inserting data, block ID is derived from checksum but checksum doesn't match", ErrorCodes::LOGICAL_ERROR);
 
                     transaction.rollback();
                 }
