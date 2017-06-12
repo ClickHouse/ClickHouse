@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <climits>
 #include <random>
+#include <functional>
 #include <common/Types.h>
 #include <ext/scope_guard.h>
 #include <Core/Types.h>
