@@ -36,7 +36,7 @@ public:
     template <typename Function>
     void registerFunction()
     {
-        if (!functions.emplace(Function::name, []{ return TableFunctionPtr(std::make_unique<Function>()); }).second)
+        if (!functions.emplace(std::string(Function::name), []{ return TableFunctionPtr(std::make_unique<Function>()); }).second)
             throw Exception("TableFunctionFactory: the table function name '" + String(Function::name) + "' is not unique",
                 ErrorCodes::LOGICAL_ERROR);
     }
