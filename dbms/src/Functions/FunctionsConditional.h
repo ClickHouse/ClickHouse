@@ -13,8 +13,8 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/IFunction.h>
-#include <Functions/NumberTraits.h>
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/NumberTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 
 namespace DB
 {

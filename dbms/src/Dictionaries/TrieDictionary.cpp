@@ -8,9 +8,11 @@
 #include <Columns/ColumnFixedString.h>
 #include <Dictionaries/DictionaryBlockInputStream.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <Functions/FunctionsCoding.h>
 #include <IO/WriteIntText.h>
 #include <iostream>
+
+#include <Functions/FunctionsCoding.h>
+
 
 namespace DB
 {

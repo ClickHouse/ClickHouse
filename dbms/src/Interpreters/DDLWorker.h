@@ -13,7 +13,7 @@
 namespace DB
 {
 
-struct ASTAlterQuery;
+class ASTAlterQuery;
 struct DDLLogEntry;
 
 

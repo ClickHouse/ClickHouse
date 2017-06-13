@@ -1,4 +1,4 @@
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 
 namespace DB { namespace DataTypeTraits {
 

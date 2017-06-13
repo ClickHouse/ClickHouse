@@ -86,7 +86,7 @@ struct DDLLogEntry
         rb >> "version: " >> version >> "\n";
 
         if (version != CURRENT_VERSION)
-            throw Exception("Unknown DDLLogEntry format version: " + version, ErrorCodes::UNKNOWN_FORMAT_VERSION);
+            throw Exception("Unknown DDLLogEntry format version: " + DB::toString(version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
         rb >> "query: " >> escape >> query >> "\n";
         rb >> "hosts: " >> hosts >> "\n";

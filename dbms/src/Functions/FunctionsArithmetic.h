@@ -6,7 +6,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
-#include <Functions/NumberTraits.h>
+#include <DataTypes/NumberTraits.h>
 #include <Core/AccurateComparison.h>
 #include <Core/FieldVisitors.h>
 
