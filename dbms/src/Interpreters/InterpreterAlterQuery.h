@@ -10,8 +10,8 @@
 namespace DB
 {
 
-/** Позволяет добавить или удалить столбец в таблице.
-  * Также позволяет осуществить манипуляции с партициями таблиц семейства MergeTree.
+/** Allows you add or remove a column in the table.
+  * It also allows you to manipulate the partitions of the MergeTree family tables.
   */
 class InterpreterAlterQuery : public IInterpreter
 {
@@ -37,13 +37,13 @@ private:
 
         Field partition;
         Field column_name;
-        bool detach = false; /// true для DETACH PARTITION.
+        bool detach = false; /// true for DETACH PARTITION.
 
         bool part = false;
 
-        String from; /// Для FETCH PARTITION - путь в ZK к шарду, с которого скачивать партицию.
+        String from; /// For FETCH PARTITION - path in ZK to the shard, from which to download the partition.
 
-        /// Для RESHARD PARTITION.
+        /// For RESHARD PARTITION.
         Field last_partition;
         WeightedZooKeeperPaths weighted_zookeeper_paths;
         ASTPtr sharding_key_expr;

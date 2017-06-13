@@ -1,6 +1,6 @@
 #include <Poco/DirectoryIterator.h>
 #include <Common/ClickHouseRevision.h>
-#include <ext/unlock_guard.hpp>
+#include <ext/unlock_guard.h>
 
 #include <Common/SipHash.h>
 #include <Common/ShellCommand.h>

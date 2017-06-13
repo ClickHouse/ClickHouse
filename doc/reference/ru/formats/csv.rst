@@ -1,5 +1,5 @@
 CSV
-----
+---
 
 Формат comma separated values (`RFC <https://tools.ietf.org/html/rfc4180>`_).
 

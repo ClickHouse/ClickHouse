@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Storages/StorageView.h>
 
@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class StorageMaterializedView : private ext::shared_ptr_helper<StorageMaterializedView>, public StorageView
+class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public StorageView
 {
 friend class ext::shared_ptr_helper<StorageMaterializedView>;
 
@@ -46,8 +46,8 @@ public:
         const ASTPtr & query,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
 private:
     StorageMaterializedView(

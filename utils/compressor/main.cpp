@@ -20,7 +20,7 @@ namespace DB
 }
 
 
-/// Выводит размеры разжатых и сжатых блоков для сжатого файла.
+/// Outputs sizes of uncompressed and compressed blocks for compressed file.
 void stat(DB::ReadBuffer & in, DB::WriteBuffer & out)
 {
     while (!in.eof())
@@ -101,18 +101,18 @@ int main(int argc, char ** argv)
 
         if (stat_mode)
         {
-            /// Вывести статистику для сжатого файла.
+            /// Output statistic for compressed file.
             stat(rb, wb);
         }
         else if (decompress)
         {
-            /// Разжатие
+            /// Decompression
             DB::CompressedReadBuffer from(rb);
             DB::copyData(from, wb);
         }
         else
         {
-            /// Сжатие
+            /// Compression
             DB::CompressedWriteBuffer to(wb, method, block_size);
             DB::copyData(rb, to);
         }

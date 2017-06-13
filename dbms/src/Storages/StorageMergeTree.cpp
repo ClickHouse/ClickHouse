@@ -58,38 +58,17 @@ StorageMergeTree::StorageMergeTree(
     data.loadDataParts(has_force_restore_data_flag);
     data.clearOldParts();
 
-    /// Temporary directories contain unfinalized results of Merges (after forced restart)
+    /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
     data.clearOldTemporaryDirectories(0);
 
     increment.set(data.getMaxDataPartIndex());
 }
 
-StoragePtr StorageMergeTree::create(
-    const String & path_, const String & database_name_, const String & table_name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    bool attach,
-    Context & context_,
-    ASTPtr & primary_expr_ast_,
-    const String & date_column_name_,
-    const ASTPtr & sampling_expression_,
-    size_t index_granularity_,
-    const MergeTreeData::MergingParams & merging_params_,
-    bool has_force_restore_data_flag_,
-    const MergeTreeSettings & settings_)
-{
-    auto res = make_shared(
-        path_, database_name_, table_name_,
-        columns_, materialized_columns_, alias_columns_, column_defaults_, attach,
-        context_, primary_expr_ast_, date_column_name_,
-        sampling_expression_, index_granularity_, merging_params_, has_force_restore_data_flag_, settings_
-    );
-    res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res.get()));
 
-    return res;
+void StorageMergeTree::startup()
+{
+    merge_task_handle = background_pool.addTask([this] { return mergeTask(); });
 }
 
 
@@ -114,9 +93,9 @@ BlockInputStreams StorageMergeTree::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
-    return reader.read(column_names, query, context, processed_stage, max_block_size, threads, nullptr, 0);
+    return reader.read(column_names, query, context, processed_stage, max_block_size, num_streams, nullptr, 0);
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & query, const Settings & settings)
@@ -346,7 +325,7 @@ bool StorageMergeTree::merge(
 
     merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
 
-    if (std::shared_ptr<PartLog> part_log = context.getPartLog())
+    if (auto part_log = context.getPartLog(database_name, table_name))
     {
         PartLogElement elem;
         elem.event_time = time(0);

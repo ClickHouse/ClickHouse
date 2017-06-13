@@ -1,16 +1,16 @@
 Functions for working with IP addresses
--------------------------
+---------------------------------------
 
 IPv4NumToString(num)
-~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~
 Takes a UInt32 number. Interprets it as an IPv4 address in big endian. Returns a string containing the corresponding IPv4 address in the format A.B.C.d (dot-separated numbers in decimal form).
 
 IPv4StringToNum(s)
-~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 The reverse function of IPv4NumToString. If the IPv4 address has an invalid format, it returns 0.
 
 IPv4NumToStringClassC(num)
-~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 Similar to IPv4NumToString, but using ``xxx`` instead of the last octet. 
 
 Example:
@@ -41,7 +41,7 @@ Example:
 Since using ``'xxx'`` is highly unusual, this may be changed in the future. We recommend that you don't rely on the exact format of this fragment.
 
 IPv6NumToString(x)
-~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing this address in text format.
 IPv6-mapped IPv4 addresses are output in the format ``::ffff:111.222.33.44``. Examples:
 
@@ -96,6 +96,6 @@ IPv6-mapped IPv4 addresses are output in the format ``::ffff:111.222.33.44``. Ex
   └────────────────────────────┴────────┘
 
 IPv6StringToNum(s)
-~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 The reverse function of IPv6NumToString. If the IPv6 address has an invalid format, it returns a string of null bytes.
 HEX can be uppercase or lowercase.

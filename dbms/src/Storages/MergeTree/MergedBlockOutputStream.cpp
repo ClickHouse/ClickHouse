@@ -79,7 +79,7 @@ void IMergedBlockOutputStream::addStream(
     {
         if (!skip_offsets)
         {
-            /// For arrays, separate threads are used for sizes.
+            /// For arrays, separate files are used for sizes.
             String size_name = DataTypeNested::extractNestedTableName(name)
                 + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
             String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))

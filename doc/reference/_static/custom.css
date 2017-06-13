@@ -22,11 +22,20 @@ pre {
 
 input {
     display: block;
-    margin-bottom: 4px;
+    margin: 0 0 4px 0;
 }
 
 a.reference {
 	border-bottom: none;
+}
+
+input[type="submit"] {
+	border: none!important;
+	background: #fc0;
+}
+
+#svg-flag {
+	border: 1px solid #eee;
 }
 
 @font-face {
@@ -92,4 +101,15 @@ a.reference {
 	font-weight: 300;
 	font-style: normal;
 	font-stretch: normal
+}
+
+
+@media screen and (max-width: 870px) {
+	div.sphinxsidebar a {
+		color: #fff;
+	}
+
+	div.document, div.footer {
+		width: auto;
+	}
 }

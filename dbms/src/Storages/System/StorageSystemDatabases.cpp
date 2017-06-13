@@ -20,11 +20,6 @@ StorageSystemDatabases::StorageSystemDatabases(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemDatabases::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemDatabases::read(
     const Names & column_names,
@@ -32,7 +27,7 @@ BlockInputStreams StorageSystemDatabases::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

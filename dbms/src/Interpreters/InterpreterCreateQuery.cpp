@@ -545,6 +545,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             context.getDatabase(database_name)->createTable(table_name, res, query_ptr, storage_name, context.getSettingsRef());
     }
 
+    res->startup();
+
     /// If the CREATE SELECT query is, insert the data into the table
     if (create.select && storage_name != "View" && (storage_name != "MaterializedView" || create.is_populate))
     {

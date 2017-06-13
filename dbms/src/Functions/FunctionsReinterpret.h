@@ -15,8 +15,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
+
 /** Functions for transforming numbers and dates to strings that contain the same set of bytes in the machine representation, and vice versa.
-    */
+  */
 
 
 template<typename Name>
@@ -104,8 +110,8 @@ public:
             ||    executeType<Float32>(block, arguments, result)
             ||    executeType<Float64>(block, arguments, result)))
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -196,32 +202,32 @@ public:
 };
 
 
-struct NameReinterpretAsUInt8         { static constexpr auto name = "reinterpretAsUInt8"; };
-struct NameReinterpretAsUInt16        { static constexpr auto name = "reinterpretAsUInt16"; };
-struct NameReinterpretAsUInt32        { static constexpr auto name = "reinterpretAsUInt32"; };
-struct NameReinterpretAsUInt64        { static constexpr auto name = "reinterpretAsUInt64"; };
-struct NameReinterpretAsInt8         { static constexpr auto name = "reinterpretAsInt8"; };
-struct NameReinterpretAsInt16         { static constexpr auto name = "reinterpretAsInt16"; };
-struct NameReinterpretAsInt32        { static constexpr auto name = "reinterpretAsInt32"; };
-struct NameReinterpretAsInt64        { static constexpr auto name = "reinterpretAsInt64"; };
-struct NameReinterpretAsFloat32        { static constexpr auto name = "reinterpretAsFloat32"; };
-struct NameReinterpretAsFloat64        { static constexpr auto name = "reinterpretAsFloat64"; };
+struct NameReinterpretAsUInt8       { static constexpr auto name = "reinterpretAsUInt8"; };
+struct NameReinterpretAsUInt16      { static constexpr auto name = "reinterpretAsUInt16"; };
+struct NameReinterpretAsUInt32      { static constexpr auto name = "reinterpretAsUInt32"; };
+struct NameReinterpretAsUInt64      { static constexpr auto name = "reinterpretAsUInt64"; };
+struct NameReinterpretAsInt8        { static constexpr auto name = "reinterpretAsInt8"; };
+struct NameReinterpretAsInt16       { static constexpr auto name = "reinterpretAsInt16"; };
+struct NameReinterpretAsInt32       { static constexpr auto name = "reinterpretAsInt32"; };
+struct NameReinterpretAsInt64       { static constexpr auto name = "reinterpretAsInt64"; };
+struct NameReinterpretAsFloat32     { static constexpr auto name = "reinterpretAsFloat32"; };
+struct NameReinterpretAsFloat64     { static constexpr auto name = "reinterpretAsFloat64"; };
 struct NameReinterpretAsDate        { static constexpr auto name = "reinterpretAsDate"; };
 struct NameReinterpretAsDateTime    { static constexpr auto name = "reinterpretAsDateTime"; };
-struct NameReinterpretAsString        { static constexpr auto name = "reinterpretAsString"; };
+struct NameReinterpretAsString      { static constexpr auto name = "reinterpretAsString"; };
 
-using FunctionReinterpretAsUInt8 = FunctionReinterpretStringAs<DataTypeUInt8,        NameReinterpretAsUInt8>    ;
-using FunctionReinterpretAsUInt16 = FunctionReinterpretStringAs<DataTypeUInt16,    NameReinterpretAsUInt16>;
-using FunctionReinterpretAsUInt32 = FunctionReinterpretStringAs<DataTypeUInt32,    NameReinterpretAsUInt32>;
-using FunctionReinterpretAsUInt64 = FunctionReinterpretStringAs<DataTypeUInt64,    NameReinterpretAsUInt64>;
-using FunctionReinterpretAsInt8 = FunctionReinterpretStringAs<DataTypeInt8,        NameReinterpretAsInt8>    ;
-using FunctionReinterpretAsInt16 = FunctionReinterpretStringAs<DataTypeInt16,        NameReinterpretAsInt16>    ;
-using FunctionReinterpretAsInt32 = FunctionReinterpretStringAs<DataTypeInt32,        NameReinterpretAsInt32>    ;
-using FunctionReinterpretAsInt64 = FunctionReinterpretStringAs<DataTypeInt64,        NameReinterpretAsInt64>    ;
-using FunctionReinterpretAsFloat32 = FunctionReinterpretStringAs<DataTypeFloat32,    NameReinterpretAsFloat32>;
-using FunctionReinterpretAsFloat64 = FunctionReinterpretStringAs<DataTypeFloat64,    NameReinterpretAsFloat64>;
-using FunctionReinterpretAsDate = FunctionReinterpretStringAs<DataTypeDate,        NameReinterpretAsDate>    ;
-using FunctionReinterpretAsDateTime = FunctionReinterpretStringAs<DataTypeDateTime,    NameReinterpretAsDateTime>;
+using FunctionReinterpretAsUInt8 = FunctionReinterpretStringAs<DataTypeUInt8,       NameReinterpretAsUInt8>;
+using FunctionReinterpretAsUInt16 = FunctionReinterpretStringAs<DataTypeUInt16,     NameReinterpretAsUInt16>;
+using FunctionReinterpretAsUInt32 = FunctionReinterpretStringAs<DataTypeUInt32,     NameReinterpretAsUInt32>;
+using FunctionReinterpretAsUInt64 = FunctionReinterpretStringAs<DataTypeUInt64,     NameReinterpretAsUInt64>;
+using FunctionReinterpretAsInt8 = FunctionReinterpretStringAs<DataTypeInt8,         NameReinterpretAsInt8>;
+using FunctionReinterpretAsInt16 = FunctionReinterpretStringAs<DataTypeInt16,       NameReinterpretAsInt16>;
+using FunctionReinterpretAsInt32 = FunctionReinterpretStringAs<DataTypeInt32,       NameReinterpretAsInt32>;
+using FunctionReinterpretAsInt64 = FunctionReinterpretStringAs<DataTypeInt64,       NameReinterpretAsInt64>;
+using FunctionReinterpretAsFloat32 = FunctionReinterpretStringAs<DataTypeFloat32,   NameReinterpretAsFloat32>;
+using FunctionReinterpretAsFloat64 = FunctionReinterpretStringAs<DataTypeFloat64,   NameReinterpretAsFloat64>;
+using FunctionReinterpretAsDate = FunctionReinterpretStringAs<DataTypeDate,         NameReinterpretAsDate>;
+using FunctionReinterpretAsDateTime = FunctionReinterpretStringAs<DataTypeDateTime, NameReinterpretAsDateTime>;
 
 using FunctionReinterpretAsString = FunctionReinterpretAsStringImpl<NameReinterpretAsString>;
 

@@ -1,11 +1,12 @@
 Distributed
 -----------
 
-**The Distributed engine does not store data itself**, but allows distributed query processing on multiple servers.
+**The Distributed engine by itself does not store data**, but allows distributed query processing on multiple servers.
 Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.
 The Distributed engine accepts parameters: the cluster name in the server's config file, the name of a remote database, the name of a remote table, and (optionally) a sharding key.
 Example:
-::
+.. code-block:: text
+
   Distributed(logs, default, hits[, sharding_key])
 
 - Data will be read from all servers in the 'logs' cluster, from the 'default.hits' table located on every server in the cluster.

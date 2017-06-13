@@ -50,35 +50,6 @@ StorageMerge::StorageMerge(
 {
 }
 
-StoragePtr StorageMerge::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const String & source_database_,
-    const String & table_name_regexp_,
-    const Context & context_)
-{
-    return make_shared(
-        name_, columns_,
-        source_database_, table_name_regexp_, context_
-    );
-}
-
-StoragePtr StorageMerge::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    const String & source_database_,
-    const String & table_name_regexp_,
-    const Context & context_)
-{
-    return make_shared(
-        name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
-        source_database_, table_name_regexp_, context_
-    );
-}
-
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const
 {
     auto type = VirtualColumnFactory::tryGetType(column_name);
@@ -99,7 +70,7 @@ BlockInputStreams StorageMerge::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     BlockInputStreams res;
 
@@ -159,7 +130,7 @@ BlockInputStreams StorageMerge::read(
 
         BlockInputStreams source_streams;
 
-        if (curr_table_number < threads)
+        if (curr_table_number < num_streams)
         {
             QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
             source_streams = table->read(
@@ -168,7 +139,7 @@ BlockInputStreams StorageMerge::read(
                 modified_context,
                 processed_stage_in_source_table,
                 max_block_size,
-                tables_count >= threads ? 1 : (threads / tables_count));
+                tables_count >= num_streams ? 1 : (num_streams / tables_count));
 
             if (!processed_stage_in_source_tables)
                 processed_stage_in_source_tables.emplace(processed_stage_in_source_table);
@@ -234,7 +205,7 @@ BlockInputStreams StorageMerge::read(
     if (processed_stage_in_source_tables)
         processed_stage = processed_stage_in_source_tables.value();
 
-    return narrowBlockInputStreams(res, threads);
+    return narrowBlockInputStreams(res, num_streams);
 }
 
 /// Construct a block consisting only of possible values of virtual columns

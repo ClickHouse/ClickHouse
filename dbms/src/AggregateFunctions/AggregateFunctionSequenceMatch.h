@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Parsers/CommonParsers.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <boost/range/iterator_range_core.hpp>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>

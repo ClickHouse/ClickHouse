@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <type_traits>
 
-#include <ext/bit_cast.hpp>
+#include <ext/bit_cast.h>
 #include <Core/Types.h>
 #include <Core/Defines.h>
 

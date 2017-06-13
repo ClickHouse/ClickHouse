@@ -23,6 +23,7 @@
 #include "StatusFile.h"
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -268,6 +269,7 @@ try
 
     registerFunctions();
     registerAggregateFunctions();
+    registerTableFunctions();
 
     /// Maybe useless
     if (config().has("macros"))

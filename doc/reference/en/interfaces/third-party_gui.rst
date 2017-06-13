@@ -1,5 +1,5 @@
 Third-party GUI
-------------------------------
+---------------
 
 There are `open source project Tabix <https://github.com/smi2/tabix.ui>`_ company of SMI2, which implements a graphical web interface for ClickHouse.
 

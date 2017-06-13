@@ -20,7 +20,9 @@ static size_t decodeURL(const char * src, size_t src_size, char * dst)
         src_curr_pos = find_first_symbols<'%'>(src_curr_pos, src_end);
 
         if (src_curr_pos == src_end)
+        {
             break;
+        }
         else if (src_end - src_curr_pos < 3)
         {
             src_curr_pos = src_end;
@@ -28,8 +30,8 @@ static size_t decodeURL(const char * src, size_t src_size, char * dst)
         }
         else
         {
-            unsigned char high = char_to_digit_table[static_cast<unsigned char>(src_curr_pos[1])];
-            unsigned char low = char_to_digit_table[static_cast<unsigned char>(src_curr_pos[2])];
+            unsigned char high = unhex(src_curr_pos[1]);
+            unsigned char low = unhex(src_curr_pos[2]);
 
             if (high != 0xFF && low != 0xFF)
             {

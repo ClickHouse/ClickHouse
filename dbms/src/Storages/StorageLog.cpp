@@ -327,7 +327,7 @@ void LogBlockInputStream::addStream(const String & name, const IDataType & type,
     }
     else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
     {
-        /// For arrays, separate threads are used for sizes.
+        /// For arrays, separate files are used for sizes.
         String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
         if (!streams.count(size_name))
             streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
@@ -458,7 +458,7 @@ void LogBlockOutputStream::addStream(const String & name, const IDataType & type
     }
     else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
     {
-        /// For arrays separate threads are used for sizes.
+        /// For arrays separate files are used for sizes.
         String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
         if (!streams.count(size_name))
             streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
@@ -587,35 +587,6 @@ StorageLog::StorageLog(
 
     if (has_nullable_columns)
         null_marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_NULL_MARKS_FILE_NAME);
-}
-
-StoragePtr StorageLog::create(
-    const std::string & path_,
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    size_t max_compress_block_size_)
-{
-    return make_shared(
-        path_, name_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_,
-        max_compress_block_size_
-    );
-}
-
-StoragePtr StorageLog::create(
-    const std::string & path_,
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    size_t max_compress_block_size_)
-{
-    return make_shared(
-        path_, name_, columns_,
-        NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{},
-        max_compress_block_size_
-    );
 }
 
 
@@ -806,7 +777,7 @@ BlockInputStreams StorageLog::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
-    unsigned threads)
+    unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -819,44 +790,44 @@ BlockInputStreams StorageLog::read(
     const Marks & marks = getMarksWithRealRowCount();
     size_t marks_size = marks.size();
 
-    /// Given a thread, return the start of the area from which
+    /// Given a stream_num, return the start of the area from which
     /// it can read data, i.e. a mark number.
-    auto mark_from_thread = [&](size_t thread)
+    auto mark_from_stream_num = [&](size_t stream_num)
     {
         /// The computation below reflects the fact that marks
-        /// are uniformly distributed among threads.
-        return thread * marks_size / threads;
+        /// are uniformly distributed among streams.
+        return stream_num * marks_size / num_streams;
     };
 
-    /// Given a thread, get the parameters that specify the area
+    /// Given a stream_num, get the parameters that specify the area
     /// from which it can read data, i.e. a mark number and a
     /// maximum number of rows.
-    auto get_reader_parameters = [&](size_t thread)
+    auto get_reader_parameters = [&](size_t stream_num)
     {
-        size_t mark_number = mark_from_thread(thread);
+        size_t mark_number = mark_from_stream_num(stream_num);
 
-        size_t cur_total_row_count = thread == 0
+        size_t cur_total_row_count = stream_num == 0
             ? 0
             : marks[mark_number - 1].rows;
 
-        size_t next_total_row_count = marks[mark_from_thread(thread + 1) - 1].rows;
+        size_t next_total_row_count = marks[mark_from_stream_num(stream_num + 1) - 1].rows;
         size_t rows_limit = next_total_row_count - cur_total_row_count;
 
         return std::make_pair(mark_number, rows_limit);
     };
 
-    if (threads > marks_size)
-        threads = marks_size;
+    if (num_streams > marks_size)
+        num_streams = marks_size;
 
     size_t max_read_buffer_size = context.getSettingsRef().max_read_buffer_size;
 
     if (has_nullable_columns)
     {
-        for (size_t thread = 0; thread < threads; ++thread)
+        for (size_t stream = 0; stream < num_streams; ++stream)
         {
             size_t mark_number;
             size_t rows_limit;
-            std::tie(mark_number, rows_limit) = get_reader_parameters(thread);
+            std::tie(mark_number, rows_limit) = get_reader_parameters(stream);
 
             res.push_back(std::make_shared<LogBlockInputStream>(
                 max_block_size,
@@ -870,11 +841,11 @@ BlockInputStreams StorageLog::read(
     }
     else
     {
-        for (size_t thread = 0; thread < threads; ++thread)
+        for (size_t stream = 0; stream < num_streams; ++stream)
         {
             size_t mark_number;
             size_t rows_limit;
-            std::tie(mark_number, rows_limit) = get_reader_parameters(thread);
+            std::tie(mark_number, rows_limit) = get_reader_parameters(stream);
 
             res.push_back(std::make_shared<LogBlockInputStream>(
                 max_block_size,

@@ -25,11 +25,18 @@
 #include <Common/HashTable/Hash.h>
 #include <Functions/IFunction.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 
 /** Hashing functions.
   *
@@ -716,15 +723,13 @@ public:
             throw Exception{
                 "Number of arguments for function " + getName() + " doesn't match: passed " +
                     toString(arg_count) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-            };
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         const auto first_arg = arguments.front().get();
         if (!typeid_cast<const DataTypeString *>(first_arg))
             throw Exception{
                 "Illegal type " + first_arg->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            };
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (arg_count == 2)
         {
@@ -739,8 +744,7 @@ public:
                 !typeid_cast<const DataTypeInt64 *>(second_arg))
                 throw Exception{
                     "Illegal type " + second_arg->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-                };
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         return std::make_shared<DataTypeUInt64>();
@@ -755,7 +759,7 @@ public:
         else if (arg_count == 2)
             executeTwoArgs(block, arguments, result);
         else
-            throw std::logic_error{"got into IFunction::execute with unexpected number of arguments"};
+            throw Exception{"got into IFunction::execute with unexpected number of arguments", ErrorCodes::LOGICAL_ERROR};
     }
 
 private:
@@ -797,8 +801,7 @@ private:
         if (!level_col->isConst())
             throw Exception{
                 "Second argument of function " + getName() + " must be an integral constant",
-                ErrorCodes::ILLEGAL_COLUMN
-            };
+                ErrorCodes::ILLEGAL_COLUMN};
 
         const auto level = level_col->get64(0);
 
@@ -833,10 +836,10 @@ private:
 };
 
 
-struct NameHalfMD5             { static constexpr auto name = "halfMD5"; };
-struct NameSipHash64        { static constexpr auto name = "sipHash64"; };
-struct NameIntHash32         { static constexpr auto name = "intHash32"; };
-struct NameIntHash64         { static constexpr auto name = "intHash64"; };
+struct NameHalfMD5   { static constexpr auto name = "halfMD5"; };
+struct NameSipHash64 { static constexpr auto name = "sipHash64"; };
+struct NameIntHash32 { static constexpr auto name = "intHash32"; };
+struct NameIntHash64 { static constexpr auto name = "intHash64"; };
 
 struct ImplCityHash64
 {

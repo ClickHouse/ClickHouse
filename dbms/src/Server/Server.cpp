@@ -9,7 +9,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/ZooKeeperNodeCache.h>
 #include <Common/Macros.h>
@@ -42,6 +42,7 @@
 
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -217,6 +218,7 @@ int Server::main(const std::vector<std::string> & args)
 
     registerFunctions();
     registerAggregateFunctions();
+    registerTableFunctions();
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
@@ -660,6 +662,8 @@ int Server::main(const std::vector<std::string> & args)
         {
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(async_metrics, graphite_key));
         }
+
+        SessionCleaner session_cleaner(*global_context);
 
         waitForTerminationRequest();
     }

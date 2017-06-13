@@ -57,9 +57,7 @@ Get the element with the index 'n' from the array 'arr'.
 Indexes in an array begin from one.
 Negative indexes are supported - in this case, it selects the corresponding element numbered from the end. For example, 'arr[-1]' is the last item in the array.
 
-If the index goes beyond the array bounds:
-- if both arguments are constants, an exception is thrown.
-- otherwise, a default value is returned (0 for numbers, an empty string for strings, etc.).
+If the index goes beyond the array bounds, a default value is returned (0 for numbers, an empty string for strings, etc.).
 
 has(arr, elem)
 ~~~~~~~~~~~
@@ -92,7 +90,9 @@ This function is normally used together with ARRAY JOIN. It allows counting some
       arrayEnumerate(GoalsReached) AS num
   WHERE CounterID = 160656
   LIMIT 10
-  
+
+.. code-block:: text
+
   ┌─Reaches─┬──Hits─┐
   │   95606 │ 31406 │
   └─────────┴───────┘
@@ -106,7 +106,9 @@ In this example, Reaches is the number of conversions (the strings received afte
       count() AS Hits
   FROM test.hits
   WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
-  
+
+.. code-block:: text
+
   ┌─Reaches─┬──Hits─┐
   │   95606 │ 31406 │
   └─────────┴───────┘
@@ -121,7 +123,7 @@ For example: ``arrayEnumerateUniq([10, 20, 10, 30]) = [1,  1,  2,  1]``.
 This function is useful when using ARRAY JOIN and aggregation of array elements. Example:
 
 .. code-block:: sql
-  
+
   SELECT
       Goals.ID AS GoalID,
       sum(Sign) AS Reaches,
@@ -134,7 +136,9 @@ This function is useful when using ARRAY JOIN and aggregation of array elements.
   GROUP BY GoalID
   ORDER BY Reaches DESC
   LIMIT 10
-  
+
+.. code-block:: text
+
   ┌──GoalID─┬─Reaches─┬─Visits─┐
   │   53225 │    3214 │   1097 │
   │ 2825062 │    3188 │   1097 │
@@ -148,16 +152,18 @@ This function is useful when using ARRAY JOIN and aggregation of array elements.
   │ 3271094 │    2256 │    812 │
   └─────────┴─────────┴────────┘
 
-In this example, each goal ID has a calculation of the number of conversions (each element in the Goals nested data structure is a goal that was reached, which we refer to as a conversion) and the number of sessions. 
-Without ARRAY JOIN, we would have counted the number of sessions as ``sum(Sign)``. But in this particular case, the rows were multiplied by the nested Goals structure, so in order to count each session one time after this, 
+In this example, each goal ID has a calculation of the number of conversions (each element in the Goals nested data structure is a goal that was reached, which we refer to as a conversion) and the number of sessions.
+Without ARRAY JOIN, we would have counted the number of sessions as ``sum(Sign)``. But in this particular case, the rows were multiplied by the nested Goals structure, so in order to count each session one time after this,
 we apply a condition to the value of the ``arrayEnumerateUniq(Goals.ID)`` function.
 
 The arrayEnumerateUniq function can take multiple arrays of the same size as arguments. In this case, uniqueness is considered for tuples of elements in the same positions in all the arrays.
 
 .. code-block:: sql
-  
+
   SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
-  
+
+.. code-block:: text
+
   ┌─res───────────┐
   │ [1,2,1,1,2,1] │
   └───────────────┘

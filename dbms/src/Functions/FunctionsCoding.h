@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Common/hex.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -17,36 +17,39 @@
 #include <Functions/IFunction.h>
 
 #include <arpa/inet.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <array>
 
 
 namespace DB
 {
 
-/** Coding functions:
+namespace ErrorCodes
+{
+    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+}
+
+
+/** Encoding functions:
   *
   * IPv4NumToString (num) - See below.
   * IPv4StringToNum(string) - Convert, for example, '192.168.0.1' to 3232235521 and vice versa.
   *
-  * hex(x) -    Returns hex; capital letters; there are no prefixes 0x or suffixes h.
-  *             For numbers, returns a variable-length string - hex in the "human" (big endian) format, with the leading zeros being cut,
-  *             but only by whole bytes. For dates and datetimes - the same as for numbers.
-  *             For example, hex(257) = '0101'.
-  * unhex(string) -    Returns a string, hex of which is equal to `string` with regard of case and discarding one leading zero.
-  *                 If such a string does not exist, reserves the right to return any garbage.
+  * hex(x) - Returns hex; capital letters; there are no prefixes 0x or suffixes h.
+  *          For numbers, returns a variable-length string - hex in the "human" (big endian) format, with the leading zeros being cut,
+  *          but only by whole bytes. For dates and datetimes - the same as for numbers.
+  *          For example, hex(257) = '0101'.
+  * unhex(string) - Returns a string, hex of which is equal to `string` with regard of case and discarding one leading zero.
+  *                 If such a string does not exist, could return arbitary implementation specific value.
   *
   * bitmaskToArray(x) - Returns an array of powers of two in the binary form of x. For example, bitmaskToArray(50) = [2, 16, 32].
   */
 
 
-/// Including zero character at the end.
-#define MAX_UINT_HEX_LENGTH 20
-
-const auto ipv4_bytes_length = 4;
-const auto ipv6_bytes_length = 16;
-const auto uuid_bytes_length = 16;
-const auto uuid_text_length = 36;
+constexpr auto ipv4_bytes_length = 4;
+constexpr auto ipv6_bytes_length = 16;
+constexpr auto uuid_bytes_length = 16;
+constexpr auto uuid_text_length = 36;
 
 class IPv6Format
 {
@@ -56,9 +59,6 @@ private:
     {
         return value >= base ? 1 + int_log(value / base, base, value % base || carry) : value % base > 1 || carry;
     }
-
-    /// mapping of digits up to base 16
-    static constexpr auto && digits = "0123456789abcdef";
 
     /// print integer in desired base, faster than sprintf
     template <uint32_t base, typename T, uint32_t buffer_size = sizeof(T) * int_log(256, base, false)>
@@ -73,7 +73,7 @@ private:
 
             while (value > 0)
             {
-                *ptr++ = digits[value % base];
+                *ptr++ = hexLowercase(value % base);
                 value /= base;
             }
 
@@ -1013,9 +1013,6 @@ public:
     {
         char * begin = out;
 
-        /// mapping of digits up to base 16
-        static char digits[] = "0123456789ABCDEF";
-
         /// Write everything backwards.
         for (size_t offset = 0; offset <= 40; offset += 8)
         {
@@ -1038,7 +1035,7 @@ public:
             {
                 while (value > 0)
                 {
-                    *(out++) = digits[value % 16];
+                    *(out++) = hexUppercase(value % 16);
                     value /= 16;
                 }
             }
@@ -1596,7 +1593,6 @@ public:
     template <typename T>
     void executeOneUInt(T x, char *& out)
     {
-        const char digit[17] = "0123456789ABCDEF";
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
         {
@@ -1608,8 +1604,8 @@ public:
 
             was_nonzero = true;
 
-            *(out++) = digit[byte >> 4];
-            *(out++) = digit[byte & 15];
+            *(out++) = hexUppercase(byte / 16);
+            *(out++) = hexUppercase(byte % 16);
         }
         *(out++) = '\0';
     }
@@ -1619,6 +1615,8 @@ public:
     {
         const ColumnVector<T> * col_vec = typeid_cast<const ColumnVector<T> *>(col);
         const ColumnConst<T> * col_const = typeid_cast<const ColumnConst<T> *>(col);
+
+        static constexpr size_t MAX_UINT_HEX_LENGTH = sizeof(T) * 2 + 1;    /// Including trailing zero byte.
 
         if (col_vec)
         {
@@ -1631,7 +1629,7 @@ public:
 
             size_t size = in_vec.size();
             out_offsets.resize(size);
-            out_vec.resize(size * 3 + MAX_UINT_HEX_LENGTH);
+            out_vec.resize(size * 3 + MAX_UINT_HEX_LENGTH); /// 3 is length of one byte in hex plus zero byte.
 
             size_t pos = 0;
             for (size_t i = 0; i < size; ++i)
@@ -1670,12 +1668,11 @@ public:
 
     void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
     {
-        const char digit[17] = "0123456789ABCDEF";
         while (pos < end)
         {
             UInt8 byte = *(pos++);
-            *(out++) = digit[byte >> 4];
-            *(out++) = digit[byte & 15];
+            *(out++) = hexUppercase(byte / 16);
+            *(out++) = hexUppercase(byte % 16);
         }
         *(out++) = '\0';
     }
@@ -1719,7 +1716,7 @@ public:
 
             return true;
         }
-        else if(col_const_in)
+        else if (col_const_in)
         {
             const std::string & src = col_const_in->getData();
             std::string res(src.size() * 2, '\0');
@@ -1829,28 +1826,26 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    UInt8 undigitUnsafe(char c)
-    {
-        if (c <= '9')
-            return c - '0';
-        if (c <= 'Z')
-            return c - ('A' - 10);
-        return c - ('a' - 10);
-    }
-
     void unhexOne(const char * pos, const char * end, char *& out)
     {
         if ((end - pos) & 1)
         {
-            *(out++) = undigitUnsafe(*(pos++));
+            *out = unhex(*pos);
+            ++out;
+            ++pos;
         }
         while (pos < end)
         {
-            UInt8 major = undigitUnsafe(*(pos++));
-            UInt8 minor = undigitUnsafe(*(pos++));
-            *(out++) = (major << 4) | minor;
+            UInt8 major = unhex(*pos);
+            ++pos;
+            UInt8 minor = unhex(*pos);
+            ++pos;
+
+            *out = (major << 4) | minor;
+            ++out;
         }
-        *(out++) = '\0';
+        *out = '\0';
+        ++out;
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override

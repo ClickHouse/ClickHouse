@@ -125,10 +125,11 @@ html_theme_options = {
     'link': '#08f',
     'link_hover': 'red',
     'extra_nav_links': collections.OrderedDict([
-        ('Switch to Russian 🇷🇺 ', '/docs/ru/'),
+        ('Switch to Russian <img id="svg-flag" src="/docs/en/_static/ru.svg" width="20" height="12" />', '#ru'),
         ('Single page documentation', '/docs/en/single/'),
         ('Website home', '/'),
-        ('GitHub', 'https://github.com/yandex/ClickHouse'),
+        ('ClickHouse repository', 'https://github.com/yandex/ClickHouse'),
+        ('Edit this page', '#edit'),
     ])
 }
 
@@ -290,3 +291,6 @@ texinfo_documents = [
 
 # If true, do not generate a @detailmenu in the "Top" node's menu.
 #texinfo_no_detailmenu = False
+
+def setup(app):
+    app.add_javascript('custom.js')

@@ -144,6 +144,12 @@
     <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 
 
+    <!-- Maximum session timeout, in seconds. Default: 3600. -->
+    <max_session_timeout>3600</max_session_timeout>
+
+    <!-- Default session timeout, in seconds. Default: 60. -->
+    <default_session_timeout>60</default_session_timeout>
+
     <!-- Sending data to Graphite for monitoring. Several sections can be defined. -->
     <!--
         interval - send every X second

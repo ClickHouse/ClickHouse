@@ -15,6 +15,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
+
 PrettyBlockOutputStream::PrettyBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_, size_t max_rows_, const Context & context_)
      : ostr(ostr_), max_rows(max_rows_), no_escapes(no_escapes_), context(context_)
 {

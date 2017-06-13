@@ -3,7 +3,7 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <mysqlxx/PoolWithFailover.h>
 #include <Poco/Util/AbstractConfiguration.h>
 

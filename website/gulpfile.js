@@ -49,7 +49,13 @@ gulp.task('reference', [], function () {
         .pipe(gulp.dest(outputDir))
 });
 
-gulp.task('docs', [], function () {
+gulp.task('docstxt', [], function () {
+    run('cd ' + docsDir + '; make');
+    return gulp.src(paths.docs)
+        .pipe(gulp.dest(outputDir + '/../docs'))
+});
+
+gulp.task('docs', ['docstxt'], function () {
     run('cd ' + docsDir + '; make');
     return gulp.src(paths.docs)
         .pipe(gulp.dest(outputDir + '/../docs'))

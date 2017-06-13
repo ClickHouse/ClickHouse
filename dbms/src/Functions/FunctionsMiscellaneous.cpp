@@ -1,7 +1,7 @@
 #include <Functions/FunctionsMiscellaneous.h>
 
 #include <cmath>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <Poco/Net/DNS.h>
 #include <Common/ClickHouseRevision.h>
 #include <Columns/ColumnSet.h>

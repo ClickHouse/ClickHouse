@@ -14,7 +14,6 @@
 #include <Databases/IDatabase.h>
 
 #include <Parsers/formatAST.h>
-#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/queryToString.h>
 
@@ -40,8 +39,8 @@
 
 #include <Common/ThreadPool.h>
 
-#include <ext/range.hpp>
-#include <ext/scope_guard.hpp>
+#include <ext/range.h>
+#include <ext/scope_guard.h>
 
 #include <cfenv>
 #include <ctime>
@@ -221,8 +220,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         sampling_expression_, index_granularity_, merging_params_,
         settings_, database_name_ + "." + table_name, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); },
-        [this] () { clearOldPartsAndRemoveFromZK(); }
-        ),
+        [this] () { clearOldPartsAndRemoveFromZK(); }),
     reader(data), writer(data, context), merger(data, context.getBackgroundPool()), fetcher(data), sharded_partition_uploader_client(*this),
     shutdown_event(false), part_check_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
@@ -296,16 +294,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     createNewZooKeeperNodes();
-
-    queue.initialize(
-        zookeeper_path, replica_path,
-        database_name + "." + table_name + " (ReplicatedMergeTreeQueue)",
-        data.getDataParts(), current_zookeeper);
-
-    queue.pullLogsToQueue(current_zookeeper, nullptr);
-
-    /// In this thread replica will be activated.
-    restarting_thread = std::make_unique<ReplicatedMergeTreeRestartingThread>(*this);
 }
 
 
@@ -878,7 +866,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         LOG_ERROR(log, "Removing unexpectedly merged local part from ZooKeeper: " << name);
 
         zkutil::Ops ops;
-        removePartFromZooKeeper(name, ops);
+        removePossiblyIncompletePartNodeFromZooKeeper(name, ops, zookeeper);
         zookeeper->multi(ops);
     }
 
@@ -895,7 +883,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 
         /// We assume that this occurs before the queue is loaded (queue.initialize).
         zkutil::Ops ops;
-        removePartFromZooKeeper(name, ops);
+        removePossiblyIncompletePartNodeFromZooKeeper(name, ops, zookeeper);
         ops.emplace_back(std::make_unique<zkutil::Op::Create>(
             replica_path + "/queue/queue-", log_entry.toString(), zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
         zookeeper->multi(ops);
@@ -1180,7 +1168,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 merger.renameMergedTemporaryPart(parts, part, entry.new_part_name, &transaction);
                 getZooKeeper()->multi(ops);        /// After long merge, get fresh ZK handle, because previous session may be expired.
 
-                if (std::shared_ptr<PartLog> part_log = context.getPartLog())
+                if (auto part_log = context.getPartLog(database_name, table_name))
                 {
                     PartLogElement elem;
                     elem.event_time = time(0);
@@ -1876,6 +1864,25 @@ void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_nam
 }
 
 
+/// Workarond for known ZooKeeper problem, see CLICKHOUSE-3040 and ZOOKEEPER-2362
+/// Multi operation was non-atomic on special wrongly-patched version of ZooKeeper
+/// (occasionally used in AdFox) in case of exceeded quota.
+void StorageReplicatedMergeTree::removePossiblyIncompletePartNodeFromZooKeeper(const String & part_name, zkutil::Ops & ops, const zkutil::ZooKeeperPtr & zookeeper)
+{
+    String part_path = replica_path + "/parts/" + part_name;
+    Names children_ = zookeeper->getChildren(part_path);
+    NameSet children(children_.begin(), children_.end());
+
+    if (children.size() != 2)
+        LOG_WARNING(log, "Will remove incomplete part node " << part_path << " from ZooKeeper");
+
+    if (children.count("checksums"))
+        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(part_path + "/checksums", -1));
+    if (children.count("columns"))
+        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(part_path + "/columns", -1));
+    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(part_path, -1));
+}
+
 void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name)
 {
     auto zookeeper = getZooKeeper();
@@ -2122,7 +2129,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
         MergeTreeData::Transaction transaction;
         auto removed_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
 
-        if (std::shared_ptr<PartLog> part_log = context.getPartLog())
+        if (auto part_log = context.getPartLog(database_name, table_name))
         {
             PartLogElement elem;
             elem.event_time = time(0);
@@ -2180,6 +2187,23 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     LOG_DEBUG(log, "Fetched part " << part_name << " from " << replica_path << (to_detached ? " (to 'detached' directory)" : ""));
     return true;
+}
+
+
+void StorageReplicatedMergeTree::startup()
+{
+    if (is_readonly)
+        return;
+
+    queue.initialize(
+        zookeeper_path, replica_path,
+        database_name + "." + table_name + " (ReplicatedMergeTreeQueue)",
+        data.getDataParts(), current_zookeeper);
+
+    queue.pullLogsToQueue(current_zookeeper, nullptr);
+
+    /// In this thread replica will be activated.
+    restarting_thread = std::make_unique<ReplicatedMergeTreeRestartingThread>(*this);
 }
 
 
@@ -2251,7 +2275,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     const Settings & settings = context.getSettingsRef();
 
@@ -2299,7 +2323,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     }
 
     return reader.read(
-        column_names, query, context, processed_stage, max_block_size, threads, &part_index, max_block_number_to_read);
+        column_names, query, context, processed_stage, max_block_size, num_streams, &part_index, max_block_number_to_read);
 }
 
 
@@ -2314,12 +2338,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & query, con
 {
     assertNotReadonly();
 
-    String insert_id;
-    if (query)
-        if (ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*query))
-            insert_id = insert->insert_id;
-
-    return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(*this, insert_id,
+    return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(*this,
         settings.insert_quorum, settings.insert_quorum_timeout.totalMilliseconds());
 }
 
@@ -3784,11 +3803,16 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
 
             LOG_DEBUG(log, "Removing " << part->name);
 
-            zkutil::Ops ops;
-            removePartFromZooKeeper(part->name, ops);
-            auto code = zookeeper->tryMulti(ops);
-            if (code != ZOK)
-                LOG_WARNING(log, "Couldn't remove " << part->name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(code));
+            try
+            {
+                zkutil::Ops ops;
+                removePossiblyIncompletePartNodeFromZooKeeper(part->name, ops, zookeeper);
+                zookeeper->multi(ops);
+            }
+            catch (const zkutil::KeeperException & e)
+            {
+                LOG_WARNING(log, "Couldn't remove " << part->name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(e.code));
+            }
 
             part->remove();
             parts.pop_back();

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 #include <atomic>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -38,7 +38,7 @@ namespace DB
   * - a set of parts of data on each replica (/replicas/replica_name/parts);
   * - list of the last N blocks of data with checksum, for deduplication (/blocks);
   * - the list of incremental block numbers (/block_numbers) that we are about to insert,
-  *   or that were unused (/nonincremental_block_numbers)
+  *   or that were unused (/nonincrement_block_numbers)
   *   to ensure the linear order of data insertion and data merge only on the intervals in this sequence;
   * - coordinates writes with quorum (/quorum).
   */
@@ -69,12 +69,12 @@ namespace DB
   * as the time will take the time of creation the appropriate part on any of the replicas.
   */
 
-class StorageReplicatedMergeTree : private ext::shared_ptr_helper<StorageReplicatedMergeTree>, public IStorage
+class StorageReplicatedMergeTree : public ext::shared_ptr_helper<StorageReplicatedMergeTree>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageReplicatedMergeTree>;
 
 public:
-    /** If !attach, either creates a new table in ZK, or adds a replica to an existing table.
+    /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
     static StoragePtr create(
         const String & zookeeper_path_,
@@ -94,6 +94,7 @@ public:
         bool has_force_restore_data_flag,
         const MergeTreeSettings & settings_);
 
+    void startup() override;
     void shutdown() override;
     ~StorageReplicatedMergeTree() override;
 
@@ -126,8 +127,8 @@ public:
         const ASTPtr & query,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
@@ -378,6 +379,10 @@ private:
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
+
+    /// Like removePartFromZooKeeper, but handles absence of some nodes and remove other nodes anyway, see CLICKHOUSE-3040
+    /// Use it only in non-critical places for cleaning.
+    void removePossiblyIncompletePartNodeFromZooKeeper(const String & part_name, zkutil::Ops & ops, const zkutil::ZooKeeperPtr & zookeeper);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);

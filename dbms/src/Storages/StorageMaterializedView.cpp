@@ -114,9 +114,9 @@ BlockInputStreams StorageMaterializedView::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
-    return getInnerTable()->read(column_names, query, context, processed_stage, max_block_size, threads);
+    return getInnerTable()->read(column_names, query, context, processed_stage, max_block_size, num_streams);
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Settings & settings)

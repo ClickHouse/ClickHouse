@@ -1,5 +1,5 @@
 Comparison functions
-------------------
+--------------------
 
 Comparison functions always return 0 or 1 (Uint8).
 
@@ -18,19 +18,19 @@ Strings are compared by bytes. A shorter string is smaller than all strings that
 Note: before version 1.1.54134 signed and unsigned numbers were compared the same way as in C++. That is, you could got an incorrect result in such cases: SELECT 9223372036854775807 > -1. From version 1.1.54134, the behavior has changed and numbers are compared mathematically correct.
 
 equals, a = b and a == b operator
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 notEquals, a != b and a <> b operator
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 less, < operator
-~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~
 
 greater, > operator
 ~~~~~~~~~~~~~~~~~~~
 
 lessOrEquals, <= operator
-~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 greaterOrEquals, >= operator
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~

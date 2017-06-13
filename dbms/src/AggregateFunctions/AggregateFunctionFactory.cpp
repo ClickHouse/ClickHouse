@@ -52,12 +52,12 @@ void AggregateFunctionFactory::registerFunction(const String & name, Creator cre
             " a null constructor", ErrorCodes::LOGICAL_ERROR);
 
     if (!aggregate_functions.emplace(name, creator).second)
-        throw Exception("AggregateFunctionFactory: the aggregate function name " + name + " is not unique",
+        throw Exception("AggregateFunctionFactory: the aggregate function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 
     if (case_sensitiveness == CaseInsensitive
         && !case_insensitive_aggregate_functions.emplace(Poco::toLower(name), creator).second)
-        throw Exception("AggregateFunctionFactory: the case insensitive aggregate function name " + name + " is not unique",
+        throw Exception("AggregateFunctionFactory: the case insensitive aggregate function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 }
 

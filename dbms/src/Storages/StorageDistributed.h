@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Common/SimpleIncrement.h>
@@ -25,27 +25,16 @@ class StorageDistributedDirectoryMonitor;
   * You can pass one address, not several.
   * In this case, the table can be considered remote, rather than distributed.
   */
-class StorageDistributed : private ext::shared_ptr_helper<StorageDistributed>, public IStorage
+class StorageDistributed : public ext::shared_ptr_helper<StorageDistributed>, public IStorage
 {
     friend class ext::shared_ptr_helper<StorageDistributed>;
     friend class DistributedBlockOutputStream;
     friend class StorageDistributedDirectoryMonitor;
 
 public:
-    static StoragePtr create(
-        const std::string & name_,            /// The name of the table.
-        NamesAndTypesListPtr columns_,        /// List of columns.
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        const String & remote_database_,    /// database on remote servers.
-        const String & remote_table_,        /// The name of the table on the remote servers.
-        const String & cluster_name,
-        const Context & context_,
-        const ASTPtr & sharding_key_,
-        const String & data_path_);
+    ~StorageDistributed() override;
 
-    static StoragePtr create(
+    static StoragePtr createWithOwnCluster(
         const std::string & name_,            /// The name of the table.
         NamesAndTypesListPtr columns_,        /// List of columns.
         const String & remote_database_,      /// database on remote servers.
@@ -71,8 +60,8 @@ public:
         const ASTPtr & query,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
@@ -82,6 +71,7 @@ public:
     /// the structure of the sub-table is not checked
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
+    void startup() override;
     void shutdown() override;
 
     void reshardPartitions(
@@ -135,9 +125,6 @@ private:
     void requireDirectoryMonitor(const std::string & name);
 
     ClusterPtr getCluster() const;
-
-    /// Get monotonically increasing string to name files with data to be written to remote servers.
-    String getMonotonicFileName();
 
 
     String name;

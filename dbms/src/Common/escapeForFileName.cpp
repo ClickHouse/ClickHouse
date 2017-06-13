@@ -1,4 +1,4 @@
-#include <IO/ReadHelpers.h>
+#include <Common/hex.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 
@@ -11,8 +11,6 @@ std::string escapeForFileName(const std::string & s)
     const char * pos = s.data();
     const char * end = pos + s.size();
 
-    static const char * hex = "0123456789ABCDEF";
-
     while (pos != end)
     {
         char c = *pos;
@@ -22,8 +20,8 @@ std::string escapeForFileName(const std::string & s)
         else
         {
             res += '%';
-            res += hex[c / 16];
-            res += hex[c % 16];
+            res += hexUppercase(c / 16);
+            res += hexUppercase(c % 16);
         }
 
         ++pos;

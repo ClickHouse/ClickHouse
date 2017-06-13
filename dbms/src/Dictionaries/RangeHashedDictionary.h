@@ -5,7 +5,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <atomic>
 #include <memory>
 #include <tuple>
@@ -78,6 +78,8 @@ public:
     void getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
         ColumnString * out) const;
+
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
     struct Range : std::pair<UInt16, UInt16>
@@ -165,6 +167,13 @@ private:
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
     const Attribute & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const;
+
+    void getIdsAndDates(PaddedPODArray<Key> & ids,
+                        PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const;
+
+    template <typename T>
+    void getIdsAndDates(const Attribute & attribute, PaddedPODArray<Key> & ids,
+                        PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;

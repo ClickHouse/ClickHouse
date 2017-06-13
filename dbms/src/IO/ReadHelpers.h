@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int CANNOT_PARSE_NUMBER;
 }
 
 /// Helper functions for formatted input.
@@ -61,21 +62,6 @@ inline char parseEscapeSequence(char c)
             return '\0';
         default:
             return c;
-    }
-}
-
-inline char unhex(char c)
-{
-    switch (c)
-    {
-        case '0' ... '9':
-            return c - '0';
-        case 'a' ... 'f':
-            return c - 'a' + 10;
-        case 'A' ... 'F':
-            return c - 'A' + 10;
-        default:
-            return 0;
     }
 }
 
@@ -258,7 +244,12 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 if (std::is_signed<T>::value)
                     negative = true;
                 else
-                    return ReturnType(false);
+                {
+                    if (throw_exception)
+                        throw Exception("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
+                    else
+                        return ReturnType(false);
+                }
                 break;
             case '0':
             case '1':
@@ -500,9 +491,9 @@ inline void readFloatText(T & x, ReadBuffer & buf)
 }
 
 /// rough; all until '\n' or '\t'
-void readString(String & s, ReadBuffer & buf);
+void readString(String & s, ReadBuffer & buf, bool skip_whitespace = false);
 
-void readEscapedString(String & s, ReadBuffer & buf);
+void readEscapedString(String & s, ReadBuffer & buf, bool skip_whitespace = false);
 
 void readQuotedString(String & s, ReadBuffer & buf);
 
@@ -531,10 +522,10 @@ void readCSVString(String & s, ReadBuffer & buf, const char delimiter = ',');
 
 /// Read and append result to array of characters.
 template <typename Vector>
-void readStringInto(Vector & s, ReadBuffer & buf);
+void readStringInto(Vector & s, ReadBuffer & buf, bool skip_whitespace = false);
 
 template <typename Vector>
-void readEscapedStringInto(Vector & s, ReadBuffer & buf);
+void readEscapedStringInto(Vector & s, ReadBuffer & buf, bool skip_whitespace = false);
 
 template <typename Vector>
 void readQuotedStringInto(Vector & s, ReadBuffer & buf);
@@ -902,6 +893,7 @@ inline T parse(const char * data, size_t size)
     T res;
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
+    assertEOF(buf);
     return res;
 }
 
