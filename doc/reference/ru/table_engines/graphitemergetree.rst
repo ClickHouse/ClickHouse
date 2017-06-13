@@ -28,7 +28,7 @@ Graphite хранит в ClickHouse полные данные, а получат
 Шаблон правил rollup:
 .. code-block:: text
 
-	pattern
+    pattern
         regexp
         function
         age -> precision
