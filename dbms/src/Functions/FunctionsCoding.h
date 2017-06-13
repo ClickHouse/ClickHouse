@@ -17,6 +17,8 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 
+#include <arpa/inet.h>
+
 #include <ext/range.h>
 #include <array>
 
