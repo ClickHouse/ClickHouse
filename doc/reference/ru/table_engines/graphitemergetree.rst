@@ -29,7 +29,7 @@ Graphite хранит в ClickHouse полные данные, а получат
 
 .. code-block:: text
 
-	pattern
+    pattern
         regexp
         function
         age -> precision
