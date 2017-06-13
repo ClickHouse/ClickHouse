@@ -95,7 +95,7 @@ public:
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
     static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_);
 
-    /// Which columns necessary to perform this action.
+    /// Which columns are necessary to perform this action.
     Names getNeededColumns() const;
 
     std::string toString() const;
