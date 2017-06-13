@@ -15,6 +15,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+
 /** Functions that split strings into an array of strings or vice versa.
   *
   * splitByChar(sep, s)
@@ -546,9 +552,9 @@ public:
 };
 
 
-using FunctionAlphaTokens = FunctionTokens<AlphaTokensImpl>    ;
-using FunctionSplitByChar = FunctionTokens<SplitByCharImpl>    ;
+using FunctionAlphaTokens = FunctionTokens<AlphaTokensImpl>;
+using FunctionSplitByChar = FunctionTokens<SplitByCharImpl>;
 using FunctionSplitByString = FunctionTokens<SplitByStringImpl>;
-using FunctionExtractAll = FunctionTokens<ExtractAllImpl>     ;
+using FunctionExtractAll = FunctionTokens<ExtractAllImpl>;
 
 }

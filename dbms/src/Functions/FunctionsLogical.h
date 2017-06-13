@@ -11,6 +11,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+
 /** Functions are logical links: and, or, not, xor.
   * Accept any numeric types, return a UInt8 containing 0 or 1.
   */

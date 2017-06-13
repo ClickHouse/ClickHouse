@@ -24,6 +24,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+}
+
+
 /** Encoding functions:
   *
   * IPv4NumToString (num) - See below.
@@ -40,10 +46,10 @@ namespace DB
   */
 
 
-const auto ipv4_bytes_length = 4;
-const auto ipv6_bytes_length = 16;
-const auto uuid_bytes_length = 16;
-const auto uuid_text_length = 36;
+constexpr auto ipv4_bytes_length = 4;
+constexpr auto ipv6_bytes_length = 16;
+constexpr auto uuid_bytes_length = 16;
+constexpr auto uuid_text_length = 36;
 
 class IPv6Format
 {

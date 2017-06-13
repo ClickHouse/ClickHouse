@@ -36,7 +36,7 @@ public:
     FunctionFactory();
 
     FunctionPtr get(const std::string & name, const Context & context) const;    /// Throws an exception if not found.
-    FunctionPtr tryGet(const std::string & name, const Context & context) const;    /// Returns nullptr if not found.
+    FunctionPtr tryGet(const std::string & name, const Context & context) const; /// Returns nullptr if not found.
 
     /// No locking, you must register all functions before usage of get, tryGet.
     template <typename Function> void registerFunction()
@@ -44,7 +44,7 @@ public:
         static_assert(std::is_same<decltype(&Function::create), Creator>::value, "Function::create has incorrect type");
 
         if (!functions.emplace(std::string(Function::name), &Function::create).second)
-            throw Exception("FunctionFactory: the function name is not unique",
+            throw Exception("FunctionFactory: the function name '" + std::string(Function::name) + "' is not unique",
                 ErrorCodes::LOGICAL_ERROR);
     }
 };
