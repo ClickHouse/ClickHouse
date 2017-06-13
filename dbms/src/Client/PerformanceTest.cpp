@@ -871,13 +871,20 @@ private:
             bool tsv = FS::path(filename).extension().string() == ".tsv";
 
             ReadBufferFromFile query_file(filename);
-            while (!query_file.eof())
-            {
-                tsv ? readEscapedString(query, query_file, true)
-                    : readString(query, query_file, true);
 
-                if (!query.empty())
+            if (tsv)
+            {
+                while (!query_file.eof())
+                {
+                    readEscapedString(query, query_file);
+                    assertChar('\n', query_file);
                     queries.push_back(query);
+                }
+            }
+            else
+            {
+                readStringUntilEOF(query, query_file);
+                queries.push_back(query);
             }
         }
 
