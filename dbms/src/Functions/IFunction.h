@@ -18,6 +18,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+struct ExpressionAction;
+
 
 /** Interface for normal functions.
   * Normal functions are functions that do not change the number of rows in the table,
