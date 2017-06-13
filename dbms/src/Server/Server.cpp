@@ -21,6 +21,8 @@
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DDLWorker.h>
+
 #include <Storages/MergeTree/ReshardingWorker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -412,6 +414,13 @@ int Server::main(const std::vector<std::string> & args)
         global_context->setReshardingWorker(resharding_worker);
         resharding_worker->start();
         has_resharding_worker = true;
+    }
+
+    if (has_zookeeper && config().has("distributed_ddl"))
+    {
+        /// DDL worker should be started after all tables were loaded
+        String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
+        global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context));
     }
 
     SCOPE_EXIT({

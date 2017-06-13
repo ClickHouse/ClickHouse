@@ -8,7 +8,7 @@ from helpers.test_tools import TSV
 
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', ['configs/graphite_rollup.xml'])
+instance = cluster.add_instance('instance', main_configs=['configs/graphite_rollup.xml'])
 
 @pytest.fixture(scope="module")
 def started_cluster():

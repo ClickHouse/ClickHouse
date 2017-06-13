@@ -58,6 +58,14 @@ public:
 
         Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);
         Address(const String & host_port_, const String & user_, const String & password_);
+
+        /// Returns escaped 'host_name:port'
+        String toString() const;
+
+        static String toString(const String & host_name, UInt16 port);
+
+        /// Retrurns escaped user:password@resolved_host_address:resolved_host_port#default_database
+        String toStringFull() const;
     };
 
     using Addresses = std::vector<Address>;
@@ -69,14 +77,17 @@ public:
         bool isLocal() const { return !local_addresses.empty(); }
         bool hasRemoteConnections() const { return pool != nullptr; }
         size_t getLocalNodeCount() const { return local_addresses.size(); }
+        bool hasInternalReplication() const { return has_internal_replication; }
 
     public:
-        /// contains names of directories for asynchronous write to StorageDistributed
+        /// Contains names of directories for asynchronous write to StorageDistributed
         std::vector<std::string> dir_names;
-        UInt32 shard_num;    /// Shard number, starting with 1.
+        /// Number of the shard, the indexation begins with 1
+        UInt32 shard_num;
         int weight;
         Addresses local_addresses;
         ConnectionPoolWithFailoverPtr pool;
+        bool has_internal_replication;
     };
 
     using ShardsInfo = std::vector<ShardInfo>;

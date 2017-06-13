@@ -82,12 +82,12 @@ public:
         for (const auto & key : keys)
         {
             if (key == "task_queue_path")
-                task_queue_path = config.getString(config_name + "." + key);
+                ddl_queries_root = config.getString(config_name + "." + key);
             else
                 throw Exception{"Unknown parameter in resharding configuration", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
         }
 
-        if (task_queue_path.empty())
+        if (ddl_queries_root.empty())
             throw Exception{"Resharding: missing parameter task_queue_path", ErrorCodes::INVALID_CONFIG_PARAMETER};
     }
 
@@ -96,11 +96,11 @@ public:
 
     std::string getTaskQueuePath() const
     {
-        return task_queue_path;
+        return ddl_queries_root;
     }
 
 private:
-    std::string task_queue_path;
+    std::string ddl_queries_root;
 };
 
 /// Helper class we use to read and write the status of a coordinator

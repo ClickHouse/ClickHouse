@@ -126,7 +126,7 @@ public:
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
         const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);
 
-    /** Paste action to the end of the queue.
+    /** Inserts an action to the end of the queue.
       * To restore broken parts during operation.
       * Do not insert the action itself into ZK (do it yourself).
       */

@@ -7,9 +7,9 @@ namespace DB
 {
 
 /** Query like this:
-  * ALTER TABLE [db.]name
+  * ALTER TABLE [db.]name [ON CLUSTER cluster]
   *     [ADD COLUMN col_name type [AFTER col_after],]
-  *        [DROP COLUMN col_drop, ...]
+  *     [DROP COLUMN col_drop, ...]
   *     [MODIFY COLUMN col_modify type, ...]
   *     [MODIFY PRIMARY KEY (a, b, c...)]
   *     [DROP|DETACH|ATTACH PARTITION|PART partition, ...]

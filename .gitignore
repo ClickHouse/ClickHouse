@@ -33,6 +33,10 @@ CTestTestfile.cmake
 *.a
 *.o
 
+# Python cache
+*.pyc
+__pycache__
+
 # ignore generated files
 *-metrika-yandex
 
