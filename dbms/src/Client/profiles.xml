@@ -1,7 +1,0 @@
-<?xml version="1.0"?>
-<profiles>
-    <default></default>
-    <single_thread>
-        <max_threads>1</max_threads>
-    </single_thread>
-</profiles>
