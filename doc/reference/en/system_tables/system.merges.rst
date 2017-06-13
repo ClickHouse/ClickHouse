@@ -3,6 +3,7 @@ system.merges
 Contains information about merges currently in process for tables in the MergeTree family.
 
 Columns:
+
 .. code-block:: text
 
   database String                    - Name of the database the table is located in.

@@ -33,6 +33,7 @@ visitParamExtractRaw(params, name)
 Returns the value of a field, including separators. 
 
 Examples: 
+
 .. code-block:: text
 
   visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
@@ -43,6 +44,7 @@ visitParamExtractString(params, name)
 Parses the string in double quotes. The value is unescaped. If unescaping failed, it returns an empty string. 
 
 Examples:
+
 .. code-block:: text
 
   visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'

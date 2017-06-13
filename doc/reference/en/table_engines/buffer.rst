@@ -2,6 +2,7 @@ Buffer
 ------
 
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
+
 .. code-block:: text
 
   Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
@@ -21,6 +22,7 @@ During the write operation, data is inserted to a 'num_layers' number of random 
 The conditions for flushing the data are calculated separately for each of the 'num_layers' buffers. For example, if num_layers = 16 and max_bytes = 100000000, the maximum RAM consumption is 1.6 GB.
 
 Example:
+
 .. code-block:: sql
 
   CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 16, 10, 100, 10000, 1000000, 10000000, 100000000)

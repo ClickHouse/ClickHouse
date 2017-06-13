@@ -4,6 +4,7 @@ Queries
 CREATE DATABASE
 ~~~~~~~~~~~~~~~
 Creates the 'db_name' database.
+
 .. code-block:: sql
 
     CREATE DATABASE [IF NOT EXISTS] db_name
@@ -28,11 +29,13 @@ Creates a table named 'name' in the 'db' database or the current database if 'db
 
 A column description is ``name type`` in the simplest case. For example: ``RegionID UInt32``.
 Expressions can also be defined for default values (see below).
+
 .. code-block:: sql
 
     CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the 'db2.name2' table.
+
 .. code-block:: sql
 
     CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
@@ -111,15 +114,18 @@ Creates a view. There are two types of views: normal and MATERIALIZED.
 Normal views don't store any data, but just perform a read from another table. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the FROM clause.
 
 As an example, assume you've created a view:
+
 .. code-block:: sql
 
     CREATE VIEW view AS SELECT ...
 and written a query:
+
 .. code-block:: sql
 
     SELECT a, b, c FROM view
     
 This query is fully equivalent to using the subquery:
+
 .. code-block:: sql
 
     SELECT a, b, c FROM (SELECT ...)
@@ -170,6 +176,7 @@ If ``IF EXISTS`` is specified, it doesn't return an error if the table doesn't e
 DETACH
 ~~~~~~
 Deletes information about the table from the server. The server stops knowing about the table's existence.
+
 .. code-block:: sql
 
     DETACH TABLE [IF EXISTS] [db.]name
@@ -203,6 +210,7 @@ Lets you change the table structure.
 In the query, specify a list of one or more comma-separated actions. Each action is an operation on a column.
 
 The following actions are supported:
+
 .. code-block:: sql
 
     ADD COLUMN name [type] [default_expr] [AFTER name_after]
@@ -282,6 +290,7 @@ Another way to view a set of parts and partitions is to go into the directory wi
 The directory with data is
 /var/lib/clickhouse/data/database/table/,
 where /var/lib/clickhouse/ is the path to ClickHouse data, 'database' is the database name, and 'table' is the table name. Example:
+
 .. code-block:: bash
 
     $ ls -l /var/lib/clickhouse/data/test/visits/
@@ -306,6 +315,7 @@ Each part corresponds to a single partition and contains data for a single month
 On an operating server, you can't manually change the set of parts or their data on the file system, since the server won't know about it. For non-replicated tables, you can do this when the server is stopped, but we don't recommended it. For replicated tables, the set of parts can't be changed in any case.
 
 The 'detached' directory contains parts that are not used by the server - detached from the table using the ALTER ... DETACH query. Parts that are damaged are also moved to this directory, instead of deleting them. You can add, delete, or modify the data in the 'detached' directory at any time - the server won't know about this until you make the ALTER TABLE ... ATTACH query.
+
 .. code-block:: sql
 
     ALTER TABLE [db.]table DETACH PARTITION 'name'
@@ -316,11 +326,13 @@ The partition name is specified in YYYYMM format. It can be indicated in single 
 After the query is executed, you can do whatever you want with the data in the 'detached' directory — delete it from the file system, or just leave it.
 
 The query is replicated - data will be moved to the 'detached' directory and forgotten on all replicas. The query can only be sent to a leader replica. To find out if a replica is a leader, perform SELECT to the 'system.replicas' system table. Alternatively, it is easier to make a query on all replicas, and all except one will throw an exception.
+
 .. code-block:: sql
 
     ALTER TABLE [db.]table DROP PARTITION 'name'
 
 Similar to the DETACH operation. Deletes data from the table. Data parts will be tagged as inactive and will be completely deleted in approximately 10 minutes. The query is replicated - data will be deleted on all replicas.
+
 .. code-block:: sql
 
     ALTER TABLE [db.]table ATTACH PARTITION|PART 'name'
@@ -332,6 +344,7 @@ It is possible to add data for an entire partition or a separate part. For a par
 The query is replicated. Each replica checks whether there is data in the 'detached' directory. If there is data, it checks the integrity, verifies that it matches the data on the server that initiated the query, and then adds it if everything is correct. If not, it downloads data from the query requestor replica, or from another replica where the data has already been added.
 
 So you can put data in the 'detached' directory on one replica, and use the ALTER ... ATTACH query to add it to the table on all replicas.
+
 .. code-block:: sql
 
     ALTER TABLE [db.]table FREEZE PARTITION 'name'
@@ -373,6 +386,7 @@ Replication provides protection from device failures. If all data disappeared on
 For protection from device failures, you must use replication. For more information about replication, see the section "Data replication".
 
 Backups protect against human error (accidentally deleting data, deleting the wrong data or in the wrong cluster, or corrupting data). For high-volume databases, it can be difficult to copy backups to remote servers. In such cases, to protect from human error, you can keep a backup on the same server (it will reside in /var/lib/clickhouse/shadow/).
+
 .. code-block:: sql
 
   ALTER TABLE [db.]table FETCH PARTITION 'name' FROM 'path-in-zookeeper'

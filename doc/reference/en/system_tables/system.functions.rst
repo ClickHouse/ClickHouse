@@ -3,6 +3,7 @@ system.functions
 
 Contains information about normal and aggregate functions.
 Columns:
+
 .. code-block:: text
 
   name String           - Function name.

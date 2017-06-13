@@ -2,6 +2,7 @@ Settings profiles
 =================
 A settings profile is a collection of settings grouped under the same name. Each ClickHouse user has a profile.
 To apply all the settings in a profile, set 'profile'. Example:
+
 .. code-block:: sql
 
   SET profile = 'web'

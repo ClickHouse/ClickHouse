@@ -4,6 +4,7 @@ What is ClickHouse?
 ClickHouse is a columnar DBMS for OLAP.
 
 In a "normal" row-oriented DBMS, data is stored in this order:
+
 .. code-block:: text
 
   5123456789123456789     1       Eurobasket - Greece - Bosnia and Herzegovina - example.com      1       2011-09-01 01:03:02     6274717   1294101174      11409   612345678912345678      0       33      6       http://www.example.com/basketball/team/123/match/456789.html http://www.example.com/basketball/team/123/match/987654.html       0       1366    768     32      10      3183      0       0       13      0\0     1       1       0       0                       2011142 -1      0               0       01321     613     660     2011-09-01 08:01:17     0       0       0       0       utf-8   1466    0       0       0       5678901234567890123               277789954       0       0       0       0       0
@@ -14,6 +15,7 @@ In a "normal" row-oriented DBMS, data is stored in this order:
 In other words, all the values related to a row are stored next to each other. Examples of a row-oriented DBMS are MySQL, Postgres, MS SQL Server, and others.
 
 In a column-oriented DBMS, data is stored like this:
+
 .. code-block:: text
 
   WatchID:    5385521489354350662     5385521490329509958     5385521489953706054     5385521490476781638     5385521490583269446     5385521490218868806     5385521491437850694   5385521491090174022      5385521490792669254     5385521490420695110     5385521491532181574     5385521491559694406     5385521491459625030     5385521492275175494   5385521492781318214      5385521492710027334     5385521492955615302     5385521493708759110     5385521494506434630     5385521493104611398
@@ -60,6 +62,7 @@ Columnar-oriented databases are better suited to OLAP scenarios (at least 100 ti
 For example, the query "count the number of records for each advertising platform" requires reading one "advertising platform ID" column, which takes up 1 byte uncompressed. If most of the traffic was not from advertising platforms, you can expect at least 10-fold compression of this column. When using a quick compression algorithm, data decompression is possible at a speed of at least several gigabytes of uncompressed data per second. In other words, this query can be processed at a speed of approximately several billion rows per second on a single server. This speed is actually achieved in practice.
 
 Example:
+
 .. code-block:: text
 
     milovidov@hostname:~$ clickhouse-client

@@ -1,6 +1,7 @@
 Command-line client
 -------------------
 To work for command line you can use ``clickhouse-client``:
+
 .. code-block:: bash
 
     $ clickhouse-client
@@ -38,6 +39,7 @@ Only works in non-interactive mode.
 ``--stacktrace`` - If specified, also prints the stack trace if an exception occurs.
 ``--config-file`` - Name of the configuration file that has additional settings or changed defaults for the settings listed above.
 By default, files are searched for in this order:
+
 .. code-block:: text
 
     ./clickhouse-client.xml
@@ -53,6 +55,7 @@ To use batch mode, specify the 'query' parameter, or send data to 'stdin' (it ve
 Similar to the HTTP interface, when using the 'query' parameter and sending data to 'stdin', the request is a concatenation of the 'query' parameter, a line break, and the data in 'stdin'. This is convenient for large INSERT queries.
 
 Examples for insert data via clickhouse-client:
+
 .. code-block:: bash
 
     echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";

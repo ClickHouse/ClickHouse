@@ -2,6 +2,7 @@ TSKV
 ----
 
 Похож на TabSeparated, но выводит значения в формате name=value. Имена экранируются так же, как строки в формате TabSeparated и, дополнительно, экранируется также символ =.
+
 .. code-block:: text
 
   SearchPhrase=   count()=8267016
