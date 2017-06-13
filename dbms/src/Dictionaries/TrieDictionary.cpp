@@ -8,10 +8,10 @@
 #include <Columns/ColumnFixedString.h>
 #include <Dictionaries/DictionaryBlockInputStream.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeString.h>
 #include <IO/WriteIntText.h>
+#include <Common/formatIPv6.h>
 #include <iostream>
-
-#include <Functions/FunctionsCoding.h>
 
 
 namespace DB
@@ -595,7 +595,7 @@ void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
 
 Columns TrieDictionary::getKeyColumns() const
 {
-    auto ip_column = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
+    auto ip_column = std::make_shared<ColumnFixedString>(IPV6_BINARY_LENGTH);
     auto mask_column = std::make_shared<ColumnVector<UInt8>>();
 
     auto getter = [& ip_column, & mask_column](__uint128_t ip, size_t mask) {
@@ -603,7 +603,7 @@ Columns TrieDictionary::getKeyColumns() const
         ip_array[0] = Poco::ByteOrder::fromNetwork(ip_array[0]);
         ip_array[1] = Poco::ByteOrder::fromNetwork(ip_array[1]);
         std::swap(ip_array[0], ip_array[1]);
-        ip_column->insertData(reinterpret_cast<const char *>(ip_array), ipv6_bytes_length);
+        ip_column->insertData(reinterpret_cast<const char *>(ip_array), IPV6_BINARY_LENGTH);
         mask_column->insert(static_cast<UInt8>(mask));
     };
 
@@ -619,7 +619,7 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
     {
         const auto & attr = attributes.front();
         return ColumnsWithTypeAndName({ColumnWithTypeAndName(columns.front(),
-            std::make_shared<DataTypeFixedString>(ipv6_bytes_length), attr.name)});
+            std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH), attr.name)});
     };
     auto getView = [](const Columns& columns, const std::vector<DictionaryAttribute>& attributes)
     {
@@ -631,7 +631,7 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
         {
             UInt8 mask = mask_column->getElement(row);
             char * ptr = buffer;
-            IPv6Format::apply(reinterpret_cast<const unsigned char *>(ip_column->getDataAt(row).data), ptr);
+            formatIPv6(reinterpret_cast<const unsigned char *>(ip_column->getDataAt(row).data), ptr);
             *(ptr - 1) = '/';
             auto size = detail::writeUIntText(mask, ptr);
             column->insertData(buffer, size + (ptr - buffer));
