@@ -31,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int DICTIONARIES_WAS_NOT_LOADED;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /** Functions using Yandex.Metrica dictionaries

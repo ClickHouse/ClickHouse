@@ -13,6 +13,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
 /** String functions
   *
   * length, empty, notEmpty,

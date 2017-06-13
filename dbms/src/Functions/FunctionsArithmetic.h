@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_DIVISION;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
