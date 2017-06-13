@@ -14,53 +14,32 @@ namespace ext
     template <typename T>
     using range_iterator = boost::counting_iterator<T>;
 
-    template <typename T>
-    using reverse_range_iterator = std::reverse_iterator<range_iterator<T>>;
-
     /** \brief Range-based for loop adapter for (reverse_)range_iterator.
-     *  By and large should be in conjunction with ext::range and ext::reverse_range. */
-    template <typename T, bool forward>
+      *  By and large should be in conjunction with ext::range and ext::reverse_range.
+      */
+    template <typename T>
     struct range_wrapper
     {
         using value_type = typename std::remove_reference<T>::type;
-        using range_iterator_t = ext::range_iterator<value_type>;
-        using iterator = typename std::conditional<forward,
-            range_iterator_t,
-            ext::reverse_range_iterator<value_type>>::type;
+        using iterator = range_iterator<value_type>;
 
-        value_type begin_, end_;
+        value_type begin_;
+        value_type end_;
 
-        iterator begin() const { return iterator(range_iterator_t{begin_}); }
-        iterator end() const { return iterator(range_iterator_t{end_}); }
+        iterator begin() const { return iterator(begin_); }
+        iterator end() const { return iterator(end_); }
     };
 
     /** \brief Constructs range_wrapper for forward-iteration over [begin, end) in range-based for loop.
      *  Usage example:
      *      for (const auto i : ext::range(0, 4)) print(i);
      *  Output:
-     *      0 1 2 3 */
-    template<typename T1, typename T2>
-    inline ext::range_wrapper<typename std::common_type<T1, T2>::type, true> range(T1 begin, T2 end)
+     *      0 1 2 3
+     */
+    template <typename T1, typename T2>
+    inline range_wrapper<typename std::common_type<T1, T2>::type> range(T1 begin, T2 end)
     {
         using common_type = typename std::common_type<T1, T2>::type;
         return { static_cast<common_type>(begin), static_cast<common_type>(end) };
-    }
-
-    /** \brief Constructs range_wrapper for backward-iteration over [begin, end) in range-based for loop.
-     *  Usage example:
-     *      for (const auto i : ext::reverse_range(0, 4)) print(i);
-     *  Output:
-     *      3 2 1 0 */
-    template<typename T1, typename T2>
-    inline ext::range_wrapper<typename std::common_type<T1, T2>::type, false> reverse_range(T1 begin, T2 end)
-    {
-        using common_type = typename std::common_type<T1, T2>::type;
-        return { static_cast<common_type>(end), static_cast<common_type>(begin) };
-    }
-
-    template<typename T>
-    inline ext::range_iterator<T> make_range_iterator(const T value)
-    {
-        return { value };
     }
 }

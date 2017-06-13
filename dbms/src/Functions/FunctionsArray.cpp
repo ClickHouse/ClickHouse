@@ -15,6 +15,7 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <boost/iterator/counting_iterator.hpp>
 #include <tuple>
 #include <array>
 
@@ -2356,7 +2357,7 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
         IColumn::Offset_t offset{};
         for (const auto i : ext::range(0, in->size()))
         {
-            std::copy(ext::make_range_iterator(T{}), ext::make_range_iterator(in_data[i]), &out_data[offset]);
+            std::copy(boost::counting_iterator(T{}), boost::counting_iterator(in_data[i]), &out_data[offset]);
             offset += in_data[i];
             out_offsets[i] = offset;
         }
@@ -2392,7 +2393,7 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
         IColumn::Offset_t offset{};
         for (const auto i : ext::range(0, in->size()))
         {
-            std::copy(ext::make_range_iterator(T{}), ext::make_range_iterator(in_data), &out_data[offset]);
+            std::copy(boost::counting_iterator(T{}), boost::counting_iterator(in_data), &out_data[offset]);
             offset += in_data;
             out_offsets[i] = offset;
         }
