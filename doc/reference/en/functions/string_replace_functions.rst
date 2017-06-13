@@ -1,5 +1,5 @@
 Functions for searching and replacing in strings
----------------------------------
+------------------------------------------------
 
 replaceOne(haystack, pattern, replacement)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -29,7 +29,9 @@ Example 1. Converting the date to American format:
   FROM test.hits
   LIMIT 7
   FORMAT TabSeparated
-  
+
+.. code-block:: text
+
   2014-03-17      03/17/2014
   2014-03-18      03/18/2014
   2014-03-19      03/19/2014
@@ -43,7 +45,9 @@ Example 2. Copy the string ten times:
 .. code-block:: sql
 
   SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
-  
+
+.. code-block:: text
+
   ┌─res────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
   │ Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World! │
   └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -53,8 +57,11 @@ replaceRegexpAll(haystack, pattern, replacement)
 This does the same thing, but replaces all the occurrences. Example:
 
 .. code-block:: sql
+
   SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
-  
+
+.. code-block:: text
+
   ┌─res────────────────────────┐
   │ HHeelllloo,,  WWoorrlldd!! │
   └────────────────────────────┘
@@ -63,8 +70,11 @@ As an exception, if a regular expression worked on an empty substring, the repla
 Example:
 
 .. code-block:: sql
+
   SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
-  
+
+.. code-block:: text
+
   ┌─res─────────────────┐
   │ here: Hello, World! │
   └─────────────────────┘

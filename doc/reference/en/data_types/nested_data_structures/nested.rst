@@ -44,7 +44,9 @@ Example:
   FROM test.visits
   WHERE CounterID = 101500 AND length(Goals.ID) < 5
   LIMIT 10
-  
+
+.. code-block:: text
+
   ┌─Goals.ID───────────────────────┬─Goals.EventTime───────────────────────────────────────────────────────────────────────────┐
   │ [1073752,591325,591325]        │ ['2014-03-17 16:38:10','2014-03-17 16:38:48','2014-03-17 16:42:27']                       │
   │ [1073752]                      │ ['2014-03-17 00:28:25']                                                                   │
@@ -71,7 +73,9 @@ The only place where a SELECT query can specify the name of an entire nested dat
   ARRAY JOIN Goals AS Goal
   WHERE CounterID = 101500 AND length(Goals.ID) < 5
   LIMIT 10
-  
+
+.. code-block:: text
+
   ┌─Goal.ID─┬──────Goal.EventTime─┐
   │ 1073752 │ 2014-03-17 16:38:10 │
   │  591325 │ 2014-03-17 16:38:48 │
@@ -84,6 +88,7 @@ The only place where a SELECT query can specify the name of an entire nested dat
   │  591325 │ 2014-03-17 22:18:51 │
   │ 1073752 │ 2014-03-17 11:37:06 │
   └─────────┴─────────────────────┘
+
 
 You can't perform SELECT for an entire nested data structure. You can only explicitly list individual columns that are part of it.
 

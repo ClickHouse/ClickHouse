@@ -1,11 +1,27 @@
 The Yandex.Metrica task
-----------------------------------
+-----------------------
+
+ClickHouse currently powers `Yandex.Metrica <https://metrica.yandex.com/>`_, world's `second largest <http://w3techs.com/technologies/overview/traffic_analysis/all>`_ web analytics platform, with over 13 trillion database records and over 20 billion events a day, generating customized reports on the fly directly from non-aggregated data.
 
 We need to get custom reports based on hits and sessions, with custom segments set by the user. Data for the reports is updated in real-time. Queries must be run immediately (in online mode). We must be able to build reports for any time period. Complex aggregates must be calculated, such as the number of unique visitors.
 At this time (April 2014), Yandex.Metrica receives approximately 12 billion events (pageviews and mouse clicks) daily. All these events must be stored in order to build custom reports. A single query may require scanning hundreds of millions of rows over a few seconds, or millions of rows in no more than a few hundred milliseconds.
 
+Usage in Yandex.Metrica and other Yandex services
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ClickHouse is used for multiple purposes in Yandex.Metrica. Its main task is to build reports in online mode using non-aggregated data. It uses a cluster of 374 servers, which store over 20.3 trillion rows in the database. The volume of compressed data, without counting duplication and replication, is about 2 PB. The volume of uncompressed data (in TSV format) would be approximately 17 PB.
+
+ClickHouse is also used for:
+ * Storing WebVisor data.
+ * Processing intermediate data.
+ * Building global reports with Analytics.
+ * Running queries for debugging the Metrica engine.
+ * Analyzing logs from the API and the user interface.
+
+ClickHouse has at least a dozen installations in other Yandex services: in search verticals, Market, Direct, business analytics, mobile development, AdFox, personal services, and others.
+
 Aggregated and non-aggregated data
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 There is a popular opinion that in order to effectively calculate statistics, you must aggregate data, since this reduces the volume of data.
 
 But data aggregation is a very limited solution, for the following reasons:

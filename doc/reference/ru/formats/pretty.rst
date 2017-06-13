@@ -13,6 +13,8 @@ Pretty
 
   SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 
+.. code-block:: text
+
   ┌──EventDate─┬───────c─┐
   │ 2014-03-17 │ 1406958 │
   │ 2014-03-18 │ 1383658 │

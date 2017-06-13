@@ -1,5 +1,5 @@
 JSON
------
+----
 
 Outputs data in JSON format. Besides data tables, it also outputs column names and types, along with some additional information - the total number of output rows, and the number of rows that could have been output if there weren't a LIMIT. Example:
 

@@ -91,6 +91,8 @@ This function is normally used together with ARRAY JOIN. It allows counting some
   WHERE CounterID = 160656
   LIMIT 10
 
+.. code-block:: text
+
   ┌─Reaches─┬──Hits─┐
   │   95606 │ 31406 │
   └─────────┴───────┘
@@ -104,6 +106,8 @@ In this example, Reaches is the number of conversions (the strings received afte
       count() AS Hits
   FROM test.hits
   WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
+
+.. code-block:: text
 
   ┌─Reaches─┬──Hits─┐
   │   95606 │ 31406 │
@@ -133,6 +137,8 @@ This function is useful when using ARRAY JOIN and aggregation of array elements.
   ORDER BY Reaches DESC
   LIMIT 10
 
+.. code-block:: text
+
   ┌──GoalID─┬─Reaches─┬─Visits─┐
   │   53225 │    3214 │   1097 │
   │ 2825062 │    3188 │   1097 │
@@ -155,6 +161,8 @@ The arrayEnumerateUniq function can take multiple arrays of the same size as arg
 .. code-block:: sql
 
   SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
+
+.. code-block:: text
 
   ┌─res───────────┐
   │ [1,2,1,1,2,1] │

@@ -23,14 +23,14 @@
 ~~~~~~~~~~~~~~~~~~~~
 
 Пропишите в `/etc/apt/sources.list` (или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`) репозитории:
-::
+.. code-block:: text
 
     deb http://repo.yandex.ru/clickhouse/trusty stable main
 
 На других версиях Ubuntu, замените `trusty` на `xenial` или `precise`.
 
 Затем выполните:
-::
+.. code-block:: bash
 
     sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
     sudo apt-get update
@@ -51,13 +51,13 @@ ClickHouse содержит настройки ограничения досту
 
 Вы можете собрать пакеты и установить их.
 Также вы можете использовать программы без установки пакетов.
-::
+.. code-block:: text
 
     Клиент: dbms/src/Client/
     Сервер: dbms/src/Server/
 
 Для сервера создаёте директории с данными, например:
-::
+.. code-block:: text
 
     /opt/clickhouse/data/default/
     /opt/clickhouse/metadata/default/
@@ -115,7 +115,7 @@ Gentoo overlay: https://github.com/kmeaw/clickhouse-overlay
 
 .. code-block:: bash
 
-    milovidov@milovidov-Latitude-E6320:~/work/metrica/src/dbms/src/Client$ ./clickhouse-client
+    milovidov@hostname:~/work/metrica/src/dbms/src/Client$ ./clickhouse-client
     ClickHouse client version 0.0.18749.
     Connecting to localhost:9000.
     Connected to ClickHouse server version 0.0.18749.
@@ -133,17 +133,3 @@ Gentoo overlay: https://github.com/kmeaw/clickhouse-overlay
     :)
 
 Поздравляю, система работает!
-
-Тестовые данные
----------------
-Если вы сотрудник Яндекса, вы можете воспользоваться тестовыми данными Яндекс.Метрики для изучения возможностей системы.
-Как загрузить тестовые данные, написано здесь.
-
-Если вы внешний пользователь системы, вы можете воспользоваться использовать общедоступные данные, способы загрузки которых указаны здесь.
-
-Если возникли вопросы
----------------------
-Если вы являетесь сотрудником Яндекса, обращайтесь на внутреннюю рассылку по ClickHouse.
-Вы можете подписаться на эту рассылку, чтобы получать анонсы, быть в курсе нововведений, а также видеть вопросы, которые возникают у других пользователей.
-
-Иначе вы можете задавать вопросы на Stackoverflow или участвовать в обсуждениях на Google Groups. Также вы можете отправить приватное сообщение для разрабочиков по адресу clickhouse-feedback@yandex-team.com.

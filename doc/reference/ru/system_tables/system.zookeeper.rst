@@ -9,7 +9,7 @@ system.zookeeper
 Если узла, указанного в path не существует, то будет брошено исключение.
 
 Столбцы:
-::
+.. code-block:: text
 
   name String          - имя узла
   path String          - путь к узлу

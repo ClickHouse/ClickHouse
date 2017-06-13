@@ -5,7 +5,7 @@ Strings of an arbitrary length. The length is not limited. The value can contain
 The String type replaces the types VARCHAR, BLOB, CLOB, and others from other DBMSs.
 
 
-Кодировки
+Encodings
 ~~~~~~~~~
 
 ClickHouse doesn't have the concept of encodings. Strings can contain an arbitrary set of bytes, which are stored and output as-is.
