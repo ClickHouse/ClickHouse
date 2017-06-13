@@ -15,7 +15,6 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <boost/iterator/counting_iterator.hpp>
 #include <tuple>
 #include <array>
 
@@ -907,7 +906,8 @@ bool FunctionArrayElement::executeConstConst(Block & block, const ColumnNumbers 
     Field value;
     if (real_index < array_size)
         value = array.at(real_index);
-    else
+
+    if (value.isNull())
         value = block.getByPosition(result).type->getDefault();
 
     block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
@@ -1162,14 +1162,14 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
     }
     else if (!block.safeGetByPosition(arguments[1]).column->isConst())
     {
-        if (!(    executeArgument<UInt8>    (block, arguments, result, builder)
-            ||    executeArgument<UInt16>    (block, arguments, result, builder)
-            ||    executeArgument<UInt32>    (block, arguments, result, builder)
-            ||    executeArgument<UInt64>    (block, arguments, result, builder)
+        if (!(    executeArgument<UInt8>   (block, arguments, result, builder)
+            ||    executeArgument<UInt16>  (block, arguments, result, builder)
+            ||    executeArgument<UInt32>  (block, arguments, result, builder)
+            ||    executeArgument<UInt64>  (block, arguments, result, builder)
             ||    executeArgument<Int8>    (block, arguments, result, builder)
-            ||    executeArgument<Int16>    (block, arguments, result, builder)
-            ||    executeArgument<Int32>    (block, arguments, result, builder)
-            ||    executeArgument<Int64>    (block, arguments, result, builder)))
+            ||    executeArgument<Int16>   (block, arguments, result, builder)
+            ||    executeArgument<Int32>   (block, arguments, result, builder)
+            ||    executeArgument<Int64>   (block, arguments, result, builder)))
         throw Exception("Second argument for function " + getName() + " must must have UInt or Int type.",
                         ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -1183,19 +1183,19 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
         if (index == UInt64(0))
             throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
 
-        if (!(    executeNumberConst<UInt8>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<UInt16>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<UInt32>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<UInt64>    (block, arguments, result, index, builder)
+        if (!(    executeNumberConst<UInt8>   (block, arguments, result, index, builder)
+            ||    executeNumberConst<UInt16>  (block, arguments, result, index, builder)
+            ||    executeNumberConst<UInt32>  (block, arguments, result, index, builder)
+            ||    executeNumberConst<UInt64>  (block, arguments, result, index, builder)
             ||    executeNumberConst<Int8>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<Int16>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<Int32>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<Int64>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<Float32>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<Float64>    (block, arguments, result, index, builder)
-            ||    executeConstConst            (block, arguments, result, index, builder)
-            ||    executeStringConst            (block, arguments, result, index, builder)
-            ||    executeGenericConst            (block, arguments, result, index, builder)))
+            ||    executeNumberConst<Int16>   (block, arguments, result, index, builder)
+            ||    executeNumberConst<Int32>   (block, arguments, result, index, builder)
+            ||    executeNumberConst<Int64>   (block, arguments, result, index, builder)
+            ||    executeNumberConst<Float32> (block, arguments, result, index, builder)
+            ||    executeNumberConst<Float64> (block, arguments, result, index, builder)
+            ||    executeConstConst           (block, arguments, result, index, builder)
+            ||    executeStringConst          (block, arguments, result, index, builder)
+            ||    executeGenericConst         (block, arguments, result, index, builder)))
         throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
             + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
@@ -2355,11 +2355,13 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
         auto & out_offsets = out->getOffsets();
 
         IColumn::Offset_t offset{};
-        for (const auto i : ext::range(0, in->size()))
+        for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
         {
-            std::copy(boost::counting_iterator<T>(), boost::counting_iterator<T>(in_data[i]), &out_data[offset]);
-            offset += in_data[i];
-            out_offsets[i] = offset;
+            for (size_t elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
+                out_data[offset + elem_idx] = elem_idx;
+
+            offset += in_data[row_idx];
+            out_offsets[row_idx] = offset;
         }
 
         return true;
@@ -2370,16 +2372,14 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
         if ((in_data != 0) && (in->size() > (std::numeric_limits<std::size_t>::max() / in_data)))
             throw Exception{
                 "A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND
-            };
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
         const std::size_t total_values = in->size() * in_data;
         if (total_values > max_elements)
             throw Exception{
                 "A call to function " + getName() + " would produce " + std::to_string(total_values) +
                     " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND
-            };
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
         const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
         const auto out = std::make_shared<ColumnArray>(
@@ -2391,11 +2391,13 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
         auto & out_offsets = out->getOffsets();
 
         IColumn::Offset_t offset{};
-        for (const auto i : ext::range(0, in->size()))
+        for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
         {
-            std::copy(boost::counting_iterator<T>(), boost::counting_iterator<T>(in_data), &out_data[offset]);
+            for (size_t elem_idx = 0, elems = in_data; elem_idx < elems; ++elem_idx)
+                out_data[offset + elem_idx] = elem_idx;
+
             offset += in_data;
-            out_offsets[i] = offset;
+            out_offsets[row_idx] = offset;
         }
 
         return true;
