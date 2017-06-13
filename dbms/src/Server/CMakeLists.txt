@@ -22,9 +22,9 @@ target_link_libraries(clickhouse
     clickhouse-client
     clickhouse-local
     clickhouse-benchmark
+    clickhouse-performance-test
     clickhouse-extract-from-config)
 INSTALL(TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-
 # make symbolic links to concrete clickhouse applications
 macro(install_symlink_to_clickhouse app)
     INSTALL(CODE "execute_process(COMMAND ln -sf clickhouse ${app} WORKING_DIRECTORY \"\$ENV{DESTDIR}${CMAKE_INSTALL_FULL_BINDIR}\" )" COMPONENT ${app})
@@ -34,6 +34,7 @@ install_symlink_to_clickhouse(clickhouse-server)
 install_symlink_to_clickhouse(clickhouse-client)
 install_symlink_to_clickhouse(clickhouse-local)
 install_symlink_to_clickhouse(clickhouse-benchmark)
+install_symlink_to_clickhouse(clickhouse-performance-test)
 
 INSTALL(
     FILES config.xml users.xml
