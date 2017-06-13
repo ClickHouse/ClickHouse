@@ -518,7 +518,6 @@ public:
     }
 
 private:
-    unsigned concurrency;
     String test_name;
 
     using Query = String;
@@ -533,8 +532,6 @@ private:
     Settings settings;
 
     InterruptListener interrupt_listener;
-
-    double average_speed_precision = 0.001;
 
     using XMLConfiguration = Poco::Util::XMLConfiguration;
     using AbstractConfig = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
