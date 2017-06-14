@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
 
 namespace DB
 {
@@ -45,6 +46,8 @@ struct MergeTreeReadTask
     const bool should_reorder;
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;
+    /// used to save current range processing status
+    std::experimental::optional<MergeTreeRangeReader> current_range_reader;
 
     MergeTreeReadTask(
         const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const std::size_t part_index_in_query,

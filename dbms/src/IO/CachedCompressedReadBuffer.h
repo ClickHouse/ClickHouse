@@ -47,6 +47,7 @@ public:
 
 
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);
+    void position(size_t & offset_in_compressed_file, size_t & offset_in_decompressed_block) const;
 
     void setProfileCallback(const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE)
     {

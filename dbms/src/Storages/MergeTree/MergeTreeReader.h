@@ -3,6 +3,7 @@
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Core/NamesAndTypes.h>
 
 
@@ -40,7 +41,9 @@ public:
     /// If columns are not present in the block, adds them. If they are present - appends the values that have been read.
     /// Do not adds columns, if the files are not present for them (to add them, call fillMissingColumns).
     /// Block should contain either no columns from the columns field, or all columns for which files are present.
-    void readRange(size_t from_mark, size_t to_mark, Block & res);
+    void readRange(size_t from_mark, size_t to_mark, Block & res)
+        { return readRange(from_mark, true, (to_mark - from_mark) * storage.index_granularity, res); }
+    MergeTreeRangeReader readRange(size_t from_mark, size_t to_mark);
 
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
@@ -102,7 +105,7 @@ private:
     MergeTreeData::DataPartPtr data_part;
 
     FileStreams streams;
-    size_t cur_mark_idx = 0; /// Mark index corresponding to the current position for all streams.
+    // size_t cur_mark_idx = 0; /// Mark index corresponding to the current position for all streams.
 
     /// Columns that are read.
     NamesAndTypesList columns;
@@ -123,10 +126,14 @@ private:
 
     void readData(
         const String & name, const IDataType & type, IColumn & column,
-        size_t from_mark, size_t max_rows_to_read,
+        size_t from_mark, bool is_first_mark_in_range, size_t max_rows_to_read,
         size_t level = 0, bool read_offsets = true);
 
     void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder);
+
+    void readRange(size_t from_mark, bool is_first_mark_in_range, size_t max_rows_to_read, Block & res);
+
+    friend class MergeTreeRangeReader;
 };
 
 }
