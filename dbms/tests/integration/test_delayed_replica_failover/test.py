@@ -55,7 +55,7 @@ SELECT count() FROM distributed SETTINGS
 
         pm.drop_instance_zk_connections(replica2)
 
-        time.sleep(2.5) # allow pings to zookeeper to timeout
+        time.sleep(4) # allow pings to zookeeper to timeout (must be greater than ZK session timeout).
 
         # At this point all replicas are stale, but the query must still go to replica2 which is the least stale one.
         assert instance_with_dist_table.query('''
