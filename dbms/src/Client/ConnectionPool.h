@@ -28,8 +28,9 @@ public:
 public:
     virtual ~IConnectionPool() {}
 
-    /** Selects the connection to work. */
-    virtual Entry get(const Settings * settings = nullptr) = 0;
+    /// Selects the connection to work.
+    /// If force_connected is false, the client must manually ensure that returned connection is good.
+    virtual Entry get(const Settings * settings = nullptr, bool force_connected = true) = 0;
 };
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
@@ -77,12 +78,18 @@ public:
     {
     }
 
-    Entry get(const Settings * settings = nullptr) override
+    Entry get(const Settings * settings = nullptr, bool force_connected = true) override
     {
+        Entry entry;
         if (settings)
-            return Base::get(settings->queue_max_wait_ms.totalMilliseconds());
+            entry = Base::get(settings->queue_max_wait_ms.totalMilliseconds());
         else
-            return Base::get(-1);
+            entry = Base::get(-1);
+
+        if (force_connected)
+            entry->forceConnected();
+
+        return entry;
     }
 
     const std::string & getHost() const
