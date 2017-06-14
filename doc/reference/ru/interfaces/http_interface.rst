@@ -160,11 +160,15 @@ wget сам всё эскейпит, но его не рекомендуется
 
 Имя пользователя и пароль могут быть указаны в одном из двух вариантов:
 
-1. С использованием HTTP Basic Authentification. Пример: ::
+1. С использованием HTTP Basic Authentification. Пример:
+
+.. code-block:: bash
 
     echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 
-2. В параметрах URL user и password. Пример: ::
+2. В параметрах URL user и password. Пример:
+
+.. code-block:: bash
 
     echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 

@@ -29,9 +29,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     ParserString s_insert("INSERT", true, true);
     ParserString s_into("INTO", true, true);
     ParserString s_dot(".");
-    ParserString s_id("ID");
-    ParserString s_eq("=");
-    ParserStringLiteral id_p;
     ParserString s_values("VALUES", true, true);
     ParserString s_format("FORMAT", true, true);
     ParserString s_select("SELECT", true, true);
@@ -45,7 +42,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     ASTPtr columns;
     ASTPtr format;
     ASTPtr select;
-    ASTPtr id;
     /// Insertion data
     const char * data = nullptr;
 
@@ -71,19 +67,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             return false;
 
         ws.ignore(pos, end);
-    }
-
-    ws.ignore(pos, end);
-
-    if (s_id.ignore(pos, end, max_parsed_pos, expected))
-    {
-        if (!s_eq.ignore(pos, end, max_parsed_pos, expected))
-            return false;
-
-        ws.ignore(pos, end);
-
-        if (!id_p.parse(pos, end, id, max_parsed_pos, expected))
-            return false;
     }
 
     ws.ignore(pos, end);
@@ -158,9 +141,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
         query->database = typeid_cast<ASTIdentifier &>(*database).name;
 
     query->table = typeid_cast<ASTIdentifier &>(*table).name;
-
-    if (id)
-        query->insert_id = safeGet<const String &>(typeid_cast<ASTLiteral &>(*id).value);
 
     if (format)
         query->format = typeid_cast<ASTIdentifier &>(*format).name;

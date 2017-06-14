@@ -4,7 +4,9 @@ system.dictionaries
 Contains information about external dictionaries.
 
 Columns:
-::
+
+.. code-block:: text
+
   name String                   - Dictionary name.
   type String                   - Dictionary type: Flat, Hashed, Cache.
   origin String                 - Path to the config file where the dictionary is described.

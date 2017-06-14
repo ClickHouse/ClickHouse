@@ -9,12 +9,14 @@ MergeTree
 Движок принимает параметры: имя столбца типа Date, содержащего дату; выражение для семплирования (не обязательно); кортеж, определяющий первичный ключ таблицы; гранулированность индекса. Пример:
 
 Пример без поддержки сэмплирования:
-::
+
+.. code-block:: text
 
   MergeTree(EventDate, (CounterID, EventDate), 8192)
 
 Пример с поддержкой сэмплирования:
-::
+
+.. code-block:: text
 
   MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)), 8192)
 

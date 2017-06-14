@@ -24,7 +24,9 @@ IPv4NumToStringClassC(num)
   GROUP BY k
   ORDER BY c DESC
   LIMIT 10
-  
+
+.. code-block:: text
+
   ┌─k──────────────┬─────c─┐
   │ 83.149.9.xxx   │ 26238 │
   │ 217.118.81.xxx │ 26074 │
@@ -48,10 +50,15 @@ IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.22
 .. code-block:: sql
 
   SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
-  
+
+.. code-block:: text
+
   ┌─addr─────────┐
   │ 2a02:6b8::11 │
   └──────────────┘
+
+.. code-block:: sql
+
   SELECT
       IPv6NumToString(ClientIP6 AS k),
       count() AS c
@@ -60,7 +67,9 @@ IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.22
   GROUP BY k
   ORDER BY c DESC
   LIMIT 10
-  
+
+.. code-block:: text
+
   ┌─IPv6NumToString(ClientIP6)──────────────┬─────c─┐
   │ 2a02:2168:aaa:bbbb::2                   │ 24695 │
   │ 2a02:2698:abcd:abcd:abcd:abcd:8888:5555 │ 22408 │
@@ -73,6 +82,9 @@ IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.22
   │ 2a02:6b8:0:444:4444:4444:4444:4444      │ 14279 │
   │ 2a01:7e00::ffff:ffff:ffff:ffff          │ 13880 │
   └─────────────────────────────────────────┴───────┘
+
+.. code-block:: sql
+
   SELECT
       IPv6NumToString(ClientIP6 AS k),
       count() AS c
@@ -81,6 +93,8 @@ IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.22
   GROUP BY k
   ORDER BY c DESC
   LIMIT 10
+
+.. code-block:: text
   
   ┌─IPv6NumToString(ClientIP6)─┬──────c─┐
   │ ::ffff:94.26.111.111       │ 747440 │

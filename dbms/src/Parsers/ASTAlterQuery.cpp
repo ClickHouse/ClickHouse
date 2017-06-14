@@ -15,13 +15,13 @@ ASTAlterQuery::Parameters::Parameters() : type(NO_TYPE) {}
 void ASTAlterQuery::Parameters::clone(Parameters & p) const
 {
     p = *this;
-    if (col_decl)        p.col_decl = col_decl->clone();
-    if (column)            p.column = column->clone();
-    if (partition)        p.partition = partition->clone();
-    if (last_partition)    p.last_partition = last_partition->clone();
+    if (col_decl)           p.col_decl = col_decl->clone();
+    if (column)             p.column = column->clone();
+    if (partition)          p.partition = partition->clone();
+    if (last_partition)     p.last_partition = last_partition->clone();
     if (weighted_zookeeper_paths) p.weighted_zookeeper_paths = weighted_zookeeper_paths->clone();
-    if (sharding_key_expr) p.sharding_key_expr = sharding_key_expr->clone();
-    if (coordinator) p.coordinator = coordinator->clone();
+    if (sharding_key_expr)  p.sharding_key_expr = sharding_key_expr->clone();
+    if (coordinator)        p.coordinator = coordinator->clone();
 }
 
 void ASTAlterQuery::addParameters(const Parameters & params)
@@ -63,6 +63,18 @@ ASTPtr ASTAlterQuery::clone() const
     return res;
 }
 
+ASTPtr ASTAlterQuery::getRewrittenASTWithoutOnCluster(const std::string & new_database) const
+{
+    auto query_ptr = clone();
+    ASTAlterQuery & query = static_cast<ASTAlterQuery &>(*query_ptr);
+
+    query.cluster.clear();
+    if (query.database.empty())
+        query.database = new_database;
+
+    return query_ptr;
+}
+
 void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
@@ -80,6 +92,7 @@ void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & st
         }
         settings.ostr << indent_str << backQuoteIfNeed(table);
     }
+    formatOnCluster(settings);
     settings.ostr << settings.nl_or_ws;
 
     for (size_t i = 0; i < parameters.size(); ++i)

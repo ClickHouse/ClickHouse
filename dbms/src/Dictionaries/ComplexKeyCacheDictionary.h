@@ -147,6 +147,8 @@ public:
 
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+
 private:
     template <typename Value> using MapType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
     template <typename Value> using ContainerType = Value[];
@@ -233,7 +235,8 @@ private:
 
     template <typename Arena>
     static StringRef placeKeysInPool(
-        const std::size_t row, const Columns & key_columns, StringRefs & keys, Arena & pool);
+        const std::size_t row, const Columns & key_columns, StringRefs & keys,
+        const std::vector<DictionaryAttribute> & key_attributes, Arena & pool);
 
     StringRef placeKeysInFixedSizePool(
         const std::size_t row, const Columns & key_columns) const;
@@ -254,6 +257,8 @@ private:
         const auto hash = StringRefHash{}(key);
         return findCellIdx(key, now, hash);
     };
+
+    bool isEmptyCell(const UInt64 idx) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;

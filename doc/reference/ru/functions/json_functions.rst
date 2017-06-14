@@ -33,7 +33,8 @@ visitParamExtractRaw(params, name)
 Вернуть значение поля, включая разделители. 
 
 Примеры:
-::
+
+.. code-block:: text
 
   visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
   visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
@@ -43,7 +44,8 @@ visitParamExtractString(params, name)
 Распарсить строку в двойных кавычках. У значения убирается экранирование. Если убрать экранированные символы не удалось, то возвращается пустая строка. 
 
 Примеры:
-::
+
+.. code-block:: text
 
   visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
   visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺'

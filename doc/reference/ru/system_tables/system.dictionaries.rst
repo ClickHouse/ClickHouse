@@ -4,7 +4,8 @@ system.dictionaries
 Содержит информацию о внешних словарях.
 
 Столбцы:
-::
+
+.. code-block:: text
 
   name String                   - имя словаря
   type String                   - тип словаря: Flat, Hashed, Cache

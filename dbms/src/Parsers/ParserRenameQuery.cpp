@@ -84,7 +84,15 @@ bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             return false;
     }
 
+    String cluster_str;
+    if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+            return false;
+    }
+
     auto query = std::make_shared<ASTRenameQuery>(StringRange(begin, pos));
+    query->cluster = cluster_str;
     node = query;
 
     query->elements = elements;

@@ -58,9 +58,9 @@ int main(int argc, char ** argv)
     }
 
     {
-        typedef HashSet<
+        using Cont = HashSet<
             DB::UInt128,
-            DB::UInt128TrivialHash> Cont;
+            DB::UInt128TrivialHash>;
         Cont cont;
 
         std::string dump;

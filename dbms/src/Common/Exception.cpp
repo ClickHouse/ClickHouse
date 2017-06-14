@@ -7,6 +7,8 @@
 #include <common/logger_useful.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Common/Exception.h>
 
@@ -83,28 +85,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
     }
     catch (const Exception & e)
     {
-        try
-        {
-            std::string text = e.displayText();
-
-            bool has_embedded_stack_trace = false;
-            if (check_embedded_stacktrace)
-            {
-                auto embedded_stack_trace_pos = text.find("Stack trace");
-                has_embedded_stack_trace = embedded_stack_trace_pos != std::string::npos;
-                if (!with_stacktrace && has_embedded_stack_trace)
-                {
-                    text.resize(embedded_stack_trace_pos);
-                    Poco::trimRightInPlace(text);
-                }
-            }
-
-            stream << "Code: " << e.code() << ", e.displayText() = " << text << ", e.what() = " << e.what();
-
-            if (with_stacktrace && !has_embedded_stack_trace)
-                stream << ", Stack trace:\n\n" << e.getStackTrace().toString();
-        }
-        catch (...) {}
+        stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace);
     }
     catch (const Poco::Exception & e)
     {
@@ -230,6 +211,36 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
     }
 }
 
+std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
+{
+    std::stringstream stream;
+
+    try
+    {
+        std::string text = e.displayText();
+
+        bool has_embedded_stack_trace = false;
+        if (check_embedded_stacktrace)
+        {
+            auto embedded_stack_trace_pos = text.find("Stack trace");
+            has_embedded_stack_trace = embedded_stack_trace_pos != std::string::npos;
+            if (!with_stacktrace && has_embedded_stack_trace)
+            {
+                text.resize(embedded_stack_trace_pos);
+                Poco::trimRightInPlace(text);
+            }
+        }
+
+        stream << "Code: " << e.code() << ", e.displayText() = " << text << ", e.what() = " << e.what();
+
+        if (with_stacktrace && !has_embedded_stack_trace)
+            stream << ", Stack trace:\n\n" << e.getStackTrace().toString();
+    }
+    catch (...) {}
+
+    return stream.str();
+}
+
 std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
 {
     try
@@ -240,6 +251,28 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
     {
         return getCurrentExceptionMessage(with_stacktrace);
     }
+}
+
+
+std::string ExecutionStatus::serializeText() const
+{
+    std::string res;
+    {
+        WriteBufferFromString wb(res);
+        wb << code << "\n" << escape << message;
+    }
+    return res;
+}
+
+void ExecutionStatus::deserializeText(const std::string & data)
+{
+    ReadBufferFromString rb(data);
+    rb >> code >> "\n" >> escape >> message;
+}
+
+ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message)
+{
+    return ExecutionStatus(getCurrentExceptionCode(), start_of_message + ": " + getCurrentExceptionMessage(false, true));
 }
 
 

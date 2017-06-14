@@ -9,7 +9,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>

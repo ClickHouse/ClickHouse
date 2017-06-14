@@ -8,6 +8,11 @@ ZooKeeperHolder::UnstorableZookeeperHandler ZooKeeperHolder::getZooKeeper()
     return UnstorableZookeeperHandler(ptr);
 }
 
+void ZooKeeperHolder::initFromInstance(const ZooKeeper::Ptr & zookeeper_ptr)
+{
+    ptr = zookeeper_ptr;
+}
+
 bool ZooKeeperHolder::replaceZooKeeperSessionToNewOne()
 {
     std::unique_lock<std::mutex> lock(mutex);

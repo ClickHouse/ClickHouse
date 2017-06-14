@@ -20,7 +20,8 @@ ClickHouse поддерживает работу одновременно с н�
 
 Во все функции по работе с регионами, в конце добавлен один необязательный аргумент - ключ словаря. Далее он обозначен как geobase.
 Пример:
-::
+
+.. code-block:: text
 
   regionToCountry(RegionID) - использует словарь по умолчанию: /opt/geo/regions_hierarchy.txt;
   regionToCountry(RegionID, '') - использует словарь по умолчанию: /opt/geo/regions_hierarchy.txt;
@@ -39,6 +40,8 @@ regionToArea(id[, geobase])
   SELECT DISTINCT regionToName(regionToArea(toUInt32(number), 'ua'))
   FROM system.numbers
   LIMIT 15
+
+.. code-block:: text
 
   ┌─regionToName(regionToArea(toUInt32(number), \'ua\'))─┐
   │                                                      │
@@ -67,6 +70,8 @@ regionToDistrict(id[, geobase])
   SELECT DISTINCT regionToName(regionToDistrict(toUInt32(number), 'ua'))
   FROM system.numbers
   LIMIT 15
+
+.. code-block:: text
 
   ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'))─┐
   │                                                          │

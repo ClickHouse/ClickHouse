@@ -102,3 +102,14 @@ input[type="submit"] {
 	font-style: normal;
 	font-stretch: normal
 }
+
+
+@media screen and (max-width: 870px) {
+	div.sphinxsidebar a {
+		color: #fff;
+	}
+
+	div.document, div.footer {
+		width: auto;
+	}
+}

@@ -5,5 +5,5 @@ Prints every row in parentheses. Rows are separated by commas. There is no comma
 
 Minimum set of symbols that you must escape in Values format is single quote and backslash.
 
-This is the format that is used in ``INSERT INTO t VALUES`` ...
+This is the format that is used in ``INSERT INTO t VALUES ...``
 But you can also use it for query result.

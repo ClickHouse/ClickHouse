@@ -4,8 +4,8 @@
 #include <Functions/Conditional/ArgsInfo.h>
 #include <Functions/Conditional/NumericEvaluator.h>
 #include <Functions/Conditional/ArrayEvaluator.h>
-#include <Functions/NumberTraits.h>
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/NumberTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnVector.h>

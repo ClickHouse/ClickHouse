@@ -2,6 +2,7 @@
 #include <Analyzers/CollectTables.h>
 #include <Analyzers/AnalyzeColumns.h>
 #include <Analyzers/AnalyzeLambdas.h>
+#include <Analyzers/ExecuteTableFunctions.h>
 #include <Analyzers/TypeAndConstantInference.h>
 #include <Analyzers/TranslatePositionalArguments.h>
 #include <Analyzers/OptimizeGroupOrderLimitBy.h>
@@ -48,14 +49,17 @@ try
     CollectAliases collect_aliases;
     collect_aliases.process(ast);
 
+    ExecuteTableFunctions execute_table_functions;
+    execute_table_functions.process(ast, context);
+
     CollectTables collect_tables;
-    collect_tables.process(ast, context, collect_aliases);
+    collect_tables.process(ast, context, collect_aliases, execute_table_functions);
 
     AnalyzeColumns analyze_columns;
     analyze_columns.process(ast, collect_aliases, collect_tables);
 
     TypeAndConstantInference inference;
-    inference.process(ast, context, collect_aliases, analyze_columns, analyze_lambdas);
+    inference.process(ast, context, collect_aliases, analyze_columns, analyze_lambdas, execute_table_functions);
 
     TranslatePositionalArguments translation;
     translation.process(ast);

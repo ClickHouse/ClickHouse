@@ -29,7 +29,9 @@ replaceRegexpOne(haystack, pattern, replacement)
   FROM test.hits
   LIMIT 7
   FORMAT TabSeparated
-  
+
+.. code-block:: text
+
   2014-03-17      03/17/2014
   2014-03-18      03/18/2014
   2014-03-19      03/19/2014
@@ -43,7 +45,9 @@ replaceRegexpOne(haystack, pattern, replacement)
 .. code-block:: sql
 
   SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
-  
+
+.. code-block:: text
+
   ┌─res────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
   │ Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World! │
   └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -55,7 +59,9 @@ replaceRegexpAll(haystack, pattern, replacement)
 .. code-block:: sql
 
   SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
-  
+
+.. code-block:: text
+
   ┌─res────────────────────────┐
   │ HHeelllloo,,  WWoorrlldd!! │
   └────────────────────────────┘
@@ -66,7 +72,9 @@ replaceRegexpAll(haystack, pattern, replacement)
 .. code-block:: sql
 
   SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
-  
+
+.. code-block:: text
+
   ┌─res─────────────────┐
   │ here: Hello, World! │
   └─────────────────────┘

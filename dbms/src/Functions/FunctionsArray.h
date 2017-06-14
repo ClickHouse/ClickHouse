@@ -14,7 +14,7 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Functions/IFunction.h>
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 #include <Functions/ObjectPool.h>
 #include <Common/StringUtils.h>
 
@@ -1344,7 +1344,7 @@ public:
 class FunctionArrayReverse : public IFunction
 {
 public:
-    static constexpr auto name = "reverse";
+    static constexpr auto name = "arrayReverse";
     static FunctionPtr create(const Context & context);
 
     String getName() const override;

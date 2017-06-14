@@ -160,15 +160,21 @@ By default, the database that is registered in the server settings is used as th
 
 The username and password can be indicated in one of two ways:
 
-1. Using HTTP Basic Authentication. Example: ::
+1. Using HTTP Basic Authentication. Example:
+
+.. code-block:: bash
 
     echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 
-2. In the 'user' and 'password' URL parameters. Example: ::
+2. In the 'user' and 'password' URL parameters. Example:
+
+.. code-block:: bash
 
     echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 
-3. Using 'X-ClickHouse-User' and 'X-ClickHouse-Key' headers. Example: ::
+3. Using 'X-ClickHouse-User' and 'X-ClickHouse-Key' headers. Example:
+
+.. code-block:: bash
 
 	echo 'SELECT 1' | curl -H "X-ClickHouse-User: user" -H "X-ClickHouse-Key: password"  'http://localhost:8123/' -d @-
 	

@@ -9,6 +9,7 @@
 #include <Interpreters/getClusterName.h>
 #include <Common/SipHash.h>
 #include <TableFunctions/TableFunctionShardByHash.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 
 namespace DB
@@ -80,6 +81,12 @@ StoragePtr TableFunctionShardByHash::execute(const ASTPtr & ast_function, const 
         context);
     res->startup();
     return res;
+}
+
+
+void registerTableFunctionShardByHash(TableFunctionFactory & factory)
+{
+    TableFunctionFactory::instance().registerFunction<TableFunctionShardByHash>();
 }
 
 }

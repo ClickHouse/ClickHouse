@@ -1,7 +1,7 @@
 #include <Functions/Conditional/ArgsInfo.h>
 #include <Functions/Conditional/CondException.h>
 #include <Functions/Conditional/common.h>
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>

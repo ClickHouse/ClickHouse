@@ -33,8 +33,6 @@ namespace DB
 
 struct ContextShared;
 class QuotaForIntervals;
-class TableFunctionFactory;
-class AggregateFunctionFactory;
 class EmbeddedDictionaries;
 class ExternalDictionaries;
 class InterserverIOHandler;
@@ -55,6 +53,7 @@ class PartLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
+class DDLWorker;
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 using Tables = std::map<String, StoragePtr>;
@@ -196,7 +195,6 @@ public:
     /// Set a setting by name. Read the value in text form from a string (for example, from a config, or from a URL parameter).
     void setSetting(const String & name, const std::string & value);
 
-    const TableFunctionFactory & getTableFunctionFactory() const;
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;
     void tryCreateEmbeddedDictionaries() const;
@@ -281,6 +279,9 @@ public:
 
     void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
     ReshardingWorker & getReshardingWorker();
+
+    void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
+    DDLWorker & getDDLWorker();
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.

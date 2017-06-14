@@ -11,7 +11,6 @@
   */
 namespace ext
 {
-
     namespace detail
     {
 

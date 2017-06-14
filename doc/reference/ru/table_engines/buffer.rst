@@ -2,7 +2,8 @@ Buffer
 ------
 
 Буферизует записываемые данные в оперативке, периодически сбрасывая их в другую таблицу. При чтении, производится чтение данных одновременно из буфера и из другой таблицы.
-::
+
+.. code-block:: text
 
   Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
 
@@ -21,6 +22,7 @@ min_bytes, max_bytes - условие на количество байт в бу
 Условия для сброса данных учитываются отдельно для каждого из num_layers буферов. Например, если num_layers = 16 и max_bytes = 100000000, то максимальный расход оперативки будет 1.6 GB.
 
 Пример:
+
 .. code-block:: sql
 
   CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 16, 10, 100, 10000, 1000000, 10000000, 100000000)

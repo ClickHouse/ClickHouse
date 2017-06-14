@@ -21,6 +21,8 @@
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DDLWorker.h>
+
 #include <Storages/MergeTree/ReshardingWorker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -40,6 +42,7 @@
 
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -215,6 +218,7 @@ int Server::main(const std::vector<std::string> & args)
 
     registerFunctions();
     registerAggregateFunctions();
+    registerTableFunctions();
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
@@ -412,6 +416,13 @@ int Server::main(const std::vector<std::string> & args)
         has_resharding_worker = true;
     }
 
+    if (has_zookeeper && config().has("distributed_ddl"))
+    {
+        /// DDL worker should be started after all tables were loaded
+        String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
+        global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context));
+    }
+
     SCOPE_EXIT({
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
@@ -422,7 +433,7 @@ int Server::main(const std::vector<std::string> & args)
         global_context->shutdown();
         LOG_DEBUG(log, "Shutted down storages.");
 
-        /** Explicitly destroy Context. It is more convenient than in destructor of Server, becuase logger is still available.
+        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
         global_context.reset();

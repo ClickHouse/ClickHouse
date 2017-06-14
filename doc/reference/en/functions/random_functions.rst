@@ -1,5 +1,5 @@
 Functions for generating pseudo-random numbers
-----------------------
+----------------------------------------------
 Non-cryptographic generators of pseudo-random numbers are used.
 
 All the functions accept zero arguments or one argument.
@@ -12,6 +12,6 @@ Returns a pseudo-random UInt32 number, evenly distributed among all UInt32-type 
 Uses a linear congruential generator.
 
 rand64
-~~~~
+~~~~~~
 Returns a pseudo-random UInt64 number, evenly distributed among all UInt64-type numbers.
 Uses a linear congruential generator.

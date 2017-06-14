@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ILLEGAL_COLUMN;
 }
 
 const Float64 EARTH_RADIUS_IN_METERS = 6372797.560856;

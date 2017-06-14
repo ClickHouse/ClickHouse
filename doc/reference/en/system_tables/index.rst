@@ -1,5 +1,5 @@
 System tables
-==========
+=============
 
 System tables are used for implementing part of the system's functionality, and for providing access to information about how the system is working.
 You can't delete a system table (but you can perform DETACH).
