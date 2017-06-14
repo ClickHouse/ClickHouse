@@ -236,31 +236,34 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
     }
     else
     {
-        size_t space_left = std::max(1LU, max_block_size_marks);
-
+        size_t space_left = std::max(1LU, max_block_size_rows);
         while (!task->mark_ranges.empty() && space_left && !isCancelled())
         {
-            auto & range = task->mark_ranges.back();
-
-            size_t marks_to_read = std::min(range.end - range.begin, space_left);
-            if (task->size_predictor)
+            if (!task->current_range_reader)
             {
-                size_t recommended_marks = task->size_predictor->estimateNumMarks(preferred_block_size_bytes, storage.index_granularity);
-                if (res && recommended_marks < 1)
-                    break;
-
-                marks_to_read = std::min(marks_to_read, std::max(1LU, recommended_marks));
+                auto & range = task->mark_ranges.back();
+                task->current_range_reader = reader->readRange(range.begin, range.end);
+                task->mark_ranges.pop_back();
             }
 
-            reader->readRange(range.begin, range.begin + marks_to_read, res);
+            size_t rows_to_read = max_block_size_rows;
+
+            // size_t marks_to_read = std::min(range.end - range.begin, space_left);
+            if (task->size_predictor)
+            {
+                size_t recommended_rows = task->size_predictor->estimateNumRows(preferred_block_size_bytes);
+                if (res && rows_to_read < 1)
+                    break;
+                rows_to_read = std::min(rows_to_read, std::max(1LU, recommended_rows));
+            }
+
+            if (!task->current_range_reader->read(res, rows_to_read))
+                task->current_range_reader = std::experimental::nullopt;
 
             if (task->size_predictor)
                 task->size_predictor->update(res);
 
-            space_left -= marks_to_read;
-            range.begin += marks_to_read;
-            if (range.begin == range.end)
-                task->mark_ranges.pop_back();
+            space_left -= rows_to_read;
         }
 
         /// In the case of isCancelled.
