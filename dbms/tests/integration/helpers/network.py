@@ -104,17 +104,17 @@ class _NetworkManager:
             source=None, destination=None,
             source_port=None, destination_port=None,
             action=None):
-        ret = []
+        ret = ['-p', 'tcp']
         if source is not None:
             ret.extend(['-s', source])
         if destination is not None:
             ret.extend(['-d', destination])
         if source_port is not None:
-            ret.extend(['-p', 'tcp', '--sport', str(source_port)])
+            ret.extend(['--sport', str(source_port)])
         if destination_port is not None:
-            ret.extend(['-p', 'tcp', '--dport', str(destination_port)])
+            ret.extend(['--dport', str(destination_port)])
         if action is not None:
-            ret.extend(['-j', action])
+            ret.extend(['-j'] + action.split())
         return ret
 
 

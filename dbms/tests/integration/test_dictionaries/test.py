@@ -21,7 +21,7 @@ def setup_module(module):
     dictionary_files = generate_dictionaries(os.path.join(SCRIPT_DIR, 'configs/dictionaries'), structure)
 
     cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-    instance = cluster.add_instance('instance', dictionary_files)
+    instance = cluster.add_instance('instance', main_configs=dictionary_files)
     test_table = DictionaryTestTable(os.path.join(SCRIPT_DIR, 'configs/dictionaries/source.tsv'))
 
 

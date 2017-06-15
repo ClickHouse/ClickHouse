@@ -384,13 +384,13 @@ public:
     void update(size_t from)
     {
         if (index >= size)
-            throw Exception{"Logical error: index passes to NullMapBuilder is out of range of column.", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Logical error: index passed to NullMapBuilder is out of range of column.", ErrorCodes::LOGICAL_ERROR};
 
         bool is_null;
         if (src_nullable_col != nullptr)
             is_null = src_nullable_col->isNullAt(from);
         else
-            is_null = (*src_array)[from].isNull();
+            is_null = from < src_array->size() ? (*src_array)[from].isNull() : true;
 
         auto & null_map_data = static_cast<ColumnUInt8 &>(*sink_null_map).getData();
         null_map_data[index] = is_null ? 1 : 0;
@@ -401,7 +401,7 @@ public:
     void update()
     {
         if (index >= size)
-            throw Exception{"Logical error: index passes to NullMapBuilder is out of range of column.", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Logical error: index passed to NullMapBuilder is out of range of column.", ErrorCodes::LOGICAL_ERROR};
 
         auto & null_map_data = static_cast<ColumnUInt8 &>(*sink_null_map).getData();
         null_map_data[index] = 0;
