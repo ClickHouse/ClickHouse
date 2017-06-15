@@ -18,9 +18,6 @@ BlockIO InterpreterSetQuery::execute()
 
     checkAccess(ast);
 
-    if (ast.global)
-        throw Exception("SET GLOBAL command is depricated", ErrorCodes::NOT_IMPLEMENTED);
-
     Context & target = context.getSessionContext();
     for (const auto & change : ast.changes)
         target.setSetting(change.name, change.value);

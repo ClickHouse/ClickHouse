@@ -54,8 +54,6 @@ bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
     ParserWhiteSpaceOrComments ws;
     ParserString s_comma(",");
 
-    bool global = false;
-
     if (!parse_only_internals)
     {
         ParserString s_set("SET", true, true);
@@ -67,8 +65,6 @@ bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
             return false;
 
         ws.ignore(pos, end);
-
-        global = s_global.ignore(pos, end, max_parsed_pos, expected);
     }
 
     ASTSetQuery::Changes changes;
@@ -92,7 +88,6 @@ bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
     node = query;
 
     query->changes = changes;
-    query->global = global;
 
     return true;
 }

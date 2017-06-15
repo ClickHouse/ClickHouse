@@ -1458,15 +1458,13 @@ This query can&#39;t be made when using the HTTP protocol, since there is no con
 
 ===SET===
 
-%%SET [GLOBAL] param = value%%
+%%SET param = value%%
 
 Lets you set the &#39;param&#39; setting to &#39;value&#39;. You can also make all the settings from the specified settings profile in a single query. To do this, specify &#39;profile&#39; as the setting name. For more information, see the section &quot;Settings&quot;. The setting is made for the session, or for the server (globally) if GLOBAL is specified.
 When making a global setting, the setting is not applied to sessions already running, including the current session. It will only be used for new sessions.
 
-Settings made using SET GLOBAL have a lower priority compared with settings made in the config file in the user profile. In other words, user settings can&#39;t be overridden by SET GLOBAL.
-
-When the server is restarted, global settings made using SET GLOBAL are lost.
-To make settings that persist after a server restart, you can only use the server&#39;s config file. (This can&#39;t be done using a SET query.)
+When the server is restarted, global settings made using SET are lost.
+To make settings that persist after a server restart, you can only use the server&#39;s config file.
 
 
 ===OPTIMIZE===
