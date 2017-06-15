@@ -15,6 +15,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
 
+#include <Databases/DatabaseOrdinary.h>
+
+#include <Storages/System/attachSystemTables.h>
+
 #include <IO/ReadBufferFromFile.h>
 #include <Common/escapeForFileName.h>
 
@@ -62,6 +66,7 @@ void loadMetadata(Context & context)
     ThreadPool thread_pool(SettingMaxThreads().getAutoValue());
 
     /// Loop over databases.
+    std::map<String, String> databases;
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
     {
@@ -72,13 +77,18 @@ void loadMetadata(Context & context)
         if (it.name().at(0) == '.')
             continue;
 
-        String database = unescapeForFileName(it.name());
+        databases.emplace(unescapeForFileName(it.name()), it.path().toString());
+    }
 
+    static constexpr auto SYSTEM_DATABASE = "system";
+
+    auto load_database = [&] (const String & database, const String & database_path)
+    {
         /// There may exist .sql file with database creation statement.
         /// Or, if it is absent, then database with default engine is created.
 
         String database_attach_query;
-        String database_metadata_file = it->path() + ".sql";
+        String database_metadata_file = escapeForFileName(database) + ".sql";
 
         if (Poco::File(database_metadata_file).exists())
         {
@@ -92,11 +102,46 @@ void loadMetadata(Context & context)
 
         /// For special system database, always restore data
         ///  to not fail on loading query_log and part_log tables, if they are corrupted.
-        if (database == "system")
+        if (database == SYSTEM_DATABASE)
             force_restore_data = true;
 
-        executeCreateQuery(database_attach_query, context, database, it->path(), thread_pool, force_restore_data);
+        executeCreateQuery(database_attach_query, context, database, database_path, thread_pool, force_restore_data);
+    };
+
+    /// At first, load the system database
+    auto it_system = databases.find(SYSTEM_DATABASE);
+    if (it_system != databases.end())
+    {
+        load_database(it_system->first, it_system->second);
+        databases.erase(it_system);
     }
+    else
+    {
+        /// Initialize system database manually
+        String global_path = context.getPath();
+        Poco::File(global_path + "data/system").createDirectories();
+        Poco::File(global_path + "metadata/system").createDirectories();
+
+        auto system_database = std::make_shared<DatabaseOrdinary>("system", global_path + "metadata/system/");
+        context.addDatabase("system", system_database);
+
+        /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
+        system_database->loadTables(context, nullptr, true);
+    }
+
+    /// After the system database is created, attach virtual system tables (in addition to query_lof and part_log)
+    {
+        DatabasePtr system_database = context.getDatabase("system");
+
+        if (context.getApplicationType() == Context::ApplicationType::SERVER)
+            attachSystemTablesServer(system_database, &context, context.hasZooKeeper());
+        else if (context.getApplicationType() == Context::ApplicationType::LOCAL_SERVER)
+            attachSystemTablesLocal(system_database);
+    }
+
+    /// Then, load remaining databases
+    for (const auto & elem : databases)
+        load_database(elem.first, elem.second);
 
     thread_pool.wait();
 

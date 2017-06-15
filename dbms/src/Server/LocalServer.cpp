@@ -314,8 +314,10 @@ try
         loadMetadata(*context);
         LOG_DEBUG(log, "Loaded metadata.");
     }
-
-    attachSystemTables();
+    else
+    {
+        attachSystemTables();
+    }
 
     processQueries();
 
