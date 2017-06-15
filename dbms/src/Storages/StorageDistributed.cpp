@@ -60,8 +60,8 @@ namespace
 /// Creates a copy of query, changes database and table names.
 ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 {
-    auto modified_query_ast = query->clone();
-    typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
+    auto modified_query_ast = typeid_cast<const ASTSelectQuery &>(*query).cloneFirstSelect();
+    modified_query_ast->replaceDatabaseAndTable(database, table);
     return modified_query_ast;
 }
 
