@@ -2,7 +2,9 @@
 #include <iostream>
 #include <limits>
 #include <regex>
-#include <sys/sysinfo.h>
+#if __has_include(<sys/sysinfo.h>)
+    #include <sys/sysinfo.h>
+#endif
 #include <unistd.h>
 
 #include <boost/program_options.hpp>
@@ -45,6 +47,7 @@ namespace ErrorCodes
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int NOT_IMPLEMENTED;
 }
 
 static String pad(size_t padding) {
@@ -670,6 +673,7 @@ private:
 
             if (precondition == "ram_size")
             {
+#if __has_include(<sys/sysinfo.h>)
                 struct sysinfo *system_information = new struct sysinfo();
                 if (sysinfo(system_information))
                 {
@@ -687,6 +691,9 @@ private:
                         return false;
                     }
                 }
+#else
+                throw DB::Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
+#endif
             }
 
             if (precondition == "table_exists")
