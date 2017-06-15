@@ -16,7 +16,6 @@
 #include <Common/StringUtils.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Databases/DatabaseOrdinary.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/ProcessList.h>
@@ -390,23 +389,6 @@ int Server::main(const std::vector<std::string> & args)
 
     global_context->setCurrentDatabase(default_database);
 
-    /// Create system tables.
-    if (!global_context->isDatabaseExist("system"))
-    {
-        Poco::File(path + "data/system").createDirectories();
-        Poco::File(path + "metadata/system").createDirectories();
-
-        auto system_database = std::make_shared<DatabaseOrdinary>("system", path + "metadata/system/");
-        global_context->addDatabase("system", system_database);
-
-        /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-        system_database->loadTables(*global_context, nullptr, true);
-    }
-
-    DatabasePtr system_database = global_context->getDatabase("system");
-
-    attachSystemTablesServer(system_database, global_context.get(), has_zookeeper);
-
     bool has_resharding_worker = false;
     if (has_zookeeper && config().has("resharding"))
     {
@@ -654,8 +636,7 @@ int Server::main(const std::vector<std::string> & args)
 
         /// This object will periodically calculate some metrics.
         AsynchronousMetrics async_metrics(*global_context);
-
-        attachSystemTablesAsync(system_database, async_metrics);
+        attachSystemTablesAsync(global_context->getDatabase("system"), async_metrics);
 
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
