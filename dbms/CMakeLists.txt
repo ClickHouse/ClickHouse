@@ -98,6 +98,7 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions
 list(REMOVE_ITEM dbms_sources
     src/Client/Client.cpp
     src/Client/Benchmark.cpp
+    src/Client/PerformanceTest.cpp
     src/Storages/StorageCloud.cpp
     src/Databases/DatabaseCloud.cpp
     src/Common/StringUtils.cpp)
