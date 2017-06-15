@@ -1,0 +1,51 @@
+/* Copyright (c) 2015, Shuang Qiu, Robbie Harwood,
+Vladislav Vaintroub & MariaDB Corporation
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+*/
+
+/* Plugin variables*/
+#include <mysql/plugin_auth.h>
+typedef enum
+{
+  PLUGIN_MECH_KERBEROS = 0,
+  PLUGIN_MECH_SPNEGO   = 1,
+  PLUGIN_MECH_DEFAULT  = 2
+}PLUGIN_MECH;
+
+extern unsigned long srv_mech;
+extern char *srv_principal_name;
+extern char *srv_mech_name;
+extern char *srv_keytab_path;
+/*
+  Check, with GSSAPI/SSPI username of logged on user.
+
+  Depending on use_full_name parameter, compare either full name
+  (principal name like user@real), or local name (first component)
+*/
+int plugin_init();
+int plugin_deinit();
+
+int auth_server(MYSQL_PLUGIN_VIO *vio, const char *username, size_t  username_len, int use_full_name);

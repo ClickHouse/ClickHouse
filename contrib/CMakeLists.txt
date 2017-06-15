@@ -46,3 +46,5 @@ endif ()
 if (NOT AARCH64)
 	add_subdirectory (libcpuid)
 endif ()
+
+add_subdirectory (libmariadbclient)

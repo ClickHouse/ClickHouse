@@ -1,0 +1,281 @@
+
+/*
+ * Include file constants (processed in LibmysqlIncludeFiles.txt 1
+ */
+#cmakedefine HAVE_ALLOCA_H 1
+#cmakedefine HAVE_BIGENDIAN 1
+#cmakedefine HAVE_SETLOCALE 1
+#cmakedefine HAVE_NL_LANGINFO 1
+#cmakedefine HAVE_ARPA_INET_H 1
+#cmakedefine HAVE_CRYPT_H 1
+#cmakedefine HAVE_DIRENT_H 1
+#cmakedefine HAVE_DLFCN_H 1
+#cmakedefine HAVE_EXECINFO_H 1
+#cmakedefine HAVE_FCNTL_H 1
+#cmakedefine HAVE_FENV_H 1
+#cmakedefine HAVE_FLOAT_H 1
+#cmakedefine HAVE_FPU_CONTROL_H 1
+#cmakedefine HAVE_GRP_H 1
+#cmakedefine HAVE_IEEEFP_H 1
+#cmakedefine HAVE_LIMITS_H 1
+#cmakedefine HAVE_MALLOC_H 1
+#cmakedefine HAVE_MEMORY_H 1
+#cmakedefine HAVE_NETINET_IN_H 1
+#cmakedefine HAVE_PATHS_H 1
+#cmakedefine HAVE_PWD_H 1
+#cmakedefine HAVE_SCHED_H 1
+#cmakedefine HAVE_SELECT_H 1
+#cmakedefine HAVE_STDDEF_H 1
+#cmakedefine HAVE_STDINT_H 1
+#cmakedefine HAVE_STDLIB_H 1
+#cmakedefine HAVE_STRING_H 1
+#cmakedefine HAVE_STRINGS_H 1
+#cmakedefine HAVE_SYNCH_H 1
+#cmakedefine HAVE_SYS_FPU_H 1
+#cmakedefine HAVE_SYS_IOCTL_H 1
+#cmakedefine HAVE_SYS_IPC_H 1
+#cmakedefine HAVE_SYS_MMAN_H 1
+#cmakedefine HAVE_SYS_PRCTL_H 1
+#cmakedefine HAVE_SYS_SELECT_H 1
+#cmakedefine HAVE_SYS_SHM_H 1
+#cmakedefine HAVE_SYS_SOCKET_H 1
+#cmakedefine HAVE_SYS_STAT_H 1
+#cmakedefine HAVE_SYS_STREAM_H 1
+#cmakedefine HAVE_SYS_TIMEB_H 1
+#cmakedefine HAVE_SYS_TYPES_H 1
+#cmakedefine HAVE_SYS_UN_H 1
+#cmakedefine HAVE_SYSENT_H 1
+#cmakedefine HAVE_TERMIO_H 1
+#cmakedefine HAVE_TERMIOS_H 1
+#cmakedefine HAVE_UNISTD_H 1
+#cmakedefine HAVE_UTIME_H 1
+#cmakedefine HAVE_UCONTEXT_H 1
+
+/*
+ * function definitions - processed in LibmysqlFunctions.txt 
+ */
+#cmakedefine HAVE_ACCESS 1
+#cmakedefine HAVE_AIOWAIT 1
+#cmakedefine HAVE_ALARM 1
+#cmakedefine HAVE_ALLOCA 1
+#cmakedefine HAVE_BCMP 1
+#cmakedefine HAVE_BFILL 1
+#cmakedefine HAVE_BMOVE 1
+#cmakedefine HAVE_BZERO 1
+#cmakedefine HAVE_CLOCK_GETTIME 1
+#cmakedefine HAVE_COMPRESS 1
+#cmakedefine HAVE_CRYPT 1
+#cmakedefine HAVE_DLERROR 1
+#cmakedefine HAVE_DLOPEN 1
+#cmakedefine HAVE_FCHMOD 1
+#cmakedefine HAVE_FCNTL 1
+#cmakedefine HAVE_FCONVERT 1
+#cmakedefine HAVE_FDATASYNC 1
+#cmakedefine HAVE_FESETROUND 1
+#cmakedefine HAVE_FINITE 1
+#cmakedefine HAVE_FSEEKO 1
+#cmakedefine HAVE_FSYNC 1
+#cmakedefine HAVE_GETADDRINFO 1
+#cmakedefine HAVE_GETCWD 1
+#cmakedefine HAVE_GETHOSTBYADDR_R 1
+#cmakedefine HAVE_GETHOSTBYNAME_R 1
+#cmakedefine HAVE_GETHRTIME 1
+#cmakedefine HAVE_GETNAMEINFO 1
+#cmakedefine HAVE_GETPAGESIZE 1
+#cmakedefine HAVE_GETPASS 1
+#cmakedefine HAVE_GETPASSPHRASE 1
+#cmakedefine HAVE_GETPWNAM 1
+#cmakedefine HAVE_GETPWUID 1
+#cmakedefine HAVE_GETRLIMIT 1
+#cmakedefine HAVE_GETRUSAGE 1
+#cmakedefine HAVE_GETWD 1
+#cmakedefine HAVE_GMTIME_R 1
+#cmakedefine HAVE_INITGROUPS 1
+#cmakedefine HAVE_LDIV 1
+#cmakedefine HAVE_LOCALTIME_R 1
+#cmakedefine HAVE_LOG2 1
+#cmakedefine HAVE_LONGJMP 1
+#cmakedefine HAVE_LSTAT 1
+#cmakedefine HAVE_MADVISE 1
+#cmakedefine HAVE_MALLINFO 1
+#cmakedefine HAVE_MEMALIGN 1
+#cmakedefine HAVE_MEMCPY 1
+#cmakedefine HAVE_MEMMOVE 1
+#cmakedefine HAVE_MKSTEMP 1
+#cmakedefine HAVE_MLOCK 1
+#cmakedefine HAVE_MLOCKALL 1
+#cmakedefine HAVE_MMAP 1
+#cmakedefine HAVE_MMAP64 1
+#cmakedefine HAVE_PERROR 1
+#cmakedefine HAVE_POLL 1
+#cmakedefine HAVE_PREAD 1
+#cmakedefine HAVE_PTHREAD_ATTR_CREATE 1
+#cmakedefine HAVE_PTHREAD_ATTR_GETSTACKSIZE 1
+#cmakedefine HAVE_PTHREAD_ATTR_SETPRIO 1
+#cmakedefine HAVE_PTHREAD_ATTR_SETSCHEDPARAM 1
+#cmakedefine HAVE_PTHREAD_ATTR_SETSCOPE 1
+#cmakedefine HAVE_PTHREAD_ATTR_SETSTACKSIZE 1
+#cmakedefine HAVE_PTHREAD_CONDATTR_CREATE 1
+#cmakedefine HAVE_PTHREAD_INIT 1
+#cmakedefine HAVE_PTHREAD_KEY_DELETE 1
+#cmakedefine HAVE_PTHREAD_KILL 1
+#cmakedefine HAVE_PTHREAD_RWLOCK_RDLOCK 1
+#cmakedefine HAVE_PTHREAD_SETPRIO_NP 1
+#cmakedefine HAVE_PTHREAD_SETSCHEDPARAM 1
+#cmakedefine HAVE_PTHREAD_SIGMASK 1
+#cmakedefine HAVE_PTHREAD_THREADMASK 1
+#cmakedefine HAVE_PTHREAD_YIELD_NP 1
+#cmakedefine HAVE_READDIR_R 1
+#cmakedefine HAVE_READLINK 1
+#cmakedefine HAVE_REALPATH 1
+#cmakedefine HAVE_RENAME 1
+#cmakedefine HAVE_SCHED_YIELD 1
+#cmakedefine HAVE_SELECT 1
+#cmakedefine HAVE_SETFD 1
+#cmakedefine HAVE_SETFILEPOINTER 1
+#cmakedefine HAVE_SIGNAL 1
+#cmakedefine HAVE_SIGACTION 1
+#cmakedefine HAVE_SIGTHREADMASK 1
+#cmakedefine HAVE_SIGWAIT 1
+#cmakedefine HAVE_SLEEP 1
+#cmakedefine HAVE_SNPRINTF 1
+#cmakedefine HAVE_SQLITE 1
+#cmakedefine HAVE_STPCPY 1
+#cmakedefine HAVE_STRERROR 1
+#cmakedefine HAVE_STRLCPY 1
+#cmakedefine HAVE_STRNLEN 1
+#cmakedefine HAVE_STRPBRK 1
+#cmakedefine HAVE_STRSEP 1
+#cmakedefine HAVE_STRSTR 1
+#cmakedefine HAVE_STRTOK_R 1
+#cmakedefine HAVE_STRTOL 1
+#cmakedefine HAVE_STRTOLL 1
+#cmakedefine HAVE_STRTOUL 1
+#cmakedefine HAVE_STRTOULL 1
+#cmakedefine HAVE_TELL 1
+#cmakedefine HAVE_THR_SETCONCURRENCY 1
+#cmakedefine HAVE_THR_YIELD 1
+#cmakedefine HAVE_VASPRINTF 1
+#cmakedefine HAVE_VSNPRINTF 1
+
+/*
+ * types and sizes
+ */
+/* Types we may use */
+#cmakedefine SIZEOF_CHAR @SIZEOF_CHAR@
+#if SIZEOF_CHAR
+# define HAVE_CHAR 1
+#endif
+
+#cmakedefine SIZEOF_CHARP @SIZEOF_CHARP@
+#if SIZEOF_CHARP
+# define HAVE_CHARP 1
+#endif
+
+#cmakedefine SIZEOF_SHORT @SIZEOF_SHORT@
+#if SIZEOF_SHORT
+# define HAVE_SHORT 1
+#endif
+
+#cmakedefine SIZEOF_INT @SIZEOF_INT@
+#if SIZEOF_INT
+# define HAVE_INT 1
+#endif
+
+#cmakedefine SIZEOF_LONG @SIZEOF_LONG@
+#if SIZEOF_LONG
+# define HAVE_LONG 1
+#endif
+
+#cmakedefine SIZEOF_LONG_LONG @SIZEOF_LONG_LONG@
+#if SIZEOF_LONG_LONG
+# define HAVE_LONG_LONG 1
+#endif
+
+#cmakedefine SIZEOF_OFF_T @SIZEOF_OFF_T@
+#if SIZEOF_OFF_T
+# define HAVE_OFF_T 1
+#endif
+
+#cmakedefine SIZEOF_SIGSET_T @SIZEOF_SIGSET_T@
+#if SIZEOF_SIGSET_T
+# define HAVE_SIGSET_T 1
+#endif
+
+#cmakedefine SIZEOF_SIZE_T @SIZEOF_SIZE_T@
+#if SIZEOF_SIZE_T
+# define HAVE_SIZE_T 1
+#endif
+
+#cmakedefine SIZEOF_UCHAR @SIZEOF_UCHAR@
+#if SIZEOF_UCHAR
+# define HAVE_UCHAR 1
+#endif
+
+#cmakedefine SIZEOF_UINT @SIZEOF_UINT@
+#if SIZEOF_UINT
+# define HAVE_UINT 1
+#endif
+
+#cmakedefine SIZEOF_ULONG @SIZEOF_ULONG@
+#if SIZEOF_ULONG
+# define HAVE_ULONG 1
+#endif
+
+#cmakedefine SIZEOF_INT8 @SIZEOF_INT8@
+#if SIZEOF_INT8
+# define HAVE_INT8 1
+#endif
+#cmakedefine SIZEOF_UINT8 @SIZEOF_UINT8@
+#if SIZEOF_UINT8
+# define HAVE_UINT8 1
+#endif
+
+#cmakedefine SIZEOF_INT16 @SIZEOF_INT16@
+#if SIZEOF_INT16
+# define HAVE_INT16 1
+#endif
+#cmakedefine SIZEOF_UINT16 @SIZEOF_UINT16@
+#if SIZEOF_UINT16
+# define HAVE_UINT16 1
+#endif
+
+#cmakedefine SIZEOF_INT32 @SIZEOF_INT32@
+#if SIZEOF_INT32
+# define HAVE_INT32 1
+#endif
+#cmakedefine SIZEOF_UINT32 @SIZEOF_UINT32@
+#if SIZEOF_UINT32
+# define HAVE_UINT32 1
+#endif
+#cmakedefine SIZEOF_U_INT32_T @SIZEOF_U_INT32_T@
+#if SIZEOF_U_INT32_T
+# define HAVE_U_INT32_T 1
+#endif
+
+#cmakedefine SIZEOF_INT64 @SIZEOF_INT64@
+#if SIZEOF_INT64
+# define HAVE_INT64 1
+#endif
+#cmakedefine SIZEOF_UINT64 @SIZEOF_UINT64@
+#if SIZEOF_UINT64
+# define HAVE_UINT64 1
+#endif
+
+#cmakedefine SIZEOF_SOCKLEN_T @SIZEOF_SOCKLEN_T@
+#if SIZEOF_SOCKLEN_T
+# define HAVE_SOCKLEN_T 1
+#endif
+
+#cmakedefine SOCKET_SIZE_TYPE @SOCKET_SIZE_TYPE@
+
+#cmakedefine RETSIGTYPE @RETSIGTYPE@
+#cmakedefine RETQSORTTYPE @RETQSORTTYPE@ 
+
+/*
+ * various other defines
+ */
+#cmakedefine HAVE_THREADS 1
+#cmakedefine SHAREDIR "@SHAREDIR@"
+#cmakedefine DEFAULT_CHARSET_HOME "@DEFAULT_CHARSET_HOME@"
+

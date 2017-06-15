@@ -34,14 +34,7 @@ add_library (mysqlxx
 set(PLATFORM_LIBS ${CMAKE_DL_LIBS})
 
 if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
-    set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)
-    add_custom_command (
-        OUTPUT ${MYSQLCLIENT_LIB}
-        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/patch.sh ${STATIC_MYSQLCLIENT_LIB} ${MYSQLCLIENT_LIB}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-        COMMENT "Patching mysqlclient library.")
-    add_custom_target (our_mysql_client DEPENDS ${MYSQLCLIENT_LIB})
-    add_dependencies (mysqlxx our_mysql_client)
+    set (MYSQLCLIENT_LIB mariadbclient)
 endif ()
 
 target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBS})
