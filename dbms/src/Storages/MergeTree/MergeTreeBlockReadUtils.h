@@ -49,6 +49,8 @@ struct MergeTreeReadTask
     /// used to save current range processing status
     std::experimental::optional<MergeTreeRangeReader> current_range_reader;
 
+    bool isFinished() const { return mark_ranges.empty() && !current_range_reader; }
+
     MergeTreeReadTask(
         const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const std::size_t part_index_in_query,
         const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,

@@ -126,12 +126,12 @@ private:
 
     void readData(
         const String & name, const IDataType & type, IColumn & column,
-        size_t from_mark, bool is_first_mark_in_range, size_t max_rows_to_read,
+        size_t from_mark, bool seek_to_from_mark, size_t max_rows_to_read,
         size_t level = 0, bool read_offsets = true);
 
     void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder);
 
-    void readRange(size_t from_mark, bool is_first_mark_in_range, size_t max_rows_to_read, Block & res);
+    void readRange(size_t from_mark, bool seek_to_from_mark, size_t max_rows_to_read, Block & res);
 
     friend class MergeTreeRangeReader;
 };
