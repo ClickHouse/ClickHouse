@@ -77,7 +77,7 @@ SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -DDBUG_OFF
 
 IF(CMAKE_COMPILER_IS_GNUCC)
   INCLUDE(CheckCCompilerFlag)
-  SET(GCC_FLAGS -Wunused -Wno-uninitialized  -Wall -Wextra -Wformat-security -Wno-init-self -Wwrite-strings -Wshift-count-overflow -Wdeclaration-after-statement)
+  SET(GCC_FLAGS -Wall -Wextra -Wunused -Wno-uninitialized -Wno-maybe-uninitialized -Wno-pointer-sign -Wno-unused-const-variable -Wno-unused-function -Wformat-security -Wno-init-self -Wwrite-strings -Wshift-count-overflow -Wdeclaration-after-statement)
   FOREACH(GCC_FLAG ${GCC_FLAGS})
     CHECK_C_COMPILER_FLAG("${GCC_FLAG}" HAS_${GCC_FLAG}_FLAG)
     IF(${HAS_${GCC_FLAG}_FLAG})

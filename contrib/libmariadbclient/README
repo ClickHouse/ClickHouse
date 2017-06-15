@@ -1,3 +1,9 @@
+Source: https://github.com/MariaDB/mariadb-connector-c
+Revision: ff4bfdf1caf2e0a47382fdbe6d796d0e63ec1062
+
+Most of files was removed. CMakeLists was modified.
+
+
 This is LGPL MariaDB client library that can be used to connect to MySQL
 or MariaDB.
 
