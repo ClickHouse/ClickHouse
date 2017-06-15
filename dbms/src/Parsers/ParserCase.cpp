@@ -12,7 +12,7 @@ bool ParserCase::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_case{"CASE", true, true};
     ParserString s_when{"WHEN", true, true};
     ParserString s_then{"THEN", true, true};

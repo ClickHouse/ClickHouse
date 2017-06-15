@@ -12,7 +12,7 @@ namespace DB
 
 bool ParserCheckQuery::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_check("CHECK", true, true);
     ParserString s_table("TABLE", true, true);
     ParserString s_dot(".");

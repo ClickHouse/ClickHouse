@@ -16,7 +16,7 @@ static bool parseDatabaseAndTable(
     ASTRenameQuery::Table & db_and_table, IParser::Pos & pos, IParser::Pos end, IParser::Pos & max_parsed_pos, Expected & expected)
 {
     ParserIdentifier name_p;
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_dot(".");
 
     ASTPtr database;
@@ -49,7 +49,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_rename("RENAME", true, true);
     ParserString s_table("TABLE", true, true);
     ParserString s_to("TO", true, true);

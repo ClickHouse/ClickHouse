@@ -15,7 +15,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_exists("EXISTS", true, true);
     ParserString s_describe("DESCRIBE", true, true);
     ParserString s_desc("DESC", true, true);

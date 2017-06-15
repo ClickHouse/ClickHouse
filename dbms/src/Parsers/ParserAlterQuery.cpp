@@ -42,7 +42,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
     ParserString s_comma(",");
     ParserString s_doubledot("..");
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     ParserIdentifier table_parser;
     ParserCompoundIdentifier parser_name;

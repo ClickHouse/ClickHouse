@@ -25,7 +25,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_insert("INSERT", true, true);
     ParserString s_into("INTO", true, true);
     ParserString s_dot(".");
@@ -104,7 +104,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             return false;
 
         /// Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
-        ParserWhiteSpaceOrComments ws_without_nl(false);
+        ParserWhitespaceOrComments ws_without_nl(false);
 
         ws_without_nl.ignore(pos, end);
         if (pos != end && *pos == ';')

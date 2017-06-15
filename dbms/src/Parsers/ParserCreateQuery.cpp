@@ -12,7 +12,7 @@ namespace DB
 
 bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString open("(");
     ParserString close(")");
     ParserIdentifier name_p;
@@ -115,7 +115,7 @@ bool ParserColumnDeclarationList::parseImpl(Pos & pos, Pos end, ASTPtr & node, P
 
 bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_engine("ENGINE", true, true);
     ParserString s_eq("=");
     ParserIdentifierWithOptionalParameters storage_p;
@@ -145,7 +145,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_create("CREATE", true, true);
     ParserString s_temporary("TEMPORARY", true, true);
     ParserString s_attach("ATTACH", true, true);

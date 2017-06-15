@@ -21,7 +21,7 @@ protected:
     {
         Pos begin = pos;
 
-        ParserWhiteSpaceOrComments ws;
+        ParserWhitespaceOrComments ws;
         ParserString s_show("SHOW", true, true);
         ParserString s_processlist("PROCESSLIST", true, true);
 

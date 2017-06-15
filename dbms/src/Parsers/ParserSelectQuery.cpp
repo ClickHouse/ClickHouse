@@ -28,7 +28,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     auto select_query = std::make_shared<ASTSelectQuery>();
     node = select_query;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_select("SELECT", true, true);
     ParserString s_distinct("DISTINCT", true, true);
     ParserString s_from("FROM", true, true);

@@ -18,7 +18,7 @@ std::string ASTQueryWithOnCluster::getRewrittenQueryWithoutOnCluster(const std::
 
 bool ASTQueryWithOnCluster::parse(Pos & pos, Pos end, std::string & cluster_str, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     ws.ignore(pos, end);
 

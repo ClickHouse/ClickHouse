@@ -15,7 +15,7 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_drop("DROP", true, true);
     ParserString s_detach("DETACH", true, true);
     ParserString s_table("TABLE", true, true);
