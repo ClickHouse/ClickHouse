@@ -10,6 +10,7 @@
 #include <ext/range.h>
 #include <common/logger_useful.h>
 #include <Core/Names.h>
+#include <memory>
 
 namespace DB
 {
@@ -338,7 +339,7 @@ ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromStringAt
     const Columns & keys, const DataTypes & data_types,
     const DictionaryAttribute& attribute, const DictionaryType& dictionary) const
 {
-    auto column_string = std::make_unique<ColumnString>();
+    auto column_string = std::make_shared<ColumnString>();
     auto ptr = column_string.get();
     callGetter(getter, ids, keys, data_types, ptr, attribute, dictionary);
     return column_string;
