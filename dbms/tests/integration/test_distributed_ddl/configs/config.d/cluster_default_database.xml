@@ -1,0 +1,32 @@
+<yandex>
+<remote_servers>
+    <cluster2>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>ch1</host>
+                <port>9000</port>
+                <default_database>default</default_database>
+            </replica>
+            <replica>
+                <host>ch2</host>
+                <port>9000</port>
+                <default_database>test2</default_database>
+            </replica>
+        </shard>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>ch3</host>
+                <port>9000</port>
+                <default_database>default</default_database>
+            </replica>
+            <replica>
+                <host>ch4</host>
+                <port>9000</port>
+                <default_database>test2</default_database>
+            </replica>
+        </shard>
+    </cluster2>
+</remote_servers>
+</yandex>

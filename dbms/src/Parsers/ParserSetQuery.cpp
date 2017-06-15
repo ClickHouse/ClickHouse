@@ -17,7 +17,7 @@ static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos,
 {
     ParserIdentifier name_p;
     ParserLiteral value_p;
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_eq("=");
 
     ASTPtr name;
@@ -51,7 +51,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_comma(",");
 
     bool global = false;

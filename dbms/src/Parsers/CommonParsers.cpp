@@ -37,19 +37,19 @@ bool ParserString::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed
 }
 
 
-ParserWhiteSpace::ParserWhiteSpace(bool allow_newlines_)
+ParserWhitespace::ParserWhitespace(bool allow_newlines_)
     : allow_newlines(allow_newlines_)
 {
 }
 
 
-const char * ParserWhiteSpace::getName() const
+const char * ParserWhitespace::getName() const
 {
     return "white space";
 }
 
 
-bool ParserWhiteSpace::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserWhitespace::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
     Pos begin = pos;
     while (pos < end && (*pos == ' ' || *pos == '\t' || (allow_newlines && *pos == '\n') || *pos == '\r' || *pos == '\f'))
@@ -128,21 +128,21 @@ bool ParserComment::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parse
 }
 
 
-ParserWhiteSpaceOrComments::ParserWhiteSpaceOrComments(bool allow_newlines_outside_comments_)
+ParserWhitespaceOrComments::ParserWhitespaceOrComments(bool allow_newlines_outside_comments_)
     : allow_newlines_outside_comments(allow_newlines_outside_comments_)
 {
 }
 
 
-const char * ParserWhiteSpaceOrComments::getName() const
+const char * ParserWhitespaceOrComments::getName() const
 {
     return "white space or comments";
 }
 
 
-bool ParserWhiteSpaceOrComments::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserWhitespaceOrComments::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpace p1(allow_newlines_outside_comments);
+    ParserWhitespace p1(allow_newlines_outside_comments);
     ParserComment p2;
 
     bool res = false;

@@ -7,10 +7,10 @@
 #include <Functions/IFunction.h>
 #include <Common/config.h>
 
-/** More effective implementations of mathematical functions are possible when connecting a separate library
-  * Disabled due licence compatibility limitations
+/** More efficient implementations of mathematical functions are possible when using a separate library.
+  * Disabled due to licence compatibility limitations.
   * To enable: download http://www.agner.org/optimize/vectorclass.zip and unpack to contrib/vectorclass
-  *  Then rebuild with -DENABLE_VECTORCLASS=1
+  * Then rebuild with -DENABLE_VECTORCLASS=1
   */
 
 #if USE_VECTORCLASS
@@ -31,6 +31,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 template <typename Impl>
 class FunctionMathNullaryConstFloat64 : public IFunction

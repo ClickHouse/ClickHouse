@@ -4,7 +4,7 @@ UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64
 Fixed-length integers, with or without a sign.
 
 Int ranges
-"""""""""""""
+""""""""""
 
 .. table::
 
@@ -23,7 +23,7 @@ Int ranges
    
    
 Uint ranges
-""""""""""""""
+"""""""""""
 
 .. table::
 

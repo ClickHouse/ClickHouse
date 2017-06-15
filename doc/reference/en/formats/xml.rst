@@ -1,5 +1,5 @@
 XML
-----
+---
 
 XML format is supported only for displaying data, not for INSERTS. Example:
 

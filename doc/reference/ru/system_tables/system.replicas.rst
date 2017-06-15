@@ -36,7 +36,8 @@ system.replicas
   active_replicas:    2
 
 Столбцы:
-::
+
+.. code-block:: text
 
   database:           имя БД
   table:              имя таблицы

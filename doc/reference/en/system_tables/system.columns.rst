@@ -3,7 +3,9 @@ system.columns
 
 Contains information about the columns in all tables.
 You can use this table to get information similar to ``DESCRIBE TABLE``, but for multiple tables at once.
-::
+
+.. code-block:: text
+
   database String           - Name of the database the table is located in.
   table String              - Table name.
   name String               - Column name.

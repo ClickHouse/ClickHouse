@@ -9,7 +9,7 @@ namespace DB
 bool ParserEnumElement::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr & node, IParser::Pos & max_parsed_pos, Expected & expected)
 {
     ParserString equality_sign_parser("=");
-    ParserWhiteSpace ws;
+    ParserWhitespace ws;
     const auto begin = pos;
 
     ASTPtr name;

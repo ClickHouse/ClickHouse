@@ -17,7 +17,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_show("SHOW", true, true);
     ParserString s_tables("TABLES", true, true);
     ParserString s_databases("DATABASES", true, true);

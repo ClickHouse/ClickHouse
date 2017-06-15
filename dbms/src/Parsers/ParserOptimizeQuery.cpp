@@ -16,7 +16,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_optimize("OPTIMIZE", true, true);
     ParserString s_table("TABLE", true, true);
     ParserString s_partition("PARTITION", true, true);

@@ -40,7 +40,7 @@ bool ParserArray::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_
     ASTPtr contents_node;
     ParserString open("["), close("]");
     ParserExpressionList contents(false);
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     if (!open.ignore(pos, end, max_parsed_pos, expected))
         return false;
@@ -69,7 +69,7 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, P
     ASTPtr contents_node;
     ParserString open("("), close(")");
     ParserExpressionList contents(false);
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     if (!open.ignore(pos, end, max_parsed_pos, expected))
         return false;
@@ -114,7 +114,7 @@ bool ParserSubquery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
     ASTPtr select_node;
     ParserString open("("), close(")");
     ParserSelectQuery select;
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     if (!open.ignore(pos, end, max_parsed_pos, expected))
         return false;
@@ -206,7 +206,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
     ParserString open("("), close(")");
     ParserString distinct("DISTINCT", true, true);
     ParserExpressionList contents(false);
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     bool has_distinct_modifier = false;
 
@@ -330,7 +330,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
     /// Parse as CAST(expression AS type)
     ParserString open("("), close(")"), comma(",");
     ParserExpressionInCastExpression expression_and_type(false);
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     ASTPtr expr_list_args;
 
@@ -553,7 +553,7 @@ bool ParserArrayOfLiterals::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
         return false;
     }
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserLiteral literal_p;
 
     ++pos;
@@ -649,7 +649,7 @@ const char * ParserAliasBase::restricted_keywords[] =
 template <typename ParserIdentifier>
 bool ParserAliasImpl<ParserIdentifier>::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_as("AS", true, true);
     ParserIdentifier id_p;
 
@@ -702,12 +702,12 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
     if (!ParserCompoundIdentifier().parse(pos, end, node, max_parsed_pos, expected))
         return false;
 
-    ParserWhiteSpaceOrComments().ignore(pos, end);
+    ParserWhitespaceOrComments().ignore(pos, end);
 
     if (!ParserString(".").ignore(pos, end, max_parsed_pos, expected))
         return false;
 
-    ParserWhiteSpaceOrComments().ignore(pos, end);
+    ParserWhitespaceOrComments().ignore(pos, end);
 
     if (!ParserString("*").ignore(pos, end, max_parsed_pos, expected))
         return false;
@@ -767,7 +767,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 template <typename ParserAlias>
 bool ParserWithOptionalAliasImpl<ParserAlias>::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     if (!elem_parser->parse(pos, end, node, max_parsed_pos, expected))
         return false;
@@ -824,7 +824,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserExpressionWithOptionalAlias elem_p(false);
     ParserString ascending("ASCENDING", true, true);
     ParserString descending("DESCENDING", true, true);
@@ -891,7 +891,7 @@ bool ParserWeightedZooKeeperPath::parseImpl(Pos & pos, Pos end, ASTPtr & node, P
     ParserString s_weight("WEIGHT", true, true);
     ParserStringLiteral path_p;
     ParserUnsignedInteger weight_p;
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     auto weighted_zookeeper_path = std::make_shared<ASTWeightedZooKeeperPath>();
     node = weighted_zookeeper_path;

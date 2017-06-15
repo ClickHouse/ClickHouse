@@ -101,7 +101,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
     if (*istr.position() != '\\')
     {
         safeDeserialize(column,
-            [&istr] { return false; },
+            [] { return false; },
             [this, &istr] (IColumn & nested) { nested_data_type->deserializeTextEscaped(nested, istr); } );
     }
     else

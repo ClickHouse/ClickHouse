@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 /** Pseudo-random number generation functions.
   * The function can be called without arguments or with one argument.
   * The argument is ignored and only serves to ensure that several calls to one function are considered different and do not stick together.
@@ -42,11 +47,11 @@ namespace detail
 
     struct LinearCongruentialGenerator
     {
-        /// Constants from man lrand48_r.
+        /// Constants from `man lrand48_r`.
         static constexpr UInt64 a = 0x5DEECE66D;
         static constexpr UInt64 c = 0xB;
 
-        /// And this is from `head -c8 /dev/urandom | Xxd -p`
+        /// And this is from `head -c8 /dev/urandom | xxd -p`
         UInt64 current = 0x09826f4a081cee35ULL;
 
         LinearCongruentialGenerator() {}
@@ -236,11 +241,11 @@ public:
 
 
 struct NameRand         { static constexpr auto name = "rand"; };
-struct NameRand64         { static constexpr auto name = "rand64"; };
+struct NameRand64       { static constexpr auto name = "rand64"; };
 struct NameRandConstant { static constexpr auto name = "randConstant"; };
 
-using FunctionRand = FunctionRandom<RandImpl,    NameRand> ;
-using FunctionRand64 = FunctionRandom<Rand64Impl,    NameRand64>;
+using FunctionRand = FunctionRandom<RandImpl, NameRand> ;
+using FunctionRand64 = FunctionRandom<Rand64Impl, NameRand64>;
 using FunctionRandConstant = FunctionRandomConstant<RandImpl, NameRandConstant>;
 
 

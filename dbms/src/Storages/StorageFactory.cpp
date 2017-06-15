@@ -31,6 +31,7 @@
 #include <Storages/StorageSet.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFile.h>
+#include <Storages/StorageDictionary.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <unistd.h>
@@ -278,6 +279,12 @@ StoragePtr StorageFactory::get(
             table_name, database_name, context, query, columns,
             materialized_columns, alias_columns, column_defaults,
             attach);
+    }
+    else if (name == "Dictionary")
+    {
+        return StorageDictionary::create(
+            table_name, database_name, context, query, columns,
+            materialized_columns, alias_columns, column_defaults);
     }
     else if (name == "TinyLog")
     {

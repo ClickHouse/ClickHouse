@@ -21,7 +21,7 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
     Pos begin = pos;
     auto query = std::make_shared<ASTKillQueryQuery>();
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     ws.ignore(pos, end);
 

@@ -13,7 +13,7 @@ bool ParserUseQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_use("USE", true, true);
     ParserIdentifier name_p;
 

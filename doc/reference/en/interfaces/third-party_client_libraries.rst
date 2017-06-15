@@ -1,5 +1,5 @@
 Third-party client libraries
---------------------------------------
+----------------------------
 
 There exist third-party client libraries for ClickHouse:
 
@@ -11,17 +11,17 @@ There exist third-party client libraries for ClickHouse:
     - `PhpClickHouseClient <https://github.com/SevaCode/PhpClickHouseClient>`_
     - `phpClickHouse <https://github.com/smi2/phpClickHouse>`_
 * Go
-    - `clickhouse <https://github.com/kshvakov/clickhouse/>`_
+    - `clickhouse (Go) <https://github.com/kshvakov/clickhouse/>`_
     - `go-clickhouse <https://github.com/roistat/go-clickhouse>`_
 * NodeJs
-    - `clickhouse <https://github.com/TimonKK/clickhouse>`_
+    - `clickhouse (NodeJs) <https://github.com/TimonKK/clickhouse>`_
     - `node-clickhouse <https://github.com/apla/node-clickhouse>`_
 * Perl
     - `perl-DBD-ClickHouse <https://github.com/elcamlost/perl-DBD-ClickHouse>`_
     - `HTTP-ClickHouse <https://metacpan.org/release/HTTP-ClickHouse>`_
     - `AnyEvent-ClickHouse <https://metacpan.org/release/AnyEvent-ClickHouse>`_
 * Ruby
-    - `clickhouse <https://github.com/archan937/clickhouse>`_
+    - `clickhouse (Ruby) <https://github.com/archan937/clickhouse>`_
 * R
     - `clickhouse-r <https://github.com/hannesmuehleisen/clickhouse-r>`_
 * .NET

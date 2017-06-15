@@ -13,6 +13,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
+
 /** Function for an unusual conversion to a string:
     *
     * bitmaskToList - takes an integer - a bitmask, returns a string of degrees of 2 separated by a comma.
@@ -63,8 +69,8 @@ public:
             ||    executeType<Int32>(block, arguments, result)
             ||    executeType<Int64>(block, arguments, result)))
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 
 private:

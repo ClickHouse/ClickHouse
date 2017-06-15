@@ -33,6 +33,7 @@ public:
         const Context & context) const;
 
     /// Register a table function by its name.
+    /// No locking, you must register all functions before usage of get.
     template <typename Function>
     void registerFunction()
     {

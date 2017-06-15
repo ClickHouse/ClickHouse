@@ -27,7 +27,8 @@ toString
 При преобразовании даты-с-временем в число или наоборот, дате-с-временем соответствует число секунд от начала unix эпохи.
 
 Форматы даты и даты-с-временем для функций toDate/toDateTime определены следующим образом:
-::
+
+.. code-block:: text
 
   YYYY-MM-DD
   YYYY-MM-DD hh:mm:ss
@@ -45,7 +46,9 @@ toString
   SELECT
       now() AS now_local,
       toString(now(), 'Asia/Yekaterinburg') AS now_yekat
-  
+
+.. code-block:: text
+
   ┌───────────now_local─┬─now_yekat───────────┐
   │ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
   └─────────────────────┴─────────────────────┘
@@ -53,7 +56,7 @@ toString
 Также смотрите функцию ``toUnixTimestamp``.
 
 toFixedString(s, N)
-~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
 Преобразует аргумент типа String в тип FixedString(N) (строку фиксированной длины N). N должно быть константой.
 Если строка имеет меньше байт, чем N, то она дополняется нулевыми байтами справа. Если строка имеет больше байт, чем N - кидается исключение.
 
@@ -65,14 +68,20 @@ toStringCutToZero(s)
 
 .. code-block:: sql
 
-  :) SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
-  
+  SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
+
+.. code-block:: text
+
   ┌─s─────────────┬─s_cut─┐
   │ foo\0\0\0\0\0 │ foo   │
   └───────────────┴───────┘
 
-  :) SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
-  
+.. code-block:: sql
+
+  SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
+
+.. code-block:: text
+
   ┌─s──────────┬─s_cut─┐
   │ foo\0bar\0 │ foo   │
   └────────────┴───────┘
@@ -109,7 +118,9 @@ CAST(x, t)
       CAST(timestamp AS Date) AS date,
       CAST(timestamp, 'String') AS string,
       CAST(timestamp, 'FixedString(22)') AS fixed_string
-  
+
+.. code-block:: text
+
   ┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
   │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │
   └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘

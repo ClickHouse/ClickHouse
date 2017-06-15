@@ -1,12 +1,14 @@
 JSON
------
+----
 
 Выводит данные в формате JSON. Кроме таблицы с данными, также выводятся имена и типы столбцов, и некоторая дополнительная информация - общее количество выведенных строк, а также количество строк, которое могло бы быть выведено, если бы не было LIMIT-а. Пример:
 
 .. code-block:: sql
 
   SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
-  
+
+.. code-block:: json
+
   {
           "meta":
           [

@@ -335,7 +335,7 @@ def generate_dictionaries(args):
 
     source_executable = '''
     <executable>
-        <command>cat %s</command>
+        <command>true; cat %s</command>
         <format>TabSeparated</format>
     </executable>
     '''

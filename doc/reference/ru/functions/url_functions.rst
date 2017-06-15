@@ -12,7 +12,7 @@ protocol
 Возвращает протокол. Примеры: http, ftp, mailto, magnet...
 
 domain
-"""""""
+""""""
 Возвращает домен.
 
 domainWithoutWWW
@@ -73,7 +73,8 @@ URLPathHierarchy(URL)
 """""""""""""""""""""
 То же самое, но без протокола и хоста в результате. Элемент / (корень) не включается. Пример:
 Функция используется для реализации древовидных отчётов по URL в Яндекс.Метрике.
-::
+
+.. code-block:: text
 
   URLPathHierarchy('https://example.com/browse/CONV-6788') =
   [
@@ -88,7 +89,9 @@ decodeURLComponent(URL)
 
 .. code-block:: sql
 
-  :) SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
+  SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
+
+.. code-block:: text
   
   ┌─DecodedURL─────────────────────────────┐
   │ http://127.0.0.1:8123/?query=SELECT 1; │

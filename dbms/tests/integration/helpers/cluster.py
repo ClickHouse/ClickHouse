@@ -4,9 +4,12 @@ import pwd
 import re
 import subprocess
 import shutil
+import distutils.dir_util
 import socket
 import time
 import errno
+from dicttoxml import dicttoxml
+import xml.dom.minidom
 
 import docker
 
@@ -44,11 +47,13 @@ class ClickHouseCluster:
         self.is_up = False
 
 
-    def add_instance(self, name, custom_configs, with_zookeeper=False):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macroses={}, with_zookeeper=False):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
-        custom_configs - a list of config files that will be added to config.d/ directory
+        config_dir - a directory with config files which content will be copied to /etc/clickhouse-server/ directory
+        main_configs - a list of config files that will be added to config.d/ directory
+        user_configs - a list of config files that will be added to users.d/ directory
         with_zookeeper - if True, add ZooKeeper configuration to configs and ZooKeeper instances to the cluster.
         """
 
@@ -58,7 +63,7 @@ class ClickHouseCluster:
         if name in self.instances:
             raise Exception("Can\'t add instance `%s': there is already an instance with the same name!" % name)
 
-        instance = ClickHouseInstance(self.base_dir, name, custom_configs, with_zookeeper, self.base_configs_dir, self.server_bin_path)
+        instance = ClickHouseInstance(self, self.base_dir, name, config_dir, main_configs, user_configs, macroses, with_zookeeper, self.base_configs_dir, self.server_bin_path)
         self.instances[name] = instance
         self.base_cmd.extend(['--file', instance.docker_compose_path])
         if with_zookeeper and not self.with_zookeeper:
@@ -66,6 +71,11 @@ class ClickHouseCluster:
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')])
 
         return instance
+
+
+    def get_instance_docker_id(self, instance_name):
+        # According to how docker-compose names containers.
+        return self.project_name + '_' + instance_name + '_1'
 
 
     def start(self, destroy_dirs=True):
@@ -79,12 +89,9 @@ class ClickHouseCluster:
 
         self.docker_client = docker.from_env()
 
-        start_deadline = time.time() + 10.0 # seconds
-        for instance in self.instances.values():
+        start_deadline = time.time() + 20.0 # seconds
+        for instance in self.instances.itervalues():
             instance.docker_client = self.docker_client
-
-            # According to how docker-compose names containers.
-            instance.docker_id = self.project_name + '_' + instance.name + '_1'
 
             container = self.docker_client.containers.get(instance.docker_id)
             instance.ip_address = container.attrs['NetworkSettings']['Networks'].values()[0]['IPAddress']
@@ -116,6 +123,7 @@ version: '2'
 services:
     {name}:
         image: ubuntu:14.04
+        hostname: {name}
         user: '{uid}'
         volumes:
             - {binary_path}:/usr/bin/clickhouse:ro
@@ -137,39 +145,72 @@ MACROS_CONFIG_TEMPLATE = '''
 </yandex>
 '''
 
+
 class ClickHouseInstance:
     def __init__(
-            self, base_path, name, custom_configs, with_zookeeper,
-            base_configs_dir, server_bin_path):
+            self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macroses,
+            with_zookeeper, base_configs_dir, server_bin_path):
 
         self.name = name
-        self.custom_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_configs]
+        self.base_cmd = cluster.base_cmd[:]
+        self.docker_id = cluster.get_instance_docker_id(self.name)
+        self.cluster = cluster
+
+        self.custom_config_dir = p.abspath(p.join(base_path, custom_config_dir)) if custom_config_dir else None
+        self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
+        self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
+        self.macroses = macroses if macroses is not None else {}
         self.with_zookeeper = with_zookeeper
 
         self.base_configs_dir = base_configs_dir
         self.server_bin_path = server_bin_path
 
-        self.path = p.abspath(p.join(base_path, name))
+        self.path = p.abspath(p.join(base_path, '_instances', name))
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
 
         self.docker_client = None
-        self.docker_id = None
         self.ip_address = None
         self.client = None
+        self.default_timeout = 20.0 # 20 sec
 
 
-    def query(self, sql, stdin=None):
-        return self.client.query(sql, stdin)
+    def query(self, *args, **kwargs):
+        return self.client.query(*args, **kwargs)
 
 
-    def wait_for_start(self, deadline):
+    def get_query_request(self, *args, **kwargs):
+        return self.client.get_query_request(*args, **kwargs)
+
+
+    def get_docker_handle(self):
+        return self.docker_client.containers.get(self.docker_id)
+
+
+    def stop(self):
+        self.get_docker_handle().stop(self.default_timeout)
+
+
+    def start(self):
+        self.get_docker_handle().start()
+
+
+    def wait_for_start(self, deadline=None, timeout=None):
+        start_time = time.time()
+
+        if timeout is not None:
+            deadline = start_time + timeout
+
         while True:
-            if self.docker_client.containers.get(self.docker_id).status == 'exited':
-                raise Exception("Instance `{}' failed to start".format(self.name))
+            status = self.get_docker_handle().status
 
-            time_left = deadline - time.time()
-            if time_left <= 0:
-                raise Exception("Timed out while waiting for instance `{}' with ip address {} to start".format(self.name, self.ip_address))
+            if status == 'exited':
+                raise Exception("Instance `{}' failed to start. Container status: {}".format(self.name, status))
+
+            current_time = time.time()
+            time_left = deadline - current_time
+            if deadline is not None and current_time >= deadline:
+                raise Exception("Timed out while waiting for instance `{}' with ip address {} to start. "
+                                "Container status: {}".format(self.name, self.ip_address, status))
 
             # Repeatedly poll the instance address until there is something that listens there.
             # Usually it means that ClickHouse is ready to accept queries.
@@ -189,6 +230,12 @@ class ClickHouseInstance:
                 sock.close()
 
 
+    @staticmethod
+    def dict_to_xml(dictionary):
+        xml_str = dicttoxml(dictionary, custom_root="yandex", attr_type=False)
+        return xml.dom.minidom.parseString(xml_str).toprettyxml()
+
+
     def create_dir(self, destroy_dir=True):
         """Create the instance directory and all the needed files there."""
 
@@ -197,7 +244,7 @@ class ClickHouseInstance:
         elif p.exists(self.path):
             return
 
-        os.mkdir(self.path)
+        os.makedirs(self.path)
 
         configs_dir = p.join(self.path, 'configs')
         os.mkdir(configs_dir)
@@ -206,18 +253,32 @@ class ClickHouseInstance:
         shutil.copy(p.join(self.base_configs_dir, 'users.xml'), configs_dir)
 
         config_d_dir = p.join(configs_dir, 'config.d')
+        users_d_dir = p.join(configs_dir, 'users.d')
         os.mkdir(config_d_dir)
 
         shutil.copy(p.join(HELPERS_DIR, 'common_instance_config.xml'), config_d_dir)
 
+        # Generate and write macroses file
+        macroses = self.macroses.copy()
+        macroses['instance'] = self.name
         with open(p.join(config_d_dir, 'macros.xml'), 'w') as macros_config:
-            macros_config.write(MACROS_CONFIG_TEMPLATE.format(name=self.name))
+            macros_config.write(self.dict_to_xml({"macros" : macroses}))
 
+        # Put ZooKeeper config
         if self.with_zookeeper:
             shutil.copy(p.join(HELPERS_DIR, 'zookeeper_config.xml'), config_d_dir)
 
-        for path in self.custom_config_paths:
+        # Copy config dir
+        if self.custom_config_dir:
+            distutils.dir_util.copy_tree(self.custom_config_dir, configs_dir)
+
+        # Copy config.d configs
+        for path in self.custom_main_config_paths:
             shutil.copy(path, config_d_dir)
+
+        # Copy users.d configs
+        for path in self.custom_user_config_paths:
+            shutil.copy(path, users_d_dir)
 
         db_dir = p.join(self.path, 'database')
         os.mkdir(db_dir)

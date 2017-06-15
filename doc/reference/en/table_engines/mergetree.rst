@@ -8,11 +8,15 @@ The engine accepts parameters: the name of a Date type column containing the dat
 Example:
 
 Example without sampling support:
-::
+
+.. code-block:: text
+
   MergeTree(EventDate, (CounterID, EventDate), 8192)
 
 Example with sampling support:
-::
+
+.. code-block:: text
+
   MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)), 8192)
 
 A MergeTree type table must have a separate column containing the date. In this example, it is the 'EventDate' column. The type of the date column must be 'Date' (not 'DateTime').

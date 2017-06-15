@@ -15,7 +15,7 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_drop("DROP", true, true);
     ParserString s_detach("DETACH", true, true);
     ParserString s_table("TABLE", true, true);
@@ -27,6 +27,7 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
 
     ASTPtr database;
     ASTPtr table;
+    String cluster_str;
     bool detach = false;
     bool if_exists = false;
 
@@ -54,6 +55,14 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
 
         if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
             return false;
+
+        ws.ignore(pos, end);
+
+        if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+                return false;
+        }
     }
     else
     {
@@ -81,6 +90,12 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
 
             ws.ignore(pos, end);
         }
+
+        if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+                return false;
+        }
     }
 
     ws.ignore(pos, end);
@@ -94,6 +109,7 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
         query->database = typeid_cast<ASTIdentifier &>(*database).name;
     if (table)
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
+    query->cluster = cluster_str;
 
     return true;
 }

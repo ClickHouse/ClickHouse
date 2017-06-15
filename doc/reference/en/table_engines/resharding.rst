@@ -1,5 +1,5 @@
 Resharding
-----------------
+----------
 
 .. code-block:: sql
 
