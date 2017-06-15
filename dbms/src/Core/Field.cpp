@@ -69,6 +69,13 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
+                case Field::Types::Uuid:
+                {
+                    Uuid value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
             };
         }
     }
@@ -115,6 +122,11 @@ namespace DB
                 case Field::Types::Tuple:
                 {
                     DB::writeBinary(get<Tuple>(*it), buf);
+                    break;
+                }
+                case Field::Types::Uuid:
+                {
+                    DB::writeBinary(get<Uuid>(*it), buf);
                     break;
                 }
             };
@@ -191,6 +203,13 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
+                case Field::Types::Uuid:
+                {
+                    Uuid value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
             };
         }
     }
@@ -237,6 +256,11 @@ namespace DB
                 case Field::Types::Tuple:
                 {
                     DB::writeBinary(get<Tuple>(*it), buf);
+                    break;
+                }
+                case Field::Types::Uuid:
+                {
+                    DB::writeBinary(get<Uuid>(*it), buf);
                     break;
                 }
             };

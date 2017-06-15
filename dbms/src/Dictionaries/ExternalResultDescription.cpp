@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeUuid.h>
 
 
 namespace DB
@@ -54,6 +55,8 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.push_back(ValueType::Date);
         else if (typeid_cast<const DataTypeDateTime *>(type))
             types.push_back(ValueType::DateTime);
+         else if (typeid_cast<const DataTypeUuid *>(type))
+            types.push_back(ValueType::Uuid);     
         else
             throw Exception{
                 "Unsupported type " + type->getName(),

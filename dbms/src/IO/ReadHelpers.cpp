@@ -18,6 +18,27 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+static void parseHex(const UInt8 * __restrict src, UInt8 * __restrict dst, const size_t num_bytes)
+{
+    size_t src_pos = 0;
+    size_t dst_pos = 0;
+    for (; dst_pos < num_bytes; ++dst_pos)
+    {
+        dst[dst_pos] = unhex(src[src_pos]) * 16 + unhex(src[src_pos + 1]);
+        src_pos += 2;
+    }
+}
+
+void parseUUID(const UInt8 * src36, UInt8 * dst16)
+{
+    /// If string is not like UUID - implementation specific behaviour.
+
+    parseHex(&src36[0], &dst16[0], 4);
+    parseHex(&src36[9], &dst16[4], 2);
+    parseHex(&src36[14], &dst16[6], 2);
+    parseHex(&src36[19], &dst16[8], 2);
+    parseHex(&src36[24], &dst16[10], 6);
+}
 
 static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {

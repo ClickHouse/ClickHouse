@@ -1,7 +1,10 @@
 #pragma once
 
+#include <boost/core/noncopyable.hpp>
+
 #include <dlfcn.h>
 
+#include <iostream>
 #include <string>
 #include <mutex>
 #include <functional>

@@ -11,8 +11,10 @@
 #include <common/find_first_symbols.h>
 
 #include <Core/Types.h>
+#include <Core/Uuid.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/UInt128.h>
 #include <Core/StringRef.h>
 
 #include <IO/WriteBuffer.h>
@@ -472,6 +474,16 @@ inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
     writeXMLString(s.data, s.data + s.size, buf);
 }
 
+void formatHex(const UInt8 * __restrict src, UInt8 * __restrict dst, const size_t num_bytes);
+void formatUUID(const UInt8 * src16, UInt8 * dst36);
+
+inline void writeUuidText(const Uuid & uuid, WriteBuffer & buf)
+{
+    char s[36];
+
+    formatUUID((const UInt8 *)&uuid, (UInt8 *)s);
+    buf.write(s, sizeof(s));
+}
 
 /// in YYYY-MM-DD format
 inline void writeDateText(DayNum_t date, WriteBuffer & buf)
@@ -585,6 +597,8 @@ writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const String & x,    WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x,    WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const uint128 & x,     WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const UInt128 & x,     WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const UInt256 & x,     WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDate & x,        WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x,    WriteBuffer & buf) { writePODBinary(x, buf); }
 
@@ -610,6 +624,7 @@ inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEsc
 
 inline void writeText(const LocalDate & x,        WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x,    WriteBuffer & buf) { writeDateTimeText(x, buf); }
+inline void writeText(const Uuid & x, WriteBuffer & buf) { writeUuidText(x, buf); }
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>

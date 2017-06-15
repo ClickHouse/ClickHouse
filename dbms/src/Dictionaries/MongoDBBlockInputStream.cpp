@@ -19,6 +19,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <ext/range.hpp>
 #include <Core/FieldVisitors.h>
+#include <Poco/UUID.h>
 
 
 namespace DB
@@ -132,6 +133,8 @@ namespace
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
                 break;
             }
+
+            case ValueType::Uuid: break;
         }
     }
 }

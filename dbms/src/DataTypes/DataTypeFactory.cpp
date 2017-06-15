@@ -1,6 +1,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeUuid.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
@@ -58,6 +59,7 @@ DataTypeFactory::DataTypeFactory()
         {"Float64",                std::make_shared<DataTypeFloat64>()},
         {"Date",                std::make_shared<DataTypeDate>()},
         {"DateTime",            std::make_shared<DataTypeDateTime>()},
+        {"Uuid",                std::make_shared<DataTypeUuid>()},
         {"String",                std::make_shared<DataTypeString>()},
         {"Null",                std::make_shared<DataTypeNull>()}
     }

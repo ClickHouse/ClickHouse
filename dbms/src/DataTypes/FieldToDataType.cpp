@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeUuid.h>
 #include <DataTypes/DataTypeNull.h>
 #include <Common/Exception.h>
 #include <ext/size.hpp>
@@ -83,6 +84,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
     bool has_float = false;
     bool has_tuple = false;
     bool has_null = false;
+    bool has_uuid = false;
     int max_bits = 0;
     int max_signed_bits = 0;
     int max_unsigned_bits = 0;
@@ -152,6 +154,11 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
                 has_null = true;
                 break;
             }
+            case Field::Types::Uuid:
+            {
+                has_uuid = true;
+                break;
+            }
         }
     }
 
@@ -166,6 +173,9 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 
     if (has_string)
         return wrap_into_array(std::make_shared<DataTypeString>());
+
+    if (has_uuid)
+        return wrap_into_array(std::make_shared<DataTypeUuid>());
 
     if (has_float && max_bits == 64)
         throw Exception("Incompatible types Float64 and UInt64/Int64 of elements of array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

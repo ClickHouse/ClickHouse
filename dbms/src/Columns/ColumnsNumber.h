@@ -14,6 +14,7 @@ using ColumnUInt8 = ColumnVector<UInt8>;
 using ColumnUInt16 = ColumnVector<UInt16>;
 using ColumnUInt32 = ColumnVector<UInt32>;
 using ColumnUInt64 = ColumnVector<UInt64>;
+using ColumnUuid = ColumnVector<Uuid>;
 
 using ColumnInt8 = ColumnVector<Int8>;
 using ColumnInt16 = ColumnVector<Int16>;
@@ -28,6 +29,7 @@ using ColumnConstUInt8 = ColumnConst<UInt8>;
 using ColumnConstUInt16 = ColumnConst<UInt16>;
 using ColumnConstUInt32 = ColumnConst<UInt32>;
 using ColumnConstUInt64 = ColumnConst<UInt64>;
+using ColumnConstUuid = ColumnConst<Uuid>;
 
 using ColumnConstInt8 = ColumnConst<Int8>;
 using ColumnConstInt16 = ColumnConst<Int16>;

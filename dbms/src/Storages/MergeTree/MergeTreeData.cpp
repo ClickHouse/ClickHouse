@@ -13,6 +13,7 @@
 #include <IO/HexWriteBuffer.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeUuid.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNested.h>
@@ -240,6 +241,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
                     && !typeid_cast<const DataTypeUInt16 *>(column.type.get())
                     && !typeid_cast<const DataTypeUInt32 *>(column.type.get())
                     && !typeid_cast<const DataTypeUInt64 *>(column.type.get())
+                    && !typeid_cast<const DataTypeUuid *>(column.type.get())
                     && !typeid_cast<const DataTypeDate *>(column.type.get())
                     && !typeid_cast<const DataTypeDateTime *>(column.type.get()))
                     throw Exception("Version column (" + version_column + ")"
@@ -622,6 +624,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
             { typeid(DataTypeDateTime), typeid(DataTypeUInt32)   },
             { typeid(DataTypeUInt32),   typeid(DataTypeDateTime) },
             { typeid(DataTypeDate),     typeid(DataTypeUInt16)   },
+            { typeid(DataTypeUuid),     typeid(DataTypeUuid)     },
             { typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
         };
 

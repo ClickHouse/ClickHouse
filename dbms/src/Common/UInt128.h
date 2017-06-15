@@ -1,8 +1,8 @@
 #pragma once
 
+#include <city.h>
+
 #include <Common/HashTable/Hash.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 
 #if __SSE4_2__
 #include <nmmintrin.h>
@@ -12,8 +12,7 @@
 namespace DB
 {
 
-
-/// For aggregation by SipHash or concatenation of several fields.
+/// For aggregation by SipHash, UUID type or concatenation of several fields.
 struct UInt128
 {
 /// Suppress gcc7 warnings: 'prev_key.DB::UInt128::first' may be used uninitialized in this function
@@ -25,11 +24,28 @@ struct UInt128
     UInt64 first;
     UInt64 second;
 
-    bool operator== (const UInt128 rhs) const { return first == rhs.first && second == rhs.second; }
-    bool operator!= (const UInt128 rhs) const { return first != rhs.first || second != rhs.second; }
+    UInt128() = default;
+    explicit UInt128(const UInt64 rhs) : first(rhs), second(0) { }
 
-    bool operator== (const UInt64 rhs) const { return first == rhs && second == 0; }
-    bool operator!= (const UInt64 rhs) const { return first != rhs || second != 0; }
+    bool operator== (const UInt128 & rhs) const { return second == rhs.second && first == rhs.first; }
+    bool operator!= (const UInt128 & rhs) const { return second != rhs.second || first != rhs.first; }
+    bool operator>= (const UInt128 & rhs) const { return (second == rhs.second) ? first >= rhs.first : second > rhs.second; }
+    bool operator>  (const UInt128 & rhs)  const { return second > rhs.second || first > rhs.first; }
+    bool operator<= (const UInt128 & rhs) const { return (second == rhs.second) ? first <= rhs.first : second < rhs.second; }
+    bool operator<  (const UInt128 & rhs)  const { return second < rhs.second || first < rhs.first; }
+
+    /** Type stored in the database will contains no more than 64 bits at the moment, don't need
+     *  to check the `second` element 
+     */
+    template<typename T> bool operator== (const T rhs) const { return second == 0 && static_cast<T>(first) == rhs; }
+    template<typename T> bool operator!= (const T rhs) const { return second != 0 || static_cast<T>(first) != rhs; }
+    template<typename T> bool operator>= (const T rhs) const { return second != 0 && static_cast<T>(first) >= rhs; }
+    template<typename T> bool operator>  (const T rhs)  const { return second != 0 && static_cast<T>(first) >  rhs; }
+    template<typename T> bool operator<= (const T rhs) const { return second == 0 && static_cast<T>(first) <= rhs; }
+    template<typename T> bool operator<  (const T rhs)  const { return second == 0 && static_cast<T>(first) >  rhs; }
+
+    template<typename T> explicit operator T() const { return static_cast<T>(first); }
+    operator UInt128() const { return *this; }
 
 #if !__clang__
 #pragma GCC diagnostic pop
@@ -37,6 +53,13 @@ struct UInt128
 
     UInt128 & operator= (const UInt64 rhs) { first = rhs; second = 0; return *this; }
 };
+
+template<typename T> bool operator== (T a, const UInt128 & b) { return b == a; }
+template<typename T> bool operator!= (T a, const UInt128 & b) { return b != a; }
+template<typename T> bool operator>= (T a, const UInt128 & b) { return b.second == 0 && a >= static_cast<T>(b.first); }
+template<typename T> bool operator>  (T a, const UInt128 & b) { return b.second == 0 && a >  static_cast<T>(b.first); }
+template<typename T> bool operator<= (T a, const UInt128 & b) { return b.second != 0 || a <= static_cast<T>(b.first); }
+template<typename T> bool operator<  (T a, const UInt128 & b) { return b.second != 0 || a <  static_cast<T>(b.first); }
 
 struct UInt128Hash
 {
@@ -71,8 +94,6 @@ struct UInt128TrivialHash
     size_t operator()(UInt128 x) const { return x.first; }
 };
 
-inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 
 /** Used for aggregation, for putting a large number of constant-length keys in a hash table.
@@ -155,10 +176,26 @@ struct UInt256HashCRC32
 };
 
 #endif
+}
 
+/// Overload hash for type casting
+namespace std
+{
+template <> struct hash<DB::UInt128>
+{
+    size_t operator()(const DB::UInt128 & u) const
+    {
+        return std::hash<DB::UInt64>()(u.first) ^ std::hash<DB::UInt64>()(u.second);
+    }
+};
 
+template <> struct is_signed<DB::UInt128>
+{
+    static constexpr bool value = false;
+};
 
-inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-
+template <> struct is_unsigned<DB::UInt128>
+{
+    static constexpr bool value = true;
+};
 }

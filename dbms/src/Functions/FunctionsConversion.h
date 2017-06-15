@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeUuid.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
@@ -46,6 +47,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_TEXT;
+    extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -78,12 +80,12 @@ struct ConvertImpl
             vec_to.resize(size);
 
             for (size_t i = 0; i < size; ++i)
-                vec_to[i] = vec_from[i];
+                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
         }
         else if (const ColumnConst<FromFieldType> * col_from
             = typeid_cast<const ColumnConst<FromFieldType> *>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), col_from->getData());
+            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), static_cast<ToFieldType>(col_from->getData()));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -374,7 +376,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
         {
             const String & s = col_from->getData();
             ReadBufferFromString read_buffer(s);
-            ToFieldType x = 0;
+            ToFieldType x(0);
             parseImpl<ToDataType>(x, read_buffer, time_zone);
 
             if (!read_buffer.eof()
@@ -685,6 +687,7 @@ public:
         }
         catch (Exception & e)
         {
+            std::cout << "err" << std::endl;
             /// More convenient error message.
             if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
             {
@@ -699,7 +702,8 @@ public:
                 || e.code() == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
                 || e.code() == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
                 || e.code() == ErrorCodes::CANNOT_PARSE_DATE
-                || e.code() == ErrorCodes::CANNOT_PARSE_DATETIME)
+                || e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
+                || e.code() == ErrorCodes::CANNOT_PARSE_UUID)
             {
                 e.addMessage("Cannot parse "
                     + block.getByPosition(result).type->getName() + " from "
@@ -737,6 +741,7 @@ private:
         else if (typeid_cast<const DataTypeFloat64 *    >(from_type)) ConvertImpl<DataTypeFloat64,     ToDataType, Name>::execute(block, arguments, result);
         else if (typeid_cast<const DataTypeDate *        >(from_type)) ConvertImpl<DataTypeDate,     ToDataType, Name>::execute(block, arguments, result);
         else if (typeid_cast<const DataTypeDateTime *    >(from_type)) ConvertImpl<DataTypeDateTime,    ToDataType, Name>::execute(block, arguments, result);
+        else if (typeid_cast<const DataTypeUuid *        >(from_type)) ConvertImpl<DataTypeUuid,        ToDataType, Name>::execute(block, arguments, result);
         else if (typeid_cast<const DataTypeString *        >(from_type)) ConvertImpl<DataTypeString,     ToDataType, Name>::execute(block, arguments, result);
         else if (typeid_cast<const DataTypeFixedString *>(from_type)) ConvertImpl<DataTypeFixedString, ToDataType, Name>::execute(block, arguments, result);
         else if (typeid_cast<const DataTypeEnum8 *>(from_type))          ConvertImpl<DataTypeEnum8, ToDataType, Name>::execute(block, arguments, result);
@@ -1038,10 +1043,10 @@ struct ToIntMonotonicity
     static bool has() { return true; }
 
     template <typename T2 = T>
-    static UInt64 divideByRangeOfType(typename std::enable_if_t<sizeof(T2) != sizeof(UInt64), UInt64> x) { return x >> (sizeof(T) * 8); };
+    static UInt64 divideByRangeOfType(typename std::enable_if_t<sizeof(T2) < sizeof(UInt64), UInt64> x) { return x >> (sizeof(T) * 8); };
 
     template <typename T2 = T>
-    static UInt64 divideByRangeOfType(typename std::enable_if_t<sizeof(T2) == sizeof(UInt64), UInt64> x) { return 0; };
+    static UInt64 divideByRangeOfType(typename std::enable_if_t<sizeof(T2) >= sizeof(UInt64), UInt64> x) { return 0; };
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
@@ -1099,34 +1104,12 @@ struct ToStringMonotonicity
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
         IFunction::Monotonicity positive(true, true);
-        IFunction::Monotonicity not_monotonic;
-
-        /// `toString` function is monotonous if the argument is Date or DateTime, or non-negative numbers with the same number of symbols.
-
-        if (typeid_cast<const DataTypeDate *>(&type)
-            || typeid_cast<const DataTypeDateTime *>(&type))
-            return positive;
+        //IFunction::Monotonicity not_monotonic;
 
         if (left.isNull() || right.isNull())
             return {};
 
-        if (left.getType() == Field::Types::UInt64
-            && right.getType() == Field::Types::UInt64)
-        {
-            return (left.get<Int64>() == 0 && right.get<Int64>() == 0)
-                || (floor(log10(left.get<UInt64>())) == floor(log10(right.get<UInt64>())))
-                ? positive : not_monotonic;
-        }
-
-        if (left.getType() == Field::Types::Int64
-            && right.getType() == Field::Types::Int64)
-        {
-            return (left.get<Int64>() == 0 && right.get<Int64>() == 0)
-                || (left.get<Int64>() > 0 && right.get<Int64>() > 0 && floor(log10(left.get<Int64>())) == floor(log10(right.get<Int64>())))
-                ? positive : not_monotonic;
-        }
-
-        return not_monotonic;
+        return positive;
     }
 };
 
@@ -1142,6 +1125,7 @@ struct NameToInt64            { static constexpr auto name = "toInt64"; };
 struct NameToFloat32        { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64        { static constexpr auto name = "toFloat64"; };
 struct NameToDateTime        { static constexpr auto name = "toDateTime"; };
+struct NameToUuid           { static constexpr auto name = "toUuid"; };
 
 using FunctionToUInt8         = FunctionConvert<DataTypeUInt8,    NameToUInt8,    ToIntMonotonicity<UInt8>>;
 using FunctionToUInt16         = FunctionConvert<DataTypeUInt16,    NameToUInt16,    ToIntMonotonicity<UInt16>>;
@@ -1155,6 +1139,7 @@ using FunctionToFloat32     = FunctionConvert<DataTypeFloat32,    NameToFloat32,
 using FunctionToFloat64     = FunctionConvert<DataTypeFloat64,    NameToFloat64,    PositiveMonotonicity>;
 using FunctionToDate         = FunctionConvert<DataTypeDate,        NameToDate,        ToIntMonotonicity<UInt16>>;
 using FunctionToDateTime     = FunctionConvert<DataTypeDateTime,    NameToDateTime,    ToIntMonotonicity<UInt32>>;
+using FunctionToUuid         = FunctionConvert<DataTypeUuid,      NameToUuid,          ToIntMonotonicity<UInt128>>;
 using FunctionToString         = FunctionConvert<DataTypeString,    NameToString,     ToStringMonotonicity>;
 using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32,    NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
 
@@ -1171,6 +1156,7 @@ template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32;
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
 template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
 template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
+template <> struct FunctionTo<DataTypeUuid> { using Type = FunctionToUuid; };
 template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
 template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
 template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
