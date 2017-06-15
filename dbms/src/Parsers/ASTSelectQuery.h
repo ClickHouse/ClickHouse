@@ -39,7 +39,7 @@ public:
     ASTPtr clone() const override;
 
     /// Get a deep copy of the first SELECT query tree.
-    ASTPtr cloneFirstSelect() const;
+    std::shared_ptr<ASTSelectQuery> cloneFirstSelect() const;
 
 private:
     std::shared_ptr<ASTSelectQuery> cloneImpl(bool traverse_union_all) const;
