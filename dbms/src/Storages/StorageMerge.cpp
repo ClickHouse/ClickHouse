@@ -50,6 +50,19 @@ StorageMerge::StorageMerge(
 {
 }
 
+bool StorageMerge::isRemote() const
+{
+    auto database = context.getDatabase(source_database);
+    auto iterator = database->getIterator();
+
+    while (iterator->isValid())
+    {
+        if (table_name_regexp.match(iterator->name()) && iterator->table()->isRemote())
+            return true;
+    }
+    return false;
+}
+
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const
 {
     auto type = VirtualColumnFactory::tryGetType(column_name);
