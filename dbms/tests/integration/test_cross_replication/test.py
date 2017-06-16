@@ -56,14 +56,14 @@ CREATE TABLE distributed(date Date, id UInt32, shard_id UInt32)
 
 def test(started_cluster):
     # Check that the data has been inserted into correct tables.
-    assert node1.query("SELECT id from shard_0.replicated") == '111\n'
-    assert node1.query("SELECT id from shard_2.replicated") == '333\n'
+    assert node1.query("SELECT id FROM shard_0.replicated") == '111\n'
+    assert node1.query("SELECT id FROM shard_2.replicated") == '333\n'
 
-    assert node2.query("SELECT id from shard_0.replicated") == '111\n'
-    assert node2.query("SELECT id from shard_1.replicated") == '222\n'
+    assert node2.query("SELECT id FROM shard_0.replicated") == '111\n'
+    assert node2.query("SELECT id FROM shard_1.replicated") == '222\n'
 
-    assert node3.query("SELECT id from shard_1.replicated") == '222\n'
-    assert node3.query("SELECT id from shard_2.replicated") == '333\n'
+    assert node3.query("SELECT id FROM shard_1.replicated") == '222\n'
+    assert node3.query("SELECT id FROM shard_2.replicated") == '333\n'
 
     # Check that SELECT from the Distributed table works.
     expected_from_distributed = '''\
@@ -75,7 +75,7 @@ def test(started_cluster):
     assert TSV(node2.query("SELECT * FROM distributed ORDER BY id")) == TSV(expected_from_distributed)
     assert TSV(node3.query("SELECT * FROM distributed ORDER BY id")) == TSV(expected_from_distributed)
 
-    # Now isolate node2 from other nodes and check that SELECTs on other nodes still work.
+    # Now isolate node3 from other nodes and check that SELECTs on other nodes still work.
     with PartitionManager() as pm:
         pm.partition_instances(node3, node1, action='REJECT --reject-with tcp-reset')
         pm.partition_instances(node3, node2, action='REJECT --reject-with tcp-reset')
