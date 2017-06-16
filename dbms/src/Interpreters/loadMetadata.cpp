@@ -88,7 +88,7 @@ void loadMetadata(Context & context)
         /// Or, if it is absent, then database with default engine is created.
 
         String database_attach_query;
-        String database_metadata_file = escapeForFileName(database) + ".sql";
+        String database_metadata_file = database_path + ".sql";
 
         if (Poco::File(database_metadata_file).exists())
         {
@@ -105,7 +105,7 @@ void loadMetadata(Context & context)
         if (database == SYSTEM_DATABASE)
             force_restore_data = true;
 
-        executeCreateQuery(database_attach_query, context, database, database_path, thread_pool, force_restore_data);
+        executeCreateQuery(database_attach_query, context, database, database_metadata_file, thread_pool, force_restore_data);
     };
 
     /// At first, load the system database
