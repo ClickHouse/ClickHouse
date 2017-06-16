@@ -1147,6 +1147,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+bool Context::hasZooKeeper() const
+{
+    std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
+    return shared->zookeeper != nullptr;
+}
+
 
 void Context::setInterserverIOAddress(const String & host, UInt16 port)
 {
