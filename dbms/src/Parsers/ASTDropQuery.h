@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-
+#include <Parsers/ASTQueryWithOnCluster.h>
 
 namespace DB
 {
@@ -9,7 +9,7 @@ namespace DB
 
 /** DROP query
   */
-class ASTDropQuery : public IAST
+class ASTDropQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     bool detach{false};    /// DETACH query, not DROP.
@@ -25,6 +25,18 @@ public:
 
     ASTPtr clone() const override { return std::make_shared<ASTDropQuery>(*this); }
 
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    {
+        auto query_ptr = clone();
+        ASTDropQuery & query = static_cast<ASTDropQuery &>(*query_ptr);
+
+        query.cluster.clear();
+        if (query.database.empty())
+            query.database = new_database;
+
+        return query_ptr;
+    }
+
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
@@ -35,13 +47,16 @@ protected:
                 << (if_exists ? "IF EXISTS " : "")
                 << (settings.hilite ? hilite_none : "")
                 << backQuoteIfNeed(database);
-            return;
+            formatOnCluster(settings);
         }
-
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-            << (detach ? "DETACH TABLE " : "DROP TABLE ")
-            << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "")
-            << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+        else
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "")
+                << (detach ? "DETACH TABLE " : "DROP TABLE ")
+                << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "")
+                << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+            formatOnCluster(settings);
+        }
     }
 };
 

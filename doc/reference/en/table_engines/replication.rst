@@ -73,6 +73,7 @@ The ``'Replicated'`` prefix is added to the table engine name. For example, ``Re
 Two parameters are also added in the beginning of the parameters list - the path to the table in ZooKeeper, and the replica name in ZooKeeper.
 
 Example:
+
 .. code-block:: text
 
   ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)

@@ -11,8 +11,8 @@ int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseClient(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
+int mainEntryClickhousePerformanceTest(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
-
 
 static bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
 {
@@ -54,6 +54,8 @@ int main(int argc_, char ** argv_)
         main_func = mainEntryClickHouseBenchmark;
     else if (isClickhouseApp("server", argv)) /// --server arg should be cut
         main_func = mainEntryClickHouseServer;
+    else if (isClickhouseApp("performance-test", argv))
+        main_func = mainEntryClickhousePerformanceTest;
     else if (isClickhouseApp("extract-from-config", argv))
         main_func = mainEntryClickHouseExtractFromConfig;
 

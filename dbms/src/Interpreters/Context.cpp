@@ -120,8 +120,9 @@ struct ContextShared
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     BackgroundProcessingPoolPtr background_pool;            /// The thread pool for the background work performed by the tables.
     ReshardingWorkerPtr resharding_worker;
-    Macros macros;                                          /// Substitutions from config. Can be used for parameters of ReplicatedMergeTree.
+    Macros macros;                                          /// Substitutions extracted from config.
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
+    std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression method, depending on the size of the part.
     mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
     std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
@@ -1097,6 +1098,22 @@ ReshardingWorker & Context::getReshardingWorker()
         throw Exception("Resharding background thread not initialized: resharding missing in configuration file.",
             ErrorCodes::LOGICAL_ERROR);
     return *shared->resharding_worker;
+}
+
+void Context::setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker)
+{
+    auto lock = getLock();
+    if (shared->ddl_worker)
+        throw Exception("DDL background thread has already been initialized.", ErrorCodes::LOGICAL_ERROR);
+    shared->ddl_worker = ddl_worker;
+}
+
+DDLWorker & Context::getDDLWorker()
+{
+    auto lock = getLock();
+    if (!shared->ddl_worker)
+        throw Exception("DDL background thread not initialized.", ErrorCodes::LOGICAL_ERROR);
+    return *shared->ddl_worker;
 }
 
 void Context::resetCaches() const

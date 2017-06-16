@@ -55,7 +55,7 @@ public:
     static ColumnsInfo getColumnsInfo(const ASTPtr & columns, const Context & context);
 
 private:
-    void createDatabase(ASTCreateQuery & create);
+    BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns of table and return it.

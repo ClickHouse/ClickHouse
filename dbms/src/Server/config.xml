@@ -246,6 +246,13 @@
         <task_queue_path>/clickhouse/task_queue</task_queue_path>
     </resharding>
 
+    <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
+         Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
+    <distributed_ddl>
+        <!-- Path in ZooKeeper to queue with DDL queries -->
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--
     <merge_tree>

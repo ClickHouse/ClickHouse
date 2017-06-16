@@ -10,6 +10,7 @@ If you need to run more than one query with a large volume of external data, don
 External data can be uploaded using the command-line client (in non-interactive mode), or using the HTTP interface.
 
 In the command-line client, you can specify a parameters section in the format
+
 .. code-block:: bash
 
     --external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
@@ -31,6 +32,7 @@ One of the following parameters is required:
 The files specified in ``file`` will be parsed by the format specified in ``format``, using the data types specified in ``types`` or ``structure``. The table will be uploaded to the server and accessible there as a temporary table with the name ``name``.
 
 Examples:
+
 .. code-block:: bash
 
   echo -ne "1\n2\n3\n" | clickhouse-client --query="SELECT count() FROM test.visits WHERE TraficSourceID IN _data" --external --file=- --types=Int8
@@ -45,6 +47,7 @@ Examples:
 When using the HTTP interface, external data is passed in the multipart/form-data format. Each table is transmitted as a separate file. The table name is taken from the file name. The 'query_string' passes the parameters 'name_format', 'name_types', and 'name_structure', where name is the name of the table that these parameters correspond to. The meaning of the parameters is the same as when using the command-line client.
 
 Example:
+
 .. code-block:: bash
 
   cat /etc/passwd | sed 's/:/\t/g' > passwd.tsv

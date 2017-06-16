@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/NumberTraits.h>
+#include <DataTypes/NumberTraits.h>
 #include <DataTypes/EnrichedDataTypePtr.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>

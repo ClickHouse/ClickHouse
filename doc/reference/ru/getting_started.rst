@@ -23,6 +23,7 @@
 ~~~~~~~~~~~~~~~~~~~~
 
 Пропишите в `/etc/apt/sources.list` (или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`) репозитории:
+
 .. code-block:: text
 
     deb http://repo.yandex.ru/clickhouse/trusty stable main
@@ -30,6 +31,7 @@
 На других версиях Ubuntu, замените `trusty` на `xenial` или `precise`.
 
 Затем выполните:
+
 .. code-block:: bash
 
     sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
@@ -51,12 +53,14 @@ ClickHouse содержит настройки ограничения досту
 
 Вы можете собрать пакеты и установить их.
 Также вы можете использовать программы без установки пакетов.
+
 .. code-block:: text
 
     Клиент: dbms/src/Client/
     Сервер: dbms/src/Server/
 
 Для сервера создаёте директории с данными, например:
+
 .. code-block:: text
 
     /opt/clickhouse/data/default/

@@ -2,6 +2,7 @@ Join
 ----
 
 A prepared data structure for JOIN that is always located in RAM.
+
 .. code-block:: text
 
   Join(ANY|ALL, LEFT|INNER, k1[, k2, ...])

@@ -67,8 +67,8 @@ add_headers_only(dbms src/Server)
 list (APPEND dbms_sources ${CONFIG_BUILD})
 list (APPEND dbms_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/DataTypeTraits.cpp)
-list (APPEND dbms_headers src/Functions/IFunction.h   src/Functions/FunctionFactory.h   src/Functions/DataTypeTraits.h)
+list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp)
+list (APPEND dbms_headers src/Functions/IFunction.h   src/Functions/FunctionFactory.h)
 
 list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
@@ -98,6 +98,7 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions
 list(REMOVE_ITEM dbms_sources
     src/Client/Client.cpp
     src/Client/Benchmark.cpp
+    src/Client/PerformanceTest.cpp
     src/Storages/StorageCloud.cpp
     src/Databases/DatabaseCloud.cpp
     src/Common/StringUtils.cpp)

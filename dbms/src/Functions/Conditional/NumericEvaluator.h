@@ -4,7 +4,7 @@
 #include <Functions/Conditional/common.h>
 #include <Functions/Conditional/NullMapBuilder.h>
 #include <Functions/Conditional/CondSource.h>
-#include <Functions/NumberTraits.h>
+#include <DataTypes/NumberTraits.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>

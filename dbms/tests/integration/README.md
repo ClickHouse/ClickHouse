@@ -8,8 +8,8 @@ Prerequisites:
 * Ubuntu 14.04 (Trusty).
 * [docker](https://www.docker.com/community-edition#/download). Minimum required API version: 1.25, check with `docker version`.
 * [pip](https://pypi.python.org/pypi/pip). To install: `sudo apt-get install python-pip`
-* [docker-compose](https://docs.docker.com/compose/). To install: `sudo pip install docker-compose`
-* [py.test](https://docs.pytest.org/) testing framework. To install: `sudo pip install pytest`
+* [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
+* [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install: `sudo -H pip install docker-compose docker dicttoxml`
 
 If you want to run the tests under a non-privileged user, you must add this user to `docker` group: `sudo usermod -aG docker $USER` and re-login.
 
@@ -28,7 +28,7 @@ To add new test named `foo`, create a directory `test_foo` with an empty `__init
 named `test.py` containing tests in it. All functions with names starting with `test` will become test cases.
 
 `helpers` directory contains utilities for:
-* Launching a ClickHouse cluster with or without ZooKeeper in docker containers.
+* Launching a ClickHouse cluster with or without ZooKeeper indocker containers.
 * Sending queries to launched instances.
 * Introducing network failures such as severing network link between two instances.
 

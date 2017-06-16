@@ -28,6 +28,7 @@ If the name of a nested table ends in 'Map' and it contains at least two columns
 Then this nested table is interpreted as a mapping of key => (values...), and when merging its rows, the elements of two data sets are merged by 'key' with a summation of the corresponding (values...).
 
 Examples:
+
 .. code-block:: text
 
   [(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]

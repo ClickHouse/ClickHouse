@@ -253,6 +253,7 @@ ip_trie
 The table stores IP prefixes for each key (IP address), which makes it possible to map IP addresses to metadata such as ASN or threat score.
 
 Example: in the table there are prefixes matches to AS number and country:
+
 .. code-block:: text
 
   prefix            asn       cca2

@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 bool ParserTableExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     auto res = std::make_shared<ASTTableExpression>();
 
     ws.ignore(pos, end);
@@ -92,7 +92,7 @@ bool ParserTableExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 
 bool ParserArrayJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     auto res = std::make_shared<ASTArrayJoin>();
 
     ws.ignore(pos, end);
@@ -147,7 +147,7 @@ bool ParserArrayJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
 
 bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     auto res = std::make_shared<ASTTablesInSelectQueryElement>();
 
     ws.ignore(pos, end);

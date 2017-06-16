@@ -20,6 +20,8 @@ public:
     std::string getName() const override { return "Merge"; }
     std::string getTableName() const override { return name; }
 
+    bool isRemote() const override;
+
     /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override { return true; }

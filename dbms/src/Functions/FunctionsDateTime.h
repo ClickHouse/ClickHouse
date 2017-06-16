@@ -23,12 +23,17 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 /** Functions for working with date and time.
   *
   * toYear, toMonth, toDayOfMonth, toDayOfWeek, toHour, toMinute, toSecond,
   * toMonday, toStartOfMonth, toStartOfYear, toStartOfMinute, toStartOfFiveMinute
   * toStartOfHour, toTime,
-  * now
+  * now, today, yesterday
   * TODO: makeDate, makeDateTime
   *
   * (toDate - located in FunctionConversion.h file)

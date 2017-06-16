@@ -4,6 +4,7 @@ system.dictionaries
 Contains information about external dictionaries.
 
 Columns:
+
 .. code-block:: text
 
   name String                   - Dictionary name.

@@ -29,7 +29,6 @@ add_library (common
 
     include/common/ApplicationServerExt.h
     include/common/Types.h
-    include/common/MetrikaTypes.h
     include/common/DateLUT.h
     include/common/DateLUTImpl.h
     include/common/LocalDate.h

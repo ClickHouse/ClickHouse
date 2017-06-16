@@ -12,7 +12,7 @@ namespace DB
 
 bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString open("(");
     ParserString close(")");
     ParserIdentifier name_p;
@@ -115,7 +115,7 @@ bool ParserColumnDeclarationList::parseImpl(Pos & pos, Pos end, ASTPtr & node, P
 
 bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_engine("ENGINE", true, true);
     ParserString s_eq("=");
     ParserIdentifierWithOptionalParameters storage_p;
@@ -145,7 +145,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_create("CREATE", true, true);
     ParserString s_temporary("TEMPORARY", true, true);
     ParserString s_attach("ATTACH", true, true);
@@ -174,6 +174,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;
+    String cluster_str;
     bool attach = false;
     bool if_not_exists = false;
     bool is_view = false;
@@ -216,6 +217,14 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
         ws.ignore(pos, end);
 
+        if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+                return false;
+        }
+
+        ws.ignore(pos, end);
+
         engine_p.parse(pos, end, storage, max_parsed_pos, expected);
     }
     else if (s_table.ignore(pos, end, max_parsed_pos, expected))
@@ -244,7 +253,15 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             ws.ignore(pos, end);
         }
 
-        /// Columns list
+        if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+                return false;
+        }
+
+        ws.ignore(pos, end);
+
+        /// List of columns.
         if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
         {
             ws.ignore(pos, end);
@@ -403,6 +420,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
         query->database = typeid_cast<ASTIdentifier &>(*database).name;
     if (table)
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
+    query->cluster = cluster_str;
     if (inner_storage)
         query->inner_storage = inner_storage;
 

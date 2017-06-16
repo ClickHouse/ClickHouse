@@ -53,6 +53,7 @@ class PartLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
+class DDLWorker;
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 using Tables = std::map<String, StoragePtr>;
@@ -278,6 +279,9 @@ public:
 
     void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
     ReshardingWorker & getReshardingWorker();
+
+    void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
+    DDLWorker & getDDLWorker();
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.

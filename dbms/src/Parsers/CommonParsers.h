@@ -29,10 +29,10 @@ protected:
 
 /** whitespace characters
   */
-class ParserWhiteSpace : public IParserBase
+class ParserWhitespace : public IParserBase
 {
 public:
-    ParserWhiteSpace(bool allow_newlines_ = true);
+    ParserWhitespace(bool allow_newlines_ = true);
 
 protected:
     bool allow_newlines;
@@ -72,10 +72,10 @@ protected:
 };
 
 
-class ParserWhiteSpaceOrComments : public IParserBase
+class ParserWhitespaceOrComments : public IParserBase
 {
 public:
-    ParserWhiteSpaceOrComments(bool allow_newlines_outside_comments_ = true);
+    ParserWhitespaceOrComments(bool allow_newlines_outside_comments_ = true);
 
 protected:
     bool allow_newlines_outside_comments;

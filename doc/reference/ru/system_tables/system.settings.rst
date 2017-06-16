@@ -5,6 +5,7 @@ system.settings
 То есть, используемых для выполнения запроса, с помощью которого вы читаете из таблицы system.settings.
 
 Столбцы:
+
 .. code-block:: text
 
   name String   - имя настройки

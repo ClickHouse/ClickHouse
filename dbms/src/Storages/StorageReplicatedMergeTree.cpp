@@ -14,7 +14,6 @@
 #include <Databases/IDatabase.h>
 
 #include <Parsers/formatAST.h>
-#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/queryToString.h>
 
@@ -2339,12 +2338,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & query, con
 {
     assertNotReadonly();
 
-    String insert_id;
-    if (query)
-        if (ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*query))
-            insert_id = insert->insert_id;
-
-    return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(*this, insert_id,
+    return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(*this,
         settings.insert_quorum, settings.insert_quorum_timeout.totalMilliseconds());
 }
 

@@ -53,11 +53,13 @@ To do transformations on DateTime in given time zone, pass second argument with 
   └─────────────────────┴─────────────────────┘
 
 To format DateTime in given time zone:
+
 .. code-block:: text
 
   toString(now(), 'Asia/Yekaterinburg')
   
 To get unix timestamp for string with datetime in specified time zone:
+
 .. code-block:: text
 
   toUnixTimestamp('2000-01-01 00:00:00', 'Asia/Yekaterinburg')

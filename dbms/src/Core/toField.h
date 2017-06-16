@@ -1,6 +1,5 @@
 #pragma once
 
-#include <common/MetrikaTypes.h>
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 #include <Core/Field.h>
