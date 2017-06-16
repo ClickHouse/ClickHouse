@@ -16,11 +16,11 @@ var docsDir = '../doc/reference';
 var paths = {
     htmls: [
         '**/*.html',
-        '!reference_ru.html',
-        '!reference_en.html',
+        '!deprecated/reference_ru.html',
+        '!deprecated/reference_en.html',
         '!node_modules/**/*.html',
         '!public/**/*.html'],
-    reference: ['reference_ru.html', 'reference_en.html'],
+    reference: ['deprecated/reference_ru.html', 'deprecated/reference_en.html'],
     docs: ['../doc/reference/build/docs/**/*'],
     scripts: [
         '**/*.js',
@@ -46,7 +46,7 @@ gulp.task('clean', function () {
 gulp.task('reference', [], function () {
     return gulp.src(paths.reference)
         .pipe(minifyInline())
-        .pipe(gulp.dest(outputDir))
+        .pipe(gulp.dest(outputDir + '/deprecated'))
 });
 
 gulp.task('docstxt', [], function () {
