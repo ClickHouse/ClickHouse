@@ -136,6 +136,7 @@ public:
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
+    void dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
     void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
     void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
     void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
@@ -402,6 +403,8 @@ private:
     void executeDropRange(const LogEntry & entry);
     bool executeAttachPart(const LogEntry & entry); /// Returns false if the part is absent, and it needs to be picked up from another replica.
 
+    void executeClearColumnFromPartition(const LogEntry & entry);
+
     /** Updates the queue.
       */
     void queueUpdatingThread();
@@ -473,19 +476,14 @@ private:
       */
     void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
 
+    /// Choose leader replica, send requst to it and wait.
+    void sendRequestToLeaderReplica(const ASTPtr & query, const Settings & settings);
+
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;
 
-    /** Get a lock that protects the specified partition from the merge task.
-      * The lock is recursive.
-      */
-    std::string acquirePartitionMergeLock(const std::string & partition_name);
-
-    /** Declare that we no longer refer to the lock corresponding to the specified
-      * partition. If there are no more links, the lock is destroyed.
-      */
-    void releasePartitionMergeLock(const std::string & partition_name);
-
+    /// The name of an imaginary part covering all parts in the specified partition (at the call moment).
+    String getFakePartNameCoveringAllPartsInPartition(const String & month_name);
 
     /// Check for a node in ZK. If it is, remember this information, and then immediately answer true.
     std::unordered_set<std::string> existing_nodes_cache;
