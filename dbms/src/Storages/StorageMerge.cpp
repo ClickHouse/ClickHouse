@@ -59,6 +59,8 @@ bool StorageMerge::isRemote() const
     {
         if (table_name_regexp.match(iterator->name()) && iterator->table()->isRemote())
             return true;
+
+        iterator->next();
     }
     return false;
 }
