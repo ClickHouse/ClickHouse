@@ -79,8 +79,9 @@ MergeTreeRangeReader MergeTreeReader::readRange(size_t from_mark, size_t to_mark
 }
 
 
-void MergeTreeReader::readRange(size_t from_mark, bool seek_to_from_mark, size_t max_rows_to_read, Block & res)
+size_t MergeTreeReader::readRange(size_t from_mark, bool seek_to_from_mark, size_t max_rows_to_read, Block & res)
 {
+    size_t read_rows = 0;
     try
     {
 
@@ -142,7 +143,9 @@ void MergeTreeReader::readRange(size_t from_mark, bool seek_to_from_mark, size_t
 
             try
             {
+                size_t column_size_before_reading = column.column->size();
                 readData(column.name, *column.type, *column.column, from_mark, seek_to_from_mark, max_rows_to_read, 0, read_offsets);
+                read_rows = column.column->size() - column_size_before_reading;
             }
             catch (Exception & e)
             {
@@ -174,6 +177,8 @@ void MergeTreeReader::readRange(size_t from_mark, bool seek_to_from_mark, size_t
 
         throw;
     }
+
+    return read_rows;
 }
 
 
