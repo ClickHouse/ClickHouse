@@ -18,6 +18,8 @@ Example:
   SELECT *
   FROM system.settings
   WHERE changed
+
+.. code-block:: text
   
   ┌─name───────────────────┬─value───────┬─changed─┐
   │ max_threads            │ 8           │       1 │

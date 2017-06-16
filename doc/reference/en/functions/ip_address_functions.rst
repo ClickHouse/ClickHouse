@@ -24,7 +24,9 @@ Example:
   GROUP BY k
   ORDER BY c DESC
   LIMIT 10
-  
+
+.. code-block:: text
+
   ┌─k──────────────┬─────c─┐
   │ 83.149.9.xxx   │ 26238 │
   │ 217.118.81.xxx │ 26074 │
@@ -48,6 +50,8 @@ IPv6-mapped IPv4 addresses are output in the format ``::ffff:111.222.33.44``. Ex
 .. code-block:: sql
 
   SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
+
+.. code-block:: text
   
   ┌─addr─────────┐
   │ 2a02:6b8::11 │

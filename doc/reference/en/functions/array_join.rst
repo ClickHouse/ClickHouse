@@ -24,6 +24,7 @@ Example:
       src
 
 .. code-block:: text
+
   ┌─dst─┬─\'Hello\'─┬─src─────┐
   │   1 │ Hello     │ [1,2,3] │
   │   2 │ Hello     │ [1,2,3] │

@@ -16,7 +16,7 @@ The setting also doesn't have a purpose when using INSERT SELECT, since data is 
 
 By default, it is 1,048,576.
 
-This is slightly more than 'max_block_size'. The reason for this is because certain table engines (*MergeTree) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, *MergeTree tables sort data during insertion, and a large enough block size allows sorting more data in RAM.
+This is slightly more than 'max_block_size'. The reason for this is because certain table engines (\*MergeTree) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, \*MergeTree tables sort data during insertion, and a large enough block size allows sorting more data in RAM.
 
 max_threads
 -----------
@@ -42,7 +42,7 @@ Don't confuse blocks for compression (a chunk of memory consisting of bytes) and
 
 min_compress_block_size
 -----------------------
-For *MergeTree tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least ``min_compress_block_size``. By default, 65,536.
+For \*MergeTree tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least ``min_compress_block_size``. By default, 65,536.
 
 The actual size of the block, if the uncompressed data less than ``max_compress_block_size`` is no less than this value and no less than the volume of data for one mark.
 

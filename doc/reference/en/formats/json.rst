@@ -7,6 +7,8 @@ Outputs data in JSON format. Besides data tables, it also outputs column names a
 
   SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
   
+.. code-block:: json
+
   {
           "meta":
           [

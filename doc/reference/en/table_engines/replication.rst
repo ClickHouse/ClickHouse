@@ -169,8 +169,9 @@ Converting from ReplicatedMergeTree to MergeTree
 Create a MergeTree table with a different name. Move all the data from the directory with the ReplicatedMergeTree table data to the new table's data directory. Then delete the ReplicatedMergeTree table and restart the server.
 
 If you want to get rid of a ReplicatedMergeTree table without launching the server:
- * Delete the corresponding .sql file in the metadata directory (``/var/lib/clickhouse/metadata/``).
- * Delete the corresponding path in ZooKeeper (``/path_to_table/replica_name``).
+* Delete the corresponding .sql file in the metadata directory (``/var/lib/clickhouse/metadata/``).
+* Delete the corresponding path in ZooKeeper (``/path_to_table/replica_name``).
+
 After this, you can launch the server, create a MergeTree table, move the data to its directory, and then restart the server.
 
 Recovery when metadata in the ZooKeeper cluster is lost or damaged

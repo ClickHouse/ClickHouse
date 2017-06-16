@@ -78,6 +78,8 @@ Example:
 
   SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
   
+.. code-block:: text
+
   ┌─s─────────────┬─s_cut─┐
   │ foo\0\0\0\0\0 │ foo   │
   └───────────────┴───────┘

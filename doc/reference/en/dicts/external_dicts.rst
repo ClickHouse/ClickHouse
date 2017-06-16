@@ -5,7 +5,7 @@ It is possible to add your own dictionaries from various data sources. The data 
 A dictionary can be stored completely in RAM and updated regularly, or it can be partially cached in RAM and dynamically load missing values.
 
 The configuration of external dictionaries is in a separate file or files specified in the ``dictionaries_config`` configuration parameter.
-This parameter contains the absolute or relative path to the file with the dictionary configuration. A relative path is relative to the directory with the server config file. The path can contain wildcards * and ?, in which case all matching files are found. Example: dictionaries/*.xml.
+This parameter contains the absolute or relative path to the file with the dictionary configuration. A relative path is relative to the directory with the server config file. The path can contain wildcards ``*`` and ``?``, in which case all matching files are found. Example: ``dictionaries/*.xml``.
 
 The dictionary configuration, as well as the set of files with the configuration, can be updated without restarting the server. The server checks updates every 5 seconds. This means that dictionaries can be enabled dynamically.
 

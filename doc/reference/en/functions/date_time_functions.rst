@@ -6,6 +6,7 @@ Time Zone Support
 All functions for working with the date and time for which this makes sense, can take a second, optional argument - the time zone name. Example: Asia / Yekaterinburg. In this case, they do not use the local time zone (the default), but the specified one.
 
 .. code-block:: sql
+
   SELECT
       toDateTime('2016-06-15 23:00:00') AS time,
       toDate(time) AS date_local,

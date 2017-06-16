@@ -118,6 +118,7 @@ As an example, assume you've created a view:
 .. code-block:: sql
 
     CREATE VIEW view AS SELECT ...
+
 and written a query:
 
 .. code-block:: sql
@@ -197,7 +198,7 @@ Renames one or more tables.
 
 ALTER
 ~~~~~
-The ALTER query is only supported for *MergeTree type tables, as well as for Merge and Distributed types. The query has several variations.
+The ALTER query is only supported for \*MergeTree type tables, as well as for Merge and Distributed types. The query has several variations.
 
 Column manipulations
 """"""""""""""""""""""""
@@ -303,11 +304,11 @@ where /var/lib/clickhouse/ is the path to ClickHouse data, 'database' is the dat
 Here ``20140317_20140323_2_2_0``, ``20140317_20140323_4_4_0`` - are directories of parts.
 
 Let's look at the name of the first part: ``20140317_20140323_2_2_0``.
- * ``20140317`` - minimum date of part data
- * ``20140323`` - maximum date of part data .. |br| raw:: html
- * ``2`` - minimum number of the data block .. |br| raw:: html
- * ``2`` - maximum number of the data block .. |br| raw:: html
- * ``0`` - part level - depth of the merge tree that formed it
+* ``20140317`` - minimum date of part data
+* ``20140323`` - maximum date of part data
+* ``2`` - minimum number of the data block
+* ``2`` - maximum number of the data block
+* ``0`` - part level, depth of the merge tree that formed it
 
 Each part corresponds to a single partition and contains data for a single month.
 201403 - The partition name. A partition is a set of parts for a single month.
@@ -530,7 +531,7 @@ OPTIMIZE
     OPTIMIZE TABLE [db.]name [PARTITION partition] [FINAL]
 
 Asks the table engine to do something for optimization.
-Supported only by *MergeTree engines, in which this query initializes a non-scheduled merge of data parts.
+Supported only by \*MergeTree engines, in which this query initializes a non-scheduled merge of data parts.
 If ``PARTITION`` is specified, then only specified partition will be optimized.
 If ``FINAL`` is specified, then optimization will be performed even if data inside the partition already optimized (i. e. all data is in single part).
 
@@ -636,7 +637,7 @@ SAMPLE clause
 """""""""""""
 
 The SAMPLE clause allows for approximated query processing.
-Approximated query processing is only supported by MergeTree* type tables, and only if the sampling expression was specified during table creation (see the section "MergeTree engine").
+Approximated query processing is only supported by MergeTree\* type tables, and only if the sampling expression was specified during table creation (see the section "MergeTree engine").
 
 SAMPLE has the format ``SAMPLE k``, where 'k' is a decimal number from 0 to 1, or ``SAMPLE n``, where 'n' is a sufficiently large integer.
 
@@ -942,7 +943,7 @@ The normal JOIN, which is not related to ARRAY JOIN described above.
 
 Performs joins with data from the subquery. At the beginning of query execution, the subquery specified after JOIN is run, and its result is saved in memory. Then it is read from the "left" table specified in the FROM clause, and while it is being read, for each of the read rows from the "left" table, rows are selected from the subquery results table (the "right" table) that meet the condition for matching the values of the columns specified in USING.
 
-The table name can be specified instead of a subquery. This is equivalent to the 'SELECT * FROM table' subquery, except in a special case when the table has the Join engine - an array prepared for joining.
+The table name can be specified instead of a subquery. This is equivalent to the ``SELECT * FROM table`` subquery, except in a special case when the table has the Join engine - an array prepared for joining.
 
 All columns that are not needed for the JOIN are deleted from the subquery.
 
@@ -1044,7 +1045,7 @@ It makes sense to use PREWHERE if there are filtration conditions that are not s
 
 For example, it is useful to write PREWHERE for queries that extract a large number of columns, but that only have filtration for a few columns.
 
-PREWHERE is only supported by *MergeTree tables.
+PREWHERE is only supported by \*MergeTree tables.
 
 A query may simultaneously specify PREWHERE and WHERE. In this case, PREWHERE precedes WHERE.
 
@@ -1317,7 +1318,7 @@ Example:
     │ 2014-03-23 │ 0.648416 │
     └────────────┴──────────┘
 
-- for each day after March 17th, count the percentage of pageviews made by users who visited the site on March 17th.
+For each day after March 17th, count the percentage of pageviews made by users who visited the site on March 17th.
 A subquery in the IN clause is always run just one time on a single server. There are no dependent subqueries.
 
 Distributed subqueries
@@ -1374,6 +1375,7 @@ To correct how the query works when data is spread randomly across the cluster s
 This query will be sent to all remote servers as
 
 .. code-block:: sql
+
     SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 
 Each of the remote servers will start running the subquery. Since the subquery uses a distributed table, each remote server will re-send the subquery to every remote server, as
