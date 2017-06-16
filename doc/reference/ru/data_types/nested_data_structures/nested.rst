@@ -44,6 +44,8 @@ Nested(Name1 Type1, Name2 Type2, ...)
   FROM test.visits
   WHERE CounterID = 101500 AND length(Goals.ID) < 5
   LIMIT 10
+
+.. code-block:: text
   
   ┌─Goals.ID───────────────────────┬─Goals.EventTime───────────────────────────────────────────────────────────────────────────┐
   │ [1073752,591325,591325]        │ ['2014-03-17 16:38:10','2014-03-17 16:38:48','2014-03-17 16:42:27']                       │
@@ -71,6 +73,8 @@ Nested(Name1 Type1, Name2 Type2, ...)
   ARRAY JOIN Goals AS Goal
   WHERE CounterID = 101500 AND length(Goals.ID) < 5
   LIMIT 10
+
+.. code-block:: text
   
   ┌─Goal.ID─┬──────Goal.EventTime─┐
   │ 1073752 │ 2014-03-17 16:38:10 │

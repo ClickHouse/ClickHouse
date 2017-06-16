@@ -13,6 +13,8 @@ system.replicas
   WHERE table = 'visits'
   FORMAT Vertical
 
+.. code-block:: text
+
   Row 1:
   ──────
   database:           merge

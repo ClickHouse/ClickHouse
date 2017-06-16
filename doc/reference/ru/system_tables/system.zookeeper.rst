@@ -36,6 +36,8 @@ system.zookeeper
   WHERE path = '/clickhouse/tables/01-08/visits/replicas'
   FORMAT Vertical
 
+.. code-block:: text
+
   Row 1:
   ──────
   name:           example01-08-1.yandex.ru
