@@ -72,11 +72,14 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
     if (prewhere_actions)
     {
+        // LOG_TRACE(log, "readFromPart prewhere");
         do
         {
+            // LOG_TRACE(log, "readFromPart prewhe do");
             /// Let's read the full block of columns needed to calculate the expression in PREWHERE.
             size_t space_left = std::max(1LU, max_block_size_rows);
             MarkRanges ranges_to_read;
+            std::vector<size_t> rows_was_read;
 
             if (task->size_predictor)
             {
@@ -89,30 +92,48 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 space_left = std::min(space_left, std::max(1LU, recommended_rows));
             }
 
+            // LOG_TRACE(log, "readFromPart prewhere key read " << space_left << "rows" );
+
             std::experimental::optional<MergeTreeRangeReader> range_reader;
             if (task->current_range_reader)
+            {
                 range_reader = task->current_range_reader->copyForReader(*pre_reader);
+                rows_was_read.push_back(0);
+            }
 
             while ((range_reader || !task->mark_ranges.empty()) && space_left && !isCancelled())
             {
                 if (!range_reader)
                 {
                     auto & range = task->mark_ranges.back();
-                    task->current_range_reader = pre_reader->readRange(range.begin, range.end);
+                    range_reader = pre_reader->readRange(range.begin, range.end);
                     ranges_to_read.push_back(range);
+                    rows_was_read.push_back(0);
                     task->mark_ranges.pop_back();
                 }
 
                 size_t rows_to_read = std::min(range_reader->unreadRows(), space_left);
-                if (!range_reader->read(res, rows_to_read))
+                size_t read_rows = range_reader->read(res, rows_to_read);
+                rows_was_read.back() += read_rows;
+                if (range_reader->isReadingFinished())
+                {
+                    if (range_reader->unreadRows())
+                        LOG_TRACE(log, "??????????????? was read " << read_rows << " expected " << rows_to_read);
                     range_reader = std::experimental::nullopt;
+                }
 
-                space_left -= rows_to_read;
+                space_left -= read_rows;
             }
 
             /// In case of isCancelled.
             if (!res)
+            {
+                if (!range_reader)
+                    task->current_range_reader = std::experimental::nullopt;
                 return res;
+            }
+
+            // LOG_TRACE(log, "readFromPart prewhe actions " );
 
             progressImpl({ res.rows(), res.bytes() });
             pre_reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
@@ -140,41 +161,45 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 */
             if (const auto column_const = typeid_cast<const ColumnConstUInt8 *>(observed_column.get()))
             {
+                // LOG_TRACE(log, "readFromPart prewhe column_const " );
                 if (!column_const->getData())
                 {
+                    if (range_reader)
+                    {
+                        /// have to read rows from last partly read granula
+                        auto & range = ranges_to_read.back();
+                        task->current_range_reader = reader->readRange(range.begin, range.end);
+                        task->current_range_reader->read(res, rows_was_read.back());
+                    }
+                    else
+                        task->current_range_reader = std::experimental::nullopt;
+
                     res.clear();
                     return res;
                 }
 
-                auto rows_to_read = column_const->size();
-                if (task->current_range_reader && rows_to_read < task->current_range_reader->unreadRows())
-                    task->current_range_reader->read(res, rows_to_read);
-                else
-                {
-                    if (task->current_range_reader)
-                    {
-                        rows_to_read -= task->current_range_reader->unreadRows();
-                        task->current_range_reader->read(res, task->current_range_reader->unreadRows());
-                        task->current_range_reader = std::experimental::nullopt;
-                    }
+                size_t rows_was_read_idx = 0;
 
-                    for (const auto & range : ranges_to_read)
-                    {
-                        if ((range.end - range.begin) * storage.index_granularity <= rows_to_read)
-                            reader->readRange(range.begin, range.end, res);
-                        else
-                        {
-                            task->current_range_reader = reader->readRange(range.begin, range.end);
-                            task->current_range_reader->read(res, rows_to_read);
-                        }
-                    }
+                if (task->current_range_reader)
+                {
+                    task->current_range_reader->read(res, rows_was_read[rows_was_read_idx++]);
                 }
+
+                for (const auto & range : ranges_to_read)
+                {
+                    task->current_range_reader = reader->readRange(range.begin, range.end);
+                    task->current_range_reader->read(res, rows_was_read[rows_was_read_idx++]);
+                }
+
+                if (!range_reader)
+                    task->current_range_reader = std::experimental::nullopt;
 
                 progressImpl({ 0, res.bytes() - pre_bytes });
             }
             else if (const auto column_vec = typeid_cast<const ColumnUInt8 *>(observed_column.get()))
             {
-                throw Exception("column_vec");
+
+                // LOG_TRACE(log, "readFromPart prewhe column_vec " );
                 const auto & pre_filter = column_vec->getData();
                 IColumn::Filter post_filter(pre_filter.size());
 
@@ -183,21 +208,26 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 size_t post_filter_pos = 0;
 
                 size_t next_range_idx = 0;
+                size_t rows_was_read_idx = 0;
                 while (pre_filter_pos < pre_filter.size())
                 {
                     if (!task->current_range_reader)
                     {
+                        if (next_range_idx == ranges_to_read.size())
+                            throw Exception("Nothing to read");
                         const auto & range = ranges_to_read[next_range_idx++];
                         task->current_range_reader = reader->readRange(range.begin, range.end);
                     }
                     MergeTreeRangeReader & range_reader = task->current_range_reader.value();
-
+                    size_t current_range_rows_read = 0;
                     auto pre_filter_begin_pos = pre_filter_pos;
 
-                    while (range_reader.unreadRows() > 0 && pre_filter_pos < pre_filter.size())
+                    while (current_range_rows_read + (pre_filter_pos - pre_filter_begin_pos) < rows_was_read[rows_was_read_idx])
                     {
                         auto rows_should_be_copied = pre_filter_pos - pre_filter_begin_pos;
-                        auto unread_rows_in_current_part = range_reader.skipRows(rows_should_be_copied).unreadRowsInCurrentPart();
+                        auto range_reader_with_skipped_rows = range_reader.skipRows(rows_should_be_copied);
+                        auto unread_rows_in_current_part = range_reader_with_skipped_rows.unreadRowsInCurrentPart();
+
                         const size_t limit = std::min(pre_filter.size(), pre_filter_pos + unread_rows_in_current_part);
                         UInt8 nonzero = 0;
                         for (size_t row = pre_filter_pos; row < limit; ++row)
@@ -212,14 +242,12 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                                 auto rows = pre_filter_pos - pre_filter_begin_pos;
                                 memcpy(&post_filter[post_filter_pos], &pre_filter[pre_filter_begin_pos], rows);
                                 post_filter_pos += rows;
-                                size_t cur_rows = res.rows();
+                                current_range_rows_read += rows;
                                 range_reader.read(res, rows);
-                                if (cur_rows + rows != res.rows())
-                                    throw Exception("read " + std::to_string(res.rows() - cur_rows) + " expected " + std::to_string(rows) + " was rows " + std::to_string(cur_rows));
                             }
 
                             pre_filter_begin_pos = pre_filter_pos = limit;
-                            range_reader.skipToNextMark();
+                            current_range_rows_read += range_reader.skipToNextMark();
                         }
                         else
                             pre_filter_pos = limit;
@@ -230,15 +258,19 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                         auto rows = pre_filter_pos - pre_filter_begin_pos;
                         memcpy(&post_filter[post_filter_pos], &pre_filter[pre_filter_begin_pos], rows);
                         post_filter_pos += rows;
-                        size_t cur_rows = res.rows();
+                        current_range_rows_read += rows;
                         range_reader.read(res, rows);
-                        if (cur_rows + rows != res.rows())
-                            throw Exception("read " + std::to_string(res.rows() - cur_rows) + " expected " + std::to_string(rows) + " was rows " + std::to_string(cur_rows));
                     }
 
-                    if (range_reader.unreadRows() == 0)
+                    if (rows_was_read_idx + 1 < rows_was_read.size())
                         task->current_range_reader = std::experimental::nullopt;
+                    ++rows_was_read_idx;
                 }
+
+                if (!range_reader)
+                    task->current_range_reader = std::experimental::nullopt;
+
+                // LOG_TRACE(log, "readFromPart prewhe column_vec " << post_filter_pos << "rows" );
 
                 if (!post_filter_pos)
                 {
@@ -307,7 +339,8 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 rows_to_read = std::min(rows_to_read, std::max(1LU, recommended_rows));
             }
 
-            if (!task->current_range_reader->read(res, rows_to_read))
+            task->current_range_reader->read(res, rows_to_read);
+            if (task->current_range_reader->isReadingFinished())
                 task->current_range_reader = std::experimental::nullopt;
 
             if (task->size_predictor)

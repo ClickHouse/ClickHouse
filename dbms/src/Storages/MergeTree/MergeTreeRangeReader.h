@@ -18,13 +18,14 @@ public:
         return index_granularity - read_rows_after_current_mark;
     }
 
-    void skipToNextMark();
+    size_t skipToNextMark();
     const MergeTreeRangeReader skipRows(size_t rows) const;
-    bool read(Block & res, size_t max_rows_to_read);
+    size_t read(Block & res, size_t max_rows_to_read);
+    bool isReadingFinished() const { return is_reading_finished; }
 
     ~MergeTreeRangeReader() {
-        if (last_mark != current_mark)
-            LOG_ERROR(logger, "last_mark = " << last_mark << " current_mark = " << current_mark << " read_rows_after_current_mark  = " << read_rows_after_current_mark);
+        //if (last_mark != current_mark)
+        //    LOG_ERROR(logger, "last_mark = " << last_mark << " current_mark = " << current_mark << " read_rows_after_current_mark  = " << read_rows_after_current_mark);
     }
 
     MergeTreeRangeReader copyForReader(MergeTreeReader & reader);
@@ -40,6 +41,7 @@ private:
     size_t read_rows_after_current_mark;
     size_t index_granularity;
     bool seek_to_from_mark;
+    bool is_reading_finished;
 
     friend class MergeTreeReader;
 };

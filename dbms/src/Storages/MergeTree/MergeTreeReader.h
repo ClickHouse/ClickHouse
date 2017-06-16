@@ -41,7 +41,7 @@ public:
     /// If columns are not present in the block, adds them. If they are present - appends the values that have been read.
     /// Do not adds columns, if the files are not present for them (to add them, call fillMissingColumns).
     /// Block should contain either no columns from the columns field, or all columns for which files are present.
-    void readRange(size_t from_mark, size_t to_mark, Block & res)
+    size_t readRange(size_t from_mark, size_t to_mark, Block & res)
         { return readRange(from_mark, true, (to_mark - from_mark) * storage.index_granularity, res); }
     MergeTreeRangeReader readRange(size_t from_mark, size_t to_mark);
 
@@ -131,7 +131,7 @@ private:
 
     void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder);
 
-    void readRange(size_t from_mark, bool seek_to_from_mark, size_t max_rows_to_read, Block & res);
+    size_t readRange(size_t from_mark, bool seek_to_from_mark, size_t max_rows_to_read, Block & res);
 
     friend class MergeTreeRangeReader;
 };
