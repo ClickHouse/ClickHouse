@@ -28,14 +28,15 @@ class ClickHouseCluster:
     these directories will contain logs, database files, docker-compose config, ClickHouse configs etc.
     """
 
-    def __init__(self, base_path, base_configs_dir=None, server_bin_path=None, client_bin_path=None):
+    def __init__(self, base_path, name=None, base_configs_dir=None, server_bin_path=None, client_bin_path=None):
         self.base_dir = p.dirname(base_path)
+        self.name = name if name is not None else ''
 
         self.base_configs_dir = base_configs_dir or os.environ.get('CLICKHOUSE_TESTS_BASE_CONFIG_DIR', '/etc/clickhouse-server/')
         self.server_bin_path = server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse')
         self.client_bin_path = client_bin_path or os.environ.get('CLICKHOUSE_TESTS_CLIENT_BIN_PATH', '/usr/bin/clickhouse-client')
 
-        self.project_name = pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir)
+        self.project_name = pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r'[^a-z0-9]', '', self.project_name.lower())
 
@@ -137,14 +138,6 @@ services:
         depends_on: {depends_on}
 '''
 
-MACROS_CONFIG_TEMPLATE = '''
-<yandex>
-    <macros>
-        <instance>{name}</instance>
-    </macros>
-</yandex>
-'''
-
 
 class ClickHouseInstance:
     def __init__(
@@ -166,7 +159,8 @@ class ClickHouseInstance:
         self.base_configs_dir = base_configs_dir
         self.server_bin_path = server_bin_path
 
-        self.path = p.abspath(p.join(base_path, '_instances', name))
+        suffix = '_instances' + ('' if not self.cluster.name else '_' + self.cluster.name)
+        self.path = p.abspath(p.join(base_path, suffix, name))
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
 
         self.docker_client = None
