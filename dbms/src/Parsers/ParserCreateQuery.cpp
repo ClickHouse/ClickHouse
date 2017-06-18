@@ -116,7 +116,7 @@ bool ParserColumnDeclarationList::parseImpl(Pos & pos, Pos end, ASTPtr & node, P
 bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
     ParserWhitespaceOrComments ws;
-    ParserString s_engine("ENGINE", true, true);
+    ParserKeyword s_engine("ENGINE");
     ParserString s_eq("=");
     ParserIdentifierWithOptionalParameters storage_p;
 
@@ -146,22 +146,20 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     Pos begin = pos;
 
     ParserWhitespaceOrComments ws;
-    ParserString s_create("CREATE", true, true);
-    ParserString s_temporary("TEMPORARY", true, true);
-    ParserString s_attach("ATTACH", true, true);
-    ParserString s_table("TABLE", true, true);
-    ParserString s_database("DATABASE", true, true);
+    ParserKeyword s_create("CREATE");
+    ParserKeyword s_temporary("TEMPORARY");
+    ParserKeyword s_attach("ATTACH");
+    ParserKeyword s_table("TABLE");
+    ParserKeyword s_database("DATABASE");
+    ParserKeyword s_if_not_exists("IF NOT EXISTS");
+    ParserKeyword s_as("AS");
+    ParserKeyword s_select("SELECT");
+    ParserKeyword s_view("VIEW");
+    ParserKeyword s_materialized("MATERIALIZED");
+    ParserKeyword s_populate("POPULATE");
     ParserString s_dot(".");
     ParserString s_lparen("(");
     ParserString s_rparen(")");
-    ParserString s_if("IF", true, true);
-    ParserString s_not("NOT", true, true);
-    ParserString s_exists("EXISTS", true, true);
-    ParserString s_as("AS", true, true);
-    ParserString s_select("SELECT", true, true);
-    ParserString s_view("VIEW", true, true);
-    ParserString s_materialized("MATERIALIZED", true, true);
-    ParserString s_populate("POPULATE", true, true);
     ParserEngine engine_p;
     ParserIdentifier name_p;
     ParserColumnDeclarationList columns_p;
@@ -204,12 +202,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     {
         ws.ignore(pos, end);
 
-        if (s_if.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_not.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_exists.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end))
+        if (s_if_not_exists.ignore(pos, end, max_parsed_pos, expected))
             if_not_exists = true;
 
         if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
@@ -217,7 +210,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
         ws.ignore(pos, end);
 
-        if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
+        if (ParserKeyword{"ON"}.ignore(pos, end, max_parsed_pos, expected))
         {
             if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
                 return false;
@@ -231,12 +224,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     {
         ws.ignore(pos, end);
 
-        if (s_if.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_not.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_exists.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end))
+        if (s_if_not_exists.ignore(pos, end, max_parsed_pos, expected))
             if_not_exists = true;
 
         if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
@@ -253,7 +241,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             ws.ignore(pos, end);
         }
 
-        if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
+        if (ParserKeyword{"ON"}.ignore(pos, end, max_parsed_pos, expected))
         {
             if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
                 return false;
@@ -347,12 +335,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
         if (!s_view.ignore(pos, end, max_parsed_pos, expected) || !ws.ignore(pos, end, max_parsed_pos, expected))
             return false;
 
-        if (s_if.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_not.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_exists.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end))
+        if (s_if_not_exists.ignore(pos, end, max_parsed_pos, expected))
             if_not_exists = true;
 
         if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
