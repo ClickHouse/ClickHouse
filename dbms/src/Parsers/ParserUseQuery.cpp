@@ -14,7 +14,7 @@ bool ParserUseQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
     Pos begin = pos;
 
     ParserWhitespaceOrComments ws;
-    ParserString s_use("USE", true, true);
+    ParserKeyword s_use("USE");
     ParserIdentifier name_p;
 
     ASTPtr database;

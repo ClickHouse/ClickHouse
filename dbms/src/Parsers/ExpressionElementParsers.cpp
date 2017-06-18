@@ -204,7 +204,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 
     ParserIdentifier id_parser;
     ParserString open("("), close(")");
-    ParserString distinct("DISTINCT", true, true);
+    ParserKeyword distinct("DISTINCT");
     ParserExpressionList contents(false);
     ParserWhitespaceOrComments ws;
 
@@ -419,7 +419,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 bool ParserNull::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
     Pos begin = pos;
-    ParserString nested_parser("NULL", true, true);
+    ParserKeyword nested_parser("NULL");
     if (nested_parser.parse(pos, end, node, max_parsed_pos, expected))
     {
         node = std::make_shared<ASTLiteral>(StringRange(StringRange(begin, pos)), Null());
@@ -650,7 +650,7 @@ template <typename ParserIdentifier>
 bool ParserAliasImpl<ParserIdentifier>::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
     ParserWhitespaceOrComments ws;
-    ParserString s_as("AS", true, true);
+    ParserKeyword s_as("AS");
     ParserIdentifier id_p;
 
     bool has_as_word = s_as.parse(pos, end, node, max_parsed_pos, expected);
@@ -826,14 +826,14 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 
     ParserWhitespaceOrComments ws;
     ParserExpressionWithOptionalAlias elem_p(false);
-    ParserString ascending("ASCENDING", true, true);
-    ParserString descending("DESCENDING", true, true);
-    ParserString asc("ASC", true, true);
-    ParserString desc("DESC", true, true);
-    ParserString nulls("NULLS", true, true);
-    ParserString first("FIRST", true, true);
-    ParserString last("LAST", true, true);
-    ParserString collate("COLLATE", true, true);
+    ParserKeyword ascending("ASCENDING");
+    ParserKeyword descending("DESCENDING");
+    ParserKeyword asc("ASC");
+    ParserKeyword desc("DESC");
+    ParserKeyword nulls("NULLS");
+    ParserKeyword first("FIRST");
+    ParserKeyword last("LAST");
+    ParserKeyword collate("COLLATE");
     ParserStringLiteral collate_locale_parser;
 
     ASTPtr expr_elem;
@@ -888,7 +888,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 
 bool ParserWeightedZooKeeperPath::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserString s_weight("WEIGHT", true, true);
+    ParserKeyword s_weight("WEIGHT");
     ParserStringLiteral path_p;
     ParserUnsignedInteger weight_p;
     ParserWhitespaceOrComments ws;

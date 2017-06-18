@@ -27,6 +27,26 @@ protected:
 };
 
 
+/** Parse specified keyword such as SELECT or compound keyword such as ORDER BY.
+  * All case insensitive. Requires word boundary.
+  * For compound keywords, any whitespace characters and comments could be in the middle.
+  */
+/// Example: ORDER/* Hello */BY
+class ParserKeyword : public IParserBase
+{
+private:
+    const char * s;
+
+public:
+    ParserKeyword(const char * s_);
+
+protected:
+    const char * getName() const override;
+
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
+};
+
+
 /** whitespace characters
   */
 class ParserWhitespace : public IParserBase
