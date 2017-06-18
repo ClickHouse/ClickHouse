@@ -12,9 +12,10 @@ namespace DB
 
 StorageSystemBuildOptions::StorageSystemBuildOptions(const std::string & name_)
     : name(name_)
-    , columns{
-        { "name",             std::make_shared<DataTypeString>()    },
-        { "value",            std::make_shared<DataTypeString>()    },
+    , columns
+    {
+        { "name", std::make_shared<DataTypeString>() },
+        { "value", std::make_shared<DataTypeString>() },
     }
 {
 }
@@ -34,15 +35,14 @@ BlockInputStreams StorageSystemBuildOptions::read(
     ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
     ColumnWithTypeAndName col_value{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "value"};
 
-    for (auto it = auto_config_build.begin(); it != auto_config_build.end(); ++it) {
-        col_name.column->insert(String(*it));
-        ++it;
-        if (it == auto_config_build.end())
-            break;
-        col_value.column->insert(String(*it));
+    for (auto it = auto_config_build; *it; it += 2)
+    {
+        col_name.column->insert(String(it[0]));
+        col_value.column->insert(String(it[1]));
     }
 
-    Block block{
+    Block block
+    {
         col_name,
         col_value,
     };

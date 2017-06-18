@@ -2,7 +2,7 @@
 
 #include <Common/config_build.h>
 
-const std::vector<const char *> auto_config_build
+const char * auto_config_build[]
 {
     "VERSION_FULL", "@VERSION_FULL@",
     "VERSION_DESCRIBE", "@VERSION_DESCRIBE@",
@@ -22,4 +22,5 @@ const std::vector<const char *> auto_config_build
     "BUILD_COMPILE_DEFINITIONS", "@BUILD_COMPILE_DEFINITIONS@",
     "BUILD_INCLUDE_DIRECTORIES", "@BUILD_INCLUDE_DIRECTORIES@",
     "STATIC", "@USE_STATIC_LIBRARIES@",
+    nullptr, nullptr
 };
