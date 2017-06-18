@@ -928,9 +928,8 @@ void ExpressionAnalyzer::executeScalarSubqueries()
     {
         for (auto & child : ast->children)
         {
-            /// Do not go to FROM, JOIN, UNION.
-            if (!typeid_cast<const ASTTableExpression *>(child.get())
-                && child.get() != select_query->next_union_all.get())
+            /// Do not go to FROM, JOIN.
+            if (!typeid_cast<const ASTTableExpression *>(child.get()))
             {
                 executeScalarSubqueriesImpl(child);
             }

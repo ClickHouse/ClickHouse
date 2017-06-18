@@ -154,34 +154,6 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_n
 
 ASTPtr ASTSelectQuery::clone() const
 {
-    auto ptr = cloneImpl(true);
-
-    /// Set pointers to previous SELECT queries.
-    ASTPtr current = ptr;
-    static_cast<ASTSelectQuery *>(current.get())->prev_union_all = nullptr;
-    ASTPtr next = static_cast<ASTSelectQuery *>(current.get())->next_union_all;
-    while (next != nullptr)
-    {
-        ASTSelectQuery * next_select_query = static_cast<ASTSelectQuery *>(next.get());
-        next_select_query->prev_union_all = current.get();
-        current = next;
-        next = next_select_query->next_union_all;
-    }
-
-    cloneOutputOptions(*ptr);
-
-    return ptr;
-}
-
-std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneFirstSelect() const
-{
-    auto res = cloneImpl(false);
-    res->prev_union_all = nullptr;
-    return res;
-}
-
-std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneImpl(bool traverse_union_all) const
-{
     auto res = std::make_shared<ASTSelectQuery>(*this);
     res->children.clear();
 
@@ -212,19 +184,11 @@ std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneImpl(bool traverse_union_al
 
 #undef CLONE
 
-    if (traverse_union_all)
-    {
-        if (next_union_all)
-        {
-            res->next_union_all = static_cast<const ASTSelectQuery *>(&*next_union_all)->cloneImpl(true);
-            res->children.push_back(res->next_union_all);
-        }
-    }
-    else
-        res->next_union_all = nullptr;
+    cloneOutputOptions(*res);
 
     return res;
 }
+
 
 void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
@@ -314,17 +278,6 @@ void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & sta
 
             s.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
         }
-    }
-
-    if (next_union_all)
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "UNION ALL " << s.nl_or_ws << (s.hilite ? hilite_none : "");
-
-        // NOTE We can safely apply `static_cast` instead of `typeid_cast` because we know that in the `UNION ALL` chain
-        // there are only trees of type SELECT.
-        const ASTSelectQuery & next_ast = static_cast<const ASTSelectQuery &>(*next_union_all);
-
-        next_ast.formatImpl(s, state, frame);
     }
 }
 
