@@ -384,6 +384,10 @@ int Server::main(const std::vector<std::string> & args)
     global_context->setSetting("profile", default_profile_name);
 
     LOG_INFO(log, "Loading metadata.");
+    loadMetadataSystem(*global_context);
+    /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
+    attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
+    /// Then, load remaining databases
     loadMetadata(*global_context);
     LOG_DEBUG(log, "Loaded metadata.");
 
@@ -636,7 +640,7 @@ int Server::main(const std::vector<std::string> & args)
 
         /// This object will periodically calculate some metrics.
         AsynchronousMetrics async_metrics(*global_context);
-        attachSystemTablesAsync(global_context->getDatabase("system"), async_metrics);
+        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
 
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
