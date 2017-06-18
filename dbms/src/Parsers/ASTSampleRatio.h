@@ -2,6 +2,10 @@
 
 #include <Parsers/IAST.h>
 
+using __uint128_t = uint64_t;
+//#include <Common/UInt128.h>
+//using __uint128_t = DB::UInt128;
+
 
 namespace DB
 {

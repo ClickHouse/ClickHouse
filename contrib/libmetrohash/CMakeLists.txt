@@ -1,6 +1,6 @@
 include_directories (${CMAKE_CURRENT_BINARY_DIR})
 
-if (NOT AARCH64) # Not used. Pretty easy to port.
+if (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64") # Not used. Pretty easy to port.
 	set (SOURCES_ONLY_ON_X86_64 src/metrohash128crc.cpp)
 endif ()
 
