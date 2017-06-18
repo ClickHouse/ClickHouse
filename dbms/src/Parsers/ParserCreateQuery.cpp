@@ -205,6 +205,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
         if (s_if_not_exists.ignore(pos, end, max_parsed_pos, expected))
             if_not_exists = true;
 
+        ws.ignore(pos, end);
+
         if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
             return false;
 
@@ -226,6 +228,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
         if (s_if_not_exists.ignore(pos, end, max_parsed_pos, expected))
             if_not_exists = true;
+
+        ws.ignore(pos, end);
 
         if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
             return false;

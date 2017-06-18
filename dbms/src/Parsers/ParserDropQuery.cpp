@@ -49,6 +49,8 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
         if (s_if_exists.ignore(pos, end, max_parsed_pos, expected))
             if_exists = true;
 
+        ws.ignore(pos, end);
+
         if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
             return false;
 
@@ -69,6 +71,8 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
 
         if (s_if_exists.ignore(pos, end, max_parsed_pos, expected))
             if_exists = true;
+
+        ws.ignore(pos, end);
 
         if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
             return false;
