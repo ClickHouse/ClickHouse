@@ -26,14 +26,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     Pos begin = pos;
 
     ParserWhitespaceOrComments ws;
-    ParserString s_insert("INSERT", true, true);
-    ParserString s_into("INTO", true, true);
-    ParserString s_dot(".");
-    ParserString s_values("VALUES", true, true);
-    ParserString s_format("FORMAT", true, true);
-    ParserString s_select("SELECT", true, true);
-    ParserString s_lparen("(");
-    ParserString s_rparen(")");
+    ParserKeyword s_insert_into("INSERT INTO");
+    ParserKeyword s_dot(".");
+    ParserKeyword s_values("VALUES");
+    ParserKeyword s_format("FORMAT");
+    ParserKeyword s_select("SELECT");
+    ParserKeyword s_lparen("(");
+    ParserKeyword s_rparen(")");
     ParserIdentifier name_p;
     ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserString>(","), false);
 
@@ -47,10 +46,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
     ws.ignore(pos, end);
 
-    /// INSERT INTO
-    if (!s_insert.ignore(pos, end, max_parsed_pos, expected)
-        || !ws.ignore(pos, end)
-        || !s_into.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_insert_into.ignore(pos, end, max_parsed_pos, expected))
         return false;
 
     ws.ignore(pos, end);

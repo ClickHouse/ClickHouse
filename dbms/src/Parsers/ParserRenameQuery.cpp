@@ -50,19 +50,13 @@ bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     Pos begin = pos;
 
     ParserWhitespaceOrComments ws;
-    ParserString s_rename("RENAME", true, true);
-    ParserString s_table("TABLE", true, true);
-    ParserString s_to("TO", true, true);
+    ParserKeyword s_rename_table("RENAME TABLE");
+    ParserKeyword s_to("TO");
     ParserString s_comma(",");
 
     ws.ignore(pos, end);
 
-    if (!s_rename.ignore(pos, end, max_parsed_pos, expected))
-        return false;
-
-    ws.ignore(pos, end);
-
-    if (!s_table.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_rename_table.ignore(pos, end, max_parsed_pos, expected))
         return false;
 
     ASTRenameQuery::Elements elements;
@@ -85,7 +79,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     }
 
     String cluster_str;
-    if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
+    if (ParserKeyword{"ON"}.ignore(pos, end, max_parsed_pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
             return false;

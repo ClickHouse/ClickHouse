@@ -58,8 +58,8 @@ bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 
     if (!parse_only_internals)
     {
-        ParserString s_set("SET", true, true);
-        ParserString s_global("GLOBAL", true, true);
+        ParserKeyword s_set("SET");
+        ParserKeyword s_global("GLOBAL");
 
         ws.ignore(pos, end);
 

@@ -240,8 +240,8 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
     ///  create an AST the same as for (subject> = left AND subject <= right).
 
     ParserWhitespaceOrComments ws;
-    ParserString s_between("BETWEEN", true, true);
-    ParserString s_and("AND", true, true);
+    ParserKeyword s_between("BETWEEN");
+    ParserKeyword s_and("AND");
 
     ASTPtr subject;
     ASTPtr left;
@@ -606,9 +606,9 @@ bool ParserNullityChecking::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
     if (!ParserComparisonExpression{}.parse(pos, end, node_comp, max_parsed_pos, expected))
         return false;
 
-    ParserString s_is{"IS", true, true};
-    ParserString s_not{"NOT", true, true};
-    ParserString s_null{"NULL", true, true};
+    ParserKeyword s_is{"IS"};
+    ParserKeyword s_not{"NOT"};
+    ParserKeyword s_null{"NULL"};
 
     ws.ignore(pos, end);
 

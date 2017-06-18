@@ -16,13 +16,12 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
     Pos begin = pos;
 
     ParserWhitespaceOrComments ws;
-    ParserString s_drop("DROP", true, true);
-    ParserString s_detach("DETACH", true, true);
-    ParserString s_table("TABLE", true, true);
-    ParserString s_database("DATABASE", true, true);
-    ParserString s_dot(".");
-    ParserString s_if("IF", true, true);
-    ParserString s_exists("EXISTS", true, true);
+    ParserKeyword s_drop("DROP");
+    ParserKeyword s_detach("DETACH");
+    ParserKeyword s_table("TABLE");
+    ParserKeyword s_database("DATABASE");
+    ParserKeyword s_dot(".");
+    ParserKeyword s_if_exists("IF EXISTS");
     ParserIdentifier name_p;
 
     ASTPtr database;
@@ -47,18 +46,17 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
     {
         ws.ignore(pos, end);
 
-        if (s_if.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_exists.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end))
+        if (s_if_exists.ignore(pos, end, max_parsed_pos, expected))
             if_exists = true;
+
+        ws.ignore(pos, end);
 
         if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
             return false;
 
         ws.ignore(pos, end);
 
-        if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
+        if (ParserKeyword{"ON"}.ignore(pos, end, max_parsed_pos, expected))
         {
             if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
                 return false;
@@ -71,11 +69,10 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
 
         ws.ignore(pos, end);
 
-        if (s_if.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_exists.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end))
+        if (s_if_exists.ignore(pos, end, max_parsed_pos, expected))
             if_exists = true;
+
+        ws.ignore(pos, end);
 
         if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
             return false;
@@ -91,7 +88,7 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
             ws.ignore(pos, end);
         }
 
-        if (ParserString{"ON", true, true}.ignore(pos, end, max_parsed_pos, expected))
+        if (ParserKeyword{"ON"}.ignore(pos, end, max_parsed_pos, expected))
         {
             if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
                 return false;

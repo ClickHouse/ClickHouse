@@ -36,18 +36,9 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 
     auto & query_with_output = dynamic_cast<ASTQueryWithOutput &>(*query);
 
-    ParserString s_into("INTO", /* word_boundary_ = */ true, /* case_insensitive_ = */ true);
-    if (s_into.ignore(pos, end, max_parsed_pos, expected))
+    ParserKeyword s_into_outfile("INTO OUTFILE");
+    if (s_into_outfile.ignore(pos, end, max_parsed_pos, expected))
     {
-        ws.ignore(pos, end);
-
-        ParserString s_outfile("OUTFILE", true, true);
-        if (!s_outfile.ignore(pos, end, max_parsed_pos, expected))
-        {
-            expected = "OUTFILE";
-            return false;
-        }
-
         ws.ignore(pos, end);
 
         ParserStringLiteral out_file_p;
@@ -59,7 +50,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
         ws.ignore(pos, end);
     }
 
-    ParserString s_format("FORMAT", true, true);
+    ParserKeyword s_format("FORMAT");
 
     if (s_format.ignore(pos, end, max_parsed_pos, expected))
     {
