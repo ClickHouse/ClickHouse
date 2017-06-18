@@ -59,9 +59,6 @@ protected:
     int main(const std::vector<std::string> & args) override;
 
 private:
-
-    void attachSystemTables(const std::string & path, bool has_zookeeper) const;
-
     std::string getDefaultCorePath() const override;
 };
 

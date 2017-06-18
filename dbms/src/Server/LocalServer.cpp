@@ -311,6 +311,8 @@ try
     if (!path.empty())
     {
         LOG_DEBUG(log, "Loading metadata from " << path);
+        loadMetadataSystem(*context);
+        attachSystemTables();
         loadMetadata(*context);
         LOG_DEBUG(log, "Loaded metadata.");
     }
@@ -390,7 +392,7 @@ void LocalServer::attachSystemTables()
         context->addDatabase("system", system_database);
     }
 
-    attachSystemTablesLocal(system_database);
+    attachSystemTablesLocal(*system_database);
 }
 
 

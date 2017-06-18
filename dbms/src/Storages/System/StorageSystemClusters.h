@@ -18,7 +18,7 @@ class StorageSystemClusters : public ext::shared_ptr_helper<StorageSystemCluster
 friend class ext::shared_ptr_helper<StorageSystemClusters>;
 
 public:
-    StorageSystemClusters(const std::string & name_, Context & context_);
+    StorageSystemClusters(const std::string & name_);
 
     std::string getName() const override { return "SystemClusters"; }
     std::string getTableName() const override { return name; }
@@ -33,12 +33,8 @@ public:
         unsigned num_streams) override;
 
 private:
-    StorageSystemClusters(const std::string & name_);
-
-private:
     const std::string name;
     NamesAndTypesList columns;
-    Context & context;
 };
 
 }
