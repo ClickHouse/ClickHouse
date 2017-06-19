@@ -402,16 +402,17 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
 
     <p><b>Note</b>
         We store ad network banners impressions logs in ClickHouse. Each table entry looks like:
-        <pre>[Advertiser ID, Impression ID, attribute1, attribute2, &hellip;]</pre>
+        [Advertiser ID, Impression ID, attribute1, attribute2, &hellip;].
         Let assume that our aim is to provide a set of reports for each advertiser. Common and frequently demanded query
         would be to count impressions for a specific Advertiser ID. This means that table primary key should start with
-        <pre>Advertiser ID</pre>. In this case ClickHouse needs to read smaller amount of data to perform the query for a
-        given
-        <pre>Advertiser ID</pre>.
+        Advertiser ID. In this case ClickHouse needs to read smaller amount of data to perform the query for a
+        given Advertiser ID.
     </p>
 
     <h3>Load data</h3>
-    <pre>xz -v -c -d &lt; ontime.csv.xz | clickhouse-client --query="INSERT INTO ontime FORMAT CSV"</pre>
+    <p>Download <a href="http://transtats.bts.gov/PREZIP/On_Time_On_Time_Performance_2016_6.zip" rel="external nofollow">
+        ontime.czv.zip</a>, then feed it's contents to clickhouse-client:</p>
+    <pre>unzip -cq ontime.csv.zip | sed -e 's/\.00//g' | clickhouse-client --query="INSERT INTO ontime FORMAT CSVWithNames"</pre>
     <p>ClickHouse INSERT query allows to load data in any <a href="docs/en/formats/index.html">supported
         format</a>. Data load requires just O(1) RAM consumption. INSERT query can receive any data volume as input.
         It's strongly recommended to insert data with <a
