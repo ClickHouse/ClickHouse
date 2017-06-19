@@ -216,6 +216,7 @@ protected:
 
     std::string config_path;
     ConfigProcessor::LoadedConfig loaded_config;
+    AbstractConfiguration * last_configuration = nullptr;
 };
 
 

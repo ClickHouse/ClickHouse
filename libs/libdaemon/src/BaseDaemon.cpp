@@ -477,7 +477,10 @@ void BaseDaemon::reloadConfiguration()
     std::string log_command_line_option = config().getString("logger.log", "");
     config_path = config().getString("config-file", "config.xml");
     loaded_config = ConfigProcessor(false, true).loadConfig(config_path, /* allow_zk_includes = */ true);
-    config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+    if (last_configuration != nullptr)
+        config().removeConfiguration(last_configuration);
+    last_configuration = loaded_config.configuration.duplicate();
+    config().add(last_configuration, PRIO_DEFAULT, false);
     log_to_console = !config().getBool("application.runAsDaemon", false) && log_command_line_option.empty();
 }
 
