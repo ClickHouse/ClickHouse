@@ -36,7 +36,7 @@ var paths = {
         '!node_modules/**/*.{jpg,jpeg,png,svg,ico}',
         '!public/**/*.{jpg,jpeg,png,svg,ico}'],
     robotstxt: ['robots.txt'],
-    presentations: ['../doc/presentations/**/*']
+    presentations: ['presentations/**/*']
 };
 
 gulp.task('clean', function () {
