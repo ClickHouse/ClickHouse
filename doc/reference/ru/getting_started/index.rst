@@ -22,13 +22,13 @@
 Установка из пакетов
 ~~~~~~~~~~~~~~~~~~~~
 
-Пропишите в `/etc/apt/sources.list` (или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`) репозитории:
+Пропишите в ``/etc/apt/sources.list`` (или в отдельный файл ``/etc/apt/sources.list.d/clickhouse.list``) репозитории:
 
 .. code-block:: text
 
     deb http://repo.yandex.ru/clickhouse/trusty stable main
 
-На других версиях Ubuntu, замените `trusty` на `xenial` или `precise`.
+На других версиях Ubuntu, замените ``trusty`` на ``xenial`` или ``precise``.
 
 Затем выполните:
 
@@ -87,9 +87,9 @@ Gentoo overlay: https://github.com/kmeaw/clickhouse-overlay
 
     sudo service clickhouse-server start
     
-Смотрите логи в директории `/var/log/clickhouse-server/`
+Смотрите логи в директории ``/var/log/clickhouse-server/``
 
-Если сервер не стартует - проверьте правильность конфигурации в файле `/etc/clickhouse-server/config.xml`
+Если сервер не стартует - проверьте правильность конфигурации в файле ``/etc/clickhouse-server/config.xml``
 
 Также можно запустить сервер из консоли:
 
@@ -136,4 +136,11 @@ Gentoo overlay: https://github.com/kmeaw/clickhouse-overlay
     
     :)
 
-Поздравляю, система работает!
+**Поздравляем, система работает!**
+
+Для дальнейших экспериментов можно попробовать загрузить из тестовых наборов данных:
+
+.. toctree::
+    :glob:
+
+    example_datasets/*

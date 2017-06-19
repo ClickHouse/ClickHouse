@@ -133,4 +133,12 @@ Checking the system:
     
     :)
 
-Congratulations, it works!
+**Congratulations, it works!**
+
+For further experiments you can try playing with one of the following example datasets:
+
+.. toctree::
+    :glob:
+
+    example_datasets/*
+

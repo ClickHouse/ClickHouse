@@ -5,7 +5,7 @@ Documentation
     :maxdepth: 6
     
     introduction/index
-    getting_started
+    getting_started/index
     interfaces/index
     query_language/index
     table_engines/index
