@@ -16,7 +16,7 @@
 #  Variant 3: Manual build:
 
 # pkg install -y curl sudo
-# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/doc/build_freebsd.sh | sh
+# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/docs/en/development/build_freebsd.sh | sh
 
 #  install compiler and libs
 sudo pkg install devel/git devel/cmake shells/bash devel/icu devel/libltdl databases/unixODBC devel/google-perftools devel/libzookeeper devel/libdouble-conversion archivers/zstd archivers/liblz4 devel/sparsehash devel/re2

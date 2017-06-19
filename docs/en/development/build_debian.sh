@@ -3,7 +3,7 @@
 # How to build ClickHouse under debian-based systems (ubuntu)
 
 # apt install -y curl sudo
-# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/doc/build_debian.sh | sh
+# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/docs/en/development/build_debian.sh | sh
 
 # install compiler and libs
 sudo apt install -y git bash cmake gcc-6 g++-6 libicu-dev libreadline-dev libmysqlclient-dev unixodbc-dev libltdl-dev libssl-dev
