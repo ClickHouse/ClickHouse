@@ -436,11 +436,11 @@ LIMIT 20
         <li>Install ClickHouse server on all machines of the cluster</li>
         <li>Set up cluster configs in configuration file</li>
         <li>Create local tables on each instance</li>
-        <li>Create a <a href="/reference_en.html#Distributed">Distributed table</a></li>
+        <li>Create a <a href="docs/en/table_engines/distributed.html">Distributed table</a></li>
     </ol>
     </p>
 
-    <p><a href="/reference_en.html#Distributed">Distributed-table</a> is actually a kind of
+    <p><a href="docs/en/table_engines/distributed.html">Distributed-table</a> is actually a kind of
         "view" to local tables of ClickHouse cluster. SELECT query from a distributed table will be executed using
         resources of all cluster's shards. You may specify configs for multiple clusters and create multiple
         Distributed-tables providing views to different clusters.</p>
@@ -482,15 +482,15 @@ LIMIT 20
 
     <p>You can create a Distributed table on all machines in the cluster. This would allow to run distributed queries on
         any machine of the cluster. Besides distributed table you can also use <a
-                href="/reference_en.html#remote">*remote* table function</a>.</p>
+                href="docs/en/table_functions/remote.html">*remote* table function</a>.</p>
 
-    <p>Let's run <a href="/reference_en.html#INSERT">INSERT SELECT</a> into Distributed table
+    <p>Let's run <a href="docs/en/query_language/queries.html#insert">INSERT SELECT</a> into Distributed table
         to spread the table to multiple servers.</p>
 
     <pre>INSERT INTO ontime_all SELECT * FROM ontime;</pre>
 
     <p class="tip"><b>⚠</b> Worth to notice that the approach given above wouldn't fit for sharding of large
-        tables.<br/>Please use <a href="/reference_en.html#Resharding">built-in sharding
+        tables.<br/>Please use <a href="docs/en/table_engines/resharding.html">built-in sharding
             feature</a>.</p>
 
     <p>As you could expect heavy queries are executed N times faster being launched on 3 servers instead of one.</p>
