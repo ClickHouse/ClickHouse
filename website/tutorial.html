@@ -402,15 +402,12 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
 
     <p><b>Note</b>
         We store ad network banners impressions logs in ClickHouse. Each table entry looks like:
-        <source>
-        [Advertiser ID, Impression ID, attribute1, attribute2, &hellip;]</pre>
+        <pre>[Advertiser ID, Impression ID, attribute1, attribute2, &hellip;]</pre>
         Let assume that our aim is to provide a set of reports for each advertiser. Common and frequently demanded query
         would be to count impressions for a specific Advertiser ID. This means that table primary key should start with
-        <source>
-        Advertiser ID</pre>. In this case ClickHouse needs to read smaller amount of data to perform the query for a
+        <pre>Advertiser ID</pre>. In this case ClickHouse needs to read smaller amount of data to perform the query for a
         given
-        <source>
-        Advertiser ID</pre>.
+        <pre>Advertiser ID</pre>.
     </p>
 
     <h3>Load data</h3>
