@@ -173,6 +173,18 @@ struct ContextShared
 
     std::mt19937_64 rng{randomSeed()};
 
+    ContextShared()
+    {
+        /// TODO: make it SingleTon (?)
+        static std::atomic<size_t> num_calls{0};
+        if (++num_calls > 1)
+        {
+            std::cerr << "Attempting to create multiple ContextShared instances. Stack trace:\n" << StackTrace().toString();
+            std::cerr.flush();
+            std::terminate();
+        }
+    }
+
 
     ~ContextShared()
     {
@@ -224,14 +236,6 @@ Context::Context() = default;
 
 Context Context::createGlobal()
 {
-    static std::atomic<size_t> num_calls{0};
-    if (++num_calls > 1)
-    {
-        std::cerr << "Attempting to create multiple default Context. Stack trace:\n" << StackTrace().toString();
-        std::cerr.flush();
-        std::terminate();
-    }
-
     Context res;
     res.shared = std::make_shared<ContextShared>();
     res.quota = std::make_shared<QuotaForIntervals>();
