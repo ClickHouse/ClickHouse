@@ -19,6 +19,7 @@ var paths = {
         '!deprecated/reference_ru.html',
         '!deprecated/reference_en.html',
         '!node_modules/**/*.html',
+        '!presentations/**/*.html',
         '!public/**/*.html'],
     reference: ['deprecated/reference_ru.html', 'deprecated/reference_en.html'],
     docs: [docsDir + '/build/docs/**/*'],
@@ -26,14 +27,17 @@ var paths = {
         '**/*.js',
         '!gulpfile.js',
         '!node_modules/**/*.js',
+        '!presentations/**/*.js',
         '!public/**/*.js'],
     styles: [
         '**/*.css',
         '!node_modules/**/*.css',
+        '!presentations/**/*.css',
         '!public/**/*.css'],
     images: [
         '**/*.{jpg,jpeg,png,svg,ico}',
         '!node_modules/**/*.{jpg,jpeg,png,svg,ico}',
+        '!presentations/**/*.{jpg,jpeg,png,svg,ico}',
         '!public/**/*.{jpg,jpeg,png,svg,ico}'],
     robotstxt: ['robots.txt'],
     presentations: ['presentations/**/*']
@@ -115,6 +119,6 @@ gulp.task('connect', function() {
     })
 });
 
-gulp.task('build', ['htmls', 'robotstxt', 'reference', 'presentations', 'scripts', 'styles', 'images']);
+gulp.task('build', ['htmls', 'robotstxt', 'reference', 'scripts', 'styles', 'images', 'presentations']);
 
 gulp.task('default', ['build', 'connect']);
