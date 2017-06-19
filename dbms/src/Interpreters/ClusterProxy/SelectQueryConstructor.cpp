@@ -42,7 +42,7 @@ BlockInputStreamPtr SelectQueryConstructor::createRemote(
         const ConnectionPoolWithFailoverPtr & pool, const std::string & query,
         const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
-    auto stream = std::make_shared<RemoteBlockInputStream>(pool, query, &settings, throttler, external_tables, processed_stage, context);
+    auto stream = std::make_shared<RemoteBlockInputStream>(pool, query, &settings, context, throttler, external_tables, processed_stage);
     stream->setPoolMode(pool_mode);
     stream->setMainTable(main_table);
     return stream;
@@ -52,7 +52,7 @@ BlockInputStreamPtr SelectQueryConstructor::createRemote(
         ConnectionPoolWithFailoverPtrs && pools, const std::string & query,
         const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
-    auto stream = std::make_shared<RemoteBlockInputStream>(std::move(pools), query, &settings, throttler, external_tables, processed_stage, context);
+    auto stream = std::make_shared<RemoteBlockInputStream>(std::move(pools), query, &settings, context, throttler, external_tables, processed_stage);
     stream->setPoolMode(pool_mode);
     stream->setMainTable(main_table);
     return stream;

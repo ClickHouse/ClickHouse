@@ -24,7 +24,7 @@ using namespace DB;
 
 void test1()
 {
-    Context context;
+    Context context = Context::createGlobal();
     StoragePtr table = StorageSystemNumbers::create("numbers", false);
 
     Names column_names;
@@ -54,7 +54,7 @@ void test1()
 
 void test2()
 {
-    Context context;
+    Context context = Context::createGlobal();
     StoragePtr table = StorageSystemNumbers::create("numbers", false);
 
     Names column_names;

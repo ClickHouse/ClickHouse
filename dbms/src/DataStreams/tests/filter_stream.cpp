@@ -39,7 +39,7 @@ try
     std::cerr << std::endl;
     std::cerr << ast->getTreeID() << std::endl;
 
-    Context context;
+    Context context = Context::createGlobal();
 
     ExpressionAnalyzer analyzer(ast, context, {}, {NameAndTypePair("number", std::make_shared<DataTypeUInt64>())});
     ExpressionActionsChain chain;

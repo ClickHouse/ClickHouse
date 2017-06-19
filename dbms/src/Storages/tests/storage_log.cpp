@@ -68,7 +68,7 @@ try
 
         QueryProcessingStage::Enum stage;
 
-        BlockInputStreamPtr in = table->read(column_names, 0, Context{}, stage, 8192, 1)[0];
+        BlockInputStreamPtr in = table->read(column_names, 0, Context::createGlobal(), stage, 8192, 1)[0];
 
         Block sample;
         {

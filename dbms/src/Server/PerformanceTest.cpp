@@ -533,6 +533,7 @@ private:
     using Keys = std::vector<String>;
 
     Settings settings;
+    Context global_context = Context::createGlobal();
 
     InterruptListener interrupt_listener;
 
@@ -1083,7 +1084,7 @@ private:
     {
         statistics[statistic_index].watch_per_query.restart();
 
-        RemoteBlockInputStream stream(connection, query, &settings, nullptr, Tables() /*, query_processing_stage*/);
+        RemoteBlockInputStream stream(connection, query, &settings, global_context, nullptr, Tables() /*, query_processing_stage*/);
 
         Progress progress;
         stream.setProgressCallback([&progress, &stream, statistic_index, this](const Progress & value) {
