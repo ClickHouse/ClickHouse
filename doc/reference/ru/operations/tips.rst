@@ -251,6 +251,7 @@ zoo.cfg:
 Salt init:
 
 .. code-block:: text
+
     description "zookeeper-{{ cluster['name'] }} centralized coordination service"
 
     start on runlevel [2345]

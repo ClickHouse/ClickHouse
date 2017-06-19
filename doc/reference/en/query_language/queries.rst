@@ -91,8 +91,8 @@ In all cases, if TEMPORARY is specified, a temporary table will be created. Temp
 
 In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed (GLOBAL) IN. For more information, see the appropriate sections.
 
-Distributed DDL queries (section ``ON CLUSTER``)
-""""""""""""""""""""""""""""""""""""""""""""""""
+Distributed DDL queries (ON CLUSTER section)
+""""""""""""""""""""""""""""""""""""""""""""
 
 Queries ``CREATE``, ``DROP``, ``ALTER``, ``RENAME`` support distributed execution on cluster.
 For example, the following query creates ``Distributed`` table ``all_hits`` for each host of the cluster ``cluster``:

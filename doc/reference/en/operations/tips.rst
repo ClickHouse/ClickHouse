@@ -251,6 +251,7 @@ JVM parameters:
 Инициализация через Salt:
 
 .. code-block:: text
+
     description "zookeeper-{{ cluster['name'] }} centralized coordination service"
 
     start on runlevel [2345]

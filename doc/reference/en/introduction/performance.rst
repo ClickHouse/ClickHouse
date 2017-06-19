@@ -8,14 +8,14 @@ Throughput can be measured in rows per second or in megabytes per second. If the
 
 The processing speed increases almost linearly for distributed processing, but only if the number of rows resulting from aggregation or sorting is not too large.
 
-Latency when processing short queries.
---------------------------------------
+Latency when processing short queries
+-------------------------------------
 If a query uses a primary key and does not select too many rows to process (hundreds of thousands), and does not use too many columns, we can expect less than 50 milliseconds of latency (single digits of milliseconds in the best case) if data is placed in the page cache. Otherwise, latency is calculated from the number of seeks. If you use rotating drives, for a system that is not overloaded, the latency is calculated by this formula: seek time (10 ms) * number of columns queried * number of data parts.
 
-Throughput when processing a large quantity of short queries.
--------------------------------------------------------------
+Throughput when processing a large quantity of short queries
+------------------------------------------------------------
 Under the same conditions, ClickHouse can handle several hundred queries per second on a single server (up to several thousand in the best case). Since this scenario is not typical for analytical DBMSs, we recommend expecting a maximum of 100 queries per second.
 
-Performance on data insertion.
-------------------------------
+Performance on data insertion
+-----------------------------
 We recommend inserting data in packets of at least 1000 rows, or no more than a single request per second. When inserting to a MergeTree table from a tab-separated dump, the insertion speed will be from 50 to 200 MB/s. If the inserted rows are around 1 Kb in size, the speed will be from 50,000 to 200,000 rows per second. If the rows are small, the performance will be higher in rows per second (on Yandex Banner System data -> 500,000 rows per second, on Graphite data -> 1,000,000 rows per second). To improve performance, you can make multiple INSERT queries in parallel, and performance will increase linearly.
