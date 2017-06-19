@@ -1168,7 +1168,7 @@ TestResult check(const TestEntry & entry)
 {
     try
     {
-        DB::Context context;
+        DB::Context context = DB::Context::createGlobal();
 
         auto storage_distributed_visits = StorageDistributedFake::create("remote_db", "remote_visits", entry.shard_count);
         auto storage_distributed_hits = StorageDistributedFake::create("distant_db", "distant_hits", entry.shard_count);

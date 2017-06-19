@@ -2615,7 +2615,7 @@ void StorageReplicatedMergeTree::dropPartition(
             leader_address.database,
             "", "", "ClickHouse replica");
 
-        RemoteBlockInputStream stream(connection, formattedAST(new_query), &settings);
+        RemoteBlockInputStream stream(connection, formattedAST(new_query), &settings, context);
         NullBlockOutputStream output;
 
         copyData(stream, output);

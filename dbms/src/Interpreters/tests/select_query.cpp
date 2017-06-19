@@ -30,7 +30,7 @@ try
     /// Pre-initialize the `DateLUT` so that the first initialization does not affect the measured execution speed.
     DateLUT::instance();
 
-    Context context;
+    Context context = Context::createGlobal();
 
     context.setPath("./");
 

@@ -22,21 +22,18 @@ class RemoteBlockInputStream : public IProfilingBlockInputStream
 public:
     /// Takes already set connection
     RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_,
-        ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        const Context & context_ = getDefaultContext());
+        const Context & context_, ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Takes a pool and gets one or several connections from it
     RemoteBlockInputStream(const ConnectionPoolWithFailoverPtr & pool_, const String & query_, const Settings * settings_,
-        ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        const Context & context_ = getDefaultContext());
+        const Context & context_, ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Takes a pool for each shard and gets one or several connections from it
     RemoteBlockInputStream(ConnectionPoolWithFailoverPtrs && pools_, const String & query_, const Settings * settings_,
-        ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        const Context & context_ = getDefaultContext());
+        const Context & context_, ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     ~RemoteBlockInputStream() override;
 
@@ -96,13 +93,6 @@ private:
 
     /// If wasn't sent yet, send request to cancell all connections to replicas
     void tryCancel(const char * reason);
-
-    /// ITable::read requires a Context, therefore we should create one if the user can't supply it
-    static Context & getDefaultContext()
-    {
-        static Context instance;
-        return instance;
-    }
 
 private:
     /// Already set connection

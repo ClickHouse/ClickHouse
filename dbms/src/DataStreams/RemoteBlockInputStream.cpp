@@ -17,8 +17,8 @@ namespace ErrorCodes
 
 
 RemoteBlockInputStream::RemoteBlockInputStream(Connection & connection_, const String & query_,
-    const Settings * settings_, ThrottlerPtr throttler_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, const Context & context_)
+    const Settings * settings_, const Context & context_, ThrottlerPtr throttler_,
+    const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : connection(&connection_), query(query_), throttler(throttler_), external_tables(external_tables_),
     stage(stage_), context(context_)
 {
@@ -26,8 +26,8 @@ RemoteBlockInputStream::RemoteBlockInputStream(Connection & connection_, const S
 }
 
 RemoteBlockInputStream::RemoteBlockInputStream(const ConnectionPoolWithFailoverPtr & pool_, const String & query_,
-    const Settings * settings_, ThrottlerPtr throttler_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, const Context & context_)
+    const Settings * settings_, const Context & context_, ThrottlerPtr throttler_,
+    const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : pool(pool_), query(query_), throttler(throttler_), external_tables(external_tables_),
     stage(stage_), context(context_)
 {
@@ -35,8 +35,8 @@ RemoteBlockInputStream::RemoteBlockInputStream(const ConnectionPoolWithFailoverP
 }
 
 RemoteBlockInputStream::RemoteBlockInputStream(ConnectionPoolWithFailoverPtrs && pools_, const String & query_,
-    const Settings * settings_, ThrottlerPtr throttler_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, const Context & context_)
+    const Settings * settings_, const Context & context_, ThrottlerPtr throttler_,
+    const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : pools(std::move(pools_)), query(query_), throttler(throttler_), external_tables(external_tables_),
     stage(stage_), context(context_)
 {

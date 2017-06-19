@@ -219,12 +219,26 @@ struct ContextShared
 };
 
 
-Context::Context()
-    : shared(std::make_shared<ContextShared>()),
-    quota(std::make_shared<QuotaForIntervals>()),
-    system_logs(std::make_shared<SystemLogs>())
+Context::Context() = default;
+
+
+Context Context::createGlobal()
 {
+    static std::atomic<size_t> num_calls{0};
+    if (++num_calls > 1)
+    {
+        std::cerr << "Attempting to create multiple default Context. Stack trace:\n" << StackTrace().toString();
+        std::cerr.flush();
+        std::terminate();
+    }
+
+    Context res;
+    res.shared = std::make_shared<ContextShared>();
+    res.quota = std::make_shared<QuotaForIntervals>();
+    res.system_logs = std::make_shared<SystemLogs>();
+    return res;
 }
+
 
 Context::~Context()
 {

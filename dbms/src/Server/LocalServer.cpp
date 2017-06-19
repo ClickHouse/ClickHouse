@@ -252,7 +252,7 @@ try
         config().add(processed_config.duplicate(), PRIO_DEFAULT, false);
     }
 
-    context = std::make_unique<Context>();
+    context = std::make_unique<Context>(Context::createGlobal());
     context->setGlobalContext(*context);
     context->setApplicationType(Context::ApplicationType::LOCAL_SERVER);
     tryInitPath();
