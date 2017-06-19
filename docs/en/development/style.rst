@@ -556,158 +556,149 @@ How to write code
 #. Virtual methods.
     Do not mark methods or destructor as virtual if class is not intended for polymorph usage.
 
-#. Кодировки.
-    Везде используется UTF-8. Используется ``std::string``, ``char *``. Не используется ``std::wstring``, ``wchar_t``.
+#. Encoding.
+    Always use UTF-8. Use ``std::string``, ``char *``. Do not use ``std::wstring``, ``wchar_t``.
 
-#. Логгирование.
-    См. примеры везде в коде.
-    Перед коммитом, удалите всё бессмысленное и отладочное логгирование, и другие виды отладочного вывода.
-    Не должно быть логгирования на каждую итерацию внутреннего цикла, даже уровня Trace.
-    При любом уровне логгирования, логи должно быть возможно читать.
-    Логгирование следует использовать, в основном, только в прикладном коде.
-    Сообщения в логе должны быть написаны на английском языке.
-    Желательно, чтобы лог был понятен системному администратору.
-    Не нужно писать ругательства в лог.
-    В логе используется кодировка UTF-8. Изредка можно использовать в логе не-ASCII символы.
+#. Logging.
+    See examples in code.
+    Remove debug logging before commit.
+    Logging in cycles should be avoided, even on Trace level.
+    Logs should be readable even with most detailed settings.
+    Log mostly in application code.
+    Log messages should be in English and understandable by operations engineers.
 
-#. Ввод-вывод.
-    Во внутренних циклах (в критичных по производительности участках программы) нельзя использовать iostreams (в том числе, ни в коем случае не используйте stringstream).
-    Вместо этого используйте библиотеку DB/IO.
+#. I/O.
+    In internal cycle (critical for application performance) you can't use iostreams (especially stringstream).
+    Instead use DB/IO library.
 
-#. Дата и время.
-    См. библиотеку DateLUT.
+#. Date and time.
+    See DateLUT library.
 
 #. include.
-    В заголовочном файле используется только ``#pragma once``, а include guard-ы писать не нужно.
+    Always use ``#pragma once`` instead of include guards.
 
 #. using.
-    using namespace не используется.
-    using что-то конкретное - можно. Лучше локально - внутри класса или функции.
+    Don't use ``using namespace``. ``using`` something specific is fine, try to put it as locally as possible.
 
-#. Не нужно использовать trailing return type для функций, если в этом нет необходимости.
+#. Do not use trailing return unless necessary.
     :strike:`auto f() -> void;`
 
-#. Не нужно объявлять и инициализировать переменные так:
+#. Do not delcare and init variables like this:
     :strike:`auto s = std::string{"Hello"};`
-    Надо так:
+    Do it like this instead:
     ``std::string s = "Hello";``
     ``std::string s{"Hello"};``
 
-#. Для виртуальных функций, пишите virtual в базовом классе, а в классах-наследниках, пишите override и не пишите virtual.
+#. For virtual functions write virtual in base class and don't forget to write override in descendant classes.
 
 
-Неиспользуемые возможности языка C++
-------------------------------------
+Unused C++ features
+-------------------
 
-#. Виртуальное наследование не используется.
+#. Virtual inheritance.
 
-#. Спецификаторы исключений из C++03 не используются.
+#. Exception specifiers from C++03.
 
-#. Function try block не используется, за исключением функции main в тестах.
-
-
-Платформа
----------
-
-#. Мы пишем некроссплатформенный код (под конкретную платформу).
-    Хотя, при прочих равных условиях, предпочитается более-менее кроссплатформенный или легко портируемый код.
-
-#. Язык - C++17. Возможно использование расширений GNU при необходимости.
-
-#. Компилятор - gcc. На данный момент (апрель 2017), код собирается версией 6.3. (Также код может быть собран clang 4)
-    Используется стандартная библиотека от gcc.
-
-#. ОС - Linux Ubuntu, не более старая, чем Precise.
-
-#. Код пишется под процессор с архитектурой x86_64.
-    Набор инструкций - минимальный поддерживаемый среди наших серверов. Сейчас это - SSE4.2.
-
-#. Используются флаги компиляции ``-Wall -Werror``.
-
-#. Используется статическая линковка со всеми библиотеками кроме тех, которые трудно подключить статически (см. вывод команды ldd).
-
-#. Код разрабатывается и отлаживается с релизными параметрами сборки.
+#. Function try block, except main function in tests.
 
 
-Инструментарий
---------------
+Platform
+--------
 
-#. Хорошая среда разработки - KDevelop.
+#. We write code for specific platform. But other things equal cross platform and portable code is preferred.
 
-#. Для отладки используется gdb, valgrind (memcheck), strace, -fsanitize=..., tcmalloc_minimal_debug.
+#. Language is C++17. GNU extensions can be used if necessary.
 
-#. Для профилирования используется Linux Perf, valgrind (callgrind), strace -cf.
+#. Compiler is gcc. As of April 2017 version 6.3 is used. It is also compilable with clang 4.
+    Standard library from gcc is used.
 
-#. Исходники в Git.
+#. OS - Linux Ubuntu, not older than Precise.
 
-#. Сборка с помощью CMake.
+#. Code is written for x86_64 CPU architecture.
+    CPU instruction set is SSE4.2 is currently required.
 
-#. Программы выкладываются с помощью deb пакетов.
+#. ``-Wall -Werror`` compilation flags are used.
 
-#. Коммиты в master не должны ломать сборку проекта.
-    А работоспособность собранных программ гарантируется только для отдельных ревизий.
+#. Static linking is used by default. See ldd output for list of exceptions from this rule.
 
-#. Коммитьте как можно чаще, в том числе и не рабочий код.
-    Для этого следует использовать бранчи.
-    Если ваш код в master-е ещё не собирается, перед push-ем - исключите его из сборки;
-    также вы будете должны его доработать или удалить в течение нескольких дней.
-
-#. Для нетривиальных изменений, используются бранчи. Следует загружать бранчи на сервер.
-
-#. Ненужный код удаляется из исходников.
+#. Code is developed and debugged with release settings.
 
 
-Библиотеки
-----------
-
-#. Используются стандартная библиотека C++14 (допустимо использовать experimental расширения) а также фреймворки boost, Poco.
-
-#. При необходимости, можно использовать любые известные библиотеки, доступные в ОС из пакетов.
-    Если есть хорошее готовое решение, то оно используется, даже если для этого придётся установить ещё одну библиотеку.
-    (Но будьте готовы к тому, что иногда вам придётся выкидывать плохие библиотеки из кода.)
-
-#. Если в пакетах нет нужной библиотеки, или её версия достаточно старая, или если она собрана не так, как нужно, то можно использовать библиотеку, устанавливаемую не из пакетов.
-
-#. Если библиотека достаточно маленькая и у неё нет своей системы сборки, то следует включить её файлы в проект, в директорию contrib.
-
-#. Предпочтение всегда отдаётся уже использующимся библиотекам.
-
-
-Общее
+Tools
 -----
 
-#. Пишите как можно меньше кода.
+#. Good IDE - KDevelop.
 
-#. Пробуйте самое простое решение.
+#. For debugging gdb, valgrind (memcheck), strace, -fsanitize=..., tcmalloc_minimal_debug are used.
 
-#. Не нужно писать код, если вы ещё не знаете, что будет делать ваша программа, и как будет работать её внутренний цикл.
+#. For profiling - Linux Perf, valgrind (callgrind), strace -cf.
 
-#. В простейших случаях, используйте using вместо классов/структур.
+#. Source code is in Git.
 
-#. Если есть возможность - не пишите конструкторы копирования, операторы присваивания, деструктор (кроме виртуального, если класс содержит хотя бы одну виртуальную функцию), move-конструкторы и move-присваивания. То есть, чтобы соответствущие функции, генерируемые компилятором, работали правильно. Можно использовать default.
+#. Compilation is managed by CMake.
 
-#. Приветствуется упрощение и уменьшение объёма кода.
+#. Releases are in deb packages.
+
+#. Commits to master should not break build.
+    Though only selected revisions are considered workable.
+
+#. Commit as often as possible, even if code is not quite ready yet.
+    Use branches for this.
+    If your code is not buildable yet, exclude it from build before pushing to master;
+    you'll have few days to fix or delete it from master after that.
+
+#. For non-trivial changes use branches and publish them on server.
+
+#. Unused code is removed from repository.
 
 
-Дополнительно
--------------
+Libraries
+---------
 
-#. Явное указание std:: для типов из stddef.h.
-    Рекомендуется не указывать. То есть, рекомендуется писать size_t вместо std::size_t - потому что это короче.
-    Но при желании, вы можете всё-таки приписать std:: - такой вариант тоже допустим.
+#. C++14 standard library is used (experimental extensions are fine), as well as boost and Poco frameworks.
 
-#. Явное указание std:: для функций из стандартной библиотеки C.
-    Не рекомендуется. То есть, пишите memcpy вместо std::memcpy.
-    Причина - существуют похожие нестандартные функции, например, memmem. Мы можем использовать и изредка используем эти функции. Эти функции отсутствуют в namespace std.
-    Если вы везде напишете std::memcpy вместо memcpy, то будет неудобно смотреться memmem без std::.
-    Тем не менее, указывать std:: тоже допустимо, если так больше нравится.
+#. If necessary you can use any well known library available in OS with packages.
+    If there's a good ready solution it is used even if it requires to install one more dependency.
+    (Buy be prepared to remove bad libraries from code.)
 
-#. Использование функций из C при наличии аналогов в стандартной библиотеке C++.
-    Допустимо, если это использование эффективнее.
-    Для примера, для копирования длинных кусков памяти, используйте memcpy вместо std::copy.
+#. It is ok to use library not from packages if it is not available or too old.
 
-#. Перенос длинных аргументов функций.
-    Допустимо использовать любой стиль переноса, похожий на приведённые ниже:
+#. If the library is small and does not have it's own complex build system, you should put it's sources in contrib folder.
+
+#. Already used libraries are preferred.
+
+
+General
+-------
+
+#. Write as short code as possible.
+
+#. Try the most simple solution.
+
+#. Do not write code if you do not know how it will work yet.
+
+#. In the most simple cases prefer using over classes and structs.
+
+#. Write copy constructors, assignment operators, destructor (except virtual), mpve-constructor and move assignment operators only if there's no other option. You can use ``default``.
+
+#. It is encouraged to simplify code.
+
+
+Additional
+----------
+
+#. Explicit std:: for types from stddef.h.
+    Not recommended, but allowed.
+
+#. Explicit std:: for functions from C standard library.
+    Not recommended. For example, write memcpy instead of std::memcpy.
+    Sometimes there are non standard functions with similar names, like memmem. It will look weird to have memcpy with std:: prefix near memmem without. Though specifying std:: is not prohibited.
+
+#. Usage of C functions when there are alternatives in C++ standard library.
+    Allowed if they are more effective. For example, use memcpy instead of std::copy for copying large chunks of memory.
+
+#. Multiline function arguments.
+    All of the following styles are allowed:
 
     .. code-block:: cpp
 
