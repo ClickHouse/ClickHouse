@@ -170,6 +170,8 @@ void ExpressionAnalyzer::init()
 
     select_query = typeid_cast<ASTSelectQuery *>(ast.get());
 
+    translateQualifiedNames();
+
     /// Depending on the user's profile, check for the execution rights
     /// distributed subqueries inside the IN or JOIN sections and process these subqueries.
     InJoinSubqueriesPreprocessor(context).process(select_query);
@@ -220,6 +222,119 @@ void ExpressionAnalyzer::init()
     /// will contain out-of-date information, which will lead to an error when the query is executed.
     analyzeAggregation();
 }
+
+
+void ExpressionAnalyzer::translateQualifiedNames()
+{
+    String database_name;
+    String table_name;
+    String alias;
+
+    if (!select_query || !select_query->tables || select_query->tables->children.empty())
+        return;
+
+    ASTTablesInSelectQueryElement & element = static_cast<ASTTablesInSelectQueryElement &>(*select_query->tables->children[0]);
+
+    if (!element.table_expression)        /// This is ARRAY JOIN without a table at the left side.
+        return;
+
+    ASTTableExpression & table_expression = static_cast<ASTTableExpression &>(*element.table_expression);
+
+    if (table_expression.database_and_table_name)
+    {
+        const ASTIdentifier & identifier = static_cast<const ASTIdentifier &>(*table_expression.database_and_table_name);
+
+        alias = identifier.tryGetAlias();
+
+        if (table_expression.database_and_table_name->children.empty())
+        {
+            database_name = context.getCurrentDatabase();
+            table_name = identifier.name;
+        }
+        else
+        {
+            if (table_expression.database_and_table_name->children.size() != 2)
+                throw Exception("Logical error: number of components in table expression not equal to two", ErrorCodes::LOGICAL_ERROR);
+
+            database_name = static_cast<const ASTIdentifier &>(*identifier.children[0]).name;
+            table_name = static_cast<const ASTIdentifier &>(*identifier.children[1]).name;
+        }
+    }
+    else if (table_expression.table_function)
+    {
+        alias = table_expression.table_function->tryGetAlias();
+    }
+    else if (table_expression.subquery)
+    {
+        alias = table_expression.subquery->tryGetAlias();
+    }
+    else
+        throw Exception("Logical error: no known elements in ASTTableExpression", ErrorCodes::LOGICAL_ERROR);
+
+    translateQualifiedNamesImpl(ast, database_name, table_name, alias);
+}
+
+
+void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const String & database_name, const String & table_name, const String & alias)
+{
+    if (ASTIdentifier * ident = typeid_cast<ASTIdentifier *>(ast.get()))
+    {
+        if (ident->kind == ASTIdentifier::Column)
+        {
+            /// It is compound identifier
+            if (!ast->children.empty())
+            {
+                size_t num_components = ast->children.size();
+                size_t num_qualifiers_to_strip = 0;
+
+                /// database.table.column
+                if (!database_name.empty()
+                        && num_components >= 3
+                        && static_cast<const ASTIdentifier &>(*ast->children[0]).name == database_name
+                        && static_cast<const ASTIdentifier &>(*ast->children[1]).name == table_name)
+                {
+                    num_qualifiers_to_strip = 2;
+                }
+                /// table.column or alias.column
+                else if (num_components >= 2
+                    && ((!table_name.empty() && static_cast<const ASTIdentifier &>(*ast->children[0]).name == table_name)
+                        || (!alias.empty() && static_cast<const ASTIdentifier &>(*ast->children[0]).name == alias)))
+                {
+                    num_qualifiers_to_strip = 1;
+                }
+
+                if (num_qualifiers_to_strip)
+                {
+                    /// plain column
+                    if (num_components - num_qualifiers_to_strip == 1)
+                    {
+                        String node_alias = ast->tryGetAlias();
+                        ast = ast->children.back();
+                        if (!node_alias.empty())
+                            ast->setAlias(node_alias);
+                    }
+                    else
+                    {
+                        ast->children.erase(ast->children.begin(), ast->children.begin() + num_qualifiers_to_strip);
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        for (auto & child : ast->children)
+        {
+            /// Do not go to FROM, JOIN, UNION.
+            if (!typeid_cast<const ASTTableExpression *>(child.get())
+                && child.get() != select_query->next_union_all.get())
+            {
+                translateQualifiedNamesImpl(child, database_name, table_name, alias);
+            }
+        }
+    }
+}
+
 
 void ExpressionAnalyzer::optimizeIfWithConstantCondition()
 {
