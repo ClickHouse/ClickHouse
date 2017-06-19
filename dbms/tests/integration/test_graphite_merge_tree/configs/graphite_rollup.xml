@@ -1,0 +1,25 @@
+<yandex>
+    <!-- retention scheme for GraphiteMergeTree engine-->
+    <graphite_rollup>
+        <path_column_name>metric</path_column_name>
+        <time_column_name>timestamp</time_column_name>
+        <value_column_name>value</value_column_name>
+        <version_column_name>updated</version_column_name>
+        <pattern>
+            <regexp>^one_min</regexp>
+            <function>avg</function>
+            <retention>
+                <age>0</age>
+                <precision>60</precision>
+            </retention>
+            <retention>
+                <age>7776000</age>
+                <precision>300</precision>
+            </retention>
+            <retention>
+                <age>31536000</age>
+                <precision>600</precision>
+            </retention>
+        </pattern>
+    </graphite_rollup>
+</yandex>

@@ -7,7 +7,7 @@ namespace DB
 {
 
 
-/** INSERT запрос
+/** INSERT query
   */
 class ASTInsertQuery : public IAST
 {
@@ -17,16 +17,14 @@ public:
     ASTPtr columns;
     String format;
     ASTPtr select;
-    /// Идентификатор запроса INSERT. Используется при репликации.
-    String insert_id;
-    /// Данные для вставки
+    /// Data to insert
     const char * data = nullptr;
     const char * end = nullptr;
 
     ASTInsertQuery() = default;
     ASTInsertQuery(const StringRange range_) : IAST(range_) {}
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return "InsertQuery_" + database + "_" + table; };
 
     ASTPtr clone() const override

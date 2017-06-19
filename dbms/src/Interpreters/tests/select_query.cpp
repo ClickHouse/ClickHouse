@@ -1,15 +1,17 @@
 #include <iostream>
 #include <iomanip>
 
+#include <common/DateLUT.h>
+
 #include <Poco/ConsoleChannel.h>
 
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/WriteBufferFromOStream.h>
 
 #include <Storages/StorageLog.h>
-#include <Storages/System/StorageSystemNumbers.h>
-#include <Storages/System/StorageSystemOne.h>
+#include <Storages/System/attachSystemTables.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/executeQuery.h>
 #include <Databases/IDatabase.h>
@@ -37,8 +39,7 @@ try
     DatabasePtr system = std::make_shared<DatabaseOrdinary>("system", "./metadata/system/");
     context.addDatabase("system", system);
     system->loadTables(context, nullptr, false);
-    system->attachTable("one",     StorageSystemOne::create("one"));
-    system->attachTable("numbers", StorageSystemNumbers::create("numbers"));
+    attachSystemTablesLocal(*context.getDatabase("system"));
     context.setCurrentDatabase("default");
 
     ReadBufferFromIStream in(std::cin);

@@ -13,15 +13,15 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/IFunction.h>
-#include <Functions/NumberTraits.h>
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/NumberTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 
 namespace DB
 {
 
-/** Функция выбора по условию: if(cond, then, else).
+/** Selection function by condition: if(cond, then, else).
   * cond - UInt8
-  * then, else - числовые типы, для которых есть общий тип, либо даты, даты-с-временем, либо строки, либо массивы таких типов.
+  * then, else - numeric types for which there is a general type, or dates, datetimes, or strings, or arrays of these types.
   */
 
 
@@ -610,9 +610,9 @@ public:
 };
 
 
-/** Реализация для массивов строк.
-  * NOTE: Код слишком сложный, потому что он работает в внутренностями массивов строк.
-  * NOTE: Массивы из FixedString не поддерживаются.
+/** Implementation for string arrays.
+  * NOTE: The code is too complex because it works with the internals of the arrays of strings.
+  * NOTE: Arrays of FixedString are not supported.
   */
 struct StringArrayIfImpl
 {
@@ -666,7 +666,7 @@ struct StringArrayIfImpl
         for (size_t j = 0; j < array_size; ++j)
         {
             const String & str = from_data[j].get<const String &>();
-            size_t string_size = str.size() + 1;    /// Включая 0 на конце.
+            size_t string_size = str.size() + 1;    /// Including 0 at the end.
 
             to_data.resize(to_string_prev_offset + string_size);
             memcpy(&to_data[to_string_prev_offset], str.data(), string_size);
@@ -1121,7 +1121,7 @@ private:
         {
             if (col_then_fixed && col_else_fixed)
             {
-                /// Результат - FixedString.
+                /// The result is FixedString.
 
                 if (col_then_fixed->getN() != col_else_fixed->getN())
                     throw Exception("FixedString columns as 'then' and 'else' arguments of function 'if' has different sizes", ErrorCodes::ILLEGAL_COLUMN);
@@ -1142,7 +1142,7 @@ private:
             }
             else
             {
-                /// Результат - String.
+                /// The result is String.
                 std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
                 block.safeGetByPosition(result).column = col_res;
 
@@ -1582,7 +1582,7 @@ public:
 
     bool hasSpecialSupportForNulls() const override { return true; }
 
-    /// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         bool cond_is_null = arguments[0]->isNull();
@@ -1640,7 +1640,7 @@ public:
         }
         else if (type_arr1 && type_arr2)
         {
-            /// NOTE Сообщения об ошибках будут относится к типам элементов массивов, что немного некорректно.
+            /// NOTE Error messages will refer to the types of array elements, which is slightly incorrect.
             return std::make_shared<DataTypeArray>(getReturnTypeImpl({arguments[0], type_arr1->getNestedType(), type_arr2->getNestedType()}));
         }
         else if (type_tuple1 && type_tuple2)

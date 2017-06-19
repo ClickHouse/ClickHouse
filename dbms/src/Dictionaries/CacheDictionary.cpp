@@ -1,6 +1,9 @@
 #include <functional>
+#include <sstream>
+#include <memory>
 #include <Columns/ColumnsNumber.h>
-#include <Dictionaries/CacheDictionary.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnString.h>
 #include <Common/BitHelpers.h>
 #include <Common/randomSeed.h>
 #include <Common/HashTable/Hash.h>
@@ -8,9 +11,12 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <ext/size.hpp>
-#include <ext/range.hpp>
-#include <ext/map.hpp>
+#include <DataTypes/DataTypesNumber.h>
+#include <Dictionaries/CacheDictionary.h>
+#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <ext/size.h>
+#include <ext/range.h>
+#include <ext/map.h>
 
 
 namespace ProfileEvents
@@ -402,10 +408,14 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         [] (auto & pair) { return pair.first; });
 
     /// request new values
-    update(required_ids, [&] (const auto id, const auto) {
+    update(required_ids,
+    [&] (const auto id, const auto)
+    {
         for (const auto row : outdated_ids[id])
             out[row] = true;
-    }, [&] (const auto id, const auto) {
+    },
+    [&] (const auto id, const auto)
+    {
         for (const auto row : outdated_ids[id])
             out[row] = false;
     });
@@ -414,11 +424,11 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 
 void CacheDictionary::createAttributes()
 {
-    const auto size = dict_struct.attributes.size();
-    attributes.reserve(size);
+    const auto attributes_size = dict_struct.attributes.size();
+    attributes.reserve(attributes_size);
 
     bytes_allocated += size * sizeof(CellMetadata);
-    bytes_allocated += size * sizeof(attributes.front());
+    bytes_allocated += attributes_size * sizeof(attributes.front());
 
     for (const auto & attribute : dict_struct.attributes)
     {
@@ -594,18 +604,19 @@ void CacheDictionary::getItemsNumberImpl(
         [] (auto & pair) { return pair.first; });
 
     /// request new values
-    update(required_ids, [&] (const auto id, const auto cell_idx)
-        {
-            const auto attribute_value = attribute_array[cell_idx];
+    update(required_ids,
+    [&] (const auto id, const auto cell_idx)
+    {
+        const auto attribute_value = attribute_array[cell_idx];
 
-            for (const auto row : outdated_ids[id])
-                out[row] = attribute_value;
-        },
-        [&] (const auto id, const auto cell_idx)
-        {
-            for (const auto row : outdated_ids[id])
-                out[row] = get_default(row);
-        });
+        for (const auto row : outdated_ids[id])
+            out[row] = attribute_value;
+    },
+    [&] (const auto id, const auto cell_idx)
+    {
+        for (const auto row : outdated_ids[id])
+            out[row] = get_default(row);
+    });
 }
 
 template <typename DefaultGetter>
@@ -715,12 +726,16 @@ void CacheDictionary::getItemsString(
         std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::begin(required_ids),
             [] (auto & pair) { return pair.first; });
 
-        update(required_ids, [&] (const auto id, const auto cell_idx) {
+        update(required_ids,
+        [&] (const auto id, const auto cell_idx)
+        {
             const auto attribute_value = attribute_array[cell_idx];
 
             map[id] = String{attribute_value};
             total_length += (attribute_value.size + 1) * outdated_ids[id].size();
-        }, [&] (const auto id, const auto cell_idx) {
+        },
+        [&] (const auto id, const auto cell_idx)
+        {
             for (const auto row : outdated_ids[id])
                 total_length += get_default(row).size + 1;
         });
@@ -740,7 +755,8 @@ void CacheDictionary::getItemsString(
 
 template <typename PresentIdHandler, typename AbsentIdHandler>
 void CacheDictionary::update(
-    const std::vector<Key> & requested_ids, PresentIdHandler && on_cell_updated,
+    const std::vector<Key> & requested_ids,
+    PresentIdHandler && on_cell_updated,
     AbsentIdHandler && on_id_not_found) const
 {
     std::unordered_map<Key, UInt8> remaining_ids{requested_ids.size()};
@@ -773,7 +789,8 @@ void CacheDictionary::update(
             const auto & ids = id_column->getData();
 
             /// cache column pointers
-            const auto column_ptrs = ext::map<std::vector>(ext::range(0, attributes.size()), [&block] (const auto & i) {
+            const auto column_ptrs = ext::map<std::vector>(ext::range(0, attributes.size()), [&block] (size_t i)
+            {
                 return block.safeGetByPosition(i + 1).column.get();
             });
 
@@ -945,5 +962,34 @@ CacheDictionary::Attribute & CacheDictionary::getAttribute(const std::string & a
 
     return attributes[it->second];
 }
+
+bool CacheDictionary::isEmptyCell(const UInt64 idx) const
+{
+    return (idx != zero_cell_idx && cells[idx].id == 0) || (cells[idx].data
+        == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t()));
+}
+
+PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
+{
+    const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+
+    PaddedPODArray<Key> array;
+    for (size_t idx = 0; idx < cells.size(); ++idx)
+    {
+        auto & cell = cells[idx];
+        if (!isEmptyCell(idx) && !cells[idx].isDefault())
+        {
+            array.push_back(cell.id);
+        }
+    }
+    return array;
+}
+
+BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+{
+    using BlockInputStreamType = DictionaryBlockInputStream<CacheDictionary, Key>;
+    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getCachedIds(), column_names);
+}
+
 
 }

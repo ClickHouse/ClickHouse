@@ -1,7 +1,8 @@
 #pragma once
 
+#include <Common/hex.h>
+#include <Common/formatIPv6.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -17,161 +18,40 @@
 #include <Functions/IFunction.h>
 
 #include <arpa/inet.h>
-#include <ext/range.hpp>
+
+#include <ext/range.h>
 #include <array>
 
 
 namespace DB
 {
 
-/** Функции кодирования:
+namespace ErrorCodes
+{
+    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+}
+
+
+/** Encoding functions:
   *
-  * IPv4NumToString(num) - См. ниже.
-  * IPv4StringToNum(string) - Преобразуют, например, '192.168.0.1' в 3232235521 и наоборот.
+  * IPv4NumToString (num) - See below.
+  * IPv4StringToNum(string) - Convert, for example, '192.168.0.1' to 3232235521 and vice versa.
   *
-  * hex(x) -    Возвращает hex; буквы заглавные; префиксов 0x или суффиксов h нет.
-  *             Для чисел возвращает строку переменной длины - hex в "человеческом" (big endian) формате, с вырезанием старших нулей, но только по целым байтам. Для дат и дат-с-временем - как для чисел.
-  *             Например, hex(257) = '0101'.
-  * unhex(string) -    Возвращает строку, hex от которой равен string с точностью до регистра и отбрасывания одного ведущего нуля.
-  *                 Если такой строки не существует, оставляет за собой право вернуть любой мусор.
+  * hex(x) - Returns hex; capital letters; there are no prefixes 0x or suffixes h.
+  *          For numbers, returns a variable-length string - hex in the "human" (big endian) format, with the leading zeros being cut,
+  *          but only by whole bytes. For dates and datetimes - the same as for numbers.
+  *          For example, hex(257) = '0101'.
+  * unhex(string) - Returns a string, hex of which is equal to `string` with regard of case and discarding one leading zero.
+  *                 If such a string does not exist, could return arbitary implementation specific value.
   *
-  * bitmaskToArray(x) - Возвращает массив степеней двойки в двоичной записи x. Например, bitmaskToArray(50) = [2, 16, 32].
+  * bitmaskToArray(x) - Returns an array of powers of two in the binary form of x. For example, bitmaskToArray(50) = [2, 16, 32].
   */
 
 
-/// Включая нулевой символ в конце.
-#define MAX_UINT_HEX_LENGTH 20
-
-const auto ipv4_bytes_length = 4;
-const auto ipv6_bytes_length = 16;
-const auto uuid_bytes_length = 16;
-const auto uuid_text_length = 36;
-
-class IPv6Format
-{
-private:
-    /// integer logarithm, return ceil(log(value, base)) (the smallest integer greater or equal  than log(value, base)
-    static constexpr uint32_t int_log(const uint32_t value, const uint32_t base, const bool carry = false)
-    {
-        return value >= base ? 1 + int_log(value / base, base, value % base || carry) : value % base > 1 || carry;
-    }
-
-    /// mapping of digits up to base 16
-    static constexpr auto && digits = "0123456789abcdef";
-
-    /// print integer in desired base, faster than sprintf
-    template <uint32_t base, typename T, uint32_t buffer_size = sizeof(T) * int_log(256, base, false)>
-    static void print_integer(char *& out, T value)
-    {
-        if (value == 0)
-            *out++ = '0';
-        else
-        {
-            char buf[buffer_size];
-            auto ptr = buf;
-
-            while (value > 0)
-            {
-                *ptr++ = digits[value % base];
-                value /= base;
-            }
-
-            while (ptr != buf)
-                *out++ = *--ptr;
-        }
-    }
-
-    /// print IPv4 address as %u.%u.%u.%u
-    static void ipv4_format(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_count)
-    {
-        const auto limit = ipv4_bytes_length - zeroed_tail_bytes_count;
-
-        for (const auto i : ext::range(0, ipv4_bytes_length))
-        {
-            UInt8 byte = (i < limit) ? src[i] : 0;
-            print_integer<10, UInt8>(dst, byte);
-
-            if (i != ipv4_bytes_length - 1)
-                *dst++ = '.';
-        }
-    }
-
-public:
-    /** rewritten inet_ntop6 from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
-     *    performs significantly faster than the reference implementation due to the absence of sprintf calls,
-     *    bounds checking, unnecessary string copying and length calculation
-     */
-    static const void apply(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_count = 0)
-    {
-        struct { int base, len; } best{-1}, cur{-1};
-        std::array<uint16_t, ipv6_bytes_length / sizeof(uint16_t)> words{};
-
-        /** Preprocess:
-         *    Copy the input (bytewise) array into a wordwise array.
-         *    Find the longest run of 0x00's in src[] for :: shorthanding. */
-        for (const auto i : ext::range(0, ipv6_bytes_length - zeroed_tail_bytes_count))
-            words[i / 2] |= src[i] << ((1 - (i % 2)) << 3);
-
-        for (const auto i : ext::range(0, words.size()))
-        {
-            if (words[i] == 0) {
-                if (cur.base == -1)
-                    cur.base = i, cur.len = 1;
-                else
-                    cur.len++;
-            }
-            else
-            {
-                if (cur.base != -1)
-                {
-                    if (best.base == -1 || cur.len > best.len)
-                        best = cur;
-                    cur.base = -1;
-                }
-            }
-        }
-
-        if (cur.base != -1)
-        {
-            if (best.base == -1 || cur.len > best.len)
-                best = cur;
-        }
-
-        if (best.base != -1 && best.len < 2)
-            best.base = -1;
-
-        /// Format the result.
-        for (const int i : ext::range(0, words.size()))
-        {
-            /// Are we inside the best run of 0x00's?
-            if (best.base != -1 && i >= best.base && i < (best.base + best.len))
-            {
-                if (i == best.base)
-                    *dst++ = ':';
-                continue;
-            }
-
-            /// Are we following an initial run of 0x00s or any real hex?
-            if (i != 0)
-                *dst++ = ':';
-
-            /// Is this address an encapsulated IPv4?
-            if (i == 6 && best.base == 0 && (best.len == 6 || (best.len == 5 && words[5] == 0xffffu)))
-            {
-                ipv4_format(src + 12, dst, std::min(zeroed_tail_bytes_count, static_cast<UInt8>(ipv4_bytes_length)));
-                break;
-            }
-
-            print_integer<16>(dst, words[i]);
-        }
-
-        /// Was it a trailing run of 0x00's?
-        if (best.base != -1 && (best.base + best.len) == words.size())
-            *dst++ = ':';
-
-        *dst++ = '\0';
-    }
-};
+constexpr auto ipv4_bytes_length = 4;
+constexpr auto ipv6_bytes_length = 16;
+constexpr auto uuid_bytes_length = 16;
+constexpr auto uuid_text_length = 36;
 
 
 class FunctionIPv6NumToString : public IFunction
@@ -219,7 +99,7 @@ public:
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
-            vec_res.resize(size * INET6_ADDRSTRLEN);
+            vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
 
             auto begin = reinterpret_cast<char *>(&vec_res[0]);
@@ -227,7 +107,7 @@ public:
 
             for (size_t offset = 0, i = 0; offset < vec_in.size(); offset += ipv6_bytes_length, ++i)
             {
-                IPv6Format::apply(&vec_in[offset], pos);
+                formatIPv6(&vec_in[offset], pos);
                 offsets_res[i] = pos - begin;
             }
 
@@ -245,9 +125,9 @@ public:
 
             const auto & data_in = col_in->getData();
 
-            char buf[INET6_ADDRSTRLEN];
+            char buf[IPV6_MAX_TEXT_LENGTH + 1];
             char * dst = buf;
-            IPv6Format::apply(reinterpret_cast<const unsigned char *>(data_in.data()), dst);
+            formatIPv6(reinterpret_cast<const unsigned char *>(data_in.data()), dst);
 
             block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_in->size(), buf);
         }
@@ -342,7 +222,7 @@ public:
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
-            vec_res.resize(size * INET6_ADDRSTRLEN);
+            vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
 
             auto begin = reinterpret_cast<char *>(&vec_res[0]);
@@ -394,7 +274,7 @@ public:
 
             const auto & data_in = col_in->getData();
 
-            char buf[INET6_ADDRSTRLEN];
+            char buf[IPV6_MAX_TEXT_LENGTH + 1];
             char * dst = buf;
 
             const auto address = reinterpret_cast<const unsigned char *>(data_in.data());
@@ -418,7 +298,7 @@ private:
 
     void cutAddress(const unsigned char * address, char *& dst, UInt8 zeroed_tail_bytes_count)
     {
-        IPv6Format::apply(address, dst, zeroed_tail_bytes_count);
+        formatIPv6(address, dst, zeroed_tail_bytes_count);
     }
 };
 
@@ -664,16 +544,16 @@ public:
     {
         char * begin = out;
 
-        /// Запишем все задом наперед.
+        /// Write everything backwards.
         for (size_t offset = 0; offset <= 24; offset += 8)
         {
             if (offset > 0)
                 *(out++) = '.';
 
-            /// Достаем очередной байт.
+            /// Get the next byte.
             UInt32 value = (ip >> offset) & static_cast<UInt32>(255);
 
-            /// Быстрее, чем sprintf.
+            /// Faster than sprintf.
             if (value == 0)
             {
                 *(out++) = '0';
@@ -688,7 +568,7 @@ public:
             }
         }
 
-        /// И развернем.
+        /// And reverse.
         std::reverse(begin, out);
 
         *(out++) = '\0';
@@ -708,7 +588,7 @@ public:
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(vec_in.size() * INET_ADDRSTRLEN); /// самое длинное значение: 255.255.255.255\0
+            vec_res.resize(vec_in.size() * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
             offsets_res.resize(vec_in.size());
             char * begin = reinterpret_cast<char *>(&vec_res[0]);
             char * pos = begin;
@@ -847,16 +727,16 @@ public:
         for (auto i = 0; i < 3; ++i)
             *(out++) = 'x';
 
-        /// Запишем все задом наперед.
+        /// Write everything backwards.
         for (size_t offset = 8; offset <= 24; offset += 8)
         {
             if (offset > 0)
                 *(out++) = '.';
 
-            /// Достаем очередной байт.
+            /// Get the next byte.
             UInt32 value = (ip >> offset) & static_cast<UInt32>(255);
 
-            /// Быстрее, чем sprintf.
+            /// Faster than sprintf.
             if (value == 0)
             {
                 *(out++) = '0';
@@ -871,7 +751,7 @@ public:
             }
         }
 
-        /// И развернем.
+        /// And reverse.
         std::reverse(begin, out);
 
         *(out++) = '\0';
@@ -891,7 +771,7 @@ public:
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(vec_in.size() * INET_ADDRSTRLEN); /// самое длинное значение: 255.255.255.255\0
+            vec_res.resize(vec_in.size() * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
             offsets_res.resize(vec_in.size());
             char * begin = reinterpret_cast<char *>(&vec_res[0]);
             char * pos = begin;
@@ -981,6 +861,305 @@ private:
     {
         *reinterpret_cast<UInt64 *>(&buf[0]) = 0;
         *reinterpret_cast<UInt64 *>(&buf[8]) = 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32);
+    }
+};
+
+
+class FunctionMACNumToString : public IFunction
+{
+public:
+    static constexpr auto name = "MACNumToString";
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMACNumToString>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+    bool isInjective(const Block &) override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!typeid_cast<const DataTypeUInt64 *>(&*arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt64",
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeString>();
+    }
+
+    static void formatMAC(UInt64 mac, char *& out)
+    {
+        char * begin = out;
+
+        /// Write everything backwards.
+        for (size_t offset = 0; offset <= 40; offset += 8)
+        {
+            if (offset > 0)
+                *(out++) = ':';
+
+            /// Get the next byte.
+            UInt64 value = (mac >> offset) & static_cast<UInt64>(255);
+
+            /// Faster than sprintf.
+            if (value < 16)
+            {
+                *(out++) = '0';
+            }
+            if (value == 0)
+            {
+                *(out++) = '0';
+            }
+            else
+            {
+                while (value > 0)
+                {
+                    *(out++) = hexUppercase(value % 16);
+                    value /= 16;
+                }
+            }
+        }
+
+        /// And reverse.
+        std::reverse(begin, out);
+
+        *(out++) = '\0';
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        const ColumnPtr & column = block.safeGetByPosition(arguments[0]).column;
+
+        if (const ColumnUInt64 * col = typeid_cast<const ColumnUInt64 *>(column.get()))
+        {
+            const ColumnUInt64::Container_t & vec_in = col->getData();
+
+            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            block.safeGetByPosition(result).column = col_res;
+
+            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
+
+            vec_res.resize(vec_in.size() * 18); /// the longest value is: xx:xx:xx:xx:xx:xx\0
+            offsets_res.resize(vec_in.size());
+            char * begin = reinterpret_cast<char *>(&vec_res[0]);
+            char * pos = begin;
+
+            for (size_t i = 0; i < vec_in.size(); ++i)
+            {
+                formatMAC(vec_in[i], pos);
+                offsets_res[i] = pos - begin;
+            }
+
+            vec_res.resize(pos - begin);
+        }
+        else if (const ColumnConst<UInt64> * col = typeid_cast<const ColumnConst<UInt64> *>(column.get()))
+        {
+            char buf[18];
+            char * pos = buf;
+            formatMAC(col->getData(), pos);
+
+            auto col_res = std::make_shared<ColumnConstString>(col->size(), buf);
+            block.safeGetByPosition(result).column = col_res;
+        }
+        else
+            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            + " of argument of function " + getName(),
+            ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+
+class FunctionMACStringToNum : public IFunction
+{
+public:
+    static constexpr auto name = "MACStringToNum";
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMACStringToNum>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeUInt64>();
+    }
+
+    static UInt64 parseMAC(const char * pos)
+    {
+
+        /// get integer value for a hexademical char digit, or -1
+        const auto number_by_char = [] (const char ch)
+        {
+            if ('A' <= ch && ch <= 'F')
+                return 10 + ch - 'A';
+
+            if ('a' <= ch && ch <= 'f')
+                return 10 + ch - 'a';
+
+            if ('0' <= ch && ch <= '9')
+                return ch - '0';
+
+            return -1;
+        };
+
+        UInt64 res = 0;
+        for (int offset = 40; offset >= 0; offset -= 8)
+        {
+            UInt64 value = 0;
+            size_t len = 0;
+            int val = 0;
+            while ((val = number_by_char(*pos)) >= 0 && len <= 2)
+            {
+                value = value * 16 + val;
+                ++len;
+                ++pos;
+            }
+            if (len == 0 || value > 255 || (offset > 0 && *pos != ':'))
+                return 0;
+            res |= value << offset;
+            ++pos;
+        }
+        if (*(pos - 1) != '\0')
+            return 0;
+        return res;
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        const ColumnPtr & column = block.safeGetByPosition(arguments[0]).column;
+
+        if (const ColumnString * col = typeid_cast<const ColumnString *>(column.get()))
+        {
+            auto col_res = std::make_shared<ColumnUInt64>();
+            block.safeGetByPosition(result).column = col_res;
+
+            ColumnUInt64::Container_t & vec_res = col_res->getData();
+            vec_res.resize(col->size());
+
+            const ColumnString::Chars_t & vec_src = col->getChars();
+            const ColumnString::Offsets_t & offsets_src = col->getOffsets();
+            size_t prev_offset = 0;
+
+            for (size_t i = 0; i < vec_res.size(); ++i)
+            {
+                vec_res[i] = parseMAC(reinterpret_cast<const char *>(&vec_src[prev_offset]));
+                prev_offset = offsets_src[i];
+            }
+        }
+        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
+        {
+            auto col_res = std::make_shared<ColumnConst<UInt64>>(col->size(), parseMAC(col->getData().c_str()));
+            block.safeGetByPosition(result).column = col_res;
+        }
+        else
+            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+class FunctionMACStringToOUI : public IFunction
+{
+public:
+    static constexpr auto name = "MACStringToOUI";
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMACStringToOUI>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeUInt64>();
+    }
+
+    static UInt64 parseMAC(const char * pos)
+    {
+
+        /// get integer value for a hexademical char digit, or -1
+        const auto number_by_char = [] (const char ch)
+        {
+            if ('A' <= ch && ch <= 'F')
+                return 10 + ch - 'A';
+
+            if ('a' <= ch && ch <= 'f')
+                return 10 + ch - 'a';
+
+            if ('0' <= ch && ch <= '9')
+                return ch - '0';
+
+            return -1;
+        };
+
+        UInt64 res = 0;
+        for (int offset = 40; offset >= 0; offset -= 8)
+        {
+            UInt64 value = 0;
+            size_t len = 0;
+            int val = 0;
+            while ((val = number_by_char(*pos)) >= 0 && len <= 2)
+            {
+                value = value * 16 + val;
+                ++len;
+                ++pos;
+            }
+            if (len == 0 || value > 255 || (offset > 0 && *pos != ':'))
+                return 0;
+            res |= value << offset;
+            ++pos;
+        }
+        if (*(pos - 1) != '\0')
+            return 0;
+        res = res >> 24;
+        return res;
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        const ColumnPtr & column = block.safeGetByPosition(arguments[0]).column;
+
+        if (const ColumnString * col = typeid_cast<const ColumnString *>(column.get()))
+        {
+            auto col_res = std::make_shared<ColumnUInt64>();
+            block.safeGetByPosition(result).column = col_res;
+
+            ColumnUInt64::Container_t & vec_res = col_res->getData();
+            vec_res.resize(col->size());
+
+            const ColumnString::Chars_t & vec_src = col->getChars();
+            const ColumnString::Offsets_t & offsets_src = col->getOffsets();
+            size_t prev_offset = 0;
+
+            for (size_t i = 0; i < vec_res.size(); ++i)
+            {
+                vec_res[i] = parseMAC(reinterpret_cast<const char *>(&vec_src[prev_offset]));
+                prev_offset = offsets_src[i];
+            }
+        }
+        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
+        {
+            auto col_res = std::make_shared<ColumnConst<UInt64>>(col->size(), parseMAC(col->getData().c_str()));
+            block.safeGetByPosition(result).column = col_res;
+        }
+        else
+            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -1293,20 +1472,19 @@ public:
     template <typename T>
     void executeOneUInt(T x, char *& out)
     {
-        const char digit[17] = "0123456789ABCDEF";
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
         {
             UInt8 byte = static_cast<UInt8>((x >> offset) & 255);
 
-            /// Ведущие нули.
+            /// Leading zeros.
             if (byte == 0 && !was_nonzero && offset)
                 continue;
 
             was_nonzero = true;
 
-            *(out++) = digit[byte >> 4];
-            *(out++) = digit[byte & 15];
+            *(out++) = hexUppercase(byte / 16);
+            *(out++) = hexUppercase(byte % 16);
         }
         *(out++) = '\0';
     }
@@ -1316,6 +1494,8 @@ public:
     {
         const ColumnVector<T> * col_vec = typeid_cast<const ColumnVector<T> *>(col);
         const ColumnConst<T> * col_const = typeid_cast<const ColumnConst<T> *>(col);
+
+        static constexpr size_t MAX_UINT_HEX_LENGTH = sizeof(T) * 2 + 1;    /// Including trailing zero byte.
 
         if (col_vec)
         {
@@ -1328,12 +1508,12 @@ public:
 
             size_t size = in_vec.size();
             out_offsets.resize(size);
-            out_vec.resize(size * 3 + MAX_UINT_HEX_LENGTH);
+            out_vec.resize(size * 3 + MAX_UINT_HEX_LENGTH); /// 3 is length of one byte in hex plus zero byte.
 
             size_t pos = 0;
             for (size_t i = 0; i < size; ++i)
             {
-                /// Ручной экспоненциальный рост, чтобы не полагаться на линейное амортизированное время работы resize (его никто не гарантирует).
+                /// Manual exponential growth, so as not to rely on the linear amortized work time of `resize` (no one guarantees it).
                 if (pos + MAX_UINT_HEX_LENGTH > out_vec.size())
                     out_vec.resize(out_vec.size() * 2 + MAX_UINT_HEX_LENGTH);
 
@@ -1367,12 +1547,11 @@ public:
 
     void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
     {
-        const char digit[17] = "0123456789ABCDEF";
         while (pos < end)
         {
             UInt8 byte = *(pos++);
-            *(out++) = digit[byte >> 4];
-            *(out++) = digit[byte & 15];
+            *(out++) = hexUppercase(byte / 16);
+            *(out++) = hexUppercase(byte % 16);
         }
         *(out++) = '\0';
     }
@@ -1416,13 +1595,13 @@ public:
 
             return true;
         }
-        else if(col_const_in)
+        else if (col_const_in)
         {
             const std::string & src = col_const_in->getData();
             std::string res(src.size() * 2, '\0');
             char * pos = &res[0];
             const UInt8 * src_ptr = reinterpret_cast<const UInt8 *>(src.c_str());
-            /// Запишем ноль в res[res.size()]. Начиная с C++11, это корректно.
+            /// Let's write zero into res[res.size()]. Starting with C++ 11, this is correct.
             executeOneString(src_ptr, src_ptr + src.size(), pos);
 
             col_res = std::make_shared<ColumnConstString>(col_const_in->size(), res);
@@ -1526,28 +1705,26 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    UInt8 undigitUnsafe(char c)
-    {
-        if (c <= '9')
-            return c - '0';
-        if (c <= 'Z')
-            return c - ('A' - 10);
-        return c - ('a' - 10);
-    }
-
     void unhexOne(const char * pos, const char * end, char *& out)
     {
         if ((end - pos) & 1)
         {
-            *(out++) = undigitUnsafe(*(pos++));
+            *out = unhex(*pos);
+            ++out;
+            ++pos;
         }
         while (pos < end)
         {
-            UInt8 major = undigitUnsafe(*(pos++));
-            UInt8 minor = undigitUnsafe(*(pos++));
-            *(out++) = (major << 4) | minor;
+            UInt8 major = unhex(*pos);
+            ++pos;
+            UInt8 minor = unhex(*pos);
+            ++pos;
+
+            *out = (major << 4) | minor;
+            ++out;
         }
-        *(out++) = '\0';
+        *out = '\0';
+        ++out;
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override

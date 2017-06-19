@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** Запрос USE db
+/** Query USE db
   */
 class ParserUseQuery : public IParserBase
 {

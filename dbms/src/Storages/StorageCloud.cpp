@@ -28,17 +28,4 @@ StorageCloud::StorageCloud(
     DatabaseCloud & db = static_cast<DatabaseCloud &>(*owned_db);
 }
 
-
-StoragePtr StorageCloud::create(
-    DatabasePtr & database_ptr_,
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_)
-{
-    return make_shared(database_ptr_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_);
-}
-
-
 }

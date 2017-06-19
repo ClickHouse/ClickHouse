@@ -12,7 +12,7 @@ namespace DB
 
 bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString open("(");
     ParserString close(")");
     ParserIdentifier name_p;
@@ -115,8 +115,8 @@ bool ParserColumnDeclarationList::parseImpl(Pos & pos, Pos end, ASTPtr & node, P
 
 bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_engine("ENGINE", true, true);
+    ParserWhitespaceOrComments ws;
+    ParserKeyword s_engine("ENGINE");
     ParserString s_eq("=");
     ParserIdentifierWithOptionalParameters storage_p;
 
@@ -145,23 +145,21 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_create("CREATE", true, true);
-    ParserString s_temporary("TEMPORARY", true, true);
-    ParserString s_attach("ATTACH", true, true);
-    ParserString s_table("TABLE", true, true);
-    ParserString s_database("DATABASE", true, true);
+    ParserWhitespaceOrComments ws;
+    ParserKeyword s_create("CREATE");
+    ParserKeyword s_temporary("TEMPORARY");
+    ParserKeyword s_attach("ATTACH");
+    ParserKeyword s_table("TABLE");
+    ParserKeyword s_database("DATABASE");
+    ParserKeyword s_if_not_exists("IF NOT EXISTS");
+    ParserKeyword s_as("AS");
+    ParserKeyword s_select("SELECT");
+    ParserKeyword s_view("VIEW");
+    ParserKeyword s_materialized("MATERIALIZED");
+    ParserKeyword s_populate("POPULATE");
     ParserString s_dot(".");
     ParserString s_lparen("(");
     ParserString s_rparen(")");
-    ParserString s_if("IF", true, true);
-    ParserString s_not("NOT", true, true);
-    ParserString s_exists("EXISTS", true, true);
-    ParserString s_as("AS", true, true);
-    ParserString s_select("SELECT", true, true);
-    ParserString s_view("VIEW", true, true);
-    ParserString s_materialized("MATERIALIZED", true, true);
-    ParserString s_populate("POPULATE", true, true);
     ParserEngine engine_p;
     ParserIdentifier name_p;
     ParserColumnDeclarationList columns_p;
@@ -174,6 +172,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;
+    String cluster_str;
     bool attach = false;
     bool if_not_exists = false;
     bool is_view = false;
@@ -203,16 +202,21 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     {
         ws.ignore(pos, end);
 
-        if (s_if.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_not.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_exists.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end))
+        if (s_if_not_exists.ignore(pos, end, max_parsed_pos, expected))
             if_not_exists = true;
+
+        ws.ignore(pos, end);
 
         if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
             return false;
+
+        ws.ignore(pos, end);
+
+        if (ParserKeyword{"ON"}.ignore(pos, end, max_parsed_pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+                return false;
+        }
 
         ws.ignore(pos, end);
 
@@ -222,13 +226,10 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     {
         ws.ignore(pos, end);
 
-        if (s_if.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_not.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_exists.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end))
+        if (s_if_not_exists.ignore(pos, end, max_parsed_pos, expected))
             if_not_exists = true;
+
+        ws.ignore(pos, end);
 
         if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
             return false;
@@ -244,7 +245,15 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             ws.ignore(pos, end);
         }
 
-        /// Columns list
+        if (ParserKeyword{"ON"}.ignore(pos, end, max_parsed_pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+                return false;
+        }
+
+        ws.ignore(pos, end);
+
+        /// List of columns.
         if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
         {
             ws.ignore(pos, end);
@@ -330,12 +339,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
         if (!s_view.ignore(pos, end, max_parsed_pos, expected) || !ws.ignore(pos, end, max_parsed_pos, expected))
             return false;
 
-        if (s_if.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_not.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && s_exists.ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end))
+        if (s_if_not_exists.ignore(pos, end, max_parsed_pos, expected))
             if_not_exists = true;
 
         if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
@@ -403,6 +407,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
         query->database = typeid_cast<ASTIdentifier &>(*database).name;
     if (table)
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
+    query->cluster = cluster_str;
     if (inner_storage)
         query->inner_storage = inner_storage;
 

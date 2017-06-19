@@ -3,7 +3,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 
-#include <ext/range.hpp>
+#include <common/logger_useful.h>
+#include <ext/range.h>
 #include <vector>
 
 
@@ -24,7 +25,8 @@ ODBCBlockInputStream::ODBCBlockInputStream(
     statement{(this->session << query_str, Poco::Data::Keywords::now)},
     result{statement},
     iterator{result.begin()},
-    max_block_size{max_block_size}
+    max_block_size{max_block_size},
+    log(&Logger::get("ODBCBlockInputStream"))
 {
     if (sample_block.columns() != result.columnCount())
         throw Exception{
@@ -78,7 +80,7 @@ Block ODBCBlockInputStream::readImpl()
     /// cache pointers returned by the calls to getByPosition
     std::vector<IColumn *> columns(block.columns());
     for (const auto i : ext::range(0, columns.size()))
-        columns[i] = block.safeGetByPosition(i).column.get();
+        columns[i] = block.getByPosition(i).column.get();
 
     size_t num_rows = 0;
     while (iterator != result.end())
@@ -95,11 +97,12 @@ Block ODBCBlockInputStream::readImpl()
                 insertDefaultValue(columns[idx], *description.sample_columns[idx]);
         }
 
+        ++iterator;
+
         ++num_rows;
         if (num_rows == max_block_size)
             break;
 
-        ++iterator;
     }
 
     return block;

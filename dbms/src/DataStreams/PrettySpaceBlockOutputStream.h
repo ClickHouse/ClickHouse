@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** Выводит результат, выравнивая пробелами.
+/** Prints the result, aligned with spaces.
   */
 class PrettySpaceBlockOutputStream : public PrettyBlockOutputStream
 {

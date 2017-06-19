@@ -10,7 +10,7 @@ class Block;
 class ReadBuffer;
 
 
-/** Поток для ввода данных в бинарном построчном формате.
+/** A stream for inputting data in a binary line-by-line format.
   */
 class BinaryRowInputStream : public IRowInputStream
 {

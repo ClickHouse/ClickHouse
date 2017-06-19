@@ -2,7 +2,7 @@
 # -*- makefile -*-
 
 # Uncomment this to turn on verbose mode.
-export DH_VERBOSE=1
+#export DH_VERBOSE=1
 
 # -pie only for static mode
 export DEB_BUILD_MAINT_OPTIONS=hardening=+all,-pie
@@ -21,6 +21,7 @@ DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
 DEB_CC ?= gcc-6
 DEB_CXX ?= g++-6
+DEB_CLANG ?= $(shell which clang)
 
 DEB_BUILD_GNU_TYPE := $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
 DEB_HOST_GNU_TYPE  := $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
@@ -33,6 +34,9 @@ CXX := $(DEB_HOST_GNU_TYPE)-$(DEB_CXX)
 endif
 
 CMAKE_FLAGS ?= -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)` -DENABLE_TESTS=0 $(CMAKE_FLAGS_ADD)
+ifndef DH_VERBOSE
+    CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=0
+endif
 
 %:
 	dh $@ --parallel --buildsystem=cmake --builddirectory=$(BUILDDIR)
@@ -65,8 +69,8 @@ override_dh_install:
 
 	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
 	mkdir -p $(DESTDIR)/usr/share/clickhouse/bin $(DESTDIR)/usr/share/clickhouse/headers
-	debian/copy_clang_binaries.sh $(DESTDIR)/usr/share/clickhouse/bin/
-	./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
+	CLANG=$(DEB_CLANG) debian/copy_clang_binaries.sh $(DESTDIR)/usr/share/clickhouse/bin/
+	CLANG=$(DEB_CLANG) ./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
 
 
 	# fake metrika files when private dir is empty

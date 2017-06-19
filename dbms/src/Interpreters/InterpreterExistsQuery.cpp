@@ -5,6 +5,7 @@
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 
 

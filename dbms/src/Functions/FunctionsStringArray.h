@@ -15,31 +15,37 @@
 namespace DB
 {
 
-/** Функции, разделяющие строки на массив строк или наоборот.
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+
+/** Functions that split strings into an array of strings or vice versa.
   *
   * splitByChar(sep, s)
   * splitByString(sep, s)
   * splitByRegexp(regexp, s)
   *
-  * extractAll(s, regexp)     - выделить из строки подпоследовательности, соответствующие регекспу.
-  * - первый subpattern, если в regexp-е есть subpattern;
-  * - нулевой subpattern (сматчившуюся часть, иначе);
-  * - инача, пустой массив
+  * extractAll(s, regexp)     - select from the string the subsequences corresponding to the regexp.
+  * - first subpattern, if regexp has subpattern;
+  * - zero subpattern (the match part, otherwise);
+  * - otherwise, an empty array
   *
   * arrayStringConcat(arr)
   * arrayStringConcat(arr, delimiter)
-  * - склеить массив строк в одну строку через разделитель.
+  * - join an array of strings into one string via a separator.
   *
-  * alphaTokens(s)            - выделить из строки подпоследовательности [a-zA-Z]+.
+  * alphaTokens(s)            - select from the string subsequence `[a-zA-Z]+`.
   *
-  * Функции работы с URL расположены отдельно.
+  * URL functions are located separately.
   */
 
 
 using Pos = const char *;
 
 
-/// Генераторы подстрок. Все они обладают общим интерфейсом.
+/// Substring generators. All of them have a common interface.
 
 class AlphaTokensImpl
 {
@@ -48,13 +54,13 @@ private:
     Pos end;
 
 public:
-    /// Получить имя фукнции.
+    /// Get the name of the function.
     static constexpr auto name = "alphaTokens";
     static String getName() { return name; }
 
     static size_t getNumberOfArguments() { return 1; }
 
-    /// Проверить типы агрументов функции.
+    /// Check the type of the function's arguments.
     static void checkArguments(const DataTypes & arguments)
     {
         if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
@@ -62,23 +68,23 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    /// Инициализировать по аргументам функции.
+    /// Initialize by the function arguments.
     void init(Block & block, const ColumnNumbers & arguments) {}
 
-    /// Вызывается для каждой следующей строки.
+    /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
         pos = pos_;
         end = end_;
     }
 
-    /// Возвращает позицию аргумента, являющегося столбцом строк
+    /// Returns the position of the argument, that is the column of strings
     size_t getStringsArgumentPosition()
     {
         return 0;
     }
 
-    /// Получить следующий токен, если есть, или вернуть false.
+    /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
         /// Skip garbage
@@ -141,7 +147,7 @@ public:
         sep = sep_str[0];
     }
 
-    /// Возвращает позицию аргумента, являющегося столбцом строк
+    /// Returns the position of the argument, that is the column of strings
     size_t getStringsArgumentPosition()
     {
         return 1;
@@ -204,20 +210,20 @@ public:
         sep = col->getData();
     }
 
-    /// Возвращает позицию аргумента, являющегося столбцом строк
+    /// Returns the position of the argument that is the column of strings
     size_t getStringsArgumentPosition()
     {
         return 1;
     }
 
-    /// Вызывается для каждой следующей строки.
+    /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
         pos = pos_;
         end = end_;
     }
 
-    /// Получить следующий токен, если есть, или вернуть false.
+    /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
         if (!pos)
@@ -252,13 +258,13 @@ public:
     static String getName() { return name; }
     static size_t getNumberOfArguments() { return 2; }
 
-    /// Проверить типы агрументов функции.
+    /// Check the type of function arguments.
     static void checkArguments( const DataTypes &  arguments )
     {
         SplitByStringImpl::checkArguments(arguments);
     }
 
-    /// Инициализировать по аргументам функции.
+    /// Initialize by the function arguments.
     void init(Block & block, const ColumnNumbers & arguments)
     {
         const ColumnConstString * col = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get());
@@ -274,20 +280,20 @@ public:
         matches.resize(capture + 1);
     }
 
-    /// Возвращает позицию аргумента, являющегося столбцом строк
+    /// Returns the position of the argument that is the column of strings
     size_t getStringsArgumentPosition()
     {
         return 0;
     }
 
-    /// Вызывается для каждой следующей строки.
+    /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
         pos = pos_;
         end = end_;
     }
 
-    /// Получить следующий токен, если есть, или вернуть false.
+    /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
         if (!pos || pos > end)
@@ -305,7 +311,7 @@ public:
     }
 };
 
-/// Функция, принимающая строку, и возвращающая массив подстрок, создаваемый некоторым генератором.
+/// A function that takes a string, and returns an array of substrings created by some generator.
 template <typename Generator>
 class FunctionTokens : public IFunction
 {
@@ -350,7 +356,7 @@ public:
             const ColumnString::Offsets_t & src_offsets = col_str->getOffsets();
 
             res_offsets.reserve(src_offsets.size());
-            res_strings_offsets.reserve(src_offsets.size() * 5);    /// Константа 5 - наугад.
+            res_strings_offsets.reserve(src_offsets.size() * 5);    /// Constant 5 - at random.
             res_strings_chars.reserve(src_chars.size());
 
             Pos token_begin = nullptr;
@@ -411,7 +417,7 @@ public:
 };
 
 
-/// Склеивает массив строк в одну строку через разделитель.
+/// Joins an array of strings into one string via a separator.
 class FunctionArrayStringConcat : public IFunction
 {
 private:
@@ -428,14 +434,14 @@ private:
         if (!size)
             return;
 
-        /// С небольшим запасом - как будто разделитель идёт и после последней строки массива.
+        /// With a small margin - as if the separator goes after the last string of the array.
         dst_chars.resize(
             src_chars.size()
-            + delimiter_size * src_string_offsets.size()    /// Разделители после каждой строки...
-            + src_array_offsets.size()                     /// Нулевой байт после каждой склеенной строки
-            - src_string_offsets.size());                /// Бывший нулевой байт после каждой строки массива
+            + delimiter_size * src_string_offsets.size()    /// Separators after each string...
+            + src_array_offsets.size()                      /// Zero byte after each joined string
+            - src_string_offsets.size());                   /// The former zero byte after each string of the array
 
-        /// Будет столько строк, сколько было массивов.
+        /// There will be as many strings as there were arrays.
         dst_string_offsets.resize(src_array_offsets.size());
 
         ColumnArray::Offset_t current_src_array_offset = 0;
@@ -443,10 +449,10 @@ private:
 
         ColumnString::Offset_t current_dst_string_offset = 0;
 
-        /// Цикл по массивам строк.
+        /// Loop through the array of strings.
         for (size_t i = 0; i < size; ++i)
         {
-            /// Цикл по строкам внутри массива. /// NOTE Можно всё сделать за одно копирование, если разделитель имеет размер 1.
+            /// Loop through the rows within the array. /// NOTE You can do everything in one copy, if the separator has a size of 1.
             for (auto next_src_array_offset = src_array_offsets[i]; current_src_array_offset < next_src_array_offset; ++current_src_array_offset)
             {
                 size_t bytes_to_copy = src_string_offsets[current_src_array_offset] - current_src_string_offset - 1;
@@ -546,9 +552,9 @@ public:
 };
 
 
-using FunctionAlphaTokens = FunctionTokens<AlphaTokensImpl>    ;
-using FunctionSplitByChar = FunctionTokens<SplitByCharImpl>    ;
+using FunctionAlphaTokens = FunctionTokens<AlphaTokensImpl>;
+using FunctionSplitByChar = FunctionTokens<SplitByCharImpl>;
 using FunctionSplitByString = FunctionTokens<SplitByStringImpl>;
-using FunctionExtractAll = FunctionTokens<ExtractAllImpl>     ;
+using FunctionExtractAll = FunctionTokens<ExtractAllImpl>;
 
 }

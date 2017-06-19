@@ -10,8 +10,9 @@
 namespace DB
 {
 
-VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const Context & context)
-    : ostr(ostr_), sample(sample_)
+VerticalRowOutputStream::VerticalRowOutputStream(
+    WriteBuffer & ostr_, const Block & sample_, size_t max_rows_, const Context & context)
+    : ostr(ostr_), sample(sample_), max_rows(max_rows_)
 {
     size_t columns = sample.columns();
 
@@ -60,6 +61,9 @@ void VerticalRowOutputStream::flush()
 
 void VerticalRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
+    if (row_number > max_rows)
+        return;
+
     writeString(names_and_paddings[field_number], ostr);
     writeValue(column, type, row_num);
     writeChar('\n', ostr);
@@ -82,6 +86,10 @@ void VerticalRawRowOutputStream::writeValue(const IColumn & column, const IDataT
 void VerticalRowOutputStream::writeRowStartDelimiter()
 {
     ++row_number;
+
+    if (row_number > max_rows)
+        return;
+
     writeCString("Row ", ostr);
     writeIntText(row_number, ostr);
     writeCString(":\n", ostr);
@@ -95,8 +103,76 @@ void VerticalRowOutputStream::writeRowStartDelimiter()
 
 void VerticalRowOutputStream::writeRowBetweenDelimiter()
 {
+    if (row_number > max_rows)
+        return;
+
     writeCString("\n", ostr);
     field_number = 0;
+}
+
+
+void VerticalRowOutputStream::writeSuffix()
+{
+    if (row_number > max_rows)
+    {
+        writeCString("Showed first ", ostr);
+        writeIntText(max_rows, ostr);
+        writeCString(".\n", ostr);
+    }
+
+    if (totals || extremes)
+    {
+        writeCString("\n", ostr);
+        writeTotals();
+        writeExtremes();
+    }
+}
+
+
+void VerticalRowOutputStream::writeSpecialRow(const Block & block, size_t row_num, const char * title)
+{
+    writeCString("\n", ostr);
+
+    row_number = 0;
+    field_number = 0;
+
+    size_t columns = block.columns();
+
+    writeCString(title, ostr);
+    writeCString(":\n", ostr);
+
+    size_t width = strlen(title) + 1;
+    for (size_t i = 0; i < width; ++i)
+        writeCString("─", ostr);
+    writeChar('\n', ostr);
+
+    for (size_t i = 0; i < columns; ++i)
+    {
+        if (i != 0)
+            writeFieldDelimiter();
+
+        auto & col = block.getByPosition(i);
+        writeField(*col.column.get(), *col.type.get(), row_num);
+    }
+}
+
+
+void VerticalRowOutputStream::writeTotals()
+{
+    if (totals)
+    {
+        writeSpecialRow(totals, 0, "Totals");
+    }
+}
+
+
+void VerticalRowOutputStream::writeExtremes()
+{
+    if (extremes)
+    {
+        writeSpecialRow(extremes, 0, "Min");
+        writeSpecialRow(extremes, 1, "Max");
+    }
 }
 
 

@@ -1,3 +1,5 @@
+#include <Interpreters/convertFieldToType.h>
+
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
@@ -9,12 +11,10 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 
+#include <Core/AccurateComparison.h>
 #include <Core/FieldVisitors.h>
-
-#include <Interpreters/convertFieldToType.h>
-
 
 namespace DB
 {
@@ -43,7 +43,7 @@ static Field convertNumericTypeImpl(const Field & from)
 {
     From value = from.get<From>();
 
-    if (static_cast<long double>(value) != static_cast<long double>(To(value)))
+    if (!accurate::equalsOp(value, To(value)))
         return {};
 
     return Field(typename NearestFieldType<To>::Type(value));
@@ -61,6 +61,31 @@ static Field convertNumericType(const Field & from, const IDataType & type)
 
     throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
         + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
+}
+
+
+DayNum_t stringToDate(const String & s)
+{
+    ReadBufferFromString in(s);
+    DayNum_t date{};
+
+    readDateText(date, in);
+    if (!in.eof())
+        throw Exception("String is too long for Date: " + s);
+
+    return date;
+}
+
+UInt64 stringToDateTime(const String & s)
+{
+    ReadBufferFromString in(s);
+    time_t date_time{};
+
+    readDateTimeText(date_time, in);
+    if (!in.eof())
+        throw Exception("String is too long for DateTime: " + s);
+
+    return UInt64(date_time);
 }
 
 

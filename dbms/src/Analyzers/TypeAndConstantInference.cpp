@@ -56,10 +56,11 @@ using LambdaParameters = std::unordered_map<String, DataTypePtr>;
 
 
 void processImpl(
-    ASTPtr & ast, Context & context,
+    ASTPtr & ast, const Context & context,
     CollectAliases & aliases, const AnalyzeColumns & columns,
     TypeAndConstantInference::Info & info,
-    const AnalyzeLambdas & lambdas);
+    const AnalyzeLambdas & lambdas,
+    ExecuteTableFunctions & table_functions);
 
 
 void processLiteral(const String & column_name, const ASTPtr & ast, TypeAndConstantInference::Info & info)
@@ -76,8 +77,8 @@ void processLiteral(const String & column_name, const ASTPtr & ast, TypeAndConst
 
 
 void processIdentifier(const String & column_name, const ASTPtr & ast, TypeAndConstantInference::Info & info,
-    Context & context, CollectAliases & aliases, const AnalyzeColumns & columns,
-    const AnalyzeLambdas & lambdas)
+    const Context & context, CollectAliases & aliases, const AnalyzeColumns & columns,
+    const AnalyzeLambdas & lambdas, ExecuteTableFunctions & table_functions)
 {
     /// Column from table
     auto it = columns.columns.find(column_name);
@@ -112,7 +113,7 @@ void processIdentifier(const String & column_name, const ASTPtr & ast, TypeAndCo
             if (it->second.kind != CollectAliases::Kind::Expression)
                 throw Exception("Logical error: unexpected kind of alias", ErrorCodes::LOGICAL_ERROR);
 
-            processImpl(it->second.node, context, aliases, columns, info, lambdas);
+            processImpl(it->second.node, context, aliases, columns, info, lambdas, table_functions);
             info[column_name] = info[it->second.node->getColumnName()];
         }
     }
@@ -165,7 +166,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
     }
 
     /// Aggregate function.
-    if (AggregateFunctionPtr aggregate_function_ptr = context.getAggregateFunctionFactory().tryGet(function->name, argument_types))
+    if (AggregateFunctionPtr aggregate_function_ptr = AggregateFunctionFactory::instance().tryGet(function->name, argument_types))
     {
         /// NOTE Not considering aggregate function parameters in type inference. It could become needed in future.
         /// Note that aggregate function could never be constant expression.
@@ -258,12 +259,12 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
 
 
 void processScalarSubquery(const String & column_name, ASTPtr & ast, TypeAndConstantInference::Info & info,
-    Context & context)
+    const Context & context, ExecuteTableFunctions & table_functions)
 {
     ASTSubquery * subquery = static_cast<ASTSubquery *>(ast.get());
 
     AnalyzeResultOfQuery analyzer;
-    analyzer.process(subquery->children.at(0), context);
+    analyzer.process(subquery->children.at(0), context, table_functions);
 
     if (!analyzer.result)
         throw Exception("Logical error: no columns returned from scalar subquery", ErrorCodes::LOGICAL_ERROR);
@@ -316,10 +317,11 @@ void processScalarSubquery(const String & column_name, ASTPtr & ast, TypeAndCons
 
 
 void processHigherOrderFunction(const String & column_name,
-    ASTPtr & ast, Context & context,
+    ASTPtr & ast, const Context & context,
     CollectAliases & aliases, const AnalyzeColumns & columns,
     TypeAndConstantInference::Info & info,
-    const AnalyzeLambdas & lambdas)
+    const AnalyzeLambdas & lambdas,
+    ExecuteTableFunctions & table_functions)
 {
     ASTFunction * function = static_cast<ASTFunction *>(ast.get());
 
@@ -383,7 +385,7 @@ void processHigherOrderFunction(const String & column_name,
 
             /// Now dive into.
 
-            processImpl(lambda->arguments->children[1], context, aliases, columns, info, lambdas);
+            processImpl(lambda->arguments->children[1], context, aliases, columns, info, lambdas, table_functions);
 
             /// Update Expression type (expression signature).
 
@@ -395,10 +397,11 @@ void processHigherOrderFunction(const String & column_name,
 
 
 void processImpl(
-    ASTPtr & ast, Context & context,
+    ASTPtr & ast, const Context & context,
     CollectAliases & aliases, const AnalyzeColumns & columns,
     TypeAndConstantInference::Info & info,
-    const AnalyzeLambdas & lambdas)
+    const AnalyzeLambdas & lambdas,
+    ExecuteTableFunctions & table_functions)
 {
     const ASTFunction * function = typeid_cast<const ASTFunction *>(ast.get());
 
@@ -428,7 +431,7 @@ void processImpl(
             if (function && function->name == "lambda")
                 continue;
 
-            processImpl(child, context, aliases, columns, info, lambdas);
+            processImpl(child, context, aliases, columns, info, lambdas, table_functions);
         }
     }
 
@@ -453,25 +456,28 @@ void processImpl(
     {
         /// If this is higher-order function, determine types of lambda arguments and infer types of subexpressions inside lambdas.
         if (lambdas.higher_order_functions.end() != std::find(lambdas.higher_order_functions.begin(), lambdas.higher_order_functions.end(), ast))
-            processHigherOrderFunction(column_name, ast, context, aliases, columns, info, lambdas);
+            processHigherOrderFunction(column_name, ast, context, aliases, columns, info, lambdas, table_functions);
 
         processFunction(column_name, ast, info, context);
     }
     else if (literal)
         processLiteral(column_name, ast, info);
     else if (identifier)
-        processIdentifier(column_name, ast, info, context, aliases, columns, lambdas);
+        processIdentifier(column_name, ast, info, context, aliases, columns, lambdas, table_functions);
     else if (subquery)
-        processScalarSubquery(column_name, ast, info, context);
+        processScalarSubquery(column_name, ast, info, context, table_functions);
 }
 
 }
 
 
-void TypeAndConstantInference::process(ASTPtr & ast, Context & context,
-    CollectAliases & aliases, const AnalyzeColumns & columns, const AnalyzeLambdas & lambdas)
+void TypeAndConstantInference::process(ASTPtr & ast, const Context & context,
+    CollectAliases & aliases,
+    const AnalyzeColumns & columns,
+    const AnalyzeLambdas & lambdas,
+    ExecuteTableFunctions & table_functions)
 {
-    processImpl(ast, context, aliases, columns, info, lambdas);
+    processImpl(ast, context, aliases, columns, info, lambdas, table_functions);
 }
 
 

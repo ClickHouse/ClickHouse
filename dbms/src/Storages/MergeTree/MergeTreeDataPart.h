@@ -103,11 +103,19 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
     /// Returns full path to part dir
     String getFullPath() const;
 
+    /// Returns part->name with prefixes like 'tmp_<name>'
+    String getNameWithPrefix() const;
+
+
     MergeTreeData & storage;
 
-    size_t size = 0;                /// in number of marks.
-    std::atomic<size_t> size_in_bytes {0};     /// size in bytes, 0 - if not counted;
-                                               /// is used from several threads without locks (it is changed with ALTER).
+    /// A directory path (realative to storage's path) where part data is actually stored
+    /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
+    mutable String relative_path;
+
+    size_t size = 0;                        /// in number of marks.
+    std::atomic<size_t> size_in_bytes {0};  /// size in bytes, 0 - if not counted;
+                                            ///  is used from several threads without locks (it is changed with ALTER).
     time_t modification_time = 0;
     mutable time_t remove_time = std::numeric_limits<time_t>::max(); /// When the part is removed from the working set.
 
@@ -152,7 +160,10 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
     static size_t calcTotalSize(const String & from);
 
     void remove() const;
-    void renameTo(const String & new_name) const;
+
+    /// Makes checks and move part to new directory
+    /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
+    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = true) const;
 
     /// Renames a piece by appending a prefix to the name. To_detached - also moved to the detached directory.
     void renameAddPrefix(bool to_detached, const String & prefix) const;

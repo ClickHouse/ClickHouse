@@ -2,10 +2,6 @@
 
 #include <memory>
 
-#ifdef USE_QUICKLZ
-    struct qlz_state_compress;
-#endif
-
 #include <Common/PODArray.h>
 
 #include <IO/WriteBuffer.h>
@@ -24,15 +20,6 @@ private:
 
     PODArray<char> compressed_buffer;
 
-#ifdef USE_QUICKLZ
-    std::unique_ptr<qlz_state_compress> qlz_state;
-#else
-    /// ABI compatibility for USE_QUICKLZ
-    void * fixed_size_padding = nullptr;
-    /// Отменяет warning unused-private-field.
-    void * fixed_size_padding_used() const { return fixed_size_padding; }
-#endif
-
     void nextImpl() override;
 
 public:
@@ -41,20 +28,20 @@ public:
         CompressionMethod method_ = CompressionMethod::LZ4,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
-    /// Объём сжатых данных
+    /// The amount of compressed data
     size_t getCompressedBytes()
     {
         nextIfAtEnd();
         return out.count();
     }
 
-    /// Сколько несжатых байт было записано в буфер
+    /// How many uncompressed bytes were written to the buffer
     size_t getUncompressedBytes()
     {
         return count();
     }
 
-    /// Сколько байт находится в буфере (ещё не сжато)
+    /// How many bytes are in the buffer (not yet compressed)
     size_t getRemainingBytes()
     {
         nextIfAtEnd();

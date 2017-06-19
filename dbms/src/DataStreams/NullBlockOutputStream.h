@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** Ничего не делает. Используется для отладки и бенчмарков.
+/** Does nothing. Used for debugging and benchmarks.
   */
 class NullBlockOutputStream : public IBlockOutputStream
 {

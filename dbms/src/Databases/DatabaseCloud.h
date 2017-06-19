@@ -26,7 +26,7 @@ namespace DB
   *
   * cloud_path                   - the path to the "cloud"; There may be several different independent clouds
         /table_definitions       - set of unique table definitions so you do not write them many times for a large number of tables
-            /hash128 -> sql      - mapping: hash from table definition (identifier) ​​-> table definition itself as CREATE query
+            /hash128 -> sql      - mapping: hash from table definition (identifier) -> table definition itself as CREATE query
         /tables                  - list of tables
             /database_name       - name of the database
                 /name_hash_mod -> compressed_table_list

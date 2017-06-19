@@ -82,6 +82,9 @@ void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row
 template <typename T>
 void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
+    static constexpr bool is_uint8 = std::is_same<T, UInt8>::value;
+    static constexpr bool is_int8 = std::is_same<T, Int8>::value;
+
     bool has_quote = false;
     if (!istr.eof() && *istr.position() == '"')        /// We understand the number both in quotes and without.
     {
@@ -101,7 +104,24 @@ void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & i
     }
     else
     {
-        readText(x, istr);
+        if (is_uint8 || is_int8)
+        {
+            // extra conditions to parse true/false strings into 1/0
+            if (istr.eof())
+                throwReadAfterEOF();
+            if (*istr.position() == 't' || *istr.position() == 'f')
+            {
+                bool tmp = false;
+                readBoolTextWord(tmp, istr);
+                x = tmp;
+            }
+            else
+                readText(x, istr);
+        }
+        else
+        {
+            readText(x, istr);
+        }
 
         if (has_quote)
             assertChar('"', istr);

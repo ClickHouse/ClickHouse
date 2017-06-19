@@ -155,9 +155,11 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
     else if (name == "PrettySpaceNoEscapes")
         return std::make_shared<PrettySpaceBlockOutputStream>(buf, true, settings.output_format_pretty_max_rows, context);
     else if (name == "Vertical")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRowOutputStream>(buf, sample, context));
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRowOutputStream>(
+            buf, sample, settings.output_format_pretty_max_rows, context));
     else if (name == "VerticalRaw")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRawRowOutputStream>(buf, sample, context));
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRawRowOutputStream>(
+            buf, sample, settings.output_format_pretty_max_rows, context));
     else if (name == "Values")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<ValuesRowOutputStream>(buf));
     else if (name == "JSON")

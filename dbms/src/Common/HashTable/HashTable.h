@@ -44,27 +44,27 @@ namespace ErrorCodes
 }
 
 
-/** Состояние хэш-таблицы, которое влияет на свойства её ячеек.
-  * Используется в качестве параметра шаблона.
-  * Например, существует реализация мгновенно-очищаемой хэш-таблицы - ClearableHashMap.
-  *  Для неё, в каждой ячейке хранится номер версии, и в самой хэш-таблице - текущая версия.
-  *  При очистке, просто увеличивается текущая версия; все ячейки с несовпадающей версией считаются пустыми.
-  * Другой пример: для приближённого рассчёта количества уникальных посетителей, есть хэш-таблица UniquesHashSet.
-  *  В ней имеется понятие "степень". При каждом переполнении, ячейки с ключами, не делящимися на соответствующую степень двух, удаляются.
+/** The state of the hash table that affects the properties of its cells.
+  * Used as a template parameter.
+  * For example, there is an implementation of an instantly clearable hash table - ClearableHashMap.
+  * For it, each cell holds the version number, and in the hash table itself is the current version.
+  *  When clearing, the current version simply increases; All cells with a mismatching version are considered empty.
+  *  Another example: for an approximate calculation of the number of unique visitors, there is a hash table for UniquesHashSet.
+  *  It has the concept of "degree". At each overflow, cells with keys that do not divide by the corresponding power of the two are deleted.
   */
 struct HashTableNoState
 {
-    /// Сериализация, в бинарном и текстовом виде.
+    /// Serialization, in binary and text form.
     void write(DB::WriteBuffer & wb) const         {}
     void writeText(DB::WriteBuffer & wb) const     {}
 
-    /// Десериализация, в бинарном и текстовом виде.
+    /// Deserialization, in binary and text form.
     void read(DB::ReadBuffer & rb)                 {}
     void readText(DB::ReadBuffer & rb)             {}
 };
 
 
-/// Эти функции могут быть перегружены для пользовательских типов.
+/// These functions can be overloaded for custom types.
 namespace ZeroTraits
 {
 
@@ -77,11 +77,11 @@ void set(T & x) { x = 0; }
 };
 
 
-/** Compile-time интерфейс ячейки хэш-таблицы.
-  * Разные ячейки используются для реализации разных хэш-таблиц.
-  * Ячейка должна содержать ключ.
-  * Также может содержать значение и произвольные дополнительные данные
-  *  (пример: запомненное значение хэш-функции; номер версии для ClearableHashMap).
+/** Compile-time interface for cell of the hash table.
+  * Different cell types are used to implement different hash tables.
+  * The cell must contain a key.
+  * It can also contain a value and arbitrary additional data
+  *  (example: the stored hash value; version number for ClearableHashMap).
   */
 template <typename Key, typename Hash, typename TState = HashTableNoState>
 struct HashTableCell
@@ -93,89 +93,89 @@ struct HashTableCell
 
     HashTableCell() {}
 
-    /// Создать ячейку с заданным ключём / ключём и значением.
+    /// Create a cell with the given key / key and value.
     HashTableCell(const Key & key_, const State & state) : key(key_) {}
-///    HashTableCell(const value_type & value_, const State & state) : key(value_) {}
+/// HashTableCell(const value_type & value_, const State & state) : key(value_) {}
 
-    /// Получить то, что будет value_type контейнера.
+    /// Get what the value_type of the container will be.
     value_type & getValue()             { return key; }
     const value_type & getValue() const { return key; }
 
-    /// Получить ключ.
+    /// Get the key.
     static Key & getKey(value_type & value)             { return value; }
     static const Key & getKey(const value_type & value) { return value; }
 
-    /// Равны ли ключи у ячеек.
+    /// Are the keys at the cells equal?
     bool keyEquals(const Key & key_) const { return key == key_; }
     bool keyEquals(const Key & key_, size_t hash_) const { return key == key_; }
 
-    /// Если ячейка умеет запоминать в себе значение хэш-функции, то запомнить его.
+    /// If the cell can remember the value of the hash function, then remember it.
     void setHash(size_t hash_value) {}
 
-    /// Если ячейка умеет запоминать в себе значение хэш-функции, то вернуть запомненное значение.
-    /// Оно должно быть хотя бы один раз вычислено до этого.
-    /// Если запоминание значения хэш-функции не предусмотрено, то просто вычислить хэш.
+    /// If the cell can store the hash value in itself, then return the stored value.
+    /// It must be at least once calculated before.
+    /// If storing the hash value is not provided, then just compute the hash.
     size_t getHash(const Hash & hash) const { return hash(key); }
 
-    /// Является ли ключ нулевым. В основном буфере, ячейки с нулевым ключём, считаются пустыми.
-    /// Если нулевые ключи могут быть вставлены в таблицу, то ячейка для нулевого ключа хранится отдельно, не в основном буфере.
-    /// Нулевые ключи должны быть такими, что занулённый кусок памяти представляет собой нулевой ключ.
+    /// Whether the key is zero. In the main buffer, cells with a zero key are considered empty.
+    /// If zero keys can be inserted into the table, then the cell for the zero key is stored separately, not in the main buffer.
+    /// Zero keys must be such that the zeroed-down piece of memory is a zero key.
     bool isZero(const State & state) const { return isZero(key, state); }
     static bool isZero(const Key & key, const State & state) { return ZeroTraits::check(key); }
 
-    /// Установить значение ключа в ноль.
+    /// Set the key value to zero.
     void setZero() { ZeroTraits::set(key); }
 
-    /// Нужно ли хранить нулевой ключ отдельно (то есть, могут ли в хэш-таблицу вставить нулевой ключ).
+    /// Do the hash table need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = true;
 
-    /// Является ли ячейка удалённой.
+    /// Whether the cell is deleted.
     bool isDeleted() const { return false; }
 
-    /// Установить отображаемое значение, если есть (для HashMap), в соответствующиее из value.
+    /// Set the mapped value, if any (for HashMap), to the corresponding `value`.
     void setMapped(const value_type & value) {}
 
-    /// Сериализация, в бинарном и текстовом виде.
+    /// Serialization, in binary and text form.
     void write(DB::WriteBuffer & wb) const         { DB::writeBinary(key, wb); }
     void writeText(DB::WriteBuffer & wb) const     { DB::writeDoubleQuoted(key, wb); }
 
-    /// Десериализация, в бинарном и текстовом виде.
+    /// Deserialization, in binary and text form.
     void read(DB::ReadBuffer & rb)        { DB::readBinary(key, rb); }
     void readText(DB::ReadBuffer & rb)    { DB::writeDoubleQuoted(key, rb); }
 };
 
 
-/** Определяет размер хэш-таблицы, а также когда и во сколько раз её надо ресайзить.
+/** Determines the size of the hash table, and when and how much it should be resized.
   */
 template <size_t initial_size_degree = 8>
 struct HashTableGrower
 {
-    /// Состояние этой структуры достаточно, чтобы получить размер буфера хэш-таблицы.
+    /// The state of this structure is enough to get the buffer size of the hash table.
 
     UInt8 size_degree = initial_size_degree;
 
-    /// Размер хэш-таблицы в ячейках.
+    /// The size of the hash table in the cells.
     size_t bufSize() const               { return 1 << size_degree; }
 
     size_t maxFill() const               { return 1 << (size_degree - 1); }
     size_t mask() const                  { return bufSize() - 1; }
 
-    /// Из значения хэш-функции получить номер ячейки в хэш-таблице.
+    /// From the hash value, get the cell number in the hash table.
     size_t place(size_t x) const         { return x & mask(); }
 
-    /// Следующая ячейка в цепочке разрешения коллизий.
+    /// The next cell in the collision resolution chain.
     size_t next(size_t pos) const        { ++pos; return pos & mask(); }
 
-    /// Является ли хэш-таблица достаточно заполненной. Нужно увеличить размер хэш-таблицы, или удалить из неё что-нибудь ненужное.
+    /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
     bool overflow(size_t elems) const    { return elems > maxFill(); }
 
-    /// Увеличить размер хэш-таблицы.
+    /// Increase the size of the hash table.
     void increaseSize()
     {
         size_degree += size_degree >= 23 ? 1 : 2;
     }
 
-    /// Установить размер буфера по количеству элементов хэш-таблицы. Используется при десериализации хэш-таблицы.
+    /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
     void set(size_t num_elems)
     {
         size_degree = num_elems <= 1
@@ -192,17 +192,17 @@ struct HashTableGrower
 };
 
 
-/** При использовании в качестве Grower-а, превращает хэш-таблицу в что-то типа lookup-таблицы.
-  * Остаётся неоптимальность - в ячейках хранятся ключи.
-  * Также компилятору не удаётся полностью удалить код хождения по цепочке разрешения коллизий, хотя он не нужен.
-  * TODO Сделать полноценную lookup-таблицу.
+/** When used as a Grower, it turns a hash table into something like a lookup table.
+  * It remains non-optimal - the cells store the keys.
+  * Also, the compiler can not completely remove the code of passing through the collision resolution chain, although it is not needed.
+  * TODO Make a proper lookup table.
   */
 template <size_t key_bits>
 struct HashTableFixedGrower
 {
     size_t bufSize() const               { return 1 << key_bits; }
     size_t place(size_t x) const         { return x; }
-    /// Тут можно было бы написать __builtin_unreachable(), но компилятор не до конца всё оптимизирует, и получается менее эффективно.
+    /// You could write __builtin_unreachable(), but the compiler does not optimize everything, and it turns out less efficiently.
     size_t next(size_t pos) const        { return pos + 1; }
     bool overflow(size_t elems) const    { return false; }
 
@@ -212,7 +212,7 @@ struct HashTableFixedGrower
 };
 
 
-/** Если нужно хранить нулевой ключ отдельно - место для его хранения. */
+/** If you want to store the zero key separately - a place to store it. */
 template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
 
@@ -271,15 +271,15 @@ protected:
     using Self = HashTable<Key, Cell, Hash, Grower, Allocator>;
     using cell_type = Cell;
 
-    size_t m_size = 0;        /// Количество элементов
-    Cell * buf;                /// Кусок памяти для всех элементов кроме элемента с ключём 0.
+    size_t m_size = 0;        /// Amount of elements
+    Cell * buf;               /// A piece of memory for all elements except the element with zero key.
     Grower grower;
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
     mutable size_t collisions = 0;
 #endif
 
-    /// Найти ячейку с тем же ключём или пустую ячейку, начиная с заданного места и далее по цепочке разрешения коллизий.
+    /// Find a cell with the same key or an empty cell, starting from the specified position and further along the collision resolution chain.
     size_t ALWAYS_INLINE findCell(const Key & x, size_t hash_value, size_t place_value) const
     {
         while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x, hash_value))
@@ -293,7 +293,7 @@ protected:
         return place_value;
     }
 
-    /// Найти пустую ячейку, начиная с заданного места и далее по цепочке разрешения коллизий.
+    /// Find an empty cell, starting with the specified position and further along the collision resolution chain.
     size_t ALWAYS_INLINE findEmptyCell(const Key & x, size_t hash_value, size_t place_value) const
     {
         while (!buf[place_value].isZero(*this))
@@ -323,7 +323,7 @@ protected:
     }
 
 
-    /// Увеличить размер буфера.
+    /// Increase the size of the buffer.
     void resize(size_t for_num_elems = 0, size_t for_buf_size = 0)
     {
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
@@ -332,10 +332,10 @@ protected:
 
         size_t old_size = grower.bufSize();
 
-        /** Чтобы в случае исключения, объект остался в корректном состоянии,
-          *  изменение переменной grower (определяющией размер буфера хэш-таблицы)
-          *  откладываем на момент после реального изменения буфера.
-          * Временная переменная new_grower используется, чтобы определить новый размер.
+        /** In case of exception for the object to remain in the correct state,
+          *  changing the variable `grower` (which determines the buffer size of the hash table)
+          *  is postponed for a moment after a real buffer change.
+          * The temporary variable `new_grower` is used to determine the new size.
           */
         Grower new_grower = grower;
 
@@ -354,29 +354,29 @@ protected:
         else
             new_grower.increaseSize();
 
-        /// Расширим пространство.
+        /// Expand the space.
         buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, getBufferSizeInBytes(), new_grower.bufSize() * sizeof(Cell)));
         grower = new_grower;
 
-        /** Теперь некоторые элементы может потребоваться переместить на новое место.
-          * Элемент может остаться на месте, или переместиться в новое место "справа",
-          *  или переместиться левее по цепочке разрешения коллизий, из-за того, что элементы левее него были перемещены в новое место "справа".
+        /** Now some items may need to be moved to a new location.
+          * The element can stay in place, or move to a new location "on the right",
+          *  or move to the left of the collision resolution chain, because the elements to the left of it have been moved to the new "right" location.
           */
         size_t i = 0;
         for (; i < old_size; ++i)
             if (!buf[i].isZero(*this) && !buf[i].isDeleted())
-                reinsert(buf[i]);
+                reinsert(buf[i], buf[i].getHash(*this));
 
-        /** Также имеется особый случай:
-          *    если элемент должен был быть в конце старого буфера,                    [        x]
-          *    но находится в начале из-за цепочки разрешения коллизий,                [o       x]
-          *    то после ресайза, он сначала снова окажется не на своём месте,          [        xo        ]
-          *    и для того, чтобы перенести его куда надо,
-          *    надо будет после переноса всех элементов из старой половинки            [         o   x    ]
-          *    обработать ещё хвостик из цепочки разрешения коллизий сразу после неё   [        o    x    ]
+        /** There is also a special case:
+          *    if the element was to be at the end of the old buffer,                  [        x]
+          *    but is at the beginning because of the collision resolution chain,      [o       x]
+          *    then after resizing, it will first be out of place again,               [        xo        ]
+          *    and in order to transfer it where necessary,
+          *    after transferring all the elements from the old halves you need to     [         o   x    ]
+          *    process tail from the collision resolution chain immediately after it   [        o    x    ]
           */
         for (; !buf[i].isZero(*this) && !buf[i].isDeleted(); ++i)
-            reinsert(buf[i]);
+            reinsert(buf[i], buf[i].getHash(*this));
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         watch.stop();
@@ -387,30 +387,30 @@ protected:
     }
 
 
-    /** Вставить в новый буфер значение, которое было в старом буфере.
-      * Используется при увеличении размера буфера.
+    /** Paste into the new buffer the value that was in the old buffer.
+      * Used when increasing the buffer size.
       */
-    void reinsert(Cell & x)
+    void reinsert(Cell & x, size_t hash_value)
     {
-        size_t hash_value = x.getHash(*this);
         size_t place_value = grower.place(hash_value);
 
-        /// Если элемент на своём месте.
+        /// If the element is in its place.
         if (&x == &buf[place_value])
             return;
 
-        /// Вычисление нового места, с учётом цепочки разрешения коллизий.
+        /// Compute a new location, taking into account the collision resolution chain.
         place_value = findCell(Cell::getKey(x.getValue()), hash_value, place_value);
 
-        /// Если элемент остался на своём месте в старой цепочке разрешения коллизий.
+        /// If the item remains in its place in the old collision resolution chain.
         if (!buf[place_value].isZero(*this))
             return;
 
-        /// Копирование на новое место и зануление старого.
+        /// Copy to a new location and zero the old one.
+        x.setHash(hash_value);
         memcpy(&buf[place_value], &x, sizeof(x));
         x.setZero();
 
-        /// Потом на старое место могут переместиться элементы, которые раньше были в коллизии с этим.
+        /// Then the elements that previously were in collision with this can move to the old place.
     }
 
 
@@ -611,10 +611,10 @@ protected:
     iterator iteratorToZero()                         { return iteratorTo(this->zeroValue()); }
 
 
-    /// Если ключ нулевой - вставить его в специальное место и вернуть true.
-    bool ALWAYS_INLINE emplaceIfZero(Key x, iterator & it, bool & inserted)
+    /// If the key is zero, insert it into a special place and return true.
+    bool ALWAYS_INLINE emplaceIfZero(Key x, iterator & it, bool & inserted, size_t hash_value)
     {
-        /// Если утверждается, что нулевой ключ не могут вставить в таблицу.
+        /// If it is claimed that the zero key can not be inserted into the table.
         if (!Cell::need_zero_value_storage)
             return false;
 
@@ -625,7 +625,7 @@ protected:
             {
                 ++m_size;
                 this->setHasZero();
-                it.ptr->setHash(hash(x));
+                it.ptr->setHash(hash_value);
                 inserted = true;
             }
             else
@@ -638,7 +638,7 @@ protected:
     }
 
 
-    /// Только для ненулевых ключей. Найти нужное место, вставить туда ключ, если его ещё нет, вернуть итератор на ячейку.
+    /// Only for non-zero keys. Find the right place, insert the key there, if it does not already exist. Set iterator to the cell in output parameter.
     void ALWAYS_INLINE emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
     {
         size_t place_value = findCell(x, hash_value, grower.place(hash_value));
@@ -664,9 +664,9 @@ protected:
             }
             catch (...)
             {
-                /** Если этого не делать, то будут проблемы.
-                  * Ведь останется ключ, но неинициализированное mapped-значение,
-                  *  у которого, возможно, даже нельзя вызвать деструктор.
+                /** If we have not resized successfully, then there will be problems.
+                  * There remains a key, but uninitialized mapped-value,
+                  *  which, perhaps, can not even be called a destructor.
                   */
                 --m_size;
                 buf[place_value].setZero();
@@ -679,13 +679,14 @@ protected:
 
 
 public:
-    /// Вставить значение. В случае хоть сколько-нибудь сложных значений, лучше используйте функцию emplace.
+    /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
     {
         std::pair<iterator, bool> res;
 
-        if (!emplaceIfZero(Cell::getKey(x), res.first, res.second))
-            emplaceNonZero(Cell::getKey(x), res.first, res.second, hash(Cell::getKey(x)));
+        size_t hash_value = hash(Cell::getKey(x));
+        if (!emplaceIfZero(Cell::getKey(x), res.first, res.second, hash_value))
+            emplaceNonZero(Cell::getKey(x), res.first, res.second, hash_value);
 
         if (res.second)
             res.first.ptr->setMapped(x);
@@ -694,14 +695,21 @@ public:
     }
 
 
-    /** Вставить ключ,
-      * вернуть итератор на позицию, которую можно использовать для placement new значения,
-      * а также флаг - был ли вставлен новый ключ.
+    /// Reinsert node pointed to by iterator
+    void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value)
+    {
+        reinsert(*it.getPtr(), hash_value);
+    }
+
+
+    /** Insert the key,
+      * return an iterator to a position that can be used for `placement new` of value,
+      * as well as the flag - whether a new key was inserted.
       *
-      * Вы обязаны сделать placement new значения, если был вставлен новый ключ,
-      * так как при уничтожении хэш-таблицы для него будет вызываться деструктор!
+      * You have to make `placement new` of value if you inserted a new key,
+      * since when destroying a hash table, it will call the destructor!
       *
-      * Пример использования:
+      * Example usage:
       *
       * Map::iterator it;
       * bool inserted;
@@ -711,20 +719,21 @@ public:
       */
     void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted)
     {
-        if (!emplaceIfZero(x, it, inserted))
-            emplaceNonZero(x, it, inserted, hash(x));
-    }
-
-
-    /// То же самое, но с заранее вычисленным значением хэш-функции.
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
-    {
-        if (!emplaceIfZero(x, it, inserted))
+        size_t hash_value = hash(x);
+        if (!emplaceIfZero(x, it, inserted, hash_value))
             emplaceNonZero(x, it, inserted, hash_value);
     }
 
 
-    /// Скопировать ячейку из другой хэш-таблицы. Предполагается, что ячейка не нулевая, а также, что такого ключа в таблице ещё не было.
+    /// Same, but with a precalculated value of hash function.
+    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
+    {
+        if (!emplaceIfZero(x, it, inserted, hash_value))
+            emplaceNonZero(x, it, inserted, hash_value);
+    }
+
+
+    /// Copy the cell from another hash table. It is assumed that the cell is not zero, and also that there was no such key in the table yet.
     void ALWAYS_INLINE insertUniqueNonZero(const Cell * cell, size_t hash_value)
     {
         size_t place_value = findEmptyCell(cell->getKey(cell->getValue()), hash_value, grower.place(hash_value));
@@ -903,8 +912,8 @@ public:
         memset(buf, 0, grower.bufSize() * sizeof(*buf));
     }
 
-    /// После выполнения этой функции, таблицу можно только уничтожить,
-    ///  а также можно использовать методы size, empty, begin, end.
+    /// After executing this function, the table can only be destroyed,
+    ///  and also you can use the methods `size`, `empty`, `begin`, `end`.
     void clearAndShrink()
     {
         destroyElements();

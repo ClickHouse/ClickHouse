@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/DDLWorker.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -31,7 +32,7 @@ namespace ErrorCodes
 }
 
 
-InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, const Context & context_)
+InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, const Context & context_)
     : query_ptr(query_ptr_), context(context_)
 {
 }
@@ -39,6 +40,10 @@ InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, const Context & 
 BlockIO InterpreterAlterQuery::execute()
 {
     auto & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
+
+    if (!alter.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context);
+
     const String & table_name = alter.table;
     String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
     StoragePtr table = context.getTable(database_name, table_name);
@@ -52,11 +57,11 @@ BlockIO InterpreterAlterQuery::execute()
         switch (command.type)
         {
             case PartitionCommand::DROP_PARTITION:
-                table->dropPartition(query_ptr, command.partition, command.detach, command.unreplicated, context.getSettingsRef());
+                table->dropPartition(query_ptr, command.partition, command.detach, context.getSettingsRef());
                 break;
 
             case PartitionCommand::ATTACH_PARTITION:
-                table->attachPartition(query_ptr, command.partition, command.unreplicated, command.part, context.getSettingsRef());
+                table->attachPartition(query_ptr, command.partition, command.part, context.getSettingsRef());
                 break;
 
             case PartitionCommand::FETCH_PARTITION:
@@ -70,7 +75,7 @@ BlockIO InterpreterAlterQuery::execute()
             case PartitionCommand::RESHARD_PARTITION:
                 table->reshardPartitions(query_ptr, database_name, command.partition, command.last_partition,
                     command.weighted_zookeeper_paths, command.sharding_key_expr, command.do_copy,
-                    command.coordinator, context.getSettingsRef());
+                    command.coordinator, context);
                 break;
 
             case PartitionCommand::DROP_COLUMN:
@@ -173,12 +178,12 @@ void InterpreterAlterQuery::parseAlter(
         else if (params.type == ASTAlterQuery::DROP_PARTITION)
         {
             const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-            out_partition_commands.emplace_back(PartitionCommand::dropPartition(partition, params.detach, params.unreplicated));
+            out_partition_commands.emplace_back(PartitionCommand::dropPartition(partition, params.detach));
         }
         else if (params.type == ASTAlterQuery::ATTACH_PARTITION)
         {
             const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-            out_partition_commands.emplace_back(PartitionCommand::attachPartition(partition, params.unreplicated, params.part));
+            out_partition_commands.emplace_back(PartitionCommand::attachPartition(partition, params.part));
         }
         else if (params.type == ASTAlterQuery::FETCH_PARTITION)
         {

@@ -5,9 +5,9 @@
 namespace DB
 {
 
-/** Если прямо сейчас не s, то ошибка.
-  * Если word_boundary установлен в true, и последний символ строки - словарный (\w),
-  *  то проверяется, что последующий символ строки не словарный.
+/** If right now is not `s`, then an error.
+  * If word_boundary is set to true, and the last character of the string - word (\w),
+  *  then it is checked that the next character in the string is not a word character.
   */
 class ParserString : public IParserBase
 {
@@ -27,12 +27,32 @@ protected:
 };
 
 
-/** пробельные символы
+/** Parse specified keyword such as SELECT or compound keyword such as ORDER BY.
+  * All case insensitive. Requires word boundary.
+  * For compound keywords, any whitespace characters and comments could be in the middle.
   */
-class ParserWhiteSpace : public IParserBase
+/// Example: ORDER/* Hello */BY
+class ParserKeyword : public IParserBase
+{
+private:
+    const char * s;
+
+public:
+    ParserKeyword(const char * s_);
+
+protected:
+    const char * getName() const override;
+
+    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
+};
+
+
+/** whitespace characters
+  */
+class ParserWhitespace : public IParserBase
 {
 public:
-    ParserWhiteSpace(bool allow_newlines_ = true);
+    ParserWhitespace(bool allow_newlines_ = true);
 
 protected:
     bool allow_newlines;
@@ -61,7 +81,7 @@ protected:
 };
 
 
-/** комментарии '--' или c-style
+/** comments '--' or c-style
   */
 class ParserComment : public IParserBase
 {
@@ -72,10 +92,10 @@ protected:
 };
 
 
-class ParserWhiteSpaceOrComments : public IParserBase
+class ParserWhitespaceOrComments : public IParserBase
 {
 public:
-    ParserWhiteSpaceOrComments(bool allow_newlines_outside_comments_ = true);
+    ParserWhitespaceOrComments(bool allow_newlines_outside_comments_ = true);
 
 protected:
     bool allow_newlines_outside_comments;

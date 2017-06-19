@@ -124,7 +124,7 @@ bool JSONEachRowRowInputStream::read(Block & block)
     }
 
     skipWhitespaceIfAny(istr);
-    if (!istr.eof() && *istr.position() == ',')
+    if (!istr.eof() && (*istr.position() == ',' || *istr.position() == ';'))    /// Semicolon is added for convenience as it could be used at end of INSERT query.
         ++istr.position();
 
     /// Fill non-visited columns with the default values.

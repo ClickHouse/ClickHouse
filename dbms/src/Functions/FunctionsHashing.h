@@ -25,27 +25,34 @@
 #include <Common/HashTable/Hash.h>
 #include <Functions/IFunction.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace DB
 {
 
-/** Функции хэширования.
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+
+/** Hashing functions.
   *
-  * Половинка MD5:
+  * Half MD5:
   * halfMD5:     String -> UInt64
   *
-  * Более быстрая криптографическая хэш-функция:
+  * A faster cryptographic hash function:
   * sipHash64:  String -> UInt64
   *
-  * Быстрая некриптографическая хэш функция для строк:
+  * Fast non-cryptographic hash function for strings:
   * cityHash64: String -> UInt64
   *
-  * Некриптографический хеш от кортежа значений любых типов (использует cityHash64 для строк и intHash64 для чисел):
+  * A non-cryptographic hash from a tuple of values of any types (uses cityHash64 for strings and intHash64 for numbers):
   * cityHash64:  any* -> UInt64
   *
-  * Быстрая некриптографическая хэш функция от любого целого числа:
+  * Fast non-cryptographic hash function from any integer:
   * intHash32:    number -> UInt32
   * intHash64:  number -> UInt64
   *
@@ -66,7 +73,7 @@ struct HalfMD5Impl
         MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         MD5_Final(buf.char_data, &ctx);
 
-        return Poco::ByteOrder::flipBytes(buf.uint64_data);        /// Совместимость с существующим кодом.
+        return Poco::ByteOrder::flipBytes(buf.uint64_data);        /// Compatibility with existing code.
     }
 };
 
@@ -151,7 +158,7 @@ struct IntHash32Impl
 
     static UInt32 apply(UInt64 x)
     {
-        /// seed взят из /dev/urandom. Он позволяет избежать нежелательных зависимостей с хэшами в разных структурах данных.
+        /// seed is taken from /dev/urandom. It allows you to avoid undesirable dependencies with hashes in different data structures.
         return intHash32<0x75D9543DE018BF45ULL>(x);
     }
 };
@@ -371,8 +378,8 @@ template <>
 UInt64 toInteger<Float64>(Float64 x);
 
 
-/** Используются хэш-функции под названием CityHash, FarmHash, MetroHash.
-  * В связи с этим, этот шаблон назван со словами NeighbourhoodHash.
+/** We use hash functions called CityHash, FarmHash, MetroHash.
+  * In this regard, this template is named with the words `NeighborhoodHash`.
   */
 template <typename Impl>
 class FunctionNeighbourhoodHash64 : public IFunction
@@ -507,7 +514,7 @@ private:
         }
         else if (const ColumnConstArray * col_from = typeid_cast<const ColumnConstArray *>(column))
         {
-            /// NOTE: тут, конечно, можно обойтись без материалиации столбца.
+            /// NOTE: here, of course, you can do without the materialization of the column.
             ColumnPtr full_column = col_from->convertToFullColumn();
             executeArray<first>(type, &*full_column, vec_to);
         }
@@ -644,15 +651,15 @@ struct URLHierarchyHashImpl
     {
         auto pos = begin;
 
-        /// Распарсим всё, что идёт до пути
+        /// Let's parse everything that goes before the path
 
-        /// Предположим, что протокол уже переведён в нижний регистр.
+        /// Suppose that the protocol has already been changed to lowercase.
         while (pos < end && ((*pos > 'a' && *pos < 'z') || (*pos > '0' && *pos < '9')))
             ++pos;
 
-        /** Будем вычислять иерархию только для URL-ов, в которых есть протокол, и после него идут два слеша.
-        *    (http, file - подходят, mailto, magnet - не подходят), и после двух слешей ещё хоть что-нибудь есть
-        *    Для остальных просто вернём полный URL как единственный элемент иерархии.
+        /** We will calculate the hierarchy only for URLs in which there is a protocol, and after it there are two slashes.
+        *    (http, file - fit, mailto, magnet - do not fit), and after two slashes there is still something
+        *    For the rest, simply return the full URL as the only element of the hierarchy.
         */
         if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
         {
@@ -660,7 +667,7 @@ struct URLHierarchyHashImpl
             return 0 == level ? pos - begin : 0;
         }
 
-        /// Доменом для простоты будем считать всё, что после протокола и двух слешей, до следующего слеша или до ? или до #
+        /// The domain for simplicity is everything that after the protocol and the two slashes, until the next slash or before `?` or `#`
         while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
             ++pos;
 
@@ -674,7 +681,7 @@ struct URLHierarchyHashImpl
 
         while (current_level != level && pos < end)
         {
-            /// Идём до следующего / или ? или #, пропуская все те, что вначале.
+            /// We go to the next `/` or `?` or `#`, skipping all at the beginning.
             while (pos < end && (*pos == '/' || *pos == '?' || *pos == '#'))
                 ++pos;
             if (pos == end)
@@ -716,15 +723,13 @@ public:
             throw Exception{
                 "Number of arguments for function " + getName() + " doesn't match: passed " +
                     toString(arg_count) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-            };
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         const auto first_arg = arguments.front().get();
         if (!typeid_cast<const DataTypeString *>(first_arg))
             throw Exception{
                 "Illegal type " + first_arg->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            };
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (arg_count == 2)
         {
@@ -739,8 +744,7 @@ public:
                 !typeid_cast<const DataTypeInt64 *>(second_arg))
                 throw Exception{
                     "Illegal type " + second_arg->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-                };
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         return std::make_shared<DataTypeUInt64>();
@@ -755,7 +759,7 @@ public:
         else if (arg_count == 2)
             executeTwoArgs(block, arguments, result);
         else
-            throw std::logic_error{"got into IFunction::execute with unexpected number of arguments"};
+            throw Exception{"got into IFunction::execute with unexpected number of arguments", ErrorCodes::LOGICAL_ERROR};
     }
 
 private:
@@ -797,8 +801,7 @@ private:
         if (!level_col->isConst())
             throw Exception{
                 "Second argument of function " + getName() + " must be an integral constant",
-                ErrorCodes::ILLEGAL_COLUMN
-            };
+                ErrorCodes::ILLEGAL_COLUMN};
 
         const auto level = level_col->get64(0);
 
@@ -833,10 +836,10 @@ private:
 };
 
 
-struct NameHalfMD5             { static constexpr auto name = "halfMD5"; };
-struct NameSipHash64        { static constexpr auto name = "sipHash64"; };
-struct NameIntHash32         { static constexpr auto name = "intHash32"; };
-struct NameIntHash64         { static constexpr auto name = "intHash64"; };
+struct NameHalfMD5   { static constexpr auto name = "halfMD5"; };
+struct NameSipHash64 { static constexpr auto name = "sipHash64"; };
+struct NameIntHash32 { static constexpr auto name = "intHash32"; };
+struct NameIntHash64 { static constexpr auto name = "intHash64"; };
 
 struct ImplCityHash64
 {

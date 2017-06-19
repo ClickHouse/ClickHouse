@@ -23,6 +23,7 @@
 #include <Functions/IFunction.h>
 #include <Poco/DirectoryIterator.h>
 #include <Common/Increment.h>
+#include <Common/SimpleIncrement.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
 #include <Common/Stopwatch.h>
@@ -72,7 +73,8 @@ MergeTreeData::MergeTreeData(
     const String & log_name_,
     bool require_part_metadata_,
     bool attach,
-    BrokenPartCallback broken_part_callback_)
+    BrokenPartCallback broken_part_callback_,
+    PartsCleanCallback parts_clean_callback_)
     : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
     date_column_name(date_column_name_), sampling_expression(sampling_expression_),
     index_granularity(index_granularity_),
@@ -82,6 +84,7 @@ MergeTreeData::MergeTreeData(
     database_name(database_), table_name(table_),
     full_path(full_path_), columns(columns_),
     broken_part_callback(broken_part_callback_),
+    parts_clean_callback(parts_clean_callback_ ? parts_clean_callback_ : [this](){ clearOldParts(); }),
     log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
 {
     /// Check that the date column exists and is of type Date.
@@ -296,7 +299,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     for (Poco::DirectoryIterator it(full_path); it != end; ++it)
     {
         /// Skip temporary directories older than one day.
-        if (startsWith(it.name(), "tmp_"))
+        if (startsWith(it.name(), "tmp"))
             continue;
 
         part_file_names.push_back(it.name());
@@ -313,6 +316,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             continue;
 
         part->name = file_name;
+        part->relative_path = file_name;
         bool broken = false;
 
         try
@@ -399,9 +403,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
             ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
-    for (const auto & part : broken_parts_to_remove)
+    for (auto & part : broken_parts_to_remove)
         part->remove();
-    for (const auto & part : broken_parts_to_detach)
+    for (auto & part : broken_parts_to_detach)
         part->renameAddPrefix(true, "");
 
     all_data_parts = data_parts;
@@ -445,7 +449,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
     }
 
-    calculateColumnSizes();
+    calculateColumnSizesImpl();
 
     LOG_DEBUG(log, "Loaded data parts (" << data_parts.size() << " items)");
 }
@@ -468,7 +472,7 @@ static bool isOldPartDirectory(Poco::File & directory, time_t threshold)
 }
 
 
-void MergeTreeData::clearOldTemporaryDirectories()
+void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock<std::mutex> lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -476,18 +480,21 @@ void MergeTreeData::clearOldTemporaryDirectories()
         return;
 
     time_t current_time = time(0);
+    ssize_t deadline = (custom_directories_lifetime_seconds >= 0)
+        ? current_time - custom_directories_lifetime_seconds
+        : current_time - settings.temporary_directories_lifetime;
 
     /// Delete temporary directories older than a day.
     Poco::DirectoryIterator end;
     for (Poco::DirectoryIterator it{full_path}; it != end; ++it)
     {
-        if (startsWith(it.name(), "tmp_"))
+        if (startsWith(it.name(), "tmp"))
         {
             Poco::File tmp_dir(full_path + it.name());
 
             try
             {
-                if (tmp_dir.isDirectory() && isOldPartDirectory(tmp_dir, current_time - settings.temporary_directories_lifetime))
+                if (tmp_dir.isDirectory() && isOldPartDirectory(tmp_dir, deadline))
                 {
                     LOG_WARNING(log, "Removing temporary directory " << full_path << it.name());
                     Poco::File(full_path + it.name()).remove(true);
@@ -1133,9 +1140,9 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
         if (!data_part)
             return;
 
-        LOG_WARNING(data_part->storage.log, "Aborting ALTER of part " << data_part->name);
+        LOG_WARNING(data_part->storage.log, "Aborting ALTER of part " << data_part->relative_path);
 
-        String path = data_part->storage.full_path + data_part->name + "/";
+        String path = data_part->getFullPath();
         for (auto it : rename_map)
         {
             if (!it.second.empty())
@@ -1174,10 +1181,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     if (out_transaction && out_transaction->data)
         throw Exception("Using the same MergeTreeData::Transaction for overlapping transactions is invalid", ErrorCodes::LOGICAL_ERROR);
 
-    LOG_TRACE(log, "Renaming " << part->name << ".");
-
-    String old_name = part->name;
-    String old_path = getFullPath() + old_name + "/";
+    LOG_TRACE(log, "Renaming temporary part " << part->relative_path << ".");
 
     DataPartsVector replaced;
     {
@@ -1189,22 +1193,32 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
         if (increment)
             part->left = part->right = increment->get();
 
+        String old_name = part->name;
         String new_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
 
-        part->is_temp = false;
-        part->name = new_name;
-        bool duplicate = data_parts.count(part);
-        part->name = old_name;
-        part->is_temp = true;
+        /// Check that new part doesn't exist yet.
+        {
+            part->is_temp = false;
+            part->name = new_name;
+            bool duplicate = data_parts.count(part);
+            part->name = old_name;
+            part->is_temp = true;
 
-        if (duplicate)
-            throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+            if (duplicate)
+                throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+        }
 
-        String new_path = getFullPath() + new_name + "/";
+        bool in_all_data_parts;
+        {
+            std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
+            in_all_data_parts = all_data_parts.count(part) != 0;
+        }
+        /// New part can be removed from data_parts but not from file system and ZooKeeper
+        if (in_all_data_parts)
+            clearOldPartsAndRemoveFromZK();
 
         /// Rename the part.
-        Poco::File(old_path).renameTo(new_path);
-
+        part->renameTo(new_name);
         part->is_temp = false;
         part->name = new_name;
 
@@ -1305,7 +1319,7 @@ void MergeTreeData::attachPart(const DataPartPtr & part)
 
 void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String & prefix, bool restore_covered, bool move_to_detached)
 {
-    LOG_INFO(log, "Renaming " << part->name << " to " << prefix << part->name << " and detaching it.");
+    LOG_INFO(log, "Renaming " << part->relative_path << " to " << prefix << part->name << " and detaching it.");
 
     std::lock_guard<std::mutex> lock(data_parts_mutex);
     std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
@@ -1543,19 +1557,22 @@ MergeTreeData::DataPartPtr MergeTreeData::getShardedPartIfExists(const String & 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const String & relative_path)
 {
     MutableDataPartPtr part = std::make_shared<DataPart>(*this);
-    part->name = relative_path;
-    ActiveDataPartSet::parsePartName(Poco::Path(relative_path).getFileName(), *part);
+
+    part->relative_path = relative_path;
+    part->name = Poco::Path(relative_path).getFileName();
+    ActiveDataPartSet::parsePartName(part->name, *part);
+    String full_part_path = part->getFullPath();
 
     /// Earlier the list of columns was written incorrectly. Delete it and re-create.
-    if (Poco::File(full_path + relative_path + "/columns.txt").exists())
-        Poco::File(full_path + relative_path + "/columns.txt").remove();
+    if (Poco::File(full_part_path + "columns.txt").exists())
+        Poco::File(full_part_path + "columns.txt").remove();
 
     part->loadColumns(false);
     part->loadChecksums(false);
     part->loadIndex();
     part->checkNotBroken(false);
 
-    part->modification_time = Poco::File(full_path + relative_path).getLastModified().epochTime();
+    part->modification_time = Poco::File(full_part_path).getLastModified().epochTime();
 
     /// If the checksums file is not present, calculate the checksums and write them to disk.
     /// Check the data while we are at it.
@@ -1564,21 +1581,21 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
         MergeTreePartChecker::Settings settings;
         settings.setIndexGranularity(index_granularity);
         settings.setRequireColumnFiles(true);
-        MergeTreePartChecker::checkDataPart(full_path + relative_path, settings, primary_key_data_types, &part->checksums);
+        MergeTreePartChecker::checkDataPart(full_part_path, settings, primary_key_data_types, &part->checksums);
 
         {
-            WriteBufferFromFile out(full_path + relative_path + "/checksums.txt.tmp", 4096);
+            WriteBufferFromFile out(full_part_path + "checksums.txt.tmp", 4096);
             part->checksums.write(out);
         }
 
-        Poco::File(full_path + relative_path + "/checksums.txt.tmp").renameTo(full_path + relative_path + "/checksums.txt");
+        Poco::File(full_part_path + "checksums.txt.tmp").renameTo(full_part_path + "checksums.txt");
     }
 
     return part;
 }
 
 
-void MergeTreeData::calculateColumnSizes()
+void MergeTreeData::calculateColumnSizesImpl()
 {
     column_sizes.clear();
 
@@ -1591,7 +1608,7 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
     const auto & files = part->checksums.files;
 
     /// TODO This method doesn't take into account columns with multiple files.
-    for (const auto & column : *columns)
+    for (const auto & column : getColumnsList())
     {
         const auto escaped_name = escapeForFileName(column.name);
         const auto bin_file_name = escaped_name + ".bin";
@@ -1611,6 +1628,14 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
     }
 }
 
+static inline void logSubtract(size_t & from, size_t value, Logger * log, const String & variable)
+{
+    if (value > from)
+        LOG_ERROR(log, "Possibly incorrect subtraction: " << from << " - " << value << " = " << from - value << ", variable " << variable);
+
+    from -= value;
+}
+
 void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part)
 {
     const auto & files = part->checksums.files;
@@ -1627,12 +1652,12 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
         if (files.count(bin_file_name))
         {
             const auto & bin_file_checksums = files.at(bin_file_name);
-            column_size.data_compressed -= bin_file_checksums.file_size;
-            column_size.data_uncompressed -= bin_file_checksums.uncompressed_size;
+            logSubtract(column_size.data_compressed, bin_file_checksums.file_size, log, bin_file_name + ".file_size");
+            logSubtract(column_size.data_uncompressed, bin_file_checksums.uncompressed_size, log, bin_file_name + ".uncompressed_size");
         }
 
         if (files.count(mrk_file_name))
-            column_size.marks -= files.at(mrk_file_name).file_size;
+            logSubtract(column_size.marks, files.at(mrk_file_name).file_size, log, mrk_file_name + ".file_size");
     }
 }
 
@@ -1752,5 +1777,35 @@ DayNum_t MergeTreeData::getMonthFromPartPrefix(const String & part_prefix)
 {
     return getMonthFromName(part_prefix.substr(0, strlen("YYYYMM")));
 }
+
+
+void MergeTreeData::Transaction::rollback()
+{
+    if (data && (!parts_to_remove_on_rollback.empty() || !parts_to_add_on_rollback.empty()))
+    {
+        std::stringstream ss;
+        if (!parts_to_remove_on_rollback.empty())
+        {
+            ss << " Removing parts:";
+            for (const auto & part : parts_to_remove_on_rollback)
+                ss << " " << part->relative_path;
+            ss << ".";
+        }
+        if (!parts_to_add_on_rollback.empty())
+        {
+            ss << " Adding parts: ";
+            for (const auto & part : parts_to_add_on_rollback)
+                ss << " " << part->relative_path;
+            ss << ".";
+        }
+
+        LOG_DEBUG(data->log, "Undoing transaction." << ss.str());
+
+        data->replaceParts(parts_to_remove_on_rollback, parts_to_add_on_rollback, true);
+
+        clear();
+    }
+}
+
 
 }

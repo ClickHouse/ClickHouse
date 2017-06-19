@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -12,13 +12,10 @@ class Context;
 
 /** Implements `zookeeper` system table, which allows you to view the data in ZooKeeper for debugging purposes.
   */
-class StorageSystemZooKeeper : private ext::shared_ptr_helper<StorageSystemZooKeeper>, public IStorage
+class StorageSystemZooKeeper : public ext::shared_ptr_helper<StorageSystemZooKeeper>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageSystemZooKeeper>;
-
 public:
-    static StoragePtr create(const std::string & name_);
-
     std::string getName() const override { return "SystemZooKeeper"; }
     std::string getTableName() const override { return name; }
 
@@ -26,12 +23,11 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const ASTPtr & query,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
 private:
     const std::string name;

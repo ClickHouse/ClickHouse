@@ -2,18 +2,18 @@
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 
 
 namespace DB
 {
 
 
-/** CREATE TABLE или ATTACH TABLE запрос
-  */
-class ASTCreateQuery : public IAST
+/// CREATE TABLE or ATTACH TABLE query
+class ASTCreateQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    bool attach{false};    /// Запрос ATTACH TABLE, а не CREATE TABLE.
+    bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
     bool if_not_exists{false};
     bool is_view{false};
     bool is_materialized_view{false};
@@ -23,7 +23,7 @@ public:
     String table;
     ASTPtr columns;
     ASTPtr storage;
-    ASTPtr inner_storage;    /// Внутренний engine для запроса CREATE MATERIALIZED VIEW
+    ASTPtr inner_storage;    /// Internal engine for the CREATE MATERIALIZED VIEW query
     String as_database;
     String as_table;
     ASTPtr select;
@@ -31,7 +31,7 @@ public:
     ASTCreateQuery() = default;
     ASTCreateQuery(const StringRange range_) : IAST(range_) {}
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
 
     ASTPtr clone() const override
@@ -39,12 +39,24 @@ public:
         auto res = std::make_shared<ASTCreateQuery>(*this);
         res->children.clear();
 
-        if (columns)     { res->columns = columns->clone();     res->children.push_back(res->columns); }
-        if (storage)     { res->storage = storage->clone();     res->children.push_back(res->storage); }
-        if (select)     { res->select = select->clone();     res->children.push_back(res->select); }
-        if (inner_storage)     { res->inner_storage = inner_storage->clone();     res->children.push_back(res->inner_storage); }
+        if (columns)        { res->columns = columns->clone();              res->children.push_back(res->columns); }
+        if (storage)        { res->storage = storage->clone();              res->children.push_back(res->storage); }
+        if (select)         { res->select = select->clone();                res->children.push_back(res->select); }
+        if (inner_storage)  { res->inner_storage = inner_storage->clone();  res->children.push_back(res->inner_storage); }
 
         return res;
+    }
+
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    {
+        auto query_ptr = clone();
+        ASTCreateQuery & query = static_cast<ASTCreateQuery &>(*query_ptr);
+
+        query.cluster.clear();
+        if (query.database.empty())
+            query.database = new_database;
+
+        return query_ptr;
     }
 
 protected:
@@ -59,6 +71,7 @@ protected:
                 << (if_not_exists ? "IF NOT EXISTS " : "")
                 << (settings.hilite ? hilite_none : "")
                 << backQuoteIfNeed(database);
+            formatOnCluster(settings);
 
             if (storage)
             {
@@ -80,10 +93,11 @@ protected:
                 << (settings.hilite ? hilite_keyword : "")
                     << (attach ? "ATTACH " : "CREATE ")
                     << (is_temporary ? "TEMPORARY " : "")
-                    << what
-                    << " " << (if_not_exists ? "IF NOT EXISTS " : "")
+                    << what << " "
+                    << (if_not_exists ? "IF NOT EXISTS " : "")
                 << (settings.hilite ? hilite_none : "")
                 << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+                formatOnCluster(settings);
         }
 
         if (!as_table.empty())

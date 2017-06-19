@@ -32,8 +32,8 @@ public:
         state = CityHash128WithSeed(data, block_size, state);
     }
 
-    /// вычисление хэша зависит от разбиения по блокам
-    /// поэтому нужно вычислить хэш от n полных кусочков и одного неполного
+    /// computation of the hash depends on the partitioning of blocks
+    /// so you need to compute a hash of n complete pieces and one incomplete
     void calculateHash(DB::BufferBase::Position data, size_t len);
 
 protected:
@@ -42,8 +42,8 @@ protected:
     uint128 state;
 };
 
-/** Вычисляет хеш от записываемых данных и передает их в указанный WriteBuffer.
-  * В качестве основного буфера используется буфер вложенного WriteBuffer.
+/** Computes the hash from the data to write and passes it to the specified WriteBuffer.
+  * The buffer of the nested WriteBuffer is used as the main buffer.
   */
 class HashingWriteBuffer : public IHashingBuffer<WriteBuffer>
 {
@@ -68,7 +68,7 @@ public:
         size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
         : IHashingBuffer<DB::WriteBuffer>(block_size_), out(out_)
     {
-        out.next(); /// Если до нас в out что-то уже писали, не дадим остаткам этих данных повлиять на хеш.
+        out.next(); /// If something has already been written to `out` before us, we will not let the remains of this data affect the hash.
         working_buffer = out.buffer();
         pos = working_buffer.begin();
         state = uint128(0, 0);

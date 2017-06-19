@@ -2,9 +2,9 @@
 
 #include <Common/Arena.h>
 #include <common/likely.h>
-#include <ext/range.hpp>
-#include <ext/size.hpp>
-#include <ext/bit_cast.hpp>
+#include <ext/range.h>
+#include <ext/size.h>
+#include <ext/bit_cast.h>
 #include <cstdlib>
 #include <memory>
 
@@ -73,7 +73,7 @@ public:
         free_list = block;
     }
 
-    /// Размер выделенного пула в байтах
+    /// The size of the allocated pool in bytes
     size_t size() const
     {
         return pool.size();

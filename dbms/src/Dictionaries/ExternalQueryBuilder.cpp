@@ -1,4 +1,4 @@
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <boost/range/join.hpp>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
@@ -211,7 +211,7 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
 
 
 std::string ExternalQueryBuilder::composeLoadKeysQuery(
-    const ConstColumnPlainPtrs & key_columns,
+    const Columns & key_columns,
     const std::vector<std::size_t> & requested_rows,
     LoadKeysMethod method)
 {
@@ -300,7 +300,7 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
 }
 
 
-void ExternalQueryBuilder::composeKeyCondition(const ConstColumnPlainPtrs & key_columns, const std::size_t row, WriteBuffer & out) const
+void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, const std::size_t row, WriteBuffer & out) const
 {
     writeString("(", out);
 
@@ -348,7 +348,7 @@ std::string ExternalQueryBuilder::composeKeyTupleDefinition() const
 }
 
 
-void ExternalQueryBuilder::composeKeyTuple(const ConstColumnPlainPtrs & key_columns, const std::size_t row, WriteBuffer & out) const
+void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, const std::size_t row, WriteBuffer & out) const
 {
     writeString("(", out);
 

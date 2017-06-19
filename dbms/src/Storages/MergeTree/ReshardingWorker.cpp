@@ -82,12 +82,12 @@ public:
         for (const auto & key : keys)
         {
             if (key == "task_queue_path")
-                task_queue_path = config.getString(config_name + "." + key);
+                ddl_queries_root = config.getString(config_name + "." + key);
             else
                 throw Exception{"Unknown parameter in resharding configuration", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
         }
 
-        if (task_queue_path.empty())
+        if (ddl_queries_root.empty())
             throw Exception{"Resharding: missing parameter task_queue_path", ErrorCodes::INVALID_CONFIG_PARAMETER};
     }
 
@@ -96,11 +96,11 @@ public:
 
     std::string getTaskQueuePath() const
     {
-        return task_queue_path;
+        return ddl_queries_root;
     }
 
 private:
-    std::string task_queue_path;
+    std::string ddl_queries_root;
 };
 
 /// Helper class we use to read and write the status of a coordinator
@@ -420,16 +420,12 @@ void ReshardingWorker::trackAndPerform()
             else
                 LOG_ERROR(log, ex.message());
         }
-        catch (const std::exception & ex)
-        {
-            LOG_ERROR(log, ex.what());
-        }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        while (true)
+        while (!must_stop)
         {
             try
             {
@@ -460,10 +456,6 @@ void ReshardingWorker::trackAndPerform()
                 else
                     LOG_ERROR(log, ex.message());
             }
-            catch (const std::exception & ex)
-            {
-                LOG_ERROR(log, ex.what());
-            }
             catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -475,13 +467,9 @@ void ReshardingWorker::trackAndPerform()
         if (ex.code() != ErrorCodes::ABORTED)
             error_msg = ex.message();
     }
-    catch (const std::exception & ex)
-    {
-        error_msg = ex.what();
-    }
     catch (...)
     {
-        error_msg = "unspecified";
+        error_msg = getCurrentExceptionMessage(false);
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
@@ -769,18 +757,10 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
             LOG_ERROR(log, dumped_coordinator_state);
         throw;
     }
-    catch (const std::exception & ex)
-    {
-        /// An error has occurred on this performer.
-        handle_exception("Resharding job cancelled", ex.what());
-        if (current_job.isCoordinated())
-            LOG_ERROR(log, dumped_coordinator_state);
-        throw;
-    }
     catch (...)
     {
         /// An error has occurred on this performer.
-        handle_exception("Resharding job cancelled", "An unspecified error has occurred");
+        handle_exception("Resharding job cancelled", getCurrentExceptionMessage(false));
         if (current_job.isCoordinated())
             LOG_ERROR(log, dumped_coordinator_state);
         throw;
@@ -959,7 +939,7 @@ void ReshardingWorker::publishShardedPartitions()
 
     ThreadPool pool(remote_count);
 
-    using Tasks = std::vector<std::packaged_task<bool()> >;
+    using Tasks = std::vector<std::packaged_task<bool()>>;
     Tasks tasks(remote_count);
 
     ReplicatedMergeTreeAddress local_address{zookeeper->get(storage.replica_path + "/host")};
@@ -1114,7 +1094,7 @@ void ReshardingWorker::commit()
     size_t pool_size = operation_count;
     ThreadPool pool(pool_size);
 
-    using Tasks = std::vector<std::packaged_task<void()> >;
+    using Tasks = std::vector<std::packaged_task<void()>>;
     Tasks tasks(pool_size);
 
     try
@@ -1312,7 +1292,7 @@ bool ReshardingWorker::checkAttachLogRecord(LogRecord & log_record)
 
     ThreadPool pool(task_info_list.size());
 
-    using Tasks = std::vector<std::packaged_task<RemotePartChecker::Status()> >;
+    using Tasks = std::vector<std::packaged_task<RemotePartChecker::Status()>>;
     Tasks tasks(task_info_list.size());
 
     try

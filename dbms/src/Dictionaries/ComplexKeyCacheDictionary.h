@@ -9,9 +9,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
 #include <Core/StringRef.h>
-#include <ext/scope_guard.hpp>
-#include <ext/bit_cast.hpp>
-#include <ext/map.hpp>
+#include <ext/scope_guard.h>
+#include <ext/bit_cast.h>
+#include <ext/map.h>
 #include <Poco/RWLock.h>
 #include <atomic>
 #include <chrono>
@@ -87,7 +87,7 @@ public:
     /// See the requirement in IDataType.h for text-serialization functions.
 #define DECLARE(TYPE)\
     void get##TYPE(\
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
         PaddedPODArray<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -102,12 +102,12 @@ public:
 #undef DECLARE
 
     void getString(
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
         ColumnString * out) const;
 
 #define DECLARE(TYPE)\
     void get##TYPE(\
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
         const PaddedPODArray<TYPE> & def, PaddedPODArray<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -122,12 +122,12 @@ public:
 #undef DECLARE
 
     void getString(
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
         const ColumnString * const def, ColumnString * const out) const;
 
 #define DECLARE(TYPE)\
     void get##TYPE(\
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
         const TYPE def, PaddedPODArray<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -142,10 +142,12 @@ public:
 #undef DECLARE
 
     void getString(
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
         const String & def, ColumnString * const out) const;
 
-    void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
+    void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
+
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
     template <typename Value> using MapType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
@@ -196,26 +198,27 @@ private:
     template <typename OutputType, typename DefaultGetter>
     void getItemsNumber(
         Attribute & attribute,
-        const ConstColumnPlainPtrs & key_columns,
+        const Columns & key_columns,
         PaddedPODArray<OutputType> & out,
         DefaultGetter && get_default) const;
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
         Attribute & attribute,
-        const ConstColumnPlainPtrs & key_columns,
+        const Columns & key_columns,
         PaddedPODArray<OutputType> & out,
         DefaultGetter && get_default) const;
 
     template <typename DefaultGetter>
     void getItemsString(
-        Attribute & attribute, const ConstColumnPlainPtrs & key_columns, ColumnString * out,
+        Attribute & attribute, const Columns & key_columns, ColumnString * out,
         DefaultGetter && get_default) const;
 
     template <typename PresentKeyHandler, typename AbsentKeyHandler>
     void update(
-        const ConstColumnPlainPtrs & in_key_columns, const PODArray<StringRef> & in_keys,
-        const std::vector<std::size_t> & in_requested_rows, PresentKeyHandler && on_cell_updated,
+        const Columns & in_key_columns, const PODArray<StringRef> & in_keys,
+        const std::vector<std::size_t> & in_requested_rows,
+        PresentKeyHandler && on_cell_updated,
         AbsentKeyHandler && on_key_not_found) const;
 
     UInt64 getCellIdx(const StringRef key) const;
@@ -226,16 +229,17 @@ private:
 
     Attribute & getAttribute(const std::string & attribute_name) const;
 
-    StringRef allocKey(const std::size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys) const;
+    StringRef allocKey(const std::size_t row, const Columns & key_columns, StringRefs & keys) const;
 
     void freeKey(const StringRef key) const;
 
     template <typename Arena>
     static StringRef placeKeysInPool(
-        const std::size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool);
+        const std::size_t row, const Columns & key_columns, StringRefs & keys,
+        const std::vector<DictionaryAttribute> & key_attributes, Arena & pool);
 
     StringRef placeKeysInFixedSizePool(
-        const std::size_t row, const ConstColumnPlainPtrs & key_columns) const;
+        const std::size_t row, const Columns & key_columns) const;
 
     static StringRef copyIntoArena(StringRef src, Arena & arena);
     StringRef copyKey(const StringRef key) const;
@@ -253,6 +257,8 @@ private:
         const auto hash = StringRefHash{}(key);
         return findCellIdx(key, now, hash);
     };
+
+    bool isEmptyCell(const UInt64 idx) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;

@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 
 

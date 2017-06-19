@@ -7,7 +7,7 @@ namespace DB
 {
 
 
-/** OPTIMIZE запрос
+/** OPTIMIZE query
   */
 class ASTOptimizeQuery : public IAST
 {
@@ -15,9 +15,9 @@ public:
     String database;
     String table;
 
-    /// Может быть указана партиция, в которой производить оптимизацию.
+    /// The partition to optimize can be specified.
     String partition;
-    /// Может быть указан флаг - производить оптимизацию "до конца" вместо одного шага.
+    /// A flag can be specified - perform optimization "to the end" instead of one step.
     bool final;
     /// Do deduplicate (default: false)
     bool deduplicate;
@@ -25,7 +25,7 @@ public:
     ASTOptimizeQuery() = default;
     ASTOptimizeQuery(const StringRange range_) : IAST(range_) {}
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return "OptimizeQuery_" + database + "_" + table + "_" + partition + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : ""); };
 
     ASTPtr clone() const override { return std::make_shared<ASTOptimizeQuery>(*this); }

@@ -23,9 +23,9 @@ static inline ContainerType max(const ContainerType & lhs, const ContainerType &
 
 }
 
-/** Для маленького количества ключей - массив фиксированного размера "на стеке".
-  * Для среднего - выделяется HashSet.
-  * Для большого - выделяется HyperLogLog.
+/** For a small number of keys - an array of fixed size "on the stack".
+  * For the average, HashSet is allocated.
+  * For large, HyperLogLog is allocated.
   */
 template
 <
@@ -146,7 +146,7 @@ public:
             getContainer<Large>().merge(rhs.getContainer<Large>());
     }
 
-    /// Можно вызывать только для пустого объекта.
+    /// You can only call for an empty object.
     void read(DB::ReadBuffer & in)
     {
         UInt8 v;
@@ -171,8 +171,8 @@ public:
     {
         auto container_type = getContainerType();
 
-        /// Если readAndMerge вызывается с пустым состоянием, просто десериализуем
-        /// состояние задано в качестве параметра.
+        /// If readAndMerge is called with an empty state, just deserialize
+        /// the state is specified as a parameter.
         if ((container_type == details::ContainerType::SMALL) && small.empty())
         {
             read(in);

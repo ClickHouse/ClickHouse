@@ -50,33 +50,24 @@ StorageMerge::StorageMerge(
 {
 }
 
-StoragePtr StorageMerge::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const String & source_database_,
-    const String & table_name_regexp_,
-    const Context & context_)
+bool StorageMerge::isRemote() const
 {
-    return make_shared(
-        name_, columns_,
-        source_database_, table_name_regexp_, context_
-    );
-}
+    auto database = context.getDatabase(source_database);
+    auto iterator = database->getIterator();
 
-StoragePtr StorageMerge::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    const String & source_database_,
-    const String & table_name_regexp_,
-    const Context & context_)
-{
-    return make_shared(
-        name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
-        source_database_, table_name_regexp_, context_
-    );
+    while (iterator->isValid())
+    {
+        if (table_name_regexp.match(iterator->name()))
+        {
+            auto & table = iterator->table();
+            if (table.get() != this && table->isRemote())
+                return true;
+        }
+
+        iterator->next();
+    }
+
+    return false;
 }
 
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const
@@ -95,12 +86,11 @@ bool StorageMerge::hasColumn(const String & column_name) const
 
 BlockInputStreams StorageMerge::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     BlockInputStreams res;
 
@@ -140,8 +130,8 @@ BlockInputStreams StorageMerge::read(
     /** Just in case, turn off optimization "transfer to PREWHERE",
       * since there is no certainty that it works when one of table is MergeTree and other is not.
       */
-    Settings modified_settings = settings;
-    modified_settings.optimize_move_to_prewhere = false;
+    Context modified_context = context;
+    modified_context.getSettingsRef().optimize_move_to_prewhere = false;
 
     size_t tables_count = selected_tables.size();
     size_t curr_table_number = 0;
@@ -160,17 +150,16 @@ BlockInputStreams StorageMerge::read(
 
         BlockInputStreams source_streams;
 
-        if (curr_table_number < threads)
+        if (curr_table_number < num_streams)
         {
             QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
             source_streams = table->read(
                 real_column_names,
                 modified_query_ast,
-                context,
-                modified_settings,
+                modified_context,
                 processed_stage_in_source_table,
                 max_block_size,
-                tables_count >= threads ? 1 : (threads / tables_count));
+                tables_count >= num_streams ? 1 : (num_streams / tables_count));
 
             if (!processed_stage_in_source_tables)
                 processed_stage_in_source_tables.emplace(processed_stage_in_source_table);
@@ -179,9 +168,12 @@ BlockInputStreams StorageMerge::read(
                     ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
             /// Subordinary tables could have different but convertible types, like numeric types of different width.
-            /// We must return streams with structure equals to structure of Merge table. 
+            /// We must return streams with structure equals to structure of Merge table.
             for (auto & stream : source_streams)
-                stream = std::make_shared<CastTypeBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock());
+            {
+                /// will throw if some columns not convertible
+                stream = std::make_shared<CastTypeBlockInputStream>(context, stream, getSampleBlock());
+            }
         }
         else
         {
@@ -192,8 +184,7 @@ BlockInputStreams StorageMerge::read(
                 BlockInputStreams streams = table->read(
                     real_column_names,
                     modified_query_ast,
-                    context,
-                    modified_settings,
+                    modified_context,
                     processed_stage_in_source_table,
                     max_block_size,
                     1);
@@ -207,7 +198,10 @@ BlockInputStreams StorageMerge::read(
 
                 auto stream = streams.empty() ? std::make_shared<NullBlockInputStream>() : streams.front();
                 if (!streams.empty())
-                    stream = std::make_shared<CastTypeBlockInputStream>(context, stream, table->getSampleBlock(), getSampleBlock());
+                {
+                    /// will throw if some columns not convertible
+                    stream = std::make_shared<CastTypeBlockInputStream>(context, stream, getSampleBlock());
+                }
                 return stream;
             }));
         }
@@ -231,7 +225,7 @@ BlockInputStreams StorageMerge::read(
     if (processed_stage_in_source_tables)
         processed_stage = processed_stage_in_source_tables.value();
 
-    return narrowBlockInputStreams(res, threads);
+    return narrowBlockInputStreams(res, num_streams);
 }
 
 /// Construct a block consisting only of possible values of virtual columns

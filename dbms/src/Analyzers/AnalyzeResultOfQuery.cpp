@@ -20,7 +20,7 @@ namespace ErrorCodes
 }
 
 
-void AnalyzeResultOfQuery::process(ASTPtr & ast, Context & context)
+void AnalyzeResultOfQuery::process(ASTPtr & ast, const Context & context, ExecuteTableFunctions & table_functions)
 {
     const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(ast.get());
     if (!select)
@@ -35,13 +35,13 @@ void AnalyzeResultOfQuery::process(ASTPtr & ast, Context & context)
     collect_aliases.process(ast);
 
     CollectTables collect_tables;
-    collect_tables.process(ast, context, collect_aliases);
+    collect_tables.process(ast, context, collect_aliases, table_functions);
 
     AnalyzeColumns analyze_columns;
     analyze_columns.process(ast, collect_aliases, collect_tables);
 
     TypeAndConstantInference inference;
-    inference.process(ast, context, collect_aliases, analyze_columns, analyze_lambdas);
+    inference.process(ast, context, collect_aliases, analyze_columns, analyze_lambdas, table_functions);
 
     for (const ASTPtr & child : select->select_expression_list->children)
     {

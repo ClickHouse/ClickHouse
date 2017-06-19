@@ -23,8 +23,9 @@
 #include <Dictionaries/ComplexKeyHashedDictionary.h>
 #include <Dictionaries/ComplexKeyCacheDictionary.h>
 #include <Dictionaries/RangeHashedDictionary.h>
+#include <Dictionaries/TrieDictionary.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace DB
@@ -35,19 +36,20 @@ namespace ErrorCodes
     extern const int DICTIONARIES_WAS_NOT_LOADED;
     extern const int UNSUPPORTED_METHOD;
     extern const int UNKNOWN_TYPE;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/** Функции, использующие подключаемые (внешние) словари.
+/** Functions that use plug-ins (external) dictionaries.
   *
-  * Получить значение аттрибута заданного типа.
+  * Get the value of the attribute of the specified type.
   *     dictGetType(dictionary, attribute, id),
-  *         Type - placeholder для имени типа, в данный момент поддерживаются любые числовые и строковой типы.
-  *        Тип должен соответствовать реальному типу аттрибута, с которым он был объявлен в структуре словаря.
+  *         Type - placeholder for the type name, any numeric and string types are currently supported.
+  *        The type must match the actual attribute type with which it was declared in the dictionary structure.
   *
-  * Получить массив идентификаторов, состоящий из исходного и цепочки родителей.
+  * Get an array of identifiers, consisting of the source and parents chain.
   *  dictGetHierarchy(dictionary, id).
   *
-  * Является ли первы йидентификатор потомком второго.
+  * Is the first identifier the child of the second.
   *  dictIsIn(dictionary, child_id, parent_id).
   */
 
@@ -102,7 +104,8 @@ private:
             !executeDispatchSimple<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchSimple<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr))
+            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))
             throw Exception{
                 "Unsupported dictionary type " + dict_ptr->getTypeName(),
                 ErrorCodes::UNKNOWN_TYPE};
@@ -155,13 +158,10 @@ private:
         if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
             || typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
         {
-            /// Функции у внешних словарей поддерживают только полноценные (не константные) столбцы с ключами.
+            /// Functions in external dictionaries only support full-value (not constant) columns with keys.
             const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
 
-            const auto key_columns = ext::map<ConstColumnPlainPtrs>(
-                static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(),
-                [](const ColumnPtr & ptr) { return ptr.get(); });
-
+            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             const auto out = std::make_shared<ColumnUInt8>(key_col_with_type.column->size());
@@ -285,6 +285,7 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
             throw Exception{
                 "Unsupported dictionary type " + dict_ptr->getTypeName(),
@@ -367,10 +368,7 @@ private:
         {
             const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
 
-            const auto key_columns = ext::map<ConstColumnPlainPtrs>(
-                static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(),
-                [](const ColumnPtr & ptr) { return ptr.get(); });
-
+            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             const auto out = std::make_shared<ColumnString>();
@@ -551,7 +549,8 @@ private:
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr))
+            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))
             throw Exception{
                 "Unsupported dictionary type " + dict_ptr->getTypeName(),
                 ErrorCodes::UNKNOWN_TYPE};
@@ -677,9 +676,7 @@ private:
 
         const ColumnPtr key_col_materialized = key_col.convertToFullColumnIfConst();
 
-        const auto key_columns = ext::map<ConstColumnPlainPtrs>(
-            static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(), [](const ColumnPtr & ptr) { return ptr.get(); });
-
+        const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
         const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
         const auto out = std::make_shared<ColumnString>();
@@ -720,7 +717,7 @@ template <> struct DictGetTraits<DATA_TYPE>\
     }\
     template <typename DictionaryType>\
     static void get(\
-        const DictionaryType * dict, const std::string & name, const ConstColumnPlainPtrs & key_columns,\
+        const DictionaryType * dict, const std::string & name, const Columns & key_columns,\
         const DataTypes & key_types, PaddedPODArray<TYPE> & out)\
     {\
         dict->get##TYPE(name, key_columns, key_types, out);\
@@ -741,7 +738,7 @@ template <> struct DictGetTraits<DATA_TYPE>\
     }\
     template <typename DictionaryType, typename DefaultsType>\
     static void getOrDefault(\
-        const DictionaryType * dict, const std::string & name, const ConstColumnPlainPtrs & key_columns,\
+        const DictionaryType * dict, const std::string & name, const Columns & key_columns,\
         const DataTypes & key_types, const DefaultsType & def, PaddedPODArray<TYPE> & out)\
     {\
         dict->get##TYPE(name, key_columns, key_types, def, out);\
@@ -844,6 +841,7 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
             throw Exception{
                 "Unsupported dictionary type " + dict_ptr->getTypeName(),
@@ -929,10 +927,7 @@ private:
         {
             const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
 
-            const auto key_columns = ext::map<ConstColumnPlainPtrs>(
-                static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(),
-                [](const ColumnPtr & ptr) { return ptr.get(); });
-
+            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             const auto out = std::make_shared<ColumnVector<Type>>(key_columns.front()->size());
@@ -1153,7 +1148,8 @@ private:
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr))
+            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))
             throw Exception{
                 "Unsupported dictionary type " + dict_ptr->getTypeName(),
                 ErrorCodes::UNKNOWN_TYPE};
@@ -1284,9 +1280,7 @@ private:
 
         const ColumnPtr key_col_materialized = key_col.convertToFullColumnIfConst();
 
-        const auto key_columns = ext::map<ConstColumnPlainPtrs>(
-            static_cast<const ColumnTuple &>(*key_col_materialized.get()).getColumns(), [](const ColumnPtr & ptr) { return ptr.get(); });
-
+        const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
         const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
         /// @todo detect when all key columns are constant

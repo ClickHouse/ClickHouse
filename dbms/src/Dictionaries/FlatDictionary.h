@@ -5,8 +5,8 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
-#include <ext/range.hpp>
-#include <ext/size.hpp>
+#include <ext/range.h>
+#include <ext/size.h>
 #include <atomic>
 #include <vector>
 #include <tuple>
@@ -125,6 +125,8 @@ public:
 
     void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+
 private:
     template <typename Value> using ContainerType = PaddedPODArray<Value>;
     template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
@@ -190,6 +192,8 @@ private:
         const ChildType & child_ids,
         const AncestorType & ancestor_ids,
         PaddedPODArray<UInt8> & out) const;
+
+    PaddedPODArray<Key> getIds() const;
 
     const std::string name;
     const DictionaryStructure dict_struct;

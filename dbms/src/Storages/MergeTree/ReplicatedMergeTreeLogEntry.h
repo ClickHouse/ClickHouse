@@ -31,11 +31,11 @@ struct ReplicatedMergeTreeLogEntryData
 {
     enum Type
     {
-        EMPTY,         /// Not used.
-        GET_PART,      /// Get the part from another replica.
-        MERGE_PARTS,   /// Merge the parts.
-        DROP_RANGE,    /// Delete the parts in the specified month in the specified number range.
-        ATTACH_PART,  /// Move a part from the `detached` or `unreplicated` directory.
+        EMPTY,          /// Not used.
+        GET_PART,       /// Get the part from another replica.
+        MERGE_PARTS,    /// Merge the parts.
+        DROP_RANGE,     /// Delete the parts in the specified month in the specified number range.
+        ATTACH_PART,    /// Move a part from the `detached` directory.
     };
 
     String typeToString() const
@@ -43,9 +43,9 @@ struct ReplicatedMergeTreeLogEntryData
         switch (type)
         {
             case ReplicatedMergeTreeLogEntryData::GET_PART:     return "GET_PART";
-            case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:     return "MERGE_PARTS";
-            case ReplicatedMergeTreeLogEntryData::DROP_RANGE:     return "DROP_RANGE";
-            case ReplicatedMergeTreeLogEntryData::ATTACH_PART:     return "ATTACH_PART";
+            case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:  return "MERGE_PARTS";
+            case ReplicatedMergeTreeLogEntryData::DROP_RANGE:   return "DROP_RANGE";
+            case ReplicatedMergeTreeLogEntryData::ATTACH_PART:  return "ATTACH_PART";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
@@ -63,7 +63,8 @@ struct ReplicatedMergeTreeLogEntryData
     /// The name of resulting part.
     /// For DROP_RANGE, the name of a non-existent part. You need to remove all the parts covered by it.
     String new_part_name;
-    String block_id;    /// For parts of level zero, the block identifier for deduplication (node ​​name in /blocks /).
+    String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
+    mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
 
     Strings parts_to_merge;
     bool deduplicate = false; /// Do deduplicate on merge
@@ -71,10 +72,8 @@ struct ReplicatedMergeTreeLogEntryData
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
 
-    /// For ATTACH_PART, the name of the part in the `detached` or `unreplicated` directory.
+    /// For ATTACH_PART, the name of the part in the `detached` directory.
     String source_part_name;
-    /// Must be moved from the `unreplicated` directory, not `detached`.
-    bool attach_unreplicated = false;
 
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     bool currently_executing = false;    /// Whether the action is executing now.

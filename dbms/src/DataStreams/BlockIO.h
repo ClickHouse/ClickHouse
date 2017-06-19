@@ -21,14 +21,14 @@ struct BlockIO
     BlockInputStreamPtr in;
     BlockOutputStreamPtr out;
 
-    Block in_sample;    /// Пример блока, который будет прочитан из in.
-    Block out_sample;    /// Пример блока, которого нужно писать в out.
+    Block in_sample;    /// Example of a block to be read from `in`.
+    Block out_sample;   /// Example of a block to be written to `out`.
 
     /// Callbacks for query logging could be set here.
-     std::function<void(IBlockInputStream *, IBlockOutputStream *)>    finish_callback;
+    std::function<void(IBlockInputStream *, IBlockOutputStream *)>    finish_callback;
     std::function<void()>                                             exception_callback;
 
-    /// Вызывайте эти функции, если нужно логгировать запрос.
+    /// Call these functions if you want to log the request.
     void onFinish()
     {
         if (finish_callback)
@@ -43,19 +43,19 @@ struct BlockIO
 
     BlockIO & operator= (const BlockIO & rhs)
     {
-        /// Обеспечиваем правильный порядок уничтожения.
-        out                 = nullptr;
-        in                     = nullptr;
-        process_list_entry     = nullptr;
+        /// We provide the correct order of destruction.
+        out                     = nullptr;
+        in                      = nullptr;
+        process_list_entry      = nullptr;
 
-        process_list_entry     = rhs.process_list_entry;
-        in                     = rhs.in;
-        out                 = rhs.out;
-        in_sample             = rhs.in_sample;
-        out_sample             = rhs.out_sample;
+        process_list_entry      = rhs.process_list_entry;
+        in                      = rhs.in;
+        out                     = rhs.out;
+        in_sample               = rhs.in_sample;
+        out_sample              = rhs.out_sample;
 
-        finish_callback        = rhs.finish_callback;
-        exception_callback    = rhs.exception_callback;
+        finish_callback         = rhs.finish_callback;
+        exception_callback      = rhs.exception_callback;
 
         return *this;
     }

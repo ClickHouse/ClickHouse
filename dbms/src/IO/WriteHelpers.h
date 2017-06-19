@@ -31,7 +31,7 @@ namespace ErrorCodes
     extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
 }
 
-/// Функции-помошники для форматированной записи
+/// Helper functions for formatted and binary output.
 
 inline void writeChar(char x, WriteBuffer & buf)
 {
@@ -41,7 +41,7 @@ inline void writeChar(char x, WriteBuffer & buf)
 }
 
 
-/// Запись POD-типа в native формате
+/// Write POD-type in native format. It's recommended to use only with packed (dense) data types.
 template <typename T>
 inline void writePODBinary(const T & x, WriteBuffer & buf)
 {
@@ -139,19 +139,19 @@ inline void writeString(const StringRef & ref, WriteBuffer & buf)
 }
 
 
-/** Пишет С-строку без создания временного объекта. Если строка - литерал, то strlen выполняется на этапе компиляции.
-  * Используйте, когда строка - литерал.
+/** Writes a C-string without creating a temporary object. If the string is a literal, then `strlen` is executed at the compilation stage.
+  * Use when the string is a literal.
   */
 #define writeCString(s, buf) \
     (buf).write((s), strlen(s))
 
-/** Пишет строку для использования в формате JSON:
- *  - строка выводится в двойных кавычках
- *  - эскейпится символ прямого слеша '/'
- *  - байты из диапазона 0x00-0x1F кроме '\b', '\f', '\n', '\r', '\t' эскейпятся как \u00XX
- *  - кодовые точки U+2028 и U+2029 (последовательности байт в UTF-8: e2 80 a8, e2 80 a9) эскейпятся как \u2028 и \u2029
- *  - предполагается, что строка в кодировке UTF-8, невалидный UTF-8 не обрабатывается
- *  - не-ASCII символы остаются как есть
+/** Writes a string for use in the JSON format:
+ *  - the string is outputted in double quotes
+ *  - forward slash character '/' is escaped
+ *  - bytes from the range 0x00-0x1F except `\b', '\f', '\n', '\r', '\t' are escaped as \u00XX
+ *  - code points U+2028 and U+2029 (byte sequences in UTF-8: e2 80 a8, e2 80 a9) are escaped as \u2028 and \u2029
+ *  - it is assumed that string is the UTF-8 encoded, the invalid UTF-8 is not processed
+ *  - non-ASCII characters remain as is
  */
 inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf)
 {
@@ -227,7 +227,7 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
     const char * pos = begin;
     while (true)
     {
-        /// Специально будем эскейпить больше символов, чем минимально необходимо.
+        /// On purpose we will escape more characters than minimally necessary.
         const char * next_pos = find_first_symbols<'\b', '\f', '\n', '\r', '\t', '\0', '\\', c>(pos, end);
 
         if (next_pos == end)
@@ -359,13 +359,13 @@ inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
     writeAnyQuotedString<'"'>(s, buf);
 }
 
-/// Выводит строку в обратных кавычках, как идентификатор в MySQL.
+/// Outputs a string in backquotes, as an identifier in MySQL.
 inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'`'>(s, buf);
 }
 
-/// То же самое, но обратные кавычки применяются только при наличии символов, не подходящих для идентификатора без обратных кавычек.
+/// The same, but backquotes apply only if there are characters that do not match the identifier without backquotes.
 inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
 {
     if (s.empty() || !isValidIdentifierBegin(s[0]))
@@ -385,10 +385,10 @@ inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
 }
 
 
-/** Выводит строку в для формата CSV.
-  * Правила:
-  * - строка выводится в кавычках;
-  * - кавычка внутри строки выводится как две кавычки подряд.
+/** Outputs the string in for the CSV format.
+  * Rules:
+  * - the string is outputted in quotation marks;
+  * - the quotation mark inside the string is outputted as two quotation marks in sequence.
   */
 template <char quote = '"'>
 void writeCSVString(const char * begin, const char * end, WriteBuffer & buf)
@@ -405,7 +405,7 @@ void writeCSVString(const char * begin, const char * end, WriteBuffer & buf)
             buf.write(pos, end - pos);
             break;
         }
-        else                        /// Кавычка.
+        else                        /// Quotation.
         {
             ++next_pos;
             buf.write(pos, next_pos - pos);
@@ -431,13 +431,13 @@ void writeCSVString(const StringRef & s, WriteBuffer & buf)
 }
 
 
-/// Запись строки в текстовый узел в XML (не в атрибут - иначе нужно больше эскейпинга).
+/// Writing a string to a text node in XML (not into an attribute - otherwise you need more escaping).
 inline void writeXMLString(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
     while (true)
     {
-        /// NOTE Возможно, для некоторых парсеров XML нужно ещё эскейпить нулевой байт и некоторые control characters.
+        /// NOTE Perhaps for some XML parsers, you need to escape the zero byte and some control characters.
         const char * next_pos = find_first_symbols<'<', '&'>(pos, end);
 
         if (next_pos == end)
@@ -473,7 +473,7 @@ inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
 }
 
 
-/// в формате YYYY-MM-DD
+/// in YYYY-MM-DD format
 inline void writeDateText(DayNum_t date, WriteBuffer & buf)
 {
     char s[10] = {'0', '0', '0', '0', '-', '0', '0', '-', '0', '0'};
@@ -515,7 +515,7 @@ inline void writeDateText(LocalDate date, WriteBuffer & buf)
 }
 
 
-/// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
+/// in the format YYYY-MM-DD HH:MM:SS, according to the current time zone
 template <char date_delimeter = '-', char time_delimeter = ':'>
 inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
@@ -577,18 +577,19 @@ inline void writeDateTimeText(LocalDateTime datetime, WriteBuffer & buf)
 }
 
 
-/// Методы вывода в бинарном виде
+/// Methods of output in binary form
 template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x,    WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const StringRef & x,    WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const uint128 & x,     WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDate & x,        WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x,    WriteBuffer & buf) { writePODBinary(x, buf); }
 
 
-/// Методы для вывода значения в текстовом виде для tab-separated формата.
+/// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
 inline typename std::enable_if<std::is_integral<T>::value, void>::type
 writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
@@ -602,15 +603,15 @@ inline void writeText(const String & x,        WriteBuffer & buf) { writeEscaped
 /// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
 template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }
 
-/// в отличие от метода для std::string
-/// здесь предполагается, что x null-terminated строка.
+/// unlike the method for std::string
+/// assumes here that `x` is a null-terminated string.
 inline void writeText(const char * x,         WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
 inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
 
 inline void writeText(const LocalDate & x,        WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x,    WriteBuffer & buf) { writeDateTimeText(x, buf); }
 
-/// Строки, даты, даты-с-временем - в одинарных кавычках с C-style эскейпингом. Числа - без.
+/// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
@@ -632,7 +633,7 @@ inline void writeQuoted(const LocalDateTime & x,    WriteBuffer & buf)
 }
 
 
-/// Строки, даты, даты-с-временем - в двойных кавычках с C-style эскейпингом. Числа - без.
+/// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
@@ -654,7 +655,7 @@ inline void writeDoubleQuoted(const LocalDateTime & x,    WriteBuffer & buf)
 }
 
 
-/// Строки - в двойных кавычках и с CSV-эскейпингом; даты, даты-с-временем - в двойных кавычках. Числа - без.
+/// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
@@ -707,11 +708,11 @@ void writeText(const std::vector<T> & x, WriteBuffer & buf)
 
 
 
-/// Сериализация эксепшена (чтобы его можно было передать по сети)
+/// Serialize exception (so that it can be transferred over the network)
 void writeException(const Exception & e, WriteBuffer & buf);
 
 
-/// Простой для использования метод преобразования чего-либо в строку в текстовом виде.
+/// An easy-to-use method for converting something to a string in text form.
 template <typename T>
 inline String toString(const T & x)
 {

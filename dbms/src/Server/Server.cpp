@@ -9,18 +9,19 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/ZooKeeperNodeCache.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Databases/DatabaseOrdinary.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DDLWorker.h>
+
 #include <Storages/MergeTree/ReshardingWorker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -39,6 +40,9 @@
 #endif
 
 #include <Functions/registerFunctions.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
+#include <TableFunctions/registerTableFunctions.h>
+
 
 namespace DB
 {
@@ -212,6 +216,8 @@ int Server::main(const std::vector<std::string> & args)
     Logger * log = &logger();
 
     registerFunctions();
+    registerAggregateFunctions();
+    registerTableFunctions();
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
@@ -378,27 +384,14 @@ int Server::main(const std::vector<std::string> & args)
     global_context->setSetting("profile", default_profile_name);
 
     LOG_INFO(log, "Loading metadata.");
+    loadMetadataSystem(*global_context);
+    /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
+    attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
+    /// Then, load remaining databases
     loadMetadata(*global_context);
     LOG_DEBUG(log, "Loaded metadata.");
 
     global_context->setCurrentDatabase(default_database);
-
-    /// Create system tables.
-    if (!global_context->isDatabaseExist("system"))
-    {
-        Poco::File(path + "data/system").createDirectories();
-        Poco::File(path + "metadata/system").createDirectories();
-
-        auto system_database = std::make_shared<DatabaseOrdinary>("system", path + "metadata/system/");
-        global_context->addDatabase("system", system_database);
-
-        /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-        system_database->loadTables(*global_context, nullptr, true);
-    }
-
-    DatabasePtr system_database = global_context->getDatabase("system");
-
-    attachSystemTablesServer(system_database, global_context.get(), has_zookeeper);
 
     bool has_resharding_worker = false;
     if (has_zookeeper && config().has("resharding"))
@@ -407,6 +400,13 @@ int Server::main(const std::vector<std::string> & args)
         global_context->setReshardingWorker(resharding_worker);
         resharding_worker->start();
         has_resharding_worker = true;
+    }
+
+    if (has_zookeeper && config().has("distributed_ddl"))
+    {
+        /// DDL worker should be started after all tables were loaded
+        String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
+        global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context));
     }
 
     SCOPE_EXIT({
@@ -419,7 +419,7 @@ int Server::main(const std::vector<std::string> & args)
         global_context->shutdown();
         LOG_DEBUG(log, "Shutted down storages.");
 
-        /** Explicitly destroy Context. It is more convenient than in destructor of Server, becuase logger is still available.
+        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
         global_context.reset();
@@ -459,7 +459,6 @@ int Server::main(const std::vector<std::string> & args)
             }
             catch (const Poco::Net::DNSException & e)
             {
-                /// Better message when IPv6 is disabled on host.
                 if (e.code() == EAI_FAMILY
 #if defined(EAI_ADDRFAMILY)
                     || e.code() == EAI_ADDRFAMILY
@@ -468,9 +467,9 @@ int Server::main(const std::vector<std::string> & args)
                 {
                     LOG_ERROR(log,
                         "Cannot resolve listen_host (" << host << "), error: " << e.message() << ". "
-                                                       << "If it is an IPv6 address and your host has disabled IPv6, then consider to "
-                                                       << "specify IPv4 address to listen in <listen_host> element of configuration "
-                                                       << "file. Example: <listen_host>0.0.0.0</listen_host>");
+                        "If it is an IPv6 address and your host has disabled IPv6, then consider to "
+                        "specify IPv4 address to listen in <listen_host> element of configuration "
+                        "file. Example: <listen_host>0.0.0.0</listen_host>");
                 }
 
                 throw;
@@ -481,7 +480,7 @@ int Server::main(const std::vector<std::string> & args)
         for (const auto & listen_host : listen_hosts)
         {
             /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
-            try 
+            try
             {
                 /// HTTP
                 if (config().has("http_port"))
@@ -553,7 +552,11 @@ int Server::main(const std::vector<std::string> & args)
             catch (const Poco::Net::NetException & e)
             {
                 if (try_listen && e.code() == POCO_EPROTONOSUPPORT)
-                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message());
+                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message()
+                        << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
+                        "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
+                        "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
+                        " Example for disabled IPv4: <listen_host>::</listen_host>");
                 else
                     throw;
             }
@@ -614,7 +617,7 @@ int Server::main(const std::vector<std::string> & args)
 
             LOG_DEBUG(
                 log, "Closed connections." << (current_connections ? " But " + std::to_string(current_connections) + " remains."
-                    + " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished> ." : ""));
+                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>" : ""));
 
             main_config_reloader.reset();
             users_config_reloader.reset();
@@ -637,14 +640,15 @@ int Server::main(const std::vector<std::string> & args)
 
         /// This object will periodically calculate some metrics.
         AsynchronousMetrics async_metrics(*global_context);
-
-        attachSystemTablesAsync(system_database, async_metrics);
+        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
 
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(async_metrics, graphite_key));
         }
+
+        SessionCleaner session_cleaner(*global_context);
 
         waitForTerminationRequest();
     }

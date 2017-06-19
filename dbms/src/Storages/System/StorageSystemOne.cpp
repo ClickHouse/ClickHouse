@@ -15,20 +15,14 @@ StorageSystemOne::StorageSystemOne(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemOne::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemOne::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

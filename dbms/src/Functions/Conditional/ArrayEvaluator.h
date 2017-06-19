@@ -9,7 +9,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Common/memcpySmall.h>
-#include <Functions/NumberTraits.h>
+#include <DataTypes/NumberTraits.h>
 
 
 namespace DB

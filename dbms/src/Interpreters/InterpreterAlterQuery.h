@@ -10,13 +10,13 @@
 namespace DB
 {
 
-/** Позволяет добавить или удалить столбец в таблице.
-  * Также позволяет осуществить манипуляции с партициями таблиц семейства MergeTree.
+/** Allows you add or remove a column in the table.
+  * It also allows you to manipulate the partitions of the MergeTree family tables.
   */
 class InterpreterAlterQuery : public IInterpreter
 {
 public:
-    InterpreterAlterQuery(ASTPtr query_ptr_, const Context & context_);
+    InterpreterAlterQuery(const ASTPtr & query_ptr_, const Context & context_);
 
     BlockIO execute() override;
 
@@ -37,14 +37,13 @@ private:
 
         Field partition;
         Field column_name;
-        bool detach = false; /// true для DETACH PARTITION.
+        bool detach = false; /// true for DETACH PARTITION.
 
-        bool unreplicated = false;
         bool part = false;
 
-        String from; /// Для FETCH PARTITION - путь в ZK к шарду, с которого скачивать партицию.
+        String from; /// For FETCH PARTITION - path in ZK to the shard, from which to download the partition.
 
-        /// Для RESHARD PARTITION.
+        /// For RESHARD PARTITION.
         Field last_partition;
         WeightedZooKeeperPaths weighted_zookeeper_paths;
         ASTPtr sharding_key_expr;
@@ -54,13 +53,12 @@ private:
         /// For FREEZE PARTITION
         String with_name;
 
-        static PartitionCommand dropPartition(const Field & partition, bool detach, bool unreplicated)
+        static PartitionCommand dropPartition(const Field & partition, bool detach)
         {
             PartitionCommand res;
             res.type = DROP_PARTITION;
             res.partition = partition;
             res.detach = detach;
-            res.unreplicated = unreplicated;
             return res;
         }
 
@@ -73,12 +71,11 @@ private:
             return res;
         }
 
-        static PartitionCommand attachPartition(const Field & partition, bool unreplicated, bool part)
+        static PartitionCommand attachPartition(const Field & partition, bool part)
         {
             PartitionCommand res;
             res.type = ATTACH_PARTITION;
             res.partition = partition;
-            res.unreplicated = unreplicated;
             res.part = part;
             return res;
         }

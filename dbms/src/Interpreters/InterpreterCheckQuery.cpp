@@ -1,3 +1,4 @@
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Storages/StorageDistributed.h>
@@ -85,7 +86,7 @@ using TableDescriptions = std::deque<TableDescription>;
 
 }
 
-InterpreterCheckQuery::InterpreterCheckQuery(DB::ASTPtr query_ptr_, DB::Context& context_)
+InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, const Context & context_)
     : query_ptr(query_ptr_), context(context_)
 {
 }
@@ -149,7 +150,7 @@ BlockIO InterpreterCheckQuery::execute()
         /// The identity of the structures is checked (column names + column types + default types + expressions
         /// by default) of the tables that the distributed table looks at.
 
-        const auto settings = context.getSettings();
+        const auto & settings = context.getSettingsRef();
 
         BlockInputStreams streams = distributed_table->describe(context, settings);
         streams[0] = std::make_shared<UnionBlockInputStream<StreamUnionMode::ExtraInfo>>(

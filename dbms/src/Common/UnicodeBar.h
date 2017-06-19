@@ -8,7 +8,7 @@
 #define UNICODE_BAR_CHAR_SIZE (strlen("█"))
 
 
-/** Позволяет нарисовать unicode-art полоску, ширина которой отображается с разрешением 1/8 символа.
+/** Allows you to draw a unicode-art bar whose width is displayed with a resolution of 1/8 character.
   */
 
 
@@ -32,7 +32,7 @@ namespace UnicodeBar
         return ceil(width - 1.0 / 8) * UNICODE_BAR_CHAR_SIZE;
     }
 
-    /// В dst должно быть место для barWidthInBytes(width) символов и завершающего нуля.
+    /// In `dst` there must be a space for barWidthInBytes(width) characters and a trailing zero.
     inline void render(double width, char * dst)
     {
         size_t floor_width = floor(width);

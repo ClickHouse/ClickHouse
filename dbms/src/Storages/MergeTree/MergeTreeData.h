@@ -85,6 +85,8 @@ class MergeTreeData : public ITableDeclaration
 public:
     /// Function to call if the part is suspected to contain corrupt data.
     using BrokenPartCallback = std::function<void (const String &)>;
+    /// Callback to delete outdated parts immediately
+    using PartsCleanCallback = std::function<void ()>;
     using DataPart = MergeTreeDataPart;
 
     using MutableDataPartPtr = std::shared_ptr<DataPart>;
@@ -110,16 +112,7 @@ public:
             clear();
         }
 
-        void rollback()
-        {
-            if (data && (!parts_to_remove_on_rollback.empty() || !parts_to_add_on_rollback.empty()))
-            {
-                LOG_DEBUG(data->log, "Undoing transaction");
-                data->replaceParts(parts_to_remove_on_rollback, parts_to_add_on_rollback, true);
-
-                clear();
-            }
-        }
+        void rollback();
 
         ~Transaction()
         {
@@ -193,12 +186,12 @@ public:
         /// Merging mode. See above.
         enum Mode
         {
-            Ordinary     = 0,    /// Enum values are saved. Do not change them.
-            Collapsing     = 1,
+            Ordinary    = 0,    /// Enum values are saved. Do not change them.
+            Collapsing  = 1,
             Summing     = 2,
             Aggregating = 3,
-            Unsorted     = 4,
-            Replacing    = 5,
+            Unsorted    = 4,
+            Replacing   = 5,
             Graphite    = 6,
         };
 
@@ -230,7 +223,7 @@ public:
     /// index_granularity - how many rows correspond to one primary key value.
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
-    MergeTreeData(    const String & database_, const String & table_,
+    MergeTreeData(  const String & database_, const String & table_,
                     const String & full_path_, NamesAndTypesListPtr columns_,
                     const NamesAndTypesList & materialized_columns_,
                     const NamesAndTypesList & alias_columns_,
@@ -245,7 +238,9 @@ public:
                     const String & log_name_,
                     bool require_part_metadata_,
                     bool attach,
-                    BrokenPartCallback broken_part_callback_ = [](const String &){});
+                    BrokenPartCallback broken_part_callback_ = [](const String &){},
+                    PartsCleanCallback parts_clean_callback_ = nullptr
+                 );
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -359,7 +354,9 @@ public:
     /// Delete irrelevant parts.
     void clearOldParts();
 
-    void clearOldTemporaryDirectories();
+    /// Deleate all directories which names begin with "tmp"
+    /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
+    void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
@@ -394,6 +391,12 @@ public:
     void reportBrokenPart(const String & name)
     {
         broken_part_callback(name);
+    }
+
+    /// Delete old parts from disk and ZooKeeper (in replicated case)
+    void clearOldPartsAndRemoveFromZK()
+    {
+        parts_clean_callback();
     }
 
     ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
@@ -446,7 +449,14 @@ public:
 
         for (const auto & col : column_sizes)
             total_size += col.second.getTotalCompressedSize();
+
         return total_size;
+    }
+
+    void recalculateColumnSizes()
+    {
+        std::lock_guard<std::mutex> lock{data_parts_mutex};
+        calculateColumnSizesImpl();
     }
 
     /// For ATTACH/DETACH/DROP/RESHARD PARTITION.
@@ -494,7 +504,10 @@ private:
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizes column_sizes;
 
+    /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
+    /// Use to delete outdated parts immediately from memory, disk and ZooKeeper
+    PartsCleanCallback parts_clean_callback;
 
     String log_name;
     Logger * log;
@@ -535,7 +548,7 @@ private:
         ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
 
     /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
-    void calculateColumnSizes();
+    void calculateColumnSizesImpl();
     /// Adds or subtracts the contribution of the part to compressed column sizes.
     void addPartContributionToColumnSizes(const DataPartPtr & part);
     void removePartContributionToColumnSizes(const DataPartPtr & part);

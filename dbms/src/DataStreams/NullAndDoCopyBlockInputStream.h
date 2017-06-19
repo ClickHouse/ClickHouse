@@ -11,11 +11,11 @@ class IBlockOutputStream;
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 
 
-/** Пустой поток блоков.
-  * Но при первой попытке чтения, копирует данные из переданного input-а в переданный output.
-  * Это нужно для выполнения запроса INSERT SELECT - запрос копирует данные, но сам ничего не возвращает.
-  * Запрос можно было бы выполнять и без оборачивания в пустой BlockInputStream,
-  *  но не работал бы прогресс выполнения запроса и возможность отменить запрос.
+/** An empty stream of blocks.
+  * But at the first read attempt, copies the data from the passed `input` to the `output`.
+  * This is necessary to execute the query INSERT SELECT - the query copies data, but returns nothing.
+  * The query could be executed without wrapping it in an empty BlockInputStream,
+  *  but the progress of query execution and the ability to cancel the query would not work.
   */
 class NullAndDoCopyBlockInputStream : public IProfilingBlockInputStream
 {

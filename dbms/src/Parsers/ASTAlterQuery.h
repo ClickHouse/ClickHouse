@@ -1,24 +1,25 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 
 
 namespace DB
 {
 
-/** ALTER запрос
+/** ALTER query:
  *  ALTER TABLE [db.]name_type
  *      ADD COLUMN col_name type [AFTER col_after],
- *         DROP COLUMN col_drop [FROM PARTITION partition],
- *         MODIFY COLUMN col_name type,
- *         DROP PARTITION partition
- *        RESHARD [COPY] PARTITION partition
- *            TO '/path/to/zookeeper/table' [WEIGHT w], ...
- *             USING expression
- *            [COORDINATE WITH 'coordinator_id']
+ *      DROP COLUMN col_drop [FROM PARTITION partition],
+ *      MODIFY COLUMN col_name type,
+ *      DROP PARTITION partition,
+ *      RESHARD [COPY] PARTITION partition
+ *          TO '/path/to/zookeeper/table' [WEIGHT w], ...
+ *              USING expression
+ *              [COORDINATE WITH 'coordinator_id']
  */
 
-class ASTAlterQuery : public IAST
+class ASTAlterQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     enum ParameterType
@@ -43,36 +44,35 @@ public:
 
         int type = NO_TYPE;
 
-        /** В запросе ADD COLUMN здесь хранится имя и тип добавляемого столбца
-          *  В запросе DROP это поле не используется
-          *  В запросе MODIFY здесь хранится имя столбца и новый тип
+        /** The ADD COLUMN query stores the name and type of the column to add
+          *  This field is not used in the DROP query
+          *  In MODIFY query, the column name and the new type are stored here
           */
         ASTPtr col_decl;
 
-        /** В запросе ADD COLUMN здесь опционально хранится имя столбца, следующее после AFTER
-          * В запросе DROP здесь хранится имя столбца для удаления
+        /** The ADD COLUMN query here optionally stores the name of the column following AFTER
+          * The DROP query stores the column name for deletion here
           */
         ASTPtr column;
 
-        /** Для MODIFY PRIMARY KEY
+        /** For MODIFY PRIMARY KEY
           */
         ASTPtr primary_key;
 
-        /** В запросах DROP PARTITION и RESHARD PARTITION здесь хранится имя partition'а.
+        /** In DROP PARTITION and RESHARD PARTITION queries, the name of the partition is stored here.
           */
         ASTPtr partition;
-        bool detach = false; /// true для DETACH PARTITION.
+        bool detach = false; /// true for DETACH PARTITION.
 
-        bool part = false; /// true для ATTACH [UNREPLICATED] PART
-        bool unreplicated = false; /// true для ATTACH UNREPLICATED, DROP UNREPLICATED ...
+        bool part = false; /// true for ATTACH PART
 
-        bool do_copy = false; /// для RESHARD PARTITION.
+        bool do_copy = false; /// for RESHARD PARTITION.
 
-        /** Для FETCH PARTITION - путь в ZK к шарду, с которого скачивать партицию.
+        /** For FETCH PARTITION - the path in ZK to the shard, from which to download the partition.
           */
         String from;
 
-        /** Для RESHARD PARTITION.
+        /** For RESHARD PARTITION.
           */
         ASTPtr last_partition;
         ASTPtr weighted_zookeeper_paths;
@@ -97,10 +97,12 @@ public:
 
     ASTAlterQuery(StringRange range_ = StringRange());
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override;
 
     ASTPtr clone() const override;
+
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database = {}) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

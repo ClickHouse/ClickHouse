@@ -32,7 +32,7 @@ public:
     virtual std::string getName() const = 0;
 
     /// Create storage according to the query
-    virtual StoragePtr execute(ASTPtr ast_function, Context & context) const = 0;
+    virtual StoragePtr execute(const ASTPtr & ast_function, const Context & context) const = 0;
 
     virtual ~ITableFunction() {};
 };

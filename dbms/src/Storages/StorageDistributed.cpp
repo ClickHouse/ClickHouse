@@ -38,6 +38,8 @@
 
 #include <memory>
 
+#include <boost/filesystem.hpp>
+
 
 namespace DB
 {
@@ -53,30 +55,75 @@ namespace ErrorCodes
 
 namespace
 {
-    /// select query has database and table names as AST pointers
-    /// Creates a copy of query, changes database and table names.
-    inline ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
-    {
-        auto modified_query_ast = query->clone();
-        typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
-        return modified_query_ast;
-    }
 
-    /// insert query has database and table names as bare strings
-    /// Creates a copy of query, changes the database and table names.
-    inline ASTPtr rewriteInsertQuery(const ASTPtr & query, const std::string & database, const std::string & table)
-    {
-        auto modified_query_ast = query->clone();
-
-        auto & actual_query = typeid_cast<ASTInsertQuery &>(*modified_query_ast);
-        actual_query.database = database;
-        actual_query.table = table;
-        /// make sure query is not INSERT SELECT
-        actual_query.select = nullptr;
-
-        return modified_query_ast;
-    }
+/// select query has database and table names as AST pointers
+/// Creates a copy of query, changes database and table names.
+ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
+{
+    auto modified_query_ast = typeid_cast<const ASTSelectQuery &>(*query).cloneFirstSelect();
+    modified_query_ast->replaceDatabaseAndTable(database, table);
+    return modified_query_ast;
 }
+
+/// insert query has database and table names as bare strings
+/// Creates a copy of query, changes the database and table names.
+ASTPtr rewriteInsertQuery(const ASTPtr & query, const std::string & database, const std::string & table)
+{
+    auto modified_query_ast = query->clone();
+
+    auto & actual_query = typeid_cast<ASTInsertQuery &>(*modified_query_ast);
+    actual_query.database = database;
+    actual_query.table = table;
+    /// make sure query is not INSERT SELECT
+    actual_query.select = nullptr;
+
+    return modified_query_ast;
+}
+
+/// Calculate maximum number in file names in directory and all subdirectories.
+/// To ensure global order of data blocks yet to be sent across server restarts.
+UInt64 getMaximumFileNumber(const std::string & path)
+{
+    UInt64 res = 0;
+
+    boost::filesystem::recursive_directory_iterator begin(path);
+    boost::filesystem::recursive_directory_iterator end;
+    for (auto it = begin; it != end; ++it)
+    {
+        const auto & path = it->path();
+
+        if (it->status().type() != boost::filesystem::regular_file || !endsWith(path.filename().string(), ".bin"))
+            continue;
+
+        UInt64 num = 0;
+        try
+        {
+            num = parse<UInt64>(path.filename().stem().string());
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("Unexpected file name " + path.filename().string() + " found at " + path.parent_path().string() + ", should have numeric base name.");
+            throw;
+        }
+
+        if (num > res)
+            res = num;
+    }
+
+    return res;
+}
+
+void initializeFileNamesIncrement(const std::string & path, SimpleIncrement & increment)
+{
+    if (!path.empty())
+        increment.set(getMaximumFileNumber(path));
+}
+
+}
+
+
+/// For destruction of std::unique_ptr of type that is incomplete in class definition.
+StorageDistributed::~StorageDistributed() = default;
 
 
 StorageDistributed::StorageDistributed(
@@ -85,7 +132,7 @@ StorageDistributed::StorageDistributed(
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
-    Context & context_,
+    const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_)
     : name(name_), columns(columns_),
@@ -95,7 +142,6 @@ StorageDistributed::StorageDistributed(
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
-    createDirectoryMonitors();
 }
 
 
@@ -108,7 +154,7 @@ StorageDistributed::StorageDistributed(
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
-    Context & context_,
+    const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
@@ -119,45 +165,20 @@ StorageDistributed::StorageDistributed(
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
-    createDirectoryMonitors();
 }
 
 
-StoragePtr StorageDistributed::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    const String & remote_database_,
-    const String & remote_table_,
-    const String & cluster_name_,
-    Context & context_,
-    const ASTPtr & sharding_key_,
-    const String & data_path_)
-{
-    return make_shared(
-        name_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_,
-        remote_database_, remote_table_,
-        cluster_name_, context_,
-        sharding_key_, data_path_
-    );
-}
-
-
-StoragePtr StorageDistributed::create(
+StoragePtr StorageDistributed::createWithOwnCluster(
     const std::string & name_,
     NamesAndTypesListPtr columns_,
     const String & remote_database_,
     const String & remote_table_,
     ClusterPtr & owned_cluster_,
-    Context & context_)
+    const Context & context_)
 {
     auto res = make_shared(
         name_, columns_, remote_database_,
-        remote_table_, String{}, context_
-    );
+        remote_table_, String{}, context_);
 
     res->owned_cluster = owned_cluster_;
 
@@ -167,14 +188,15 @@ StoragePtr StorageDistributed::create(
 
 BlockInputStreams StorageDistributed::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     auto cluster = getCluster();
+
+    const Settings & settings = context.getSettingsRef();
 
     size_t result_size = (cluster->getRemoteShardCount() * settings.max_parallel_replicas) + cluster->getLocalShardCount();
 
@@ -208,7 +230,7 @@ BlockInputStreams StorageDistributed::read(
 }
 
 
-BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & settings)
+BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
 {
     auto cluster = context.getCluster(cluster_name);
 
@@ -242,17 +264,25 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
 }
 
 
+void StorageDistributed::startup()
+{
+    createDirectoryMonitors();
+    initializeFileNamesIncrement(path, file_names_increment);
+}
+
+
 void StorageDistributed::shutdown()
 {
     directory_monitors.clear();
 }
 
 
-void StorageDistributed::reshardPartitions(ASTPtr query, const String & database_name,
+void StorageDistributed::reshardPartitions(
+    const ASTPtr & query, const String & database_name,
     const Field & first_partition, const Field & last_partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-    const Settings & settings)
+    Context & context)
 {
     auto & resharding_worker = context.getReshardingWorker();
     if (!resharding_worker.isStarted())
@@ -332,7 +362,7 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
         ClusterProxy::AlterQueryConstructor alter_query_constructor;
 
         BlockInputStreams streams = ClusterProxy::Query{alter_query_constructor, cluster, alter_query_ptr,
-            context, settings, enable_shard_multiplexing}.execute();
+            context, context.getSettingsRef(), enable_shard_multiplexing}.execute();
 
         /// This callback is called if an exception has occurred while attempting to read
         /// a block from a shard. This is to avoid a potential deadlock if other shards are
@@ -354,7 +384,7 @@ void StorageDistributed::reshardPartitions(ASTPtr query, const String & database
         };
 
         streams[0] = std::make_shared<UnionBlockInputStream<>>(
-            streams, nullptr, settings.max_distributed_connections, exception_callback);
+            streams, nullptr, context.getSettingsRef().max_distributed_connections, exception_callback);
         streams.resize(1);
 
         auto stream_ptr = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]);
@@ -404,7 +434,7 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 
     /** The functionality of shard_multiplexing is not completed - turn it off.
       * (Because connecting connections to different shards within a single thread is not done in parallel.)
-      * For more information, see https: //███████████.yandex-team.ru/METR-18300
+      * For more information, see https://███████████.yandex-team.ru/METR-18300
       */
     bool enable_shard_multiplexing = false;
 
@@ -443,10 +473,11 @@ void StorageDistributed::createDirectoryMonitors()
 
     Poco::File{path}.createDirectory();
 
-    Poco::DirectoryIterator end;
-    for (Poco::DirectoryIterator it{path}; it != end; ++it)
-        if (it->isDirectory())
-            createDirectoryMonitor(it.name());
+    boost::filesystem::directory_iterator begin(path);
+    boost::filesystem::directory_iterator end;
+    for (auto it = begin; it != end; ++it)
+        if (it->status().type() == boost::filesystem::directory_file)
+            createDirectoryMonitor(it->path().filename().string());
 }
 
 

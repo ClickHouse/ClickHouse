@@ -11,7 +11,6 @@
         <meta name="keywords" content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics"/>
     </head>
     <body>
-
 <script type="text/javascript">
 function getParams() {
     var matches = document.cookie.match(/yandex_login=([\w\-]+)/);
@@ -20,24 +19,37 @@ function getParams() {
 </script>
 
 <!-- Yandex.Metrica counter -->
-<script src="https://mc.yandex.ru/metrika/watch.js" type="text/javascript"></script>
 <script type="text/javascript">
-try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
-          webvisor:true,
-          clickmap:true,
-          trackLinks:true,
-          accurateTrackBounce:true,
-          trackHash:true,
-          params: getParams()});
-} catch(e) { }
+    (function (d, w, c) {
+        (w[c] = w[c] || []).push(function() {
+            try {
+                w.yaCounter18343495 = new Ya.Metrika2({
+                    id:18343495,
+                    clickmap:true,
+                    trackLinks:true,
+                    accurateTrackBounce:true,
+                    webvisor:true
+                });
+            } catch(e) { }
+        });
+
+        var n = d.getElementsByTagName("script")[0],
+            s = d.createElement("script"),
+            f = function () { n.parentNode.insertBefore(s, n); };
+        s.type = "text/javascript";
+        s.async = true;
+        s.src = "https://mc.yandex.ru/metrika/tag.js";
+
+        if (w.opera == "[object Opera]") {
+            d.addEventListener("DOMContentLoaded", f, false);
+        } else { f(); }
+    })(document, window, "yandex_metrika_callbacks2");
 </script>
 <noscript><div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt=" " /></div></noscript>
 <!-- /Yandex.Metrica counter -->
 
 <script type="text/javascript" src="https://yandex.st/jquery/1.7.2/jquery.min.js"></script>
-
 <div class="island">
-
 <div style="float: left; margin-right: -100%; margin-top: 3px; margin-left: 3px;">
     <a href="/">
         <svg xmlns="http://www.w3.org/2000/svg" width="90" height="80" viewBox="0 0 9 8">
@@ -6418,6 +6430,17 @@ Usage example:
 Problem: Generate a report that shows only keywords that produced at least 5 unique users.
 Solution: Write in the query <span class="inline-example">GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5</span>
 
+==topK(N)(x)==
+
+Returns the K most frequent argument values as an array sorted by their relative frequency.
+
+Recommended for use with small Ns, up to 10. The maximum N value is 65536.
+
+For the state of an aggregate function, it uses approximately the amount of memory equal to K * (the size of the key + 16) for counters, and 48 * N bytes for alpha value map.
+
+Usage example:
+Problem: Generate a report that shows top 5 frequent queries.
+Solution: Write in the query <span class="inline-example">SELECT topK(5)(SearchPhrase)</span>
 
 ==Aggregate function combinators==
 
@@ -6447,7 +6470,17 @@ The -%%If%% and -%%Array%% combinators can be used together. However, &#39;Array
 
 ==-State combinator==
 
+If this combinator is used, the aggregate function returns a non-completed/non-finished value (for example, in the case of the `uniq` function, the number of unique values), and the intermediate aggregation state (for example, in the case of the `uniq` function, a hash table for calculating the number of unique values), which has type of %%AggregateFunction(...)%% and can be used for further processing or can be saved to a table for subsequent pre-aggregation - see the sections "AggregatingMergeTree" and "functions for working with intermediate aggregation states".
+
+
 ==-Merge combinator==
+
+In the case of using this combinator, the aggregate function will take as an argument the intermediate state of an aggregation, pre-aggregate (combine together) these states, and return the finished/complete value.
+
+
+==-MergeState combinator==
+
+Merges the intermediate aggregation states, similar to the -Merge combinator, but returns a non-complete value, but an intermediate aggregation state, similar to the -State combinator.
 
 
 </div>
@@ -6921,6 +6954,12 @@ The parameter works only for JSONEachRow and TSKV input formats.
 If the parameter is true (default value), UInt64 and Int64 numbers are printed as quoted strings in all JSON output formats.
 Such behavior is compatible with most JavaScript interpreters that stores all numbers as double-precision floating point numbers.
 Otherwise, they are printed as regular numbers.
+
+==input_format_allow_errors_num==
+==input_format_allow_errors_ratio==
+
+Maximum amount of errors while reading text formats (like CSV, TSV). 
+In case of error, if both values are non-zero, and at least absolute or relative amount of errors is lower than corresponding value, will skip until next line and continue.
 
 ==Restrictions on query complexity==
 

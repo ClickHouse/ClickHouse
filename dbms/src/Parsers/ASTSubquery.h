@@ -7,7 +7,7 @@ namespace DB
 {
 
 
-/** Подзарос SELECT
+/** SELECT subquery
   */
 class ASTSubquery : public ASTWithAlias
 {
@@ -15,7 +15,7 @@ public:
     ASTSubquery() = default;
     ASTSubquery(const StringRange range_) : ASTWithAlias(range_) {}
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return "Subquery"; }
 
     ASTPtr clone() const override

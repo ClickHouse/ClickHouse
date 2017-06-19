@@ -15,19 +15,25 @@
 namespace DB
 {
 
-/** Функции округления:
-    * roundToExp2 - вниз до ближайшей степени двойки;
-    * roundDuration - вниз до ближайшего из: 0, 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000;
-    * roundAge - вниз до ближайшего из: 0, 18, 25, 35, 45.
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+
+/** Rounding Functions:
+    * roundToExp2 - down to the nearest power of two;
+    * roundDuration - down to the nearest of: 0, 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000;
+    * roundAge - down to the nearest of: 0, 18, 25, 35, 45, 55.
     *
-    * round(x, N) - арифметическое округление (N = 0 по умолчанию).
-    * ceil(x, N) - наименьшее число, которое не меньше x (N = 0 по умолчанию).
-    * floor(x, N) - наибольшее число, которое не больше x (N = 0 по умолчанию).
+    * round(x, N) - arithmetic rounding (N = 0 by default).
+    * ceil(x, N) is the smallest number that is at least x (N = 0 by default).
+    * floor(x, N) is the largest number that is not greater than x (N = 0 by default).
     *
-    * Значение параметра N:
-    * - N > 0: округлять до числа с N десятичными знаками после запятой
-    * - N < 0: окурглять до целого числа с N нулевыми знаками
-    * - N = 0: округлять до целого числа
+    * The value of the parameter N:
+    * - N > 0: round to the number with N decimal places after the decimal point
+    * - N < 0: round to an integer with N zero characters
+    * - N = 0: round to an integer
     */
 
 template<typename A>
@@ -101,12 +107,13 @@ struct RoundAgeImpl
             : (x < 25 ? 18
             : (x < 35 ? 25
             : (x < 45 ? 35
-            : 45))));
+            : (x < 55 ? 45
+            : 55)))));
     }
 };
 
-/** Быстрое вычисление остатка от деления для применения к округлению целых чисел.
-    * Без проверки, потому что делитель всегда положительный.
+/** Quick calculation of the remainder of the division to apply to the rounding of integers.
+    * Without verification, because the divisor is always positive.
     */
 template<typename T, typename Enable = void>
 struct FastModulo;
@@ -160,14 +167,14 @@ public:
     }
 };
 
-/** Этот параметр контролирует поведение функций округления.
+/** This parameter controls the behavior of the rounding functions.
     */
 enum ScaleMode
 {
-    PositiveScale,    // округлять до числа с N десятичными знаками после запятой
-    NegativeScale,  // окурглять до целого числа с N нулевыми знаками
-    ZeroScale,        // округлять до целого числа
-    NullScale         // возвращать нулевое значение
+    PositiveScale,    // round to a number with N decimal places after the decimal point
+    NegativeScale,    // round to an integer with N zero characters
+    ZeroScale,        // round to an integer
+    NullScale         // return zero value
 };
 
 #if !defined(_MM_FROUND_NINT)
@@ -176,7 +183,7 @@ enum ScaleMode
 #define _MM_FROUND_CEIL        2
 #endif
 
-/** Реализация низкоуровневых функций округления для целочисленных значений.
+/** Implementing low-level rounding functions for integer values.
     */
 template<typename T, int rounding_mode, ScaleMode scale_mode, typename Enable = void>
 struct IntegerRoundingComputation;
@@ -282,7 +289,7 @@ public:
     static const size_t data_count = 4;
 
 protected:
-    /// Предотвратить появление отрицательных нолей определённых в стандарте IEEE-754.
+    /// Prevent the appearance of negative zeros defined in the IEEE-754 standard.
     static inline void normalize(__m128 & val, const __m128 & mask)
     {
         __m128 mask1 = _mm_cmpeq_ps(val, getZero());
@@ -320,7 +327,7 @@ public:
     static const size_t data_count = 2;
 
 protected:
-    /// Предотвратить появление отрицательных нолей определённых в стандарте IEEE-754.
+    /// Prevent the occurrence of negative zeros defined in the IEEE-754 standard.
     static inline void normalize(__m128d & val, const __m128d & mask)
     {
         __m128d mask1 = _mm_cmpeq_pd(val, getZero());
@@ -350,7 +357,7 @@ protected:
     }
 };
 
-/** Реализация низкоуровневых функций округления для значений с плавающей точкой.
+/** Implementation of low-level round-off functions for floating-point values.
     */
 template<typename T, int rounding_mode, ScaleMode scale_mode>
 class FloatRoundingComputation;
@@ -371,7 +378,7 @@ public:
         __m128 val = _mm_loadu_ps(in);
         __m128 mask = _mm_cmplt_ps(val, getZero());
 
-        /// Алгоритм округления.
+        /// Rounding algorithm.
         val = _mm_mul_ps(val, scale);
         val = _mm_round_ps(val, rounding_mode);
         val = _mm_div_ps(val, scale);
@@ -397,20 +404,20 @@ public:
         __m128 val = _mm_loadu_ps(in);
         __m128 mask = _mm_cmplt_ps(val, getZero());
 
-        /// Превратить отрицательные значения в положительные.
+        /// Turn negative values into positive values.
         __m128 factor = _mm_cmpge_ps(val, getZero());
         factor = _mm_min_ps(factor, getTwo());
         factor = _mm_sub_ps(factor, getOne());
         val = _mm_mul_ps(val, factor);
 
-        /// Алгоритм округления.
+        /// Rounding algorithm.
         val = _mm_div_ps(val, scale);
         __m128 res = _mm_cmpge_ps(val, getOneTenth());
         val = _mm_round_ps(val, rounding_mode);
         val = _mm_mul_ps(val, scale);
         val = _mm_and_ps(val, res);
 
-        /// Вернуть настоящие знаки всех значений.
+        /// Return the real signs of all values.
         val = _mm_mul_ps(val, factor);
 
         normalize(val, mask);
@@ -462,7 +469,7 @@ public:
         __m128d val = _mm_loadu_pd(in);
         __m128d mask = _mm_cmplt_pd(val, getZero());
 
-        /// Алгоритм округления.
+        /// Rounding algorithm.
         val = _mm_mul_pd(val, scale);
         val = _mm_round_pd(val, rounding_mode);
         val = _mm_div_pd(val, scale);
@@ -488,20 +495,20 @@ public:
         __m128d val = _mm_loadu_pd(in);
         __m128d mask = _mm_cmplt_pd(val, getZero());
 
-        /// Превратить отрицательные значения в положительные.
+        /// Turn negative values into positive values.
         __m128d factor = _mm_cmpge_pd(val, getZero());
         factor = _mm_min_pd(factor, getTwo());
         factor = _mm_sub_pd(factor, getOne());
         val = _mm_mul_pd(val, factor);
 
-        /// Алгоритм округления.
+        /// Rounding algorithm.
         val = _mm_div_pd(val, scale);
         __m128d res = _mm_cmpge_pd(val, getOneTenth());
         val = _mm_round_pd(val, rounding_mode);
         val = _mm_mul_pd(val, scale);
         val = _mm_and_pd(val, res);
 
-        /// Вернуть настоящие знаки всех значений.
+        /// Return the real signs of all values.
         val = _mm_mul_pd(val, factor);
 
         normalize(val, mask);
@@ -537,7 +544,7 @@ public:
     }
 };
 #else
-/// Реализация для ARM. Не векторизована. Не исправляет отрицательные нули.
+/// Implementation for ARM. Not vectorized. Does not fix negative zeros.
 
 template <int mode>
 float roundWithMode(float x)
@@ -612,12 +619,12 @@ public:
 #endif
 
 
-/** Реализация высокоуровневых функций округления.
+/** Implementing high-level rounding functions.
     */
 template<typename T, int rounding_mode, ScaleMode scale_mode, typename Enable = void>
 struct FunctionRoundingImpl;
 
-/** Реализация высокоуровневых функций округления для целочисленных значений.
+/** Implement high-level rounding functions for integer values.
     */
 template<typename T, int rounding_mode, ScaleMode scale_mode>
 struct FunctionRoundingImpl<T, rounding_mode, scale_mode,
@@ -649,7 +656,7 @@ public:
     }
 };
 
-/** Реализация высокоуровневых функций округления для значений с плавающей точкой.
+/** Implement high-level round-off functions for floating-point values.
     */
 template<typename T, int rounding_mode, ScaleMode scale_mode>
 struct FunctionRoundingImpl<T, rounding_mode, scale_mode,
@@ -729,7 +736,7 @@ public:
     }
 };
 
-/** Реализация высокоуровневых функций округления в том случае, когда возвращается нулевое значение.
+/** Implementation of high-level rounding functions in the case when a zero value is returned.
     */
 template<typename T, int rounding_mode, ScaleMode scale_mode>
 struct FunctionRoundingImpl<T, rounding_mode, scale_mode,
@@ -747,11 +754,11 @@ public:
     }
 };
 
-/// Следующий код генерирует во время сборки таблицу степеней числа 10.
+/// The following code generates a table of powers of 10 during the build.
 
 namespace
 {
-    /// Отдельные степени числа 10.
+    /// Individual degrees of the number 10.
 
     template<size_t N>
     struct PowerOf10
@@ -766,7 +773,7 @@ namespace
     };
 }
 
-/// Объявление и определение контейнера содержащего таблицу степеней числа 10.
+/// Declaring and defining a container containing a table of powers of 10.
 
 template<size_t... TArgs>
 struct TableContainer
@@ -777,7 +784,7 @@ struct TableContainer
 template<size_t... TArgs>
 const std::array<size_t, sizeof...(TArgs)> TableContainer<TArgs...>::values {{ TArgs... }};
 
-/// Генератор первых N степеней.
+/// The generator of the first N degrees.
 
 template<size_t N, size_t... TArgs>
 struct FillArrayImpl
@@ -797,9 +804,9 @@ struct FillArray
     using result = typename FillArrayImpl<N - 1>::result;
 };
 
-/** Этот шаблон определяет точность, которую используют функции round/ceil/floor,
-    * затем  преобразовывает её в значение, которое можно использовать в операциях
-    * умножения и деления. Поэтому оно называется масштабом.
+/** This pattern defines the precision that the round/ceil/floor functions use,
+    * then converts it to a value that can be used in operations of
+    * multiplication and division. Therefore, it is called a scale.
     */
 template<typename T, typename U, typename Enable = void>
 struct ScaleForRightType;
@@ -943,7 +950,7 @@ struct ScaleForRightType<T, U,
     }
 };
 
-/** Превратить параметр точности в масштаб.
+/** Turn the precision parameter into a scale.
     */
 template<typename T>
 struct ScaleForLeftType
@@ -967,7 +974,7 @@ struct ScaleForLeftType
     }
 };
 
-/** Главный шаблон применяющий функцию округления к значению или столбцу.
+/** The main template that applies the rounding function to a value or column.
     */
 template<typename T, int rounding_mode, ScaleMode scale_mode>
 struct Cruncher
@@ -996,7 +1003,7 @@ struct Cruncher
     }
 };
 
-/** Выбрать подходящий алгоритм обработки в зависимости от масштаба.
+/** Select the appropriate processing algorithm depending on the scale.
     */
 template<typename T, template <typename> class U, int rounding_mode>
 struct Dispatcher
@@ -1027,9 +1034,9 @@ struct Dispatcher
     }
 };
 
-/** Шаблон для функций, которые округляют значение входного параметра типа
-    * (U)Int8/16/32/64 или Float32/64, и принимают дополнительный необязятельный
-    * параметр (по умолчанию - 0).
+/** A template for functions that round the value of an input parameter of type
+    * (U)Int8/16/32/64 or Float32/64, and accept an additional optional
+    * parameter (default is 0).
     */
 template<typename Name, int rounding_mode>
 class FunctionRounding : public IFunction
@@ -1071,7 +1078,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    /// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if ((arguments.size() < 1) || (arguments.size() > 2))

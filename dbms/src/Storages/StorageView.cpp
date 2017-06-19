@@ -15,23 +15,6 @@ namespace ErrorCodes
 }
 
 
-StoragePtr StorageView::create(
-    const String & table_name_,
-    const String & database_name_,
-    Context & context_,
-    ASTPtr & query_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_)
-{
-    return make_shared(
-        table_name_, database_name_, context_, query_,
-        columns_, materialized_columns_, alias_columns_, column_defaults_
-    );
-}
-
-
 StorageView::StorageView(
     const String & table_name_,
     const String & database_name_,
@@ -93,32 +76,14 @@ void StorageView::extractDependentTable(const ASTSelectQuery & query)
 
 BlockInputStreams StorageView::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     processed_stage = QueryProcessingStage::FetchColumns;
-
     ASTPtr inner_query_clone = getInnerQuery();
-/*    ASTSelectQuery & inner_select = static_cast<ASTSelectQuery &>(*inner_query_clone);
-    const ASTSelectQuery & outer_select = typeid_cast<const ASTSelectQuery &>(*query);
-
-    /// We pass through SAMPLE and FINAL if they exist in an external query and they are not in the internal query. TODO
-
-    if (outer_select.sample_size && !inner_select.sample_size)
-    {
-        inner_select.sample_size = outer_select.sample_size;
-
-        if (outer_select.sample_offset && !inner_select.sample_offset)
-            inner_select.sample_offset = outer_select.sample_offset;
-    }
-
-    if (outer_select.final && !inner_select.final)
-        inner_select.final = outer_select.final;*/
-
     return InterpreterSelectQuery(inner_query_clone, context, column_names).executeWithoutUnion();
 }
 

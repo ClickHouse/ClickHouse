@@ -4,7 +4,7 @@
 #include <Common/NetException.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequest.h>
 
@@ -210,19 +210,21 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
 
     ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
 
-    String full_part_name = String(to_detached ? "detached/" : "") + "tmp_" + part_name;
-    String part_path = data.getFullPath() + full_part_name + "/";
-    Poco::File part_file(part_path);
+    static const String TMP_PREFIX = "tmp_fetch_";
+    String relative_part_path = String(to_detached ? "detached/" : "") + TMP_PREFIX + part_name;
+    String absolute_part_path = data.getFullPath() + relative_part_path + "/";
+    Poco::File part_file(absolute_part_path);
 
     if (part_file.exists())
-        throw Exception("Directory " + part_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+        throw Exception("Directory " + absolute_part_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 
     part_file.createDirectory();
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
-    new_data_part->name = full_part_name;
+    new_data_part->name = part_name;
+    new_data_part->relative_path = relative_part_path;
     new_data_part->is_temp = true;
 
     size_t files;
@@ -236,7 +238,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
         readStringBinary(file_name, in);
         readBinary(file_size, in);
 
-        WriteBufferFromFile file_out(part_path + file_name);
+        WriteBufferFromFile file_out(absolute_part_path + file_name);
         HashingWriteBuffer hashing_out(file_out);
         copyData(in, hashing_out, file_size, is_cancelled);
 
@@ -252,7 +254,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
         readBinary(expected_hash, in);
 
         if (expected_hash != hashing_out.getHash())
-            throw Exception("Checksum mismatch for file " + part_path + file_name + " transferred from " + replica_path);
+            throw Exception("Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path);
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt")

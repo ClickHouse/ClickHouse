@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** Выводит результат в виде красивых таблиц, но с меньшим количеством строк-разделителей.
+/** Prints the result in the form of beautiful tables, but with fewer delimiter lines.
   */
 class PrettyCompactBlockOutputStream : public PrettyBlockOutputStream
 {

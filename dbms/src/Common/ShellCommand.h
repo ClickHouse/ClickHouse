@@ -9,19 +9,19 @@ namespace DB
 {
 
 
-/** Позволяет запустить команду,
-  *  читать её stdout, stderr, писать в stdin,
-  *  дождаться завершения.
+/** Lets you run the command,
+  *  read it stdout and stderr; write to stdin;
+  *  wait for completion.
   *
-  * Реализация похожа на функцию popen из POSIX (посмотреть можно в исходниках libc).
+  * The implementation is similar to the popen function from POSIX (see libc source code).
   *
-  * Наиболее важное отличие: использует vfork вместо fork.
-  * Это сделано, потому что fork не работает (с ошибкой о нехватке памяти),
-  *  при некоторых настройках overcommit-а, если размер адресного пространства процесса больше половины количества доступной памяти.
-  * Также, изменение memory map-ов - довольно ресурсоёмкая операция.
+  * The most important difference: uses vfork instead of fork.
+  * This is done because fork does not work (with a memory shortage error),
+  *  with some overcommit settings, if the address space of the process is more than half the amount of available memory.
+  * Also, changing memory maps - a fairly resource-intensive operation.
   *
-  * Второе отличие - позволяет работать одновременно и с stdin, и с stdout, и с stderr запущенного процесса,
-  *  а также узнать код и статус завершения.
+  * The second difference - allows to work simultaneously with stdin, and with stdout, and with stderr of running process,
+  *  and also to obtain the return code and completion status.
   */
 class ShellCommand
 {
@@ -34,20 +34,20 @@ private:
     static std::unique_ptr<ShellCommand> executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only);
 
 public:
-    WriteBufferFromFile in;        /// Если команда читает из stdin, то не забудьте вызвать in.close() после записи туда всех данных.
+    WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;
     ReadBufferFromFile err;
 
-    /// Выполнить команду с использованием /bin/sh -c
+    /// Run the command using /bin/sh -c
     static std::unique_ptr<ShellCommand> execute(const std::string & command, bool pipe_stdin_only = false);
 
-    /// Выполнить исполняемый файл с указаннами аргументами. arguments - без argv[0].
+    /// Run the executable with the specified arguments. `arguments` - without argv[0].
     static std::unique_ptr<ShellCommand> executeDirect(const std::string & path, const std::vector<std::string> & arguments);
 
-    /// Подождать завершения процесса, кинуть исключение, если код не 0 или если процесс был завершён не самостоятельно.
+    /// Wait for the process to end, throw an exception if the code is not 0 or if the process was not completed by itself.
     void wait();
 
-    /// Подождать завершения процесса, узнать код возврата. Кинуть исключение, если процесс был завершён не самостоятельно.
+    /// Wait for the process to finish, see the return code. To throw an exception if the process was not completed independently.
     int tryWait();
 };
 

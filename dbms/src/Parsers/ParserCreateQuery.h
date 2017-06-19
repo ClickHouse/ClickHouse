@@ -14,7 +14,7 @@
 namespace DB
 {
 
-/** Вложенная таблица. Например, Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
+/** A nested table. For example, Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
   */
 class ParserNestedTable : public IParserBase
 {
@@ -24,12 +24,12 @@ protected:
 };
 
 
-/** Параметрический тип или Storage. Например:
- *         FixedString(10) или
- *         Partitioned(Log, ChunkID) или
+/** Parametric type or Storage. For example:
+ *         FixedString(10) or
+ *         Partitioned(Log, ChunkID) or
  *         Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
-  * Результат парсинга - ASTFunction с параметрами или без.
-  */
+ * Result of parsing - ASTFunction with or without parameters.
+ */
 class ParserIdentifierWithParameters : public IParserBase
 {
 protected:
@@ -64,9 +64,9 @@ protected:
     bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
-/** Имя и тип через пробел. Например, URL String. */
+/** The name and type are separated by a space. For example, URL String. */
 using ParserNameTypePair = IParserNameTypePair<ParserIdentifier>;
-/** Имя и тип через пробел. Имя может содержать точку. Например, Hits.URL String. */
+/** Name and type separated by a space. The name can contain a dot. For example, Hits.URL String. */
 using ParserCompoundNameTypePair = IParserNameTypePair<ParserCompoundIdentifier>;
 
 template <class NameParser>
@@ -74,7 +74,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 {
     NameParser name_parser;
     ParserIdentifierWithOptionalParameters type_parser;
-    ParserWhiteSpaceOrComments ws_parser;
+    ParserWhitespaceOrComments ws_parser;
 
     Pos begin = pos;
 
@@ -94,7 +94,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & nod
     return false;
 }
 
-/** Список столбцов.  */
+/** List of columns. */
 class ParserNameTypePairList : public IParserBase
 {
 protected:
@@ -119,10 +119,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr 
 {
     NameParser name_parser;
     ParserIdentifierWithOptionalParameters type_parser;
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_default{"DEFAULT", true, true};
-    ParserString s_materialized{"MATERIALIZED", true, true};
-    ParserString s_alias{"ALIAS", true, true};
+    ParserWhitespaceOrComments ws;
+    ParserKeyword s_default{"DEFAULT"};
+    ParserKeyword s_materialized{"MATERIALIZED"};
+    ParserKeyword s_alias{"ALIAS"};
     ParserTernaryOperatorExpression expr_parser;
 
     const auto begin = pos;
@@ -204,7 +204,7 @@ protected:
 };
 
 
-/** Запрос типа такого:
+/** Query like this:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name
   * (
   *     name1 type1,
@@ -212,16 +212,16 @@ protected:
   *     ...
   * ) ENGINE = engine
   *
-  * Или:
+  * Or:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
   *
-  * Или:
+  * Or:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS ENGINE = engine SELECT ...
   *
-  * Или:
+  * Or:
   * CREATE|ATTACH DATABASE db [ENGINE = engine]
   *
-  * Или:
+  * Or:
   * CREATE|ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [ENGINE = engine] [POPULATE] AS SELECT ...
   */
 class ParserCreateQuery : public IParserBase

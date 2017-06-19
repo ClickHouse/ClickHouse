@@ -6,8 +6,8 @@
 namespace DB
 {
 
-/** Поток блоков, из которого можно прочитать один блок.
-  * Также смотрите BlocksListBlockInputStream.
+/** A stream of blocks from which you can read one block.
+  * Also see BlocksListBlockInputStream.
   */
 class OneBlockInputStream : public IProfilingBlockInputStream
 {

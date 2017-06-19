@@ -3,24 +3,24 @@
 #include <Common/CounterInFile.h>
 
 
-/** Позволяет получать авто-инкрементное число, храня его в файле.
-  * Предназначен для редких вызовов (не рассчитан на производительность).
+/** Allows to get an auto-increment number, storing it in a file.
+  * Intended for rare calls (not designed for performance).
   */
 class Increment
 {
 public:
-    /// path - имя файла, включая путь
+    /// path - the name of the file, including the path
     Increment(const std::string & path_) : counter(path_) {}
 
-    /** Получить следующее число.
-      * Если параметр create_if_need не установлен в true, то
-      *  в файле уже должно быть записано какое-нибудь число (если нет - создайте файл вручную с нулём).
+    /** Get the next number.
+      * If the `create_if_need` parameter is not set to true, then
+      *  the file must already have a number written (if not - create the file manually with zero).
       *
-      * Для защиты от race condition-ов между разными процессами, используются файловые блокировки.
-      * (Но при первом создании файла race condition возможен, так что лучше создать файл заранее.)
+      * To protect against race conditions between different processes, file locks are used.
+      * (But when the first file is created, the race condition is possible, so it's better to create the file in advance.)
       *
-      * locked_callback вызывается при заблокированном файле со счетчиком. В него передается новое значение.
-      * locked_callback можно использовать, чтобы делать что-нибудь атомарно с увеличением счетчика (например, переименовывать файлы).
+      * `locked_callback` is called when the counter file is locked. A new value is passed to it.
+      * `locked_callback` can be used to do something atomically with the increment of the counter (for example, rename files).
       */
     template <typename Callback>
     UInt64 get(Callback && locked_callback, bool create_if_need = false)
@@ -33,25 +33,25 @@ public:
         return getBunch(1, create_if_need);
     }
 
-    /// Посмотреть следующее значение.
+    /// Peek the next value.
     UInt64 peek(bool create_if_need = false)
     {
         return getBunch(0, create_if_need);
     }
 
-    /** Получить следующее число и увеличить счетчик на count.
-     * Если параметр create_if_need не установлен в true, то
-     *  в файле уже должно быть записано какое-нибудь число (если нет - создайте файл вручную с нулём).
-     *
-     * Для защиты от race condition-ов между разными процессами, используются файловые блокировки.
-     * (Но при первом создании файла race condition возможен, так что лучше создать файл заранее.)
-     */
+    /** Get the next number and increase the counter by `count`.
+      * If the `create_if_need` parameter is not set to true, then
+      *  the file should already have a number written (if not - create the file manually with zero).
+      *
+      * To protect against race conditions between different processes, file locks are used.
+      * (But when the first file is created, the race condition is possible, so it's better to create the file in advance.)
+      */
     UInt64 getBunch(UInt64 count, bool create_if_need = false)
     {
         return static_cast<UInt64>(counter.add(static_cast<Int64>(count), create_if_need) - count + 1);
     }
 
-    /// Изменить путь к файлу.
+    /// Change the path to the file.
     void setPath(std::string path_)
     {
         counter.setPath(path_);
@@ -64,24 +64,4 @@ public:
 
 private:
     CounterInFile counter;
-};
-
-
-/** То же самое, но без хранения в файле.
-  */
-struct SimpleIncrement : private boost::noncopyable
-{
-    std::atomic<UInt64> value;
-
-    SimpleIncrement(UInt64 start = 0) : value(start) {}
-
-    void set(UInt64 new_value)
-    {
-        value = new_value;
-    }
-
-    UInt64 get()
-    {
-        return ++value;
-    }
 };

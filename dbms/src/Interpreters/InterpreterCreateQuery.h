@@ -1,16 +1,18 @@
 #pragma once
 
-#include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnDefault.h>
-#include <Common/ThreadPool.h>
 
+
+class ThreadPool;
 
 namespace DB
 {
 
+class Context;
 class ASTCreateQuery;
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
 
 
 /** Allows to create new table or database,
@@ -19,7 +21,7 @@ class ASTCreateQuery;
 class InterpreterCreateQuery : public IInterpreter
 {
 public:
-    InterpreterCreateQuery(ASTPtr query_ptr_, Context & context_);
+    InterpreterCreateQuery(const ASTPtr & query_ptr_, Context & context_);
 
     BlockIO execute() override;
 
@@ -53,7 +55,7 @@ public:
     static ColumnsInfo getColumnsInfo(const ASTPtr & columns, const Context & context);
 
 private:
-    void createDatabase(ASTCreateQuery & create);
+    BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns of table and return it.
@@ -61,7 +63,7 @@ private:
     String setEngine(ASTCreateQuery & create, const StoragePtr & as_storage) const;
 
     ASTPtr query_ptr;
-    Context context;
+    Context & context;
 
     /// Using while loading database.
     ThreadPool * thread_pool = nullptr;

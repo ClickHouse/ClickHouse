@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Storages/StorageView.h>
 
@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class StorageMaterializedView : private ext::shared_ptr_helper<StorageMaterializedView>, public StorageView
+class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public StorageView
 {
 friend class ext::shared_ptr_helper<StorageMaterializedView>;
 
@@ -37,18 +37,17 @@ public:
     bool supportsParallelReplicas() const override     { return getInnerTable()->supportsParallelReplicas(); }
     bool supportsIndexForIn() const override         { return getInnerTable()->supportsIndexForIn(); }
 
-    BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
     void drop() override;
     bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override;
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const ASTPtr & query,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
 private:
     StorageMaterializedView(

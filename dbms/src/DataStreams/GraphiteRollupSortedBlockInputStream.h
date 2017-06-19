@@ -111,16 +111,16 @@ namespace Graphite
     };
 }
 
-/** Соединяет несколько сортированных потоков в один.
+/** Merges several sorted streams into one.
   *
-  * При этом, для каждой группы идущих подряд одинаковых значений столбца path,
-  *  и одинаковых значений time с округлением до некоторой точности
-  *  (где точность округления зависит от набора шаблонов на path
-  *   и количества времени, прошедшего от time до заданного времени),
-  * оставляет одну строку,
-  *  выполняя округление времени,
-  *  слияние значений value, используя заданные агрегатные функции,
-  *  а также оставляя максимальное значение столбца version.
+  * For each group of consecutive identical values of the `path` column,
+  *  and the same `time` values, rounded to some precision
+  *  (where rounding accuracy depends on the template set for `path`
+  *   and the amount of time elapsed from `time` to the specified time),
+  * keeps one line,
+  *  performing the rounding of time,
+  *  merge `value` values using the specified aggregate functions,
+  *  as well as keeping the maximum value of the `version` column.
   */
 class GraphiteRollupSortedBlockInputStream : public MergingSortedBlockInputStream
 {
@@ -154,7 +154,7 @@ public:
 
     ~GraphiteRollupSortedBlockInputStream()
     {
-        if (current_pattern)
+        if (aggregate_state_created)
             current_pattern->function->destroy(place_for_aggregate_state.data());
     }
 
@@ -179,19 +179,17 @@ private:
     /// All data has been read.
     bool finished = false;
 
-    RowRef selected_row;        /// Last row with maximum version for current primary key.
+    RowRef current_selected_row;        /// Last row with maximum version for current primary key.
     UInt64 current_max_version = 0;
 
     bool is_first = true;
     StringRef current_path;
     time_t current_time = 0;
     time_t current_time_rounded = 0;
-    StringRef next_path;
-    time_t next_time = 0;
-    time_t next_time_rounded = 0;
 
     const Graphite::Pattern * current_pattern = nullptr;
     std::vector<char> place_for_aggregate_state;
+    bool aggregate_state_created = false; /// Invariant: if true then current_pattern is not NULL.
 
     const Graphite::Pattern * selectPatternForPath(StringRef path) const;
     UInt32 selectPrecision(const Graphite::Retentions & retentions, time_t time) const;
@@ -200,14 +198,14 @@ private:
     template <typename TSortCursor>
     void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
-    /// Вставить значения в результирующие столбцы, которые не будут меняться в дальнейшем.
+    /// Insert the values into the resulting columns, which will not be changed in the future.
     template <class TSortCursor>
-    void startNextRow(ColumnPlainPtrs & merged_columns, TSortCursor & cursor);
+    void startNextRow(ColumnPlainPtrs & merged_columns, TSortCursor & cursor, const Graphite::Pattern * next_pattern);
 
-    /// Вставить в результирующие столбцы вычисленные значения time, value, version по последней группе строк.
+    /// Insert the calculated `time`, `value`, `version` values into the resulting columns by the last group of rows.
     void finishCurrentRow(ColumnPlainPtrs & merged_columns);
 
-    /// Обновить состояние агрегатной функции новым значением value.
+    /// Update the state of the aggregate function with the new `value`.
     void accumulateRow(RowRef & row);
 };
 

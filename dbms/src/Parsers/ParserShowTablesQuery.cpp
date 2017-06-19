@@ -17,13 +17,13 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_show("SHOW", true, true);
-    ParserString s_tables("TABLES", true, true);
-    ParserString s_databases("DATABASES", true, true);
-    ParserString s_from("FROM", true, true);
-    ParserString s_not("NOT", true, true);
-    ParserString s_like("LIKE", true, true);
+    ParserWhitespaceOrComments ws;
+    ParserKeyword s_show("SHOW");
+    ParserKeyword s_tables("TABLES");
+    ParserKeyword s_databases("DATABASES");
+    ParserKeyword s_from("FROM");
+    ParserKeyword s_not("NOT");
+    ParserKeyword s_like("LIKE");
     ParserStringLiteral like_p;
     ParserIdentifier name_p;
 

@@ -240,6 +240,8 @@ void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_directi
 
         if (!limit)
             limit = end_idx;
+        else
+            limit = std::min(end_idx, limit);
 
         while (read_idx < limit && !isNullAt(res[read_idx]))
         {
@@ -271,7 +273,7 @@ void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_directi
     }
     else
     {
-        /// Shift all NULL values to the begin.
+        /// Shift all NULL values to the beginning.
 
         ssize_t read_idx = res.size() - 1;
         ssize_t write_idx = res.size() - 1;

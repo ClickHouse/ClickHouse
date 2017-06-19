@@ -177,7 +177,7 @@ namespace ErrorCodes
     extern const int TOO_BIG_AST = 168;
     extern const int BAD_TYPE_OF_FIELD = 169;
     extern const int BAD_GET = 170;
-    extern const int BLOCKS_HAS_DIFFERENT_STRUCTURE = 171;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE = 171;
     extern const int CANNOT_CREATE_DIRECTORY = 172;
     extern const int CANNOT_ALLOCATE_MEMORY = 173;
     extern const int CYCLIC_ALIASES = 174;
@@ -373,6 +373,10 @@ namespace ErrorCodes
     extern const int BAD_CAST = 368;
     extern const int ALL_REPLICAS_ARE_STALE = 369;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES = 370;
+    extern const int INCONSISTENT_CLUSTER_DEFINITION = 371;
+    extern const int SESSION_NOT_FOUND = 372;
+    extern const int SESSION_IS_LOCKED = 373;
+    extern const int INVALID_SESSION_TIMEOUT = 374;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

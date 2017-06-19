@@ -24,6 +24,9 @@ public:
     /// был ли класс инициализирован
     bool isInitialized() const { return ptr != nullptr; }
 
+    /// Workaround for zkutil::Lock
+    void initFromInstance(const ZooKeeper::Ptr & zookeeper_ptr);
+
     UnstorableZookeeperHandler getZooKeeper();
     bool replaceZooKeeperSessionToNewOne();
 

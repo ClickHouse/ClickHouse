@@ -10,7 +10,7 @@
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/set.hpp>
 #include <boost/noncopyable.hpp>
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>

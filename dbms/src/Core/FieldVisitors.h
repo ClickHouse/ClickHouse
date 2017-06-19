@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Core/AccurateComparison.h>
 #include <common/DateLUT.h>
 
 
@@ -33,13 +34,13 @@ typename std::decay<Visitor>::type::ResultType applyVisitor(Visitor && visitor, 
 {
     switch (field.getType())
     {
-        case Field::Types::Null:     return visitor(field.template get<Null>());
-        case Field::Types::UInt64:     return visitor(field.template get<UInt64>());
-        case Field::Types::Int64:     return visitor(field.template get<Int64>());
+        case Field::Types::Null:    return visitor(field.template get<Null>());
+        case Field::Types::UInt64:  return visitor(field.template get<UInt64>());
+        case Field::Types::Int64:   return visitor(field.template get<Int64>());
         case Field::Types::Float64: return visitor(field.template get<Float64>());
-        case Field::Types::String:     return visitor(field.template get<String>());
-        case Field::Types::Array:     return visitor(field.template get<Array>());
-        case Field::Types::Tuple:     return visitor(field.template get<Tuple>());
+        case Field::Types::String:  return visitor(field.template get<String>());
+        case Field::Types::Array:   return visitor(field.template get<Array>());
+        case Field::Types::Tuple:   return visitor(field.template get<Tuple>());
 
         default:
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -52,13 +53,13 @@ static typename std::decay<Visitor>::type::ResultType applyBinaryVisitorImpl(Vis
 {
     switch (field2.getType())
     {
-        case Field::Types::Null:     return visitor(field1, field2.template get<Null>());
-        case Field::Types::UInt64:     return visitor(field1, field2.template get<UInt64>());
-        case Field::Types::Int64:     return visitor(field1, field2.template get<Int64>());
+        case Field::Types::Null:    return visitor(field1, field2.template get<Null>());
+        case Field::Types::UInt64:  return visitor(field1, field2.template get<UInt64>());
+        case Field::Types::Int64:   return visitor(field1, field2.template get<Int64>());
         case Field::Types::Float64: return visitor(field1, field2.template get<Float64>());
-        case Field::Types::String:     return visitor(field1, field2.template get<String>());
-        case Field::Types::Array:     return visitor(field1, field2.template get<Array>());
-        case Field::Types::Tuple:     return visitor(field1, field2.template get<Tuple>());
+        case Field::Types::String:  return visitor(field1, field2.template get<String>());
+        case Field::Types::Array:   return visitor(field1, field2.template get<Array>());
+        case Field::Types::Tuple:   return visitor(field1, field2.template get<Tuple>());
 
         default:
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -102,13 +103,13 @@ typename std::decay<Visitor>::type::ResultType applyVisitor(Visitor && visitor, 
 class FieldVisitorToString : public StaticVisitor<String>
 {
 public:
-    String operator() (const Null         & x) const;
-    String operator() (const UInt64     & x) const;
-    String operator() (const Int64         & x) const;
-    String operator() (const Float64     & x) const;
-    String operator() (const String     & x) const;
-    String operator() (const Array         & x) const;
-    String operator() (const Tuple         & x) const;
+    String operator() (const Null & x) const;
+    String operator() (const UInt64 & x) const;
+    String operator() (const Int64 & x) const;
+    String operator() (const Float64 & x) const;
+    String operator() (const String & x) const;
+    String operator() (const Array & x) const;
+    String operator() (const Tuple & x) const;
 };
 
 
@@ -116,13 +117,13 @@ public:
 class FieldVisitorDump : public StaticVisitor<String>
 {
 public:
-    String operator() (const Null         & x) const;
-    String operator() (const UInt64     & x) const;
-    String operator() (const Int64         & x) const;
-    String operator() (const Float64     & x) const;
-    String operator() (const String     & x) const;
-    String operator() (const Array         & x) const;
-    String operator() (const Tuple         & x) const;
+    String operator() (const Null & x) const;
+    String operator() (const UInt64 & x) const;
+    String operator() (const Int64 & x) const;
+    String operator() (const Float64 & x) const;
+    String operator() (const String & x) const;
+    String operator() (const Array & x) const;
+    String operator() (const Tuple & x) const;
 };
 
 
@@ -151,8 +152,8 @@ public:
         throw Exception("Cannot convert Tuple to " + TypeName<T>::get(), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    T operator() (const UInt64     & x) const { return x; }
-    T operator() (const Int64     & x) const { return x; }
+    T operator() (const UInt64 & x) const { return x; }
+    T operator() (const Int64 & x) const { return x; }
     T operator() (const Float64 & x) const { return x; }
 };
 
@@ -165,35 +166,21 @@ private:
 public:
     FieldVisitorHash(SipHash & hash);
 
-    void operator() (const Null     & x) const;
-    void operator() (const UInt64     & x) const;
-    void operator() (const Int64     & x) const;
-    void operator() (const Float64     & x) const;
-    void operator() (const String     & x) const;
-    void operator() (const Array     & x) const;
+    void operator() (const Null & x) const;
+    void operator() (const UInt64 & x) const;
+    void operator() (const Int64 & x) const;
+    void operator() (const Float64 & x) const;
+    void operator() (const String & x) const;
+    void operator() (const Array & x) const;
 };
-
-
-/// Converts string with date or datetime (in format 'YYYY-MM-DD hh:mm:ss') to UInt64 containing numeric value of date (or datetime)
-UInt64 stringToDateOrDateTime(const String & s);
-
-/// Converts string with date to UInt16 (which is alias of DayNum_t) containing numeric value of date
-DayNum_t stringToDate(const String & s);
-
-/// Converts string with date to UInt64 containing numeric value of datetime
-UInt64 stringToDateTime(const String & s);
 
 
 /** More precise comparison, used for index.
   * Differs from Field::operator< and Field::operator== in that it also compares values of different types.
   * Comparison rules are same as in FunctionsComparison (to be consistent with expression evaluation in query).
-  * Except in cases when comparing signed and unsigned integers, which is unspecified behavior in FunctionsComparison,
-  *  and when comparing integers and floats. Comparison is accurate here.
   */
 class FieldVisitorAccurateEquals : public StaticVisitor<bool>
 {
-    using Double128 = long double;        /// Non portable. Must have 64 bit mantissa to provide accurate comparisons.
-
 public:
     bool operator() (const Null & l, const Null & r)        const { return true; }
     bool operator() (const Null & l, const UInt64 & r)      const { return false; }
@@ -205,30 +192,30 @@ public:
 
     bool operator() (const UInt64 & l, const Null & r)      const { return false; }
     bool operator() (const UInt64 & l, const UInt64 & r)    const { return l == r; }
-    bool operator() (const UInt64 & l, const Int64 & r)     const { return r >= 0 && l == UInt64(r); }
-    bool operator() (const UInt64 & l, const Float64 & r)   const { return Double128(l) == Double128(r); }
-    bool operator() (const UInt64 & l, const String & r)    const { return l == stringToDateOrDateTime(r); }
+    bool operator() (const UInt64 & l, const Int64 & r)     const { return accurate::equalsOp(l, r); }
+    bool operator() (const UInt64 & l, const Float64 & r)   const { return accurate::equalsOp(l, r); }
+    bool operator() (const UInt64 & l, const String & r)    const { return false; }
     bool operator() (const UInt64 & l, const Array & r)     const { return false; }
     bool operator() (const UInt64 & l, const Tuple & r)     const { return false; }
 
     bool operator() (const Int64 & l, const Null & r)       const { return false; }
-    bool operator() (const Int64 & l, const UInt64 & r)     const { return l >= 0 && UInt64(l) == r; }
+    bool operator() (const Int64 & l, const UInt64 & r)     const { return accurate::equalsOp(l, r); }
     bool operator() (const Int64 & l, const Int64 & r)      const { return l == r; }
-    bool operator() (const Int64 & l, const Float64 & r)    const { return Double128(l) == Double128(r); }
+    bool operator() (const Int64 & l, const Float64 & r)    const { return accurate::equalsOp(l, r); }
     bool operator() (const Int64 & l, const String & r)     const { return false; }
     bool operator() (const Int64 & l, const Array & r)      const { return false; }
     bool operator() (const Int64 & l, const Tuple & r)      const { return false; }
 
     bool operator() (const Float64 & l, const Null & r)     const { return false; }
-    bool operator() (const Float64 & l, const UInt64 & r)   const { return Double128(l) == Double128(r); }
-    bool operator() (const Float64 & l, const Int64 & r)    const { return Double128(l) == Double128(r); }
+    bool operator() (const Float64 & l, const UInt64 & r)   const { return accurate::equalsOp(l, r); }
+    bool operator() (const Float64 & l, const Int64 & r)    const { return accurate::equalsOp(l, r); }
     bool operator() (const Float64 & l, const Float64 & r)  const { return l == r; }
     bool operator() (const Float64 & l, const String & r)   const { return false; }
     bool operator() (const Float64 & l, const Array & r)    const { return false; }
     bool operator() (const Float64 & l, const Tuple & r)    const { return false; }
 
     bool operator() (const String & l, const Null & r)      const { return false; }
-    bool operator() (const String & l, const UInt64 & r)    const { return stringToDateOrDateTime(l) == r; }
+    bool operator() (const String & l, const UInt64 & r)    const { return false; }
     bool operator() (const String & l, const Int64 & r)     const { return false; }
     bool operator() (const String & l, const Float64 & r)   const { return false; }
     bool operator() (const String & l, const String & r)    const { return l == r; }
@@ -254,8 +241,6 @@ public:
 
 class FieldVisitorAccurateLess : public StaticVisitor<bool>
 {
-    using Double128 = long double;        /// Non portable. Must have 64 bit mantissa to provide accurate comparisons.
-
 public:
     bool operator() (const Null & l, const Null & r)        const { return false; }
     bool operator() (const Null & l, const UInt64 & r)      const { return true; }
@@ -267,30 +252,30 @@ public:
 
     bool operator() (const UInt64 & l, const Null & r)      const { return false; }
     bool operator() (const UInt64 & l, const UInt64 & r)    const { return l < r; }
-    bool operator() (const UInt64 & l, const Int64 & r)     const { return r >= 0 && l < UInt64(r); }
-    bool operator() (const UInt64 & l, const Float64 & r)   const { return Double128(l) < Double128(r); }
-    bool operator() (const UInt64 & l, const String & r)    const { return l < stringToDateOrDateTime(r); }
+    bool operator() (const UInt64 & l, const Int64 & r)     const { return accurate::lessOp(l, r); }
+    bool operator() (const UInt64 & l, const Float64 & r)   const { return accurate::lessOp(l, r); }
+    bool operator() (const UInt64 & l, const String & r)    const { return true; }
     bool operator() (const UInt64 & l, const Array & r)     const { return true; }
     bool operator() (const UInt64 & l, const Tuple & r)     const { return true; }
 
     bool operator() (const Int64 & l, const Null & r)       const { return false; }
-    bool operator() (const Int64 & l, const UInt64 & r)     const { return l < 0 || UInt64(l) < r; }
+    bool operator() (const Int64 & l, const UInt64 & r)     const { return accurate::lessOp(l, r); }
     bool operator() (const Int64 & l, const Int64 & r)      const { return l < r; }
-    bool operator() (const Int64 & l, const Float64 & r)    const { return Double128(l) < Double128(r); }
+    bool operator() (const Int64 & l, const Float64 & r)    const { return accurate::lessOp(l, r); }
     bool operator() (const Int64 & l, const String & r)     const { return true; }
     bool operator() (const Int64 & l, const Array & r)      const { return true; }
     bool operator() (const Int64 & l, const Tuple & r)      const { return true; }
 
     bool operator() (const Float64 & l, const Null & r)     const { return false; }
-    bool operator() (const Float64 & l, const UInt64 & r)   const { return Double128(l) < Double128(r); }
-    bool operator() (const Float64 & l, const Int64 & r)    const { return Double128(l) < Double128(r); }
+    bool operator() (const Float64 & l, const UInt64 & r)   const { return accurate::lessOp(l, r); }
+    bool operator() (const Float64 & l, const Int64 & r)    const { return accurate::lessOp(l, r); }
     bool operator() (const Float64 & l, const Float64 & r)  const { return l < r; }
     bool operator() (const Float64 & l, const String & r)   const { return true; }
     bool operator() (const Float64 & l, const Array & r)    const { return true; }
     bool operator() (const Float64 & l, const Tuple & r)    const { return true; }
 
     bool operator() (const String & l, const Null & r)      const { return false; }
-    bool operator() (const String & l, const UInt64 & r)    const { return stringToDateOrDateTime(l) < r; }
+    bool operator() (const String & l, const UInt64 & r)    const { return false; }
     bool operator() (const String & l, const Int64 & r)     const { return false; }
     bool operator() (const String & l, const Float64 & r)   const { return false; }
     bool operator() (const String & l, const String & r)    const { return l < r; }

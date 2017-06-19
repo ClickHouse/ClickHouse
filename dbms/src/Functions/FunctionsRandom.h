@@ -12,24 +12,29 @@
 namespace DB
 {
 
-/** Функции генерации псевдослучайных чисел.
-  * Функция может быть вызвана без аргументов или с одним аргументом.
-  * Аргумент игнорируется и служит лишь для того, чтобы несколько вызовов одной функции считались разными и не склеивались.
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+/** Pseudo-random number generation functions.
+  * The function can be called without arguments or with one argument.
+  * The argument is ignored and only serves to ensure that several calls to one function are considered different and do not stick together.
   *
-  * Пример:
-  * SELECT rand(), rand() - выдаст два одинаковых столбца.
-  * SELECT rand(1), rand(2) - выдаст два разных столбца.
+  * Example:
+  * SELECT rand(), rand() - will output two identical columns.
+  * SELECT rand(1), rand(2) - will output two different columns.
   *
-  * Некриптографические генераторы:
+  * Non-cryptographic generators:
   *
   * rand   - linear congruental generator 0 .. 2^32 - 1.
-  * rand64 - комбинирует несколько значений rand, чтобы получить значения из диапазона 0 .. 2^64 - 1.
+  * rand64 - combines several rand values to get values from the range 0 .. 2^64 - 1.
   *
-  * randConstant - служебная функция, выдаёт константный столбец со случайным значением.
+  * randConstant - service function, produces a constant column with a random value.
   *
-  * В качестве затравки используют время.
-  * Замечание: переинициализируется на каждый блок.
-  * Это значит, что таймер должен быть достаточного разрешения, чтобы выдавать разные значения на каждый блок.
+  * The time is used as the seed.
+  * Note: it is reinitialized for each block.
+  * This means that the timer must be of sufficient resolution to give different values to each block.
   */
 
 namespace detail
@@ -42,11 +47,11 @@ namespace detail
 
     struct LinearCongruentialGenerator
     {
-        /// Константы из man lrand48_r.
+        /// Constants from `man lrand48_r`.
         static constexpr UInt64 a = 0x5DEECE66D;
         static constexpr UInt64 c = 0xB;
 
-        /// А эта - из head -c8 /dev/urandom | xxd -p
+        /// And this is from `head -c8 /dev/urandom | xxd -p`
         UInt64 current = 0x09826f4a081cee35ULL;
 
         LinearCongruentialGenerator() {}
@@ -194,7 +199,7 @@ class FunctionRandomConstant : public IFunction
 private:
     using ToType = typename Impl::ReturnType;
 
-    /// Значение одно для разных блоков.
+    /// The value is one for different blocks.
     bool is_initialized = false;
     ToType value;
 
@@ -236,11 +241,11 @@ public:
 
 
 struct NameRand         { static constexpr auto name = "rand"; };
-struct NameRand64         { static constexpr auto name = "rand64"; };
+struct NameRand64       { static constexpr auto name = "rand64"; };
 struct NameRandConstant { static constexpr auto name = "randConstant"; };
 
-using FunctionRand = FunctionRandom<RandImpl,    NameRand> ;
-using FunctionRand64 = FunctionRandom<Rand64Impl,    NameRand64>;
+using FunctionRand = FunctionRandom<RandImpl, NameRand> ;
+using FunctionRand64 = FunctionRandom<Rand64Impl, NameRand64>;
 using FunctionRandConstant = FunctionRandomConstant<RandImpl, NameRandConstant>;
 
 

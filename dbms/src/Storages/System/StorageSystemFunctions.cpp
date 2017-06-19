@@ -22,19 +22,14 @@ StorageSystemFunctions::StorageSystemFunctions(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemFunctions::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
 
 BlockInputStreams StorageSystemFunctions::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -49,7 +44,7 @@ BlockInputStreams StorageSystemFunctions::read(
         column_is_aggregate.column->insert(UInt64(0));
     }
 
-    const auto & aggregate_functions = context.getAggregateFunctionFactory().aggregate_functions;
+    const auto & aggregate_functions = AggregateFunctionFactory::instance().aggregate_functions;
     for (const auto & it : aggregate_functions)
     {
         column_name.column->insert(it.first);

@@ -12,7 +12,7 @@ namespace DB
 
 static bool parseDecimal(IParser::Pos & pos, IParser::Pos end, ASTSampleRatio::Rational & res, IParser::Pos & max_parsed_pos)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ws.ignore(pos, end);
 
     UInt64 num_before = 0;
@@ -61,7 +61,7 @@ static bool parseDecimal(IParser::Pos & pos, IParser::Pos end, ASTSampleRatio::R
     if (exponent < 0)
         res.denominator *= exp10(-exponent);
 
-    /// NOTE You do not need to delete the common power of ten from the numerator and denominator.
+    /// NOTE You do not need to remove the common power of ten from the numerator and denominator.
     return true;
 }
 
@@ -77,7 +77,7 @@ static bool parseDecimal(IParser::Pos & pos, IParser::Pos end, ASTSampleRatio::R
   * - fraction in ordinary decimal notation
   *
   * 1.23e-1
-  * - fraction in engineering decimal notation
+  * - fraction in scientific decimal notation
   *
   * 123 / 456
   * - fraction with an ordinary denominator
@@ -90,7 +90,7 @@ bool ParserSampleRatio::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr &
 {
     auto begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     ASTSampleRatio::Rational numerator;
     ASTSampleRatio::Rational denominator;

@@ -144,6 +144,12 @@
     <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 
 
+    <!-- Maximum session timeout, in seconds. Default: 3600. -->
+    <max_session_timeout>3600</max_session_timeout>
+
+    <!-- Default session timeout, in seconds. Default: 60. -->
+    <default_session_timeout>60</default_session_timeout>
+
     <!-- Sending data to Graphite for monitoring. Several sections can be defined. -->
     <!--
         interval - send every X second
@@ -239,6 +245,13 @@
     <resharding>
         <task_queue_path>/clickhouse/task_queue</task_queue_path>
     </resharding>
+
+    <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
+         Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
+    <distributed_ddl>
+        <!-- Path in ZooKeeper to queue with DDL queries -->
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
 
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--

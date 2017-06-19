@@ -21,6 +21,7 @@ include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
+include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libbtrie/include)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 include_directories (${ClickHouse_BINARY_DIR}/dbms/src)
 
@@ -41,10 +42,8 @@ set(dbms_headers)
 set(dbms_sources)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
-add_headers_and_sources(dbms src/TableFunctions)
 add_headers_and_sources(dbms src/Parsers)
 add_headers_and_sources(dbms src/Analyzers)
-add_headers_and_sources(dbms src/AggregateFunctions)
 add_headers_and_sources(dbms src/Core)
 add_headers_and_sources(dbms src/DataStreams)
 add_headers_and_sources(dbms src/DataTypes)
@@ -68,12 +67,35 @@ add_headers_only(dbms src/Server)
 list (APPEND dbms_sources ${CONFIG_BUILD})
 list (APPEND dbms_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/DataTypeTraits.cpp)
-list (APPEND dbms_headers src/Functions/IFunction.h   src/Functions/FunctionFactory.h   src/Functions/DataTypeTraits.h)
+list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp)
+list (APPEND dbms_headers src/Functions/IFunction.h   src/Functions/FunctionFactory.h)
+
+list (APPEND dbms_sources
+    src/AggregateFunctions/AggregateFunctionFactory.cpp
+    src/AggregateFunctions/AggregateFunctionState.cpp
+    src/AggregateFunctions/AggregateFunctionArray.cpp
+    src/AggregateFunctions/AggregateFunctionNull.cpp
+    src/AggregateFunctions/AggregateFunctionForEach.cpp
+    src/AggregateFunctions/AggregateFunctionIf.cpp
+    src/AggregateFunctions/AggregateFunctionMerge.cpp
+    src/AggregateFunctions/AggregateFunctionCount.cpp)
+
+list (APPEND dbms_headers
+    src/AggregateFunctions/IAggregateFunction.h
+    src/AggregateFunctions/AggregateFunctionFactory.h
+    src/AggregateFunctions/AggregateFunctionState.h
+    src/AggregateFunctions/AggregateFunctionArray.h
+    src/AggregateFunctions/AggregateFunctionNull.h
+    src/AggregateFunctions/AggregateFunctionForEach.h
+    src/AggregateFunctions/AggregateFunctionIf.h
+    src/AggregateFunctions/AggregateFunctionMerge.h
+    src/AggregateFunctions/AggregateFunctionCount.h)
+
+list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
+list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
+
 
 list(REMOVE_ITEM dbms_sources
-    src/Client/Client.cpp
-    src/Client/Benchmark.cpp
     src/Storages/StorageCloud.cpp
     src/Databases/DatabaseCloud.cpp
     src/Common/StringUtils.cpp)
@@ -127,6 +149,7 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
         src/Dictionaries/FlatDictionary.cpp
         src/Dictionaries/HashedDictionary.cpp
         src/Dictionaries/CacheDictionary.cpp
+        src/Dictionaries/TrieDictionary.cpp
         src/Dictionaries/RangeHashedDictionary.cpp
         src/Dictionaries/ComplexKeyHashedDictionary.cpp
         src/Dictionaries/ComplexKeyCacheDictionary.cpp
@@ -159,6 +182,7 @@ target_link_libraries (dbms
     ${OPENSSL_CRYPTO_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
     ${Poco_Data_LIBRARY}
+    btrie
 )
 
 if (Poco_DataODBC_FOUND)

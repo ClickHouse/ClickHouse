@@ -129,12 +129,11 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
 
 BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads,
+    const unsigned num_streams,
     size_t * inout_part_index,
     Int64 max_block_number_to_read) const
 {
@@ -203,6 +202,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     PKCondition date_condition(query, context, available_real_and_virtual_columns,
         SortDescription(1, SortColumnDescription(data.date_column_name, 1, 1)),
         Block{{DataTypeDate{}.createColumn(), std::make_shared<DataTypeDate>(), data.date_column_name}});
+
+    const Settings & settings = context.getSettingsRef();
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
@@ -544,9 +545,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         std::sort(column_names_to_read.begin(), column_names_to_read.end());
         column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
-        res = spreadMarkRangesAmongThreadsFinal(
+        res = spreadMarkRangesAmongStreamsFinal(
             parts_with_ranges,
-            threads,
             column_names_to_read,
             max_block_size,
             settings.use_uncompressed_cache,
@@ -558,9 +558,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     }
     else
     {
-        res = spreadMarkRangesAmongThreads(
+        res = spreadMarkRangesAmongStreams(
             parts_with_ranges,
-            threads,
+            num_streams,
             column_names_to_read,
             max_block_size,
             settings.use_uncompressed_cache,
@@ -584,9 +584,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 }
 
 
-BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
+BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     RangesInDataParts parts,
-    size_t threads,
+    size_t num_streams,
     const Names & column_names,
     size_t max_block_size,
     bool use_uncompressed_cache,
@@ -621,19 +621,19 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 
     if (sum_marks > 0 && settings.merge_tree_uniform_read_distribution == 1)
     {
-        /// Reduce the number of threads if the data is small.
-        if (sum_marks < threads * min_marks_for_concurrent_read && parts.size() < threads)
-            threads = std::max((sum_marks + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, parts.size());
+        /// Reduce the number of num_streams if the data is small.
+        if (sum_marks < num_streams * min_marks_for_concurrent_read && parts.size() < num_streams)
+            num_streams = std::max((sum_marks + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, parts.size());
 
         MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
-            threads, sum_marks, min_marks_for_concurrent_read, parts, data, prewhere_actions, prewhere_column, true,
+            num_streams, sum_marks, min_marks_for_concurrent_read, parts, data, prewhere_actions, prewhere_column, true,
             column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
 
         /// Let's estimate total number of rows for progress bar.
         const std::size_t total_rows = data.index_granularity * sum_marks;
         LOG_TRACE(log, "Reading approx. " << total_rows << " rows");
 
-        for (std::size_t i = 0; i < threads; ++i)
+        for (std::size_t i = 0; i < num_streams; ++i)
         {
             res.emplace_back(std::make_shared<MergeTreeThreadBlockInputStream>(
                 i, pool, min_marks_for_concurrent_read, max_block_size, settings.preferred_block_size_bytes, data, use_uncompressed_cache,
@@ -648,11 +648,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
     }
     else if (sum_marks > 0)
     {
-        const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
+        const size_t min_marks_per_stream = (sum_marks - 1) / num_streams + 1;
 
-        for (size_t i = 0; i < threads && !parts.empty(); ++i)
+        for (size_t i = 0; i < num_streams && !parts.empty(); ++i)
         {
-            size_t need_marks = min_marks_per_thread;
+            size_t need_marks = min_marks_per_stream;
 
             /// Loop parts.
             while (need_marks > 0 && !parts.empty())
@@ -690,7 +690,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
                     while (need_marks > 0)
                     {
                         if (part.ranges.empty())
-                            throw Exception("Unexpected end of ranges while spreading marks among threads", ErrorCodes::LOGICAL_ERROR);
+                            throw Exception("Unexpected end of ranges while spreading marks among streams", ErrorCodes::LOGICAL_ERROR);
 
                         MarkRange & range = part.ranges.back();
 
@@ -716,15 +716,14 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
         }
 
         if (!parts.empty())
-            throw Exception("Couldn't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Couldn't spread marks among streams", ErrorCodes::LOGICAL_ERROR);
     }
 
     return res;
 }
 
-BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal(
+BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts parts,
-    size_t threads,
     const Names & column_names,
     size_t max_block_size,
     bool use_uncompressed_cache,

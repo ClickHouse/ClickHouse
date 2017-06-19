@@ -1,4 +1,5 @@
 #include <Core/Defines.h>
+#include <Common/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <IO/WriteHelpers.h>

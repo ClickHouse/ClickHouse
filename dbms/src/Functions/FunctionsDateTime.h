@@ -23,51 +23,56 @@
 namespace DB
 {
 
-/** Функции работы с датой и временем.
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+/** Functions for working with date and time.
   *
   * toYear, toMonth, toDayOfMonth, toDayOfWeek, toHour, toMinute, toSecond,
   * toMonday, toStartOfMonth, toStartOfYear, toStartOfMinute, toStartOfFiveMinute
   * toStartOfHour, toTime,
-  * now
+  * now, today, yesterday
   * TODO: makeDate, makeDateTime
   *
-  * (toDate - расположена в файле FunctionsConversion.h)
+  * (toDate - located in FunctionConversion.h file)
   *
-  * Возвращаемые типы:
+  * Return types:
   *  toYear -> UInt16
   *  toMonth, toDayOfMonth, toDayOfWeek, toHour, toMinute, toSecond -> UInt8
   *  toMonday, toStartOfMonth, toStartOfYear -> Date
   *  toStartOfMinute, toStartOfHour, toTime, now -> DateTime
   *
-  * А также:
+  * And also:
   *
   * timeSlot(EventTime)
-  * - округляет время до получаса.
+  * - rounds the time to half an hour.
   *
   * timeSlots(StartTime, Duration)
-  * - для интервала времени, начинающегося в StartTime и продолжающегося Duration секунд,
-  *   возвращает массив моментов времени, состоящий из округлений вниз до получаса точек из этого интервала.
-  *  Например, timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')].
-  *  Это нужно для поиска хитов, входящих в соответствующий визит.
+  * - for the time interval beginning at `StartTime` and continuing `Duration` seconds,
+  *   returns an array of time points, consisting of rounding down to half an hour of points from this interval.
+  *  For example, timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')].
+  *  This is necessary to search for hits that are part of the corresponding visit.
   */
 
 
 #define TIME_SLOT_SIZE 1800
 
-/** Всевозможные преобразования.
-  * Представляют собой две функции - от даты-с-временем (UInt32) и от даты (UInt16).
+/** Extra transformations.
+  * Represents two functions - from datetime (UInt32) and from date (UInt16).
   *
-  * Также для преобразования T определяется "фактор-преобразование" F.
-  * Это такое преобразование F, что его значение идентифицирует область монотонности T
-  *  (при фиксированном значении F, преобразование T является монотонным).
+  * Also, the "factor transformation" F is defined for the T transformation.
+  * This is a transformation of F such that its value identifies the region of monotonicity T
+  *  (for a fixed value of F, the transformation T is monotonic).
   *
-  * Или, образно, если T аналогично взятию остатка от деления, то F аналогично делению.
+  * Or, figuratively, if T is similar to taking the remainder of division, then F is similar to division.
   *
-  * Пример: для преобразования T "получить номер дня в месяце" (2015-02-03 -> 3),
-  *  фактор-преобразованием F является "округлить до месяца" (2015-02-03 -> 2015-02-01).
+  * Example: to convert T "get the day number in the month" (2015-02-03 -> 3),
+  *  factor-transformation F is "round to the nearest month" (2015-02-03 -> 2015-02-01).
   */
 
-/// Это фактор-преобразование будет говорить, что функция монотонна всюду.
+/// This factor transformation will say that the function is monotone everywhere.
 struct ZeroTransform
 {
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone) { return 0; }
@@ -161,7 +166,7 @@ struct ToStartOfYearImpl
 
 struct ToTimeImpl
 {
-    /// При переводе во время, дату будем приравнивать к 1970-01-02.
+    /// When transforming to time, the date will be equated to 1970-01-02.
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toTime(t) + 86400;
@@ -554,13 +559,13 @@ public:
         if (std::is_same<typename Transform::FactorTransform, ZeroTransform>::value)
             return is_monotonic;
 
-        /// Этот метод вызывается только если у функции один аргумент. Поэтому, нас пока не волнует не-локальная тайм-зона.
+        /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
         const DateLUTImpl & date_lut = DateLUT::instance();
 
         if (left.isNull() || right.isNull())
             return is_not_monotonic;
 
-        /// Функция монотонна на отрезке [left, right], если фактор-преобразование возвращает для них одинаковые значения.
+        /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
 
         if (typeid_cast<const DataTypeDate *>(&type))
         {
@@ -578,7 +583,7 @@ public:
 };
 
 
-/// Получить текущее время. (Оно - константа, вычисляется один раз за весь запрос.)
+/// Get the current time. (It is a constant, it is evaluated once for the entire query.)
 class FunctionNow : public IFunction
 {
 public:

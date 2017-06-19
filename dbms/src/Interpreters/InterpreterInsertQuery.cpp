@@ -33,7 +33,7 @@ namespace ErrorCodes
 }
 
 
-InterpreterInsertQuery::InterpreterInsertQuery(ASTPtr query_ptr_, Context & context_)
+InterpreterInsertQuery::InterpreterInsertQuery(const ASTPtr & query_ptr_, const Context & context_)
     : query_ptr(query_ptr_), context(context_)
 {
     ProfileEvents::increment(ProfileEvents::InsertQuery);
@@ -124,7 +124,7 @@ BlockIO InterpreterInsertQuery::execute()
         res.in = interpreter_select.execute().in;
 
         res.in = std::make_shared<NullableAdapterBlockInputStream>(res.in, res.in_sample, res.out_sample);
-        res.in = std::make_shared<CastTypeBlockInputStream>(context, res.in, res.in_sample, res.out_sample);
+        res.in = std::make_shared<CastTypeBlockInputStream>(context, res.in, res.out_sample);
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out);
     }
 

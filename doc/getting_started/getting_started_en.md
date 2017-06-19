@@ -33,7 +33,7 @@ https://github.com/yandex/ClickHouse/blob/master/doc/build.md
 
 Install required packages. After that let's run the following command from directory with source code of ClickHouse:
 ```
-~/ClickHouse$ ./release --standalone
+~/ClickHouse$ ./release
 ```
 
 The build successfully completed:

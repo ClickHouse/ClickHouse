@@ -9,15 +9,10 @@
 namespace DB
 {
 
-/** Берёт синтаксическое дерево и превращает его обратно в текст.
-  * В случае запроса INSERT, данные будут отсутствовать.
+/** Takes a syntax tree and turns it back into text.
+  * In case of INSERT query, the data will be missing.
   */
-inline void formatAST(const IAST & ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false)
-{
-    IAST::FormatSettings settings(s, hilite, one_line);
-    ast.format(settings);
-}
-
+void formatAST(const IAST & ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false);
 
 String formatColumnsForCreateQuery(NamesAndTypesList & columns);
 

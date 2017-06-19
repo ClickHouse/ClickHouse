@@ -13,12 +13,18 @@
 namespace DB
 {
 
-/** Функция для необычного преобразования в строку:
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
+
+/** Function for an unusual conversion to a string:
     *
-    * bitmaskToList - принимает целое число - битовую маску, возвращает строку из степеней двойки через запятую.
-    *                     например, bitmaskToList(50) = '2,16,32'
+    * bitmaskToList - takes an integer - a bitmask, returns a string of degrees of 2 separated by a comma.
+    *                     for example, bitmaskToList(50) = '2,16,32'
     *
-    * formatReadableSize - выводит переданный размер в байтах в виде 123.45 GiB.
+    * formatReadableSize - prints the transferred size in bytes in form `123.45 GiB`.
     */
 
 class FunctionBitmaskToList : public IFunction
@@ -63,8 +69,8 @@ public:
             ||    executeType<Int32>(block, arguments, result)
             ||    executeType<Int64>(block, arguments, result)))
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 
 private:

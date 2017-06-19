@@ -16,7 +16,7 @@ constexpr PoolMode pool_mode = PoolMode::GET_ONE;
 namespace ClusterProxy
 {
 
-BlockInputStreamPtr AlterQueryConstructor::createLocal(ASTPtr query_ast, const Context & context, const Cluster::Address & address)
+BlockInputStreamPtr AlterQueryConstructor::createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address)
 {
     /// The ALTER query may be a resharding query that is a part of a distributed
     /// job. Since the latter heavily relies on synchronization among its participating

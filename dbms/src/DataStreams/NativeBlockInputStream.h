@@ -10,12 +10,12 @@ namespace DB
 class CompressedReadBufferFromFile;
 
 
-/** Формат Native может содержать отдельно расположенный индекс,
-  *  который позволяет понять, где какой столбец расположен,
-  *  и пропускать ненужные столбцы.
+/** The Native format can contain a separately located index,
+  *  which allows you to understand where what column is located,
+  *  and skip unnecessary columns.
   */
 
-/** Позиция одного кусочка одного столбца. */
+/** The position of one piece of a single column. */
 struct IndexOfOneColumnForNativeFormat
 {
     String name;
@@ -23,7 +23,7 @@ struct IndexOfOneColumnForNativeFormat
     MarkInCompressedFile location;
 };
 
-/** Индекс для блока данных. */
+/** The index for the data block. */
 struct IndexOfBlockForNativeFormat
 {
     using Columns = std::vector<IndexOfOneColumnForNativeFormat>;
@@ -33,7 +33,7 @@ struct IndexOfBlockForNativeFormat
     Columns columns;
 };
 
-/** Весь индекс. */
+/** The whole index. */
 struct IndexForNativeFormat
 {
     using Blocks = std::vector<IndexOfBlockForNativeFormat>;
@@ -46,24 +46,24 @@ struct IndexForNativeFormat
         read(istr, required_columns);
     }
 
-    /// Прочитать индекс, только для нужных столбцов.
+    /// Read the index, only for the required columns.
     void read(ReadBuffer & istr, const NameSet & required_columns);
 };
 
 
-/** Десериализует поток блоков из родного бинарного формата (с именами и типами столбцов).
-  * Предназначено для взаимодействия между серверами.
+/** Deserializes the stream of blocks from the native binary format (with names and column types).
+  * Designed for communication between servers.
   *
-  * Также может использоваться для хранения данных на диске.
-  * В этом случае, может использовать индекс.
+  * Can also be used to store data on disk.
+  * In this case, can use the index.
   */
 class NativeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    /** В случае указания ненулевой server_revision, может ожидаться и считываться дополнительная информация о блоке,
-      * в зависимости от поддерживаемой для указанной ревизии.
+    /** If a non-zero server_revision is specified, additional block information may be expected and read,
+      * depending on what is supported for the specified revision.
       *
-      * index - не обязательный параметр. Если задан, то будут читаться только указанные в индексе кусочки столбцов.
+      * `index` is not required parameter. If set, only parts of columns specified in the index will be read.
       */
     NativeBlockInputStream(
         ReadBuffer & istr_, UInt64 server_revision_ = 0,
@@ -94,7 +94,7 @@ private:
     IndexForNativeFormat::Blocks::const_iterator index_block_end;
     IndexOfBlockForNativeFormat::Columns::const_iterator index_column_it;
 
-    /// Если задан индекс, то istr должен быть CompressedReadBufferFromFile.
+    /// If an index is specified, then `istr` must be CompressedReadBufferFromFile.
     CompressedReadBufferFromFile * istr_concrete;
 };
 

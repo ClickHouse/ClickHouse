@@ -12,20 +12,22 @@
 #endif
 
 
-/** Использует два способа оптимизации регулярного выражения:
-  * 1. Если регулярное выражение является тривиальным (сводится к поиску подстроки в строке),
-  *     то заменяет поиск на strstr или strcasestr.
-  * 2. Если регулярное выражение содержит безальтернативную подстроку достаточной длины,
-  *     то перед проверкой используется strstr или strcasestr достаточной длины;
-  *     регулярное выражение проверяется полностью только если подстрока найдена.
-  * 3. В остальных случаях, используется движок re2.
+/** Uses two ways to optimize a regular expression:
+  * 1. If the regular expression is trivial (reduces to finding a substring in a string),
+  *     then replaces the search with strstr or strcasestr.
+  * 2. If the regular expression contains a non-alternative substring of sufficient length,
+  *     then before testing, strstr or strcasestr of sufficient length is used;
+  *     regular expression is only fully checked if a substring is found.
+  * 3. In other cases, the re2 engine is used.
   *
-  * Это имеет смысл, так как strstr и strcasestr в libc под Linux хорошо оптимизированы.
+  * This makes sense, since strstr and strcasestr in libc for Linux are well optimized.
   *
-  * Подходит, если одновременно выполнены следующие условия:
-  * - если в большинстве вызовов, регулярное выражение не матчится;
-  * - если регулярное выражение совместимо с движком re2;
-  * - можете использовать на свой риск, так как, возможно, не все случаи учтены.
+  * Suitable if the following conditions are simultaneously met:
+  * - if in most calls, the regular expression does not match;
+  * - if the regular expression is compatible with the re2 engine;
+  * - you can use at your own risk, since, probably, not all cases are taken into account.
+  *
+  * NOTE: Multi-character metasymbols such as \Pl are handled incorrectly.
   */
 
 namespace OptimizedRegularExpressionDetails
@@ -82,7 +84,7 @@ public:
 
     unsigned getNumberOfSubpatterns() const { return number_of_subpatterns; }
 
-    /// Получить регексп re2 или nullptr, если шаблон тривиален (для вывода в лог).
+    /// Get the regexp re2 or nullptr if the pattern is trivial (for output to the log).
     const std::unique_ptr<RegexType>& getRE2() const { return re2; }
 
     static void analyze(const std::string & regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
@@ -105,4 +107,4 @@ private:
 
 using OptimizedRegularExpression = OptimizedRegularExpressionImpl<true>;
 
-#include "OptimizedRegularExpression.inl"
+#include "OptimizedRegularExpression.inl.h"

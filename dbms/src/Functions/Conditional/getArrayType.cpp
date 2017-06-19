@@ -1,7 +1,7 @@
 #include <Functions/Conditional/getArrayType.h>
 #include <Functions/Conditional/CondException.h>
 #include <Functions/Conditional/common.h>
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 

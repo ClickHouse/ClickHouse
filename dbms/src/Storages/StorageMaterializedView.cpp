@@ -1,6 +1,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 
@@ -109,17 +110,16 @@ bool StorageMaterializedView::hasColumn(const String & column_name) const
 
 BlockInputStreams StorageMaterializedView::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
-    return getInnerTable()->read(column_names, query, context, settings, processed_stage, max_block_size, threads);
+    return getInnerTable()->read(column_names, query, context, processed_stage, max_block_size, num_streams);
 }
 
-BlockOutputStreamPtr StorageMaterializedView::write(ASTPtr query, const Settings & settings)
+BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Settings & settings)
 {
     return getInnerTable()->write(query, settings);
 }

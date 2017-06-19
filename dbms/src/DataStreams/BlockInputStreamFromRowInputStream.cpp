@@ -12,6 +12,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int CANNOT_PARSE_NUMBER;
 }
 
 
@@ -33,7 +34,8 @@ static bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
         || code == ErrorCodes::CANNOT_PARSE_DATE
         || code == ErrorCodes::CANNOT_PARSE_DATETIME
-        || code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT;
+        || code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
+        || code == ErrorCodes::CANNOT_PARSE_NUMBER;
 }
 
 

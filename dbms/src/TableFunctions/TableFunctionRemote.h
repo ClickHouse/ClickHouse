@@ -6,8 +6,7 @@
 namespace DB
 {
 
-/*
- * remote ('address', db, table) - creates a temporary StorageDistributed.
+/* remote ('address', db, table) - creates a temporary StorageDistributed.
  * To get the table structure, a DESC TABLE request is made to the remote server.
  * For example
  * SELECT count() FROM remote('example01-01-1', merge, hits) - go to `example01-01-1`, in the merge database, the hits table.
@@ -16,8 +15,9 @@ namespace DB
 class TableFunctionRemote : public ITableFunction
 {
 public:
-    std::string getName() const override { return "remote"; }
-    StoragePtr execute(ASTPtr ast_function, Context & context) const override;
+    static constexpr auto name = "remote";
+    std::string getName() const override { return name; }
+    StoragePtr execute(const ASTPtr & ast_function, const Context & context) const override;
 };
 
 }

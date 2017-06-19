@@ -20,24 +20,24 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
 }
 
-/** Функции высшего порядка для массивов:
+/** Higher-order functions for arrays:
   *
-  * arrayMap(x1,...,xn -> expression, array1,...,arrayn) - применить выражение к каждому элементу массива (или набора параллельных массивов).
-  * arrayFilter(x -> predicate, array) - оставить в массиве только элементы, для которых выражение истинно.
-  * arrayCount(x1,...,xn -> expression, array1,...,arrayn) - для скольки элементов массива выражение истинно.
-  * arrayExists(x1,...,xn -> expression, array1,...,arrayn) - истинно ли выражение для хотя бы одного элемента массива.
-  * arrayAll(x1,...,xn -> expression, array1,...,arrayn) - истинно ли выражение для всех элементов массива.
+  * arrayMap(x1,...,xn -> expression, array1,...,arrayn) - apply the expression to each element of the array (or set of parallel arrays).
+  * arrayFilter(x -> predicate, array) - leave in the array only the elements for which the expression is true.
+  * arrayCount(x1,...,xn -> expression, array1,...,arrayn) - for how many elements of the array the expression is true.
+  * arrayExists(x1,...,xn -> expression, array1,...,arrayn) - is the expression true for at least one array element.
+  * arrayAll(x1,...,xn -> expression, array1,...,arrayn) - is the expression true for all elements of the array.
   *
-  * Для функций arrayCount, arrayExists, arrayAll доступна еще перегрузка вида f(array), которая работает так же, как f(x -> x, array).
+  * For functions arrayCount, arrayExists, arrayAll, an overload of the form f(array) is available, which works in the same way as f(x -> x, array).
   */
 
 struct ArrayMapImpl
 {
-    /// true, если выражение (для перегрузки f(expression, arrays)) или массив (для f(array)) должно быть булевым.
+    /// true if the expression (for an overload of f(expression, arrays)) or an array (for f(array)) should be boolean.
     static bool needBoolean() { return false; }
-    /// true, если перегрузка f(array) недоступна.
+    /// true if the f(array) overload is unavailable.
     static bool needExpression() { return true; }
-    /// true, если массив должен быть ровно один.
+    /// true if the array must be exactly one.
     static bool needOneArray() { return false; }
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
@@ -64,7 +64,7 @@ struct ArrayFilterImpl
         return std::make_shared<DataTypeArray>(array_element);
     }
 
-    /// Если массивов несколько, сюда передается первый.
+    /// If there are several arrays, the first one is passed here.
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
         const ColumnUInt8 * column_filter = typeid_cast<const ColumnUInt8 *>(&*mapped);
@@ -610,8 +610,8 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    /// Вызывается, если хоть один агрумент функции - лямбда-выражение.
-    /// Для аргументов-лямбда-выражений определяет типы аргументов этих выражений.
+    /// Called if at least one function argument is a lambda expression.
+    /// For argument-lambda expressions, it defines the types of arguments of these expressions.
     void getLambdaArgumentTypesImpl(DataTypes & arguments) const override
     {
         if (arguments.size() < 1)
@@ -679,7 +679,7 @@ public:
                 throw Exception("Type of first argument for function " + getName() + " must be an expression.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            /// Типы остальных аргументов уже проверены в getLambdaArgumentTypes.
+            /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
             DataTypePtr return_type = expression->getReturnType();
             if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(&*return_type))
@@ -735,9 +735,9 @@ public:
                 throw Exception("Column of first argument for function " + getName() + " must be an expression.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            /// Типы остальных аргументов уже проверены в getLambdaArgumentTypes.
+            /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
-            /// Попросим добавить в блок все столбцы, упоминаемые в выражении, размноженные в массив, параллельный обрабатываемому.
+            /// Let's add to the block all the columns mentioned in the expression, multiplied into an array parallel to the one being processed.
             const ExpressionActions & expression = *column_expression->getExpression();
             const NamesAndTypesList & required_columns = expression.getRequiredColumnsWithTypes();
 
@@ -803,7 +803,7 @@ public:
             ColumnPtr column_first_array_ptr;
             const ColumnArray * column_first_array = nullptr;
 
-            /// Положим в блок аргументы выражения.
+            /// Put the expression arguments in the block.
 
             for (size_t i = 0; i < expression_arguments.size(); ++i)
             {
@@ -828,7 +828,7 @@ public:
                 }
                 else
                 {
-                    /// Первое условие - оптимизация: не сравнивать данные, если указатели равны.
+                    /// The first condition is optimization: do not compare data if the pointers are equal.
                     if (column_array->getOffsetsColumn() != offsets_column
                         && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets_t &>(*offsets_column).getData())
                         throw Exception("Arrays passed to " + getName() + " must have equal size", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
@@ -848,7 +848,7 @@ public:
                 argument_names.insert(argument_name);
             }
 
-            /// Положим в блок все нужные столбцы, размноженные по размерам массивов.
+            /// Put all the necessary columns multiplied by the sizes of arrays into the block.
 
             Names required_columns = expression.getRequiredColumns();
             size_t prerequisite_index = 0;

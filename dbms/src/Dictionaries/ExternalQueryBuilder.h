@@ -57,20 +57,20 @@ struct ExternalQueryBuilder
     };
 
     std::string composeLoadKeysQuery(
-        const ConstColumnPlainPtrs & key_columns,
+        const Columns & key_columns,
         const std::vector<size_t> & requested_rows,
         LoadKeysMethod method);
 
 
 private:
     /// Expression in form (x = c1 AND y = c2 ...)
-    void composeKeyCondition(const ConstColumnPlainPtrs & key_columns, const size_t row, WriteBuffer & out) const;
+    void composeKeyCondition(const Columns & key_columns, const size_t row, WriteBuffer & out) const;
 
     /// Expression in form (x, y, ...)
     std::string composeKeyTupleDefinition() const;
 
     /// Expression in form (c1, c2, ...)
-    void composeKeyTuple(const ConstColumnPlainPtrs & key_columns, const size_t row, WriteBuffer & out) const;
+    void composeKeyTuple(const Columns & key_columns, const size_t row, WriteBuffer & out) const;
 
     /// Write string with specified quoting style.
     void writeQuoted(const std::string & s, WriteBuffer & out) const;

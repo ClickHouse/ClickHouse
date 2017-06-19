@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Parsers/CommonParsers.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <boost/range/iterator_range_core.hpp>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
@@ -286,7 +286,7 @@ private:
         ParserString dot_p(".");
         ParserNumber number_p;
 
-        auto pos = pattern.data();
+        const char * pos = pattern.data();
         const auto begin = pos;
         const auto end = pos + pattern.size();
 

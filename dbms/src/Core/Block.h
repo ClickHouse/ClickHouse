@@ -119,6 +119,12 @@ public:
       */
     void unshareColumns();
 
+    /** Updates SipHash of the Block, using update method of columns.
+      * Returns hash for block, that could be used to differentiate blocks 
+      *  with same structure, but different data.
+      */
+    void updateHash(SipHash & hash) const;
+
 private:
     void eraseImpl(size_t position);
     void initializeIndexByName();

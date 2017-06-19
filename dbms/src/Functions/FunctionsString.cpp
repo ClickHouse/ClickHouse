@@ -1,6 +1,6 @@
 ﻿#include <Functions/FunctionsString.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
@@ -15,6 +15,14 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+
 template <bool negative = false>
 struct EmptyImpl
 {
@@ -102,6 +110,7 @@ struct LengthImpl
 
 /** If the string is UTF-8 encoded text, it returns the length of the text in code points.
   * (not in characters: the length of the text "ё" can be either 1 or 2, depending on the normalization)
+ * (not in characters: the length of the text "" can be either 1 or 2, depending on the normalization)
   * Otherwise, the behavior is undefined.
   */
 struct LengthUTF8Impl
@@ -893,7 +902,7 @@ public:
     {
         if (arguments.size() < 2)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at least 2.",
+                + ", should be at least 2.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (const auto arg_idx : ext::range(0, arguments.size()))

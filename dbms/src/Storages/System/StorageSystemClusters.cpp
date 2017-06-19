@@ -11,7 +11,7 @@ namespace DB
 {
 
 
-StorageSystemClusters::StorageSystemClusters(const std::string & name_, Context & context_)
+StorageSystemClusters::StorageSystemClusters(const std::string & name_)
     : name(name_)
     , columns{
         { "cluster",      std::make_shared<DataTypeString>() },
@@ -25,23 +25,17 @@ StorageSystemClusters::StorageSystemClusters(const std::string & name_, Context 
         { "user",         std::make_shared<DataTypeString>() },
         { "default_database", std::make_shared<DataTypeString>() }
     }
-    , context(context_)
 {
 }
 
-StoragePtr StorageSystemClusters::create(const std::string & name_, Context & context_)
-{
-    return make_shared(name_, context_);
-}
 
 BlockInputStreams StorageSystemClusters::read(
     const Names & column_names,
-    ASTPtr query,
-    const Context & context_,
-    const Settings & settings,
+    const ASTPtr & query,
+    const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

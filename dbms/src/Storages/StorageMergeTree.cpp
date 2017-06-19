@@ -4,11 +4,9 @@
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PartLog.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -59,35 +57,18 @@ StorageMergeTree::StorageMergeTree(
 {
     data.loadDataParts(has_force_restore_data_flag);
     data.clearOldParts();
-    data.clearOldTemporaryDirectories();
+
+    /// Temporary directories contain incomplete results of merges (after forced restart)
+    ///  and don't allow to reinitialize them, so delete each of them immediately
+    data.clearOldTemporaryDirectories(0);
+
     increment.set(data.getMaxDataPartIndex());
 }
 
-StoragePtr StorageMergeTree::create(
-    const String & path_, const String & database_name_, const String & table_name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    bool attach,
-    Context & context_,
-    ASTPtr & primary_expr_ast_,
-    const String & date_column_name_,
-    const ASTPtr & sampling_expression_,
-    size_t index_granularity_,
-    const MergeTreeData::MergingParams & merging_params_,
-    bool has_force_restore_data_flag_,
-    const MergeTreeSettings & settings_)
-{
-    auto res = make_shared(
-        path_, database_name_, table_name_,
-        columns_, materialized_columns_, alias_columns_, column_defaults_, attach,
-        context_, primary_expr_ast_, date_column_name_,
-        sampling_expression_, index_granularity_, merging_params_, has_force_restore_data_flag_, settings_
-    );
-    res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res.get()));
 
-    return res;
+void StorageMergeTree::startup()
+{
+    merge_task_handle = background_pool.addTask([this] { return mergeTask(); });
 }
 
 
@@ -108,29 +89,23 @@ StorageMergeTree::~StorageMergeTree()
 
 BlockInputStreams StorageMergeTree::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
-    auto & select = typeid_cast<const ASTSelectQuery &>(*query);
-
-    /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-    if (settings.optimize_move_to_prewhere && select.where_expression && !select.prewhere_expression && !select.final())
-        MergeTreeWhereOptimizer{query, context, data, column_names, log};
-
-    return reader.read(column_names, query, context, settings, processed_stage, max_block_size, threads, nullptr, 0);
+    return reader.read(column_names, query, context, processed_stage, max_block_size, num_streams, nullptr, 0);
 }
 
-BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query, const Settings & settings)
+BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & query, const Settings & settings)
 {
     return std::make_shared<MergeTreeBlockOutputStream>(*this);
 }
 
 bool StorageMergeTree::checkTableCanBeDropped() const
 {
+    const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
     context.checkTableCanBeDropped(database_name, table_name, getData().getTotalCompressedSize());
     return true;
 }
@@ -243,6 +218,9 @@ void StorageMergeTree::alter(
     for (auto & transaction : transactions)
         transaction->commit();
 
+    /// Columns sizes could be changed
+    data.recalculateColumnSizes();
+
     if (primary_key_is_modified)
         data.loadDataParts(false);
 }
@@ -347,7 +325,7 @@ bool StorageMergeTree::merge(
 
     merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
 
-    if (std::shared_ptr<PartLog> part_log = context.getPartLog())
+    if (auto part_log = context.getPartLog(database_name, table_name))
     {
         PartLogElement elem;
         elem.event_time = time(0);
@@ -403,7 +381,7 @@ bool StorageMergeTree::mergeTask()
     }
 }
 
-void StorageMergeTree::dropColumnFromPartition(ASTPtr query, const Field & partition, const Field & column_name, const Settings &)
+void StorageMergeTree::dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings &)
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
@@ -449,11 +427,8 @@ void StorageMergeTree::dropColumnFromPartition(ASTPtr query, const Field & parti
         transaction->commit();
 }
 
-void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings)
+void StorageMergeTree::dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings)
 {
-    if (unreplicated)
-        throw Exception("UNREPLICATED option for DROP has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);
-
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = merger.cancel();
@@ -483,11 +458,8 @@ void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool
 }
 
 
-void StorageMergeTree::attachPartition(ASTPtr query, const Field & field, bool unreplicated, bool part, const Settings & settings)
+void StorageMergeTree::attachPartition(const ASTPtr & query, const Field & field, bool part, const Settings & settings)
 {
-    if (unreplicated)
-        throw Exception("UNREPLICATED option for ATTACH has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);
-
     String partition;
 
     if (part)

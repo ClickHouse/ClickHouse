@@ -39,12 +39,9 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             break;
 
         case ATTACH_PART:
-            out << "attach\n";
-            if (attach_unreplicated)
-                out << "unreplicated\n";
-            else
-                out << "detached\n";
-            out << source_part_name << "\ninto\n" << new_part_name;
+            out << "attach\n"
+                << "detached\n"
+                << source_part_name << "\ninto\n" << new_part_name;
             break;
 
         default:
@@ -114,12 +111,8 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         type = ATTACH_PART;
         String source_type;
         in >> source_type;
-        if (source_type == "unreplicated")
-            attach_unreplicated = true;
-        else if (source_type == "detached")
-            attach_unreplicated = false;
-        else
-            throw Exception("Bad format: expected 'unreplicated' or 'detached', found '" + source_type + "'", ErrorCodes::CANNOT_PARSE_TEXT);
+        if (source_type != "detached")
+            throw Exception("Bad format: expected 'detached', found '" + source_type + "'", ErrorCodes::CANNOT_PARSE_TEXT);
         in >> "\n" >> source_part_name >> "\ninto\n" >> new_part_name;
     }
 

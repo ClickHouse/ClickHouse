@@ -34,16 +34,11 @@ StorageSystemMerges::StorageSystemMerges(const std::string & name)
 {
 }
 
-StoragePtr StorageSystemMerges::create(const std::string & name)
-{
-    return make_shared(name);
-}
 
 BlockInputStreams StorageSystemMerges::read(
     const Names & column_names,
-    ASTPtr query,
+    const ASTPtr & query,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned)

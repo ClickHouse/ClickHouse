@@ -33,6 +33,10 @@ CTestTestfile.cmake
 *.a
 *.o
 
+# Python cache
+*.pyc
+__pycache__
+
 # ignore generated files
 *-metrika-yandex
 
@@ -223,3 +227,4 @@ config-preprocessed.xml
 # Gulp dependencies used to minify website
 node_modules
 public
+website/docs

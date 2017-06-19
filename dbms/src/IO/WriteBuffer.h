@@ -18,11 +18,11 @@ namespace ErrorCodes
 }
 
 
-/** Простой абстрактный класс для буферизованной записи данных (последовательности char) куда-нибудь.
-  * В отличие от std::ostream, предоставляет доступ к внутреннему буферу,
-  *  а также позволяет вручную управлять позицией внутри буфера.
+/** A simple abstract class for buffered data writing (char sequences) somewhere.
+  * Unlike std::ostream, it provides access to the internal buffer,
+  *  and also allows you to manually manage the position inside the buffer.
   *
-  * Наследники должны реализовать метод nextImpl().
+  * The successors must implement the nextImpl() method.
   */
 class WriteBuffer : public BufferBase
 {
@@ -30,8 +30,8 @@ public:
     WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
 
-    /** записать данные, находящиеся в буфере (от начала буфера до текущей позиции);
-      * переместить позицию в начало; кинуть исключение, если что-то не так
+    /** write the data in the buffer (from the beginning of the buffer to the current position);
+      * set the position to the beginning; throw an exception, if something is wrong
       */
     inline void next()
     {
@@ -45,8 +45,8 @@ public:
         }
         catch (...)
         {
-            /** Если вызов nextImpl() был неудачным, то переместим курсор в начало,
-              * чтобы потом (например, при развёртке стека) не было второй попытки записать данные.
+            /** If the nextImpl() call was unsuccessful, move the cursor to the beginning,
+              * so that later (for example, when the stack was expanded) there was no second attempt to write data.
               */
             pos = working_buffer.begin();
             throw;
@@ -55,8 +55,8 @@ public:
         pos = working_buffer.begin();
     }
 
-    /** желательно в наследниках поместить в деструктор вызов next(),
-      * чтобы последние данные записались
+    /** it is desirable in the successors to place the next() call in the destructor,
+      * so that the last data is written
       */
     virtual ~WriteBuffer() {}
 
@@ -91,8 +91,8 @@ public:
     }
 
 private:
-    /** Записать данные, находящиеся в буфере (от начала буфера до текущей позиции).
-      * Кинуть исключение, если что-то не так.
+    /** Write the data in the buffer (from the beginning of the buffer to the current position).
+      * Throw an exception if something is wrong.
       */
     virtual void nextImpl() { throw Exception("Cannot write after end of buffer.", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER); };
 };

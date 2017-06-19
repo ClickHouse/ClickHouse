@@ -22,24 +22,24 @@
 #define SMALL_READ_WRITE_BUFFER_SIZE 16
 
 
-/** Хранит в файле число.
- * Предназначен для редких вызовов (не рассчитан на производительность).
+/** Stores a number in the file.
+ * Designed for rare calls (not designed for performance).
  */
 class CounterInFile
 {
 public:
-    /// path - имя файла, включая путь
+    /// path - the name of the file, including the path
     CounterInFile(const std::string & path_) : path(path_) {}
 
-    /** Добавить delta к числу в файле и вернуть новое значение.
-     * Если параметр create_if_need не установлен в true, то
-     *  в файле уже должно быть записано какое-нибудь число (если нет - создайте файл вручную с нулём).
+    /** Add `delta` to the number in the file and return the new value.
+     * If the `create_if_need` parameter is not set to true, then
+     *  the file should already have a number written (if not - create the file manually with zero).
      *
-     * Для защиты от race condition-ов между разными процессами, используются файловые блокировки.
-     * (Но при первом создании файла race condition возможен, так что лучше создать файл заранее.)
+     * To protect against race conditions between different processes, file locks are used.
+     * (But when the first file is created, the race condition is possible, so it's better to create the file in advance.)
      *
-     * locked_callback вызывается при заблокированном файле со счетчиком. В него передается новое значение.
-     * locked_callback можно использовать, чтобы делать что-нибудь атомарно с увеличением счетчика (например, переименовывать файлы).
+     * `locked_callback` is called when the counter file is locked. A new value is passed to it.
+     * `locked_callback` can be used to do something atomically with incrementing the counter (for example, renaming files).
      */
     template <typename Callback>
     Int64 add(Int64 delta, Callback && locked_callback, bool create_if_need = false)
@@ -74,7 +74,7 @@ public:
                 }
                 catch (const DB::Exception & e)
                 {
-                    /// Более понятное сообщение об ошибке.
+                    /// A more understandable error message.
                     if (e.code() == DB::ErrorCodes::CANNOT_READ_ALL_DATA || e.code() == DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
                         throw DB::Exception("File " + path + " is empty. You must fill it manually with appropriate value.", e.code());
                     else
@@ -118,13 +118,13 @@ public:
         return path;
     }
 
-    /// Изменить путь к файлу.
+    /// Change the path to the file.
     void setPath(std::string path_)
     {
         path = path_;
     }
 
-    // Не thread-safe и не синхронизирован между процессами.
+    // Not thread-safe and not synchronized between processes.
     void fixIfBroken(UInt64 value)
     {
         bool file_exists = Poco::File(path).exists();

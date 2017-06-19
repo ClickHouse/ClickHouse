@@ -1,6 +1,6 @@
-#include <ext/size.hpp>
+#include <ext/size.h>
 #include <Dictionaries/HashedDictionary.h>
-
+#include <Dictionaries/DictionaryBlockInputStream.h>
 
 namespace DB
 {
@@ -477,6 +477,46 @@ void HashedDictionary::has(const Attribute & attribute, const PaddedPODArray<Key
         out[i] = attr.find(ids[i]) != std::end(attr);
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
+}
+
+template <typename T>
+PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds(const Attribute & attribute) const
+{
+    const HashMap<UInt64, T> & attr = *std::get<CollectionPtrType<T>>(attribute.maps);
+
+    PaddedPODArray<Key> ids;
+    ids.reserve(attr.size());
+    for (const auto & value : attr) {
+        ids.push_back(value.first);
+    }
+    return ids;
+}
+
+PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
+{
+    const auto & attribute = attributes.front();
+
+    switch (attribute.type)
+    {
+        case AttributeUnderlyingType::UInt8: return getIds<UInt8>(attribute); break;
+        case AttributeUnderlyingType::UInt16: return getIds<UInt16>(attribute); break;
+        case AttributeUnderlyingType::UInt32: return getIds<UInt32>(attribute); break;
+        case AttributeUnderlyingType::UInt64: return getIds<UInt64>(attribute); break;
+        case AttributeUnderlyingType::Int8: return getIds<Int8>(attribute); break;
+        case AttributeUnderlyingType::Int16: return getIds<Int16>(attribute); break;
+        case AttributeUnderlyingType::Int32: return getIds<Int32>(attribute); break;
+        case AttributeUnderlyingType::Int64: return getIds<Int64>(attribute); break;
+        case AttributeUnderlyingType::Float32: return getIds<Float32>(attribute); break;
+        case AttributeUnderlyingType::Float64: return getIds<Float64>(attribute); break;
+        case AttributeUnderlyingType::String: return getIds<StringRef>(attribute); break;
+    }
+    return PaddedPODArray<Key>();
+}
+
+BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+{
+    using BlockInputStreamType = DictionaryBlockInputStream<HashedDictionary, Key>;
+    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds(), column_names);
 }
 
 }

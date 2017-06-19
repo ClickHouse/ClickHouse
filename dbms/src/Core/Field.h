@@ -47,16 +47,16 @@ public:
         /// Type tag.
         enum Which
         {
-            Null                 = 0,
-            UInt64                = 1,
-            Int64                = 2,
-            Float64                = 3,
+            Null    = 0,
+            UInt64  = 1,
+            Int64   = 2,
+            Float64 = 3,
 
             /// Non-POD types.
 
-            String                = 16,
-            Array                = 17,
-            Tuple                = 18,
+            String  = 16,
+            Array   = 17,
+            Tuple   = 18,
         };
 
         static const int MIN_NON_POD = 16;
@@ -65,13 +65,13 @@ public:
         {
             switch (which)
             {
-                case Null:                 return "Null";
-                case UInt64:             return "UInt64";
-                case Int64:             return "Int64";
-                case Float64:             return "Float64";
-                case String:             return "String";
-                case Array:             return "Array";
-                case Tuple:             return "Tuple";
+                case Null:    return "Null";
+                case UInt64:  return "UInt64";
+                case Int64:   return "Int64";
+                case Float64: return "Float64";
+                case String:  return "String";
+                case Array:   return "Array";
+                case Tuple:   return "Tuple";
 
                 default:
                     throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -231,13 +231,13 @@ public:
 
         switch (which)
         {
-            case Types::Null:                 return false;
-            case Types::UInt64:             return get<UInt64>()                 < rhs.get<UInt64>();
-            case Types::Int64:                 return get<Int64>()                 < rhs.get<Int64>();
-            case Types::Float64:             return get<Float64>()                 < rhs.get<Float64>();
-            case Types::String:             return get<String>()                 < rhs.get<String>();
-            case Types::Array:                 return get<Array>()                 < rhs.get<Array>();
-            case Types::Tuple:                 return get<Tuple>()                 < rhs.get<Tuple>();
+            case Types::Null:    return false;
+            case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
+            case Types::Int64:   return get<Int64>()   < rhs.get<Int64>();
+            case Types::Float64: return get<Float64>() < rhs.get<Float64>();
+            case Types::String:  return get<String>()  < rhs.get<String>();
+            case Types::Array:   return get<Array>()   < rhs.get<Array>();
+            case Types::Tuple:   return get<Tuple>()   < rhs.get<Tuple>();
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -258,13 +258,13 @@ public:
 
         switch (which)
         {
-            case Types::Null:                 return true;
-            case Types::UInt64:             return get<UInt64>()                 <= rhs.get<UInt64>();
-            case Types::Int64:                 return get<Int64>()                 <= rhs.get<Int64>();
-            case Types::Float64:             return get<Float64>()                 <= rhs.get<Float64>();
-            case Types::String:             return get<String>()                 <= rhs.get<String>();
-            case Types::Array:                 return get<Array>()                 <= rhs.get<Array>();
-            case Types::Tuple:                 return get<Tuple>()                 <= rhs.get<Tuple>();
+            case Types::Null:    return true;
+            case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
+            case Types::Int64:   return get<Int64>()   <= rhs.get<Int64>();
+            case Types::Float64: return get<Float64>() <= rhs.get<Float64>();
+            case Types::String:  return get<String>()  <= rhs.get<String>();
+            case Types::Array:   return get<Array>()   <= rhs.get<Array>();
+            case Types::Tuple:   return get<Tuple>()   <= rhs.get<Tuple>();
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -283,13 +283,13 @@ public:
 
         switch (which)
         {
-            case Types::Null:                 return true;
+            case Types::Null:    return true;
             case Types::UInt64:
             case Types::Int64:
-            case Types::Float64:            return get<UInt64>()                 == rhs.get<UInt64>();
-            case Types::String:             return get<String>()                 == rhs.get<String>();
-            case Types::Array:                 return get<Array>()                 == rhs.get<Array>();
-            case Types::Tuple:                 return get<Tuple>()                 == rhs.get<Tuple>();
+            case Types::Float64: return get<UInt64>() == rhs.get<UInt64>();
+            case Types::String:  return get<String>() == rhs.get<String>();
+            case Types::Array:   return get<Array>()  == rhs.get<Array>();
+            case Types::Tuple:   return get<Tuple>()  == rhs.get<Tuple>();
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -335,13 +335,13 @@ private:
     {
         switch (field.which)
         {
-            case Types::Null:         f(field.template get<Null>());        return;
-            case Types::UInt64:     f(field.template get<UInt64>());    return;
-            case Types::Int64:         f(field.template get<Int64>());        return;
-            case Types::Float64:     f(field.template get<Float64>());    return;
-            case Types::String:     f(field.template get<String>());    return;
-            case Types::Array:         f(field.template get<Array>());        return;
-            case Types::Tuple:         f(field.template get<Tuple>());        return;
+            case Types::Null:    f(field.template get<Null>());    return;
+            case Types::UInt64:  f(field.template get<UInt64>());  return;
+            case Types::Int64:   f(field.template get<Int64>());   return;
+            case Types::Float64: f(field.template get<Float64>()); return;
+            case Types::String:  f(field.template get<String>());  return;
+            case Types::Array:   f(field.template get<Array>());   return;
+            case Types::Tuple:   f(field.template get<Tuple>());   return;
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -416,21 +416,21 @@ private:
 #undef DBMS_MIN_FIELD_SIZE
 
 
-template <> struct Field::TypeToEnum<Null>                                 { static const Types::Which value = Types::Null; };
-template <> struct Field::TypeToEnum<UInt64>                             { static const Types::Which value = Types::UInt64; };
-template <> struct Field::TypeToEnum<Int64>                             { static const Types::Which value = Types::Int64; };
-template <> struct Field::TypeToEnum<Float64>                             { static const Types::Which value = Types::Float64; };
-template <> struct Field::TypeToEnum<String>                             { static const Types::Which value = Types::String; };
-template <> struct Field::TypeToEnum<Array>                             { static const Types::Which value = Types::Array; };
-template <> struct Field::TypeToEnum<Tuple>                             { static const Types::Which value = Types::Tuple; };
+template <> struct Field::TypeToEnum<Null>    { static const Types::Which value = Types::Null; };
+template <> struct Field::TypeToEnum<UInt64>  { static const Types::Which value = Types::UInt64; };
+template <> struct Field::TypeToEnum<Int64>   { static const Types::Which value = Types::Int64; };
+template <> struct Field::TypeToEnum<Float64> { static const Types::Which value = Types::Float64; };
+template <> struct Field::TypeToEnum<String>  { static const Types::Which value = Types::String; };
+template <> struct Field::TypeToEnum<Array>   { static const Types::Which value = Types::Array; };
+template <> struct Field::TypeToEnum<Tuple>   { static const Types::Which value = Types::Tuple; };
 
-template <> struct Field::EnumToType<Field::Types::Null>                 { using Type = Null                 ; };
-template <> struct Field::EnumToType<Field::Types::UInt64>                 { using Type = UInt64                 ; };
-template <> struct Field::EnumToType<Field::Types::Int64>                 { using Type = Int64                 ; };
-template <> struct Field::EnumToType<Field::Types::Float64>             { using Type = Float64                 ; };
-template <> struct Field::EnumToType<Field::Types::String>                 { using Type = String                 ; };
-template <> struct Field::EnumToType<Field::Types::Array>                 { using Type = Array                 ; };
-template <> struct Field::EnumToType<Field::Types::Tuple>                 { using Type = Tuple                 ; };
+template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
+template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
+template <> struct Field::EnumToType<Field::Types::Int64>   { using Type = Int64; };
+template <> struct Field::EnumToType<Field::Types::Float64> { using Type = Float64; };
+template <> struct Field::EnumToType<Field::Types::String>  { using Type = String; };
+template <> struct Field::EnumToType<Field::Types::Array>   { using Type = Array; };
+template <> struct Field::EnumToType<Field::Types::Tuple>   { using Type = Tuple; };
 
 
 template <typename T>
@@ -464,21 +464,21 @@ template <> struct TypeName<Tuple> { static std::string get() { return "Tuple"; 
 
 template <typename T> struct NearestFieldType;
 
-template <> struct NearestFieldType<UInt8>         { using Type = UInt64 ; };
-template <> struct NearestFieldType<UInt16>     { using Type = UInt64 ; };
-template <> struct NearestFieldType<UInt32>     { using Type = UInt64 ; };
-template <> struct NearestFieldType<UInt64>     { using Type = UInt64 ; };
-template <> struct NearestFieldType<Int8>         { using Type = Int64 ; };
-template <> struct NearestFieldType<Int16>         { using Type = Int64 ; };
-template <> struct NearestFieldType<Int32>         { using Type = Int64 ; };
-template <> struct NearestFieldType<Int64>         { using Type = Int64 ; };
-template <> struct NearestFieldType<Float32>     { using Type = Float64 ; };
-template <> struct NearestFieldType<Float64>     { using Type = Float64 ; };
-template <> struct NearestFieldType<String>     { using Type = String ; };
-template <> struct NearestFieldType<Array>         { using Type = Array ; };
-template <> struct NearestFieldType<Tuple>         { using Type = Tuple    ; };
-template <> struct NearestFieldType<bool>         { using Type = UInt64 ; };
-template <> struct NearestFieldType<Null>        { using Type = Null; };
+template <> struct NearestFieldType<UInt8>   { using Type = UInt64; };
+template <> struct NearestFieldType<UInt16>  { using Type = UInt64; };
+template <> struct NearestFieldType<UInt32>  { using Type = UInt64; };
+template <> struct NearestFieldType<UInt64>  { using Type = UInt64; };
+template <> struct NearestFieldType<Int8>    { using Type = Int64; };
+template <> struct NearestFieldType<Int16>   { using Type = Int64; };
+template <> struct NearestFieldType<Int32>   { using Type = Int64; };
+template <> struct NearestFieldType<Int64>   { using Type = Int64; };
+template <> struct NearestFieldType<Float32> { using Type = Float64; };
+template <> struct NearestFieldType<Float64> { using Type = Float64; };
+template <> struct NearestFieldType<String>  { using Type = String; };
+template <> struct NearestFieldType<Array>   { using Type = Array; };
+template <> struct NearestFieldType<Tuple>   { using Type = Tuple; };
+template <> struct NearestFieldType<bool>    { using Type = UInt64; };
+template <> struct NearestFieldType<Null>    { using Type = Null; };
 
 
 template <typename T>
@@ -494,8 +494,8 @@ class WriteBuffer;
 /// It is assumed that all elements of the array have the same type.
 void readBinary(Array & x, ReadBuffer & buf);
 
-inline void readText(Array & x, ReadBuffer & buf)             { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
-inline void readQuoted(Array & x, ReadBuffer & buf)         { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readText(Array & x, ReadBuffer & buf) { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readQuoted(Array & x, ReadBuffer & buf) { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
 
 /// It is assumed that all elements of the array have the same type.
 void writeBinary(const Array & x, WriteBuffer & buf);
@@ -506,8 +506,8 @@ inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("C
 
 void readBinary(Tuple & x, ReadBuffer & buf);
 
-inline void readText(Tuple & x, ReadBuffer & buf)             { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
-inline void readQuoted(Tuple & x, ReadBuffer & buf)         { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readText(Tuple & x, ReadBuffer & buf) { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readQuoted(Tuple & x, ReadBuffer & buf) { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
 
 void writeBinary(const Tuple & x, WriteBuffer & buf);
 

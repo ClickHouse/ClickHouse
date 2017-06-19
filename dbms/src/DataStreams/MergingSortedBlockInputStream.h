@@ -22,12 +22,12 @@ namespace ErrorCodes
 }
 
 
-/// Позволяет ссылаться на строку в блоке и удерживать владение блоком,
-///  и таким образом избежать создания временного объекта-строки.
-/// Не используется std::shared_ptr, так как не нужно место для weak_count и deleter;
-///  не используется Poco::SharedPtr, так как нужно выделять блок и refcount одним куском;
-///  не используется Poco::AutoPtr, так как у него нет move конструктора и есть лишние проверки на nullptr;
-/// Счётчик ссылок неатомарный, так как используется из одного потока.
+/// Allows you refer to the row in the block and hold the block ownership,
+///  and thus avoid creating a temporary row object.
+/// Do not use std::shared_ptr, since there is no need for a place for `weak_count` and `deleter`;
+///  does not use Poco::SharedPtr, since you need to allocate a block and `refcount` in one piece;
+///  does not use Poco::AutoPtr, since it does not have a `move` constructor and there are extra checks for nullptr;
+/// The reference counter is not atomic, since it is used from one thread.
 namespace detail
 {
     struct SharedBlock : Block
@@ -87,7 +87,7 @@ protected:
             std::swap(shared_block, other.shared_block);
         }
 
-        /// Количество и типы столбцов обязаны соответствовать.
+        /// The number and types of columns must match.
         bool operator==(const RowRef & other) const
         {
             size_t size = columns.size();
@@ -111,10 +111,10 @@ protected:
 
     void readSuffixImpl() override;
 
-    /// Инициализирует очередь и следующий блок результата.
+    /// Initializes the queue and the next result block.
     void init(Block & merged_block, ColumnPlainPtrs & merged_columns);
 
-    /// Достаёт из источника, соответствующего current следующий блок.
+    /// Gets the next block from the source corresponding to the `current`.
     template <typename TSortCursor>
     void fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue);
 
@@ -131,7 +131,7 @@ protected:
     /// May be smaller or equal to max_block_size. To do 'reserve' for columns.
     size_t expected_block_size = 0;
 
-    /// Текущие сливаемые блоки.
+    /// Blocks currently being merged.
     size_t num_columns = 0;
     std::vector<SharedBlockPtr> source_blocks;
 
@@ -149,9 +149,9 @@ protected:
     MergedRowSources * out_row_sources = nullptr;
 
 
-    /// Эти методы используются в Collapsing/Summing/Aggregating... SortedBlockInputStream-ах.
+    /// These methods are used in Collapsing/Summing/Aggregating... SortedBlockInputStream-s.
 
-    /// Сохранить строчку, на которую указывает cursor, в row.
+    /// Save the row pointed to by cursor in `row`.
     template <class TSortCursor>
     void setRow(Row & row, TSortCursor & cursor)
     {
@@ -165,7 +165,7 @@ protected:
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
 
-                /// Узнаем имя столбца и бросим исключение поинформативней.
+                /// Find out the name of the column and throw more informative exception.
 
                 String column_name;
                 for (const auto & block : source_blocks)
@@ -206,8 +206,8 @@ protected:
 
 private:
 
-    /** Делаем поддержку двух разных курсоров - с Collation и без.
-     *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
+    /** We support two different cursors - with Collation and without.
+     * Templates are used instead of polymorphic SortCursor and calls to virtual functions.
      */
     template <typename TSortCursor>
     void initQueue(std::priority_queue<TSortCursor> & queue);
@@ -217,7 +217,7 @@ private:
 
     Logger * log = &Logger::get("MergingSortedBlockInputStream");
 
-    /// Прочитали до конца.
+    /// Read is finished.
     bool finished = false;
 };
 
