@@ -4,19 +4,19 @@ $(function() {
         var pathname = window.location.pathname;
         var url;
         if (pathname.indexOf('html') >= 0) {
-            url = pathname.replace('/docs/', 'https://github.com/yandex/ClickHouse/edit/master/doc/reference/').replace('html', 'rst');
+            url = pathname.replace('/docs/', 'https://github.com/yandex/ClickHouse/edit/master/docs/').replace('html', 'rst');
         } else {
             if (pathname.indexOf('/single/') >= 0) {
                 if (pathname.indexOf('ru') >= 0) {
-                    url = 'https://github.com/yandex/ClickHouse/tree/master/doc/reference/ru';
+                    url = 'https://github.com/yandex/ClickHouse/tree/master/docs/ru';
                 } else {
-                    url = 'https://github.com/yandex/ClickHouse/tree/master/doc/reference/en';
+                    url = 'https://github.com/yandex/ClickHouse/tree/master/docs/en';
                 }
             } else {
                 if (pathname.indexOf('ru') >= 0) {
-                    url = 'https://github.com/yandex/ClickHouse/edit/master/doc/reference/ru/index.rst';
+                    url = 'https://github.com/yandex/ClickHouse/edit/master/docs/ru/index.rst';
                 } else {
-                    url = 'https://github.com/yandex/ClickHouse/edit/master/doc/reference/en/index.rst';
+                    url = 'https://github.com/yandex/ClickHouse/edit/master/docs/en/index.rst';
                 }
             }
         }
