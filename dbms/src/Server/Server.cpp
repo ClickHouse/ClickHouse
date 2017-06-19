@@ -10,8 +10,8 @@
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
 #include <ext/scope_guard.h>
-#include <zkutil/ZooKeeper.h>
-#include <zkutil/ZooKeeperNodeCache.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils.h>
 #include <Common/getFQDNOrHostName.h>

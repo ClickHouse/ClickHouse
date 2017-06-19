@@ -1,5 +1,5 @@
-#include <zkutil/Types.h>
-#include <zkutil/KeeperException.h>
+#include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/KeeperException.h>
 
 #include <Core/FieldVisitors.h>
 

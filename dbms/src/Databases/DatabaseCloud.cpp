@@ -1,4 +1,4 @@
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
 #include <Common/SipHash.h>

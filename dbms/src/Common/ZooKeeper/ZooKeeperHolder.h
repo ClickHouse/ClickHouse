@@ -1,6 +1,6 @@
 #pragma once
 
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <mutex>
 #include <boost/noncopyable.hpp>
 

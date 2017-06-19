@@ -24,7 +24,7 @@
 
 #include <Common/ThreadPool.h>
 
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <Poco/Event.h>
 #include <Poco/DirectoryIterator.h>
