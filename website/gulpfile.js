@@ -11,7 +11,7 @@ var connect = require('gulp-connect');
 var run = require('gulp-run');
 
 var outputDir = 'public';
-var docsDir = '../doc/reference';
+var docsDir = '../docs';
 
 var paths = {
     htmls: [
@@ -21,7 +21,7 @@ var paths = {
         '!node_modules/**/*.html',
         '!public/**/*.html'],
     reference: ['deprecated/reference_ru.html', 'deprecated/reference_en.html'],
-    docs: ['../doc/reference/build/docs/**/*'],
+    docs: [docsDir + '/build/docs/**/*'],
     scripts: [
         '**/*.js',
         '!gulpfile.js',
