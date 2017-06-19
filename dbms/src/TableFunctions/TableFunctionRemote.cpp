@@ -139,7 +139,7 @@ static std::vector<String> parseDescription(const String & description, size_t l
                     add_leading_zeroes = true;
                 for (size_t id = left; id <= right; ++id)
                 {
-                    String cur = toString<uint64>(id);
+                    String cur = toString<UInt64>(id);
                     if (add_leading_zeroes)
                     {
                         while (cur.size() < len)
