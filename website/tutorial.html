@@ -86,7 +86,7 @@ clickhouse-client --multiline
 clickhouse-client --query='SELECT 1'
 echo 'SELECT 1' | clickhouse-client
 </pre>
-            Inser data from file of a specified format:
+            Insert data from file of a specified format:
 <pre>
 clickhouse-client --query='INSERT INTO table VALUES' &lt; data.txt
 clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' &lt; data.tsv
