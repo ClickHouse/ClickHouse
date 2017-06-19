@@ -1,24 +1,23 @@
 ..  role:: strike
     :class: strike
 
-Как писать код на C++
+How to write C++ code
 =====================
 
-Общее
------
+General
+-------
 
-#. Этот текст носит рекомендательный характер.
-#. Всё относится только к команде разработки движка Яндекс.Метрики и ClickHouse.
-#. Если вы редактируйте не наш код, то имеет смысл писать так, как уже написано.
-#. Стиль нужен для единообразия. Единообразие нужно, чтобы было проще (удобнее) читать код. А также, чтобы было легче осуществлять поиск по коду.
-#. Многие правила продиктованы не какими либо разумными соображениями, а сложившейся практикой.
+#. This text should be considered as recommendations.
+#. If you edit some code, it makes sense to keep style in changes consistent with the rest of it.
+#. Style is needed to keep code consistent. Consistency is required to make it easier (more convenient) to read the code. And also for code navigation.
+#. Many rules do not have any logical explanation and just come from existing practice.
 
-Форматирование
---------------
+Formatting
+----------
 
-#. Большую часть форматирования сделает автоматически clang-format. Инструкция для подключения clang-format в kdevelop описана в файле format_sources
-#. Отступы - 4 пробела. Настройте среду разработки так, чтобы таб добавлял четыре пробела.
-#. Открывающая фигурная скобка на новой, отдельной строке. (Закрывающая - тоже.)
+#. Most of formatting is done automatically by ``clang-format``.
+#. Indent is 4 spaces wide. Configure your IDE to insert 4 spaces on pressing Tab.
+#. Curly braces on separate lines.
 
     .. code-block:: cpp
 
@@ -30,7 +29,7 @@
         }
 
 
-#. Но если всё тело функции достаточно короткое (один statement) - при желании, его можно целиком разместить на одной строке. При этом, вокруг фигурных скобок ставятся пробелы (кроме пробела на конце строки).
+#. But if function body is short enough (one statement) you can put the whole thing on one line. In this case put spaces near curly braces, except for the last one in the end.
 
     .. code-block:: cpp
 
@@ -38,7 +37,7 @@
         inline size_t place(HashValue x) const    { return x & mask(); }
 
 
-#. Для функций, пробелы вокруг скобок не ставятся.
+#. For functions there are no spaces near brackets.
 
     .. code-block:: cpp
 
@@ -49,13 +48,13 @@
         memcpy(&buf[place_value], &x, sizeof(x));
 
 
-#. При использовании выражений if, for, while, ... (в отличие от вызовов функций) перед открывающей скобкой ставится пробел.
+#. When using expressions if, for, while, ... (in contrast to function calls) there should be space before opening bracket.
 
     .. code-block:: cpp
 
         for (size_t i = 0; i < rows; i += storage.index_granularity)
 
-#. Вокруг бинарных операторов (+, -, \*, /, %, ...), а также тернарного оператора ?: ставятся пробелы.
+#. There should be spaces around binary operators (+, -, \*, /, %, ...) and ternary operator ?:.
 
     .. code-block:: cpp
 
@@ -64,7 +63,7 @@
         UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
 
-#. Если ставится перенос строки, то оператор пишется на новой строке, и перед ним увеличивается отступ.
+#. If there's a line break, operator is written on new line and it has additional indent.
 
     .. code-block:: cpp
 
@@ -73,7 +72,7 @@
                 << rows_read_on_server * 1000000000 / elapsed_ns << " rows/s., "
                 << bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
 
-    #. Внутри строки можно, при желании, выполнять выравнивание с помощью пробелов.
+    #. It is ok to insert additional spaces to align the code.
 
         .. code-block:: cpp
 
@@ -82,16 +81,16 @@
             dst.ClickGoodEvent     = click.GoodEvent;
 
 
-#. Вокруг операторов ``.``, ``->`` не ставятся пробелы.
-    При необходимости, оператор может быть перенесён на новую строку. В этом случае, перед ним увеличивается отступ.
+#. No spaces around ``.``, ``->`` operators.
+    If necessary these operators can be moved to next line with additional indent.
 
-#. Унарные операторы (``--, ++, *, &``, ...) не отделяются от аргумента пробелом.
+#. Unary operators (``--, ++, *, &``, ...) are not delimited from argument.
 
-#. После запятой ставится пробел, а перед - нет. Аналогично для точки с запятой внутри выражения for.
+#. Space is put after comma or semicolon, not before.
 
-#. Оператор ``[]`` не отделяется пробелами.
+#. Operator ``[]`` is not delimited with spaces.
 
-#. В выражении ``template <...>``, между ``template`` и ``<`` ставится пробел; после ``<`` и до ``>`` - не ставится.
+#. In ``template <...>``, put space between ``template`` and ``<``; after ``<`` and before ``>`` - do not.
 
     .. code-block:: cpp
 
@@ -99,7 +98,7 @@
         struct AggregatedStatElement
 
 
-#. В классах и структурах, public, private, protected пишется на том же уровне, что и class/struct, а все остальные внутренности - глубже.
+#. In classes and structs keywords public, private, protected are written on same indention level as class/struct, while other contents - deeper.
 
     .. code-block:: cpp
 
@@ -111,9 +110,9 @@
             using Version = Ptr;
 
 
-#. Если на весь файл один namespace и кроме него ничего существенного нет - то отступ внутри namespace не нужен.
+#. If there's only one namespace in a file and there's nothing else significant - no need to indent the namespace.
 
-#. Если блок для выражения if, for, while... состоит из одного statement-а, то фигурные скобки писать не обязательно. Вместо этого поместите statement на отдельную строку. Этим statement-ом также может быть вложенный if, for, while... Но если внутренний statement содержит фигурные скобки или else, то у внешнего блок следует писать в фигурных скобках.
+#. If ``if, for, while...`` block consists of only one statement, it's not required to wrap it in curly braces. Instead you can put the statement on separate line. This statements can also be a ``if, for, while...`` block. But if internal statement contains curly braces or else, this option should not be used.
 
     .. code-block:: cpp
 
@@ -124,24 +123,24 @@
                     storage.files[name].data_file.path(),
                     storage.files[name].marks[mark_number].offset));
 
-#. Не должно быть пробелов на концах строк.
+#. No spaces before end of line.
 
-#. Исходники в кодировке UTF-8.
+#. Source code should be in UTF-8 encoding.
 
-#. В строковых литералах можно использовать не-ASCII.
+#. It's ok to have non-ASCII characters in string literals.
 
     .. code-block:: cpp
 
         << ", " << (timer.elapsed() / chunks_stats.hits) << " μsec/hit.";
 
 
-#. Не пишите несколько выражений в одной строке.
+#. Don't put multiple statements on single line.
 
-#. Внутри функций, группируйте куски кода, отделяя их не более, чем одной пустой строкой.
+#. Inside functions do not delimit logical blocks by more than one empty line.
 
-#. Функции, классы, и т. п. отделяются друг от друга минимум одной, максимум двумя пустыми строками.
+#. Functions, classes and similar constructs are delimited by one or two empty lines.
 
-#. const (относящийся к значению) пишется до имени типа.
+#. const (related to value) is written before type name.
 
     .. code-block:: cpp
 
@@ -153,7 +152,7 @@
 
     :strike:`char const * pos`
 
-#. При объявлении указателя или ссылки, символы * и & отделяются пробелами с обеих сторон.
+#. When declaring pointer or reference symbols \* and & should be surrounded by spaces.
 
     .. code-block:: cpp
 
@@ -162,9 +161,7 @@
     :strike:`const char\* pos`
     :strike:`const char \*pos`
 
-#. При использовании шаблонных типов, пишите using (кроме, возможно, простейших случаев).
-    То есть, параметры шаблона указываются только в using-е и затем не повторяются в коде.
-    using может быть объявлен локально, например, внутри функции.
+#. Alias template types with ``using`` keyword (except the most simple cases). It can be declared even locally, for example inside functions.
 
     .. code-block:: cpp
 
@@ -173,11 +170,11 @@
 
     :strike:`std::map<std::string, std::shared_ptr<Stream>> streams;`
 
-#. Нельзя объявлять несколько переменных разных типов в одном объявлении.
+#. Do not declare several variables of different types in one statements.
 
     :strike:`int x, *y;`
 
-#. c-style cast не используется.
+#. C-style casts should be avoided.
 
     :strike:`std::cerr << (int)c << std::endl;`
 
@@ -186,56 +183,56 @@
         std::cerr << static_cast<int>(c) << std::endl;
 
 
-#. В классах и структурах, группируйте отдельно методы и отдельно члены, внутри каждой области видимости.
+#. In classes and structs group members and functions separately inside each visibility scope.
 
-#. Для не очень большого класса/структуры, можно не отделять объявления методов от реализации.
-    Аналогично для маленьких методов в любых классах/структурах.
-    Для шаблонных классов/структур, лучше не отделять объявления методов от реализации (так как иначе они всё равно должны быть определены в той же единице трансляции).
+#. For small classes and structs, it is not necessary to split method declaration and implementation.
+    The same for small methods.
+    For templated classes and structs it is better not to split declaration and implementations (because anyway they should be defined in the same translation unit).
 
-#. Не обязательно умещать код по ширине в 80 символов. Можно в 140.
+#. Lines should be wrapped at 140 symbols, not 80.
 
-#. Всегда используйте префиксный инкремент/декремент, если постфиксный не нужен.
+#. Always use prefix increment/decrement if postfix is not required.
 
     .. code-block:: cpp
 
         for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 
 
-Комментарии
------------
+Comments
+--------
 
-#. Необходимо обязательно писать комментарии во всех нетривиальных местах.
-    Это очень важно. При написании комментария, можно успеть понять, что код не нужен вообще, или что всё сделано неверно.
+#. You shoud write comments in all not trivial places.
+    It is very important. While writing comment you could even understand that code does the wrong thing or is completely unnecessary.
 
     .. code-block:: cpp
 
-        /** Часть куска памяти, которую можно использовать.
-          * Например, если internal_buffer - 1MB, а из файла для чтения было загружено в буфер
-          *  только 10 байт, то working_buffer будет иметь размер 10 байт
-          *  (working_buffer.end() будет указывать на позицию сразу после тех 10 байт, которых можно прочитать).
+        /** Part of piece of memory, that can be used.
+          * For example, if internal_buffer is 1MB, and there was only 10 bytes loaded to buffer from file for reading,
+          * then working_buffer will have size of only 10 bytes
+          * (working_buffer.end() will point to position right after those 10 bytes available for read).
           */
 
 
-#. Комментарии могут быть сколь угодно подробными.
+#. Comments can be as detailed as necessary.
 
-#. Комментарии пишутся до соответствующего кода. В редких случаях - после, на той же строке.
+#. Comments are written before the relevant code. In rare cases - after on the same line.
 
     .. code-block:: text
 
-        /** Парсит и исполняет запрос.
+        /** Parses and executes the query.
           */
         void executeQuery(
-            ReadBuffer & istr,                                                  /// Откуда читать запрос (а также данные для INSERT-а, если есть)
-            WriteBuffer & ostr,                                                 /// Куда писать результат
-            Context & context,                                                  /// БД, таблицы, типы данных, движки таблиц, функции, агрегатные функции...
-            BlockInputStreamPtr & query_plan,                                   /// Сюда может быть записано описание, как выполнялся запрос
-            QueryProcessingStage::Enum stage = QueryProcessingStage::Complete); /// До какой стадии выполнять SELECT запрос.
+            ReadBuffer & istr,                                                  /// Where to read the query from (and data for INSERT, if applicable)
+            WriteBuffer & ostr,                                                 /// Where to write the result
+            Context & context,                                                  /// DB, tables, data types, engines, functions, aggregate functions...
+            BlockInputStreamPtr & query_plan,                                   /// Here could be written the description on how query was executed
+            QueryProcessingStage::Enum stage = QueryProcessingStage::Complete); /// Up to which stage process the SELECT query
 
-#. Комментарии следует писать только на английском языке.
+#. Comments should be written only in english
 
-#. При написании библиотеки, разместите подробный комментарий о том, что это такое, в самом главном заголовочном файле.
+#. When writing a library, put it's detailed description in it's main header file.
 
-#. Нельзя писать комментарии, которые не дают дополнительной информации. В частности, *НЕЛЬЗЯ* писать пустые комментарии.
+#. You shouldn't write comments not providing additional information. For instance, you *CAN'T* write empty comments like this one:
 
     .. code-block:: cpp
 
@@ -258,106 +255,105 @@
            * Purpose:
            */
 
-    (пример взят отсюда: http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/)
+    (example is borrowed from here: http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/)
 
-#. Нельзя писать мусорные комментарии (автор, дата создания...) в начале каждого файла.
+#. You shouldn't write garbage comments (author, creation date...) in the beginning of each file.
 
-#. Однострочные комментарии начинаются с трёх слешей: ``///``, многострочные - с ``/**``. Такие комментарии считаются "документрующими".
-    Замечание: такие комментарии могут использоваться для генерации документации с помощью Doxygen. Но, фактически, Doxygen не используется, так как для навигации по коду гораздо удобне использовать возможности IDE.
+#. One line comments should start with three slashes: ``///``, multiline - with ``/**``. This comments are considered "documenting".
+    Note: such comments could be used to generate docs using Doxygen. But in reality Doxygen is not used because it is way more convenient to use IDE for code navigation.
 
-#. В начале и конце многострочного комментария, не должно быть пустых строк (кроме строки, на которой закрывается многострочный комментарий).
+#. In beginning and end of multiline comments there should be no empty lines (except the one where the comment ends).
 
-#. Для закомментированных кусков кода, используются обычные, не "документирующие" комментарии.
-    Удаляйте закомментированные куски кода перед коммитом.
+#. For commented out code use simple, not "documenting" comments. Delete commented out code before commits.
 
-#. Не нужно писать нецензурную брань в комментариях.
+#. Do not use profanity in comments or code.
 
-#. Не нужно писать в комментариях слишком много восклицательных знаков или знаков вопроса, или выделять слишком много слов большими буквами.
+#. Do not use too many question signs, exclamation points or capital letters.
     :strike:`/// WHAT THE FAIL???`
 
-#. Не нужно составлять из комментариев строки-разделители.
+#. Do not make delimeters from comments.
     :strike:`/*******************************************************/`
 
-#. Не нужно писать в комментарии диалог (лучше сказать устно).
-    :strike:`/// Зачем ты сделал эту фигню?`
+#. Do not create discussions in comments.
+    :strike:`/// Why you did this?`
 
-#. Не нужно писать комментарий в конце блока о том, что представлял собой этот блок.
+#. Do not comment end of block describing what kind of block it was.
     :strike:`} /// for`
 
 
-Имена
+Names
 -----
 
-#. Имена переменных и членов класса - маленькими буквами с подчёркиванием.
+#. Names of variables and class members — in lowercase with underscores.
 
     .. code-block:: cpp
 
         size_t max_block_size;
 
-#. Имена функций (методов) - camelCase с маленькой буквы.
+#. Names of functions (methids) - in camelCase starting with lowercase letter.
 
     .. code-block:: cpp
 
         std::string getName() const override { return "Memory"; }
 
-#. Имена классов (структур) - CamelCase с большой буквы. Префиксы кроме I для интерфейсов - не используются.
+#. Names of classes (structs) - CamelCase starting with uppercase letter. Prefixes are not used, except I for interfaces.
 
     .. code-block:: cpp
 
         class StorageMemory : public IStorage
 
 
-#. Имена using-ов - также, как классов, либо можно добавить _t на конце.
+#. Names of ``using``'s - same as classes and can have _t suffix.
 
-#. Имена типов - параметров шаблонов: в простых случаях - T; T, U; T1, T2.
-    В более сложных случаях - либо также, как имена классов, либо можно добавить в начало букву T.
+#. Names of template type arguments: in simple cases - T; T, U; T1, T2.
+    In complex cases - like class names or can have T prefix.
 
     .. code-block:: cpp
 
         template <typename TKey, typename TValue>
         struct AggregatedStatElement
 
-#. Имена констант - параметров шаблонов: либо также, как имена переменных, либо N - в простом случае.
+#. Names of template constant arguments: same as variable names or N in simple cases.
 
     .. code-block:: cpp
 
         template <bool without_www>
         struct ExtractDomain
 
-#. Для абстрактных классов (интерфейсов) можно добавить в начало имени букву I.
+#. For abstract classes (interfaces) you can add I to the start of name.
 
     .. code-block:: cpp
 
         class IBlockInputStream
 
-#. Если переменная используется достаточно локально, то можно использовать короткое имя.
-    В остальных случаях - используйте достаточно подробное имя, описывающее смысл.
+#. If variable is used pretty locally, you can use short name.
+    In other cases - use descriptive name.
 
     .. code-block:: cpp
 
         bool info_successfully_loaded = false;
 
 
-#. define-ы - ALL_CAPS с подчёркиванием. Глобальные константы - тоже.
+#. ``define``'s should be in ALL_CAPS with underlines. Global constants - too.
 
     .. code-block:: cpp
 
         #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
 
-#. Имена файлов с кодом называйте по стилю соответственно тому, что в них находится.
-    Если в файле находится один класс - назовите файл, как класс - в CamelCase.
-    Если в файле находится одна функция - назовите файл, как функцию - в camelCase.
+#. Names of files should match it's contents.
+    If file contains one class - name it like class in CamelCase.
+    If file contains one function - name it like function in camelCase.
 
-#. Если имя содержит сокращение, то:
-    * для имён переменных, всё сокращение пишется маленькими буквами;
+#. If name contains an abbreviation:
+    * for variables names it should be all lowercase;
         ``mysql_connection``
         :strike:`mySQL_connection`
 
-    * для имён классов и функций, сохраняются большие буквы в сокращении.
+    * for class and function names it should be all uppercase;
         ``MySQLConnection``
         :strike:`MySqlConnection`
 
-#. Параметры конструктора, использующиеся сразу же для инициализации соответствующих членов класса, следует назвать также, как и члены класса, добавив подчёркивание в конец.
+#. Constructor arguments used just to initialize the class members, should have the matching name, but with underscore suffix.
 
     .. code-block:: cpp
 
@@ -372,13 +368,13 @@
         {
         }
 
-    Также можно называть параметры конструктора так же, как и члены класса (не добавлять подчёркивание), но только если этот параметр не используется в теле конструктора.
+    The underscore suffix can be omitted if argument is not used in constructor body.
 
-#. Именование локальных переменных и членов класса никак не отличается (никакие префиксы не нужны).
+#. Naming of local variables and class members do not have any differences (no prefixes required).
     ``timer``
     :strike:`m_timer`
 
-#. Константы в enum-е - CamelCase с большой буквы. Также допустимо ALL_CAPS. Если enum не локален, то используйте enum class.
+#. Constants in enums - CamelCase starting with uppercase letter. ALL_CAPS is also ok. If enum is not local, use enum class.
 
     .. code-block:: cpp
 
@@ -388,58 +384,58 @@
             LZ4     = 1,
         };
 
-#. Все имена - по английски. Транслит с русского использовать нельзя.
+#. All names - in English. Transliteration from Russian is not allowed.
     :strike:`Stroka`
 
-#. Сокращения (из нескольких букв разных слов) в именах можно использовать только если они являются общепринятыми (если для сокращения можно найти расшифровку в английской википедии или сделав поисковый запрос).
+#. Abbreviations are fine only if they are well known (when you can find what it means in wikipedia or with web search query).
+
     ``AST`` ``SQL``
-    :strike:`NVDH (неведомая х.)`
-    Сокращения в виде обрезанного слова можно использовать, только если такое сокращение является широко используемым.
-    Впрочем, сокращения также можно использовать, если расшифровка находится рядом в комментарии.
+    :strike:`NVDH (some random letters)`
 
-#. Имена файлов с исходниками на C++ должны иметь расширение только .cpp. Заголовочные файлы - только .h.
+    Using incomplete words is ok if it is commonly used. Also you can put the whole word in comments.
+
+#. C++ source code extensions should be .cpp. Header files - only .h.
     :strike:`.hpp` :strike:`.cc` :strike:`.C` :strike:`.inl`
-    Можно ``.inl.h``, но не :strike:`.h.inl:strike:`
+    ``.inl.h`` is ok, but not :strike:`.h.inl:strike:`
 
 
-Как писать код
---------------
+How to write code
+-----------------
 
-#. Управление памятью.
-    Ручное освобождение памяти (delete) можно использовать только в библиотечном коде.
-    В свою очередь, в библиотечном коде, оператор delete можно использовать только в деструкторах.
-    В прикладном коде следует делать так, что память освобождается каким-либо объектом, который владеет ей.
-    Примеры:
-    * проще всего разместить объект на стеке, или сделать его членом другого класса.
-    * для большого количества маленьких объектов используйте контейнеры.
-    * для автоматического освобождения маленького количества объектов, выделенных на куче, используйте shared_ptr/unique_ptr.
+#. Memory management.
+    Manual memory deallocation (delete) is ok only in destructors in library code.
+    In application code memory should be freed by some object that owns it.
+    Examples:
+    * you can put object on stack or make it a member of another class.
+    * use containers for many small objects.
+    * for automatic deallocation of not that many objects residing in heap, use shared_ptr/unique_ptr.
 
-#. Управление ресурсами.
-    Используйте RAII и см. пункт выше.
+#. Resource management.
+    Use RAII and see abovee.
 
-#. Обработка ошибок.
-    Используйте исключения. В большинстве случаев, нужно только кидать исключения, а ловить - не нужно (потому что RAII).
-    В программах offline обработки данных, зачастую, можно не ловить исключения.
-    В серверах, обрабатывающих пользовательские запросы, как правило, достаточно ловить исключения на самом верху обработчика соединения.
-    В функциях потока, следует ловить и запоминать все исключения, чтобы выкинуть их в основном потоке после join.
+#. Error handling.
+    Use exceptions. In most cases you should only throw exception, but not catch (because of RAII).
+    In offline data processing applications it's often ok not to catch exceptions.
+    In server code serving user requests usually you should catch exceptions only on top level of connection handler.
+    In thread functions you should catch and keep all exceptions to rethrow it in main thread after join.
 
     .. code-block:: cpp
 
-        /// Если вычислений ещё не было - вычислим первый блок синхронно
+        /// If there were no other calculations yet - lets do it synchronously
         if (!started)
         {
             calculate();
             started = true;
         }
-        else    /// Если вычисления уже идут - подождём результата
+        else    /// If the calculations are already in progress - lets wait
             pool.wait();
 
         if (exception)
             exception->rethrow();
 
-    Ни в коем случае не "проглатывайте" исключения без разбора. Ни в коем случае, не превращайте все исключения без разбора в сообщения в логе.
+    Never hide exceptions without handling. Never just blindly put all exceptions to log.
     :strike:`catch (...) {}`
-    Если вам нужно проигнорировать какие-то исключения, то игнорируйте только конкретные, а остальные - кидайте обратно.
+    If you need to ignore some exceptions, do so only for specific ones and rethrow the rest..
 
     .. code-block:: cpp
 
@@ -451,28 +447,28 @@
                 throw;
         }
 
-    При использовании функций, использующих коды возврата или errno - проверяйте результат и кидайте исключение.
+    When using functions with error codes - always check it and throw exception in case of error.
 
     .. code-block:: cpp
 
         if (0 != close(fd))
             throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
 
-    assert-ы не используются.
+    Asserts are not used.
 
-#. Типы исключений.
-    В прикладном коде не требуется использовать сложную иерархию исключений. Желательно, чтобы текст исключения был понятен системному администратору.
+#. Exception types.
+    No need to use complex exception hierarchy in application code. Exception code should be understandable by operations engineer.
 
-#. Исключения, вылетающие из деструкторов.
-    Использовать не рекомендуется, но допустимо.
-    Используйте следующие варианты:
-    * Сделайте функцию (done() или finalize()), которая позволяет заранее выполнить всю работу, в процессе которой может возникнуть исключение. Если эта функция была вызвана, то затем в деструкторе не должно возникать исключений.
-    * Слишком сложную работу (например, отправку данных по сети) можно вообще не делать в деструкторе, рассчитывая, что пользователь заранее позовёт метод для завершения работы.
-    * Если в деструкторе возникло исключение, желательно не "проглатывать" его, а вывести информацию в лог (если в этом месте доступен логгер).
-    * В простых программах, если соответствующие исключения не ловятся, и приводят к завершению работы с записью информации в лог, можно не беспокоиться об исключениях, вылетающих из деструкторов, так как вызов std::terminate (в случае noexcept по-умолчанию в C++11), является приемлимым способом обработки исключения.
+#. Throwing exception from destructors.
+    Not recommended, but allowed.
+    Use the following options:
+    * Create function (done() or finalize()) that will in advance do all the work that might lead to exception. If that function was called, later there should be no exceptions in destructor.
+    * Too complex work (for example, sending messages via network) can be put in separate method that class user will have to call before destruction.
+    * If nevertheless there's an exception in destructor it's better to log it that to hide it.
+    * In simple applications it is ok to rely on std::terminate (in case of noexcept by default in C++11) to handle exception.
 
-#. Отдельные блоки кода.
-    Внутри одной функции, можно создать отдельный блок кода, для того, чтобы сделать некоторые переменные локальными в нём, и для того, чтобы соответствующие деструкторы были вызваны при выходе из блока.
+#. Anonymous code blocks.
+    It is ok to declare anonymous code block to make some variables local to it and make them be destroyed earlier than they otherwise would.
 
     .. code-block:: cpp
 
@@ -486,51 +482,51 @@
 
         ready_any.set();
 
-#. Многопоточность.
-    В программах offline обработки данных:
-    * cначала добейтесь более-менее максимальной производительности на одном процессорном ядре;
-    * потом можно распараллеливать код, но только если есть необходимость.
-    В программах - серверах:
-    * используйте пул потоков для обработки запросов;
-    * на данный момент, у нас не было задач, в которых была бы необходимость использовать userspace context switching.
-    Fork для распараллеливания не используется.
+#. Multithreading.
+    In case of offline data processing applications:
+    * Try to make code as fast as possible on single core.
+    * Make it parallel only if single core performance appeared to be not enough.
+    In server application:
+    * use thread pool for request handling;
+    * for now there were no tasks where userspace context switching was really necessary.
+    Fork is not used to parallelize code.
 
-#. Синхронизация потоков.
-    Часто можно сделать так, чтобы отдельные потоки писали данные в разные ячейки памяти (лучше - в разные кэш-линии), и не использовать синхронизацию потоков (кроме joinAll).
-    Если синхронизация нужна, то в большинстве случаев, достаточно использовать mutex под lock_guard-ом.
-    В остальных случаях, используйте системные примитивы синхронизации. Не используйте busy wait.
-    Атомарные операции можно использовать только в простейших случаях.
-    Не нужно писать самостоятельно lock-free структуры данных, если вы не являетесь экспертом.
+#. Synchronizing threads.
+    Often it is possible to make different threads use different memory cells (better - different cache lines) and do not use any synchronization (except joinAll).
+    If synchronization is necessary in most cases mutex under lock_guard is enough.
+    In other cases use system synchronization primitives. Do not use busy wait.
+    Atomic operations should be used only in the most simple cases.
+    Do not try to implement lock-free data structures unless it is your primary area of expertise.
 
-#. Ссылки и указатели.
-    В большинстве случаев, предпочитайте ссылки.
+#. Pointers vs reference.
+    Prefer references.
 
 #. const.
-    Используйте константные ссылки, указатели на константу, const_iterator, константные методы.
-    Считайте, что const - вариант написания "по-умолчанию", а отсутствие const - только при необходимости.
-    Для переменных, передающихся по значению, использовать const обычно не имеет смысла.
+    Use constant references, pointers to constants, const_iterator, const methods.
+    Consider const to be default and use non-const only when necessary.
+    When passing variable by value using const usually do not make sense.
 
 #. unsigned.
-    Используйте unsigned, если нужно.
+    unsinged is ok if necessary.
 
-#. Числовые типы.
-    Используйте типы UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, а также size_t, ssize_t, ptrdiff_t.
-    Не используйте для чисел типы signed/unsigned long, long long, short; signed char, unsigned char, а также char.
+#. Numeric types.
+    Use types UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, as well as size_t, ssize_t, ptrdiff_t.
+    Do not use типы signed/unsigned long, long long, short; signed char, unsigned char, аnd char.
 
-#. Передача аргументов.
-    Сложные значения передавайте по ссылке (включая std::string).
-    Если функция захватывает владение объектом, созданным на куче, то сделайте типом аргумента shared_ptr или unique_ptr.
+#. Passing arguments.
+    Pass complex values by reference (including std::string).
+    If functions captures object ownership created in heap, make an argument to be shared_ptr or unique_ptr.
 
-#. Возврат значений.
-    В большинстве случаев, просто возвращайте значение с помощью return. Не пишите :strike:`return std::move(res)`.
-    Если внутри функции создаётся объект на куче и отдаётся наружу, то возвращайте shared_ptr или unique_ptr.
-    В некоторых редких случаях, может потребоваться возвращать значение через аргумент функции. В этом случае, аргументом будет ссылка.
+#. Returning values.
+    In most cases just use return. Do not write :strike:`return std::move(res)`.
+    If function allocates an object on heap and returns it, use shared_ptr or unique_ptr.
+    In rare cases you might need to return value via argument, in this cases the argument should be a reference.
 
     .. code-block:: cpp
 
         using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
-        /** Позволяет создать агрегатную функцию по её имени.
+        /** Creates aggregate function by it's name
           */
         class AggregateFunctionFactory
         {
@@ -539,26 +535,26 @@
             AggregateFunctionPtr get(const String & name, const DataTypes & argument_types) const;
 
 #. namespace.
-    Для прикладного кода отдельный namespace использовать не нужно.
-    Для маленьких библиотек - не требуется.
-    Для не совсем маленьких библиотек - поместите всё в namespace.
-    Внутри библиотеки в .h файле можно использовать namespace detail для деталей реализации, не нужных прикладному коду.
-    В .cpp файле можно использовать static или анонимный namespace для скрытия символов.
-    Также, namespace можно использовать для enum, чтобы соответствующие имена не попали во внешний namespace (но лучше использовать enum class).
+    No need to use separate namespace for application code or small libraries.
+    For medium to large libraries - put everything in namespace.
+    You can use additional detail namespace in .h file to hide implementation details.
+    In .cpp you can use static or anonymous namespace to hide symbols.
+    You can also use namespace for enums to prevent it's names to pollute outer namespace, but it's better to use enum class.
 
-#. Отложенная инициализация.
-    Обычно, если для инициализации требуются аргументы, то не пишите конструктор по-умопчанию.
-    Если потом вам потребовалась отложенная инициализация, то вы можете дописать конструктор по-умолчанию (который создаст объект с некорректным состоянием). Или, для небольшого количества объектов, можно использовать shared_ptr/unique_ptr.
+#. Delayed initialization.
+    If arguments are required for initialization then do not write default constructor.
+    If later you'll need to delay initialization you can add default constructor creating invalid object.
+    For small number of object you could use shared_ptr/unique_ptr.
 
     .. code-block:: cpp
 
         Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
 
-        /// Для отложенной инициализации
+        /// For delayed initialization
         Loader() {}
 
-#. Виртуальные функции.
-    Если класс не предназначен для полиморфного использования, то не нужно делать функции виртуальными зря. Это относится и к деструктору.
+#. Virtual methods.
+    Do not mark methods or destructor as virtual if class is not intended for polymorph usage.
 
 #. Кодировки.
     Везде используется UTF-8. Используется ``std::string``, ``char *``. Не используется ``std::wstring``, ``wchar_t``.
