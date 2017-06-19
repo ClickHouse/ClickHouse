@@ -307,9 +307,8 @@ ul.dashed > li:before {
 }
 
 #tutorial_title {
-    font-size: 100px;
-    font-weight: normal;
-    margin-top: 98px;
+    font: normal 100px 'Yandex Sans Display Web', Arial, sans-serif;
+    margin-top: 25px;
     margin-bottom: 0;
     text-align: center;
     padding-top: 27px;

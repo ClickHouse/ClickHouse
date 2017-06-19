@@ -17,7 +17,7 @@
 <div class="page">
 
     <div>
-        <div style="float: left; margin-right: -100%; margin-top: 0; margin-left: 3px;">
+        <div style="float: left; margin-right: -100%; margin-top: 34px; margin-left: 3px;">
             <a href="/">
                 <svg xmlns="http://www.w3.org/2000/svg" width="90" height="80" viewBox="0 0 9 8">
                     <path class="red" d="M0,7 h1 v1 h-1 z"></path>
@@ -38,15 +38,14 @@
         It's hard to call this sample a Big Data (contains 166 millions rows, 63 Gb of uncompressed data) but this
         allows us to quickly get to work. Dataset is available for download <a href="https://yadi.sk/d/pOZxpa42sDdgm">here</a>.
         Also you may download it from the original datasource <a
-                href="https://github.com/yandex/ClickHouse/raw/master/doc/example_datasets/1_ontime.txt"
-                rel="external nofollow">as described
-            here</a>.</p>
+                href="docs/en/getting_started/example_datasets/ontime.html"
+                rel="external nofollow">as described here</a>.</p>
 
     <p>Firstly we will deploy ClickHouse to a single server. Below that we will also review the process of deployment to
         a cluster with support for sharding and replication.</p>
 
-    <p>On Ubuntu and Debian Linux ClickHouse can be installed from <a href="/#download">packages</a>.
-        For other Linux distributions you can <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md"
+    <p>On Ubuntu and Debian Linux ClickHouse can be installed from <a href="/#quick-start">packages</a>.
+        For other Linux distributions you can <a href="docs/en/development/build.html"
                                                  rel="external nofollow">compile
             ClickHouse from sources</a> and then install.</p>
 
@@ -236,9 +235,7 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
     </p>
 
     <h3>Load data</h3>
-    <p>Download <a href="http://transtats.bts.gov/PREZIP/On_Time_On_Time_Performance_2016_6.zip" rel="external nofollow">
-        ontime.czv.zip</a>, then feed it's contents to clickhouse-client:</p>
-    <pre>unzip -cq ontime.csv.zip | sed -e 's/\.00//g' | clickhouse-client --query="INSERT INTO ontime FORMAT CSVWithNames"</pre>
+    <pre>xz -v -c -d &lt; ontime.csv.xz | clickhouse-client --query="INSERT INTO ontime FORMAT CSV"</pre>
     <p>ClickHouse INSERT query allows to load data in any <a href="docs/en/formats/index.html">supported
         format</a>. Data load requires just O(1) RAM consumption. INSERT query can receive any data volume as input.
         It's strongly recommended to insert data with <a
