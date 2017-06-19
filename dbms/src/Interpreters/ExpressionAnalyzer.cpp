@@ -7,6 +7,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -288,15 +289,16 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const String 
                 size_t num_qualifiers_to_strip = 0;
 
                 /// database.table.column
-                if (!database_name.empty()
-                        && num_components >= 3
-                        && static_cast<const ASTIdentifier &>(*ast->children[0]).name == database_name
-                        && static_cast<const ASTIdentifier &>(*ast->children[1]).name == table_name)
+                if (num_components >= 3
+                    && !database_name.empty()
+                    && static_cast<const ASTIdentifier &>(*ast->children[0]).name == database_name
+                    && static_cast<const ASTIdentifier &>(*ast->children[1]).name == table_name)
                 {
                     num_qualifiers_to_strip = 2;
                 }
-                /// table.column or alias.column
-                else if (num_components >= 2
+
+                /// table.column or alias.column. If num_components > 2, it is like table.nested.column.
+                if (num_components >= 2
                     && ((!table_name.empty() && static_cast<const ASTIdentifier &>(*ast->children[0]).name == table_name)
                         || (!alias.empty() && static_cast<const ASTIdentifier &>(*ast->children[0]).name == alias)))
                 {
@@ -314,11 +316,46 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const String 
                             ast->setAlias(node_alias);
                     }
                     else
+                    /// nested column
                     {
-                        ast->children.erase(ast->children.begin(), ast->children.begin() + num_qualifiers_to_strip);
+                        ident->children.erase(ident->children.begin(), ident->children.begin() + num_qualifiers_to_strip);
+                        String new_name;
+                        for (const auto & child : ident->children)
+                        {
+                            if (!new_name.empty())
+                                new_name += '.';
+                            new_name += static_cast<const ASTIdentifier &>(*child.get()).name;
+                        }
+                        ident->name = new_name;
                     }
                 }
             }
+        }
+    }
+    else if (ASTQualifiedAsterisk * asterisk = typeid_cast<ASTQualifiedAsterisk *>(ast.get()))
+    {
+        if (ast->children.size() != 1)
+            throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
+
+        ASTIdentifier * ident = typeid_cast<ASTIdentifier *>(ast->children[0].get());
+        if (!ident)
+            throw Exception("Logical error: qualified asterisk must have identifier as its child", ErrorCodes::LOGICAL_ERROR);
+
+        size_t num_components = ident->children.size();
+        if (num_components > 2)
+            throw Exception("Qualified asterisk cannot have more than two qualifiers", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+
+        /// database.table.*, table.* or alias.*
+        if (   (num_components == 2
+                && !database_name.empty()
+                && static_cast<const ASTIdentifier &>(*ident->children[0]).name == database_name
+                && static_cast<const ASTIdentifier &>(*ident->children[1]).name == table_name)
+            || (num_components == 0
+                && ((!table_name.empty() && ident->name == table_name)
+                    || (!alias.empty() && ident->name == alias))))
+        {
+            /// Replace to plain asterisk.
+            ast = std::make_shared<ASTAsterisk>(ast->range);
         }
     }
     else
