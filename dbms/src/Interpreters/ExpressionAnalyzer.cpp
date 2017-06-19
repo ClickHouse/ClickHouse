@@ -23,7 +23,7 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnExpression.h>
 
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
@@ -472,7 +472,7 @@ void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
 }
 
 
-static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
+static std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns);
 
 
@@ -983,7 +983,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
         subquery_context.setSettings(subquery_settings);
 
         ASTPtr query = subquery->children.at(0);
-        BlockIO res = InterpreterSelectQuery(query, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1).execute();
+        BlockIO res = InterpreterSelectWithUnionQuery(query, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1).execute();
 
         Block block;
         try
@@ -1254,7 +1254,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sampl
 }
 
 
-static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
+static std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns)
 {
     /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
@@ -1343,10 +1343,10 @@ static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
     }
 
     if (required_columns.empty())
-        return std::make_shared<InterpreterSelectQuery>(
+        return std::make_shared<InterpreterSelectWithUnionQuery>(
             query, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
     else
-        return std::make_shared<InterpreterSelectQuery>(
+        return std::make_shared<InterpreterSelectWithUnionQuery>(
             query, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
 }
 
@@ -2621,7 +2621,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
     else if (table_expression.subquery)
     {
         const auto & subquery = table_expression.subquery->children.at(0);
-        nested_result_sample = InterpreterSelectQuery::getSampleBlock(subquery, context);
+        nested_result_sample = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context);
     }
 
     if (table_join.using_expression_list)

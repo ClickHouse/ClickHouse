@@ -23,7 +23,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/queryToString.h>
 
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>

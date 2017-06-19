@@ -1,4 +1,4 @@
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -84,7 +84,7 @@ BlockInputStreams StorageView::read(
 {
     processed_stage = QueryProcessingStage::FetchColumns;
     ASTPtr inner_query_clone = getInnerQuery();
-    return InterpreterSelectQuery(inner_query_clone, context, column_names).executeWithoutUnion();
+    return InterpreterSelectWithUnionQuery(inner_query_clone, context, column_names).executeWithoutUnion();
 }
 
 

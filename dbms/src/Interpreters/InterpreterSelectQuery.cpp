@@ -30,6 +30,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -79,47 +80,13 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
         throw Exception("Too deep subqueries. Maximum: " + settings.limits.max_subquery_depth.toString(),
             ErrorCodes::TOO_DEEP_SUBQUERIES);
 
-    if (is_first_select_inside_union_all)
+    basicInit(input);
+
+    if (!required_column_names.empty() && (table_column_names.size() != required_column_names.size()))
     {
-        /// Create a SELECT query chain.
-        InterpreterSelectQuery * interpreter = this;
-        ASTPtr tail = query.next_union_all;
-
-        while (tail)
-        {
-            ASTPtr head = tail;
-
-            ASTSelectQuery & head_query = static_cast<ASTSelectQuery &>(*head);
-            tail = head_query.next_union_all;
-
-            interpreter->next_select_in_union_all = std::make_unique<InterpreterSelectQuery>(head, context, to_stage, subquery_depth);
-            interpreter = interpreter->next_select_in_union_all.get();
-        }
-    }
-
-    if (is_first_select_inside_union_all && hasAsterisk())
-    {
-        basicInit(input);
-
-        // We execute this code here, because otherwise the following kind of query would not work
-        // SELECT X FROM (SELECT * FROM (SELECT 1 AS X, 2 AS Y) UNION ALL SELECT 3, 4)
-        // because the asterisk is replaced with columns only when query_analyzer objects are created in basicInit().
-        renameColumns();
-
-        if (!required_column_names.empty() && (table_column_names.size() != required_column_names.size()))
-        {
-            rewriteExpressionList(required_column_names);
-            /// Now there is obsolete information to execute the query. We update this information.
-            initQueryAnalyzer();
-        }
-    }
-    else
-    {
-        renameColumns();
-        if (!required_column_names.empty())
-            rewriteExpressionList(required_column_names);
-
-        basicInit(input);
+        rewriteExpressionList(required_column_names);
+        /// Now there is obsolete information to execute the query. We update this information.
+        initQueryAnalyzer();
     }
 }
 
@@ -170,30 +137,12 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 
     if (input_)
         streams.push_back(input_);
-
-    if (is_first_select_inside_union_all)
-    {
-        /// We check that the results of all SELECT queries are compatible.
-        Block first = getSampleBlock();
-        for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-        {
-            Block current = p->getSampleBlock();
-            if (!blocksHaveEqualStructure(first, current))
-                throw Exception("Result structures mismatch in the SELECT queries of the UNION ALL chain. Found result structure:\n\n" + current.dumpStructure()
-                + "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead",
-                ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
-        }
-    }
 }
 
 void InterpreterSelectQuery::initQueryAnalyzer()
 {
     query_analyzer.reset(
         new ExpressionAnalyzer(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze));
-
-    for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-        p->query_analyzer.reset(
-            new ExpressionAnalyzer(p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth, !only_analyze));
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
@@ -203,7 +152,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const 
     , context(context_)
     , to_stage(to_stage_)
     , subquery_depth(subquery_depth_)
-    , is_first_select_inside_union_all(query.isUnionAllHead())
     , log(&Logger::get("InterpreterSelectQuery"))
 {
     init(input_);
@@ -215,7 +163,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & qu
     , context(context_)
     , to_stage(QueryProcessingStage::Complete)
     , subquery_depth(0)
-    , is_first_select_inside_union_all(false), only_analyze(true)
+    , only_analyze(true)
     , log(&Logger::get("InterpreterSelectQuery"))
 {
     init({});
@@ -237,36 +185,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const 
     , to_stage(to_stage_)
     , subquery_depth(subquery_depth_)
     , table_column_names(table_column_names_)
-    , is_first_select_inside_union_all(query.isUnionAllHead())
     , log(&Logger::get("InterpreterSelectQuery"))
 {
     init(input_, required_column_names_);
-}
-
-bool InterpreterSelectQuery::hasAsterisk() const
-{
-    if (query.hasAsterisk())
-        return true;
-
-    if (is_first_select_inside_union_all)
-    {
-        for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-        {
-            if (p->query.hasAsterisk())
-                return true;
-        }
-    }
-
-    return false;
-}
-
-void InterpreterSelectQuery::renameColumns()
-{
-    if (is_first_select_inside_union_all)
-    {
-        for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-            p->query.renameColumns(query);
-    }
 }
 
 void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column_names)
@@ -274,22 +195,7 @@ void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column
     if (query.distinct)
         return;
 
-    if (is_first_select_inside_union_all)
-    {
-        for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-        {
-            if (p->query.distinct)
-                return;
-        }
-    }
-
     query.rewriteSelectExpressionList(required_column_names);
-
-    if (is_first_select_inside_union_all)
-    {
-        for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-            p->query.rewriteSelectExpressionList(required_column_names);
-    }
 }
 
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
@@ -393,24 +299,7 @@ BlockIO InterpreterSelectQuery::execute()
 
 const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
 {
-    if (is_first_select_inside_union_all)
-    {
-        executeSingleQuery();
-        for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-        {
-            p->executeSingleQuery();
-            const auto & others = p->streams;
-            streams.insert(streams.end(), others.begin(), others.end());
-        }
-
-        transformStreams([&](auto & stream)
-        {
-            stream = std::make_shared<MaterializingBlockInputStream>(stream);
-        });
-    }
-    else
-        executeSingleQuery();
-
+    executeSingleQuery();
     return streams;
 }
 
@@ -698,7 +587,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         return QueryProcessingStage::FetchColumns;
 
     /// The subquery interpreter, if the subquery
-    std::experimental::optional<InterpreterSelectQuery> interpreter_subquery;
+    std::experimental::optional<InterpreterSelectWithUnionQuery> interpreter_subquery;
 
     /// List of columns to read to execute the query.
     Names required_columns = query_analyzer->getRequiredColumns();

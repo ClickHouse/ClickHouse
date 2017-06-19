@@ -15,7 +15,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
 
@@ -118,7 +118,7 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else
     {
-        InterpreterSelectQuery interpreter_select{query.select, context};
+        InterpreterSelectWithUnionQuery interpreter_select{query.select, context};
         res.in_sample = interpreter_select.getSampleBlock();
 
         res.in = interpreter_select.execute().in;

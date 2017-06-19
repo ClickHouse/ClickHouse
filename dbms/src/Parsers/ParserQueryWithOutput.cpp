@@ -1,6 +1,6 @@
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ParserShowTablesQuery.h>
-#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserShowProcesslistQuery.h>
 #include <Parsers/ParserCheckQuery.h>
@@ -16,7 +16,7 @@ namespace DB
 bool ParserQueryWithOutput::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
     ParserShowTablesQuery show_tables_p;
-    ParserSelectQuery select_p;
+    ParserSelectWithUnionQuery select_p;
     ParserTablePropertiesQuery table_p;
     ParserShowProcesslistQuery show_processlist_p;
     ParserCheckQuery check_p;

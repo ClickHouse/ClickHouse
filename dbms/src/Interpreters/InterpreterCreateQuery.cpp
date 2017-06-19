@@ -29,7 +29,7 @@
 #include <Storages/StorageLog.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/DDLWorker.h>
@@ -482,12 +482,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String data_path = path + "data/" + database_name_escaped + "/";
     String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
 
-    std::unique_ptr<InterpreterSelectQuery> interpreter_select;
+    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_select;
     Block as_select_sample;
     /// For `view` type tables, you may need `sample_block` to get the columns.
     if (create.select && (!create.attach || (!create.columns && (create.is_view || create.is_materialized_view))))
     {
-        interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select, context);
+        interpreter_select = std::make_unique<InterpreterSelectWithUnionQuery>(create.select, context);
         as_select_sample = interpreter_select->getSampleBlock();
     }
 

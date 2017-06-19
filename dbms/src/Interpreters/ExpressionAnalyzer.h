@@ -38,7 +38,7 @@ class ASTSelectQuery;
   */
 struct SubqueryForSet
 {
-    /// The source is obtained using the InterpreterSelectQuery subquery.
+    /// The source is obtained using the InterpreterSelectWithUnionQuery subquery.
     BlockInputStreamPtr source;
     Block source_sample;
 
@@ -261,7 +261,7 @@ private:
     /// Finds in the query the usage of external tables (as table identifiers). Fills in external_tables.
     void findExternalTables(ASTPtr & ast);
 
-    /** Initialize InterpreterSelectQuery for a subquery in the GLOBAL IN/JOIN section,
+    /** Initialize InterpreterSelectWithUnionQuery for a subquery in the GLOBAL IN/JOIN section,
       * create a temporary table of type Memory and store it in the external_tables dictionary.
       */
     void addExternalStorage(ASTPtr & subquery_or_table_name);

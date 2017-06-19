@@ -83,10 +83,8 @@ public:
         const Context & context_);
 
 private:
-    /**
-     * - Optimization if an object is created only to call getSampleBlock(): consider only the first SELECT of the UNION ALL chain, because
-     *   the first SELECT is sufficient to determine the required columns.
-     */
+    /** Optimization if an object is created only to call getSampleBlock().
+      */
     struct OnlyAnalyzeTag {};
     InterpreterSelectQuery(
         OnlyAnalyzeTag,
@@ -100,7 +98,7 @@ private:
     /// Execute one SELECT query from the UNION ALL chain.
     void executeSingleQuery();
 
-    /** Leave only the necessary columns of the SELECT section in each query of the UNION ALL chain.
+    /** Leave only the necessary columns of the SELECT section.
      *  However, if you use at least one DISTINCT in the chain, then all the columns are considered necessary,
      *   since otherwise DISTINCT would work differently.
      *
@@ -112,18 +110,12 @@ private:
      */
     void rewriteExpressionList(const Names & required_column_names);
 
-    /// Does the request contain at least one asterisk?
-    bool hasAsterisk() const;
-
-    // Rename the columns of each query for the UNION ALL chain into the same names as in the first query.
-    void renameColumns();
-
     /** From which table to read. With JOIN, the "left" table is returned.
-     */
+      */
     void getDatabaseAndTableNames(String & database_name, String & table_name);
 
     /** Select from the list of columns any, better - with minimum size.
-     */
+      */
     String getAnyColumn();
 
     /// Different stages of query execution.
@@ -185,14 +177,8 @@ private:
       */
     BlockInputStreamPtr stream_with_non_joined_data;
 
-    /// Is it the first SELECT query of the UNION ALL chain?
-    bool is_first_select_inside_union_all;
-
     /// The object was created only for query analysis.
     bool only_analyze = false;
-
-    /// The next SELECT query in the UNION ALL chain, if any.
-    std::unique_ptr<InterpreterSelectQuery> next_select_in_union_all;
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
