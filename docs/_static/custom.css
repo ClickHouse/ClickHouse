@@ -29,6 +29,10 @@ a.reference {
 	border-bottom: none;
 }
 
+span.strike {
+	text-decoration: line-through;
+}
+
 input[type="submit"] {
 	border: none!important;
 	background: #fc0;
