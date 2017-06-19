@@ -332,7 +332,7 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const String 
             }
         }
     }
-    else if (ASTQualifiedAsterisk * asterisk = typeid_cast<ASTQualifiedAsterisk *>(ast.get()))
+    else if (typeid_cast<ASTQualifiedAsterisk *>(ast.get()))
     {
         if (ast->children.size() != 1)
             throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
