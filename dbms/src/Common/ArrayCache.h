@@ -15,6 +15,10 @@
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+
 
 namespace DB
 {
