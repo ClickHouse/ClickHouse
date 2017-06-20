@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 
+/// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
 #endif
