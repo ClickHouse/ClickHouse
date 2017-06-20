@@ -12,11 +12,11 @@ uint128 referenceHash(const char * data, size_t len)
 
     for (pos = 0; pos + block_size <= len; pos += block_size)
     {
-        state = CityHash128WithSeed(data + pos, block_size, state);
+        state = DB::CityHash128WithSeed(data + pos, block_size, state);
     }
 
     if (pos < len)
-        state = CityHash128WithSeed(data + pos, len - pos, state);
+        state = DB::CityHash128WithSeed(data + pos, len - pos, state);
 
     return state;
 }

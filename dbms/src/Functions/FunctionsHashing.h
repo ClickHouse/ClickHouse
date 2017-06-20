@@ -846,7 +846,7 @@ struct ImplCityHash64
     static constexpr auto name = "cityHash64";
     using uint128_t = uint128;
 
-    static auto Hash128to64(const uint128_t & x) { return ::Hash128to64(x); }
+    static auto Hash128to64(const uint128_t & x) { return DB::Hash128to64(x); }
     static auto Hash64(const char * const s, const std::size_t len) { return CityHash64(s, len); }
 };
 
@@ -864,7 +864,7 @@ struct ImplMetroHash64
     static constexpr auto name = "metroHash64";
     using uint128_t = uint128;
 
-    static auto Hash128to64(const uint128_t & x) { return ::Hash128to64(x); }
+    static auto Hash128to64(const uint128_t & x) { return DB::Hash128to64(x); }
     static auto Hash64(const char * const s, const std::size_t len)
     {
         union {
