@@ -1,7 +1,7 @@
 #pragma once
 
-#include <zkutil/ZooKeeper.h>
-#include <zkutil/Common.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/Common.h>
 #include <Common/Exception.h>
 #include <Poco/Event.h>
 #include <string>

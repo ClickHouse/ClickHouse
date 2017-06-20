@@ -1,4 +1,4 @@
-#include <zkutil/RWLock.h>
+#include <Common/ZooKeeper/RWLock.h>
 #include <Common/StringUtils.h>
 #include <algorithm>
 #include <iterator>

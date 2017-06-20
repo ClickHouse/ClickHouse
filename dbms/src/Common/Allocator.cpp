@@ -9,6 +9,11 @@
 #include <Common/Exception.h>
 #include <Common/Allocator.h>
 
+/// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+
 
 namespace DB
 {

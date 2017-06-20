@@ -110,8 +110,13 @@ private:
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
-public:
+    /// Use copy constructor or createGlobal() instead
     Context();
+
+public:
+    /// Create initial Context with ContextShared and etc.
+    static Context createGlobal();
+
     ~Context();
 
     String getPath() const;

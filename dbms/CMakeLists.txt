@@ -55,6 +55,7 @@ add_headers_and_sources(dbms src/Interpreters)
 add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
 add_headers_and_sources(dbms src/Common)
 add_headers_and_sources(dbms src/Common/HashTable)
+add_headers_and_sources(dbms src/Common/ZooKeeper)
 add_headers_and_sources(dbms src/IO)
 add_headers_and_sources(dbms src/Columns)
 add_headers_and_sources(dbms src/Storages)
@@ -168,11 +169,11 @@ endif()
 
 target_link_libraries (dbms
     common
-    zkutil
     ${MYSQLXX_LIBRARY}
     cityhash farmhash metrohash
     ${LZ4_LIBRARY}
     ${ZSTD_LIBRARY}
+    ${ZOOKEEPER_LIBRARY}
     string_utils
     ${DOUBLE_CONVERSION_LIBRARY}
     ${ZLIB_LIBRARIES}

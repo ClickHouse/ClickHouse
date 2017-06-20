@@ -1146,7 +1146,9 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
             if (!block)
             {
                 /// Interpret subquery with empty result as Null literal
-                ast = std::make_unique<ASTLiteral>(ast->range, Null());
+                auto ast_new = std::make_unique<ASTLiteral>(ast->range, Null());
+                ast_new->setAlias(ast->tryGetAlias());
+                ast = std::move(ast_new);
                 return;
             }
 

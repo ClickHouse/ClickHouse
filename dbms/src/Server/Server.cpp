@@ -10,8 +10,8 @@
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
 #include <ext/scope_guard.h>
-#include <zkutil/ZooKeeper.h>
-#include <zkutil/ZooKeeperNodeCache.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils.h>
 #include <Common/getFQDNOrHostName.h>
@@ -222,7 +222,7 @@ int Server::main(const std::vector<std::string> & args)
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
       */
-    global_context = std::make_unique<Context>();
+    global_context = std::make_unique<Context>(Context::createGlobal());
     global_context->setGlobalContext(*global_context);
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 

@@ -1,5 +1,5 @@
-#include <zkutil/SingleBarrier.h>
-#include <zkutil/RWLock.h>
+#include <Common/ZooKeeper/SingleBarrier.h>
+#include <Common/ZooKeeper/RWLock.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>

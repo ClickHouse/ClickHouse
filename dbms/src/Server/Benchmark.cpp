@@ -67,7 +67,7 @@ public:
         concurrency(concurrency_), delay(delay_), queue(concurrency),
         connections(concurrency, host_, port_, default_database_, user_, password_),
         randomize(randomize_), max_iterations(max_iterations_), max_time(max_time_),
-        json_path(json_path_), settings(settings_), pool(concurrency)
+        json_path(json_path_), settings(settings_), global_context(Context::createGlobal()), pool(concurrency)
     {
         std::cerr << std::fixed << std::setprecision(3);
 
@@ -107,6 +107,7 @@ private:
     double max_time;
     String json_path;
     Settings settings;
+    Context global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
     /// Don't execute new queries after timelimit or SIGINT or exception
@@ -295,7 +296,7 @@ private:
     void execute(ConnectionPool::Entry & connection, Query & query)
     {
         Stopwatch watch;
-        RemoteBlockInputStream stream(*connection, query, &settings, nullptr, Tables(), query_processing_stage);
+        RemoteBlockInputStream stream(*connection, query, &settings, global_context, nullptr, Tables(), query_processing_stage);
 
         Progress progress;
         stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });

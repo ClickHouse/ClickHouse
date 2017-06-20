@@ -22,7 +22,7 @@ try
 
     const size_t rows = 12345;
 
-    Context context;
+    Context context = Context::createGlobal();
 
     /// create a table with a pair of columns
 

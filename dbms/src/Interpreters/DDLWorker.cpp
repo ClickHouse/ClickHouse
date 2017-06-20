@@ -28,8 +28,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 
-#include <zkutil/ZooKeeper.h>
-#include <zkutil/Lock.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/Lock.h>
 #include <Poco/Timestamp.h>
 
 #include <experimental/optional>

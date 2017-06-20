@@ -1,6 +1,6 @@
 #pragma once
 #include <Common/Exception.h>
-#include <zkutil/Types.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Common/ProfileEvents.h>
 
 

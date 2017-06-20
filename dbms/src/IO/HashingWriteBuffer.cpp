@@ -1,6 +1,6 @@
 #include <IO/HashingWriteBuffer.h>
 #include <iomanip>
-#include <city.h>
+
 
 namespace DB
 {

@@ -41,7 +41,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
 
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB
 {

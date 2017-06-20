@@ -82,6 +82,9 @@ static uint32 UNALIGNED_LOAD32(const char *p) {
 #endif
 #endif
 
+namespace DB
+{
+
 static uint64 Fetch64(const char *p) {
   return uint64_in_expected_order(UNALIGNED_LOAD64(p));
 }
@@ -353,9 +356,14 @@ uint128 CityHash128(const char *s, size_t len) {
   }
 }
 
+}
+
 #ifdef __SSE4_2__
 #include <citycrc.h>
 #include <nmmintrin.h>
+
+namespace DB
+{
 
 // Requires len >= 240.
 static void CityHashCrc256Long(const char *s, size_t len,
@@ -465,6 +473,8 @@ uint128 CityHashCrc128(const char *s, size_t len) {
     CityHashCrc256(s, len, result);
     return uint128(result[2], result[3]);
   }
+}
+
 }
 
 #endif

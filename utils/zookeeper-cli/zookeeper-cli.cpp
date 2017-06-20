@@ -1,5 +1,5 @@
-#include <zkutil/ZooKeeper.h>
-#include <zkutil/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <iostream>
 #include <sstream>
 #include <Poco/ConsoleChannel.h>

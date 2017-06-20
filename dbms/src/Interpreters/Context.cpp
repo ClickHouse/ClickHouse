@@ -44,7 +44,7 @@
 #include <Databases/IDatabase.h>
 
 #include <Common/ConfigProcessor.h>
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
 
 
@@ -173,6 +173,18 @@ struct ContextShared
 
     std::mt19937_64 rng{randomSeed()};
 
+    ContextShared()
+    {
+        /// TODO: make it Singleton (?)
+        static std::atomic<size_t> num_calls{0};
+        if (++num_calls > 1)
+        {
+            std::cerr << "Attempting to create multiple ContextShared instances. Stack trace:\n" << StackTrace().toString();
+            std::cerr.flush();
+            std::terminate();
+        }
+    }
+
 
     ~ContextShared()
     {
@@ -219,12 +231,18 @@ struct ContextShared
 };
 
 
-Context::Context()
-    : shared(std::make_shared<ContextShared>()),
-    quota(std::make_shared<QuotaForIntervals>()),
-    system_logs(std::make_shared<SystemLogs>())
+Context::Context() = default;
+
+
+Context Context::createGlobal()
 {
+    Context res;
+    res.shared = std::make_shared<ContextShared>();
+    res.quota = std::make_shared<QuotaForIntervals>();
+    res.system_logs = std::make_shared<SystemLogs>();
+    return res;
 }
+
 
 Context::~Context()
 {
