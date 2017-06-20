@@ -36,7 +36,7 @@
 
     sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
     sudo apt-get update
-    sudo apt-get install clickhouse-client clickhouse-server-common
+    sudo apt-get install clickhouse-client clickhouse-server
     
 Также можно скачать и установить пакеты вручную, отсюда:
 http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/,

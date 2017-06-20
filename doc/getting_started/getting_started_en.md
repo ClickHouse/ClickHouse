@@ -41,8 +41,8 @@ The build successfully completed:
 
 Installing packages and running ClickHouse:
 ```
-sudo apt-get install ../clickhouse-server-base_1.1.53960_amd64.deb ../clickhouse-server-common_1.1.53960_amd64.deb
-sudo apt-get install ../clickhouse-client_1.1.53960_amd64.deb
+sudo apt-get install ../clickhouse-common_1.1.54239_amd64.deb ../clickhouse-server_1.1.54239_amd64.deb
+sudo apt-get install ../clickhouse-client_1.1.54239_amd64.deb
 sudo service clickhouse-server start
 ```
 

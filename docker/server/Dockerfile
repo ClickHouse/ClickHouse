@@ -8,7 +8,7 @@ RUN apt-get update && \
     mkdir -p /etc/apt/sources.list.d && \
     echo $repository | tee /etc/apt/sources.list.d/clickhouse.list && \
     apt-get update && \
-    apt-get install --allow-unauthenticated -y clickhouse-server-common=$version clickhouse-server-base=$version && \
+    apt-get install --allow-unauthenticated -y clickhouse-server=$version && \
     rm -rf /var/lib/apt/lists/* /var/cache/debconf && \
     apt-get clean
 
