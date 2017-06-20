@@ -14,14 +14,18 @@ public:
     size_t unreadRows() const {
         return (last_mark - current_mark) * index_granularity - read_rows_after_current_mark;
     }
-    size_t unreadRowsInCurrentPart() const {
+    size_t unreadRowsInCurrentGranule() const {
         return index_granularity - read_rows_after_current_mark;
     }
 
+    size_t readRowsInCurrentGranule() const { return read_rows_after_current_mark; }
+
     size_t skipToNextMark();
-    const MergeTreeRangeReader skipRows(size_t rows) const;
+    MergeTreeRangeReader skipRows(size_t rows) const;
     size_t read(Block & res, size_t max_rows_to_read);
     bool isReadingFinished() const { return is_reading_finished; }
+
+    void disableNextSeek() { seek_to_from_mark = false; }
 
     ~MergeTreeRangeReader() {
         //if (last_mark != current_mark)

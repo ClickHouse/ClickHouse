@@ -41,8 +41,6 @@ public:
     /// If columns are not present in the block, adds them. If they are present - appends the values that have been read.
     /// Do not adds columns, if the files are not present for them (to add them, call fillMissingColumns).
     /// Block should contain either no columns from the columns field, or all columns for which files are present.
-    size_t readRange(size_t from_mark, size_t to_mark, Block & res)
-        { return readRange(from_mark, true, (to_mark - from_mark) * storage.index_granularity, res); }
     MergeTreeRangeReader readRange(size_t from_mark, size_t to_mark);
 
     /// Add columns from ordered_names that are not present in the block.
@@ -105,7 +103,6 @@ private:
     MergeTreeData::DataPartPtr data_part;
 
     FileStreams streams;
-    // size_t cur_mark_idx = 0; /// Mark index corresponding to the current position for all streams.
 
     /// Columns that are read.
     NamesAndTypesList columns;
@@ -131,6 +128,7 @@ private:
 
     void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder);
 
+    /// return the number of rows has been read or zero if ther is no columns to read
     size_t readRange(size_t from_mark, bool seek_to_from_mark, size_t max_rows_to_read, Block & res);
 
     friend class MergeTreeRangeReader;
