@@ -76,7 +76,7 @@ const char * ParserTupleElementExpression::operators[] =
 bool ParserList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
     bool first = true;
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     auto list = std::make_shared<ASTExpressionList>();
     node = list;
@@ -122,7 +122,7 @@ bool ParserList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
     bool first = true;
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     Pos begin = pos;
 
     while (1)
@@ -198,7 +198,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 
 bool ParserVariableArityOperatorList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     Pos begin = pos;
     ASTPtr arguments;
@@ -239,9 +239,9 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
     /// For the expression (subject BETWEEN left AND right)
     ///  create an AST the same as for (subject> = left AND subject <= right).
 
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_between("BETWEEN", true, true);
-    ParserString s_and("AND", true, true);
+    ParserWhitespaceOrComments ws;
+    ParserKeyword s_between("BETWEEN");
+    ParserKeyword s_and("AND");
 
     ASTPtr subject;
     ASTPtr left;
@@ -320,7 +320,7 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 
 bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString symbol1("?");
     ParserString symbol2(":");
 
@@ -381,7 +381,7 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 
 bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString arrow("->");
     ParserString open("(");
     ParserString close(")");
@@ -448,7 +448,7 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & 
 
 bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     /// try to find any of the valid operators
     Pos begin = pos;
@@ -600,15 +600,15 @@ bool ParserOrderByExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, P
 
 bool ParserNullityChecking::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     ASTPtr node_comp;
     if (!ParserComparisonExpression{}.parse(pos, end, node_comp, max_parsed_pos, expected))
         return false;
 
-    ParserString s_is{"IS", true, true};
-    ParserString s_not{"NOT", true, true};
-    ParserString s_null{"NULL", true, true};
+    ParserKeyword s_is{"IS"};
+    ParserKeyword s_not{"NOT"};
+    ParserKeyword s_null{"NULL"};
 
     ws.ignore(pos, end);
 

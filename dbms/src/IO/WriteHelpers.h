@@ -20,7 +20,6 @@
 #include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/DoubleConverter.h>
-#include <city.h>
 
 
 namespace DB

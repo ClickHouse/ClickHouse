@@ -335,7 +335,15 @@ def generate_dictionaries(args):
 
     source_executable = '''
     <executable>
-        <command>true; cat %s</command>
+        <command>cat %s</command>
+        <format>TabSeparated</format>
+    </executable>
+    '''
+
+    # ignore stdin, then print file
+    source_executable_cache = '''
+    <executable>
+        <command>cat ->/dev/null; cat %s</command>
         <format>TabSeparated</format>
     </executable>
     '''
@@ -416,7 +424,7 @@ def generate_dictionaries(args):
         [ source_http % (files[0]), layout_hashed ],
 
         [ source_clickhouse, layout_cache ],
-        [ source_executable % (generated_prefix + files[0]), layout_cache ],
+        [ source_executable_cache % (generated_prefix + files[0]), layout_cache ],
         [ source_http % (files[0]), layout_cache ],
 
         # Complex key dictionaries with (UInt8, UInt8) key
@@ -426,7 +434,7 @@ def generate_dictionaries(args):
         [ source_http % (files[1]), layout_complex_key_hashed ],
 
         [ source_clickhouse, layout_complex_key_cache ],
-        [ source_executable % (generated_prefix + files[1]), layout_complex_key_cache ],
+        [ source_executable_cache % (generated_prefix + files[1]), layout_complex_key_cache ],
         [ source_http % (files[1]), layout_complex_key_cache ],
 
         # Complex key dictionaries with (String, UInt8) key
@@ -436,7 +444,7 @@ def generate_dictionaries(args):
         [ source_http % (files[2]), layout_complex_key_hashed ],
 
         [ source_clickhouse, layout_complex_key_cache ],
-        [ source_executable % (generated_prefix + files[2]), layout_complex_key_cache ],
+        [ source_executable_cache % (generated_prefix + files[2]), layout_complex_key_cache ],
         [ source_http % (files[2]), layout_complex_key_cache ],
     ]
 

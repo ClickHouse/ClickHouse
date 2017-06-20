@@ -74,7 +74,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 {
     NameParser name_parser;
     ParserIdentifierWithOptionalParameters type_parser;
-    ParserWhiteSpaceOrComments ws_parser;
+    ParserWhitespaceOrComments ws_parser;
 
     Pos begin = pos;
 
@@ -119,10 +119,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr 
 {
     NameParser name_parser;
     ParserIdentifierWithOptionalParameters type_parser;
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_default{"DEFAULT", true, true};
-    ParserString s_materialized{"MATERIALIZED", true, true};
-    ParserString s_alias{"ALIAS", true, true};
+    ParserWhitespaceOrComments ws;
+    ParserKeyword s_default{"DEFAULT"};
+    ParserKeyword s_materialized{"MATERIALIZED"};
+    ParserKeyword s_alias{"ALIAS"};
     ParserTernaryOperatorExpression expr_parser;
 
     const auto begin = pos;

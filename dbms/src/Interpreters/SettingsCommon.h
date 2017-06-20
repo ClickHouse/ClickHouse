@@ -556,14 +556,6 @@ struct SettingCompressionMethod
 
     static CompressionMethod getCompressionMethod(const String & s)
     {
-        if (s == "quicklz")
-        {
-        #ifdef USE_QUICKLZ
-            return CompressionMethod::QuickLZ;
-        #else
-            throw Exception("QuickLZ compression method is disabled", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-        #endif
-        }
         if (s == "lz4")
             return CompressionMethod::LZ4;
         if (s == "lz4hc")
@@ -571,14 +563,14 @@ struct SettingCompressionMethod
         if (s == "zstd")
             return CompressionMethod::ZSTD;
 
-        throw Exception("Unknown compression method: '" + s + "', must be one of 'quicklz', 'lz4', 'lz4hc', 'zstd'", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+        throw Exception("Unknown compression method: '" + s + "', must be one of 'lz4', 'lz4hc', 'zstd'", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
     }
 
     String toString() const
     {
-        const char * strings[] = { "quicklz", "lz4", "lz4hc", "zstd" };
+        const char * strings[] = { nullptr, "lz4", "lz4hc", "zstd" };
 
-        if (value < CompressionMethod::QuickLZ || value > CompressionMethod::ZSTD)
+        if (value < CompressionMethod::LZ4 || value > CompressionMethod::ZSTD)
             throw Exception("Unknown compression method", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
 
         return strings[static_cast<size_t>(value)];

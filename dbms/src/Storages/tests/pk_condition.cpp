@@ -29,7 +29,7 @@ int main(int argc, const char ** argv)
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
 
-    Context context;
+    Context context = Context::createGlobal();
     NamesAndTypesList columns{{"key", std::make_shared<DataTypeUInt64>()}};
     Block sample_block{{DataTypeUInt64{}.createColumn(), std::make_shared<DataTypeUInt64>(), "key"}};
     SortDescription sort_descr;

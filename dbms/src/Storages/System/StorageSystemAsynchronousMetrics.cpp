@@ -16,8 +16,8 @@ StorageSystemAsynchronousMetrics::StorageSystemAsynchronousMetrics(const std::st
     : name(name_),
     columns
     {
-        {"metric",         std::make_shared<DataTypeString>()},
-        {"value",        std::make_shared<DataTypeFloat64>()},
+        {"metric", std::make_shared<DataTypeString>()},
+        {"value", std::make_shared<DataTypeFloat64>()},
     },
     async_metrics(async_metrics_)
 {

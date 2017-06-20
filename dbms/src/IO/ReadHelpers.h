@@ -22,7 +22,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
-#include <city.h>
 
 #define DEFAULT_MAX_STRING_SIZE 0x00FFFFFFULL
 

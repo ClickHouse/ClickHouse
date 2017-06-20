@@ -2,10 +2,6 @@
 
 #include <memory>
 
-#ifdef USE_QUICKLZ
-    struct qlz_state_compress;
-#endif
-
 #include <Common/PODArray.h>
 
 #include <IO/WriteBuffer.h>
@@ -23,15 +19,6 @@ private:
     CompressionMethod method;
 
     PODArray<char> compressed_buffer;
-
-#ifdef USE_QUICKLZ
-    std::unique_ptr<qlz_state_compress> qlz_state;
-#else
-    /// ABI compatibility for USE_QUICKLZ
-    void * fixed_size_padding = nullptr;
-    /// Undoes warning unused-private-field.
-    void * fixed_size_padding_used() const { return fixed_size_padding; }
-#endif
 
     void nextImpl() override;
 

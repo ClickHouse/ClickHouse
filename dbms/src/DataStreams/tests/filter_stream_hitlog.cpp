@@ -93,7 +93,7 @@ int main(int argc, char ** argv)
             {"WithHash", std::make_shared<DataTypeUInt8>()},
         };
 
-        Context context;
+        Context context = Context::createGlobal();
 
         std::string input = "SELECT UniqID, URL, CounterID, IsLink WHERE URL = 'http://mail.yandex.ru/neo2/#inbox'";
         ParserSelectQuery parser;

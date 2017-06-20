@@ -110,8 +110,13 @@ private:
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
-public:
+    /// Use copy constructor or createGlobal() instead
     Context();
+
+public:
+    /// Create initial Context with ContextShared and etc.
+    static Context createGlobal();
+
     ~Context();
 
     String getPath() const;
@@ -272,6 +277,8 @@ public:
     void setZooKeeper(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
+    /// Has ready or expired ZooKeeper
+    bool hasZooKeeper() const;
 
     /// Create a cache of marks of specified size. This can be done only once.
     void setMarkCache(size_t cache_size_in_bytes);

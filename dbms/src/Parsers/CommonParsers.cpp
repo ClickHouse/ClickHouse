@@ -1,10 +1,18 @@
 #include <Common/StringUtils.h>
 #include <Parsers/CommonParsers.h>
+#include <common/find_first_symbols.h>
 
 #include <string.h>        /// strncmp, strncasecmp
 
 
-namespace DB {
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 ParserString::ParserString(const char * s_, bool word_boundary_, bool case_insensitive_)
     : s(s_)
@@ -37,19 +45,72 @@ bool ParserString::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed
 }
 
 
-ParserWhiteSpace::ParserWhiteSpace(bool allow_newlines_)
+ParserKeyword::ParserKeyword(const char * s_) : s(s_)
+{
+}
+
+
+const char * ParserKeyword::getName() const
+{
+    return s;
+}
+
+
+bool ParserKeyword::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+{
+    ParserWhitespaceOrComments ws;
+
+    const char * current_word = s;
+
+    size_t s_length = strlen(s);
+    if (!s_length)
+        throw Exception("Logical error: keyword cannot be empty string", ErrorCodes::LOGICAL_ERROR);
+
+    const char * s_end = s + s_length;
+
+    while (true)
+    {
+        const char * next_whitespace = find_first_symbols<' ', '\0'>(current_word, s_end);
+        size_t word_length = next_whitespace - current_word;
+
+        if (static_cast<ptrdiff_t>(word_length) > end - pos)
+            return false;
+
+        if (strncasecmp(pos, current_word, word_length))
+            return false;
+
+        pos += word_length;
+
+        if (!*next_whitespace)
+            break;
+
+        if (!ws.ignore(pos, end))
+            return false;
+
+        current_word = next_whitespace + 1;
+    }
+
+    /// Check word break.
+    if (isWordCharASCII(s_end[-1]) && pos < end && isWordCharASCII(pos[0]))
+        return false;
+
+    return true;
+}
+
+
+ParserWhitespace::ParserWhitespace(bool allow_newlines_)
     : allow_newlines(allow_newlines_)
 {
 }
 
 
-const char * ParserWhiteSpace::getName() const
+const char * ParserWhitespace::getName() const
 {
     return "white space";
 }
 
 
-bool ParserWhiteSpace::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserWhitespace::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
     Pos begin = pos;
     while (pos < end && (*pos == ' ' || *pos == '\t' || (allow_newlines && *pos == '\n') || *pos == '\r' || *pos == '\f'))
@@ -128,21 +189,21 @@ bool ParserComment::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parse
 }
 
 
-ParserWhiteSpaceOrComments::ParserWhiteSpaceOrComments(bool allow_newlines_outside_comments_)
+ParserWhitespaceOrComments::ParserWhitespaceOrComments(bool allow_newlines_outside_comments_)
     : allow_newlines_outside_comments(allow_newlines_outside_comments_)
 {
 }
 
 
-const char * ParserWhiteSpaceOrComments::getName() const
+const char * ParserWhitespaceOrComments::getName() const
 {
     return "white space or comments";
 }
 
 
-bool ParserWhiteSpaceOrComments::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserWhitespaceOrComments::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-    ParserWhiteSpace p1(allow_newlines_outside_comments);
+    ParserWhitespace p1(allow_newlines_outside_comments);
     ParserComment p2;
 
     bool res = false;

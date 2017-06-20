@@ -3,6 +3,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
+#include <city.h>
 
 #define DBMS_DEFAULT_HASHING_BLOCK_SIZE 2048ULL
 

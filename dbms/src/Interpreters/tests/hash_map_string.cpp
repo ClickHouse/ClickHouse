@@ -76,7 +76,7 @@ struct DefaultHash<CompactStringRef>
 {
     size_t operator() (CompactStringRef x) const
     {
-        return CityHash64(x.data(), x.size);
+        return DB::CityHash64(x.data(), x.size);
     }
 };
 
