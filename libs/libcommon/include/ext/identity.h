@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 namespace ext
 {
     /// \brief Identity function for use with other algorithms as a pass-through.
