@@ -14,6 +14,7 @@ REMOTE_NAME="registry.yandex.net/${FULL_NAME}"
 DOCKER_HASH="$2"
 if [[ -z "$1" ]]
 then
+    gulp clean
     gulp build
     docker build -t "${FULL_NAME}" "${BASE_DIR}"
     docker tag "${FULL_NAME}" "${REMOTE_NAME}"
