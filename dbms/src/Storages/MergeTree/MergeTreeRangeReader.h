@@ -6,17 +6,12 @@ namespace DB
 {
 
 class MergeTreeReader;
-// void MergeTreeReader::readRange(size_t from_mark, bool is_first_mark_in_range, size_t max_rows_to_read, Block & res);
 
 class MergeTreeRangeReader
 {
 public:
-    size_t unreadRows() const {
-        return (last_mark - current_mark) * index_granularity - read_rows_after_current_mark;
-    }
-    size_t unreadRowsInCurrentGranule() const {
-        return index_granularity - read_rows_after_current_mark;
-    }
+    size_t unreadRows() const { return (last_mark - current_mark) * index_granularity - read_rows_after_current_mark; }
+    size_t unreadRowsInCurrentGranule() const { return index_granularity - read_rows_after_current_mark; }
 
     size_t readRowsInCurrentGranule() const { return read_rows_after_current_mark; }
 
@@ -26,11 +21,6 @@ public:
     bool isReadingFinished() const { return is_reading_finished; }
 
     void disableNextSeek() { seek_to_from_mark = false; }
-
-    ~MergeTreeRangeReader() {
-        //if (last_mark != current_mark)
-        //    LOG_ERROR(logger, "last_mark = " << last_mark << " current_mark = " << current_mark << " read_rows_after_current_mark  = " << read_rows_after_current_mark);
-    }
 
     MergeTreeRangeReader copyForReader(MergeTreeReader & reader);
 
@@ -51,3 +41,4 @@ private:
 };
 
 }
+

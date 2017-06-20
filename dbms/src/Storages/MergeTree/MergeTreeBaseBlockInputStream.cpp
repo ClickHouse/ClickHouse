@@ -109,15 +109,13 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 space_left = std::min(space_left, std::max(1LU, recommended_rows));
             }
 
-            //LOG_TRACE(log, "******************* prewhere");
             std::experimental::optional<MergeTreeRangeReader> pre_range_reader;
             if (task->current_range_reader)
             {
                 pre_range_reader = task->current_range_reader->copyForReader(*pre_reader);
-                if (task->unread_rows_in_current_granule)
+                if (task->number_of_rows_to_skip)
                 {
-                    // LOG_TRACE(log, "skipping " << task->unread_rows_in_current_granule << " rows");
-                    pre_range_reader = pre_range_reader->skipRows(task->unread_rows_in_current_granule);
+                    pre_range_reader = pre_range_reader->skipRows(task->number_of_rows_to_skip);
                     pre_range_reader->disableNextSeek();
                 }
                 rows_was_read.push_back(0);
@@ -184,7 +182,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                         /// have to read rows from last partly read granula
                         auto & range = ranges_to_read.back();
                         task->current_range_reader = reader->readRange(range.begin, range.end);
-                        task->unread_rows_in_current_granule = rows_was_read.back();
+                        task->number_of_rows_to_skip = rows_was_read.back();
                     }
                     else
                         task->current_range_reader = std::experimental::nullopt;
@@ -197,11 +195,8 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 if (task->current_range_reader)
                 {
-                    if (task->unread_rows_in_current_granule)
-                    {
-                        skipRows(res, *task->current_range_reader, *task, task->unread_rows_in_current_granule);
-                        task->current_range_reader->read(res, task->unread_rows_in_current_granule);
-                    }
+                    if (task->number_of_rows_to_skip)
+                        skipRows(res, *task->current_range_reader, *task, task->number_of_rows_to_skip);
                     task->current_range_reader->read(res, rows_was_read[rows_was_read_idx++]);
                 }
 
@@ -213,15 +208,14 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 if (!pre_range_reader)
                     task->current_range_reader = std::experimental::nullopt;
-                task->unread_rows_in_current_granule = 0;
+                task->number_of_rows_to_skip = 0;
 
                 progressImpl({ 0, res.bytes() - pre_bytes });
             }
             else if (const auto column_vec = typeid_cast<const ColumnUInt8 *>(observed_column.get()))
             {
-                //LOG_TRACE(log, ">>>>>>>>>>>>>>>>>>>>>>>>>>>>> where");
                 const auto & pre_filter = column_vec->getData();
-                auto & additional_rows_to_read = task->unread_rows_in_current_granule;
+                auto & additional_rows_to_read = task->number_of_rows_to_skip;
                 if (!task->current_range_reader)
                     additional_rows_to_read = 0;
                 IColumn::Filter post_filter(pre_filter.size());
@@ -269,7 +263,6 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                                 if (additional_rows_to_read)
                                 {
                                     skipRows(res, range_reader, *task, additional_rows_to_read);
-                                    // LOG_TRACE(log, "additional " << additional_rows_to_read);
                                 }
                                 range_reader.read(res, rows);
                                 additional_rows_to_read = 0;
@@ -284,8 +277,6 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                             }
                             else
                             {
-                                //LOG_TRACE(log, "additional " << limit - pre_filter_pos << " rows to " << additional_rows_to_read << ", current_range_rows_read = " << current_range_rows_read);
-                                //LOG_TRACE(log, rows_was_read_idx << ' ' << rows_was_read.size() << ' ' << pre_filter_begin_pos << ' ' << pre_filter_pos << ' ' << limit);
                                 additional_rows_to_read += limit - pre_filter_pos;
                                 current_range_rows_read += limit - pre_filter_pos;
                             }
@@ -305,7 +296,6 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                         if (additional_rows_to_read)
                         {
                             skipRows(res, range_reader, *task, additional_rows_to_read);
-                            //LOG_TRACE(log, "additional " << additional_rows_to_read);
                         }
                         range_reader.read(res, rows);
 
