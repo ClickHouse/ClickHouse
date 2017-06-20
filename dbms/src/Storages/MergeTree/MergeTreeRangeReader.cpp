@@ -13,14 +13,14 @@ MergeTreeRangeReader::MergeTreeRangeReader(
 
 size_t MergeTreeRangeReader::skipToNextMark()
 {
-    auto unread_rows_in_current_part = unreadRowsInCurrentPart();
+    auto unread_rows_in_current_part = unreadRowsInCurrentGranule();
     seek_to_from_mark = true;
     ++current_mark;
     read_rows_after_current_mark = 0;
     return unread_rows_in_current_part;
 }
 
-const MergeTreeRangeReader MergeTreeRangeReader::skipRows(size_t rows) const
+MergeTreeRangeReader MergeTreeRangeReader::skipRows(size_t rows) const
 {
     MergeTreeRangeReader copy = *this;
     copy.read_rows_after_current_mark += rows;
@@ -38,6 +38,7 @@ size_t MergeTreeRangeReader::read(Block & res, size_t max_rows_to_read)
         return false;
 
     auto read_rows = merge_tree_reader.get().readRange(current_mark, seek_to_from_mark, rows_to_read, res);
+    //LOG_TRACE(logger, "to read: " << rows_to_read << " read: " << read_rows << " max: " << max_rows_to_read);
     /// if no columns to read, consider all rows was read
     if (!read_rows)
         read_rows = rows_to_read;

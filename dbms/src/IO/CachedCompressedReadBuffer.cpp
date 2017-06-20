@@ -103,11 +103,4 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
     }
 }
 
-
-void CachedCompressedReadBuffer::position(size_t & offset_in_compressed_file, size_t & offset_in_decompressed_block) const
-{
-    offset_in_compressed_file = file_pos - owned_cell->compressed_size;
-    offset_in_decompressed_block = pos - working_buffer.begin();
-}
-
 }
