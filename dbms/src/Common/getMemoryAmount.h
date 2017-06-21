@@ -1,8 +1,8 @@
 #pragma once
-#include <cstddef>
+#include <cstdint>
 
 namespace DB {
 
-size_t getMemoryAmount();
+int64_t getMemoryAmount();
 
 }
