@@ -71,10 +71,30 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         task->size_predictor->startBlock();
 
     const auto preferred_block_size_bytes = this->preferred_block_size_bytes;
+    const auto index_granularity = storage.index_granularity;
+    const auto default_block_size = std::max(1LU, max_block_size_rows);
+
+    auto estimateNumRows = [preferred_block_size_bytes, default_block_size, index_granularity](
+        MergeTreeReadTask & task, MergeTreeRangeReader & reader)
+    {
+        if (!task.size_predictor)
+            return default_block_size;
+        size_t recommended_rows = task.size_predictor->estimateNumRows(preferred_block_size_bytes);
+        recommended_rows = std::min(default_block_size, recommended_rows);
+        size_t marks_to_read = (reader.readRowsInCurrentGranule() + recommended_rows + index_granularity / 2) / index_granularity;
+        if (!marks_to_read)
+            return recommended_rows;
+        size_t rows_to_read = marks_to_read * index_granularity - reader.readRowsInCurrentGranule();
+        return 2 * recommended_rows > rows_to_read ? rows_to_read : recommended_rows;
+    };
 
     // read rows from reader and clean columns
-    auto skipRows = [& preferred_block_size_bytes](Block & block, MergeTreeRangeReader & reader, MergeTreeReadTask & task, size_t rows) {
-        size_t recommended_rows = std::max<size_t>(1, task.size_predictor->estimateNumRows(preferred_block_size_bytes));
+    auto skipRows = [& preferred_block_size_bytes, & estimateNumRows](
+        Block & block, MergeTreeRangeReader & reader, MergeTreeReadTask & task, size_t rows)
+    {
+        size_t recommended_rows = rows;
+        if (task.size_predictor)
+            recommended_rows = std::max<size_t>(1, estimateNumRows(task, reader));
         while (rows)
         {
             size_t rows_to_skip = std::min(rows, recommended_rows);
@@ -94,43 +114,44 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         do
         {
             /// Let's read the full block of columns needed to calculate the expression in PREWHERE.
-            size_t space_left = std::max(1LU, max_block_size_rows);
             MarkRanges ranges_to_read;
             std::vector<size_t> rows_was_read;
-
-            if (task->size_predictor)
-            {
-                /// FIXME: size prediction model is updated by filtered rows, but it predicts size of unfiltered rows also
-
-                size_t recommended_rows = task->size_predictor->estimateNumRows(preferred_block_size_bytes);
-                if (res && recommended_rows < 1)
-                    break;
-
-                space_left = std::min(space_left, std::max(1LU, recommended_rows));
-            }
-
             std::experimental::optional<MergeTreeRangeReader> pre_range_reader;
+
+            auto processNextRange = [& ranges_to_read, & rows_was_read, & pre_range_reader](
+                MergeTreeReadTask & task, MergeTreeReader & pre_reader)
+            {
+                auto & range = task.mark_ranges.back();
+                pre_range_reader = pre_reader.readRange(range.begin, range.end);
+                ranges_to_read.push_back(range);
+                rows_was_read.push_back(0);
+                task.mark_ranges.pop_back();
+            };
+
             if (task->current_range_reader)
             {
                 pre_range_reader = task->current_range_reader->copyForReader(*pre_reader);
                 if (task->number_of_rows_to_skip)
                 {
-                    pre_range_reader = pre_range_reader->skipRows(task->number_of_rows_to_skip);
+                    pre_range_reader = pre_range_reader->getFutureState(task->number_of_rows_to_skip);
                     pre_range_reader->disableNextSeek();
                 }
                 rows_was_read.push_back(0);
             }
+            else
+                processNextRange(*task, *pre_reader);
+
+            /// FIXME: size prediction model is updated by filtered rows, but it predicts size of unfiltered rows also
+            size_t space_left = std::max(1LU, max_block_size_rows);
+            size_t recommended_rows = estimateNumRows(*task, *pre_range_reader);
+            if (res && recommended_rows < 1)
+                break;
+            space_left = std::min(space_left, std::max(1LU, recommended_rows));
 
             while ((pre_range_reader || !task->mark_ranges.empty()) && space_left && !isCancelled())
             {
                 if (!pre_range_reader)
-                {
-                    auto & range = task->mark_ranges.back();
-                    pre_range_reader = pre_reader->readRange(range.begin, range.end);
-                    ranges_to_read.push_back(range);
-                    rows_was_read.push_back(0);
-                    task->mark_ranges.pop_back();
-                }
+                    processNextRange(*task, *pre_reader);
 
                 size_t rows_to_read = std::min(pre_range_reader->unreadRows(), space_left);
                 size_t read_rows = pre_range_reader->read(res, rows_to_read);
@@ -215,9 +236,9 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             else if (const auto column_vec = typeid_cast<const ColumnUInt8 *>(observed_column.get()))
             {
                 const auto & pre_filter = column_vec->getData();
-                auto & additional_rows_to_read = task->number_of_rows_to_skip;
+                auto & number_of_rows_to_skip = task->number_of_rows_to_skip;
                 if (!task->current_range_reader)
-                    additional_rows_to_read = 0;
+                    number_of_rows_to_skip = 0;
                 IColumn::Filter post_filter(pre_filter.size());
 
                 /// Let's read the rest of the columns in the required segments and compose our own filter for them.
@@ -242,7 +263,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                     while (current_range_rows_read + (pre_filter_pos - pre_filter_begin_pos) < rows_was_read[rows_was_read_idx])
                     {
                         auto rows_should_be_copied = pre_filter_pos - pre_filter_begin_pos;
-                        auto range_reader_with_skipped_rows = range_reader.skipRows(additional_rows_to_read + rows_should_be_copied);
+                        auto range_reader_with_skipped_rows = range_reader.getFutureState(number_of_rows_to_skip + rows_should_be_copied);
                         auto unread_rows_in_current_granule = range_reader_with_skipped_rows.unreadRowsInCurrentGranule();
 
                         const size_t limit = std::min(pre_filter.size(), pre_filter_pos + unread_rows_in_current_granule);
@@ -260,24 +281,22 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                                 memcpy(&post_filter[post_filter_pos], &pre_filter[pre_filter_begin_pos], rows);
                                 post_filter_pos += rows;
                                 current_range_rows_read += rows;
-                                if (additional_rows_to_read)
+                                if (number_of_rows_to_skip)
                                 {
-                                    skipRows(res, range_reader, *task, additional_rows_to_read);
+                                    skipRows(res, range_reader, *task, number_of_rows_to_skip);
+                                    number_of_rows_to_skip = 0;
                                 }
                                 range_reader.read(res, rows);
-                                additional_rows_to_read = 0;
                             }
 
                             if (will_read_until_mark)
                             {
-                                //if (additional_rows_to_read)
-                                //    LOG_TRACE(log, "additional skiped " << additional_rows_to_read);
-                                current_range_rows_read += range_reader.skipToNextMark() - additional_rows_to_read;
-                                additional_rows_to_read = 0;
+                                current_range_rows_read += range_reader.skipToNextMark() - number_of_rows_to_skip;
+                                number_of_rows_to_skip = 0;
                             }
                             else
                             {
-                                additional_rows_to_read += limit - pre_filter_pos;
+                                number_of_rows_to_skip += limit - pre_filter_pos;
                                 current_range_rows_read += limit - pre_filter_pos;
                             }
 
@@ -293,13 +312,12 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                         memcpy(&post_filter[post_filter_pos], &pre_filter[pre_filter_begin_pos], rows);
                         post_filter_pos += rows;
                         current_range_rows_read += rows;
-                        if (additional_rows_to_read)
+                        if (number_of_rows_to_skip)
                         {
-                            skipRows(res, range_reader, *task, additional_rows_to_read);
+                            skipRows(res, range_reader, *task, number_of_rows_to_skip);
+                            number_of_rows_to_skip = 0;
                         }
                         range_reader.read(res, rows);
-
-                        additional_rows_to_read = 0;
                     }
 
                     if (rows_was_read_idx + 1 < rows_was_read.size())
@@ -355,6 +373,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
     }
     else
     {
+        // LOG_TRACE(log, "without prewhere");
         size_t space_left = std::max(1LU, max_block_size_rows);
         while (!task->isFinished() && space_left && !isCancelled())
         {
@@ -366,16 +385,10 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             }
 
             size_t rows_to_read = space_left;
-
-            if (task->size_predictor)
-            {
-                size_t recommended_rows = task->size_predictor->estimateNumRows(preferred_block_size_bytes);
-
-                /// TODO: stop reading if recommended_rows small enough, same in prewhere
-                if (res && recommended_rows < 1)
-                    break;
-                rows_to_read = std::min(rows_to_read, std::max(1LU, recommended_rows));
-            }
+            size_t recommended_rows = estimateNumRows(*task, *task->current_range_reader);
+            if (res && recommended_rows < 1)
+                break;
+            rows_to_read = std::min(rows_to_read, std::max(1LU, recommended_rows));
 
             task->current_range_reader->read(res, rows_to_read);
             if (task->current_range_reader->isReadingFinished())
