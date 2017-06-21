@@ -16,6 +16,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <Common/getFQDNOrHostName.h>
 #include <Core/Types.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
@@ -515,8 +516,16 @@ public:
             throw DB::Exception("No tests were specified", 0);
         }
 
-        std::cerr << std::fixed << std::setprecision(3);
-        std::cout << std::fixed << std::setprecision(3);
+        std::string name;
+        UInt64 version_major;
+        UInt64 version_minor;
+        UInt64 version_revision;
+        connection.getServerVersion(name, version_major, version_minor, version_revision);
+
+        std::stringstream ss;
+        ss << name << " v" << version_major << "." << version_minor << "." << version_revision;
+        server_version = ss.str();
+
         processTestsConfigurations(input_files);
     }
 
@@ -529,6 +538,7 @@ private:
     Queries queries;
 
     Connection connection;
+    std::string server_version;
 
     using Keys = std::vector<String>;
 
@@ -1278,16 +1288,10 @@ public:
     String constructTotalInfo(Strings metrics)
     {
         JSONString json_output;
-        String hostname;
 
-        char hostname_buffer[256];
-        if (gethostname(hostname_buffer, 256) == 0)
-        {
-            hostname = String(hostname_buffer);
-        }
-
-        json_output.set("hostname", hostname);
+        json_output.set("hostname", getFQDNOrHostName());
         json_output.set("cpu_num", sysconf(_SC_NPROCESSORS_ONLN));
+        json_output.set("server_version", server_version);
         json_output.set("test_name", test_name);
         json_output.set("main_metric", main_metric);
 
