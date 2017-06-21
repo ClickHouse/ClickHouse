@@ -587,7 +587,7 @@ private:
     };
 
     size_t times_to_run = 1;
-    std::vector<Stats> statistics;
+    std::vector<Stats> statistics_by_run;
 
     /// Removes configurations that has a given value. If leave is true, the logic is reversed.
     void removeConfigurationsIf(std::vector<Config> & configs, FilterType filter_type, const Strings & values, bool leave = false)
@@ -760,7 +760,7 @@ private:
 
                 String output = runTest(test_config);
                 if (lite_output)
-                    std::cout << output << std::endl;
+                    std::cout << output;
                 else
                     outputs.push_back(output);
             }
@@ -982,7 +982,7 @@ private:
         if (metrics.size() > 0)
             checkMetricsInput(metrics);
 
-        statistics.resize(times_to_run * queries.size());
+        statistics_by_run.resize(times_to_run * queries.size());
         for (size_t number_of_launch = 0; number_of_launch < times_to_run; ++number_of_launch)
         {
             QueriesWithIndexes queries_with_indexes;
@@ -1050,7 +1050,7 @@ private:
             size_t max_iterations = stop_criterions[statistic_index].iterations.value;
             size_t iteration = 0;
 
-            statistics[statistic_index].clear();
+            statistics_by_run[statistic_index].clear();
             execute(query, statistic_index);
 
             if (exec_type == ExecutionType::Loop)
@@ -1085,14 +1085,14 @@ private:
 
             if (!gotSIGINT)
             {
-                statistics[statistic_index].ready = true;
+                statistics_by_run[statistic_index].ready = true;
             }
         }
     }
 
     void execute(const Query & query, const size_t statistic_index)
     {
-        statistics[statistic_index].watch_per_query.restart();
+        statistics_by_run[statistic_index].watch_per_query.restart();
 
         RemoteBlockInputStream stream(connection, query, &settings, global_context, nullptr, Tables() /*, query_processing_stage*/);
 
@@ -1108,24 +1108,24 @@ private:
             ;
         stream.readSuffix();
 
-        statistics[statistic_index].updateQueryInfo();
-        statistics[statistic_index].setTotalTime();
+        statistics_by_run[statistic_index].updateQueryInfo();
+        statistics_by_run[statistic_index].setTotalTime();
     }
 
     void checkFulfilledCriterionsAndUpdate(const Progress & progress,
         RemoteBlockInputStream & stream,
         const size_t statistic_index)
     {
-        statistics[statistic_index].add(progress.rows, progress.bytes);
+        statistics_by_run[statistic_index].add(progress.rows, progress.bytes);
 
         size_t max_rows_to_read = stop_criterions[statistic_index].rows_read.value;
-        if (max_rows_to_read && statistics[statistic_index].rows_read >= max_rows_to_read)
+        if (max_rows_to_read && statistics_by_run[statistic_index].rows_read >= max_rows_to_read)
         {
             incFulfilledCriterions(statistic_index, rows_read);
         }
 
         size_t max_bytes_to_read = stop_criterions[statistic_index].bytes_read_uncompressed.value;
-        if (max_bytes_to_read && statistics[statistic_index].bytes_read >= max_bytes_to_read)
+        if (max_bytes_to_read && statistics_by_run[statistic_index].bytes_read >= max_bytes_to_read)
         {
             incFulfilledCriterions(statistic_index, bytes_read_uncompressed);
         }
@@ -1133,7 +1133,7 @@ private:
         if (UInt64 max_timeout_ms = stop_criterions[statistic_index].timeout_ms.value)
         {
             /// cast nanoseconds to ms
-            if ((statistics[statistic_index].watch.elapsed() / (1000 * 1000)) > max_timeout_ms)
+            if ((statistics_by_run[statistic_index].watch.elapsed() / (1000 * 1000)) > max_timeout_ms)
             {
                 incFulfilledCriterions(statistic_index, timeout_ms);
             }
@@ -1142,7 +1142,7 @@ private:
         size_t min_time_not_changing_for_ms = stop_criterions[statistic_index].min_time_not_changing_for_ms.value;
         if (min_time_not_changing_for_ms)
         {
-            size_t min_time_did_not_change_for = statistics[statistic_index].min_time_watch.elapsed() / (1000 * 1000);
+            size_t min_time_did_not_change_for = statistics_by_run[statistic_index].min_time_watch.elapsed() / (1000 * 1000);
 
             if (min_time_did_not_change_for >= min_time_not_changing_for_ms)
             {
@@ -1153,7 +1153,7 @@ private:
         size_t max_speed_not_changing_for_ms = stop_criterions[statistic_index].max_speed_not_changing_for_ms.value;
         if (max_speed_not_changing_for_ms)
         {
-            UInt64 speed_not_changing_time = statistics[statistic_index].max_rows_speed_watch.elapsed() / (1000 * 1000);
+            UInt64 speed_not_changing_time = statistics_by_run[statistic_index].max_rows_speed_watch.elapsed() / (1000 * 1000);
             if (speed_not_changing_time >= max_speed_not_changing_for_ms)
             {
                 incFulfilledCriterions(statistic_index, max_speed_not_changing_for_ms);
@@ -1163,7 +1163,7 @@ private:
         size_t average_speed_not_changing_for_ms = stop_criterions[statistic_index].average_speed_not_changing_for_ms.value;
         if (average_speed_not_changing_for_ms)
         {
-            UInt64 speed_not_changing_time = statistics[statistic_index].avg_rows_speed_watch.elapsed() / (1000 * 1000);
+            UInt64 speed_not_changing_time = statistics_by_run[statistic_index].avg_rows_speed_watch.elapsed() / (1000 * 1000);
             if (speed_not_changing_time >= average_speed_not_changing_for_ms)
             {
                 incFulfilledCriterions(statistic_index, average_speed_not_changing_for_ms);
@@ -1320,12 +1320,16 @@ public:
         std::vector<JSONString> run_infos;
         for (size_t query_index = 0; query_index < queries.size(); ++query_index)
         {
-            for (size_t number_of_launch = 0; number_of_launch < statistics.size(); ++number_of_launch)
+            for (size_t number_of_launch = 0; number_of_launch < times_to_run; ++number_of_launch)
             {
-                if (!statistics[number_of_launch].ready)
+                Stats & statistics = statistics_by_run[number_of_launch * queries.size() + query_index];
+
+                if (!statistics.ready)
                     continue;
 
                 JSONString runJSON;
+
+                runJSON.set("query", queries[query_index]);
 
                 if (substitutions_maps.size())
                 {
@@ -1339,11 +1343,13 @@ public:
                     runJSON.set("parameters", parameters.asString());
                 }
 
+
+
                 if (exec_type == ExecutionType::Loop)
                 {
                     /// in seconds
                     if (std::find(metrics.begin(), metrics.end(), "min_time") != metrics.end())
-                        runJSON.set("min_time", statistics[number_of_launch].min_time / double(1000));
+                        runJSON.set("min_time", statistics.min_time / double(1000));
 
                     if (std::find(metrics.begin(), metrics.end(), "quantiles") != metrics.end())
                     {
@@ -1354,44 +1360,44 @@ public:
                             while (quantile_key.back() == '0')
                                 quantile_key.pop_back();
 
-                            quantiles.set(quantile_key, statistics[number_of_launch].sampler.quantileInterpolated(percent / 100.0));
+                            quantiles.set(quantile_key, statistics.sampler.quantileInterpolated(percent / 100.0));
                         }
-                        quantiles.set("0.95",   statistics[number_of_launch].sampler.quantileInterpolated(95    / 100.0));
-                        quantiles.set("0.99",   statistics[number_of_launch].sampler.quantileInterpolated(99    / 100.0));
-                        quantiles.set("0.999",  statistics[number_of_launch].sampler.quantileInterpolated(99.9  / 100.0));
-                        quantiles.set("0.9999", statistics[number_of_launch].sampler.quantileInterpolated(99.99 / 100.0));
+                        quantiles.set("0.95",   statistics.sampler.quantileInterpolated(95    / 100.0));
+                        quantiles.set("0.99",   statistics.sampler.quantileInterpolated(99    / 100.0));
+                        quantiles.set("0.999",  statistics.sampler.quantileInterpolated(99.9  / 100.0));
+                        quantiles.set("0.9999", statistics.sampler.quantileInterpolated(99.99 / 100.0));
 
                         runJSON.set("quantiles", quantiles.asString());
                     }
 
                     if (std::find(metrics.begin(), metrics.end(), "total_time") != metrics.end())
-                        runJSON.set("total_time", statistics[number_of_launch].total_time);
+                        runJSON.set("total_time", statistics.total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "queries_per_second") != metrics.end())
-                        runJSON.set("queries_per_second", double(statistics[number_of_launch].queries) /
-                                                          statistics[number_of_launch].total_time);
+                        runJSON.set("queries_per_second", double(statistics.queries) /
+                                                          statistics.total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "rows_per_second") != metrics.end())
-                        runJSON.set("rows_per_second", double(statistics[number_of_launch].rows_read) /
-                                                       statistics[number_of_launch].total_time);
+                        runJSON.set("rows_per_second", double(statistics.rows_read) /
+                                                       statistics.total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "bytes_per_second") != metrics.end())
-                        runJSON.set("bytes_per_second", double(statistics[number_of_launch].bytes_read) /
-                                                        statistics[number_of_launch].total_time);
+                        runJSON.set("bytes_per_second", double(statistics.bytes_read) /
+                                                        statistics.total_time);
                 }
                 else
                 {
                     if (std::find(metrics.begin(), metrics.end(), "max_rows_per_second") != metrics.end())
-                        runJSON.set("max_rows_per_second", statistics[number_of_launch].max_rows_speed);
+                        runJSON.set("max_rows_per_second", statistics.max_rows_speed);
 
                     if (std::find(metrics.begin(), metrics.end(), "max_bytes_per_second") != metrics.end())
-                        runJSON.set("max_bytes_per_second", statistics[number_of_launch].max_bytes_speed);
+                        runJSON.set("max_bytes_per_second", statistics.max_bytes_speed);
 
                     if (std::find(metrics.begin(), metrics.end(), "avg_rows_per_second") != metrics.end())
-                        runJSON.set("avg_rows_per_second", statistics[number_of_launch].avg_rows_speed_value);
+                        runJSON.set("avg_rows_per_second", statistics.avg_rows_speed_value);
 
                     if (std::find(metrics.begin(), metrics.end(), "avg_bytes_per_second") != metrics.end())
-                        runJSON.set("avg_bytes_per_second", statistics[number_of_launch].avg_bytes_speed_value);
+                        runJSON.set("avg_bytes_per_second", statistics.avg_bytes_speed_value);
                 }
 
                 run_infos.push_back(runJSON);
@@ -1411,7 +1417,10 @@ public:
         {
             for (size_t number_of_launch = 0; number_of_launch < times_to_run; ++number_of_launch)
             {
-                output += test_name  + ", ";
+                if (queries.size() > 1)
+                {
+                    output += "query \"" + queries[query_index] + "\", ";
+                }
 
                 if (substitutions_maps.size())
                 {
@@ -1423,7 +1432,7 @@ public:
 
                 output += "run " + std::to_string(number_of_launch + 1) + ": ";
                 output += main_metric + " = ";
-                output += statistics[number_of_launch * queries.size() + query_index].getStatisticByName(main_metric);
+                output += statistics_by_run[number_of_launch * queries.size() + query_index].getStatisticByName(main_metric);
                 output += "\n";
             }
         }
@@ -1500,13 +1509,18 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
 
         if (!options.count("input-files"))
         {
-            std::cerr << "Trying to find tests in current folder" << std::endl;
+            std::cerr << "Trying to find test scenario files in the current folder...";
             FS::path curr_dir(".");
 
             getFilesFromDir(curr_dir, input_files);
 
             if (input_files.empty())
+            {
+                std::cerr << std::endl;
                 throw DB::Exception("Did not find any xml files", 1);
+            }
+            else
+                std::cerr << " found " << input_files.size() << " files." << std::endl;
         }
         else
         {
