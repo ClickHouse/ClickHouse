@@ -32,8 +32,10 @@ ColumnPtr ColumnConst<Null>::convertToFullColumn() const
     ColumnPtr nested_col;
 
     if (data_type)
-        nested_col = data_type->createConstColumn(
-            s, typeid_cast<const DataTypeNullable &>(*data_type).getNestedType()->getDefault())->convertToFullColumnIfConst();
+    {
+        const IDataType & nested_data_type = *typeid_cast<const DataTypeNullable &>(*data_type).getNestedType();
+        nested_col = nested_data_type.createConstColumn(s, nested_data_type.getDefault())->convertToFullColumnIfConst();
+    }
     else
         nested_col = std::make_shared<ColumnUInt8>(s, 0);
 

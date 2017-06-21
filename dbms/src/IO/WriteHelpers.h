@@ -20,7 +20,6 @@
 #include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/DoubleConverter.h>
-#include <city.h>
 
 
 namespace DB
@@ -582,11 +581,10 @@ template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
-inline void writeBinary(const String & x,    WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const StringRef & x,    WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const uint128 & x,     WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const LocalDate & x,        WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const LocalDateTime & x,    WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 
 /// Methods for outputting the value in text form for a tab-separated format.

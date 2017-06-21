@@ -1,4 +1,4 @@
-#include <zkutil/Types.h>
+#include <Common/ZooKeeper/Types.h>
 
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <IO/Operators.h>

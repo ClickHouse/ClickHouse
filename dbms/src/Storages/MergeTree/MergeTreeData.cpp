@@ -959,7 +959,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
     /// Update primary key if needed.
     size_t new_primary_key_file_size{};
-    uint128 new_primary_key_hash{};
+    MergeTreeDataPartChecksum::uint128 new_primary_key_hash{};
 
     if (new_primary_key.get() != primary_expr_ast.get())
     {

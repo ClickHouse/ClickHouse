@@ -193,10 +193,12 @@ size_t ColumnAggregateFunction::allocatedSize() const
 
     return res;
 }
+
 ColumnPtr ColumnAggregateFunction::cloneEmpty() const
 {
     return std::make_shared<ColumnAggregateFunction>(func, Arenas(1, std::make_shared<Arena>()));
 }
+
 Field ColumnAggregateFunction::operator[](size_t n) const
 {
     Field field = String();
@@ -206,6 +208,7 @@ Field ColumnAggregateFunction::operator[](size_t n) const
     }
     return field;
 }
+
 void ColumnAggregateFunction::get(size_t n, Field & res) const
 {
     res = String();
@@ -214,14 +217,17 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
         func->serialize(getData()[n], buffer);
     }
 }
+
 StringRef ColumnAggregateFunction::getDataAt(size_t n) const
 {
     return StringRef(reinterpret_cast<const char *>(&getData()[n]), sizeof(getData()[n]));
 }
+
 void ColumnAggregateFunction::insertData(const char * pos, size_t length)
 {
     getData().push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
 }
+
 void ColumnAggregateFunction::insertFrom(const IColumn & src, size_t n)
 {
     /// Must create new state of aggregate function and take ownership of it,
@@ -230,25 +236,30 @@ void ColumnAggregateFunction::insertFrom(const IColumn & src, size_t n)
     insertDefault();
     insertMergeFrom(src, n);
 }
+
 void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 {
     insertDefault();
     insertMergeFrom(place);
 }
+
 void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
 {
     func->merge(getData().back(), place, &createOrGetArena());
 }
+
 void ColumnAggregateFunction::insertMergeFrom(const IColumn & src, size_t n)
 {
     insertMergeFrom(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
 }
+
 Arena & ColumnAggregateFunction::createOrGetArena()
 {
     if (unlikely(arenas.empty()))
         arenas.emplace_back(std::make_shared<Arena>());
     return *arenas.back().get();
 }
+
 void ColumnAggregateFunction::insert(const Field & x)
 {
     IAggregateFunction * function = func.get();
@@ -260,6 +271,7 @@ void ColumnAggregateFunction::insert(const Field & x)
     ReadBufferFromString read_buffer(x.get<const String &>());
     function->deserialize(getData().back(), read_buffer, &arena);
 }
+
 void ColumnAggregateFunction::insertDefault()
 {
     IAggregateFunction * function = func.get();
@@ -269,14 +281,17 @@ void ColumnAggregateFunction::insertDefault()
     getData().push_back(arena.alloc(function->sizeOfData()));
     function->create(getData().back());
 }
+
 StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
 {
     throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
+
 const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char * pos)
 {
     throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
+
 void ColumnAggregateFunction::popBack(size_t n)
 {
     size_t size = data.size();
@@ -288,10 +303,12 @@ void ColumnAggregateFunction::popBack(size_t n)
 
     data.resize_assume_reserved(new_size);
 }
+
 ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets_t & offsets) const
 {
     throw Exception("Method replicate is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 }
+
 Columns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
 {
     /// Columns with scattered values will point to this column as the owner of values.
@@ -314,6 +331,7 @@ Columns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const
 
     return columns;
 }
+
 void ColumnAggregateFunction::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
     size_t s = getData().size();
@@ -321,8 +339,10 @@ void ColumnAggregateFunction::getPermutation(bool reverse, size_t limit, int nan
     for (size_t i = 0; i < s; ++i)
         res[i] = i;
 }
+
 void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
 {
     throw Exception("Method getExtremes is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 }
+
 }

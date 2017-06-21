@@ -21,8 +21,8 @@
 #include <Storages/MergeTree/RemoteQueryExecutor.h>
 #include <Storages/MergeTree/RemotePartChecker.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <zkutil/ZooKeeper.h>
-#include <zkutil/LeaderElection.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/LeaderElection.h>
 
 
 namespace DB

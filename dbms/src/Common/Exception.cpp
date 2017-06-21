@@ -154,31 +154,6 @@ int getCurrentExceptionCode()
 }
 
 
-std::unique_ptr<Poco::Exception> convertCurrentException()
-{
-    try
-    {
-        throw;
-    }
-    catch (const Exception & e)
-    {
-        return std::unique_ptr<Poco::Exception>{ e.clone() };
-    }
-    catch (const Poco::Exception & e)
-    {
-        return std::unique_ptr<Poco::Exception>{ e.clone() };
-    }
-    catch (const std::exception & e)
-    {
-        return std::make_unique<Exception>(e.what(), ErrorCodes::STD_EXCEPTION);
-    }
-    catch (...)
-    {
-        return std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
-    }
-}
-
-
 void rethrowFirstException(const Exceptions & exceptions)
 {
     for (size_t i = 0, size = exceptions.size(); i < size; ++i)

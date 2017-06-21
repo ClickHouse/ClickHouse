@@ -44,7 +44,7 @@
 #include <Databases/IDatabase.h>
 
 #include <Common/ConfigProcessor.h>
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
 
 
@@ -128,6 +128,7 @@ struct ContextShared
     std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
 
+
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
     class SessionKeyHash
@@ -172,6 +173,18 @@ struct ContextShared
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
     std::mt19937_64 rng{randomSeed()};
+
+    ContextShared()
+    {
+        /// TODO: make it Singleton (?)
+        static std::atomic<size_t> num_calls{0};
+        if (++num_calls > 1)
+        {
+            std::cerr << "Attempting to create multiple ContextShared instances. Stack trace:\n" << StackTrace().toString();
+            std::cerr.flush();
+            std::terminate();
+        }
+    }
 
 
     ~ContextShared()
@@ -219,12 +232,18 @@ struct ContextShared
 };
 
 
-Context::Context()
-    : shared(std::make_shared<ContextShared>()),
-    quota(std::make_shared<QuotaForIntervals>()),
-    system_logs(std::make_shared<SystemLogs>())
+Context::Context() = default;
+
+
+Context Context::createGlobal()
 {
+    Context res;
+    res.shared = std::make_shared<ContextShared>();
+    res.quota = std::make_shared<QuotaForIntervals>();
+    res.system_logs = std::make_shared<SystemLogs>();
+    return res;
 }
+
 
 Context::~Context()
 {
@@ -480,24 +499,42 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
+void Context::calculateUserSettings()
+{
+    auto lock = getLock();
+
+    String profile = shared->users.get(client_info.current_user).profile;
+
+    /// 1) Set default settings (hardcoded values)
+    /// NOTE: we ignore global_context settings (from which it is usually copied)
+    /// NOTE: global_context settings are immutable and not auto updated
+    settings = Settings();
+
+    /// 2) Apply settings from default profile
+    auto default_profile_name = getDefaultProfileName();
+    if (profile != default_profile_name)
+        settings.setProfile(default_profile_name, *shared->users_config);
+
+    /// 3) Apply settings from current user
+    settings.setProfile(profile, *shared->users_config);
+}
+
+
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
 {
     auto lock = getLock();
 
     const User & user_props = shared->users.get(name, password, address.host());
 
-    /// Firstly set default settings from default profile
-    auto default_profile_name = getDefaultProfileName();
-    if (user_props.profile != default_profile_name)
-        settings.setProfile(default_profile_name, *shared->users_config);
-    settings.setProfile(user_props.profile, *shared->users_config);
-    setQuota(user_props.quota, quota_key, name, address.host());
-
     client_info.current_user = name;
     client_info.current_address = address;
 
     if (!quota_key.empty())
         client_info.quota_key = quota_key;
+
+    calculateUserSettings();
+
+    setQuota(user_props.quota, quota_key, name, address.host());
 }
 
 
@@ -1145,6 +1182,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
+}
+
+bool Context::hasZooKeeper() const
+{
+    std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
+    return shared->zookeeper != nullptr;
 }
 
 

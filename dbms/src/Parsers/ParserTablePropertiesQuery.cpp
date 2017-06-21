@@ -16,12 +16,12 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
     Pos begin = pos;
 
     ParserWhitespaceOrComments ws;
-    ParserString s_exists("EXISTS", true, true);
-    ParserString s_describe("DESCRIBE", true, true);
-    ParserString s_desc("DESC", true, true);
-    ParserString s_show("SHOW", true, true);
-    ParserString s_create("CREATE", true, true);
-    ParserString s_table("TABLE", true, true);
+    ParserKeyword s_exists("EXISTS");
+    ParserKeyword s_describe("DESCRIBE");
+    ParserKeyword s_desc("DESC");
+    ParserKeyword s_show("SHOW");
+    ParserKeyword s_create("CREATE");
+    ParserKeyword s_table("TABLE");
     ParserString s_dot(".");
     ParserIdentifier name_p;
 

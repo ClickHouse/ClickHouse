@@ -22,7 +22,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
-#include <city.h>
 
 #define DEFAULT_MAX_STRING_SIZE 0x00FFFFFFULL
 
@@ -658,9 +657,8 @@ template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
-inline void readBinary(String & x,     ReadBuffer & buf) { readStringBinary(x, buf); }
-inline void readBinary(uint128 & x,    ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(LocalDate & x,     ReadBuffer & buf)     { readPODBinary(x, buf); }
+inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
+inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(LocalDateTime & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 
@@ -673,9 +671,9 @@ template <typename T>
 inline typename std::enable_if<std::is_floating_point<T>::value, void>::type
 readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
-inline void readText(bool & x,         ReadBuffer & buf) { readBoolText(x, buf); }
-inline void readText(String & x,     ReadBuffer & buf) { readEscapedString(x, buf); }
-inline void readText(LocalDate & x,     ReadBuffer & buf) { readDateText(x, buf); }
+inline void readText(bool & x, ReadBuffer & buf) { readBoolText(x, buf); }
+inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
+inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 
 
@@ -685,7 +683,7 @@ template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
-inline void readQuoted(String & x,     ReadBuffer & buf) { readQuotedString(x, buf); }
+inline void readQuoted(String & x, ReadBuffer & buf) { readQuotedString(x, buf); }
 
 inline void readQuoted(LocalDate & x, ReadBuffer & buf)
 {
@@ -707,7 +705,7 @@ template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
-inline void readDoubleQuoted(String & x,     ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
+inline void readDoubleQuoted(String & x, ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
 
 inline void readDoubleQuoted(LocalDate & x, ReadBuffer & buf)
 {
@@ -747,7 +745,7 @@ inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 inline void readCSV(String & x, ReadBuffer & buf, const char delimiter = ',') { readCSVString(x, buf, delimiter); }
-inline void readCSV(LocalDate & x,     ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 

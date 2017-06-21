@@ -19,14 +19,14 @@ static IAggregateFunction * createAggregateFunctionSingleValue(const String & na
 
     const IDataType & argument_type = *argument_types[0];
 
-         if (typeid_cast<const DataTypeUInt8     *>(&argument_type))    return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt8>>>;
-    else if (typeid_cast<const DataTypeUInt16     *>(&argument_type))    return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt16>>>;
-    else if (typeid_cast<const DataTypeUInt32     *>(&argument_type))    return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt32>>>;
-    else if (typeid_cast<const DataTypeUInt64     *>(&argument_type))    return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt64>>>;
-    else if (typeid_cast<const DataTypeInt8     *>(&argument_type))    return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int8>>>;
-    else if (typeid_cast<const DataTypeInt16     *>(&argument_type))    return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int16>>>;
-    else if (typeid_cast<const DataTypeInt32     *>(&argument_type))    return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int32>>>;
-    else if (typeid_cast<const DataTypeInt64     *>(&argument_type))    return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int64>>>;
+         if (typeid_cast<const DataTypeUInt8     *>(&argument_type))  return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt8>>>;
+    else if (typeid_cast<const DataTypeUInt16     *>(&argument_type)) return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt16>>>;
+    else if (typeid_cast<const DataTypeUInt32     *>(&argument_type)) return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt32>>>;
+    else if (typeid_cast<const DataTypeUInt64     *>(&argument_type)) return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt64>>>;
+    else if (typeid_cast<const DataTypeInt8     *>(&argument_type))   return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int8>>>;
+    else if (typeid_cast<const DataTypeInt16     *>(&argument_type))  return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int16>>>;
+    else if (typeid_cast<const DataTypeInt32     *>(&argument_type))  return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int32>>>;
+    else if (typeid_cast<const DataTypeInt64     *>(&argument_type))  return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int64>>>;
     else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))    return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Float32>>>;
     else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))    return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Float64>>>;
     else if (typeid_cast<const DataTypeDate     *>(&argument_type))

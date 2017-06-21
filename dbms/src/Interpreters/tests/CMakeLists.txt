@@ -8,7 +8,7 @@ add_executable (create_query create_query.cpp)
 target_link_libraries (create_query dbms)
 
 add_executable (select_query select_query.cpp)
-target_link_libraries (select_query dbms clickhouse_storages_system)
+target_link_libraries (select_query clickhouse_storages_system dbms)
 
 add_executable (aggregate aggregate.cpp)
 target_link_libraries (aggregate dbms)
@@ -48,4 +48,4 @@ target_link_libraries (in_join_subqueries_preprocessor dbms)
 add_check(in_join_subqueries_preprocessor)
 
 add_executable (users users.cpp)
-target_link_libraries (users dbms ${Boost_FILESYSTEM_LIBRARY} zkutil dbms)
+target_link_libraries (users dbms ${Boost_FILESYSTEM_LIBRARY} dbms)

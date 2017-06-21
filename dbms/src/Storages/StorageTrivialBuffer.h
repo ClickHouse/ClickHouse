@@ -10,7 +10,7 @@
 #include <Poco/Event.h>
 #include <Storages/IStorage.h>
 
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace Poco { class Logger; }
 

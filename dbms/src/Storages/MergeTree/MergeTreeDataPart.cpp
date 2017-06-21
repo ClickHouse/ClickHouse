@@ -175,13 +175,13 @@ bool MergeTreeDataPartChecksums::read_v3(ReadBuffer & in)
 
         readBinary(name, in);
         readVarUInt(sum.file_size, in);
-        readBinary(sum.file_hash, in);
+        readPODBinary(sum.file_hash, in);
         readBinary(sum.is_compressed, in);
 
         if (sum.is_compressed)
         {
             readVarUInt(sum.uncompressed_size, in);
-            readBinary(sum.uncompressed_hash, in);
+            readPODBinary(sum.uncompressed_hash, in);
         }
 
         files.emplace(std::move(name), sum);
@@ -210,18 +210,18 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
 
         writeBinary(name, out);
         writeVarUInt(sum.file_size, out);
-        writeBinary(sum.file_hash, out);
+        writePODBinary(sum.file_hash, out);
         writeBinary(sum.is_compressed, out);
 
         if (sum.is_compressed)
         {
             writeVarUInt(sum.uncompressed_size, out);
-            writeBinary(sum.uncompressed_hash, out);
+            writePODBinary(sum.uncompressed_hash, out);
         }
     }
 }
 
-void MergeTreeDataPartChecksums::addFile(const String & file_name, size_t file_size, uint128 file_hash)
+void MergeTreeDataPartChecksums::addFile(const String & file_name, size_t file_size, MergeTreeDataPartChecksum::uint128 file_hash)
 {
     files[file_name] = Checksum(file_size, file_hash);
 }

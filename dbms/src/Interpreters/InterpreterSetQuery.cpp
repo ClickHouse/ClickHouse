@@ -15,20 +15,18 @@ namespace ErrorCodes
 BlockIO InterpreterSetQuery::execute()
 {
     const ASTSetQuery & ast = typeid_cast<const ASTSetQuery &>(*query_ptr);
-    Context & target = ast.global ? context.getGlobalContext() : context.getSessionContext();
-    executeImpl(ast, target);
+
+    checkAccess(ast);
+
+    Context & target = context.getSessionContext();
+    for (const auto & change : ast.changes)
+        target.setSetting(change.name, change.value);
+
     return {};
 }
 
 
-void InterpreterSetQuery::executeForCurrentContext()
-{
-    const ASTSetQuery & ast = typeid_cast<const ASTSetQuery &>(*query_ptr);
-    executeImpl(ast, context);
-}
-
-
-void InterpreterSetQuery::executeImpl(const ASTSetQuery & ast, Context & target)
+void InterpreterSetQuery::checkAccess(const ASTSetQuery & ast)
 {
     /** The `readonly` value is understood as follows:
       * 0 - everything allowed.
@@ -40,12 +38,24 @@ void InterpreterSetQuery::executeImpl(const ASTSetQuery & ast, Context & target)
         throw Exception("Cannot execute SET query in readonly mode", ErrorCodes::READONLY);
 
     if (context.getSettingsRef().limits.readonly > 1)
-        for (ASTSetQuery::Changes::const_iterator it = ast.changes.begin(); it != ast.changes.end(); ++it)
-            if (it->name == "readonly")
+    {
+        for (const auto & change : ast.changes)
+        {
+            if (change.name == "readonly")
                 throw Exception("Cannot modify 'readonly' setting in readonly mode", ErrorCodes::READONLY);
+        }
+    }
+}
 
-    for (ASTSetQuery::Changes::const_iterator it = ast.changes.begin(); it != ast.changes.end(); ++it)
-        target.setSetting(it->name, it->value);
+
+void InterpreterSetQuery::executeForCurrentContext()
+{
+    const ASTSetQuery & ast = typeid_cast<const ASTSetQuery &>(*query_ptr);
+
+    checkAccess(ast);
+
+    for (const auto & change : ast.changes)
+        context.setSetting(change.name, change.value);
 }
 
 

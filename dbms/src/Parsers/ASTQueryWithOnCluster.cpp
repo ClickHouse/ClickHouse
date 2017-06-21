@@ -22,7 +22,7 @@ bool ASTQueryWithOnCluster::parse(Pos & pos, Pos end, std::string & cluster_str,
 
     ws.ignore(pos, end);
 
-    if (!ParserString{"CLUSTER", true, true}.ignore(pos, end, max_parsed_pos, expected))
+    if (!ParserKeyword{"CLUSTER"}.ignore(pos, end, max_parsed_pos, expected))
         return false;
 
     ws.ignore(pos, end);

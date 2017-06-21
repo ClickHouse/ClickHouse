@@ -28,14 +28,15 @@ class ClickHouseCluster:
     these directories will contain logs, database files, docker-compose config, ClickHouse configs etc.
     """
 
-    def __init__(self, base_path, base_configs_dir=None, server_bin_path=None, client_bin_path=None):
+    def __init__(self, base_path, name=None, base_configs_dir=None, server_bin_path=None, client_bin_path=None):
         self.base_dir = p.dirname(base_path)
+        self.name = name if name is not None else ''
 
         self.base_configs_dir = base_configs_dir or os.environ.get('CLICKHOUSE_TESTS_BASE_CONFIG_DIR', '/etc/clickhouse-server/')
         self.server_bin_path = server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse')
         self.client_bin_path = client_bin_path or os.environ.get('CLICKHOUSE_TESTS_CLIENT_BIN_PATH', '/usr/bin/clickhouse-client')
 
-        self.project_name = pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir)
+        self.project_name = pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r'[^a-z0-9]', '', self.project_name.lower())
 
@@ -47,7 +48,7 @@ class ClickHouseCluster:
         self.is_up = False
 
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macroses={}, with_zookeeper=False):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macroses={}, with_zookeeper=False, clickhouse_path_dir=None):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -63,7 +64,7 @@ class ClickHouseCluster:
         if name in self.instances:
             raise Exception("Can\'t add instance `%s': there is already an instance with the same name!" % name)
 
-        instance = ClickHouseInstance(self, self.base_dir, name, config_dir, main_configs, user_configs, macroses, with_zookeeper, self.base_configs_dir, self.server_bin_path)
+        instance = ClickHouseInstance(self, self.base_dir, name, config_dir, main_configs, user_configs, macroses, with_zookeeper, self.base_configs_dir, self.server_bin_path, clickhouse_path_dir)
         self.instances[name] = instance
         self.base_cmd.extend(['--file', instance.docker_compose_path])
         if with_zookeeper and not self.with_zookeeper:
@@ -136,19 +137,11 @@ services:
         depends_on: {depends_on}
 '''
 
-MACROS_CONFIG_TEMPLATE = '''
-<yandex>
-    <macros>
-        <instance>{name}</instance>
-    </macros>
-</yandex>
-'''
-
 
 class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macroses,
-            with_zookeeper, base_configs_dir, server_bin_path):
+            with_zookeeper, base_configs_dir, server_bin_path, clickhouse_path_dir):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
@@ -158,13 +151,15 @@ class ClickHouseInstance:
         self.custom_config_dir = p.abspath(p.join(base_path, custom_config_dir)) if custom_config_dir else None
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
+        self.clickhouse_path_dir = p.abspath(p.join(base_path, clickhouse_path_dir)) if clickhouse_path_dir else None
         self.macroses = macroses if macroses is not None else {}
         self.with_zookeeper = with_zookeeper
 
         self.base_configs_dir = base_configs_dir
         self.server_bin_path = server_bin_path
 
-        self.path = p.abspath(p.join(base_path, '_instances', name))
+        suffix = '_instances' + ('' if not self.cluster.name else '_' + self.cluster.name)
+        self.path = p.abspath(p.join(base_path, suffix, name))
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
 
         self.docker_client = None
@@ -281,6 +276,8 @@ class ClickHouseInstance:
 
         db_dir = p.join(self.path, 'database')
         os.mkdir(db_dir)
+        if self.clickhouse_path_dir is not None:
+            distutils.dir_util.copy_tree(self.clickhouse_path_dir, db_dir)
 
         logs_dir = p.join(self.path, 'logs')
         os.mkdir(logs_dir)

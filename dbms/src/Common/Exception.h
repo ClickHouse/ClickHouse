@@ -119,8 +119,6 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace);
 
 void rethrowFirstException(const Exceptions & exceptions);
 
-std::unique_ptr<Poco::Exception> convertCurrentException();
-
 
 template <typename T>
 typename std::enable_if<std::is_pointer<T>::value, T>::type exception_cast(std::exception_ptr e)
