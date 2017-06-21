@@ -20,10 +20,10 @@ size_t MergeTreeRangeReader::skipToNextMark()
     return unread_rows_in_current_part;
 }
 
-MergeTreeRangeReader MergeTreeRangeReader::skipRows(size_t rows) const
+MergeTreeRangeReader MergeTreeRangeReader::getFutureState(size_t rows_to_read) const
 {
     MergeTreeRangeReader copy = *this;
-    copy.read_rows_after_current_mark += rows;
+    copy.read_rows_after_current_mark += rows_to_read;
     size_t read_parts = copy.read_rows_after_current_mark / index_granularity;
     copy.current_mark += read_parts;
     copy.read_rows_after_current_mark -= index_granularity * read_parts;
@@ -38,8 +38,6 @@ size_t MergeTreeRangeReader::read(Block & res, size_t max_rows_to_read)
         return false;
 
     auto read_rows = merge_tree_reader.get().readRange(current_mark, seek_to_from_mark, rows_to_read, res);
-    //LOG_TRACE(logger, "to read: " << rows_to_read << " read: " << read_rows << " max: " << max_rows_to_read);
-    /// if no columns to read, consider all rows was read
     if (!read_rows)
         read_rows = rows_to_read;
     seek_to_from_mark = false;
@@ -51,10 +49,6 @@ size_t MergeTreeRangeReader::read(Block & res, size_t max_rows_to_read)
 
     if (read_rows < rows_to_read || current_mark == last_mark)
         is_reading_finished = true;
-
-    if (rows_to_read != read_rows && current_mark + 1 != last_mark)
-        LOG_ERROR(logger, "!!!!!!!!!!!!!!!!!!!! rows_to_read " << rows_to_read << " read_rows " << read_rows
-        << " last_mark = " << last_mark << " current_mark = " << current_mark << " read_rows_after_current_mark  = " << read_rows_after_current_mark);
 
     return read_rows;
 }
