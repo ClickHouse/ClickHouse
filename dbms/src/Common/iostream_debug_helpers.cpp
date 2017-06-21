@@ -80,7 +80,6 @@ std::ostream & operator<<(std::ostream & stream, const DB::IColumn & what)
     return stream;
 }
 
-
 std::ostream & operator<<(std::ostream & stream, const DB::Connection::Packet & what) {
     stream << "Connection::Packet("
         << "type = " << what.type;
@@ -88,9 +87,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::Connection::Packet & 
     if (what.exception)
         stream << "exception = " << what.exception.get();
     //TODO: profile_info
-    stream
-        << ") {"
-        << what.block << "}";
+    stream << ") {" << what.block << "}";
     return stream;
 }
 
