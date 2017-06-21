@@ -35,17 +35,6 @@
 
 using namespace std;
 
-static uint64 UNALIGNED_LOAD64(const char *p) {
-  uint64 result;
-  memcpy(&result, p, sizeof(result));
-  return result;
-}
-
-static uint32 UNALIGNED_LOAD32(const char *p) {
-  uint32 result;
-  memcpy(&result, p, sizeof(result));
-  return result;
-}
 
 #if !defined(WORDS_BIGENDIAN)
 
@@ -82,8 +71,20 @@ static uint32 UNALIGNED_LOAD32(const char *p) {
 #endif
 #endif
 
-namespace DB
+namespace CityHash_v1_0_2
 {
+
+static uint64 UNALIGNED_LOAD64(const char *p) {
+  uint64 result;
+  memcpy(&result, p, sizeof(result));
+  return result;
+}
+
+static uint32 UNALIGNED_LOAD32(const char *p) {
+  uint32 result;
+  memcpy(&result, p, sizeof(result));
+  return result;
+}
 
 static uint64 Fetch64(const char *p) {
   return uint64_in_expected_order(UNALIGNED_LOAD64(p));
@@ -362,7 +363,7 @@ uint128 CityHash128(const char *s, size_t len) {
 #include <citycrc.h>
 #include <nmmintrin.h>
 
-namespace DB
+namespace CityHash_v1_0_2
 {
 
 // Requires len >= 240.

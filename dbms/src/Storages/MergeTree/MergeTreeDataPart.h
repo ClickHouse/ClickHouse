@@ -16,6 +16,8 @@ namespace DB
 /// Checksum of one file.
 struct MergeTreeDataPartChecksum
 {
+    using uint128 = CityHash_v1_0_2::uint128;
+
     size_t file_size {};
     uint128 file_hash {};
 
@@ -44,7 +46,7 @@ struct MergeTreeDataPartChecksums
     using FileChecksums = std::map<String, Checksum>;
     FileChecksums files;
 
-    void addFile(const String & file_name, size_t file_size, uint128 file_hash);
+    void addFile(const String & file_name, size_t file_size, Checksum::uint128 file_hash);
 
     void add(MergeTreeDataPartChecksums && rhs_checksums);
 

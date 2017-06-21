@@ -30,7 +30,7 @@
 
 #include <city.h>
 
-namespace DB
+namespace CityHash_v1_0_2
 {
 
 // Hash function for a byte array.
