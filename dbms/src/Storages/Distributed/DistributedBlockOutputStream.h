@@ -10,7 +10,7 @@ namespace DB
 
 class StorageDistributed;
 
-/** The write is asynchronous - the data is first written to the local file system, and then sent to the remote servers.
+/** The write is asynchronous - the data is first written to the local filesystem, and then sent to the remote servers.
  *  If the Distributed table uses more than one shard, then in order to support the write,
  *  when creating the table, an additional parameter must be specified for ENGINE - the sharding key.
  *  Sharding key is an arbitrary expression from the columns. For example, rand() or UserID.

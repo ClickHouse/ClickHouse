@@ -135,18 +135,18 @@ extern const Int64 RESERVED_BLOCK_NUMBERS = 200;
 
 /** There are three places for each part, where it should be
   * 1. In the RAM, MergeTreeData::data_parts, all_data_parts.
-  * 2. In the file system (FS), the directory with the data of the table.
+  * 2. In the filesystem (FS), the directory with the data of the table.
   * 3. in ZooKeeper (ZK).
   *
   * When adding a part, it must be added immediately to these three places.
   * This is done like this
-  * - [FS] first write the part into a temporary directory on the file system;
-  * - [FS] rename the temporary part to the result on the file system;
+  * - [FS] first write the part into a temporary directory on the filesystem;
+  * - [FS] rename the temporary part to the result on the filesystem;
   * - [RAM] immediately afterwards add it to the `data_parts`, and remove from `data_parts` any parts covered by this one;
   * - [RAM] also set the `Transaction` object, which in case of an exception (in next point),
   *   rolls back the changes in `data_parts` (from the previous point) back;
   * - [ZK] then send a transaction (multi) to add a part to ZooKeeper (and some more actions);
-  * - [FS, ZK] by the way, removing the covered (old) parts from file system, from ZooKeeper and from `all_data_parts`
+  * - [FS, ZK] by the way, removing the covered (old) parts from filesystem, from ZooKeeper and from `all_data_parts`
   *   is delayed, after a few minutes.
   *
   * There is no atomicity here.
@@ -823,25 +823,19 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
             + toString(expected_parts.size()) + " missing obsolete parts, "
             + toString(parts_to_fetch.size()) + " missing parts";
 
-    /** You can automatically synchronize data,
-      *  if the number of errors of each of the four types is no more than the corresponding thresholds,
-      *  or if the ratio of the total number of errors to the total number of parts (minimum - on the local file system or in ZK)
-      *  no more than some ratio (for example 5%).
+    /** We can automatically synchronize data,
+      *  if the ratio of the total number of errors to the total number of parts (minimum - on the local filesystem or in ZK)
+      *  is no more than some threshold (for example 50%).
       *
-      * A large number of mismatches in the data on the file system and the expected data
-      *  may indicate a configuration error (the server accidentally connected as a replica not from that shard).
+      * A large ratio of mismatches in the data on the filesystem and the expected data
+      *  may indicate a configuration error (the server accidentally connected as a replica not from right shard).
       * In this case, the protection mechanism does not allow the server to start.
       */
 
     size_t min_parts_local_or_expected = std::min(expected_parts_vec.size(), parts.size());
-    size_t total_difference = parts_to_add.size() + unexpected_parts_nonnew + expected_parts.size() + parts_to_fetch.size();
+    size_t total_difference = parts_to_add.size() + unexpected_parts_nonnew + parts_to_fetch.size();
 
-    bool insane =
-        (parts_to_add.size() > data.settings.replicated_max_unexpectedly_merged_parts
-            || unexpected_parts_nonnew > data.settings.replicated_max_unexpected_parts
-            || expected_parts.size() > data.settings.replicated_max_missing_obsolete_parts
-            || parts_to_fetch.size() > data.settings.replicated_max_missing_active_parts)
-        && (total_difference > min_parts_local_or_expected * data.settings.replicated_max_ratio_of_wrong_parts);
+    bool insane = total_difference > min_parts_local_or_expected * data.settings.replicated_max_ratio_of_wrong_parts;
 
     if (insane && !skip_sanity_checks)
         throw Exception("The local set of parts of table " + getTableName() + " doesn't look like the set of parts in ZooKeeper. "
