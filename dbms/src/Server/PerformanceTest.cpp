@@ -279,6 +279,9 @@ struct Stats
     Stopwatch max_bytes_speed_watch;
     Stopwatch avg_rows_speed_watch;
     Stopwatch avg_bytes_speed_watch;
+
+    bool last_query_was_cancelled = false;
+
     size_t queries;
     size_t rows_read;
     size_t bytes_read;
@@ -454,6 +457,8 @@ struct Stats
         avg_rows_speed_watch.restart();
         avg_bytes_speed_watch.restart();
 
+        last_query_was_cancelled = false;
+
         sampler.clear();
 
         queries = 0;
@@ -559,7 +564,7 @@ private:
     std::vector<StringKeyValue> substitutions_maps;
 
     bool gotSIGINT;
-    std::vector<StopCriterions> stop_criterions;
+    std::vector<StopCriterions> stop_criterions_by_run;
     String main_metric;
     bool lite_output;
     String profiles_file;
@@ -574,12 +579,12 @@ private:
     Strings tests_names_regexp;
     Strings skip_names_regexp;
 
-    #define incFulfilledCriterions(index, CRITERION)                                                                        \
-    if (!stop_criterions[index].CRITERION.fulfilled)                                                                        \
+    #define INC_FULFILLED_CRITERIONS(stop_criterions, CRITERION)                                                                        \
+    if (!stop_criterions.CRITERION.fulfilled)                                                                        \
     {                                                                                                                       \
-        stop_criterions[index].CRITERION.priority == PriorityType::AllOf ? ++stop_criterions[index].fulfilled_criterions_all_of  \
-                                                                       : ++stop_criterions[index].fulfilled_criterions_any_of; \
-        stop_criterions[index].CRITERION.fulfilled = true;                                                                  \
+        stop_criterions.CRITERION.priority == PriorityType::AllOf ? ++stop_criterions.fulfilled_criterions_all_of  \
+                                                                  : ++stop_criterions.fulfilled_criterions_any_of; \
+        stop_criterions.CRITERION.fulfilled = true;                                                                  \
     }
 
     enum class ExecutionType
@@ -951,14 +956,14 @@ private:
             times_to_run = test_config->getUInt("times_to_run");
         }
 
-        stop_criterions.resize(times_to_run * queries.size());
+        stop_criterions_by_run.resize(times_to_run * queries.size());
 
         if (test_config->has("stop_conditions"))
         {
             AbstractConfig stop_criterions_view(test_config->createView("stop_conditions"));
-            for (StopCriterions & stop_criterion : stop_criterions)
+            for (StopCriterions & stop_criterions : stop_criterions_by_run)
             {
-                stop_criterion.loadFromConfig(stop_criterions_view);
+                stop_criterions.loadFromConfig(stop_criterions_view);
             }
         }
         else
@@ -1000,7 +1005,7 @@ private:
             for (size_t query_index = 0; query_index < queries.size(); ++query_index)
             {
                 size_t statistic_index = number_of_launch * queries.size() + query_index;
-                stop_criterions[statistic_index].reset();
+                stop_criterions_by_run[statistic_index].reset();
 
                 queries_with_indexes.push_back({queries[query_index], statistic_index});
             }
@@ -1055,13 +1060,17 @@ private:
         for (const std::pair<Query, const size_t> & query_and_index : queries_with_indexes)
         {
             Query query = query_and_index.first;
-            const size_t statistic_index = query_and_index.second;
+            const size_t run_index = query_and_index.second;
 
-            size_t max_iterations = stop_criterions[statistic_index].iterations.value;
+            StopCriterions & stop_criterions = stop_criterions_by_run[run_index];
+
+            size_t max_iterations = stop_criterions.iterations.value;
             size_t iteration = 0;
 
-            statistics_by_run[statistic_index].clear();
-            execute(query, statistic_index);
+            Stats & statistics = statistics_by_run[run_index];
+
+            statistics.clear();
+            execute(query, statistics, stop_criterions);
 
             if (exec_type == ExecutionType::Loop)
             {
@@ -1072,130 +1081,139 @@ private:
                     /// check stop criterions
                     if (max_iterations && iteration >= max_iterations)
                     {
-                        incFulfilledCriterions(statistic_index, iterations);
+                        INC_FULFILLED_CRITERIONS(stop_criterions, iterations);
                     }
 
-                    if (stop_criterions[statistic_index].number_of_initialized_all_of
-                        && (stop_criterions[statistic_index].fulfilled_criterions_all_of
-                               >= stop_criterions[statistic_index].number_of_initialized_all_of))
+                    if (stop_criterions.number_of_initialized_all_of
+                        && (stop_criterions.fulfilled_criterions_all_of
+                               >= stop_criterions.number_of_initialized_all_of))
                     {
                         /// All 'all_of' criterions are fulfilled
                         break;
                     }
 
-                    if (stop_criterions[statistic_index].number_of_initialized_any_of && stop_criterions[statistic_index].fulfilled_criterions_any_of)
+                    if (stop_criterions.number_of_initialized_any_of && stop_criterions.fulfilled_criterions_any_of)
                     {
                         /// Some 'any_of' criterions are fulfilled
                         break;
                     }
 
-                    execute(query, statistic_index);
+                    execute(query, statistics, stop_criterions);
                 }
             }
 
             if (!gotSIGINT)
             {
-                statistics_by_run[statistic_index].ready = true;
+                statistics.ready = true;
             }
         }
     }
 
-    void execute(const Query & query, const size_t statistic_index)
+    void execute(const Query & query, Stats & statistics, StopCriterions & stop_criterions)
     {
-        statistics_by_run[statistic_index].watch_per_query.restart();
+        statistics.watch_per_query.restart();
+        statistics.last_query_was_cancelled = false;
 
         RemoteBlockInputStream stream(connection, query, &settings, global_context, nullptr, Tables() /*, query_processing_stage*/);
 
         Progress progress;
-        stream.setProgressCallback([&progress, &stream, statistic_index, this](const Progress & value) {
-            progress.incrementPiecewiseAtomically(value);
-
-            this->checkFulfilledCriterionsAndUpdate(progress, stream, statistic_index);
-        });
+        stream.setProgressCallback(
+            [&progress, &stream, &statistics, &stop_criterions, this](const Progress & value)
+            {
+                progress.incrementPiecewiseAtomically(value);
+                this->checkFulfilledCriterionsAndUpdate(progress, stream, statistics, stop_criterions);
+            });
 
         stream.readPrefix();
         while (Block block = stream.read())
             ;
         stream.readSuffix();
 
-        statistics_by_run[statistic_index].updateQueryInfo();
-        statistics_by_run[statistic_index].setTotalTime();
+        if (!statistics.last_query_was_cancelled)
+            statistics.updateQueryInfo();
+
+        statistics.setTotalTime();
     }
 
-    void checkFulfilledCriterionsAndUpdate(const Progress & progress,
-        RemoteBlockInputStream & stream,
-        const size_t statistic_index)
+    void checkFulfilledCriterionsAndUpdate(
+            const Progress & progress,
+            RemoteBlockInputStream & stream,
+            Stats & statistics,
+            StopCriterions & stop_criterions)
     {
-        statistics_by_run[statistic_index].add(progress.rows, progress.bytes);
+        statistics.add(progress.rows, progress.bytes);
 
-        size_t max_rows_to_read = stop_criterions[statistic_index].rows_read.value;
-        if (max_rows_to_read && statistics_by_run[statistic_index].rows_read >= max_rows_to_read)
+        size_t max_rows_to_read = stop_criterions.rows_read.value;
+        if (max_rows_to_read && statistics.rows_read >= max_rows_to_read)
         {
-            incFulfilledCriterions(statistic_index, rows_read);
+            INC_FULFILLED_CRITERIONS(stop_criterions, rows_read);
         }
 
-        size_t max_bytes_to_read = stop_criterions[statistic_index].bytes_read_uncompressed.value;
-        if (max_bytes_to_read && statistics_by_run[statistic_index].bytes_read >= max_bytes_to_read)
+        size_t max_bytes_to_read = stop_criterions.bytes_read_uncompressed.value;
+        if (max_bytes_to_read && statistics.bytes_read >= max_bytes_to_read)
         {
-            incFulfilledCriterions(statistic_index, bytes_read_uncompressed);
+            INC_FULFILLED_CRITERIONS(stop_criterions, bytes_read_uncompressed);
         }
 
-        if (UInt64 max_total_time_ms = stop_criterions[statistic_index].total_time_ms.value)
+        if (UInt64 max_total_time_ms = stop_criterions.total_time_ms.value)
         {
             /// cast nanoseconds to ms
-            if ((statistics_by_run[statistic_index].watch.elapsed() / (1000 * 1000)) > max_total_time_ms)
+            if ((statistics.watch.elapsed() / (1000 * 1000)) > max_total_time_ms)
             {
-                incFulfilledCriterions(statistic_index, total_time_ms);
+                INC_FULFILLED_CRITERIONS(stop_criterions, total_time_ms);
             }
         }
 
-        size_t min_time_not_changing_for_ms = stop_criterions[statistic_index].min_time_not_changing_for_ms.value;
+        size_t min_time_not_changing_for_ms = stop_criterions.min_time_not_changing_for_ms.value;
         if (min_time_not_changing_for_ms)
         {
-            size_t min_time_did_not_change_for = statistics_by_run[statistic_index].min_time_watch.elapsed() / (1000 * 1000);
+            size_t min_time_did_not_change_for = statistics.min_time_watch.elapsed() / (1000 * 1000);
 
             if (min_time_did_not_change_for >= min_time_not_changing_for_ms)
             {
-                incFulfilledCriterions(statistic_index, min_time_not_changing_for_ms);
+                INC_FULFILLED_CRITERIONS(stop_criterions, min_time_not_changing_for_ms);
             }
         }
 
-        size_t max_speed_not_changing_for_ms = stop_criterions[statistic_index].max_speed_not_changing_for_ms.value;
+        size_t max_speed_not_changing_for_ms = stop_criterions.max_speed_not_changing_for_ms.value;
         if (max_speed_not_changing_for_ms)
         {
-            UInt64 speed_not_changing_time = statistics_by_run[statistic_index].max_rows_speed_watch.elapsed() / (1000 * 1000);
+            UInt64 speed_not_changing_time = statistics.max_rows_speed_watch.elapsed() / (1000 * 1000);
             if (speed_not_changing_time >= max_speed_not_changing_for_ms)
             {
-                incFulfilledCriterions(statistic_index, max_speed_not_changing_for_ms);
+                INC_FULFILLED_CRITERIONS(stop_criterions, max_speed_not_changing_for_ms);
             }
         }
 
-        size_t average_speed_not_changing_for_ms = stop_criterions[statistic_index].average_speed_not_changing_for_ms.value;
+        size_t average_speed_not_changing_for_ms = stop_criterions.average_speed_not_changing_for_ms.value;
         if (average_speed_not_changing_for_ms)
         {
-            UInt64 speed_not_changing_time = statistics_by_run[statistic_index].avg_rows_speed_watch.elapsed() / (1000 * 1000);
+            UInt64 speed_not_changing_time = statistics.avg_rows_speed_watch.elapsed() / (1000 * 1000);
             if (speed_not_changing_time >= average_speed_not_changing_for_ms)
             {
-                incFulfilledCriterions(statistic_index, average_speed_not_changing_for_ms);
+                INC_FULFILLED_CRITERIONS(stop_criterions, average_speed_not_changing_for_ms);
             }
         }
 
-        if (stop_criterions[statistic_index].number_of_initialized_all_of
-            && (stop_criterions[statistic_index].fulfilled_criterions_all_of >= stop_criterions[statistic_index].number_of_initialized_all_of))
+        if (stop_criterions.number_of_initialized_all_of
+            && (stop_criterions.fulfilled_criterions_all_of >= stop_criterions.number_of_initialized_all_of))
         {
             /// All 'all_of' criterions are fulfilled
+            statistics.last_query_was_cancelled = true;
             stream.cancel();
         }
 
-        if (stop_criterions[statistic_index].number_of_initialized_any_of && stop_criterions[statistic_index].fulfilled_criterions_any_of)
+        if (stop_criterions.number_of_initialized_any_of && stop_criterions.fulfilled_criterions_any_of)
         {
             /// Some 'any_of' criterions are fulfilled
+            statistics.last_query_was_cancelled = true;
             stream.cancel();
         }
 
         if (interrupt_listener.check())
         {
             gotSIGINT = true;
+            statistics.last_query_was_cancelled = true;
             stream.cancel();
         }
     }
