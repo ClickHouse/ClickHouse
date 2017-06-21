@@ -12,7 +12,7 @@ void test(size_t data_size)
     for (size_t i = 0; i < data_size; ++i)
         data[i] = rand() & 255;
 
-    CityHash64_v1_0_2::uint128 reference = referenceHash(data, data_size);
+    CityHash_v1_0_2::uint128 reference = referenceHash(data, data_size);
 
     std::vector<size_t> block_sizes = {56, 128, 513, 2048, 3055, 4097, 4096};
     for (size_t read_buffer_block_size : block_sizes)

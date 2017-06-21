@@ -15,7 +15,7 @@ template <class Buffer>
 class IHashingBuffer : public BufferWithOwnMemory<Buffer>
 {
 public:
-    using uint128 = CityHash64_v1_0_2::uint128;
+    using uint128 = CityHash_v1_0_2::uint128;
 
     IHashingBuffer<Buffer>(size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
         : BufferWithOwnMemory<Buffer>(block_size_), block_pos(0), block_size(block_size_), state(0, 0)
@@ -25,14 +25,14 @@ public:
     uint128 getHash()
     {
         if (block_pos)
-            return CityHash64_v1_0_2::CityHash128WithSeed(&BufferWithOwnMemory<Buffer>::memory[0], block_pos, state);
+            return CityHash_v1_0_2::CityHash128WithSeed(&BufferWithOwnMemory<Buffer>::memory[0], block_pos, state);
         else
             return state;
     }
 
     void append(DB::BufferBase::Position data)
     {
-        state = CityHash64_v1_0_2::CityHash128WithSeed(data, block_size, state);
+        state = CityHash_v1_0_2::CityHash128WithSeed(data, block_size, state);
     }
 
     /// computation of the hash depends on the partitioning of blocks

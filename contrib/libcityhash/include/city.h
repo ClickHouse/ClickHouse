@@ -55,7 +55,7 @@
   * - this version of CityHash is exposed in cityHash64 function in ClickHouse SQL language;
   * - and already used by many users for data ordering, sampling and sharding.
   */
-namespace CityHash64_v1_0_2
+namespace CityHash_v1_0_2
 {
 
 typedef uint8_t uint8;

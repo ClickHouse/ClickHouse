@@ -71,7 +71,7 @@ using namespace std;
 #endif
 #endif
 
-namespace CityHash64_v1_0_2
+namespace CityHash_v1_0_2
 {
 
 static uint64 UNALIGNED_LOAD64(const char *p) {
@@ -363,7 +363,7 @@ uint128 CityHash128(const char *s, size_t len) {
 #include <citycrc.h>
 #include <nmmintrin.h>
 
-namespace CityHash64_v1_0_2
+namespace CityHash_v1_0_2
 {
 
 // Requires len >= 240.

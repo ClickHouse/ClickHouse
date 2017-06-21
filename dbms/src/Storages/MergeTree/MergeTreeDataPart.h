@@ -16,7 +16,7 @@ namespace DB
 /// Checksum of one file.
 struct MergeTreeDataPartChecksum
 {
-    using uint128 = CityHash64_v1_0_2::uint128;
+    using uint128 = CityHash_v1_0_2::uint128;
 
     size_t file_size {};
     uint128 file_hash {};
