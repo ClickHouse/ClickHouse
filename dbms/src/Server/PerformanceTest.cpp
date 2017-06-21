@@ -118,8 +118,8 @@ public:
 
 enum class PriorityType
 {
-    Min,
-    Max
+    AllOf,
+    AnyOf
 };
 
 struct CriterionWithPriority
@@ -135,9 +135,9 @@ struct CriterionWithPriority
 };
 
 /// Termination criterions. The running test will be terminated in either of two conditions:
-/// 1. All criterions marked 'min' are fulfilled
+/// 1. All criterions marked 'all_of' are fulfilled
 /// or
-/// 2. Any criterion  marked 'max' is  fulfilled
+/// 2. Any criterion  marked 'any_of' is  fulfilled
 class StopCriterions
 {
 private:
@@ -149,14 +149,14 @@ private:
         Keys keys;
         stop_criterions_view->keys(priority, keys);
 
-        PriorityType priority_type = (priority == "min" ? PriorityType::Min : PriorityType::Max);
+        PriorityType priority_type = (priority == "all_of" ? PriorityType::AllOf : PriorityType::AnyOf);
 
         for (const String & key : keys)
         {
-            if (key == "timeout_ms")
+            if (key == "total_time_ms")
             {
-                timeout_ms.value = stop_criterions_view->getUInt64(priority + ".timeout_ms");
-                timeout_ms.priority = priority_type;
+                total_time_ms.value = stop_criterions_view->getUInt64(priority + ".total_time_ms");
+                total_time_ms.priority = priority_type;
             }
             else if (key == "rows_read")
             {
@@ -193,24 +193,24 @@ private:
                 throw DB::Exception("Met unkown stop criterion: " + key, 1);
             }
 
-            if (priority == "min")
+            if (priority == "all_of")
             {
-                ++number_of_initialized_min;
+                ++number_of_initialized_all_of;
             };
-            if (priority == "max")
+            if (priority == "any_of")
             {
-                ++number_of_initialized_max;
+                ++number_of_initialized_any_of;
             };
         }
     }
 
 public:
-    StopCriterions() : number_of_initialized_min(0), number_of_initialized_max(0), fulfilled_criterions_min(0), fulfilled_criterions_max(0)
+    StopCriterions() : number_of_initialized_all_of(0), number_of_initialized_any_of(0), fulfilled_criterions_all_of(0), fulfilled_criterions_any_of(0)
     {
     }
 
     StopCriterions(const StopCriterions & another_criterions)
-        : timeout_ms(another_criterions.timeout_ms),
+        : total_time_ms(another_criterions.total_time_ms),
           rows_read(another_criterions.rows_read),
           bytes_read_uncompressed(another_criterions.bytes_read_uncompressed),
           iterations(another_criterions.iterations),
@@ -218,29 +218,29 @@ public:
           max_speed_not_changing_for_ms(another_criterions.max_speed_not_changing_for_ms),
           average_speed_not_changing_for_ms(another_criterions.average_speed_not_changing_for_ms),
 
-          number_of_initialized_min(another_criterions.number_of_initialized_min),
-          number_of_initialized_max(another_criterions.number_of_initialized_max),
-          fulfilled_criterions_min(another_criterions.fulfilled_criterions_min),
-          fulfilled_criterions_max(another_criterions.fulfilled_criterions_max)
+          number_of_initialized_all_of(another_criterions.number_of_initialized_all_of),
+          number_of_initialized_any_of(another_criterions.number_of_initialized_any_of),
+          fulfilled_criterions_all_of(another_criterions.fulfilled_criterions_all_of),
+          fulfilled_criterions_any_of(another_criterions.fulfilled_criterions_any_of)
     {
     }
 
     void loadFromConfig(const AbstractConfiguration & stop_criterions_view)
     {
-        if (stop_criterions_view->has("min"))
+        if (stop_criterions_view->has("all_of"))
         {
-            initializeStruct("min", stop_criterions_view);
+            initializeStruct("all_of", stop_criterions_view);
         }
 
-        if (stop_criterions_view->has("max"))
+        if (stop_criterions_view->has("any_of"))
         {
-            initializeStruct("max", stop_criterions_view);
+            initializeStruct("any_of", stop_criterions_view);
         }
     }
 
     void reset()
     {
-        timeout_ms.fulfilled = false;
+        total_time_ms.fulfilled = false;
         rows_read.fulfilled = false;
         bytes_read_uncompressed.fulfilled = false;
         iterations.fulfilled = false;
@@ -248,11 +248,11 @@ public:
         max_speed_not_changing_for_ms.fulfilled = false;
         average_speed_not_changing_for_ms.fulfilled = false;
 
-        fulfilled_criterions_min = 0;
-        fulfilled_criterions_max = 0;
+        fulfilled_criterions_all_of = 0;
+        fulfilled_criterions_any_of = 0;
     }
 
-    CriterionWithPriority timeout_ms;
+    CriterionWithPriority total_time_ms;
     CriterionWithPriority rows_read;
     CriterionWithPriority bytes_read_uncompressed;
     CriterionWithPriority iterations;
@@ -260,13 +260,13 @@ public:
     CriterionWithPriority max_speed_not_changing_for_ms;
     CriterionWithPriority average_speed_not_changing_for_ms;
 
-    /// Hereafter 'min' and 'max', in context of critetions, mean a level of importance
+    /// Hereafter 'all_of' and 'any_of', in context of critetions, mean a level of importance
     /// Number of initialized properties met in configuration
-    size_t number_of_initialized_min;
-    size_t number_of_initialized_max;
+    size_t number_of_initialized_all_of;
+    size_t number_of_initialized_any_of;
 
-    size_t fulfilled_criterions_min;
-    size_t fulfilled_criterions_max;
+    size_t fulfilled_criterions_all_of;
+    size_t fulfilled_criterions_any_of;
 };
 
 struct Stats
@@ -567,8 +567,8 @@ private:
     #define incFulfilledCriterions(index, CRITERION)                                                                        \
     if (!stop_criterions[index].CRITERION.fulfilled)                                                                        \
     {                                                                                                                       \
-        stop_criterions[index].CRITERION.priority == PriorityType::Min ? ++stop_criterions[index].fulfilled_criterions_min  \
-                                                                       : ++stop_criterions[index].fulfilled_criterions_max; \
+        stop_criterions[index].CRITERION.priority == PriorityType::AllOf ? ++stop_criterions[index].fulfilled_criterions_all_of  \
+                                                                       : ++stop_criterions[index].fulfilled_criterions_any_of; \
         stop_criterions[index].CRITERION.fulfilled = true;                                                                  \
     }
 
@@ -666,9 +666,9 @@ private:
 
         for (const String & precondition : preconditions)
         {
-            if (precondition == "reset_cpu_cache")
-                if (system("(>&2 echo 'Flushing cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')")) {
-                    std::cerr << "Failed to flush cache" << std::endl;
+            if (precondition == "flush_disk_cache")
+                if (system("(>&2 echo 'Flushing disk cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')")) {
+                    std::cerr << "Failed to flush disk cache" << std::endl;
                     return false;
                 }
 
@@ -693,7 +693,7 @@ private:
                     }
                 }
 #else
-                throw DB::Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
+                throw DB::Exception("ram_size precondition not available on this platform", ErrorCodes::NOT_IMPLEMENTED);
 #endif
             }
 
@@ -943,9 +943,9 @@ private:
 
         stop_criterions.resize(times_to_run * queries.size());
 
-        if (test_config->has("stop"))
+        if (test_config->has("stop_conditions"))
         {
-            AbstractConfig stop_criterions_view(test_config->createView("stop"));
+            AbstractConfig stop_criterions_view(test_config->createView("stop_conditions"));
             for (StopCriterions & stop_criterion : stop_criterions)
             {
                 stop_criterion.loadFromConfig(stop_criterions_view);
@@ -1065,17 +1065,17 @@ private:
                         incFulfilledCriterions(statistic_index, iterations);
                     }
 
-                    if (stop_criterions[statistic_index].number_of_initialized_min
-                        && (stop_criterions[statistic_index].fulfilled_criterions_min
-                               >= stop_criterions[statistic_index].number_of_initialized_min))
+                    if (stop_criterions[statistic_index].number_of_initialized_all_of
+                        && (stop_criterions[statistic_index].fulfilled_criterions_all_of
+                               >= stop_criterions[statistic_index].number_of_initialized_all_of))
                     {
-                        /// All 'min' criterions are fulfilled
+                        /// All 'all_of' criterions are fulfilled
                         break;
                     }
 
-                    if (stop_criterions[statistic_index].number_of_initialized_max && stop_criterions[statistic_index].fulfilled_criterions_max)
+                    if (stop_criterions[statistic_index].number_of_initialized_any_of && stop_criterions[statistic_index].fulfilled_criterions_any_of)
                     {
-                        /// Some 'max' criterions are fulfilled
+                        /// Some 'any_of' criterions are fulfilled
                         break;
                     }
 
@@ -1130,12 +1130,12 @@ private:
             incFulfilledCriterions(statistic_index, bytes_read_uncompressed);
         }
 
-        if (UInt64 max_timeout_ms = stop_criterions[statistic_index].timeout_ms.value)
+        if (UInt64 max_total_time_ms = stop_criterions[statistic_index].total_time_ms.value)
         {
             /// cast nanoseconds to ms
-            if ((statistics_by_run[statistic_index].watch.elapsed() / (1000 * 1000)) > max_timeout_ms)
+            if ((statistics_by_run[statistic_index].watch.elapsed() / (1000 * 1000)) > max_total_time_ms)
             {
-                incFulfilledCriterions(statistic_index, timeout_ms);
+                incFulfilledCriterions(statistic_index, total_time_ms);
             }
         }
 
@@ -1170,16 +1170,16 @@ private:
             }
         }
 
-        if (stop_criterions[statistic_index].number_of_initialized_min
-            && (stop_criterions[statistic_index].fulfilled_criterions_min >= stop_criterions[statistic_index].number_of_initialized_min))
+        if (stop_criterions[statistic_index].number_of_initialized_all_of
+            && (stop_criterions[statistic_index].fulfilled_criterions_all_of >= stop_criterions[statistic_index].number_of_initialized_all_of))
         {
-            /// All 'min' criterions are fulfilled
+            /// All 'all_of' criterions are fulfilled
             stream.cancel();
         }
 
-        if (stop_criterions[statistic_index].number_of_initialized_max && stop_criterions[statistic_index].fulfilled_criterions_max)
+        if (stop_criterions[statistic_index].number_of_initialized_any_of && stop_criterions[statistic_index].fulfilled_criterions_any_of)
         {
-            /// Some 'max' criterions are fulfilled
+            /// Some 'any_of' criterions are fulfilled
             stream.cancel();
         }
 
