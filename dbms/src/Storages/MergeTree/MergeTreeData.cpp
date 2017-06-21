@@ -360,7 +360,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 int contained_parts = 0;
 
                 LOG_ERROR(log, "Part " << full_path + file_name << " is broken. Looking for parts to replace it.");
-                ++suspicious_broken_parts;
 
                 for (const String & contained_name : part_file_names)
                 {
@@ -388,6 +387,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                     LOG_ERROR(log, "Detaching broken part " << full_path + file_name
                         << " because it covers less than 2 parts. You need to resolve this manually");
                     broken_parts_to_detach.push_back(part);
+                    ++suspicious_broken_parts;
                 }
             }
 
