@@ -411,7 +411,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     all_data_parts = data_parts;
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
-    /// were merged), but that for some reason are still not deleted from the file system.
+    /// were merged), but that for some reason are still not deleted from the filesystem.
     /// Deletion of files will be performed later in the clearOldParts() method.
 
     if (data_parts.size() >= 2)
@@ -1213,7 +1213,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
             std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
             in_all_data_parts = all_data_parts.count(part) != 0;
         }
-        /// New part can be removed from data_parts but not from file system and ZooKeeper
+        /// New part can be removed from data_parts but not from filesystem and ZooKeeper
         if (in_all_data_parts)
             clearOldPartsAndRemoveFromZK();
 

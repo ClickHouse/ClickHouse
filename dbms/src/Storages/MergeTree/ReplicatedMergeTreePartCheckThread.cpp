@@ -278,7 +278,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
         {
             /// TODO You need to make sure that the part is still checked after a while.
             /// Otherwise, it's possible that the part was not added to ZK,
-            ///  but remained in the file system and in a number of active parts.
+            ///  but remained in the filesystem and in a number of active parts.
             /// And then for a long time (before restarting), the data on the replicas will be different.
 
             LOG_TRACE(log, "Young part " << part_name
