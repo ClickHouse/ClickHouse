@@ -868,7 +868,17 @@ private:
         }
 
         if (test_config->has("query"))
+        {
             queries.push_back(test_config->getString("query"));
+            for (size_t i = 1; ; ++i)
+            {
+                std::string key = "query[" + std::to_string(i) + "]";
+                if (!test_config->has(key))
+                    break;
+
+                queries.push_back(test_config->getString(key));
+            }
+        }
 
         if (test_config->has("query_file"))
         {
