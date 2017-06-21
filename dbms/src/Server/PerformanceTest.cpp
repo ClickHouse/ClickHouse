@@ -2,9 +2,6 @@
 #include <iostream>
 #include <limits>
 #include <regex>
-#if __has_include(<sys/sysinfo.h>)
-    #include <sys/sysinfo.h>
-#endif
 #include <unistd.h>
 
 #include <boost/program_options.hpp>
@@ -16,6 +13,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <Common/getMemoryAmount.h>
 #include <Core/Types.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
@@ -667,34 +665,21 @@ private:
         for (const String & precondition : preconditions)
         {
             if (precondition == "reset_cpu_cache")
-                if (system("(>&2 echo 'Flushing cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')")) {
+                if (system("(>&2 echo 'Flushing cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')"))
+                {
                     std::cerr << "Failed to flush cache" << std::endl;
                     return false;
                 }
 
             if (precondition == "ram_size")
             {
-#if __has_include(<sys/sysinfo.h>)
-                struct sysinfo *system_information = new struct sysinfo();
-                if (sysinfo(system_information))
+                size_t ram_size_needed = config->getUInt64("preconditions.ram_size");
+                size_t actual_ram_mb = getMemoryAmount() / 1024 / 1024;
+                if (ram_size_needed > actual_ram_mb)
                 {
-                    std::cerr << "Failed to check system RAM size" << std::endl;
-                    delete system_information;
+                    std::cerr << "Not enough RAM: need=" << ram_size_needed << " present=" << actual_ram_mb << std::endl;
+                    return false;
                 }
-                else
-                {
-                    size_t ram_size_needed = config->getUInt64("preconditions.ram_size");
-                    size_t actual_ram = system_information->totalram / 1024 / 1024;
-                    if (ram_size_needed > actual_ram)
-                    {
-                        std::cerr << "Not enough RAM" << std::endl;
-                        delete system_information;
-                        return false;
-                    }
-                }
-#else
-                throw DB::Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
-#endif
             }
 
             if (precondition == "table_exists")
@@ -711,11 +696,15 @@ private:
                 {
                     Connection::Packet packet = connection.receivePacket();
 
-                    if (packet.type == Protocol::Server::Data) {
+                    if (packet.type == Protocol::Server::Data)
+                    {
                         for (const ColumnWithTypeAndName & column : packet.block.getColumns())
                         {
-                            if (column.name == "result" && column.column->getDataAt(0).data != nullptr) {
-                                exist = column.column->get64(0);
+                            if (column.name == "result" && column.column->size() > 0)
+                            {
+                                Field field;
+                                column.column->get(0, field);
+                                exist = field.get<UInt64>();
                             }
                         }
                     }
@@ -724,8 +713,9 @@ private:
                         break;
                 }
 
-                if (exist == 0) {
-                    std::cerr << "Table " + table_to_check + " doesn't exist" << std::endl;
+                if (exist == 0)
+                {
+                    std::cerr << "Table " << table_to_check << " doesn't exist" << std::endl;
                     return false;
                 }
             }

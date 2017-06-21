@@ -160,4 +160,13 @@ std::ostream & operator<<(std::ostream & stream, const std::experimental::option
 }
 
 
+#include <exception>
+
+std::ostream & operator<<(std::ostream & stream, const std::exception & what)
+{
+    stream << "exception{" << what.what() << "}";
+    return stream;
+}
+
+
 // TODO: add more types
