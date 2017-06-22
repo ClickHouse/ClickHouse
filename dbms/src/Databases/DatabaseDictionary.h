@@ -5,8 +5,9 @@
 #include <Storages/IStorage.h>
 
 
-namespace Poco {
-class Logger;
+namespace Poco
+{
+    class Logger;
 }
 
 
@@ -29,7 +30,8 @@ public:
 
     DatabaseDictionary(const String & name_) : name(name_) {}
 
-    String getEngineName() const override {
+    String getEngineName() const override
+    {
         return "Dictionary";
     }
 
