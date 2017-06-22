@@ -27,7 +27,7 @@ namespace DB
  * Returns the size of physical memory (RAM) in bytes.
  * Returns 0 on unsupported platform
  */
-int64_t getMemoryAmount()
+uint64_t getMemoryAmount()
 {
 #if defined(_WIN32) && (defined(__CYGWIN__) || defined(__CYGWIN32__))
     /* Cygwin under Windows. ------------------------------------ */
@@ -35,7 +35,7 @@ int64_t getMemoryAmount()
     MEMORYSTATUS status;
     status.dwLength = sizeof(status);
     GlobalMemoryStatus( &status );
-    return (int64_t)status.dwTotalPhys;
+    return status.dwTotalPhys;
 
 #elif defined(WIN32) || defined(_WIN32)
     /* Windows. ------------------------------------------------- */
@@ -43,7 +43,7 @@ int64_t getMemoryAmount()
     MEMORYSTATUSEX status;
     status.dwLength = sizeof(status);
     GlobalMemoryStatusEx( &status );
-    return (int64_t)status.ullTotalPhys;
+    return status.ullTotalPhys;
 
 #else
     /* UNIX variants. ------------------------------------------- */
@@ -57,7 +57,7 @@ int64_t getMemoryAmount()
 #elif defined(HW_PHYSMEM64)
     mib[1] = HW_PHYSMEM64; /* NetBSD, OpenBSD. --------- */
 #endif
-    int64_t size = 0; /* 64-bit */
+    uint64_t size = 0; /* 64-bit */
     size_t len = sizeof(size);
     if ( sysctl( mib, 2, &size, &len, NULL, 0 ) == 0 ) {
         return size;
@@ -66,17 +66,17 @@ int64_t getMemoryAmount()
 
 #elif defined(_SC_AIX_REALMEM)
     /* AIX. ----------------------------------------------------- */
-    return (int64_t)(sysconf( _SC_AIX_REALMEM ) * 1024);
+    return sysconf( _SC_AIX_REALMEM ) * 1024;
 
 #elif defined(_SC_PHYS_PAGES) && defined(_SC_PAGESIZE)
     /* FreeBSD, Linux, OpenBSD, and Solaris. -------------------- */
-    return (int64_t)sysconf( _SC_PHYS_PAGES )
-           * (int64_t)sysconf( _SC_PAGESIZE );
+    return (uint64_t)sysconf( _SC_PHYS_PAGES )
+           * (uint64_t)sysconf( _SC_PAGESIZE );
 
 #elif defined(_SC_PHYS_PAGES) && defined(_SC_PAGE_SIZE)
     /* Legacy. -------------------------------------------------- */
-    return (int64_t)sysconf( _SC_PHYS_PAGES )
-           * (int64_t)sysconf( _SC_PAGE_SIZE );
+    return (uint64_t)sysconf( _SC_PHYS_PAGES )
+           * (uint64_t)sysconf( _SC_PAGE_SIZE );
 
 #elif defined(CTL_HW) && (defined(HW_PHYSMEM) || defined(HW_REALMEM))
     /* DragonFly BSD, FreeBSD, NetBSD, OpenBSD, and OSX. -------- */
@@ -90,7 +90,7 @@ int64_t getMemoryAmount()
     unsigned int size = 0; /* 32-bit */
     size_t len = sizeof( size );
     if ( sysctl( mib, 2, &size, &len, NULL, 0 ) == 0 ) {
-        return (int64_t) size;
+        return size;
     }
     return 0; /* Failed? */
 #endif /* sysctl and sysconf variants */

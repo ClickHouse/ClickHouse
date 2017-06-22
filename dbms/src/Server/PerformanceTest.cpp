@@ -700,9 +700,9 @@ private:
                         {
                             if (column.name == "result" && column.column->size() > 0)
                             {
-                                Field field;
-                                column.column->get(0, field);
-                                exist = field.get<UInt64>();
+                                exist = column.column->get64(0);
+                                if (exist)
+                                    break;
                             }
                         }
                     }
@@ -711,7 +711,7 @@ private:
                         break;
                 }
 
-                if (exist == 0)
+                if (!exist)
                 {
                     std::cerr << "Table " << table_to_check << " doesn't exist" << std::endl;
                     return false;
