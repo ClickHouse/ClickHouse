@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
 }
 
 
@@ -210,9 +211,10 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         const auto code = e.code();
 
         /// mark file as broken if necessary
-        if (code == ErrorCodes::CHECKSUM_DOESNT_MATCH ||
-            code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED ||
-            code == ErrorCodes::CANNOT_READ_ALL_DATA)
+        if (code == ErrorCodes::CHECKSUM_DOESNT_MATCH
+            || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
+            || code == ErrorCodes::CANNOT_READ_ALL_DATA
+            || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
         {
             const auto last_path_separator_pos = file_path.rfind('/');
             const auto & path = file_path.substr(0, last_path_separator_pos + 1);
