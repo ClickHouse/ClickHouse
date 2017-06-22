@@ -67,7 +67,7 @@ public:
     }
 
     void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
-    void dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
+    void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
     void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
     void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
 

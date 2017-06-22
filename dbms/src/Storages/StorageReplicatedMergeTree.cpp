@@ -1023,7 +1023,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
     if (entry.type == LogEntry::CLEAR_COLUMN)
     {
-        executeClearColumnFromPartition(entry);
+        executeClearColumnInPartition(entry);
         return true;
     }
 
@@ -1526,9 +1526,9 @@ bool StorageReplicatedMergeTree::executeAttachPart(const StorageReplicatedMergeT
 }
 
 
-void StorageReplicatedMergeTree::executeClearColumnFromPartition(const LogEntry & entry)
+void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & entry)
 {
-    LOG_INFO(log, "Clear column " << entry.column_name << " inside " << entry.new_part_name);
+    LOG_INFO(log, "Clear column " << entry.column_name << " in parts inside " << entry.new_part_name << " range");
 
     /// Assume optimistic scenario, i.e. conflicts are very rare
     /// So, if conflicts are found, throw an exception and will retry execution later
@@ -1562,7 +1562,7 @@ void StorageReplicatedMergeTree::executeClearColumnFromPartition(const LogEntry 
         if (!ActiveDataPartSet::contains(entry.new_part_name, part->name))
             continue;
 
-        LOG_DEBUG(log, "Clean column " << entry.column_name << " from part " << part->name);
+        LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
 
         auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_expr_ast, false);
         if (!transaction)
@@ -1581,7 +1581,7 @@ void StorageReplicatedMergeTree::executeClearColumnFromPartition(const LogEntry 
         ++modified_parts;
     }
 
-    LOG_DEBUG(log, "Cleaned column " << entry.column_name << " from " << modified_parts << " parts");
+    LOG_DEBUG(log, "Cleared column " << entry.column_name << " in " << modified_parts << " parts");
 
     data.recalculateColumnSizes();
 }
@@ -2680,7 +2680,7 @@ String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(co
 }
 
 
-void StorageReplicatedMergeTree::dropColumnFromPartition(
+void StorageReplicatedMergeTree::clearColumnInPartition(
     const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
 {
     assertNotReadonly();
@@ -2689,6 +2689,8 @@ void StorageReplicatedMergeTree::dropColumnFromPartition(
 
     String month_name = MergeTreeData::getMonthName(partition);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(month_name);
+
+    /// We allocated new block number for this part, so new merges can't merge clearing parts with new ones
 
     LogEntry entry;
     entry.type = LogEntry::CLEAR_COLUMN;

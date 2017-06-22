@@ -80,7 +80,7 @@ BlockIO InterpreterAlterQuery::execute()
                 break;
 
             case PartitionCommand::CLEAR_COLUMN:
-                table->dropColumnFromPartition(query_ptr, command.partition, command.column_name, context.getSettingsRef());
+                table->clearColumnInPartition(query_ptr, command.partition, command.column_name, context.getSettingsRef());
                 break;
         }
     }

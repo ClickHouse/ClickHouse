@@ -136,7 +136,7 @@ public:
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
-    void dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
+    void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
     void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
     void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
     void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
@@ -403,7 +403,7 @@ private:
     void executeDropRange(const LogEntry & entry);
     bool executeAttachPart(const LogEntry & entry); /// Returns false if the part is absent, and it needs to be picked up from another replica.
 
-    void executeClearColumnFromPartition(const LogEntry & entry);
+    void executeClearColumnInPartition(const LogEntry & entry);
 
     /** Updates the queue.
       */

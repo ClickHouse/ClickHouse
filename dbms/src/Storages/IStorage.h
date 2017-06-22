@@ -217,8 +217,8 @@ public:
         throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Execute DROP COLUMN ... FROM PARTITION query witch drops column from given partition. */
-    virtual void dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
+    /** Execute CLEAR COLUMN ... IN PARTITION query which removes column from given partition. */
+    virtual void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
     {
         throw Exception("Method dropColumnFromPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
