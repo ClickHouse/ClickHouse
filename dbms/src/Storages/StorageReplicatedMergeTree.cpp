@@ -1769,6 +1769,10 @@ struct CachedMergingPredicate
     }
 };
 
+template <typename Key> constexpr CachedMergingPredicate<Key>::clock::duration CachedMergingPredicate<Key>::Expiration::min_delay;
+template <typename Key> constexpr CachedMergingPredicate<Key>::clock::duration CachedMergingPredicate<Key>::Expiration::max_delay;
+template <typename Key> constexpr double CachedMergingPredicate<Key>::Expiration::exponent_base;
+
 
 void StorageReplicatedMergeTree::mergeSelectingThread()
 {
