@@ -9,7 +9,8 @@
 #include <Interpreters/ExternalDictionaries.h>
 #include <common/logger_useful.h>
 
-namespace DB {
+namespace DB
+{
 
 StoragePtr StorageDictionary::create(
     const String & table_name,
@@ -23,7 +24,8 @@ StoragePtr StorageDictionary::create(
     ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query);
     const ASTFunction & function = typeid_cast<const ASTFunction &> (*create.storage);
     String dictionary_name;
-    if (function.arguments) {
+    if (function.arguments)
+    {
         std::stringstream iss;
         function.arguments->format(IAST::FormatSettings(iss, false, false));
         dictionary_name = iss.str();
@@ -106,8 +108,10 @@ void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const Diction
     auto dictionaryNamesAndTypes = getNamesAndTypes(dictionaryStructure);
     std::set<NameAndTypePair> namesAndTypesSet(dictionaryNamesAndTypes->begin(), dictionaryNamesAndTypes->end());
 
-    for (auto & column : *columns) {
-        if (namesAndTypesSet.find(column) == namesAndTypesSet.end()) {
+    for (auto & column : *columns)
+    {
+        if (namesAndTypesSet.find(column) == namesAndTypesSet.end())
+        {
             std::string message = "Not found column ";
             message += column.name + " " + column.type->getName();
             message += " in dictionary " + dictionary_name + ". ";
