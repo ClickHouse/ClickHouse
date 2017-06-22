@@ -1,15 +1,16 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <common/MultiVersion.h>
-#include <common/logger_useful.h>
 
-#include <Interpreters/ExternalDictionaries.h>
+namespace Poco { class Logger; }
 
 namespace DB
 {
+
+class DictionaryStructure;
+class IDictionaryBase;
 
 class StorageDictionary : private ext::shared_ptr_helper<StorageDictionary>, public IStorage
 {
@@ -18,13 +19,22 @@ class StorageDictionary : private ext::shared_ptr_helper<StorageDictionary>, pub
 public:
     static StoragePtr create(
         const String & table_name_,
-        const String & database_name_,
         Context & context_,
         ASTPtr & query_,
         NamesAndTypesListPtr columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_);
+
+    static StoragePtr create(
+        const String & table_name,
+        Context & context,
+        NamesAndTypesListPtr columns,
+        const NamesAndTypesList & materialized_columns,
+        const NamesAndTypesList & alias_columns,
+        const ColumnDefaults & column_defaults,
+        const DictionaryStructure & dictionary_structure,
+        const String & dictionary_name);
 
     std::string getName() const override { return "Dictionary"; }
     std::string getTableName() const override { return table_name; }
@@ -40,34 +50,28 @@ public:
 
     void drop() override {}
 
+    static NamesAndTypesListPtr getNamesAndTypes(const DictionaryStructure & dictionaryStructure);
+
 private:
     using Ptr = MultiVersion<IDictionaryBase>::Version;
 
-    String select_database_name;
-    String select_table_name;
     String table_name;
-    String database_name;
-    ASTSelectQuery inner_query;
     Context & context;
     NamesAndTypesListPtr columns;
     String dictionary_name;
-    const ExternalDictionaries & external_dictionaries;
     Poco::Logger * logger;
 
     StorageDictionary(
         const String & table_name_,
-        const String & database_name_,
         Context & context_,
-        ASTPtr & query_,
         NamesAndTypesListPtr columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
-        const ExternalDictionaries & external_dictionaries_);
+        const DictionaryStructure & dictionary_structure_,
+        const String & dictionary_name_);
 
-    void checkNamesAndTypesCompatibleWithDictionary(Ptr dictionary) const;
-
-    NamesAndTypes getNamesAndTypesFromDictionaryStructure(Ptr dictionary) const;
+    void checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionaryStructure) const;
 
     template <class ForwardIterator>
     std::string generateNamesAndTypesDescription(ForwardIterator begin, ForwardIterator end) const {
