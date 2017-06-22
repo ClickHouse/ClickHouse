@@ -464,7 +464,7 @@ ReplicatedMergeTreeQueue::Queue ReplicatedMergeTreeQueue::getConflictsForClearCo
                     conflicts.emplace_back(elem);
             }
 
-            if (elem->type == LogEntry::DROP_COLUMN)
+            if (elem->type == LogEntry::CLEAR_COLUMN)
             {
                 ActiveDataPartSet::Part cur_part;
                 ActiveDataPartSet::parsePartName(elem->new_part_name, cur_part);
@@ -625,7 +625,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
-    if (entry.type == LogEntry::DROP_COLUMN)
+    if (entry.type == LogEntry::CLEAR_COLUMN)
     {
         String conflicts_description;
         if (!getConflictsForClearColumnCommand(entry, &conflicts_description).empty())

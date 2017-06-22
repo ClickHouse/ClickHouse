@@ -44,8 +44,8 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << source_part_name << "\ninto\n" << new_part_name;
             break;
 
-        case DROP_COLUMN:
-            out << "drop_column\n"
+        case CLEAR_COLUMN:
+            out << "clear_column\n"
                 << escape << column_name
                 << "\nfrom\n"
                 << new_part_name;
@@ -113,9 +113,9 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         detach = type_str == "detach";
         in >> new_part_name;
     }
-    else if (type_str == "drop_column")
+    else if (type_str == "clear_column")
     {
-        type = DROP_COLUMN;
+        type = CLEAR_COLUMN;
         in >> escape >> column_name >> "\nfrom\n" >> new_part_name;
     }
     else if (type_str == "attach")

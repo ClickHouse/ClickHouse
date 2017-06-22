@@ -36,7 +36,7 @@ struct ReplicatedMergeTreeLogEntryData
         MERGE_PARTS,    /// Merge the parts.
         DROP_RANGE,     /// Delete the parts in the specified month in the specified number range.
         ATTACH_PART,    /// Move a part from the `detached` directory.
-        DROP_COLUMN,    /// Drop specific column.
+        CLEAR_COLUMN,   /// Drop specific column from specified partition.
     };
 
     String typeToString() const
@@ -47,7 +47,7 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:  return "MERGE_PARTS";
             case ReplicatedMergeTreeLogEntryData::DROP_RANGE:   return "DROP_RANGE";
             case ReplicatedMergeTreeLogEntryData::ATTACH_PART:  return "ATTACH_PART";
-            case ReplicatedMergeTreeLogEntryData::DROP_COLUMN:  return "DROP_COLUMN";
+            case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN: return "CLEAR_COLUMN";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }

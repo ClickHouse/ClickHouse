@@ -1020,7 +1020,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
         return true;
     }
 
-    if (entry.type == LogEntry::DROP_COLUMN)
+    if (entry.type == LogEntry::CLEAR_COLUMN)
     {
         executeClearColumnFromPartition(entry);
         return true;
@@ -1561,7 +1561,7 @@ void StorageReplicatedMergeTree::executeClearColumnFromPartition(const LogEntry 
         if (!ActiveDataPartSet::contains(entry.new_part_name, part->name))
             continue;
 
-        LOG_DEBUG(log, "Clear column " << entry.column_name << " from part " << part->name);
+        LOG_DEBUG(log, "Clean column " << entry.column_name << " from part " << part->name);
 
         auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_expr_ast, false);
         if (!transaction)
@@ -1580,7 +1580,7 @@ void StorageReplicatedMergeTree::executeClearColumnFromPartition(const LogEntry 
         ++modified_parts;
     }
 
-    LOG_DEBUG(log, "Cleared column " << entry.column_name << " from " << modified_parts << " parts");
+    LOG_DEBUG(log, "Cleaned column " << entry.column_name << " from " << modified_parts << " parts");
 
     data.recalculateColumnSizes();
 }
@@ -2687,7 +2687,7 @@ void StorageReplicatedMergeTree::dropColumnFromPartition(
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(month_name);
 
     LogEntry entry;
-    entry.type = LogEntry::DROP_COLUMN;
+    entry.type = LogEntry::CLEAR_COLUMN;
     entry.new_part_name = fake_part_name;
     entry.column_name = column_name.safeGet<String>();
     entry.create_time = time(0);
