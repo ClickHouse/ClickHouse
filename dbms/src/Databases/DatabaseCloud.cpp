@@ -352,7 +352,7 @@ static void modifyTwoTableSets(zkutil::ZooKeeperPtr & zookeeper, const String & 
 
 bool DatabaseCloud::isTableExist(const String & table_name) const
 {
-    /// We are looking for a local table in the local table cache or in the file system in `path`.
+    /// We are looking for a local table in the local table cache or in the filesystem in `path`.
     /// If you do not find it, look for the cloud table in ZooKeeper.
 
     {

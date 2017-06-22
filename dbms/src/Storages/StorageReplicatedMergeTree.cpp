@@ -135,18 +135,18 @@ extern const Int64 RESERVED_BLOCK_NUMBERS = 200;
 
 /** There are three places for each part, where it should be
   * 1. In the RAM, MergeTreeData::data_parts, all_data_parts.
-  * 2. In the file system (FS), the directory with the data of the table.
+  * 2. In the filesystem (FS), the directory with the data of the table.
   * 3. in ZooKeeper (ZK).
   *
   * When adding a part, it must be added immediately to these three places.
   * This is done like this
-  * - [FS] first write the part into a temporary directory on the file system;
-  * - [FS] rename the temporary part to the result on the file system;
+  * - [FS] first write the part into a temporary directory on the filesystem;
+  * - [FS] rename the temporary part to the result on the filesystem;
   * - [RAM] immediately afterwards add it to the `data_parts`, and remove from `data_parts` any parts covered by this one;
   * - [RAM] also set the `Transaction` object, which in case of an exception (in next point),
   *   rolls back the changes in `data_parts` (from the previous point) back;
   * - [ZK] then send a transaction (multi) to add a part to ZooKeeper (and some more actions);
-  * - [FS, ZK] by the way, removing the covered (old) parts from file system, from ZooKeeper and from `all_data_parts`
+  * - [FS, ZK] by the way, removing the covered (old) parts from filesystem, from ZooKeeper and from `all_data_parts`
   *   is delayed, after a few minutes.
   *
   * There is no atomicity here.
@@ -823,25 +823,19 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
             + toString(expected_parts.size()) + " missing obsolete parts, "
             + toString(parts_to_fetch.size()) + " missing parts";
 
-    /** You can automatically synchronize data,
-      *  if the number of errors of each of the four types is no more than the corresponding thresholds,
-      *  or if the ratio of the total number of errors to the total number of parts (minimum - on the local file system or in ZK)
-      *  no more than some ratio (for example 5%).
+    /** We can automatically synchronize data,
+      *  if the ratio of the total number of errors to the total number of parts (minimum - on the local filesystem or in ZK)
+      *  is no more than some threshold (for example 50%).
       *
-      * A large number of mismatches in the data on the file system and the expected data
-      *  may indicate a configuration error (the server accidentally connected as a replica not from that shard).
+      * A large ratio of mismatches in the data on the filesystem and the expected data
+      *  may indicate a configuration error (the server accidentally connected as a replica not from right shard).
       * In this case, the protection mechanism does not allow the server to start.
       */
 
     size_t min_parts_local_or_expected = std::min(expected_parts_vec.size(), parts.size());
-    size_t total_difference = parts_to_add.size() + unexpected_parts_nonnew + expected_parts.size() + parts_to_fetch.size();
+    size_t total_difference = parts_to_add.size() + unexpected_parts_nonnew + parts_to_fetch.size();
 
-    bool insane =
-        (parts_to_add.size() > data.settings.replicated_max_unexpectedly_merged_parts
-            || unexpected_parts_nonnew > data.settings.replicated_max_unexpected_parts
-            || expected_parts.size() > data.settings.replicated_max_missing_obsolete_parts
-            || parts_to_fetch.size() > data.settings.replicated_max_missing_active_parts)
-        && (total_difference > min_parts_local_or_expected * data.settings.replicated_max_ratio_of_wrong_parts);
+    bool insane = total_difference > min_parts_local_or_expected * data.settings.replicated_max_ratio_of_wrong_parts;
 
     if (insane && !skip_sanity_checks)
         throw Exception("The local set of parts of table " + getTableName() + " doesn't look like the set of parts in ZooKeeper. "
@@ -1622,8 +1616,7 @@ bool StorageReplicatedMergeTree::queueTask()
 
 bool StorageReplicatedMergeTree::canMergeParts(
     const MergeTreeData::DataPartPtr & left,
-    const MergeTreeData::DataPartPtr & right,
-    MemoizedPartsThatCouldBeMerged * memo)
+    const MergeTreeData::DataPartPtr & right)
 {
     /** It can take a long time to determine whether it is possible to merge two adjacent parts.
       * Two adjacent parts can be merged if all block numbers between their numbers are not used (abandoned).
@@ -1643,10 +1636,6 @@ bool StorageReplicatedMergeTree::canMergeParts(
     if (queue.partWillBeMergedOrMergesDisabled(left->name)
         || (left.get() != right.get() && queue.partWillBeMergedOrMergesDisabled(right->name)))
         return false;
-
-    auto key = std::make_pair(left->name, right->name);
-    if (memo && memo->count(key))
-        return true;
 
     String month_name = left->name.substr(0, 6);
     auto zookeeper = getZooKeeper();
@@ -1711,11 +1700,74 @@ bool StorageReplicatedMergeTree::canMergeParts(
         }
     }
 
-    if (memo)
-        memo->insert(key);
-
     return true;
 }
+
+
+/** Cache for function, that returns bool.
+  * If function returned true, cache it forever.
+  * If function returned false, cache it for exponentially growing time.
+  * Not thread safe.
+  */
+template <typename Key>
+struct CachedMergingPredicate
+{
+    using clock = std::chrono::steady_clock;
+
+    struct Expiration
+    {
+        static constexpr clock::duration min_delay = std::chrono::seconds(1);
+        static constexpr clock::duration max_delay = std::chrono::seconds(600);
+        static constexpr double exponent_base = 2;
+
+        clock::time_point expire_time;
+        clock::duration delay = clock::duration::zero();
+
+        void next(clock::time_point now)
+        {
+            if (delay == clock::duration::zero())
+                delay = min_delay;
+            else
+            {
+                delay *= exponent_base;
+                if (delay > max_delay)
+                    delay = max_delay;
+            }
+
+            expire_time = now + delay;
+        }
+
+        bool expired(clock::time_point now) const
+        {
+            return now > expire_time;
+        }
+    };
+
+    std::set<Key> true_keys;
+    std::map<Key, Expiration> false_keys;
+
+    template <typename Function, typename ArgsToKey, typename... Args>
+    bool get(clock::time_point now, Function && function, ArgsToKey && args_to_key, Args &&... args)
+    {
+        Key key{args_to_key(std::forward<Args>(args)...)};
+
+        if (true_keys.count(key))
+            return true;
+
+        auto it = false_keys.find(key);
+        if (false_keys.end() != it && !it->second.expired(now))
+            return false;
+
+        bool value = function(std::forward<Args>(args)...);
+
+        if (value)
+            true_keys.insert(key);
+        else
+            false_keys[key].next(now);
+
+        return value;
+    }
+};
 
 
 void StorageReplicatedMergeTree::mergeSelectingThread()
@@ -1726,12 +1778,25 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
     bool deduplicate = false; /// TODO: read deduplicate option from table config
     bool need_pull = true;
 
-    MemoizedPartsThatCouldBeMerged memoized_parts_that_could_be_merged;
-
-    auto can_merge = [&memoized_parts_that_could_be_merged, this]
-        (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right) -> bool
+    auto uncached_merging_predicate = [this](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
     {
-        return canMergeParts(left, right, &memoized_parts_that_could_be_merged);
+        return canMergeParts(left, right);
+    };
+
+    auto merging_predicate_args_to_key = [](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
+    {
+        return std::make_pair(left->name, right->name);
+    };
+
+    CachedMergingPredicate<std::pair<std::string, std::string>> cached_merging_predicate;
+
+    /// Will be updated below.
+    std::chrono::steady_clock::time_point now;
+
+    auto can_merge = [&]
+        (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
+    {
+        return cached_merging_predicate.get(now, uncached_merging_predicate, merging_predicate_args_to_key, left, right);
     };
 
     while (!shutdown_called && is_leader_node)
@@ -1768,6 +1833,8 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
                 String merged_name;
 
                 size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued);
+
+                now = std::chrono::steady_clock::now();
 
                 if (max_parts_size_for_merge > 0
                     && merger.selectPartsToMerge(
@@ -2353,7 +2420,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
     auto can_merge = [this]
         (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
     {
-        return canMergeParts(left, right, nullptr);
+        return canMergeParts(left, right);
     };
 
     pullLogsToQueue();

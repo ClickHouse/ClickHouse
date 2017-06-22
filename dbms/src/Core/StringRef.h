@@ -165,7 +165,7 @@ struct StringRefHash64
 {
     size_t operator() (StringRef x) const
     {
-        return DB::CityHash64(x.data, x.size);
+        return CityHash_v1_0_2::CityHash64(x.data, x.size);
     }
 };
 
@@ -177,7 +177,7 @@ struct StringRefHash64
 
 inline UInt64 hashLen16(UInt64 u, UInt64 v)
 {
-    return DB::Hash128to64(uint128(u, v));
+    return CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(u, v));
 }
 
 inline UInt64 shiftMix(UInt64 val)
@@ -262,6 +262,14 @@ struct CRC32Hash
 struct StringRefHash : CRC32Hash {};
 
 #else
+
+struct CRC32Hash
+{
+    size_t operator() (StringRef x) const
+    {
+       throw std::logic_error{"Not implemented CRC32Hash without SSE"};
+    };
+};
 
 struct StringRefHash : StringRefHash64 {};
 

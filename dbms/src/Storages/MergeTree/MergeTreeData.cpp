@@ -360,7 +360,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 int contained_parts = 0;
 
                 LOG_ERROR(log, "Part " << full_path + file_name << " is broken. Looking for parts to replace it.");
-                ++suspicious_broken_parts;
 
                 for (const String & contained_name : part_file_names)
                 {
@@ -388,6 +387,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                     LOG_ERROR(log, "Detaching broken part " << full_path + file_name
                         << " because it covers less than 2 parts. You need to resolve this manually");
                     broken_parts_to_detach.push_back(part);
+                    ++suspicious_broken_parts;
                 }
             }
 
@@ -411,7 +411,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     all_data_parts = data_parts;
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
-    /// were merged), but that for some reason are still not deleted from the file system.
+    /// were merged), but that for some reason are still not deleted from the filesystem.
     /// Deletion of files will be performed later in the clearOldParts() method.
 
     if (data_parts.size() >= 2)
@@ -959,7 +959,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
     /// Update primary key if needed.
     size_t new_primary_key_file_size{};
-    uint128 new_primary_key_hash{};
+    MergeTreeDataPartChecksum::uint128 new_primary_key_hash{};
 
     if (new_primary_key.get() != primary_expr_ast.get())
     {
@@ -1213,7 +1213,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
             std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
             in_all_data_parts = all_data_parts.count(part) != 0;
         }
-        /// New part can be removed from data_parts but not from file system and ZooKeeper
+        /// New part can be removed from data_parts but not from filesystem and ZooKeeper
         if (in_all_data_parts)
             clearOldPartsAndRemoveFromZK();
 

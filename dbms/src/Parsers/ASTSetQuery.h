@@ -23,8 +23,6 @@ public:
     using Changes = std::vector<Change>;
     Changes changes;
 
-    bool global;    /// If the query is SET GLOBAL.
-
     ASTSetQuery() = default;
     ASTSetQuery(const StringRange range_) : IAST(range_) {}
 
@@ -36,7 +34,7 @@ public:
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SET " << (global ? "GLOBAL " : "") << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SET " << (settings.hilite ? hilite_none : "");
 
         for (ASTSetQuery::Changes::const_iterator it = changes.begin(); it != changes.end(); ++it)
         {

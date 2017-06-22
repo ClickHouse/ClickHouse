@@ -1909,15 +1909,24 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
                 array_join_result_to_source[node->name]    /// PP.Key1 -> ParsedParams.Key1
                     = DataTypeNested::concatenateNestedName(array_join_alias_to_name[table_name], nested_column);
             }
-            else if (array_join_name_to_alias.count(table_name))
+            else if (array_join_name_to_alias.count(node->name))
             {
-                /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams AS PP.
+                /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams.Key1 AS PP.Key1.
                   * That is, the query uses the original array, replicated by itself.
                   */
 
                 String nested_column = DataTypeNested::extractNestedColumnName(node->name);    /// Key1
                 array_join_result_to_source[    /// PP.Key1 -> ParsedParams.Key1
-                    DataTypeNested::concatenateNestedName(array_join_name_to_alias[table_name], nested_column)] = node->name;
+                    array_join_name_to_alias[node->name]] = node->name;
+            }
+            else if (array_join_name_to_alias.count(table_name))
+            {
+                /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams AS PP.
+                 */
+
+                String nested_column = DataTypeNested::extractNestedColumnName(node->name);    /// Key1
+                array_join_result_to_source[    /// PP.Key1 -> ParsedParams.Key1
+                DataTypeNested::concatenateNestedName(array_join_name_to_alias[table_name], nested_column)] = node->name;
             }
         }
     }
