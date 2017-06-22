@@ -675,7 +675,7 @@ private:
 
                 if (ram_size_needed > actual_ram)
                 {
-                    std::cerr << "Not enough RAM: need =" << ram_size_needed << " present=" << actual_ram_mb << std::endl;
+                    std::cerr << "Not enough RAM: need =" << ram_size_needed << " present=" << actual_ram << std::endl;
                     return false;
                 }
             }
