@@ -21,7 +21,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Settings.h>
 #include <common/getMemoryAmount.h>
-
+#include <Common/getMultipleKeysFromConfig.h>
 
 #include <Poco/AutoPtr.h>
 #include <Poco/Exception.h>
@@ -857,15 +857,7 @@ private:
 
         if (test_config->has("query"))
         {
-            queries.push_back(test_config->getString("query"));
-            for (size_t i = 1; ; ++i)
-            {
-                std::string key = "query[" + std::to_string(i) + "]";
-                if (!test_config->has(key))
-                    break;
-
-                queries.push_back(test_config->getString(key));
-            }
+            queries = DB::getMultipleValuesFromConfig(*test_config, "", "query");
         }
 
         if (test_config->has("query_file"))
