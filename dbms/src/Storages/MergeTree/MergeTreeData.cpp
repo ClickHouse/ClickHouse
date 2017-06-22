@@ -1500,7 +1500,7 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
     if (until)
         until->tryWait(delay_milliseconds);
     else
-        std::this_thread::sleep_for(std::chrono::duration<std::chrono::milliseconds>(delay_milliseconds));
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)
