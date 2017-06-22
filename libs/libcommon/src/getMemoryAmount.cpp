@@ -20,8 +20,6 @@
 #endif
 #endif
 
-namespace DB
-{
 
 /**
  * Returns the size of physical memory (RAM) in bytes.
@@ -96,6 +94,4 @@ uint64_t getMemoryAmount()
 #endif /* sysctl and sysconf variants */
 
 #endif
-}
-
 }
