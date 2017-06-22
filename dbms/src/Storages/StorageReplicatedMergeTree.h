@@ -418,11 +418,6 @@ private:
       */
     void mergeSelectingThread();
 
-    /// Is it possible to merge parts in the specified range?
-    bool canMergeParts(
-        const MergeTreeData::DataPartPtr & left,
-        const MergeTreeData::DataPartPtr & right);
-
     /** Write the selected parts to merge into the log,
       * Call when merge_selecting_mutex is locked.
       * Returns false if any part is not in ZK.

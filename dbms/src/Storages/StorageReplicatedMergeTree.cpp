@@ -1614,31 +1614,12 @@ bool StorageReplicatedMergeTree::queueTask()
 }
 
 
-bool StorageReplicatedMergeTree::canMergeParts(
+static bool canMergePartsAccordingToZooKeeperInfo(
     const MergeTreeData::DataPartPtr & left,
-    const MergeTreeData::DataPartPtr & right)
+    const MergeTreeData::DataPartPtr & right,
+    zkutil::ZooKeeperPtr && zookeeper, const String & zookeeper_path, const MergeTreeData & data)
 {
-    /** It can take a long time to determine whether it is possible to merge two adjacent parts.
-      * Two adjacent parts can be merged if all block numbers between their numbers are not used (abandoned).
-      * This means that another part can not be inserted between these parts.
-      *
-      * But if the numbers of adjacent blocks differ sufficiently strongly (usually if there are many "abandoned" blocks between them),
-      *  then too many readings are made from ZooKeeper to find out if it's possible to merge them.
-      *
-      * Let's use a statement that if a couple of parts were possible to merge, and their merge is not yet planned,
-      *  then now they can be merged, and we will remember this state (if the parameter `memo` is specified),
-      *  not to make many times the same requests to ZooKeeper.
-      *
-      * TODO I wonder how this is combined with DROP PARTITION and then ATTACH PARTITION.
-      */
-
-    /// If any of the parts is already going to be merge into a larger one, do not agree to merge it.
-    if (queue.partWillBeMergedOrMergesDisabled(left->name)
-        || (left.get() != right.get() && queue.partWillBeMergedOrMergesDisabled(right->name)))
-        return false;
-
     String month_name = left->name.substr(0, 6);
-    auto zookeeper = getZooKeeper();
 
     /// You can not merge parts, among which is a part for which the quorum is unsatisfied.
     /// Note: theoretically, this could be resolved. But this will make logic more complex.
@@ -1703,6 +1684,20 @@ bool StorageReplicatedMergeTree::canMergeParts(
     return true;
 }
 
+
+/** It can take a long time to determine whether it is possible to merge two adjacent parts.
+  * Two adjacent parts can be merged if all block numbers between their numbers are not used (abandoned).
+  * This means that another part can not be inserted between these parts.
+  *
+  * But if the numbers of adjacent blocks differ much (usually if there are many "abandoned" blocks between them),
+  *  then too many read requests are made to ZooKeeper to find out if it's possible to merge them.
+  *
+  * Let's use a statement that if a couple of parts were possible to merge, and their merge is not yet planned,
+  *  then now they can be merged, and we will remember this state,
+  *  not to send multiple identical requests to ZooKeeper.
+  *
+  * TODO This works incorrectly with DROP PARTITION and then ATTACH PARTITION.
+  */
 
 /** Cache for function, that returns bool.
   * If function returned true, cache it forever.
@@ -1784,7 +1779,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
     auto uncached_merging_predicate = [this](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
     {
-        return canMergeParts(left, right);
+        return canMergePartsAccordingToZooKeeperInfo(left, right, getZooKeeper(), zookeeper_path, data);
     };
 
     auto merging_predicate_args_to_key = [](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
@@ -1800,6 +1795,11 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
     auto can_merge = [&]
         (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
     {
+        /// If any of the parts is already going to be merge into a larger one, do not agree to merge it.
+        if (queue.partWillBeMergedOrMergesDisabled(left->name)
+            || (left.get() != right.get() && queue.partWillBeMergedOrMergesDisabled(right->name)))
+            return false;
+
         return cached_merging_predicate.get(now, uncached_merging_predicate, merging_predicate_args_to_key, left, right);
     };
 
@@ -2424,7 +2424,7 @@ bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, 
     auto can_merge = [this]
         (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
     {
-        return canMergeParts(left, right);
+        return canMergePartsAccordingToZooKeeperInfo(left, right, getZooKeeper(), zookeeper_path, data);
     };
 
     pullLogsToQueue();
