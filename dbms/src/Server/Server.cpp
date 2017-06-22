@@ -439,11 +439,7 @@ int Server::main(const std::vector<std::string> & args)
 
         std::vector<std::unique_ptr<Poco::Net::TCPServer>> servers;
 
-        std::vector<std::string> listen_hosts;
-        for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "listen_host"))
-        {
-            listen_hosts.emplace_back(config().getString(key));
-        }
+        std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
         bool try_listen = false;
         if (listen_hosts.empty())
