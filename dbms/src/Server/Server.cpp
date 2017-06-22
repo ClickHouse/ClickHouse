@@ -16,6 +16,8 @@
 #include <Common/StringUtils.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <common/getMemoryAmount.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/ProcessList.h>
@@ -568,6 +570,15 @@ int Server::main(const std::vector<std::string> & args)
 
         for (auto & server : servers)
             server->start();
+
+        {
+            std::stringstream message;
+            message << "Available RAM = " << formatReadableSizeWithDecimalSuffix(getMemoryAmount()) << ";"
+                << " physical cores = " << getNumberOfPhysicalCPUCores() << ";"
+                // on ARM processors it can show only enabled at current moment cores
+                << " threads = " <<  std::thread::hardware_concurrency() << ";";
+            LOG_INFO(log, message.str());
+        }
 
         LOG_INFO(log, "Ready for connections.");
 
