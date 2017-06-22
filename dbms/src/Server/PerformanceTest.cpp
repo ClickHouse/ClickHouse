@@ -11,12 +11,15 @@
 #include <boost/filesystem.hpp>
 #include <sys/stat.h>
 
+#include <common/DateLUT.h>
+
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <Client/Connection.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/getFQDNOrHostName.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Core/Types.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
@@ -514,7 +517,7 @@ public:
         connection.getServerVersion(name, version_major, version_minor, version_revision);
 
         std::stringstream ss;
-        ss << name << " v" << version_major << "." << version_minor << "." << version_revision;
+        ss << version_major << "." << version_minor << "." << version_revision;
         server_version = ss.str();
 
         processTestsConfigurations(input_files);
@@ -1217,8 +1220,9 @@ public:
         JSONString json_output;
 
         json_output.set("hostname", getFQDNOrHostName());
-        json_output.set("cpu_num", sysconf(_SC_NPROCESSORS_ONLN));
+        json_output.set("num_cores", getNumberOfPhysicalCPUCores());
         json_output.set("server_version", server_version);
+        json_output.set("time", DateLUT::instance().timeToString(time(0)));
         json_output.set("test_name", test_name);
         json_output.set("main_metric", main_metric);
 
