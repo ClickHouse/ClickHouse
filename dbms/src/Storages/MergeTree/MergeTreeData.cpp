@@ -1487,20 +1487,20 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 
     const size_t max_k = settings.parts_to_throw_insert - settings.parts_to_delay_insert; /// always > 0
     const size_t k = 1 + parts_count - settings.parts_to_delay_insert; /// from 1 to max_k
-    const double delay_sec = ::pow(settings.max_delay_to_insert, static_cast<double>(k) / max_k);
+    const double delay_milliseconds = ::pow(settings.max_delay_to_insert * 1000, static_cast<double>(k) / max_k);
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
-    ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay_sec * 1000);
+    ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay_milliseconds);
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::DelayedInserts);
 
     LOG_INFO(log, "Delaying inserting block by "
-        << std::fixed << std::setprecision(4) << delay_sec << " sec. because there are " << parts_count << " parts");
+        << std::fixed << std::setprecision(4) << delay_milliseconds << " ms. because there are " << parts_count << " parts");
 
     if (until)
-        until->tryWait(delay_sec * 1000);
+        until->tryWait(delay_milliseconds);
     else
-        std::this_thread::sleep_for(std::chrono::duration<double>(delay_sec));
+        std::this_thread::sleep_for(std::chrono::duration<std::chrono::milliseconds>(delay_milliseconds));
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)

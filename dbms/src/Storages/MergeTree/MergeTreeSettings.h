@@ -48,7 +48,7 @@ struct MergeTreeSettings
     size_t parts_to_throw_insert = 300;
 
     /// Max delay of inserting data into MergeTree table in seconds, if there are a lot of unmerged parts.
-    size_t max_delay_to_insert = 200;
+    size_t max_delay_to_insert = 1;
 
     /** Replication settings. */
 
