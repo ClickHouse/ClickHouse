@@ -1,4 +1,4 @@
-#include "getMemoryAmount.h"
+#include "common/getMemoryAmount.h"
 
 // http://nadeausoftware.com/articles/2012/09/c_c_tip_how_get_physical_memory_size_system
 

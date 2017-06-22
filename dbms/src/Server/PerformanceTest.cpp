@@ -13,7 +13,6 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-#include <Common/getMemoryAmount.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Core/Types.h>
 #include <DataStreams/RemoteBlockInputStream.h>
@@ -21,6 +20,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Settings.h>
+#include <common/getMemoryAmount.h>
 
 
 #include <Poco/AutoPtr.h>
@@ -669,11 +669,11 @@ private:
             if (precondition == "ram_size")
             {
                 size_t ram_size_needed = config->getUInt64("preconditions.ram_size");
-                size_t actual_ram_mb = getMemoryAmount() / 1024 / 1024;
-                if (!actual_ram_mb)
+                size_t actual_ram = getMemoryAmount();
+                if (!actual_ram)
                     throw DB::Exception("ram_size precondition not available on this platform", ErrorCodes::NOT_IMPLEMENTED);
 
-                if (ram_size_needed > actual_ram_mb)
+                if (ram_size_needed > actual_ram)
                 {
                     std::cerr << "Not enough RAM: need =" << ram_size_needed << " present=" << actual_ram_mb << std::endl;
                     return false;
