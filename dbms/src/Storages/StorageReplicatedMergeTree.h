@@ -418,7 +418,7 @@ private:
       */
     void mergeSelectingThread();
 
-    /// Is it possible to merge parts in the specified range? `memo` is an optional parameter.
+    /// Is it possible to merge parts in the specified range?
     bool canMergeParts(
         const MergeTreeData::DataPartPtr & left,
         const MergeTreeData::DataPartPtr & right);

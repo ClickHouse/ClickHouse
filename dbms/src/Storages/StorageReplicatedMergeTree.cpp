@@ -1691,7 +1691,7 @@ bool StorageReplicatedMergeTree::canMergeParts(
         }
         else
         {
-            String path1 = zookeeper_path +                 "/block_numbers/" + month_name + "/block-" + padIndex(number);
+            String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
             String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
 
             if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
