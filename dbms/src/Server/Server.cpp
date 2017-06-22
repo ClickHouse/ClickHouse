@@ -16,7 +16,7 @@
 #include <Common/StringUtils.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getMemoryAmount.h>
+#include <common/getMemoryAmount.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -572,19 +572,12 @@ int Server::main(const std::vector<std::string> & args)
             server->start();
 
         {
-            std::string report;
-            auto memory_amount = getMemoryAmount();
-            if (memory_amount)
-               report += " RAM = " + std::to_string(memory_amount/1024/1024) + "MB;";
-            auto cores = getNumberOfPhysicalCPUCores();
-            if (cores)
-               report += " physical cores = " + std::to_string(cores) + ";";
-            // on ARM processors it can show only enabled at current moment cores
-            auto threads = std::thread::hardware_concurrency();
-            if (threads)
-               report += " threads = " + std::to_string(threads) + ";";
-            if (!report.empty())
-                LOG_INFO(log, "Available" + report);
+            std::stringstream message;
+            message << "Available RAM = " << formatReadableSizeWithDecimalSuffix(getMemoryAmount()) << ";"
+                << " physical cores = " << getNumberOfPhysicalCPUCores() << ";"
+                // on ARM processors it can show only enabled at current moment cores
+                << " threads = " <<  std::thread::hardware_concurrency() << ";";
+            LOG_INFO(log, message.str());
         }
 
         LOG_INFO(log, "Ready for connections.");
