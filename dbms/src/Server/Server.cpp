@@ -573,10 +573,10 @@ int Server::main(const std::vector<std::string> & args)
 
         {
             std::stringstream message;
-            message << "Available RAM = " << formatReadableSizeWithDecimalSuffix(getMemoryAmount()) << ";"
+            message << "Available RAM = " << formatReadableSizeWithBinarySuffix(getMemoryAmount()) << ";"
                 << " physical cores = " << getNumberOfPhysicalCPUCores() << ";"
                 // on ARM processors it can show only enabled at current moment cores
-                << " threads = " <<  std::thread::hardware_concurrency() << ";";
+                << " threads = " <<  std::thread::hardware_concurrency() << ".";
             LOG_INFO(log, message.str());
         }
 
