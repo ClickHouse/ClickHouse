@@ -61,7 +61,7 @@ public:
 
     /** Perform the next step in combining the parts.
       */
-    bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override
+    bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings) override
     {
         return merge(settings.min_bytes_to_use_direct_io, true, partition, final, deduplicate);
     }

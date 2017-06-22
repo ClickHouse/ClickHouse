@@ -45,5 +45,9 @@ SELECT sum(data_uncompressed_bytes) FROM system.columns WHERE database='test' AN
 ALTER TABLE test.drop_column1 CLEAR COLUMN s IN PARTITION '200001';
 ALTER TABLE test.drop_column1 CLEAR COLUMN s IN PARTITION '200002';
 
+-- check optimize for non-leader replica
+OPTIMIZE TABLE test.drop_column1;
+OPTIMIZE TABLE test.drop_column2;
+
 DROP TABLE IF EXISTS test.drop_column1;
 DROP TABLE IF EXISTS test.drop_column2;

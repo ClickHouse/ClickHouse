@@ -15,6 +15,7 @@
 
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/queryToString.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -2410,12 +2411,15 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & query, con
 }
 
 
-bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
+bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
 {
     assertNotReadonly();
 
     if (!is_leader_node)
-        throw Exception("Method OPTIMIZE for ReplicatedMergeTree could be called only on leader replica", ErrorCodes::NOT_IMPLEMENTED);
+    {
+        sendRequestToLeaderReplica(query, settings);
+        return true;
+    }
 
     auto can_merge = [this]
         (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
@@ -3175,11 +3179,20 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 
     ReplicatedMergeTreeAddress leader_address(getZooKeeper()->get(zookeeper_path + "/replicas/" + leader + "/host"));
 
+    /// TODO: add setters and getters interface for database and table fields of AST
     auto new_query = query->clone();
-    auto & alter = typeid_cast<ASTAlterQuery &>(*new_query);
-
-    alter.database = leader_address.database;
-    alter.table = leader_address.table;
+    if (auto * alter = typeid_cast<ASTAlterQuery *>(new_query.get()))
+    {
+        alter->database = leader_address.database;
+        alter->table = leader_address.table;
+    }
+    else if (auto * optimize = typeid_cast<ASTOptimizeQuery *>(new_query.get()))
+    {
+        optimize->database = leader_address.database;
+        optimize->table = leader_address.table;
+    }
+    else
+        throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);
 
     /// NOTE Works only if there is access from the default user without a password. You can fix it by adding a parameter to the server config.
 

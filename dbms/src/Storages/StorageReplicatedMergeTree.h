@@ -132,7 +132,7 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
-    bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override;
+    bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings) override;
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
