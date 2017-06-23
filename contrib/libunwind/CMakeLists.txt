@@ -1,4 +1,4 @@
-add_definitions(-DHAVE_CONFIG_H=1 -D_GNU_SOURCE -Wno-visibility -Wno-header-guard)
+add_definitions(-DHAVE_CONFIG_H=1 -D_XOPEN_SOURCE -D_GNU_SOURCE -Wno-visibility -Wno-header-guard)
 
 include_directories(include include/tdep src)
 
