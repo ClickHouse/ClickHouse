@@ -1,5 +1,5 @@
 if (CMAKE_SYSTEM MATCHES "Linux")
-    option (USE_INTERNAL_UNWIND_LIBRARY "Set to FALSE to use system unwind library instead of bundled" ${NOT_UNBUNDLED})
+    option (USE_INTERNAL_UNWIND_LIBRARY "Set to FALSE to use system unwind library instead of bundled" ${UNBUNDLED})
 else ()
     option (USE_INTERNAL_UNWIND_LIBRARY "Set to FALSE to use system unwind library instead of bundled" OFF)
 endif ()
@@ -10,8 +10,10 @@ if (NOT USE_INTERNAL_UNWIND_LIBRARY)
 
     include (CheckCXXSourceCompiles)
     set(CMAKE_REQUIRED_INCLUDES ${UNWIND_INCLUDE_DIR})
+    set(CMAKE_REQUIRED_LIBRARIES ${UNWIND_LIBRARY})
     check_cxx_source_compiles("
-    #include <unwind.h>
+    #include <ucontext.h>
+    #include <libunwind.h>
     int main () {
        ucontext_t context;
        unw_cursor_t cursor;
