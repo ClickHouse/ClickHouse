@@ -12,7 +12,7 @@ add_library (daemon
 )
 
 if (USE_UNWIND)
-    target_include_directories (daemon BRFORE PRIVATE ${UNWIND_INCLUDE_DIR})
+    target_include_directories (daemon BEFORE PRIVATE ${UNWIND_INCLUDE_DIR})
     add_definitions(-DUSE_UNWIND=1)
     target_link_libraries (daemon ${UNWIND_LIBRARY})
 endif ()
