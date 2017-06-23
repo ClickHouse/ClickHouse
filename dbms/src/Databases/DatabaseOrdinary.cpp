@@ -132,7 +132,7 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
     }
 
     /** Tables load faster if they are loaded in sorted (by name) order.
-      * Otherwise (for the ext4 file system), `DirectoryIterator` iterates through them in some order,
+      * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
       */
     std::sort(file_names.begin(), file_names.end());

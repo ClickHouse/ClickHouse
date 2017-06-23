@@ -26,6 +26,8 @@ add_library (common
     src/DateLUTImpl.cpp
     src/exp10.cpp
     src/JSON.cpp
+    src/getMemoryAmount.cpp
+    src/iostream_debug_helpers.cpp
 
     include/common/ApplicationServerExt.h
     include/common/Types.h
@@ -41,6 +43,8 @@ add_library (common
     include/common/singleton.h
     include/common/strong_typedef.h
     include/common/JSON.h
+    include/common/getMemoryAmount.h
+    include/common/iostream_debug_helpers.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h

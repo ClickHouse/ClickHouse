@@ -62,7 +62,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::Block & what)
 {
     stream << "Block("
            << "size = " << what.getColumns().size()
-           << ")";
+           << "){" << what.dumpStructure() << "}";
     return stream;
 }
 
@@ -79,3 +79,15 @@ std::ostream & operator<<(std::ostream & stream, const DB::IColumn & what)
            << ")";
     return stream;
 }
+
+std::ostream & operator<<(std::ostream & stream, const DB::Connection::Packet & what) {
+    stream << "Connection::Packet("
+        << "type = " << what.type;
+        // types description: Core/Protocol.h
+    if (what.exception)
+        stream << "exception = " << what.exception.get();
+    //TODO: profile_info
+    stream << ") {" << what.block << "}";
+    return stream;
+}
+

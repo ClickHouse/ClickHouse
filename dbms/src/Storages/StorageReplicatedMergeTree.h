@@ -418,13 +418,6 @@ private:
       */
     void mergeSelectingThread();
 
-    using MemoizedPartsThatCouldBeMerged = std::set<std::pair<std::string, std::string>>;
-    /// Is it possible to merge parts in the specified range? `memo` is an optional parameter.
-    bool canMergeParts(
-        const MergeTreeData::DataPartPtr & left,
-        const MergeTreeData::DataPartPtr & right,
-        MemoizedPartsThatCouldBeMerged * memo);
-
     /** Write the selected parts to merge into the log,
       * Call when merge_selecting_mutex is locked.
       * Returns false if any part is not in ZK.

@@ -396,8 +396,8 @@ private:
 
     std::mutex mutex;
     std::condition_variable cond;
-    std::thread thread{&SessionCleaner::run, this};
     std::atomic<bool> quit{false};
+    std::thread thread{&SessionCleaner::run, this};
 };
 
 }
