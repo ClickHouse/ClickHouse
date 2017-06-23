@@ -1,4 +1,5 @@
 include_directories (include)
+include_directories (${ClickHouse_SOURCE_DIR}/contrib/libunwind/include)
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 add_library (daemon
@@ -11,4 +12,4 @@ add_library (daemon
     include/daemon/OwnPatternFormatter.h
 )
 
-target_link_libraries (daemon dbms)
+target_link_libraries (daemon dbms unwind)

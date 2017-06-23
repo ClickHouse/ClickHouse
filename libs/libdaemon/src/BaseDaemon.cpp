@@ -11,11 +11,16 @@
 #include <signal.h>
 #include <cxxabi.h>
 #include <execinfo.h>
+
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
+
 #ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
 #define _XOPEN_SOURCE
 #endif
 #include <ucontext.h>
+
 #include <typeinfo>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
@@ -175,6 +180,30 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 static bool already_printed_stack_trace = false;
 
 
+size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & context)
+{
+    if (already_printed_stack_trace)
+        return 0;
+
+    unw_cursor_t cursor;
+
+    if (unw_init_local_signal(&cursor, &context) < 0)
+        return 0;
+
+    size_t i = 0;
+    for (; i < max_frames; ++i)
+    {
+        unw_word_t ip;
+        unw_get_reg(&cursor, UNW_REG_IP, &ip);
+        out_frames[i] = reinterpret_cast<void*>(ip);
+        if (!unw_step(&cursor))
+            break;
+    }
+
+    return i;
+}
+
+
 /** Получает информацию через pipe.
   * При получении сигнала HUP / USR1 закрывает лог-файлы.
   * При получении информации из std::terminate, выводит её в лог.
@@ -293,14 +322,10 @@ private:
 
         static const int max_frames = 50;
         void * frames[max_frames];
-        int frames_size = backtrace(frames, max_frames);
+        int frames_size = backtraceLibUnwind(frames, max_frames, context);
 
-        if (frames_size >= 2)
+        if (frames_size)
         {
-            /// Overwrite sigaction with caller's address
-            if (caller_address && (frames_size < 3 || caller_address != frames[2]))
-                frames[1] = caller_address;
-
             char ** symbols = backtrace_symbols(frames, frames_size);
 
             if (!symbols)
