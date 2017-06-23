@@ -1,5 +1,4 @@
 include_directories (include)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcctz/include)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
@@ -79,10 +78,12 @@ endif ()
 
 find_package (Threads)
 
+target_include_directories (common PRIVATE ${CCTZ_INCLUDE_DIR})
+
 target_link_libraries (
     common
     pocoext
-    cctz
+    ${CCTZ_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
     ${Boost_FILESYSTEM_LIBRARY}
     ${MALLOC_LIBRARIES}
