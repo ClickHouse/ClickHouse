@@ -9,7 +9,7 @@
 
 namespace Poco
 {
-class Logger;
+    class Logger;
 }
 
 
@@ -35,7 +35,8 @@ private:
 public:
     DatabaseDictionary(const String & name_, const Context & context);
 
-    String getEngineName() const override {
+    String getEngineName() const override
+    {
         return "Dictionary";
     }
     void loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag) override;
