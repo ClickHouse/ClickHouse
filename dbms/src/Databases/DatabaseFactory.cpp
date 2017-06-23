@@ -3,7 +3,6 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseDictionary.h>
 
-
 namespace DB
 {
 
@@ -24,7 +23,7 @@ DatabasePtr DatabaseFactory::get(
     else if (engine_name == "Memory")
         return std::make_shared<DatabaseMemory>(database_name);
     else if (engine_name == "Dictionary")
-        return std::make_shared<DatabaseDictionary>(database_name);
+        return std::make_shared<DatabaseDictionary>(database_name, context);
 
     throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);
 }

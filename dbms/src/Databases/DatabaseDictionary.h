@@ -1,38 +1,43 @@
 #pragma once
 
 #include <mutex>
+#include <unordered_set>
+#include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 
 
-namespace Poco {
+namespace Poco
+{
 class Logger;
 }
 
 
 namespace DB
 {
+class ExternalDictionaries;
 
 /* Database to store StorageDictionary tables
  * automatically creates tables for all dictionaries
  */
 class DatabaseDictionary : public IDatabase
 {
-protected:
+private:
     const String name;
     mutable std::mutex mutex;
-    Tables tables;
+    const ExternalDictionaries & external_dictionaries;
+    std::unordered_set<String> deleted_tables;
 
     Poco::Logger * log;
 
-public:
+    Tables loadTables();
 
-    DatabaseDictionary(const String & name_) : name(name_) {}
+public:
+    DatabaseDictionary(const String & name_, const Context & context);
 
     String getEngineName() const override {
         return "Dictionary";
     }
-
     void loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag) override;
 
     bool isTableExist(const String & table_name) const override;
@@ -42,16 +47,22 @@ public:
 
     bool empty() const override;
 
-    void createTable(
-        const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings) override;
+    void createTable(const String & table_name,
+                     const StoragePtr & table,
+                     const ASTPtr & query,
+                     const String & engine,
+                     const Settings & settings) override;
 
     void removeTable(const String & table_name) override;
 
     void attachTable(const String & table_name, const StoragePtr & table) override;
     StoragePtr detachTable(const String & table_name) override;
 
-    void renameTable(
-        const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings) override;
+    void renameTable(const Context & context,
+                     const String & table_name,
+                     IDatabase & to_database,
+                     const String & to_table_name,
+                     const Settings & settings) override;
 
     time_t getTableMetadataModificationTime(const String & table_name) override;
 
@@ -60,15 +71,12 @@ public:
     void shutdown() override;
     void drop() override;
 
-    void alterTable(
-        const Context & context,
-        const String & name,
-        const NamesAndTypesList & columns,
-        const NamesAndTypesList & materialized_columns,
-        const NamesAndTypesList & alias_columns,
-        const ColumnDefaults & column_defaults,
-        const ASTModifier & engine_modifier) override;
+    void alterTable(const Context & context,
+                    const String & name,
+                    const NamesAndTypesList & columns,
+                    const NamesAndTypesList & materialized_columns,
+                    const NamesAndTypesList & alias_columns,
+                    const ColumnDefaults & column_defaults,
+                    const ASTModifier & engine_modifier) override;
 };
-
 }
-

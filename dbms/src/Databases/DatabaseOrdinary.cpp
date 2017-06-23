@@ -342,7 +342,7 @@ void DatabaseOrdinary::renameTable(
     StoragePtr table = tryGetTable(table_name);
 
     if (!table)
-        throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try

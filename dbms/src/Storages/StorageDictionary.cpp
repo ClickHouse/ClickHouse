@@ -9,7 +9,8 @@
 #include <Interpreters/ExternalDictionaries.h>
 #include <common/logger_useful.h>
 
-namespace DB {
+namespace DB
+{
 
 StoragePtr StorageDictionary::create(
     const String & table_name,
@@ -23,7 +24,8 @@ StoragePtr StorageDictionary::create(
     ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query);
     const ASTFunction & function = typeid_cast<const ASTFunction &> (*create.storage);
     String dictionary_name;
-    if (function.arguments) {
+    if (function.arguments)
+    {
         std::stringstream iss;
         function.arguments->format(IAST::FormatSettings(iss, false, false));
         dictionary_name = iss.str();
@@ -31,13 +33,12 @@ StoragePtr StorageDictionary::create(
 
     const auto & dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
     const DictionaryStructure & dictionary_structure = dictionary->getStructure();
-    return make_shared(table_name, context, columns, materialized_columns, alias_columns,
+    return make_shared(table_name, columns, materialized_columns, alias_columns,
                        column_defaults, dictionary_structure, dictionary_name);
 }
 
 StoragePtr StorageDictionary::create(
     const String & table_name,
-    Context & context,
     NamesAndTypesListPtr columns,
     const NamesAndTypesList & materialized_columns,
     const NamesAndTypesList & alias_columns,
@@ -45,13 +46,12 @@ StoragePtr StorageDictionary::create(
     const DictionaryStructure & dictionary_structure,
     const String & dictionary_name)
 {
-    return make_shared(table_name, context, columns, materialized_columns, alias_columns,
+    return make_shared(table_name, columns, materialized_columns, alias_columns,
                        column_defaults, dictionary_structure, dictionary_name);
 }
 
 StorageDictionary::StorageDictionary(
     const String & table_name_,
-    Context & context_,
     NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
@@ -59,7 +59,7 @@ StorageDictionary::StorageDictionary(
     const DictionaryStructure & dictionary_structure_,
     const String & dictionary_name_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
-    context(context_), columns(columns_), dictionary_name(dictionary_name_),
+    columns(columns_), dictionary_name(dictionary_name_),
     logger(&Poco::Logger::get("StorageDictionary"))
 {
     checkNamesAndTypesCompatibleWithDictionary(dictionary_structure_);
@@ -106,8 +106,10 @@ void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const Diction
     auto dictionaryNamesAndTypes = getNamesAndTypes(dictionaryStructure);
     std::set<NameAndTypePair> namesAndTypesSet(dictionaryNamesAndTypes->begin(), dictionaryNamesAndTypes->end());
 
-    for (auto & column : *columns) {
-        if (namesAndTypesSet.find(column) == namesAndTypesSet.end()) {
+    for (auto & column : *columns)
+    {
+        if (namesAndTypesSet.find(column) == namesAndTypesSet.end())
+        {
             std::string message = "Not found column ";
             message += column.name + " " + column.type->getName();
             message += " in dictionary " + dictionary_name + ". ";
