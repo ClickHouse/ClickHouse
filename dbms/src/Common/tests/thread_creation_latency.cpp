@@ -3,8 +3,6 @@
 
 #include <IO/ReadHelpers.h>
 
-//#include <common/ThreadPool.h>
-
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <common/ThreadPool.h>
