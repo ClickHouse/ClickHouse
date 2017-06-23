@@ -1614,159 +1614,162 @@ bool StorageReplicatedMergeTree::queueTask()
 }
 
 
-static bool canMergePartsAccordingToZooKeeperInfo(
-    const MergeTreeData::DataPartPtr & left,
-    const MergeTreeData::DataPartPtr & right,
-    zkutil::ZooKeeperPtr && zookeeper, const String & zookeeper_path, const MergeTreeData & data)
+namespace
 {
-    String month_name = left->name.substr(0, 6);
-
-    /// You can not merge parts, among which is a part for which the quorum is unsatisfied.
-    /// Note: theoretically, this could be resolved. But this will make logic more complex.
-    String quorum_node_value;
-    if (zookeeper->tryGet(zookeeper_path + "/quorum/status", quorum_node_value))
+    bool canMergePartsAccordingToZooKeeperInfo(
+        const MergeTreeData::DataPartPtr & left,
+        const MergeTreeData::DataPartPtr & right,
+        zkutil::ZooKeeperPtr && zookeeper, const String & zookeeper_path, const MergeTreeData & data)
     {
-        ReplicatedMergeTreeQuorumEntry quorum_entry;
-        quorum_entry.fromString(quorum_node_value);
+        String month_name = left->name.substr(0, 6);
 
-        ActiveDataPartSet::Part part_info;
-        ActiveDataPartSet::parsePartName(quorum_entry.part_name, part_info);
-
-        if (part_info.left != part_info.right)
-            throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
-
-        if (left->right <= part_info.left && right->left >= part_info.right)
-            return false;
-    }
-
-    /// Won't merge last_part even if quorum is satisfied, because we gonna check if replica has this part
-    /// on SELECT execution.
-    String quorum_last_part;
-    if (zookeeper->tryGet(zookeeper_path + "/quorum/last_part", quorum_last_part) && quorum_last_part.empty() == false)
-    {
-        ActiveDataPartSet::Part part_info;
-        ActiveDataPartSet::parsePartName(quorum_last_part, part_info);
-
-        if (part_info.left != part_info.right)
-            throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
-
-        if (left->right <= part_info.left && right->left >= part_info.right)
-            return false;
-    }
-
-    /// You can merge the parts, if all the numbers between them are abandoned - do not correspond to any blocks.
-    for (Int64 number = left->right + 1; number <= right->left - 1; ++number)
-    {
-        /** For numbers before RESERVED_BLOCK_NUMBERS AbandonableLock is not used
-            *  - these numbers can not be "abandoned" - that is, not used for parts.
-            * These are the part numbers that were added using `ALTER ... ATTACH`.
-            * They should go without a gap (for each number there should be a part).
-            * We check that for all such numbers there are parts,
-            *  otherwise, through the "holes" - missing parts, you can not merge.
-            */
-
-        if (number < RESERVED_BLOCK_NUMBERS)
+        /// You can not merge parts, among which is a part for which the quorum is unsatisfied.
+        /// Note: theoretically, this could be resolved. But this will make logic more complex.
+        String quorum_node_value;
+        if (zookeeper->tryGet(zookeeper_path + "/quorum/status", quorum_node_value))
         {
-            if (!data.hasBlockNumberInMonth(number, left->month))
+            ReplicatedMergeTreeQuorumEntry quorum_entry;
+            quorum_entry.fromString(quorum_node_value);
+
+            ActiveDataPartSet::Part part_info;
+            ActiveDataPartSet::parsePartName(quorum_entry.part_name, part_info);
+
+            if (part_info.left != part_info.right)
+                throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
+
+            if (left->right <= part_info.left && right->left >= part_info.right)
                 return false;
         }
-        else
-        {
-            String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
-            String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
 
-            if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
-                AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
+        /// Won't merge last_part even if quorum is satisfied, because we gonna check if replica has this part
+        /// on SELECT execution.
+        String quorum_last_part;
+        if (zookeeper->tryGet(zookeeper_path + "/quorum/last_part", quorum_last_part) && quorum_last_part.empty() == false)
+        {
+            ActiveDataPartSet::Part part_info;
+            ActiveDataPartSet::parsePartName(quorum_last_part, part_info);
+
+            if (part_info.left != part_info.right)
+                throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
+
+            if (left->right <= part_info.left && right->left >= part_info.right)
                 return false;
         }
-    }
 
-    return true;
-}
-
-
-/** It can take a long time to determine whether it is possible to merge two adjacent parts.
-  * Two adjacent parts can be merged if all block numbers between their numbers are not used (abandoned).
-  * This means that another part can not be inserted between these parts.
-  *
-  * But if the numbers of adjacent blocks differ much (usually if there are many "abandoned" blocks between them),
-  *  then too many read requests are made to ZooKeeper to find out if it's possible to merge them.
-  *
-  * Let's use a statement that if a couple of parts were possible to merge, and their merge is not yet planned,
-  *  then now they can be merged, and we will remember this state,
-  *  not to send multiple identical requests to ZooKeeper.
-  *
-  * TODO This works incorrectly with DROP PARTITION and then ATTACH PARTITION.
-  */
-
-/** Cache for function, that returns bool.
-  * If function returned true, cache it forever.
-  * If function returned false, cache it for exponentially growing time.
-  * Not thread safe.
-  */
-template <typename Key>
-struct CachedMergingPredicate
-{
-    using clock = std::chrono::steady_clock;
-
-    struct Expiration
-    {
-        static constexpr clock::duration min_delay = std::chrono::seconds(1);
-        static constexpr clock::duration max_delay = std::chrono::seconds(600);
-        static constexpr double exponent_base = 2;
-
-        clock::time_point expire_time;
-        clock::duration delay = clock::duration::zero();
-
-        void next(clock::time_point now)
+        /// You can merge the parts, if all the numbers between them are abandoned - do not correspond to any blocks.
+        for (Int64 number = left->right + 1; number <= right->left - 1; ++number)
         {
-            if (delay == clock::duration::zero())
-                delay = min_delay;
+            /** For numbers before RESERVED_BLOCK_NUMBERS AbandonableLock is not used
+                *  - these numbers can not be "abandoned" - that is, not used for parts.
+                * These are the part numbers that were added using `ALTER ... ATTACH`.
+                * They should go without a gap (for each number there should be a part).
+                * We check that for all such numbers there are parts,
+                *  otherwise, through the "holes" - missing parts, you can not merge.
+                */
+
+            if (number < RESERVED_BLOCK_NUMBERS)
+            {
+                if (!data.hasBlockNumberInMonth(number, left->month))
+                    return false;
+            }
             else
             {
-                delay *= exponent_base;
-                if (delay > max_delay)
-                    delay = max_delay;
-            }
+                String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
+                String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
 
-            expire_time = now + delay;
+                if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
+                    AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
+                    return false;
+            }
         }
 
-        bool expired(clock::time_point now) const
+        return true;
+    }
+
+
+    /** It can take a long time to determine whether it is possible to merge two adjacent parts.
+    * Two adjacent parts can be merged if all block numbers between their numbers are not used (abandoned).
+    * This means that another part can not be inserted between these parts.
+    *
+    * But if the numbers of adjacent blocks differ much (usually if there are many "abandoned" blocks between them),
+    *  then too many read requests are made to ZooKeeper to find out if it's possible to merge them.
+    *
+    * Let's use a statement that if a couple of parts were possible to merge, and their merge is not yet planned,
+    *  then now they can be merged, and we will remember this state,
+    *  not to send multiple identical requests to ZooKeeper.
+    *
+    * TODO This works incorrectly with DROP PARTITION and then ATTACH PARTITION.
+    */
+
+    /** Cache for function, that returns bool.
+    * If function returned true, cache it forever.
+    * If function returned false, cache it for exponentially growing time.
+    * Not thread safe.
+    */
+    template <typename Key>
+    struct CachedMergingPredicate
+    {
+        using clock = std::chrono::steady_clock;
+
+        struct Expiration
         {
-            return now > expire_time;
+            static constexpr clock::duration min_delay = std::chrono::seconds(1);
+            static constexpr clock::duration max_delay = std::chrono::seconds(600);
+            static constexpr double exponent_base = 2;
+
+            clock::time_point expire_time;
+            clock::duration delay = clock::duration::zero();
+
+            void next(clock::time_point now)
+            {
+                if (delay == clock::duration::zero())
+                    delay = min_delay;
+                else
+                {
+                    delay *= exponent_base;
+                    if (delay > max_delay)
+                        delay = max_delay;
+                }
+
+                expire_time = now + delay;
+            }
+
+            bool expired(clock::time_point now) const
+            {
+                return now > expire_time;
+            }
+        };
+
+        std::set<Key> true_keys;
+        std::map<Key, Expiration> false_keys;
+
+        template <typename Function, typename ArgsToKey, typename... Args>
+        bool get(clock::time_point now, Function && function, ArgsToKey && args_to_key, Args &&... args)
+        {
+            Key key{args_to_key(std::forward<Args>(args)...)};
+
+            if (true_keys.count(key))
+                return true;
+
+            auto it = false_keys.find(key);
+            if (false_keys.end() != it && !it->second.expired(now))
+                return false;
+
+            bool value = function(std::forward<Args>(args)...);
+
+            if (value)
+                true_keys.insert(key);
+            else
+                false_keys[key].next(now);
+
+            return value;
         }
     };
 
-    std::set<Key> true_keys;
-    std::map<Key, Expiration> false_keys;
-
-    template <typename Function, typename ArgsToKey, typename... Args>
-    bool get(clock::time_point now, Function && function, ArgsToKey && args_to_key, Args &&... args)
-    {
-        Key key{args_to_key(std::forward<Args>(args)...)};
-
-        if (true_keys.count(key))
-            return true;
-
-        auto it = false_keys.find(key);
-        if (false_keys.end() != it && !it->second.expired(now))
-            return false;
-
-        bool value = function(std::forward<Args>(args)...);
-
-        if (value)
-            true_keys.insert(key);
-        else
-            false_keys[key].next(now);
-
-        return value;
-    }
-};
-
-template <typename Key> constexpr CachedMergingPredicate<Key>::clock::duration CachedMergingPredicate<Key>::Expiration::min_delay;
-template <typename Key> constexpr CachedMergingPredicate<Key>::clock::duration CachedMergingPredicate<Key>::Expiration::max_delay;
-template <typename Key> constexpr double CachedMergingPredicate<Key>::Expiration::exponent_base;
+    template <typename Key> constexpr CachedMergingPredicate<Key>::clock::duration CachedMergingPredicate<Key>::Expiration::min_delay;
+    template <typename Key> constexpr CachedMergingPredicate<Key>::clock::duration CachedMergingPredicate<Key>::Expiration::max_delay;
+    template <typename Key> constexpr double CachedMergingPredicate<Key>::Expiration::exponent_base;
+}
 
 
 void StorageReplicatedMergeTree::mergeSelectingThread()
@@ -1913,7 +1916,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
         /// Remove the unnecessary entries about non-existent blocks.
         for (Int64 number = std::max(RESERVED_BLOCK_NUMBERS, parts[i]->right + 1); number <= parts[i + 1]->left - 1; ++number)
         {
-            zookeeper->tryRemove(zookeeper_path +               "/block_numbers/" + month_name + "/block-" + padIndex(number));
+            zookeeper->tryRemove(zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number));
             zookeeper->tryRemove(zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number));
         }
     }
