@@ -14,15 +14,8 @@ get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPE
 string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_build.cpp.in ${CONFIG_BUILD})
 
-
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libbtrie/include)
-include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 include_directories (${ClickHouse_BINARY_DIR}/dbms/src)
 
 if (NOT NO_WERROR)
@@ -211,9 +204,15 @@ target_link_libraries (dbms
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
-target_include_directories (dbms
-    INTERFACE include
-)
+target_include_directories (dbms INTERFACE include)
+
+target_include_directories (dbms BEFORE PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include)
+target_include_directories (dbms BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
+target_include_directories (dbms BEFORE PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/libbtrie/include)
+target_include_directories (dbms PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libmysqlxx/include)
+target_include_directories (dbms PRIVATE ${ClickHouse_SOURCE_DIR}/libs/libpocoext/include)
+target_include_directories (dbms BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libcityhash/include)
+
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)
