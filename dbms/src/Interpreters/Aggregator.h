@@ -12,7 +12,7 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
 #include <DataStreams/IBlockInputStream.h>
 

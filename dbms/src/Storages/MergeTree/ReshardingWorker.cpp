@@ -22,7 +22,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 
