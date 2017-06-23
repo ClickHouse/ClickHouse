@@ -32,6 +32,7 @@ add_subdirectory (libcityhash)
 add_subdirectory (libfarmhash)
 add_subdirectory (libmetrohash)
 add_subdirectory (libbtrie)
+add_subdirectory (libunwind)
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
 	add_subdirectory (libzlib-ng)
