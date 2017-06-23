@@ -14,9 +14,7 @@ get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPE
 string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_build.cpp.in ${CONFIG_BUILD})
 
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
-
-include_directories (${ClickHouse_BINARY_DIR}/dbms/src)
+include_directories (${DBMS_INCLUDE_DIR})
 
 if (NOT NO_WERROR)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
@@ -204,8 +202,6 @@ target_link_libraries (dbms
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
-target_include_directories (dbms INTERFACE include)
-
 target_include_directories (dbms BEFORE PRIVATE ${CPUID_INCLUDE_DIR})
 target_include_directories (dbms BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms BEFORE PRIVATE ${BTRIE_INCLUDE_DIR})
@@ -213,7 +209,7 @@ target_include_directories (dbms BEFORE PRIVATE ${CITYHASH_INCLUDE_DIR})
 target_include_directories (dbms PUBLIC ${MYSQLXX_INCLUDE_DIR})
 target_include_directories (dbms PRIVATE ${POCOEXT_INCLUDE_DIR})
 target_include_directories (dbms PRIVATE ${COMMON_INCLUDE_DIR})
-
+target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)

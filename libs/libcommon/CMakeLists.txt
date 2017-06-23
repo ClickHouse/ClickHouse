@@ -24,6 +24,7 @@ add_library (common
     src/exp10.cpp
     src/JSON.cpp
     src/getMemoryAmount.cpp
+    src/ThreadPool.cpp
     src/iostream_debug_helpers.cpp
 
     include/common/ApplicationServerExt.h
@@ -41,6 +42,7 @@ add_library (common
     include/common/strong_typedef.h
     include/common/JSON.h
     include/common/getMemoryAmount.h
+    include/common/ThreadPool.h
     include/common/iostream_debug_helpers.h
 
     include/ext/bit_cast.h
