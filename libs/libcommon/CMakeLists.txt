@@ -1,7 +1,5 @@
 include_directories (include)
 
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
-
 if (APPLE)
     if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
         set (APPLE_SIERRA_OR_NEWER 1)
@@ -26,6 +24,7 @@ add_library (common
     src/exp10.cpp
     src/JSON.cpp
     src/getMemoryAmount.cpp
+    src/ThreadPool.cpp
     src/iostream_debug_helpers.cpp
 
     include/common/ApplicationServerExt.h
@@ -43,6 +42,7 @@ add_library (common
     include/common/strong_typedef.h
     include/common/JSON.h
     include/common/getMemoryAmount.h
+    include/common/ThreadPool.h
     include/common/iostream_debug_helpers.h
 
     include/ext/bit_cast.h
@@ -78,7 +78,9 @@ endif ()
 
 find_package (Threads)
 
-target_include_directories (common PRIVATE ${CCTZ_INCLUDE_DIR})
+target_include_directories (common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
+target_include_directories (common BEFORE PUBLIC ${CITYHASH_INCLUDE_DIR})
+target_include_directories (common BEFORE PUBLIC ${COMMON_INCLUDE_DIR})
 
 target_link_libraries (
     common

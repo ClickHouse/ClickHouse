@@ -13,7 +13,7 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Common/UInt128.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
 
 namespace DB

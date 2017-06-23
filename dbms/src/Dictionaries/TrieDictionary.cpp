@@ -12,6 +12,7 @@
 #include <IO/WriteIntText.h>
 #include <Common/formatIPv6.h>
 #include <iostream>
+#include <btrie.h>
 
 
 namespace DB

@@ -22,7 +22,7 @@ PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 
 # Опция -mcx16 для того, чтобы выбиралось больше заголовочных файлов (с запасом).
 
-for src_file in $($CLANG -M -xc++ -std=gnu++1y -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
+for src_file in $($CLANG -M -xc++ -std=gnu++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
     $(cat "$SOURCE_PATH/build/include_directories.txt") \
     "$SOURCE_PATH/dbms/src/Interpreters/SpecializedAggregator.h" |
     tr -d '\\' |

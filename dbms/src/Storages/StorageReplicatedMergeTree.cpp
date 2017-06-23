@@ -37,7 +37,7 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
 #include <ext/range.h>
 #include <ext/scope_guard.h>

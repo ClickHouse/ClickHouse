@@ -1,5 +1,4 @@
 include_directories (include)
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 add_library (daemon
     src/BaseDaemon.cpp
@@ -16,4 +15,6 @@ if (USE_UNWIND)
     add_definitions(-DUSE_UNWIND=1)
     target_link_libraries (daemon ${UNWIND_LIBRARY})
 endif ()
+
 target_link_libraries (daemon dbms)
+target_include_directories (daemon PRIVATE ${ClickHouse_SOURCE_DIR}/libs/libpocoext/include)

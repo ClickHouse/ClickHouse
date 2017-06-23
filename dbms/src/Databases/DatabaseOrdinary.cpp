@@ -7,7 +7,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
 #include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>

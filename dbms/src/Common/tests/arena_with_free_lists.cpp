@@ -15,7 +15,7 @@
 #include <ext/size.h>
 #include <Common/Arena.h>
 
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Core/Field.h>
 #include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromFileDescriptor.h>

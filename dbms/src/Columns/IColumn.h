@@ -7,7 +7,7 @@
 
 #include <Core/Field.h>
 #include <Common/Exception.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 
 
 class SipHash;

@@ -14,7 +14,7 @@
 #include <Client/Connection.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Core/Types.h>

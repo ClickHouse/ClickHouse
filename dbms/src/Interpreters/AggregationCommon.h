@@ -6,7 +6,7 @@
 #include <Common/Arena.h>
 #include <Common/UInt128.h>
 #include <Core/Defines.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>

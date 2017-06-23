@@ -2,12 +2,16 @@
 
 #include <common/DateLUTImpl.h>
 #include <common/singleton.h>
-#include <Core/Defines.h>
 
 #include <unordered_map>
 #include <atomic>
 #include <mutex>
 #include <memory>
+
+// Also defined in Core/Defines.h
+#if !defined(ALWAYS_INLINE)
+    #define ALWAYS_INLINE __attribute__((__always_inline__))
+#endif
 
 
 /// This class provides lazy initialization and lookup of singleton DateLUTImpl objects for a given timezone.
