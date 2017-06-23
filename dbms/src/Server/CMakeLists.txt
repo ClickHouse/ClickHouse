@@ -32,6 +32,7 @@ target_link_libraries (clickhouse-performance-test dbms ${Boost_PROGRAM_OPTIONS_
 
 
 add_executable(clickhouse main.cpp)
+target_include_directories(clickhouse PRIVATE ${COMMON_INCLUDE_DIR})
 target_link_libraries(clickhouse
     clickhouse-server
     clickhouse-client

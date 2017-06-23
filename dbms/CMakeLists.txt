@@ -206,12 +206,13 @@ target_link_libraries (dbms
 
 target_include_directories (dbms INTERFACE include)
 
-target_include_directories (dbms BEFORE PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include)
-target_include_directories (dbms BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
-target_include_directories (dbms BEFORE PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/libbtrie/include)
+target_include_directories (dbms BEFORE PRIVATE ${CPUID_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PRIVATE ${BTRIE_INCLUDE_DIR})
 target_include_directories (dbms BEFORE PRIVATE ${CITYHASH_INCLUDE_DIR})
-target_include_directories (dbms PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libmysqlxx/include)
-target_include_directories (dbms PRIVATE ${ClickHouse_SOURCE_DIR}/libs/libpocoext/include)
+target_include_directories (dbms PUBLIC ${MYSQLXX_INCLUDE_DIR})
+target_include_directories (dbms PRIVATE ${POCOEXT_INCLUDE_DIR})
+target_include_directories (dbms PRIVATE ${COMMON_INCLUDE_DIR})
 
 
 if (ENABLE_TESTS)

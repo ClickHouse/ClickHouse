@@ -1,7 +1,5 @@
 include_directories (include)
 
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
-
 if (APPLE)
     if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
         set (APPLE_SIERRA_OR_NEWER 1)
@@ -78,8 +76,9 @@ endif ()
 
 find_package (Threads)
 
-target_include_directories (common PRIVATE ${CCTZ_INCLUDE_DIR})
+target_include_directories (common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
 target_include_directories (common BEFORE PUBLIC ${CITYHASH_INCLUDE_DIR})
+target_include_directories (common BEFORE PUBLIC ${COMMON_INCLUDE_DIR})
 
 target_link_libraries (
     common
