@@ -7,7 +7,7 @@
 #include <Common/SmallObjectPool.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <ext/bit_cast.h>
 #include <Poco/RWLock.h>
 #include <atomic>

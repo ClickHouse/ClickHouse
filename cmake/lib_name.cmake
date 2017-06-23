@@ -1,0 +1,8 @@
+
+set(CITYHASH_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libcityhash/include)
+set(CPUID_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include)
+set(DIVIDE_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
+set(BTRIE_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libbtrie/include)
+set(CITYHASH_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libcityhash/include)
+set(MYSQLXX_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/libs/libmysqlxx/include)
+set(POCOEXT_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/libs/libpocoext/include)

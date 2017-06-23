@@ -79,6 +79,7 @@ endif ()
 find_package (Threads)
 
 target_include_directories (common PRIVATE ${CCTZ_INCLUDE_DIR})
+target_include_directories (common BEFORE PUBLIC ${CITYHASH_INCLUDE_DIR})
 
 target_link_libraries (
     common

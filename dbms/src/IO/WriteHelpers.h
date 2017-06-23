@@ -13,7 +13,7 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteIntText.h>

@@ -9,7 +9,7 @@
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
-#include <Common/unaligned.h>
+#include <common/unaligned.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressedStream.h>

@@ -14,7 +14,7 @@
 #include <common/exp10.h>
 
 #include <Core/Types.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/Arena.h>

@@ -8,5 +8,3 @@ include_directories (${ClickHouse_BINARY_DIR}/dbms/src)
 include_directories (${ClickHouse_SOURCE_DIR}/libs/libcommon/include)
 # for generated config_common.h:
 include_directories (${ClickHouse_BINARY_DIR}/libs/libcommon/include)
-# for stringref:
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcityhash/include)

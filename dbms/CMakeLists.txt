@@ -209,9 +209,9 @@ target_include_directories (dbms INTERFACE include)
 target_include_directories (dbms BEFORE PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include)
 target_include_directories (dbms BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
 target_include_directories (dbms BEFORE PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/libbtrie/include)
+target_include_directories (dbms BEFORE PRIVATE ${CITYHASH_INCLUDE_DIR})
 target_include_directories (dbms PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libmysqlxx/include)
 target_include_directories (dbms PRIVATE ${ClickHouse_SOURCE_DIR}/libs/libpocoext/include)
-target_include_directories (dbms BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libcityhash/include)
 
 
 if (ENABLE_TESTS)

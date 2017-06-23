@@ -5,14 +5,16 @@
 #include <functional>
 #include <ostream>
 
+#include <Poco/Types.h>
+
+#include <common/unaligned.h>
+
+#include <city.h>
+
 #if __SSE2__
     #include <emmintrin.h>
 #endif
 
-#include <city.h>
-
-#include <Core/Types.h>
-#include <Common/unaligned.h>
 
 
 /// The thing to avoid creating strings to find substrings in the hash table.
@@ -33,7 +35,8 @@ struct StringRef
 
 using StringRefs = std::vector<StringRef>;
 
-using UInt64 = DB::UInt64;
+/// Same type as DB::UInt64;
+using UInt64 = Poco::UInt64;
 
 #if __SSE2__
 

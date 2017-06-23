@@ -8,7 +8,7 @@
 
 #include <common/logger_useful.h>
 
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
