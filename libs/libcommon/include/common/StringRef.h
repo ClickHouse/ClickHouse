@@ -5,8 +5,7 @@
 #include <functional>
 #include <ostream>
 
-#include <Poco/Types.h>
-
+#include <common/Types.h>
 #include <common/unaligned.h>
 
 #include <city.h>
@@ -35,8 +34,6 @@ struct StringRef
 
 using StringRefs = std::vector<StringRef>;
 
-/// Same type as DB::UInt64;
-using UInt64 = Poco::UInt64;
 
 #if __SSE2__
 
