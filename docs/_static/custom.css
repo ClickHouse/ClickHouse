@@ -7,6 +7,12 @@ div.sphinxsidebarwrapper {
 div.body dd, div.body li, div.body p {
     line-height: 1.6em;
 }
+div.body blockquote, div.body dd, div.body li, div.body p {
+    -moz-hyphens: none;
+    -ms-hyphens: none;
+    -webkit-hyphens: none;
+    hyphens: none;
+}
 
 div.sphinxsidebarwrapper p.logo {
     float: left;
