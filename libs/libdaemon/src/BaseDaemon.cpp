@@ -339,7 +339,7 @@ private:
         int frames_size = backtrace(frames, max_frames);
 
         if (frames_size >= 2)
-         {
+        {
             /// Overwrite sigaction with caller's address
             if (caller_address && (frames_size < 3 || caller_address != frames[2]))
                 frames[1] = caller_address;
