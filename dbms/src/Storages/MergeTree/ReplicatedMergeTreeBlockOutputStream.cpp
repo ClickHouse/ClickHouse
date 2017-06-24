@@ -109,7 +109,6 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
     {
         assertSessionIsNotExpired(zookeeper);
 
-        ++block_index;
         String month_name = toString(DateLUT::instance().toNumYYYYMMDD(DayNum_t(current_block.min_date)) / 100);
 
         AbandonableLockInZooKeeper block_number_lock = storage.allocateBlockNumber(month_name);    /// 2 RTT

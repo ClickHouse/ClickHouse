@@ -23,7 +23,6 @@ private:
     StorageReplicatedMergeTree & storage;
     size_t quorum;
     size_t quorum_timeout_ms;
-    size_t block_index = 0;
 
     using Logger = Poco::Logger;
     Logger * log;

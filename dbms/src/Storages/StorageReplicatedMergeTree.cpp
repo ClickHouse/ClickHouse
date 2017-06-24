@@ -2802,7 +2802,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & query, const Fie
         }
     }
 
-    /// Synchronously check that added parts exist and are not spoiled at least on this replica. We will write checksums.txt if it does not exist.
+    /// Synchronously check that added parts exist and are not broken at least on this replica. We will write checksums.txt if it does not exist.
     LOG_DEBUG(log, "Checking parts");
     for (const String & part : parts)
     {
