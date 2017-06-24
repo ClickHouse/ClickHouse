@@ -137,12 +137,16 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 {
     Pos begin = pos;
 
-    /// Identifier in backquotes
-    if (pos != end && *pos == '`')
+    /// Identifier in backquotes or in double quotes
+    if (pos != end && (*pos == '`' || *pos == '"'))
     {
         ReadBufferFromMemory buf(pos, end - pos);
         String s;
-        readBackQuotedString(s, buf);
+
+        if (*pos == '`')
+            readBackQuotedString(s, buf);
+        else
+            readDoubleQuotedString(s, buf);
 
         if (s.empty())    /// Identifiers "empty string" are not allowed.
             return false;
