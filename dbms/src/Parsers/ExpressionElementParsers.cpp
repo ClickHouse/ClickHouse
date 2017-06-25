@@ -144,9 +144,9 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
         String s;
 
         if (*pos == '`')
-            readBackQuotedString(s, buf);
+            readBackQuotedStringWithSQLStyle(s, buf);
         else
-            readDoubleQuotedString(s, buf);
+            readDoubleQuotedStringWithSQLStyle(s, buf);
 
         if (s.empty())    /// Identifiers "empty string" are not allowed.
             return false;
@@ -532,7 +532,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
 
     try
     {
-        readQuotedString(s, in);
+        readQuotedStringWithSQLStyle(s, in);
     }
     catch (const Exception & e)
     {

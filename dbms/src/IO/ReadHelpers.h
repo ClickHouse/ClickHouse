@@ -495,12 +495,15 @@ void readString(String & s, ReadBuffer & buf);
 void readEscapedString(String & s, ReadBuffer & buf);
 
 void readQuotedString(String & s, ReadBuffer & buf);
+void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf);
+void readDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readJSONString(String & s, ReadBuffer & buf);
 
 void readBackQuotedString(String & s, ReadBuffer & buf);
+void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readStringUntilEOF(String & s, ReadBuffer & buf);
 
@@ -526,13 +529,13 @@ void readStringInto(Vector & s, ReadBuffer & buf);
 template <typename Vector>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf);
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readQuotedStringInto(Vector & s, ReadBuffer & buf);
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readDoubleQuotedStringInto(Vector & s, ReadBuffer & buf);
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readBackQuotedStringInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>

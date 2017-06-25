@@ -78,7 +78,7 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
     for (size_t i = 0; i < count; ++i)
     {
         String column_name;
-        readBackQuotedString(column_name, buf);
+        readBackQuotedStringWithSQLStyle(column_name, buf);
         assertChar(' ', buf);
 
         String type_name;
