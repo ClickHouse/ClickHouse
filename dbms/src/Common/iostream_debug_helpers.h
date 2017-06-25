@@ -32,6 +32,9 @@ std::ostream & operator<<(std::ostream & stream, const DB::ColumnWithTypeAndName
 namespace DB { class IColumn; }
 std::ostream & operator<<(std::ostream & stream, const DB::IColumn & what);
 
+#include <Client/Connection.h>
+std::ostream & operator<<(std::ostream & stream, const DB::Connection::Packet & what);
+
 
 /// some operator<< should be declared before operator<<(... std::shared_ptr<>)
 #include <common/iostream_debug_helpers.h>

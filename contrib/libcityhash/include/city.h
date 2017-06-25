@@ -47,10 +47,22 @@
 #include <stdint.h>
 #include <utility>
 
+/** This is a version of CityHash that predates v1.0.3 algorithm change.
+  * Why we need exactly this version?
+  * Although hash values of CityHash are not recommended for storing persistently anywhere,
+  * it has already been used this way in ClickHouse:
+  * - for calculation of checksums of compressed chunks and for data parts;
+  * - this version of CityHash is exposed in cityHash64 function in ClickHouse SQL language;
+  * - and already used by many users for data ordering, sampling and sharding.
+  */
+namespace CityHash_v1_0_2
+{
+
 typedef uint8_t uint8;
 typedef uint32_t uint32;
 typedef uint64_t uint64;
 typedef std::pair<uint64, uint64> uint128;
+
 
 inline uint64 Uint128Low64(const uint128& x) { return x.first; }
 inline uint64 Uint128High64(const uint128& x) { return x.second; }
@@ -85,6 +97,8 @@ inline uint64 Hash128to64(const uint128& x) {
   b ^= (b >> 47);
   b *= kMul;
   return b;
+}
+
 }
 
 #endif  // CITY_HASH_H_

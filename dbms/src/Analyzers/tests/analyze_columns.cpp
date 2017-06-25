@@ -32,7 +32,7 @@ try
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "query");
 
-    Context context;
+    Context context = Context::createGlobal();
 
     auto system_database = std::make_shared<DatabaseMemory>("system");
     context.addDatabase("system", system_database);

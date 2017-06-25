@@ -311,6 +311,13 @@ private:
       */
     void makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set);
     void makeSetsForIndexImpl(ASTPtr & node, const Block & sample_block);
+
+    /** Translate qualified names such as db.table.column, table.column, table_alias.column
+      *  to unqualified names. This is done in a poor transitional way:
+      *  only one ("main") table is supported. Ambiguity is not detected or resolved.
+      */
+    void translateQualifiedNames();
+    void translateQualifiedNamesImpl(ASTPtr & node, const String & database_name, const String & table_name, const String & alias);
 };
 
 }

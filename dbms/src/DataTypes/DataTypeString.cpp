@@ -262,7 +262,7 @@ void DataTypeString::serializeTextQuoted(const IColumn & column, size_t row_num,
 
 void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-    read(column, istr, [&](ColumnString::Chars_t & data) { readQuotedStringInto(data, istr); });
+    read(column, istr, [&](ColumnString::Chars_t & data) { readQuotedStringInto<true>(data, istr); });
 }
 
 

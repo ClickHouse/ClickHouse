@@ -360,7 +360,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 int contained_parts = 0;
 
                 LOG_ERROR(log, "Part " << full_path + file_name << " is broken. Looking for parts to replace it.");
-                ++suspicious_broken_parts;
 
                 for (const String & contained_name : part_file_names)
                 {
@@ -388,6 +387,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                     LOG_ERROR(log, "Detaching broken part " << full_path + file_name
                         << " because it covers less than 2 parts. You need to resolve this manually");
                     broken_parts_to_detach.push_back(part);
+                    ++suspicious_broken_parts;
                 }
             }
 
@@ -411,7 +411,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     all_data_parts = data_parts;
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
-    /// were merged), but that for some reason are still not deleted from the file system.
+    /// were merged), but that for some reason are still not deleted from the filesystem.
     /// Deletion of files will be performed later in the clearOldParts() method.
 
     if (data_parts.size() >= 2)
@@ -959,7 +959,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
     /// Update primary key if needed.
     size_t new_primary_key_file_size{};
-    uint128 new_primary_key_hash{};
+    MergeTreeDataPartChecksum::uint128 new_primary_key_hash{};
 
     if (new_primary_key.get() != primary_expr_ast.get())
     {
@@ -1181,8 +1181,6 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     if (out_transaction && out_transaction->data)
         throw Exception("Using the same MergeTreeData::Transaction for overlapping transactions is invalid", ErrorCodes::LOGICAL_ERROR);
 
-    LOG_TRACE(log, "Renaming temporary part " << part->relative_path << ".");
-
     DataPartsVector replaced;
     {
         std::lock_guard<std::mutex> lock(data_parts_mutex);
@@ -1195,6 +1193,8 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
         String old_name = part->name;
         String new_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
+
+        LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << new_name << ".");
 
         /// Check that new part doesn't exist yet.
         {
@@ -1213,7 +1213,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
             std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
             in_all_data_parts = all_data_parts.count(part) != 0;
         }
-        /// New part can be removed from data_parts but not from file system and ZooKeeper
+        /// New part can be removed from data_parts but not from filesystem and ZooKeeper
         if (in_all_data_parts)
             clearOldPartsAndRemoveFromZK();
 
@@ -1445,34 +1445,6 @@ size_t MergeTreeData::getMaxPartsCountForMonth() const
 }
 
 
-std::pair<Int64, bool> MergeTreeData::getMinBlockNumberForMonth(DayNum_t month) const
-{
-    std::lock_guard<std::mutex> lock(all_data_parts_mutex);
-
-    for (const auto & part : all_data_parts)    /// The search can be done better.
-        if (part->month == month)
-            return { part->left, true };    /// Blocks in data_parts are sorted by month and left.
-
-    return { 0, false };
-}
-
-
-bool MergeTreeData::hasBlockNumberInMonth(Int64 block_number, DayNum_t month) const
-{
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
-
-    for (const auto & part : data_parts)    /// The search can be done better.
-    {
-        if (part->month == month && part->left <= block_number && part->right >= block_number)
-            return true;
-
-        if (part->month > month)
-            break;
-    }
-
-    return false;
-}
-
 void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 {
     const size_t parts_count = getMaxPartsCountForMonth();
@@ -1487,20 +1459,20 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 
     const size_t max_k = settings.parts_to_throw_insert - settings.parts_to_delay_insert; /// always > 0
     const size_t k = 1 + parts_count - settings.parts_to_delay_insert; /// from 1 to max_k
-    const double delay_sec = ::pow(settings.max_delay_to_insert, static_cast<double>(k) / max_k);
+    const double delay_milliseconds = ::pow(settings.max_delay_to_insert * 1000, static_cast<double>(k) / max_k);
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
-    ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay_sec * 1000);
+    ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay_milliseconds);
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::DelayedInserts);
 
     LOG_INFO(log, "Delaying inserting block by "
-        << std::fixed << std::setprecision(4) << delay_sec << " sec. because there are " << parts_count << " parts");
+        << std::fixed << std::setprecision(4) << delay_milliseconds << " ms. because there are " << parts_count << " parts");
 
     if (until)
-        until->tryWait(delay_sec * 1000);
+        until->tryWait(delay_milliseconds);
     else
-        std::this_thread::sleep_for(std::chrono::duration<double>(delay_sec));
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)

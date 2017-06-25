@@ -22,7 +22,7 @@ struct MergeTreeSettings
     /** Merge settings. */
 
     /// Maximum in total size of parts to merge, when there are maximum (minimum) free threads in background pool (or entries in replication queue).
-    size_t max_bytes_to_merge_at_max_space_in_pool = 100ULL * 1024 * 1024 * 1024;
+    size_t max_bytes_to_merge_at_max_space_in_pool = 500ULL * 1024 * 1024 * 1024;
     size_t max_bytes_to_merge_at_min_space_in_pool = 1024 * 1024;
 
     /// How many tasks of merging parts are allowed simultaneously in ReplicatedMergeTree queue.
@@ -48,7 +48,7 @@ struct MergeTreeSettings
     size_t parts_to_throw_insert = 300;
 
     /// Max delay of inserting data into MergeTree table in seconds, if there are a lot of unmerged parts.
-    size_t max_delay_to_insert = 200;
+    size_t max_delay_to_insert = 1;
 
     /** Replication settings. */
 
@@ -74,11 +74,8 @@ struct MergeTreeSettings
     /// Not apply ALTER, if number of files for deletion more than this.
     size_t max_files_to_remove_in_alter_columns = 50;
 
-    /// Maximum number of errors during parts loading, while ReplicatedMergeTree still allowed to start.
-    size_t replicated_max_unexpected_parts = 3;
-    size_t replicated_max_unexpectedly_merged_parts = 2;
-    size_t replicated_max_missing_obsolete_parts = 5;
-    size_t replicated_max_missing_active_parts = 20;
+    /// If ratio of wrong parts to total number of parts is less than this - allow to start.
+    double replicated_max_ratio_of_wrong_parts = 0.5;
 
     /// Limit parallel fetches
     size_t replicated_max_parallel_fetches = 0;
@@ -86,9 +83,6 @@ struct MergeTreeSettings
     /// Limit parallel sends
     size_t replicated_max_parallel_sends = 0;
     size_t replicated_max_parallel_sends_for_table = 0;
-
-    /// If ration of wrong parts to total number of parts is less than this - allow to start anyway.
-    double replicated_max_ratio_of_wrong_parts = 0.05;
 
     /// In seconds.
     size_t zookeeper_session_expiration_check_period = 60;
@@ -146,10 +140,6 @@ struct MergeTreeSettings
         SET(max_suspicious_broken_parts, getUInt64);
         SET(max_files_to_modify_in_alter_columns, getUInt64);
         SET(max_files_to_remove_in_alter_columns, getUInt64);
-        SET(replicated_max_unexpected_parts, getUInt64);
-        SET(replicated_max_unexpectedly_merged_parts, getUInt64);
-        SET(replicated_max_missing_obsolete_parts, getUInt64);
-        SET(replicated_max_missing_active_parts, getUInt64);
         SET(replicated_max_parallel_fetches, getUInt64);
         SET(replicated_max_parallel_fetches_for_table, getUInt64);
         SET(replicated_max_parallel_sends, getUInt64);

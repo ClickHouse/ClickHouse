@@ -11,7 +11,7 @@ void test(size_t data_size)
     for (size_t i = 0; i < data_size; ++i)
         data[i] = rand() & 255;
 
-    uint128 reference = referenceHash(data, data_size);
+    CityHash_v1_0_2::uint128 reference = referenceHash(data, data_size);
 
     DB::WriteBufferFromFile sink("/dev/null", 1 << 16);
 

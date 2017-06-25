@@ -4,7 +4,7 @@ CREATE TABLE test.alter (d Date, x UInt8) ENGINE = ReplicatedMergeTree('/clickho
 INSERT INTO test.alter VALUES ('2014-01-01', 1);
 ALTER TABLE test.alter DROP COLUMN x;
 
-SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/test/alter/replicas/r1/parts/20140101_20140101_200_200_0' AND name = 'columns' FORMAT TabSeparatedRaw;
+SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/test/alter/replicas/r1/parts/20140101_20140101_0_0_0' AND name = 'columns' FORMAT TabSeparatedRaw;
 
 DROP TABLE test.alter;
 
@@ -22,6 +22,6 @@ SELECT * FROM test.alter ORDER BY d;
 ALTER TABLE test.alter DROP COLUMN x;
 SELECT * FROM test.alter ORDER BY d;
 
-SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/test/alter/replicas/r1/parts/20140201_20140201_200_200_0' AND name = 'columns' FORMAT TabSeparatedRaw;
+SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/test/alter/replicas/r1/parts/20140201_20140201_0_0_0' AND name = 'columns' FORMAT TabSeparatedRaw;
 
 DROP TABLE test.alter;

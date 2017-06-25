@@ -12,15 +12,16 @@ add_library(clickhouse-server
     StatusFile.cpp
     ReplicasStatusHandler.cpp)
 target_link_libraries(clickhouse-server daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
+target_include_directories (clickhouse-server PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 
 add_library(clickhouse-local LocalServer.cpp)
-target_link_libraries(clickhouse-local dbms clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
+target_link_libraries(clickhouse-local dbms clickhouse-server clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
 
 add_library(clickhouse-extract-from-config ExtractFromConfig.cpp)
-target_link_libraries(clickhouse-extract-from-config dbms)
+target_link_libraries(clickhouse-extract-from-config dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 add_library (clickhouse-client Client.cpp)
-target_link_libraries (clickhouse-client dbms clickhouse_aggregate_functions ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_link_libraries (clickhouse-client dbms clickhouse_functions clickhouse_aggregate_functions ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
 install (FILES clickhouse-client.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-client COMPONENT clickhouse-client RENAME config.xml)
 
 add_library (clickhouse-benchmark Benchmark.cpp)
@@ -31,6 +32,7 @@ target_link_libraries (clickhouse-performance-test dbms ${Boost_PROGRAM_OPTIONS_
 
 
 add_executable(clickhouse main.cpp)
+target_include_directories(clickhouse PRIVATE ${COMMON_INCLUDE_DIR})
 target_link_libraries(clickhouse
     clickhouse-server
     clickhouse-client

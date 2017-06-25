@@ -110,8 +110,13 @@ private:
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
-public:
+    /// Use copy constructor or createGlobal() instead
     Context();
+
+public:
+    /// Create initial Context with ContextShared and etc.
+    static Context createGlobal();
+
     ~Context();
 
     String getPath() const;
@@ -133,6 +138,8 @@ public:
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
+    /// Compute and set actual user settings, client_info.current_user should be set
+    void calculateUserSettings();
 
     ClientInfo & getClientInfo() { return client_info; };
     const ClientInfo & getClientInfo() const { return client_info; };
@@ -389,8 +396,8 @@ private:
 
     std::mutex mutex;
     std::condition_variable cond;
-    std::thread thread{&SessionCleaner::run, this};
     std::atomic<bool> quit{false};
+    std::thread thread{&SessionCleaner::run, this};
 };
 
 }

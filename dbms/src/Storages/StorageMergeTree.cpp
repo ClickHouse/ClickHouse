@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -52,11 +53,20 @@ StorageMergeTree::StorageMergeTree(
          context_, primary_expr_ast_, date_column_name_,
          sampling_expression_, index_granularity_, merging_params_,
          settings_, database_name_ + "." + table_name, false, attach),
-    reader(data), writer(data, context), merger(data, context.getBackgroundPool()),
+    reader(data), writer(data), merger(data, context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
     data.loadDataParts(has_force_restore_data_flag);
-    data.clearOldParts();
+
+    if (!attach)
+    {
+        if (!data.getDataParts().empty())
+            throw Exception("Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
+    }
+    else
+    {
+        data.clearOldParts();
+    }
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
