@@ -198,7 +198,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         ops.emplace_back(
             std::make_unique<zkutil::Op::Create>(
                 storage.zookeeper_path + "/blocks/" + block_id,
-                "",
+                toString(part_number),  /// We will able to know original part number for duplicate blocks, if we want.
                 acl,
                 zkutil::CreateMode::Persistent));
 
