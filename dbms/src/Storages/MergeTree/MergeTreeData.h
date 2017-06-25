@@ -296,12 +296,6 @@ public:
 
     size_t getMaxPartsCountForMonth() const;
 
-    /// Returns a pair of min block number in the given month and a bool denoting if there is at least one part.
-    std::pair<Int64, bool> getMinBlockNumberForMonth(DayNum_t month) const;
-
-    ///    Returns true if block_number is contained in some part of the given month.
-    bool hasBlockNumberInMonth(Int64 block_number, DayNum_t month) const;
-
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     void delayInsertIfNeeded(Poco::Event * until = nullptr);

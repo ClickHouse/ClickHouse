@@ -48,7 +48,6 @@ namespace DB
   * Each entry is one of:
   * - normal data insertion (GET),
   * - merge (MERGE),
-  * - slightly less common data insertion (ATTACH),
   * - delete the partition (DROP).
   *
   * Each replica copies (queueUpdatingThread, pullLogsToQueue) entries from the log to its queue (/replicas/replica_name/queue/queue-...)
@@ -400,7 +399,6 @@ private:
     bool executeLogEntry(const LogEntry & entry);
 
     void executeDropRange(const LogEntry & entry);
-    bool executeAttachPart(const LogEntry & entry); /// Returns false if the part is absent, and it needs to be picked up from another replica.
 
     /** Updates the queue.
       */
@@ -510,7 +508,6 @@ private:
 };
 
 
-extern const Int64 RESERVED_BLOCK_NUMBERS;
 extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER;
 
 }

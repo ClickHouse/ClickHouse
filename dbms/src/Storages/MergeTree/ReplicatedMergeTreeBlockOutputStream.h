@@ -27,6 +27,9 @@ public:
 
     void write(const Block & block) override;
 
+    /// For ATTACHing existing data on filesystem.
+    void writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
+
 private:
     struct QuorumInfo
     {
@@ -40,7 +43,7 @@ private:
     void checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper);
 
     /// Rename temporary part and commit to ZooKeeper.
-    void commitPart(zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, String block_id);
+    void commitPart(zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id);
 
     StorageReplicatedMergeTree & storage;
     size_t quorum;

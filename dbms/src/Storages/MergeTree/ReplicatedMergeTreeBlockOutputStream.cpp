@@ -139,7 +139,26 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 }
 
 
-void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, String block_id)
+void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
+{
+    /// NOTE No delay in this case. That's Ok.
+
+    auto zookeeper = storage.getZooKeeper();
+    assertSessionIsNotExpired(zookeeper);
+
+    if (quorum)
+        checkQuorumPrecondition(zookeeper);
+
+    Stopwatch watch;
+
+    commitPart(zookeeper, part, "");
+
+    if (auto part_log = storage.context.getPartLog(part->storage.getDatabaseName(), part->storage.getTableName()))
+        part_log->addNewPart(*part, watch.elapsed());
+}
+
+
+void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id)
 {
     assertSessionIsNotExpired(zookeeper);
 

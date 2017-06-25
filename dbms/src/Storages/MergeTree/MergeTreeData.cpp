@@ -1445,34 +1445,6 @@ size_t MergeTreeData::getMaxPartsCountForMonth() const
 }
 
 
-std::pair<Int64, bool> MergeTreeData::getMinBlockNumberForMonth(DayNum_t month) const
-{
-    std::lock_guard<std::mutex> lock(all_data_parts_mutex);
-
-    for (const auto & part : all_data_parts)    /// The search can be done better.
-        if (part->month == month)
-            return { part->left, true };    /// Blocks in data_parts are sorted by month and left.
-
-    return { 0, false };
-}
-
-
-bool MergeTreeData::hasBlockNumberInMonth(Int64 block_number, DayNum_t month) const
-{
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
-
-    for (const auto & part : data_parts)    /// The search can be done better.
-    {
-        if (part->month == month && part->left <= block_number && part->right >= block_number)
-            return true;
-
-        if (part->month > month)
-            break;
-    }
-
-    return false;
-}
-
 void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 {
     const size_t parts_count = getMaxPartsCountForMonth();
