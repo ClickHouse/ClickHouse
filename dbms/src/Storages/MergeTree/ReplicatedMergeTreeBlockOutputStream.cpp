@@ -129,7 +129,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
         /// We take the hash from the data as ID. That is, do not insert the same data twice.
         String block_id = toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 
-        LOG_DEBUG(log, "Wrote block with ID " << block_id << ", " << block.rows() << " rows");
+        LOG_DEBUG(log, "Wrote block with ID '" << block_id << "', " << block.rows() << " rows");
 
         commitPart(zookeeper, part, block_id);
 
@@ -193,12 +193,13 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     zkutil::Ops ops;
     auto acl = zookeeper->getDefaultACL();
 
-    ops.emplace_back(
-        std::make_unique<zkutil::Op::Create>(
-            storage.zookeeper_path + "/blocks/" + block_id,
-            "",
-            acl,
-            zkutil::CreateMode::Persistent));
+    if (!block_id.empty())
+        ops.emplace_back(
+            std::make_unique<zkutil::Op::Create>(
+                storage.zookeeper_path + "/blocks/" + block_id,
+                "",
+                acl,
+                zkutil::CreateMode::Persistent));
 
     /// Information about the part, in the replica data.
     storage.addNewPartToZooKeeper(part, ops, part_name);
@@ -267,8 +268,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         else if (code == ZNODEEXISTS)
         {
             /// If the block with such ID already exists in the table, rollback its insertion.
-            String expected_checksum;
-            if (zookeeper->exists(storage.zookeeper_path + "/blocks/" + block_id))
+            if (!block_id.empty() && zookeeper->exists(storage.zookeeper_path + "/blocks/" + block_id))
             {
                 LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
 
@@ -284,13 +284,13 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
             {
                 /// if the node with the quorum existed, but was quickly removed.
 
-                throw Exception("Unexpected ZNODEEXISTS while adding block " + toString(part_number) + " with ID " + block_id + ": "
+                throw Exception("Unexpected ZNODEEXISTS while adding block " + toString(part_number) + " with ID '" + block_id + "': "
                     + zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
             }
         }
         else
         {
-            throw Exception("Unexpected error while adding block " + toString(part_number) + " with ID " + block_id + ": "
+            throw Exception("Unexpected error while adding block " + toString(part_number) + " with ID '" + block_id + "': "
                 + zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
         }
     }
