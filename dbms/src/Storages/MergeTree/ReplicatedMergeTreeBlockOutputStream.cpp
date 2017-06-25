@@ -160,6 +160,7 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
 
 void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id)
 {
+    storage.check(part->columns);
     assertSessionIsNotExpired(zookeeper);
 
     /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
@@ -202,7 +203,25 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
                 zkutil::CreateMode::Persistent));
 
     /// Information about the part, in the replica data.
-    storage.addNewPartToZooKeeper(part, ops, part_name);
+
+    ops.emplace_back(std::make_unique<zkutil::Op::Check>(
+        storage.zookeeper_path + "/columns",
+        storage.columns_version));
+    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+        storage.replica_path + "/parts/" + part->name,
+        "",
+        acl,
+        zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+        storage.replica_path + "/parts/" + part->name + "/columns",
+        part->columns.toString(),
+        acl,
+        zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+        storage.replica_path + "/parts/" + part->name + "/checksums",
+        part->checksums.toString(),
+        acl,
+        zkutil::CreateMode::Persistent));
 
     /// Replication log.
     ops.emplace_back(std::make_unique<zkutil::Op::Create>(
@@ -259,7 +278,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
     try
     {
-        auto code = zookeeper->tryMulti(ops);
+        auto code = zookeeper->tryMulti(ops);   /// 1 RTT
         if (code == ZOK)
         {
             transaction.commit();

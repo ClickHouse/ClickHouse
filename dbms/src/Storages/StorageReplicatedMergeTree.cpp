@@ -941,38 +941,6 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(
 }
 
 
-void StorageReplicatedMergeTree::addNewPartToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String part_name)
-{
-    auto zookeeper = getZooKeeper();
-
-    if (part_name.empty())
-        part_name = part->name;
-
-    check(part->columns);
-
-    auto acl = zookeeper->getDefaultACL();
-
-    ops.emplace_back(std::make_unique<zkutil::Op::Check>(
-        zookeeper_path + "/columns",
-        columns_version));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
-        replica_path + "/parts/" + part_name,
-        "",
-        acl,
-        zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
-        replica_path + "/parts/" + part_name + "/columns",
-        part->columns.toString(),
-        acl,
-        zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
-        replica_path + "/parts/" + part_name + "/checksums",
-        part->checksums.toString(),
-        acl,
-        zkutil::CreateMode::Persistent));
-}
-
-
 void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_event)
 {
     if (queue.pullLogsToQueue(getZooKeeper(), next_update_event))

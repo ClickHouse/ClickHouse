@@ -370,12 +370,6 @@ private:
       */
     void checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
 
-    /** Based on the assumption that there is no such part anywhere else (This is provided if the part number is highlighted with AbandonableLock).
-      * Adds actions to `ops` that add data about the part into ZooKeeper.
-      * Call under TableStructureLock.
-      */
-    void addNewPartToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
-
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
 
