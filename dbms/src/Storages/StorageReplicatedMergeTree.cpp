@@ -2795,8 +2795,12 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path)
 
 AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const String & month_name, zkutil::ZooKeeperPtr & zookeeper)
 {
+    String month_path = zookeeper_path + "/block_numbers/" + month_name;
+    if (!existsNodeCached(month_path))
+        zookeeper->create(month_path, "", zkutil::CreateMode::Persistent);
+
     return AbandonableLockInZooKeeper(
-        zookeeper_path + "/block_numbers/" + month_name + "/block-",
+        month_path + "/block-",
         zookeeper_path + "/temp", *zookeeper);
 }
 
