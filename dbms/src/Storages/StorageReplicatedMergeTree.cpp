@@ -221,7 +221,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         settings_, database_name_ + "." + table_name, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); },
         [this] () { clearOldPartsAndRemoveFromZK(); }),
-    reader(data), writer(data, context), merger(data, context.getBackgroundPool()), fetcher(data), sharded_partition_uploader_client(*this),
+    reader(data), writer(data), merger(data, context.getBackgroundPool()), fetcher(data), sharded_partition_uploader_client(*this),
     shutdown_event(false), part_check_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
@@ -1342,11 +1342,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
                             /// Deleting from `blocks`.
                             if (zookeeper->exists(zookeeper_path + "/blocks/" + entry.block_id))
-                            {
-                                ops.emplace_back(std::make_unique<zkutil::Op::Remove>(zookeeper_path + "/blocks/" + entry.block_id + "/number", -1));
-                                ops.emplace_back(std::make_unique<zkutil::Op::Remove>(zookeeper_path + "/blocks/" + entry.block_id + "/checksum", -1));
                                 ops.emplace_back(std::make_unique<zkutil::Op::Remove>(zookeeper_path + "/blocks/" + entry.block_id, -1));
-                            }
 
                             auto code = zookeeper->tryMulti(ops);
 
@@ -2711,7 +2707,8 @@ void StorageReplicatedMergeTree::dropPartition(
     Int64 right;
 
     {
-        AbandonableLockInZooKeeper block_number_lock = allocateBlockNumber(month_name);
+        auto zookeeper = getZooKeeper();
+        AbandonableLockInZooKeeper block_number_lock = allocateBlockNumber(month_name, zookeeper);
         right = block_number_lock.getNumber();
         block_number_lock.unlock();
     }
@@ -2942,10 +2939,8 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path)
 }
 
 
-AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const String & month_name)
+AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const String & month_name, zkutil::ZooKeeperPtr & zookeeper)
 {
-    auto zookeeper = getZooKeeper();
-
     String month_path = zookeeper_path + "/block_numbers/" + month_name;
     if (!existsNodeCached(month_path))
     {

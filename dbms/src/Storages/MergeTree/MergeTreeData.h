@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/SortDescription.h>
+#include <Common/SimpleIncrement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage.h>
@@ -13,9 +14,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
-
-
-struct SimpleIncrement;
 
 
 namespace DB
@@ -483,6 +481,9 @@ public:
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
+
+    /// For generating names of temporary parts during insertion.
+    SimpleIncrement insert_increment;
 
 private:
     friend struct MergeTreeDataPart;

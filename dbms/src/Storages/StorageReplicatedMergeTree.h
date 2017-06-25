@@ -455,7 +455,7 @@ private:
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
 
-    AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);
+    AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name, zkutil::ZooKeeperPtr & zookeeper);
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .
