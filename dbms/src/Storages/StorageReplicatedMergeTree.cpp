@@ -1082,7 +1082,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
         if (!have_all_parts)
         {
-            /// If you do not have all the necessary parts, try to take some already merged piece from someone.
+            /// If you do not have all the necessary parts, try to take some already merged part from someone.
             do_fetch = true;
             LOG_DEBUG(log, "Don't have all parts for merge " << entry.new_part_name << "; will try to fetch it instead");
         }
