@@ -38,6 +38,7 @@ class ExternalDictionaries
 {
 private:
     friend class StorageSystemDictionaries;
+    friend class DatabaseDictionary;
 
     mutable std::mutex dictionaries_mutex;
 
