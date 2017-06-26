@@ -18,6 +18,11 @@ namespace ErrorCodes
 }
 
 
+IProfilingBlockInputStream::IProfilingBlockInputStream()
+{
+    info.parent = this;
+}
+
 Block IProfilingBlockInputStream::read()
 {
     collectAndSendTotalRowsApprox();
@@ -25,14 +30,6 @@ Block IProfilingBlockInputStream::read()
     if (!info.started)
     {
         info.total_stopwatch.start();
-        info.stream_name = getName();
-
-        for (const auto & child : children)
-            if (const IProfilingBlockInputStream * p_child = dynamic_cast<const IProfilingBlockInputStream *>(&*child))
-                info.nested_infos.push_back(&p_child->info);
-
-        /// Note that after this, `children` elements can not be deleted before you might need to work with `nested_info`.
-
         info.started = true;
     }
 
