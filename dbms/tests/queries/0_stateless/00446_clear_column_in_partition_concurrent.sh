@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-ch="clickhouse-client -q"
+ch="clickhouse-client --stacktrace -q"
 
 $ch "DROP TABLE IF EXISTS test.drop_column1"
 $ch "DROP TABLE IF EXISTS test.drop_column2"
@@ -12,12 +12,12 @@ $ch "INSERT INTO test.drop_column1 VALUES ('2000-01-01', 1, 'a'), ('2000-02-01',
 $ch "INSERT INTO test.drop_column1 VALUES ('2000-01-01', 3, 'c'), ('2000-02-01', 4, 'd')"
 
 for i in `seq 3`; do
-    $ch "INSERT INTO test.drop_column1 VALUES ('2000-03-01', 3, 'c'), ('2000-03-01', 4, 'd')" &
+    $ch "INSERT INTO test.drop_column1 VALUES ('2000-01-01', 3, 'c'), ('2000-01-01', 4, 'd')" & # insert into the same partition
     $ch "ALTER TABLE test.drop_column1 CLEAR COLUMN i IN PARTITION '200001'" --replication_alter_partitions_sync=2 &
     $ch "ALTER TABLE test.drop_column1 CLEAR COLUMN s IN PARTITION '200001'" --replication_alter_partitions_sync=2 &
     $ch "ALTER TABLE test.drop_column1 CLEAR COLUMN i IN PARTITION '200002'" --replication_alter_partitions_sync=2 &
     $ch "ALTER TABLE test.drop_column1 CLEAR COLUMN s IN PARTITION '200002'" --replication_alter_partitions_sync=2 &
-    $ch "INSERT INTO test.drop_column1 VALUES ('2000-03-01', 3, 'c'), ('2000-03-01', 4, 'd')" &
+    $ch "INSERT INTO test.drop_column1 VALUES ('2000-03-01', 3, 'c'), ('2000-03-01', 4, 'd')" & # insert into other partition
 done
 wait
 
