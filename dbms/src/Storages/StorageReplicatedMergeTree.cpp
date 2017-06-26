@@ -1439,7 +1439,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
         std::begin(new_materialized_columns), std::end(new_materialized_columns));
 
     size_t modified_parts = 0;
-    auto parts = data.getAllDataParts();
+    auto parts = data.getDataParts();
     for (const auto & part : parts)
     {
         if (!ActiveDataPartSet::contains(entry.new_part_name, part->name))

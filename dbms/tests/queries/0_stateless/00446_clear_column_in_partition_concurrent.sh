@@ -12,7 +12,7 @@ $ch "INSERT INTO test.clear_column1 VALUES ('2000-01-01', 1, 'a'), ('2000-02-01'
 $ch "INSERT INTO test.clear_column1 VALUES ('2000-01-01', 3, 'c'), ('2000-02-01', 4, 'd')"
 
 for i in `seq 3`; do
-    $ch "INSERT INTO test.clear_column1 VALUES ('2000-01-01', 3, 'c'), ('2000-01-01', 4, 'd')" & # insert into the same partition
+    $ch "INSERT INTO test.clear_column1 VALUES ('2000-02-01', 0, ''), ('2000-02-01', 0, '')" & # insert into the same partition
     $ch "ALTER TABLE test.clear_column1 CLEAR COLUMN i IN PARTITION '200001'" --replication_alter_partitions_sync=2 &
     $ch "ALTER TABLE test.clear_column1 CLEAR COLUMN s IN PARTITION '200001'" --replication_alter_partitions_sync=2 &
     $ch "ALTER TABLE test.clear_column1 CLEAR COLUMN i IN PARTITION '200002'" --replication_alter_partitions_sync=2 &
@@ -21,7 +21,7 @@ for i in `seq 3`; do
 done
 wait
 
-$ch "SELECT DISTINCT * FROM test.clear_column2 WHERE d != toDate('2000-03-01') ORDER BY d, i, s"
+$ch "SELECT DISTINCT * FROM test.clear_column1 WHERE d != toDate('2000-03-01') ORDER BY d, i, s"
 $ch "SELECT DISTINCT * FROM test.clear_column2 WHERE d != toDate('2000-03-01') ORDER BY d, i, s"
 
 $ch "DROP TABLE IF EXISTS test.clear_column1"
