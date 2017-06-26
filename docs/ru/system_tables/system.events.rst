@@ -1,3 +1,5 @@
+.. _system_tables-system.events:
+
 system.events
 -------------
 
