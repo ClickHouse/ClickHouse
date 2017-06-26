@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Core/Names.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/PODArray.h>

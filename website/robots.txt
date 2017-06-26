@@ -3,7 +3,7 @@ Disallow: /docs/en/single/
 Disallow: /docs/ru/single/
 Disallow: /docs/en/search.html
 Disallow: /docs/ru/search.html
-Disallow: /reference_en.html
-Disallow: /reference_ru.html
+Disallow: /deprecated/reference_en.html
+Disallow: /deprecated/reference_ru.html
 Allow: /
 Host: https://clickhouse.yandex

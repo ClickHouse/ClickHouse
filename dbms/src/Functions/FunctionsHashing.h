@@ -638,9 +638,9 @@ struct URLHashImpl
     {
         /// do not take last slash, '?' or '#' character into account
         if (size > 0 && (data[size - 1] == '/' || data[size - 1] == '?' || data[size - 1] == '#'))
-            return CityHash64(data, size - 1);
+            return CityHash_v1_0_2::CityHash64(data, size - 1);
 
-        return CityHash64(data, size);
+        return CityHash_v1_0_2::CityHash64(data, size);
     }
 };
 
@@ -844,10 +844,10 @@ struct NameIntHash64 { static constexpr auto name = "intHash64"; };
 struct ImplCityHash64
 {
     static constexpr auto name = "cityHash64";
-    using uint128_t = uint128;
+    using uint128_t = CityHash_v1_0_2::uint128;
 
-    static auto Hash128to64(const uint128_t & x) { return DB::Hash128to64(x); }
-    static auto Hash64(const char * const s, const std::size_t len) { return CityHash64(s, len); }
+    static auto Hash128to64(const uint128_t & x) { return CityHash_v1_0_2::Hash128to64(x); }
+    static auto Hash64(const char * const s, const std::size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
 };
 
 struct ImplFarmHash64
@@ -862,9 +862,9 @@ struct ImplFarmHash64
 struct ImplMetroHash64
 {
     static constexpr auto name = "metroHash64";
-    using uint128_t = uint128;
+    using uint128_t = CityHash_v1_0_2::uint128;
 
-    static auto Hash128to64(const uint128_t & x) { return DB::Hash128to64(x); }
+    static auto Hash128to64(const uint128_t & x) { return CityHash_v1_0_2::Hash128to64(x); }
     static auto Hash64(const char * const s, const std::size_t len)
     {
         union {

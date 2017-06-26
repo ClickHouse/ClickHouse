@@ -16,6 +16,8 @@ namespace DB
 /// Checksum of one file.
 struct MergeTreeDataPartChecksum
 {
+    using uint128 = CityHash_v1_0_2::uint128;
+
     size_t file_size {};
     uint128 file_hash {};
 
@@ -44,7 +46,7 @@ struct MergeTreeDataPartChecksums
     using FileChecksums = std::map<String, Checksum>;
     FileChecksums files;
 
-    void addFile(const String & file_name, size_t file_size, uint128 file_hash);
+    void addFile(const String & file_name, size_t file_size, Checksum::uint128 file_hash);
 
     void add(MergeTreeDataPartChecksums && rhs_checksums);
 
@@ -165,7 +167,7 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = true) const;
 
-    /// Renames a piece by appending a prefix to the name. To_detached - also moved to the detached directory.
+    /// Renames a part by appending a prefix to the name. To_detached - also moved to the detached directory.
     void renameAddPrefix(bool to_detached, const String & prefix) const;
 
     /// Loads index file. Also calculates this->size if size=0

@@ -8,11 +8,11 @@
 
 #include <common/logger_useful.h>
 
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
 #include <DataStreams/IBlockInputStream.h>
 
@@ -1003,7 +1003,7 @@ public:
         const size_t group_by_two_level_threshold;
         const size_t group_by_two_level_threshold_bytes;
 
-        /// Settings to flush temporary data to the file system (external aggregation).
+        /// Settings to flush temporary data to the filesystem (external aggregation).
         const size_t max_bytes_before_external_group_by;        /// 0 - do not use external aggregation.
         const std::string tmp_path;
 

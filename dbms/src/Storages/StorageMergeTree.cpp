@@ -53,7 +53,7 @@ StorageMergeTree::StorageMergeTree(
          context_, primary_expr_ast_, date_column_name_,
          sampling_expression_, index_granularity_, merging_params_,
          settings_, database_name_ + "." + table_name, false, attach),
-    reader(data), writer(data, context), merger(data, context.getBackgroundPool()),
+    reader(data), writer(data), merger(data, context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
     data.loadDataParts(has_force_restore_data_flag);

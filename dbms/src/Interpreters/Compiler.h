@@ -13,11 +13,17 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Common/UInt128.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_DLOPEN;
+    extern const int CANNOT_DLSYM;
+}
 
 
 /** Allows you to open a dynamic library and get a pointer to a function from it.
@@ -29,7 +35,7 @@ public:
     {
         handle = dlopen(path.c_str(), RTLD_LAZY);
         if (!handle)
-            throw Exception(std::string("Cannot dlopen: ") + dlerror());
+            throw Exception(std::string("Cannot dlopen: ") + dlerror(), ErrorCodes::CANNOT_DLOPEN);
     }
 
     ~SharedLibrary()
@@ -46,7 +52,7 @@ public:
         Func res = reinterpret_cast<Func>(dlsym(handle, name.c_str()));
 
         if (char * error = dlerror())
-            throw Exception(std::string("Cannot dlsym: ") + error);
+            throw Exception(std::string("Cannot dlsym: ") + error, ErrorCodes::CANNOT_DLSYM);
 
         return res;
     }

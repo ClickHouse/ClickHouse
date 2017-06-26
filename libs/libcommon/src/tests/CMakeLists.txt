@@ -16,7 +16,7 @@ target_link_libraries (date_lut2 common ${PLATFORM_LIBS})
 target_link_libraries (date_lut3 common ${PLATFORM_LIBS})
 target_link_libraries (date_lut4 common ${PLATFORM_LIBS})
 target_link_libraries (date_lut_default_timezone common ${PLATFORM_LIBS})
-target_link_libraries (multi_version dbms ${Boost_SYSTEM_LIBRARY} ${RT_LIBRARIES})
+target_link_libraries (multi_version common ${Boost_SYSTEM_LIBRARY} ${RT_LIBRARIES})
 
 add_executable (unit_tests_libcommon gtest_json_test.cpp gtest_strong_typedef.cpp)
 target_link_libraries (unit_tests_libcommon gtest_main)

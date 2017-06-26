@@ -1,7 +1,9 @@
 #include <DataStreams/NullableAdapterBlockInputStream.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataStreams/isConvertableTypes.h>
+
 
 namespace DB
 {
@@ -51,7 +53,7 @@ Block NullableAdapterBlockInputStream::readImpl()
                 const auto & nullable_type = static_cast<const DataTypeNullable &>(*elem.type);
 
                 const auto & null_map = nullable_col.getNullMap();
-                bool has_nulls = std::any_of(null_map.begin(), null_map.end(), [](UInt8 val){ return val == 1; });
+                bool has_nulls = !memoryIsZero(null_map.data(), null_map.size());
 
                 if (has_nulls)
                     throw Exception{"Cannot insert NULL value into non-nullable column",

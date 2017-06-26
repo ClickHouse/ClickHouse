@@ -38,12 +38,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << new_part_name;
             break;
 
-        case ATTACH_PART:
-            out << "attach\n"
-                << "detached\n"
-                << source_part_name << "\ninto\n" << new_part_name;
-            break;
-
         case CLEAR_COLUMN:
             out << "clear_column\n"
                 << escape << column_name
@@ -120,11 +114,13 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     }
     else if (type_str == "attach")
     {
+        /// Obsolete. TODO: Remove after half year.
         type = ATTACH_PART;
         String source_type;
         in >> source_type;
         if (source_type != "detached")
             throw Exception("Bad format: expected 'detached', found '" + source_type + "'", ErrorCodes::CANNOT_PARSE_TEXT);
+        String source_part_name;
         in >> "\n" >> source_part_name >> "\ninto\n" >> new_part_name;
     }
 

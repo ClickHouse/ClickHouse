@@ -48,7 +48,6 @@ namespace DB
   * Each entry is one of:
   * - normal data insertion (GET),
   * - merge (MERGE),
-  * - slightly less common data insertion (ATTACH),
   * - delete the partition (DROP).
   *
   * Each replica copies (queueUpdatingThread, pullLogsToQueue) entries from the log to its queue (/replicas/replica_name/queue/queue-...)
@@ -372,12 +371,6 @@ private:
       */
     void checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
 
-    /** Based on the assumption that there is no such part anywhere else (This is provided if the part number is highlighted with AbandonableLock).
-      * Adds actions to `ops` that add data about the part into ZooKeeper.
-      * Call under TableStructureLock.
-      */
-    void addNewPartToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
-
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
 
@@ -401,7 +394,6 @@ private:
     bool executeLogEntry(const LogEntry & entry);
 
     void executeDropRange(const LogEntry & entry);
-    bool executeAttachPart(const LogEntry & entry); /// Returns false if the part is absent, and it needs to be picked up from another replica.
 
     void executeClearColumnInPartition(const LogEntry & entry);
 
@@ -420,13 +412,6 @@ private:
     /** Selects the parts to merge and writes to the log.
       */
     void mergeSelectingThread();
-
-    using MemoizedPartsThatCouldBeMerged = std::set<std::pair<std::string, std::string>>;
-    /// Is it possible to merge parts in the specified range? `memo` is an optional parameter.
-    bool canMergeParts(
-        const MergeTreeData::DataPartPtr & left,
-        const MergeTreeData::DataPartPtr & right,
-        MemoizedPartsThatCouldBeMerged * memo);
 
     /** Write the selected parts to merge into the log,
       * Call when merge_selecting_mutex is locked.
@@ -465,7 +450,7 @@ private:
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
 
-    AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);
+    AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name, zkutil::ZooKeeperPtr & zookeeper);
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .
@@ -515,7 +500,6 @@ private:
 };
 
 
-extern const Int64 RESERVED_BLOCK_NUMBERS;
 extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER;
 
 }

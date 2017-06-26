@@ -160,4 +160,7 @@ std::ostream & operator<<(std::ostream & stream, const std::experimental::option
 }
 
 
+namespace std { class exception; }
+std::ostream & operator<<(std::ostream & stream, const std::exception & what);
+
 // TODO: add more types

@@ -39,14 +39,14 @@ struct UniqVariadicHash<false, false>
 
         {
             StringRef value = (*column)->getDataAt(row_num);
-            hash = CityHash64(value.data, value.size);
+            hash = CityHash_v1_0_2::CityHash64(value.data, value.size);
             ++column;
         }
 
         while (column < columns_end)
         {
             StringRef value = (*column)->getDataAt(row_num);
-            hash = Hash128to64(uint128(CityHash64(value.data, value.size), hash));
+            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(CityHash_v1_0_2::CityHash64(value.data, value.size), hash));
             ++column;
         }
 
@@ -68,14 +68,14 @@ struct UniqVariadicHash<false, true>
 
         {
             StringRef value = column->get()->getDataAt(row_num);
-            hash = CityHash64(value.data, value.size);
+            hash = CityHash_v1_0_2::CityHash64(value.data, value.size);
             ++column;
         }
 
         while (column < columns_end)
         {
             StringRef value = column->get()->getDataAt(row_num);
-            hash = Hash128to64(uint128(CityHash64(value.data, value.size), hash));
+            hash = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(CityHash_v1_0_2::CityHash64(value.data, value.size), hash));
             ++column;
         }
 

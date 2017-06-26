@@ -45,7 +45,7 @@ struct Settings
     M(SettingUInt64, min_insert_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256)) \
     /** The maximum number of threads to execute the request. By default, it is determined automatically. */ \
     M(SettingMaxThreads, max_threads, 0) \
-    /** The maximum size of the buffer to read from the file system. */ \
+    /** The maximum size of the buffer to read from the filesystem. */ \
     M(SettingUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE) \
     /** The maximum number of connections for distributed processing of one query (should be greater than max_threads). */ \
     M(SettingUInt64, max_distributed_connections, DEFAULT_MAX_DISTRIBUTED_CONNECTIONS) \

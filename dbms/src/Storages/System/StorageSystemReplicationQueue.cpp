@@ -33,7 +33,6 @@ StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string &
         { "new_part_name",           std::make_shared<DataTypeString>()    },
         { "parts_to_merge",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
         { "is_detach",               std::make_shared<DataTypeUInt8>()     },
-        { "attach_source_part_name", std::make_shared<DataTypeString>()    },
         /// Processing status of item.
         { "is_currently_executing",  std::make_shared<DataTypeUInt8>()     },
         { "num_tries",               std::make_shared<DataTypeUInt32>()    },
@@ -102,7 +101,6 @@ BlockInputStreams StorageSystemReplicationQueue::read(
     ColumnWithTypeAndName col_parts_to_merge         { std::make_shared<ColumnArray>(std::make_shared<ColumnString>()),
         std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "parts_to_merge" };
     ColumnWithTypeAndName col_is_detach              { std::make_shared<ColumnUInt8>(),  std::make_shared<DataTypeUInt8>(), "is_detach" };
-    ColumnWithTypeAndName col_attach_source_part_name{ std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "attach_source_part_name" };
     ColumnWithTypeAndName col_is_currently_executing { std::make_shared<ColumnUInt8>(),  std::make_shared<DataTypeUInt8>(), "is_currently_executing" };
     ColumnWithTypeAndName col_num_tries              { std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeUInt32>(), "num_tries" };
     ColumnWithTypeAndName col_last_exception         { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "last_exception" };
@@ -142,7 +140,6 @@ BlockInputStreams StorageSystemReplicationQueue::read(
             col_new_part_name           .column->insert(entry.new_part_name);
             col_parts_to_merge          .column->insert(parts_to_merge);
             col_is_detach               .column->insert(UInt64(entry.detach));
-            col_attach_source_part_name .column->insert(entry.source_part_name);
             col_is_currently_executing  .column->insert(UInt64(entry.currently_executing));
             col_num_tries               .column->insert(UInt64(entry.num_tries));
             col_last_exception          .column->insert(entry.exception ? getExceptionMessage(entry.exception, false) : "");
@@ -166,7 +163,6 @@ BlockInputStreams StorageSystemReplicationQueue::read(
         col_new_part_name,
         col_parts_to_merge,
         col_is_detach,
-        col_attach_source_part_name,
         col_is_currently_executing,
         col_num_tries,
         col_last_exception,
