@@ -2847,7 +2847,7 @@ AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const
     if (!existsNodeCached(month_path))
     {
         int code = zookeeper->tryCreate(month_path, "", zkutil::CreateMode::Persistent);
-        if (code != ZOK && code != ZNONODE)
+        if (code != ZOK && code != ZNODEEXISTS)
             throw zkutil::KeeperException(code, month_path);
     }
 
