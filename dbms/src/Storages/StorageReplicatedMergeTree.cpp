@@ -15,6 +15,7 @@
 
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/queryToString.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -965,6 +966,12 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
         return true;
     }
 
+    if (entry.type == LogEntry::CLEAR_COLUMN)
+    {
+        executeClearColumnInPartition(entry);
+        return true;
+    }
+
     if (entry.type == LogEntry::GET_PART ||
         entry.type == LogEntry::MERGE_PARTS)
     {
@@ -1399,6 +1406,67 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
     }
 
     LOG_INFO(log, (entry.detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << entry.new_part_name << ".");
+}
+
+
+void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & entry)
+{
+    LOG_INFO(log, "Clear column " << entry.column_name << " in parts inside " << entry.new_part_name << " range");
+
+    /// Assume optimistic scenario, i.e. conflicts are very rare
+    /// So, if conflicts are found, throw an exception and will retry execution later
+    queue.disableMergesAndFetchesInRange(entry);
+
+    /// We don't change table structure, only data in some parts, disable reading from them
+    auto lock_read_structure = lockStructure(false);
+    auto lock_write_data = lockDataForAlter();
+
+    auto zookeeper = getZooKeeper();
+
+    AlterCommand alter_command;
+    alter_command.type = AlterCommand::DROP_COLUMN;
+    alter_command.column_name = entry.column_name;
+
+    auto new_columns = data.getColumnsListNonMaterialized();
+    auto new_materialized_columns = data.materialized_columns;
+    auto new_alias_columns = data.alias_columns;
+    auto new_column_defaults = data.column_defaults;
+
+    alter_command.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
+
+    auto columns_for_parts = new_columns;
+    columns_for_parts.insert(std::end(columns_for_parts),
+        std::begin(new_materialized_columns), std::end(new_materialized_columns));
+
+    size_t modified_parts = 0;
+    auto parts = data.getAllDataParts();
+    for (const auto & part : parts)
+    {
+        if (!ActiveDataPartSet::contains(entry.new_part_name, part->name))
+            continue;
+
+        LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
+
+        auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_expr_ast, false);
+        if (!transaction)
+            continue;
+
+        /// Update part metadata in ZooKeeper.
+        zkutil::Ops ops;
+        ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
+            replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
+        ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
+            replica_path + "/parts/" + part->name + "/checksums", transaction->getNewChecksums().toString(), -1));
+
+        zookeeper->multi(ops);
+
+        transaction->commit();
+        ++modified_parts;
+    }
+
+    LOG_DEBUG(log, "Cleared column " << entry.column_name << " in " << modified_parts << " parts");
+
+    data.recalculateColumnSizes();
 }
 
 
@@ -2288,12 +2356,15 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & query, con
 }
 
 
-bool StorageReplicatedMergeTree::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
+bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
 {
     assertNotReadonly();
 
     if (!is_leader_node)
-        throw Exception("Method OPTIMIZE for ReplicatedMergeTree could be called only on leader replica", ErrorCodes::NOT_IMPLEMENTED);
+    {
+        sendRequestToLeaderReplica(query, settings);
+        return true;
+    }
 
     auto can_merge = [this]
         (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
@@ -2508,8 +2579,8 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 }
 
 
-/// The name of an imaginary part covering all possible parts in the specified month with numbers in the specified range.
-static String getFakePartNameForDrop(const String & month_name, UInt64 right)
+/// The name of an imaginary part covering all possible parts in the specified month with numbers in the range from zero to specified right bound.
+static String getFakePartNameCoveringPartRange(const String & month_name, UInt64 right)
 {
     /// The date range is all month long.
     const auto & lut = DateLUT::instance();
@@ -2522,49 +2593,11 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 right)
 }
 
 
-void StorageReplicatedMergeTree::dropPartition(
-    const ASTPtr & query, const Field & field, bool detach, const Settings & settings)
+String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(const String & month_name)
 {
-    assertNotReadonly();
-
-    String month_name = MergeTreeData::getMonthName(field);
-
-    if (!is_leader_node)
-    {
-        /// Proxy request to the leader.
-
-        auto live_replicas = getZooKeeper()->getChildren(zookeeper_path + "/leader_election");
-        if (live_replicas.empty())
-            throw Exception("No active replicas", ErrorCodes::NO_ACTIVE_REPLICAS);
-
-        std::sort(live_replicas.begin(), live_replicas.end());
-        const auto leader = getZooKeeper()->get(zookeeper_path + "/leader_election/" + live_replicas.front());
-
-        if (leader == replica_name)
-            throw Exception("Leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
-
-        ReplicatedMergeTreeAddress leader_address(getZooKeeper()->get(zookeeper_path + "/replicas/" + leader + "/host"));
-
-        auto new_query = query->clone();
-        auto & alter = typeid_cast<ASTAlterQuery &>(*new_query);
-
-        alter.database = leader_address.database;
-        alter.table = leader_address.table;
-
-        /// NOTE Works only if there is access from the default user without a password. You can fix it by adding a parameter to the server config.
-
-        Connection connection(
-            leader_address.host,
-            leader_address.queries_port,
-            leader_address.database,
-            "", "", "ClickHouse replica");
-
-        RemoteBlockInputStream stream(connection, formattedAST(new_query), &settings, context);
-        NullBlockOutputStream output;
-
-        copyData(stream, output);
-        return;
-    }
+    /// Even if there is no data in the partition, you still need to mark the range for deletion.
+    /// - Because before executing DETACH, tasks for downloading parts to this partition can be executed.
+    Int64 left = 0;
 
     /** Let's skip one number in `block_numbers` for the month being deleted, and we will only delete parts until this number.
       * This prohibits merges of deleted parts with the new inserted data.
@@ -2586,7 +2619,53 @@ void StorageReplicatedMergeTree::dropPartition(
         throw Exception("Logical error: newly allocated block number is zero", ErrorCodes::LOGICAL_ERROR);
     --right;
 
-    String fake_part_name = getFakePartNameForDrop(month_name, right);
+    return getFakePartNameCoveringPartRange(month_name, left, right);
+}
+
+
+void StorageReplicatedMergeTree::clearColumnInPartition(
+    const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
+{
+    assertNotReadonly();
+
+    /// We don't block merges, so anyone can manage this task (not only leader)
+
+    String month_name = MergeTreeData::getMonthName(partition);
+    String fake_part_name = getFakePartNameCoveringAllPartsInPartition(month_name);
+
+    /// We allocated new block number for this part, so new merges can't merge clearing parts with new ones
+
+    LogEntry entry;
+    entry.type = LogEntry::CLEAR_COLUMN;
+    entry.new_part_name = fake_part_name;
+    entry.column_name = column_name.safeGet<String>();
+    entry.create_time = time(0);
+
+    String log_znode_path = getZooKeeper()->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+    entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+    /// If necessary, wait until the operation is performed on itself or on all replicas.
+    if (settings.replication_alter_partitions_sync != 0)
+    {
+        if (settings.replication_alter_partitions_sync == 1)
+            waitForReplicaToProcessLogEntry(replica_name, entry);
+        else
+            waitForAllReplicasToProcessLogEntry(entry);
+    }
+}
+
+void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings)
+{
+    assertNotReadonly();
+
+    if (!is_leader_node)
+    {
+        sendRequestToLeaderReplica(query, settings);
+        return;
+    }
+
+    String month_name = MergeTreeData::getMonthName(partition);
+    String fake_part_name = getFakePartNameCoveringAllPartsInPartition(month_name);
 
     /** Forbid to choose the parts to be deleted for merging.
       * Invariant: after the `DROP_RANGE` entry appears in the log, merge of deleted parts will not appear in the log.
@@ -2596,7 +2675,7 @@ void StorageReplicatedMergeTree::dropPartition(
         queue.disableMergesInRange(fake_part_name);
     }
 
-    LOG_DEBUG(log, "Disabled merges in range " << "0_" << right << " for partition " << month_name);
+    LOG_DEBUG(log, "Disabled merges covered by range " << fake_part_name);
 
     /// Finally, having achieved the necessary invariants, you can put an entry in the log.
     LogEntry entry;
@@ -2604,9 +2683,10 @@ void StorageReplicatedMergeTree::dropPartition(
     entry.source_replica = replica_name;
     entry.new_part_name = fake_part_name;
     entry.detach = detach;
+    entry.create_time = time(0);
+
     String log_znode_path = getZooKeeper()->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
-    entry.create_time = time(0);
 
     /// If necessary, wait until the operation is performed on itself or on all replicas.
     if (settings.replication_alter_partitions_sync != 0)
@@ -2965,6 +3045,52 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
             if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
                 ++res.active_replicas;
     }
+}
+
+
+/// TODO: Probably it is better to have queue in ZK with tasks for leader (like DDL)
+void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query, const Settings & settings)
+{
+    auto live_replicas = getZooKeeper()->getChildren(zookeeper_path + "/leader_election");
+    if (live_replicas.empty())
+        throw Exception("No active replicas", ErrorCodes::NO_ACTIVE_REPLICAS);
+
+    std::sort(live_replicas.begin(), live_replicas.end());
+    const auto leader = getZooKeeper()->get(zookeeper_path + "/leader_election/" + live_replicas.front());
+
+    if (leader == replica_name)
+        throw Exception("Leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
+
+    ReplicatedMergeTreeAddress leader_address(getZooKeeper()->get(zookeeper_path + "/replicas/" + leader + "/host"));
+
+    /// TODO: add setters and getters interface for database and table fields of AST
+    auto new_query = query->clone();
+    if (auto * alter = typeid_cast<ASTAlterQuery *>(new_query.get()))
+    {
+        alter->database = leader_address.database;
+        alter->table = leader_address.table;
+    }
+    else if (auto * optimize = typeid_cast<ASTOptimizeQuery *>(new_query.get()))
+    {
+        optimize->database = leader_address.database;
+        optimize->table = leader_address.table;
+    }
+    else
+        throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);
+
+    /// NOTE Works only if there is access from the default user without a password. You can fix it by adding a parameter to the server config.
+
+    Connection connection(
+        leader_address.host,
+        leader_address.queries_port,
+        leader_address.database,
+        "", "", "ClickHouse replica");
+
+    RemoteBlockInputStream stream(connection, formattedAST(new_query), &settings, context);
+    NullBlockOutputStream output;
+
+    copyData(stream, output);
+    return;
 }
 
 

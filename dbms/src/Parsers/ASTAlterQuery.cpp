@@ -113,11 +113,12 @@ void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & st
         }
         else if (p.type == ASTAlterQuery::DROP_COLUMN)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DROP COLUMN " << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
+                << (p.clear_column ? "CLEAR " : "DROP ") << "COLUMN " << (settings.hilite ? hilite_none : "");
             p.column->formatImpl(settings, state, frame);
             if (p.partition)
             {
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " FROM PARTITION " << (settings.hilite ? hilite_none : "");
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " IN PARTITION " << (settings.hilite ? hilite_none : "");
                 p.partition->formatImpl(settings, state, frame);
             }
         }

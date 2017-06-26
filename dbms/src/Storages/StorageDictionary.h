@@ -4,6 +4,7 @@
 #include <common/MultiVersion.h>
 #include <ext/shared_ptr_helper.h>
 
+
 namespace Poco
 {
 class Logger;
@@ -11,8 +12,8 @@ class Logger;
 
 namespace DB
 {
-class DictionaryStructure;
-class IDictionaryBase;
+struct DictionaryStructure;
+struct IDictionaryBase;
 class ExternalDictionaries;
 
 class StorageDictionary : private ext::shared_ptr_helper<StorageDictionary>, public IStorage

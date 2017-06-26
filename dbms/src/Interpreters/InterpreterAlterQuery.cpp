@@ -29,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -78,8 +79,8 @@ BlockIO InterpreterAlterQuery::execute()
                     command.coordinator, context);
                 break;
 
-            case PartitionCommand::DROP_COLUMN:
-                table->dropColumnFromPartition(query_ptr, command.partition, command.column_name, context.getSettingsRef());
+            case PartitionCommand::CLEAR_COLUMN:
+                table->clearColumnInPartition(query_ptr, command.partition, command.column_name, context.getSettingsRef());
                 break;
         }
     }
@@ -131,13 +132,19 @@ void InterpreterAlterQuery::parseAlter(
         {
             if (params.partition)
             {
+                if (!params.clear_column)
+                    throw Exception("Can't DROP COLUMN from partition. It is possible only CLEAR COLUMN in partition", ErrorCodes::BAD_ARGUMENTS);
+
                 const Field & partition = typeid_cast<const ASTLiteral &>(*(params.partition)).value;
                 const Field & column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
 
-                out_partition_commands.emplace_back(PartitionCommand::dropColumnFromPartition(partition, column_name));
+                out_partition_commands.emplace_back(PartitionCommand::clearColumn(partition, column_name));
             }
             else
             {
+                if (params.clear_column)
+                    throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
+
                 AlterCommand command;
                 command.type = AlterCommand::DROP_COLUMN;
                 command.column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
