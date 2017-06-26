@@ -2580,7 +2580,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 
 /// The name of an imaginary part covering all possible parts in the specified month with numbers in the range from zero to specified right bound.
-static String getFakePartNameCoveringPartRange(const String & month_name, UInt64 right)
+static String getFakePartNameCoveringPartRange(const String & month_name, UInt64 left, UInt64 right)
 {
     /// The date range is all month long.
     const auto & lut = DateLUT::instance();
@@ -2589,7 +2589,7 @@ static String getFakePartNameCoveringPartRange(const String & month_name, UInt64
     DayNum_t right_date = DayNum_t(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
 
     /// Artificial high level is choosen, to make this part "covering" all parts inside.
-    return ActiveDataPartSet::getPartName(left_date, right_date, 0, right, 999999999);
+    return ActiveDataPartSet::getPartName(left_date, right_date, left, right, 999999999);
 }
 
 
