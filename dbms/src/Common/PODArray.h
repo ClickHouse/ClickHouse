@@ -39,7 +39,7 @@ namespace DB
 template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>, size_t pad_right_ = 0>
 class PODArray : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
-private:
+protected:
     /// Round padding up to an whole number of elements to simplify arithmetic.
     static constexpr size_t pad_right = (pad_right_ + sizeof(T) - 1) / sizeof(T) * sizeof(T);
 
