@@ -2597,7 +2597,6 @@ String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(co
 {
     /// Even if there is no data in the partition, you still need to mark the range for deletion.
     /// - Because before executing DETACH, tasks for downloading parts to this partition can be executed.
-    Int64 left = 0;
 
     /** Let's skip one number in `block_numbers` for the month being deleted, and we will only delete parts until this number.
       * This prohibits merges of deleted parts with the new inserted data.
@@ -2619,7 +2618,7 @@ String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(co
         throw Exception("Logical error: newly allocated block number is zero", ErrorCodes::LOGICAL_ERROR);
     --right;
 
-    return getFakePartNameCoveringPartRange(month_name, left, right);
+    return getFakePartNameCoveringPartRange(month_name, right);
 }
 
 
