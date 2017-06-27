@@ -894,7 +894,6 @@ inline T parse(const char * data, size_t size)
     T res;
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
-    assertEOF(buf);
     return res;
 }
 
