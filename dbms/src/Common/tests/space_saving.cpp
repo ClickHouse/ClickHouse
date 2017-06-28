@@ -82,7 +82,7 @@ int main(int argc, char ** argv)
         }
 
         for (auto x : cont.topK(5)) {
-            auto key = x.key;
+            auto key = x.key.toString();
             if (x.count < expect[key]) {
                 std::cerr << "key: " << key << " value: " << x.count << " expected: " << expect[key] << std::endl;
             } else {
