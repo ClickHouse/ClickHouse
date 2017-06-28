@@ -38,6 +38,7 @@ void registerFunctionsTransform(FunctionFactory &);
 void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsCharset(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
+void registerFunctionsFindCluster(FunctionFactory &);
 
 
 void registerFunctions()
@@ -71,6 +72,7 @@ void registerFunctions()
     registerFunctionsGeo(factory);
     registerFunctionsCharset(factory);
     registerFunctionsNull(factory);
+    registerFunctionsFindCluster(factory);
 }
 
 }
