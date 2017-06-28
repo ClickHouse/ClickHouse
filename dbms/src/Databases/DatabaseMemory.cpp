@@ -54,7 +54,7 @@ StoragePtr DatabaseMemory::detachTable(const String & table_name)
         std::lock_guard<std::mutex> lock(mutex);
         auto it = tables.find(table_name);
         if (it == tables.end())
-            throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::TABLE_ALREADY_EXISTS);
+            throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         res = it->second;
         tables.erase(it);
     }

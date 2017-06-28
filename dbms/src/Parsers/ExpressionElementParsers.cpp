@@ -137,12 +137,16 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 {
     Pos begin = pos;
 
-    /// Identifier in backquotes
-    if (pos != end && *pos == '`')
+    /// Identifier in backquotes or in double quotes
+    if (pos != end && (*pos == '`' || *pos == '"'))
     {
         ReadBufferFromMemory buf(pos, end - pos);
         String s;
-        readBackQuotedString(s, buf);
+
+        if (*pos == '`')
+            readBackQuotedStringWithSQLStyle(s, buf);
+        else
+            readDoubleQuotedStringWithSQLStyle(s, buf);
 
         if (s.empty())    /// Identifiers "empty string" are not allowed.
             return false;
@@ -528,7 +532,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
 
     try
     {
-        readQuotedString(s, in);
+        readQuotedStringWithSQLStyle(s, in);
     }
     catch (const Exception & e)
     {

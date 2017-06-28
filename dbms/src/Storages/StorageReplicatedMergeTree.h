@@ -48,7 +48,6 @@ namespace DB
   * Each entry is one of:
   * - normal data insertion (GET),
   * - merge (MERGE),
-  * - slightly less common data insertion (ATTACH),
   * - delete the partition (DROP).
   *
   * Each replica copies (queueUpdatingThread, pullLogsToQueue) entries from the log to its queue (/replicas/replica_name/queue/queue-...)
@@ -132,10 +131,11 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
-    bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override;
+    bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings) override;
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
+    void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
     void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
     void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
     void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
@@ -371,12 +371,6 @@ private:
       */
     void checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
 
-    /** Based on the assumption that there is no such part anywhere else (This is provided if the part number is highlighted with AbandonableLock).
-      * Adds actions to `ops` that add data about the part into ZooKeeper.
-      * Call under TableStructureLock.
-      */
-    void addNewPartToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
-
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
 
@@ -400,7 +394,8 @@ private:
     bool executeLogEntry(const LogEntry & entry);
 
     void executeDropRange(const LogEntry & entry);
-    bool executeAttachPart(const LogEntry & entry); /// Returns false if the part is absent, and it needs to be picked up from another replica.
+
+    void executeClearColumnInPartition(const LogEntry & entry);
 
     /** Updates the queue.
       */
@@ -455,7 +450,7 @@ private:
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
 
-    AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);
+    AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name, zkutil::ZooKeeperPtr & zookeeper);
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .
@@ -466,19 +461,14 @@ private:
       */
     void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
 
+    /// Choose leader replica, send requst to it and wait.
+    void sendRequestToLeaderReplica(const ASTPtr & query, const Settings & settings);
+
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;
 
-    /** Get a lock that protects the specified partition from the merge task.
-      * The lock is recursive.
-      */
-    std::string acquirePartitionMergeLock(const std::string & partition_name);
-
-    /** Declare that we no longer refer to the lock corresponding to the specified
-      * partition. If there are no more links, the lock is destroyed.
-      */
-    void releasePartitionMergeLock(const std::string & partition_name);
-
+    /// The name of an imaginary part covering all parts in the specified partition (at the call moment).
+    String getFakePartNameCoveringAllPartsInPartition(const String & month_name);
 
     /// Check for a node in ZK. If it is, remember this information, and then immediately answer true.
     std::unordered_set<std::string> existing_nodes_cache;
@@ -510,7 +500,6 @@ private:
 };
 
 
-extern const Int64 RESERVED_BLOCK_NUMBERS;
 extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER;
 
 }

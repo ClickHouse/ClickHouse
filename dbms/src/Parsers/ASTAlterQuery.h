@@ -62,11 +62,13 @@ public:
         /** In DROP PARTITION and RESHARD PARTITION queries, the name of the partition is stored here.
           */
         ASTPtr partition;
-        bool detach = false; /// true for DETACH PARTITION.
+        bool detach = false;        /// true for DETACH PARTITION
 
-        bool part = false; /// true for ATTACH PART
+        bool part = false;          /// true for ATTACH PART
 
-        bool do_copy = false; /// for RESHARD PARTITION.
+        bool do_copy = false;       /// for RESHARD PARTITION
+
+        bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
         /** For FETCH PARTITION - the path in ZK to the shard, from which to download the partition.
           */

@@ -27,6 +27,8 @@ using ProfilingBlockInputStreamPtr = std::shared_ptr<IProfilingBlockInputStream>
 class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
+    IProfilingBlockInputStream();
+
     Block read() override final;
 
     /** The default implementation calls readPrefixImpl() on itself, and then readPrefix() recursively for all children.

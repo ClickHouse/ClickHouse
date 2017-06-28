@@ -35,7 +35,8 @@ struct ReplicatedMergeTreeLogEntryData
         GET_PART,       /// Get the part from another replica.
         MERGE_PARTS,    /// Merge the parts.
         DROP_RANGE,     /// Delete the parts in the specified month in the specified number range.
-        ATTACH_PART,    /// Move a part from the `detached` directory.
+        ATTACH_PART,    /// Move a part from the `detached` directory. Obsolete. TODO: Remove after half year.
+        CLEAR_COLUMN,   /// Drop specific column from specified partition.
     };
 
     String typeToString() const
@@ -46,6 +47,7 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:  return "MERGE_PARTS";
             case ReplicatedMergeTreeLogEntryData::DROP_RANGE:   return "DROP_RANGE";
             case ReplicatedMergeTreeLogEntryData::ATTACH_PART:  return "ATTACH_PART";
+            case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN: return "CLEAR_COLUMN";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
@@ -68,12 +70,10 @@ struct ReplicatedMergeTreeLogEntryData
 
     Strings parts_to_merge;
     bool deduplicate = false; /// Do deduplicate on merge
+    String column_name;
 
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
-
-    /// For ATTACH_PART, the name of the part in the `detached` directory.
-    String source_part_name;
 
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     bool currently_executing = false;    /// Whether the action is executing now.
