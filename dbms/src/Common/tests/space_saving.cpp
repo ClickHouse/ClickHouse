@@ -24,7 +24,7 @@ int main(int argc, char ** argv)
 
         std::map<int, UInt64> expect;
         for (int i = 0; i < 5; ++i) {
-            expect[i] = 41;   
+            expect[i] = 41;
         }
 
         for (auto x : first.topK(5)) {
@@ -48,7 +48,7 @@ int main(int argc, char ** argv)
         }
 
         for (int i = 0; i < 5; ++i) {
-            expect[i] = 42;   
+            expect[i] = 42;
         }
 
         first.merge(second);
@@ -66,7 +66,7 @@ int main(int argc, char ** argv)
     {
         /* Same test for string keys */
 
-        using Cont = DB::SpaceSaving<std::string, StringRef, StringRefHash>;
+        using Cont = DB::SpaceSaving<StringRef, StringRefHash>;
         Cont cont(10);
 
         for (int i = 0; i < 400; ++i) {
