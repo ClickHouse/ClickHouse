@@ -128,6 +128,7 @@ struct MergeTreeSettings
         SET(max_bytes_to_merge_at_max_space_in_pool, getUInt64);
         SET(max_bytes_to_merge_at_min_space_in_pool, getUInt64);
         SET(max_replicated_merges_in_queue, getUInt64);
+        SET(number_of_free_entries_in_pool_to_lower_max_size_of_merge, getUInt64);
         SET(old_parts_lifetime, getUInt64);
         SET(temporary_directories_lifetime, getUInt64);
         SET(parts_to_delay_insert, getUInt64);
