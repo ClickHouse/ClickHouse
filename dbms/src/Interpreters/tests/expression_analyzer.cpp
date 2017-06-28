@@ -22,7 +22,7 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    Context context;
+    Context context = Context::createGlobal();
 
     NamesAndTypesList columns;
     for (int i = 2; i + 1 < argc; i += 2)

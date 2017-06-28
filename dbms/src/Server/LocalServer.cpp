@@ -252,7 +252,7 @@ try
         config().add(processed_config.duplicate(), PRIO_DEFAULT, false);
     }
 
-    context = std::make_unique<Context>();
+    context = std::make_unique<Context>(Context::createGlobal());
     context->setGlobalContext(*context);
     context->setApplicationType(Context::ApplicationType::LOCAL_SERVER);
     tryInitPath();
@@ -311,11 +311,15 @@ try
     if (!path.empty())
     {
         LOG_DEBUG(log, "Loading metadata from " << path);
+        loadMetadataSystem(*context);
+        attachSystemTables();
         loadMetadata(*context);
         LOG_DEBUG(log, "Loaded metadata.");
     }
-
-    attachSystemTables();
+    else
+    {
+        attachSystemTables();
+    }
 
     processQueries();
 
@@ -388,7 +392,7 @@ void LocalServer::attachSystemTables()
         context->addDatabase("system", system_database);
     }
 
-    attachSystemTablesLocal(system_database);
+    attachSystemTablesLocal(*system_database);
 }
 
 

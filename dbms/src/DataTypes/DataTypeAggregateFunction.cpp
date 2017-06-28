@@ -190,7 +190,7 @@ void DataTypeAggregateFunction::serializeTextQuoted(const IColumn & column, size
 void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
     String s;
-    readQuotedString(s, istr);
+    readQuotedStringWithSQLStyle(s, istr);
     deserializeFromString(function, column, s);
 }
 

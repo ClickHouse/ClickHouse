@@ -38,8 +38,6 @@ public:
         bool contains(const Part & rhs) const
         {
             return month == rhs.month        /// Parts for different months are not merged
-                && left_date <= rhs.left_date
-                && right_date >= rhs.right_date
                 && left <= rhs.left
                 && right >= rhs.right
                 && level >= rhs.level;

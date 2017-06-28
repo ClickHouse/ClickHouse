@@ -14,7 +14,7 @@
 namespace DB
 {
 
-/** Implements a repository that is suitable for small pieces of the log.
+/** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
 class StorageStripeLog : public ext::shared_ptr_helper<StorageStripeLog>, public IStorage

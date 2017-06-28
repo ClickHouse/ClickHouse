@@ -1,7 +1,7 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
 #include <IO/WriteBufferFromFileDescriptor.h>
 
@@ -35,7 +35,7 @@ void forkThread(ForkPtr fork)
 int main(int argc, char ** argv)
 try
 {
-    Context context;
+    Context context = Context::createGlobal();
 
     context.setGlobalContext(context);
     context.setPath("./");

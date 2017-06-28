@@ -212,13 +212,15 @@ public:
     {
         const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
 
-        /** For performance, the strings are compared to the first zero byte.
-          * (if zero byte is in the middle of the line, then what is after it is ignored)
-          * Note that the terminating zero byte is always present.
-          */
-        return strcmp(
-            reinterpret_cast<const char *>(&chars[offsetAt(n)]),
-            reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]));
+        const size_t size = sizeAt(n);
+        const size_t rhs_size = rhs.sizeAt(m);
+
+        int cmp = memcmp(&chars[offsetAt(n)], &rhs.chars[rhs.offsetAt(m)], std::min(size, rhs_size));
+
+        if (cmp != 0)
+            return cmp;
+        else
+            return size > rhs_size ? 1 : (size < rhs_size ? -1 : 0);
     }
 
     /// Variant of compareAt for string comparison with respect of collation.

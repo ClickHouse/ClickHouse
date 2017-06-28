@@ -2,7 +2,7 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 
 namespace DB
@@ -147,6 +147,17 @@ public:
       * And also wait for the completion of their execution, if they are now being executed.
       */
     void removeGetsAndMergesInRange(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
+
+    /** Disables future merges and fetches inside entry.new_part_name
+     *  If there are currently executing merges or fetches then throws exception.
+     */
+    void disableMergesAndFetchesInRange(const LogEntry & entry);
+
+    /** Returns list of currently executing entries blocking execution of specified CLEAR_COLUMN command
+     * Call it under mutex
+     */
+    Queue getConflictsForClearColumnCommand(const LogEntry & entry, String * out_conflicts_description);
+
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue

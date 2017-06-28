@@ -149,6 +149,10 @@ if (UNBUNDLED)
 else ()
     set(NOT_UNBUNDLED 1)
 endif ()
+# Using system libs can cause lot of warnings in includes. 
+if (UNBUNDLED OR NOT (CMAKE_SYSTEM MATCHES "Linux" OR APPLE))
+    option (NO_WERROR "Disable -Werror compiler option" ON)
+endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} UNBUNDLED=${UNBUNDLED}")
 
@@ -173,9 +177,14 @@ include (cmake/find_readline_edit.cmake)
 include (cmake/find_zookeeper.cmake)
 include (cmake/find_double-conversion.cmake)
 include (cmake/find_re2.cmake)
+# Need to process before "contrib" dir:
 include (libs/libcommon/cmake/find_gperftools.cmake)
 include (libs/libcommon/cmake/find_jemalloc.cmake)
+include (libs/libcommon/cmake/find_cctz.cmake)
 include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
+include (libs/libdaemon/cmake/find_unwind.cmake)
+include (cmake/lib_name.cmake)
+
 
 set (FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")
 set (FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")

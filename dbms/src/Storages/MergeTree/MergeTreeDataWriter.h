@@ -41,7 +41,7 @@ using BlocksWithDateIntervals = std::list<BlockWithDateInterval>;
 class MergeTreeDataWriter
 {
 public:
-    MergeTreeDataWriter(MergeTreeData & data_, Context & context_) : data(data_), context(context_), log(&Logger::get(data.getLogName() + " (Writer)")) {}
+    MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Logger::get(data.getLogName() + " (Writer)")) {}
 
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by months)
@@ -49,15 +49,13 @@ public:
       */
     BlocksWithDateIntervals splitBlockIntoParts(const Block & block);
 
-    /** All rows must correspond to same month.
-      * 'temp_index' - value for 'left' and 'right' for new part. Could be changed later at rename.
-      * Returns part with name starting with 'tmp_', yet not added to MergeTreeData.
+    /** All rows must correspond to same partition.
+      * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
-    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithDateInterval & block, Int64 temp_index);
+    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithDateInterval & block);
 
 private:
     MergeTreeData & data;
-    Context & context;
 
     Logger * log;
 };

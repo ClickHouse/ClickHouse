@@ -209,9 +209,6 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
 
 bool InJoinSubqueriesPreprocessor::hasAtLeastTwoShards(const IStorage & table) const
 {
-    if (!table.isRemote())
-        return false;
-
     const StorageDistributed * distributed = typeid_cast<const StorageDistributed *>(&table);
     if (!distributed)
         return false;

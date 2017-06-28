@@ -10,7 +10,7 @@
 #include <Poco/DOM/Comment.h>
 #include <Poco/Util/XMLConfiguration.h>
 
-#include <zkutil/ZooKeeperNodeCache.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
 using namespace Poco::XML;
 

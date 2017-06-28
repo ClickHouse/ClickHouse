@@ -173,7 +173,7 @@ ASTPtr ASTSelectQuery::clone() const
     return ptr;
 }
 
-ASTPtr ASTSelectQuery::cloneFirstSelect() const
+std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneFirstSelect() const
 {
     auto res = cloneImpl(false);
     res->prev_union_all = nullptr;

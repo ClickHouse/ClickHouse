@@ -7,7 +7,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
 #include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -132,7 +132,7 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
     }
 
     /** Tables load faster if they are loaded in sorted (by name) order.
-      * Otherwise (for the ext4 file system), `DirectoryIterator` iterates through them in some order,
+      * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
       */
     std::sort(file_names.begin(), file_names.end());
@@ -342,7 +342,7 @@ void DatabaseOrdinary::renameTable(
     StoragePtr table = tryGetTable(table_name);
 
     if (!table)
-        throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try

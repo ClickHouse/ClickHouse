@@ -174,18 +174,27 @@ struct StringComparisonImpl
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
+
         for (size_t i = 0; i < size; ++i)
         {
+            /// Trailing zero byte of the smaller string is included in the comparison.
+            size_t a_size;
+            size_t b_size;
+            int res;
             if (i == 0)
             {
-                /// The trailing zero in the smaller string is included in the comparison.
-                c[i] = Op::apply(memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0], b_offsets[0])), 0);
+                a_size = a_offsets[0];
+                b_size = b_offsets[0];
+                res = memcmp(&a_data[0], &b_data[0], std::min(a_size, b_size));
             }
             else
             {
-                c[i] = Op::apply(memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]],
-                    std::min(a_offsets[i] - a_offsets[i - 1], b_offsets[i] - b_offsets[i - 1])), 0);
+                a_size = a_offsets[i] - a_offsets[i - 1];
+                b_size = b_offsets[i] - b_offsets[i - 1];
+                res = memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]], std::min(a_size, b_size));
             }
+
+            c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_size, b_size));
         }
     }
 
@@ -217,18 +226,20 @@ struct StringComparisonImpl
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
-        ColumnString::Offset_t b_n = b.size();
+        ColumnString::Offset_t b_size = b.size() + 1;
         const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
         for (size_t i = 0; i < size; ++i)
         {
+            /// Trailing zero byte of the smaller string is included in the comparison.
             if (i == 0)
             {
-                c[i] = Op::apply(memcmp(&a_data[0], b_data, std::min(a_offsets[0], b_n + 1)), 0);
+                int res = memcmp(&a_data[0], b_data, std::min(a_offsets[0], b_size));
+                c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_offsets[0], b_size));
             }
             else
             {
-                c[i] = Op::apply(memcmp(&a_data[a_offsets[i - 1]], b_data,
-                    std::min(a_offsets[i] - a_offsets[i - 1], b_n + 1)), 0);
+                int res = memcmp(&a_data[a_offsets[i - 1]], b_data, std::min(a_offsets[i] - a_offsets[i - 1], b_size));
+                c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_offsets[i] - a_offsets[i - 1], b_size));
             }
         }
     }
@@ -331,7 +342,11 @@ struct StringComparisonImpl
         const std::string & b,
         UInt8 & c)
     {
-        c = Op::apply(memcmp(a.data(), b.data(), std::min(a.size(), b.size()) + 1), 0);
+        size_t a_n = a.size();
+        size_t b_n = b.size();
+
+        int res = memcmp(a.data(), b.data(), std::min(a_n, b_n));
+        c = Op::apply(res, 0) || (res == 0 && Op::apply(a_n, b_n));
     }
 };
 

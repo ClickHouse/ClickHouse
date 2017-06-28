@@ -22,7 +22,7 @@ using namespace DB;
 int main(int argc, char ** argv)
 try
 {
-    Context context;
+    Context context = Context::createGlobal();
     Settings settings = context.getSettings();
 
     context.setPath("./");

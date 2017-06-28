@@ -11,7 +11,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/CompressedReadBuffer.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
@@ -65,7 +65,7 @@ struct DefaultHash<STRUCT> \
 { \
     size_t operator() (STRUCT x) const \
     { \
-        return CityHash64(x.data, x.size); \
+        return CityHash_v1_0_2::CityHash64(x.data, x.size);  \
     } \
 };
 

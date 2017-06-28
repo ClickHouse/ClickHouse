@@ -3,16 +3,18 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <ext/range.h>
-#include <btrie.h>
 #include <atomic>
 #include <memory>
 #include <tuple>
 #include <common/logger_useful.h>
+
+struct btrie_s;
+typedef struct btrie_s btrie_t;
 
 namespace DB
 {

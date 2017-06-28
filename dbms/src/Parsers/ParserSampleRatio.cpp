@@ -12,7 +12,7 @@ namespace DB
 
 static bool parseDecimal(IParser::Pos & pos, IParser::Pos end, ASTSampleRatio::Rational & res, IParser::Pos & max_parsed_pos)
 {
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ws.ignore(pos, end);
 
     UInt64 num_before = 0;
@@ -90,7 +90,7 @@ bool ParserSampleRatio::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr &
 {
     auto begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
 
     ASTSampleRatio::Rational numerator;
     ASTSampleRatio::Rational denominator;

@@ -34,7 +34,7 @@ struct Mark
 using Marks = std::vector<Mark>;
 
 
-/** Implements a repository that is suitable for logs.
+/** Implements a table engine that is suitable for logs.
   * Keys are not supported.
   * The data is stored in a compressed form.
   */

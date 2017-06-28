@@ -78,7 +78,7 @@ try
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
 
-    Context context;
+    Context context = Context::createGlobal();
 
     context.setPath("./");
     auto database = std::make_shared<DatabaseOrdinary>("test", "./metadata/test/");

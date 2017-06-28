@@ -1,15 +1,10 @@
 #include <memory>
 #include <city.h>
-
-#ifdef USE_QUICKLZ
-    #include <quicklz/quicklz_level1.h>
-#endif
-
 #include <lz4.h>
 #include <lz4hc.h>
 #include <zstd.h>
 
-#include <Common/unaligned.h>
+#include <common/unaligned.h>
 #include <Core/Types.h>
 
 #include <IO/CompressedWriteBuffer.h>
@@ -35,28 +30,10 @@ void CompressedWriteBuffer::nextImpl()
     char * compressed_buffer_ptr = nullptr;
 
     /** The format of compressed block - see CompressedStream.h
-        */
+      */
 
     switch (method)
     {
-        case CompressionMethod::QuickLZ:
-        {
-        #ifdef USE_QUICKLZ
-            compressed_buffer.resize(uncompressed_size + QUICKLZ_ADDITIONAL_SPACE);
-
-            compressed_size = qlz_compress(
-                working_buffer.begin(),
-                &compressed_buffer[0],
-                uncompressed_size,
-                qlz_state.get());
-
-            compressed_buffer[0] &= 3;
-            compressed_buffer_ptr = &compressed_buffer[0];
-            break;
-        #else
-            throw Exception("QuickLZ compression method is disabled", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-        #endif
-        }
         case CompressionMethod::LZ4:
         case CompressionMethod::LZ4HC:
         {
@@ -125,7 +102,7 @@ void CompressedWriteBuffer::nextImpl()
             throw Exception("Unknown compression method", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
     }
 
-    uint128 checksum = CityHash128(compressed_buffer_ptr, compressed_size);
+    CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_buffer_ptr, compressed_size);
     out.write(reinterpret_cast<const char *>(&checksum), sizeof(checksum));
 
     out.write(compressed_buffer_ptr, compressed_size);
@@ -137,9 +114,6 @@ CompressedWriteBuffer::CompressedWriteBuffer(
     CompressionMethod method_,
     size_t buf_size)
     : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), method(method_)
-#ifdef USE_QUICKLZ
-        , qlz_state(std::make_unique<qlz_state_compress>())
-#endif
 {
 }
 

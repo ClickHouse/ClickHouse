@@ -16,12 +16,11 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_optimize("OPTIMIZE", true, true);
-    ParserString s_table("TABLE", true, true);
-    ParserString s_partition("PARTITION", true, true);
-    ParserString s_final("FINAL", true, true);
-    ParserString s_deduplicate("DEDUPLICATE", true, true);
+    ParserWhitespaceOrComments ws;
+    ParserKeyword s_optimize_table("OPTIMIZE TABLE");
+    ParserKeyword s_partition("PARTITION");
+    ParserKeyword s_final("FINAL");
+    ParserKeyword s_deduplicate("DEDUPLICATE");
     ParserString s_dot(".");
     ParserIdentifier name_p;
     ParserLiteral partition_p;
@@ -34,12 +33,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
 
     ws.ignore(pos, end);
 
-    if (!s_optimize.ignore(pos, end, max_parsed_pos, expected))
-        return false;
-
-    ws.ignore(pos, end);
-
-    if (!s_table.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_optimize_table.ignore(pos, end, max_parsed_pos, expected))
         return false;
 
     ws.ignore(pos, end);

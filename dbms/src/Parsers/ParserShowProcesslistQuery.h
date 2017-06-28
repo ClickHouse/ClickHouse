@@ -21,20 +21,13 @@ protected:
     {
         Pos begin = pos;
 
-        ParserWhiteSpaceOrComments ws;
-        ParserString s_show("SHOW", true, true);
-        ParserString s_processlist("PROCESSLIST", true, true);
+        ParserWhitespaceOrComments ws;
 
         auto query = std::make_shared<ASTShowProcesslistQuery>();
 
         ws.ignore(pos, end);
 
-        if (!s_show.ignore(pos, end, max_parsed_pos, expected))
-            return false;
-
-        ws.ignore(pos, end);
-
-        if (!s_processlist.ignore(pos, end, max_parsed_pos, expected))
+        if (!ParserKeyword("SHOW PROCESSLIST").ignore(pos, end, max_parsed_pos, expected))
             return false;
 
         ws.ignore(pos, end);

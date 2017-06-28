@@ -30,7 +30,7 @@ private:
             FETCH_PARTITION,
             FREEZE_PARTITION,
             RESHARD_PARTITION,
-            DROP_COLUMN,
+            CLEAR_COLUMN,
         };
 
         Type type;
@@ -62,10 +62,10 @@ private:
             return res;
         }
 
-        static PartitionCommand dropColumnFromPartition(const Field & partition, const Field & column_name)
+        static PartitionCommand clearColumn(const Field & partition, const Field & column_name)
         {
             PartitionCommand res;
-            res.type = DROP_COLUMN;
+            res.type = CLEAR_COLUMN;
             res.partition = partition;
             res.column_name = column_name;
             return res;

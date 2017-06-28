@@ -2,7 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
-
+#include <Core/Defines.h>
 
 namespace DB
 {

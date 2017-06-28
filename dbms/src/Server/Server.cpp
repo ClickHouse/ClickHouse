@@ -10,13 +10,14 @@
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
 #include <ext/scope_guard.h>
-#include <zkutil/ZooKeeper.h>
-#include <zkutil/ZooKeeperNodeCache.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Databases/DatabaseOrdinary.h>
+#include <common/getMemoryAmount.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/ProcessList.h>
@@ -223,7 +224,7 @@ int Server::main(const std::vector<std::string> & args)
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
       */
-    global_context = std::make_unique<Context>();
+    global_context = std::make_unique<Context>(Context::createGlobal());
     global_context->setGlobalContext(*global_context);
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
@@ -385,27 +386,14 @@ int Server::main(const std::vector<std::string> & args)
     global_context->setSetting("profile", default_profile_name);
 
     LOG_INFO(log, "Loading metadata.");
+    loadMetadataSystem(*global_context);
+    /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
+    attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
+    /// Then, load remaining databases
     loadMetadata(*global_context);
     LOG_DEBUG(log, "Loaded metadata.");
 
     global_context->setCurrentDatabase(default_database);
-
-    /// Create system tables.
-    if (!global_context->isDatabaseExist("system"))
-    {
-        Poco::File(path + "data/system").createDirectories();
-        Poco::File(path + "metadata/system").createDirectories();
-
-        auto system_database = std::make_shared<DatabaseOrdinary>("system", path + "metadata/system/");
-        global_context->addDatabase("system", system_database);
-
-        /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-        system_database->loadTables(*global_context, nullptr, true);
-    }
-
-    DatabasePtr system_database = global_context->getDatabase("system");
-
-    attachSystemTablesServer(system_database, global_context.get(), has_zookeeper);
 
     bool has_resharding_worker = false;
     if (has_zookeeper && config().has("resharding"))
@@ -451,11 +439,7 @@ int Server::main(const std::vector<std::string> & args)
 
         std::vector<std::unique_ptr<Poco::Net::TCPServer>> servers;
 
-        std::vector<std::string> listen_hosts;
-        for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "listen_host"))
-        {
-            listen_hosts.emplace_back(config().getString(key));
-        }
+        std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
         bool try_listen = false;
         if (listen_hosts.empty())
@@ -583,6 +567,15 @@ int Server::main(const std::vector<std::string> & args)
         for (auto & server : servers)
             server->start();
 
+        {
+            std::stringstream message;
+            message << "Available RAM = " << formatReadableSizeWithBinarySuffix(getMemoryAmount()) << ";"
+                << " physical cores = " << getNumberOfPhysicalCPUCores() << ";"
+                // on ARM processors it can show only enabled at current moment cores
+                << " threads = " <<  std::thread::hardware_concurrency() << ".";
+            LOG_INFO(log, message.str());
+        }
+
         LOG_INFO(log, "Ready for connections.");
 
         SCOPE_EXIT({
@@ -654,8 +647,7 @@ int Server::main(const std::vector<std::string> & args)
 
         /// This object will periodically calculate some metrics.
         AsynchronousMetrics async_metrics(*global_context);
-
-        attachSystemTablesAsync(system_database, async_metrics);
+        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
 
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))

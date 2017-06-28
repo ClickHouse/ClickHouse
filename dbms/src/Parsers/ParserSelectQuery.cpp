@@ -28,22 +28,20 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     auto select_query = std::make_shared<ASTSelectQuery>();
     node = select_query;
 
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_select("SELECT", true, true);
-    ParserString s_distinct("DISTINCT", true, true);
-    ParserString s_from("FROM", true, true);
-    ParserString s_prewhere("PREWHERE", true, true);
-    ParserString s_where("WHERE", true, true);
-    ParserString s_group("GROUP", true, true);
-    ParserString s_by("BY", true, true);
-    ParserString s_with("WITH", true, true);
-    ParserString s_totals("TOTALS", true, true);
-    ParserString s_having("HAVING", true, true);
-    ParserString s_order("ORDER", true, true);
-    ParserString s_limit("LIMIT", true, true);
-    ParserString s_settings("SETTINGS", true, true);
-    ParserString s_union("UNION", true, true);
-    ParserString s_all("ALL", true, true);
+    ParserWhitespaceOrComments ws;
+    ParserKeyword s_select("SELECT");
+    ParserKeyword s_distinct("DISTINCT");
+    ParserKeyword s_from("FROM");
+    ParserKeyword s_prewhere("PREWHERE");
+    ParserKeyword s_where("WHERE");
+    ParserKeyword s_group_by("GROUP BY");
+    ParserKeyword s_with("WITH");
+    ParserKeyword s_totals("TOTALS");
+    ParserKeyword s_having("HAVING");
+    ParserKeyword s_order_by("ORDER BY");
+    ParserKeyword s_limit("LIMIT");
+    ParserKeyword s_settings("SETTINGS");
+    ParserKeyword s_by("BY");
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_select_clause(true);    /// Allows aliases without AS keyword.
@@ -105,12 +103,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     }
 
     /// GROUP BY expr list
-    if (s_group.ignore(pos, end, max_parsed_pos, expected))
+    if (s_group_by.ignore(pos, end, max_parsed_pos, expected))
     {
-        ws.ignore(pos, end);
-        if (!s_by.ignore(pos, end, max_parsed_pos, expected))
-            return false;
-
         if (!exp_list.parse(pos, end, select_query->group_expression_list, max_parsed_pos, expected))
             return false;
 
@@ -141,12 +135,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     }
 
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
-    if (s_order.ignore(pos, end, max_parsed_pos, expected))
+    if (s_order_by.ignore(pos, end, max_parsed_pos, expected))
     {
-        ws.ignore(pos, end);
-        if (!s_by.ignore(pos, end, max_parsed_pos, expected))
-            return false;
-
         if (!order_list.parse(pos, end, select_query->order_expression_list, max_parsed_pos, expected))
             return false;
 
@@ -228,20 +218,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     }
 
     // UNION ALL select query
-    if (s_union.ignore(pos, end, max_parsed_pos, expected))
+    if (ParserKeyword("UNION ALL").ignore(pos, end, max_parsed_pos, expected))
     {
-        ws.ignore(pos, end);
-
-        if (s_all.ignore(pos, end, max_parsed_pos, expected))
-        {
-            ParserSelectQuery select_p;
-            if (!select_p.parse(pos, end, select_query->next_union_all, max_parsed_pos, expected))
-                return false;
-            auto next_select_query = static_cast<ASTSelectQuery *>(&*select_query->next_union_all);
-            next_select_query->prev_union_all = node.get();
-        }
-        else
+        ParserSelectQuery select_p;
+        if (!select_p.parse(pos, end, select_query->next_union_all, max_parsed_pos, expected))
             return false;
+        auto next_select_query = static_cast<ASTSelectQuery *>(&*select_query->next_union_all);
+        next_select_query->prev_union_all = node.get();
 
         ws.ignore(pos, end);
     }
@@ -271,6 +254,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
         select_query->children.push_back(select_query->limit_length);
     if (select_query->settings)
         select_query->children.push_back(select_query->settings);
+
     if (select_query->next_union_all)
         select_query->children.push_back(select_query->next_union_all);
 

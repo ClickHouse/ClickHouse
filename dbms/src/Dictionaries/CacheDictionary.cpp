@@ -424,11 +424,11 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 
 void CacheDictionary::createAttributes()
 {
-    const auto size = dict_struct.attributes.size();
-    attributes.reserve(size);
+    const auto attributes_size = dict_struct.attributes.size();
+    attributes.reserve(attributes_size);
 
     bytes_allocated += size * sizeof(CellMetadata);
-    bytes_allocated += size * sizeof(attributes.front());
+    bytes_allocated += attributes_size * sizeof(attributes.front());
 
     for (const auto & attribute : dict_struct.attributes)
     {

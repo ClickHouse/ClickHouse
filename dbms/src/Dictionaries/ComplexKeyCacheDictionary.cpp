@@ -1,5 +1,6 @@
 #include <Dictionaries/ComplexKeyCacheDictionary.h>
 #include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Common/Arena.h>
 #include <Common/BitHelpers.h>
 #include <Common/randomSeed.h>
 #include <Common/Stopwatch.h>
@@ -7,6 +8,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <ext/range.h>
+#include <ext/scope_guard.h>
+#include <ext/map.h>
 
 
 namespace ProfileEvents
@@ -321,11 +324,11 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
 
 void ComplexKeyCacheDictionary::createAttributes()
 {
-    const auto size = dict_struct.attributes.size();
-    attributes.reserve(size);
+    const auto attributes_size = dict_struct.attributes.size();
+    attributes.reserve(attributes_size);
 
     bytes_allocated += size * sizeof(CellMetadata);
-    bytes_allocated += size * sizeof(attributes.front());
+    bytes_allocated += attributes_size * sizeof(attributes.front());
 
     for (const auto & attribute : dict_struct.attributes)
     {

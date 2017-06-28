@@ -3,7 +3,7 @@
 #include <string>
 #include <map>
 
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/SpaceSaving.h>
 
 int main(int argc, char ** argv)

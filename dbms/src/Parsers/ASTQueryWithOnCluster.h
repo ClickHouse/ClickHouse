@@ -15,7 +15,7 @@ public:
     /// Should be parsed from ON CLUSTER <cluster> clause
     String cluster;
 
-    /// new_database should be used by queries taht refer to default db
+    /// new_database should be used by queries that refer to default db
     ///  and default_database is specified for remote server
     virtual ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database = {}) const = 0;
 

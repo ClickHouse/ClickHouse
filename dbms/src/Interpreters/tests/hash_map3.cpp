@@ -15,7 +15,7 @@
 
 #include <IO/ReadHelpers.h>
 
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 
 #include <Common/HashTable/HashMap.h>
 

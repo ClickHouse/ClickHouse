@@ -1,0 +1,220 @@
+[
+{
+    "hostname": "xxxxxxxx.yandex.ru",
+    "main_metric": "min_time",
+    "num_cores": 16,
+    "runs": [
+        {
+            "min_time": 1.122000,
+            "query": "SELECT URL as col FROM hits_100m_single ORDER BY col LIMIT 1000,1"
+        },
+        {
+            "min_time": 0.419000,
+            "query": "SELECT SearchPhrase as col FROM hits_100m_single ORDER BY col LIMIT 10000,1"
+        },
+        {
+            "min_time": 0.533000,
+            "query": "SELECT SearchPhrase as col FROM hits_100m_single WHERE notEmpty(col) ORDER BY col LIMIT 10000,1"
+        },
+        {
+            "min_time": 0.344000,
+            "query": "SELECT MobilePhoneModel as col FROM hits_100m_single ORDER BY col LIMIT 20000,1"
+        },
+        {
+            "min_time": 0.330000,
+            "query": "SELECT MobilePhoneModel as col FROM hits_100m_single WHERE notEmpty(col) ORDER BY col LIMIT 500000,1"
+        },
+        {
+            "min_time": 0.326000,
+            "query": "SELECT PageCharset as col FROM hits_100m_single ORDER BY col LIMIT 10000,1"
+        },
+        {
+            "min_time": 0.934000,
+            "query": "SELECT Title as col FROM hits_100m_single ORDER BY col LIMIT 1000,1"
+        }
+    ],
+    "server_version": "1.1.54240",
+    "test_name": "ORDER BY single string column",
+    "time": "2017-06-22 19:28:04"
+},
+{
+    "hostname": "xxxxxxxx.yandex.ru",
+    "main_metric": "min_time",
+    "num_cores": 16,
+    "runs": [
+        {
+            "min_time": 0.539000,
+            "query": "SELECT count() FROM hits_100m_single WHERE URL < URL"
+        },
+        {
+            "min_time": 0.904000,
+            "query": "SELECT count() FROM hits_100m_single WHERE URL < PageCharset"
+        },
+        {
+            "min_time": 0.833000,
+            "query": "SELECT count() FROM hits_100m_single WHERE SearchPhrase < SearchPhrase SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.923000,
+            "query": "SELECT count() FROM hits_100m_single WHERE SearchPhrase < URL"
+        },
+        {
+            "min_time": 1.785000,
+            "query": "SELECT count() FROM hits_100m_single WHERE SearchPhrase < PageCharset SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.835000,
+            "query": "SELECT count() FROM hits_100m_single WHERE notEmpty(SearchPhrase) AND SearchPhrase < SearchPhrase SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.613000,
+            "query": "SELECT count() FROM hits_100m_single WHERE notEmpty(SearchPhrase) AND SearchPhrase < URL"
+        },
+        {
+            "min_time": 1.448000,
+            "query": "SELECT count() FROM hits_100m_single WHERE notEmpty(SearchPhrase) AND SearchPhrase < PageCharset SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.861000,
+            "query": "SELECT count() FROM hits_100m_single WHERE MobilePhoneModel < MobilePhoneModel SETTINGS max_threads = 1"
+        },
+        {
+            "min_time": 0.821000,
+            "query": "SELECT count() FROM hits_100m_single WHERE MobilePhoneModel < URL"
+        },
+        {
+            "min_time": 1.189000,
+            "query": "SELECT count() FROM hits_100m_single WHERE MobilePhoneModel < PageCharset SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.629000,
+            "query": "SELECT count() FROM hits_100m_single WHERE notEmpty(MobilePhoneModel) AND MobilePhoneModel < MobilePhoneModel SETTINGS max_threads = 1"
+        },
+        {
+            "min_time": 0.516000,
+            "query": "SELECT count() FROM hits_100m_single WHERE notEmpty(MobilePhoneModel) AND MobilePhoneModel < URL"
+        },
+        {
+            "min_time": 0.889000,
+            "query": "SELECT count() FROM hits_100m_single WHERE notEmpty(MobilePhoneModel) AND MobilePhoneModel < PageCharset SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.773000,
+            "query": "SELECT count() FROM hits_100m_single WHERE PageCharset < PageCharset SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.576000,
+            "query": "SELECT count() FROM hits_100m_single WHERE PageCharset < URL"
+        },
+        {
+            "min_time": 0.506000,
+            "query": "SELECT count() FROM hits_100m_single WHERE Title < Title"
+        },
+        {
+            "min_time": 1.473000,
+            "query": "SELECT count() FROM hits_100m_single WHERE Title < URL"
+        },
+        {
+            "min_time": 0.707000,
+            "query": "SELECT count() FROM hits_100m_single WHERE Title < PageCharset"
+        }
+    ],
+    "server_version": "1.1.54240",
+    "test_name": "Column-column string comparison",
+    "time": "2017-06-22 19:33:42"
+},
+{
+    "hostname": "xxxxxxxx.yandex.ru",
+    "main_metric": "min_time",
+    "num_cores": 16,
+    "runs": [
+        {
+            "min_time": 0.438000,
+            "query": "SELECT count() FROM hits_100m_single WHERE URL < ''"
+        },
+        {
+            "min_time": 0.796000,
+            "query": "SELECT count() FROM hits_100m_single WHERE URL < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz'"
+        },
+        {
+            "min_time": 0.678000,
+            "query": "SELECT count() FROM hits_100m_single WHERE URL < 'http://some_url'"
+        },
+        {
+            "min_time": 0.743000,
+            "query": "SELECT count() FROM hits_100m_single WHERE SearchPhrase < '' SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 1.038000,
+            "query": "SELECT count() FROM hits_100m_single WHERE SearchPhrase < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 1.044000,
+            "query": "SELECT count() FROM hits_100m_single WHERE SearchPhrase < 'поисковая фраза' SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.754000,
+            "query": "SELECT count() FROM hits_100m_single WHERE notEmpty(SearchPhrase) AND SearchPhrase < '' SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.799000,
+            "query": "SELECT count() FROM hits_100m_single WHERE notEmpty(SearchPhrase) AND SearchPhrase < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.823000,
+            "query": "SELECT count() FROM hits_100m_single WHERE notEmpty(SearchPhrase) AND SearchPhrase < 'поисковая фраза' SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.803000,
+            "query": "SELECT count() FROM hits_100m_single WHERE MobilePhoneModel < '' SETTINGS max_threads = 1"
+        },
+        {
+            "min_time": 1.006000,
+            "query": "SELECT count() FROM hits_100m_single WHERE MobilePhoneModel < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' SETTINGS max_threads = 1"
+        },
+        {
+            "min_time": 1.005000,
+            "query": "SELECT count() FROM hits_100m_single WHERE MobilePhoneModel < 'model' SETTINGS max_threads = 1"
+        },
+        {
+            "min_time": 0.615000,
+            "query": "SELECT count() FROM hits_100m_single WHERE notEmpty(MobilePhoneModel) AND MobilePhoneModel < '' SETTINGS max_threads = 1"
+        },
+        {
+            "min_time": 0.635000,
+            "query": "SELECT count() FROM hits_100m_single WHERE notEmpty(MobilePhoneModel) AND MobilePhoneModel < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' SETTINGS max_threads = 1"
+        },
+        {
+            "min_time": 0.636000,
+            "query": "SELECT count() FROM hits_100m_single WHERE notEmpty(MobilePhoneModel) AND MobilePhoneModel < 'model' SETTINGS max_threads = 1"
+        },
+        {
+            "min_time": 0.714000,
+            "query": "SELECT count() FROM hits_100m_single WHERE PageCharset < '' SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.990000,
+            "query": "SELECT count() FROM hits_100m_single WHERE PageCharset < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.790000,
+            "query": "SELECT count() FROM hits_100m_single WHERE PageCharset < 'utf-8' SETTINGS max_threads = 2"
+        },
+        {
+            "min_time": 0.404000,
+            "query": "SELECT count() FROM hits_100m_single WHERE Title < ''"
+        },
+        {
+            "min_time": 0.608000,
+            "query": "SELECT count() FROM hits_100m_single WHERE Title < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz'"
+        },
+        {
+            "min_time": 0.624000,
+            "query": "SELECT count() FROM hits_100m_single WHERE Title < 'Какой-то заголовок'"
+        }
+    ],
+    "server_version": "1.1.54240",
+    "test_name": "Constant-column string comparison",
+    "time": "2017-06-22 19:40:06"
+}
+]

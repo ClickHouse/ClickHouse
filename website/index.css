@@ -260,13 +260,12 @@ a:hover, a:active {
     color: #888;
 }
 
-code {
+pre {
     font: 13px/18px monospace, "Courier New";
     display: block;
     border-left: 5px solid #ffdb4d;
     padding: 5px 10px;
-    background: #000;
-    color: #ccc;
+    background-color: #fff8e8;
 }
 
 ul {
@@ -305,6 +304,52 @@ ul.dashed > li:before {
     color: #08f;
     cursor: pointer;
     border-bottom: 1px solid #08f;
+}
+
+#tutorial_title {
+    font: normal 100px 'Yandex Sans Display Web', Arial, sans-serif;
+    margin-top: 25px;
+    margin-bottom: 0;
+    text-align: center;
+    padding-top: 27px;
+}
+
+#tutorial_subtitle {
+    font-size: 50px;
+    text-align: center;
+    margin-top: 35px;
+    margin-bottom: 50px;
+}
+
+.spoiler {
+    margin-bottom: 10px;
+}
+
+.spoiler_body {
+    display: none;
+}
+
+.spoiler_title {
+    color: #08f;
+    border-bottom: 1px dotted #08f;
+}
+
+.spoiler_title:hover {
+    cursor: pointer;
+    color: #f00;
+    border-bottom: 1px dotted #f00;
+    text-decoration: none;
+}
+
+.tip {
+    background-color: #EEE;
+    border: 1px solid #EEE;
+    padding: 5px 10px 5px 10px;
+}
+
+.tip b {
+    font-size: 150%;
+    color: #888;
 }
 
 .block-50 {
