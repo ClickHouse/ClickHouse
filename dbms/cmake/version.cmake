@@ -1,7 +1,7 @@
-#This strings autochanged from release_lib.sh :
+# This strings autochanged from release_lib.sh:
 set(VERSION_DESCRIBE v1.1.54243-testing)
 set(VERSION_REVISION 54243)
-#===end of autochange
+# end of autochange
 
 set (VERSION_MAJOR 1)
 set (VERSION_MINOR 1)
