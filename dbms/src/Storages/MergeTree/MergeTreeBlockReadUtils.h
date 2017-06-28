@@ -81,11 +81,19 @@ struct MergeTreeBlockSizePredictor
     }
 
     /// Predicts what number of rows should be read to exhaust byte quota
+    inline size_t estimateNumRowsMax(size_t bytes_quota) const
+    {
+        double max_size_per_row = std::max<double>(std::max<size_t>(max_size_per_row_fixed, 1), max_size_per_row_dynamic);
+        return (bytes_quota > block_size_rows * max_size_per_row)
+        ? static_cast<size_t>(bytes_quota / max_size_per_row) - block_size_rows
+            : 0;
+    }
+
     inline size_t estimateNumRows(size_t bytes_quota) const
     {
         return (bytes_quota > block_size_bytes)
-            ? static_cast<size_t>((bytes_quota - block_size_bytes) / bytes_per_row_current)
-            : 0;
+        ? static_cast<size_t>((bytes_quota - block_size_bytes) / bytes_per_row_current)
+        : 0;
     }
 
     /// Predicts what number of marks should be read to exhaust byte quota
@@ -115,6 +123,8 @@ protected:
     std::vector<ColumnInfo> dynamic_columns_infos;
     size_t fixed_columns_bytes_per_row = 0;
 
+    size_t max_size_per_row_fixed = 0;
+    double max_size_per_row_dynamic = 0;
 public:
 
     size_t block_size_bytes = 0;

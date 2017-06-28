@@ -79,13 +79,18 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
     {
         if (!task.size_predictor)
             return default_block_size;
+        return task.size_predictor->estimateNumRowsMax(preferred_block_size_bytes);
+        /*
         size_t recommended_rows = task.size_predictor->estimateNumRows(preferred_block_size_bytes);
         recommended_rows = std::min(default_block_size, recommended_rows);
-        size_t marks_to_read = (reader.readRowsInCurrentGranule() + recommended_rows + index_granularity / 2) / index_granularity;
-        if (!marks_to_read)
-            return recommended_rows;
-        size_t rows_to_read = marks_to_read * index_granularity - reader.readRowsInCurrentGranule();
-        return 2 * recommended_rows > rows_to_read ? rows_to_read : recommended_rows;
+        // size_t marks_to_read = (reader.readRowsInCurrentGranule() + recommended_rows + index_granularity / 2) / index_granularity;
+        // if (!marks_to_read)
+        //    return recommended_rows;
+        // size_t rows_to_read = marks_to_read * index_granularity - reader.readRowsInCurrentGranule();
+        size_t rows_to_read = recommended_rows;
+        return rows_to_read;
+        // return 2 * recommended_rows > rows_to_read ? rows_to_read : recommended_rows;
+        */
     };
 
     // read rows from reader and clean columns
@@ -373,7 +378,6 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
     }
     else
     {
-        // LOG_TRACE(log, "without prewhere");
         size_t space_left = std::max(1LU, max_block_size_rows);
         while (!task->isFinished() && space_left && !isCancelled())
         {
