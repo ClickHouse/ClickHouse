@@ -330,20 +330,30 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     }
     else
     {
+        ws.ignore(pos, end);
+
         /// VIEW or MATERIALIZED VIEW
-        if (s_materialized.ignore(pos, end, max_parsed_pos, expected) && ws.ignore(pos, end, max_parsed_pos, expected))
+        if (s_materialized.ignore(pos, end, max_parsed_pos, expected))
+        {
             is_materialized_view = true;
+            ws.ignore(pos, end);
+        }
         else
             is_view = true;
 
-        if (!s_view.ignore(pos, end, max_parsed_pos, expected) || !ws.ignore(pos, end, max_parsed_pos, expected))
+        if (!s_view.ignore(pos, end, max_parsed_pos, expected))
             return false;
+
+        ws.ignore(pos, end);
 
         if (s_if_not_exists.ignore(pos, end, max_parsed_pos, expected))
             if_not_exists = true;
 
+        ws.ignore(pos, end);
+
         if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
             return false;
+
         ws.ignore(pos, end);
 
         if (s_dot.ignore(pos, end, max_parsed_pos, expected))
