@@ -552,7 +552,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     for (size_t i = 0; i < parts.size(); ++i)
     {
         auto input = std::make_unique<MergeTreeBlockInputStream>(
-            data, parts[i], DEFAULT_MERGE_BLOCK_SIZE, 0, merging_column_names, MarkRanges(1, MarkRange(0, parts[i]->size)),
+            data, parts[i], DEFAULT_MERGE_BLOCK_SIZE, 0, 0, merging_column_names, MarkRanges(1, MarkRange(0, parts[i]->size)),
             false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         input->setProgressCallback(
@@ -686,7 +686,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
             for (size_t part_num = 0; part_num < parts.size(); ++part_num)
             {
                 auto column_part_stream = std::make_shared<MergeTreeBlockInputStream>(
-                    data, parts[part_num], DEFAULT_MERGE_BLOCK_SIZE, 0, column_name_, MarkRanges{MarkRange(0, parts[part_num]->size)},
+                    data, parts[part_num], DEFAULT_MERGE_BLOCK_SIZE, 0, 0, column_name_, MarkRanges{MarkRange(0, parts[part_num]->size)},
                     false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false, Names{}, 0, true);
 
                 column_part_stream->setProgressCallback(
@@ -894,7 +894,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
         MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 
         auto input = std::make_unique<MergeTreeBlockInputStream>(
-            data, parts[i], DEFAULT_MERGE_BLOCK_SIZE, 0, column_names,
+            data, parts[i], DEFAULT_MERGE_BLOCK_SIZE, 0, 0, column_names,
             ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)

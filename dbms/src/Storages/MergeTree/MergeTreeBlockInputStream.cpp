@@ -20,6 +20,7 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
     const MergeTreeData::DataPartPtr & owned_data_part_,
     size_t max_block_size_rows_,
     size_t preferred_block_size_bytes_,
+    size_t preferred_max_column_in_block_size_bytes_,
     Names column_names,
     const MarkRanges & mark_ranges_,
     bool use_uncompressed_cache_,
@@ -33,8 +34,9 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
     size_t part_index_in_query_,
     bool quiet)
     :
-    MergeTreeBaseBlockInputStream{storage_, prewhere_actions_, prewhere_column_, max_block_size_rows_, preferred_block_size_bytes_,
-        min_bytes_to_use_direct_io_, max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names},
+    MergeTreeBaseBlockInputStream{storage_, prewhere_actions_, prewhere_column_, max_block_size_rows_,
+        preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_,
+        max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names},
     ordered_names{column_names},
     data_part{owned_data_part_},
     part_columns_lock{new Poco::ScopedReadRWLock(data_part->columns_lock)},
