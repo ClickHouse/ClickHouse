@@ -12,8 +12,10 @@
 #include <cxxabi.h>
 #include <execinfo.h>
 
-#define UNW_LOCAL_ONLY
-#include <libunwind.h>
+#if USE_UNWIND
+    #define UNW_LOCAL_ONLY
+    #include <libunwind.h>
+#endif
 
 #ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
@@ -179,7 +181,7 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 
 static bool already_printed_stack_trace = false;
 
-
+#if USE_UNWIND
 size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & context)
 {
     if (already_printed_stack_trace)
@@ -202,7 +204,7 @@ size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & co
 
     return i;
 }
-
+#endif
 
 /** Получает информацию через pipe.
   * При получении сигнала HUP / USR1 закрывает лог-файлы.
@@ -322,10 +324,27 @@ private:
 
         static const int max_frames = 50;
         void * frames[max_frames];
+
+
+
+
+
+
+#if USE_UNWIND
         int frames_size = backtraceLibUnwind(frames, max_frames, context);
 
         if (frames_size)
         {
+#else
+        int frames_size = backtrace(frames, max_frames);
+
+        if (frames_size >= 2)
+        {
+            /// Overwrite sigaction with caller's address
+            if (caller_address && (frames_size < 3 || caller_address != frames[2]))
+                frames[1] = caller_address;
+#endif
+
             char ** symbols = backtrace_symbols(frames, frames_size);
 
             if (!symbols)

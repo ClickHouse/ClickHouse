@@ -3,6 +3,9 @@
 *\#
 .tramp_history
 
+# vim cache files
+*.swp
+
 # auto generated files
 *.logrt
 

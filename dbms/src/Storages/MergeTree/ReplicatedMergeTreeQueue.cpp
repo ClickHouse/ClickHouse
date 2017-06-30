@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
+    extern const int UNFINISHED;
 }
 
 
@@ -448,6 +449,62 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
 }
 
 
+ReplicatedMergeTreeQueue::Queue ReplicatedMergeTreeQueue::getConflictsForClearColumnCommand(
+    const LogEntry & entry, String * out_conflicts_description)
+{
+    Queue conflicts;
+
+    for (auto & elem : queue)
+    {
+        if (elem->currently_executing && elem->znode_name != entry.znode_name)
+        {
+            if (elem->type == LogEntry::MERGE_PARTS || elem->type == LogEntry::GET_PART || elem->type == LogEntry::ATTACH_PART)
+            {
+                if (ActiveDataPartSet::contains(entry.new_part_name, elem->new_part_name))
+                    conflicts.emplace_back(elem);
+            }
+
+            if (elem->type == LogEntry::CLEAR_COLUMN)
+            {
+                ActiveDataPartSet::Part cur_part;
+                ActiveDataPartSet::parsePartName(elem->new_part_name, cur_part);
+                ActiveDataPartSet::Part part;
+                ActiveDataPartSet::parsePartName(entry.new_part_name, part);
+
+                if (part.month == cur_part.month)
+                    conflicts.emplace_back(elem);
+            }
+        }
+    }
+
+    if (out_conflicts_description)
+    {
+        std::stringstream ss;
+        ss << "Can't execute " << entry.typeToString() << " entry " << entry.znode_name << ". ";
+        ss << "There are " << conflicts.size() << " currently executing entries blocking it: ";
+        for (const auto & conflict : conflicts)
+            ss << conflict->typeToString() << " " << conflict->new_part_name << " " << conflict->znode_name << ", ";
+
+        *out_conflicts_description = ss.str();
+    }
+
+    return conflicts;
+}
+
+
+void ReplicatedMergeTreeQueue::disableMergesAndFetchesInRange(const LogEntry & entry)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    String conflicts_description;
+
+    if (!getConflictsForClearColumnCommand(entry, &conflicts_description).empty())
+        throw Exception(conflicts_description, ErrorCodes::UNFINISHED);
+
+    if (!future_parts.count(entry.new_part_name))
+        throw Exception("Expected that merges and fetches should be blocked in range " + entry.new_part_name + ". This is a bug", ErrorCodes::LOGICAL_ERROR);
+}
+
+
 bool ReplicatedMergeTreeQueue::isNotCoveredByFuturePartsImpl(const String & new_part_name, String & out_reason)
 {
     /// mutex should been already acquired
@@ -564,6 +621,16 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 + ") is greater than current maximum (" + formatReadableSizeWithBinarySuffix(max_parts_size_for_merge) + ").";
             LOG_DEBUG(log, reason);
             out_postpone_reason = reason;
+            return false;
+        }
+    }
+
+    if (entry.type == LogEntry::CLEAR_COLUMN)
+    {
+        String conflicts_description;
+        if (!getConflictsForClearColumnCommand(entry, &conflicts_description).empty())
+        {
+            LOG_DEBUG(log, conflicts_description);
             return false;
         }
     }

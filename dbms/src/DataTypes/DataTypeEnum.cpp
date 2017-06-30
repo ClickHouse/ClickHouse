@@ -166,7 +166,7 @@ template <typename Type>
 void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
     std::string name;
-    readQuotedString(name, istr);
+    readQuotedStringWithSQLStyle(name, istr);
     static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
 }
 

@@ -20,7 +20,7 @@
 
 #include <Common/Exception.h>
 
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 
 #ifdef __APPLE__

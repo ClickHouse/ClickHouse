@@ -1181,8 +1181,6 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     if (out_transaction && out_transaction->data)
         throw Exception("Using the same MergeTreeData::Transaction for overlapping transactions is invalid", ErrorCodes::LOGICAL_ERROR);
 
-    LOG_TRACE(log, "Renaming temporary part " << part->relative_path << ".");
-
     DataPartsVector replaced;
     {
         std::lock_guard<std::mutex> lock(data_parts_mutex);
@@ -1195,6 +1193,8 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
         String old_name = part->name;
         String new_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
+
+        LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << new_name << ".");
 
         /// Check that new part doesn't exist yet.
         {
@@ -1444,34 +1444,6 @@ size_t MergeTreeData::getMaxPartsCountForMonth() const
     return res;
 }
 
-
-std::pair<Int64, bool> MergeTreeData::getMinBlockNumberForMonth(DayNum_t month) const
-{
-    std::lock_guard<std::mutex> lock(all_data_parts_mutex);
-
-    for (const auto & part : all_data_parts)    /// The search can be done better.
-        if (part->month == month)
-            return { part->left, true };    /// Blocks in data_parts are sorted by month and left.
-
-    return { 0, false };
-}
-
-
-bool MergeTreeData::hasBlockNumberInMonth(Int64 block_number, DayNum_t month) const
-{
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
-
-    for (const auto & part : data_parts)    /// The search can be done better.
-    {
-        if (part->month == month && part->left <= block_number && part->right >= block_number)
-            return true;
-
-        if (part->month > month)
-            break;
-    }
-
-    return false;
-}
 
 void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 {
