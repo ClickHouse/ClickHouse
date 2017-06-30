@@ -1,4 +1,6 @@
 #include <IO/WriteHelpers.h>
+#include <inttypes.h>
+#include <stdio.h>
 
 namespace DB
 {
@@ -45,6 +47,29 @@ void formatUUID(const UInt8 * src16, UInt8 * dst36)
     dst36[23] = '-';
     formatHex(&src16[10], &dst36[24], 6);
 }
+
+void formatUUID(const Uuid & uuid, UInt8 * dst36)
+{
+    char s[16+1];
+
+    dst36[8] = '-';
+    dst36[13] = '-';
+    dst36[18] = '-';
+    dst36[23] = '-';
+
+    snprintf(s, sizeof(s), "%016llx", static_cast<long long>(uuid.first));
+
+    memcpy(&dst36[0], &s, 8);
+    memcpy(&dst36[9], &s[8], 4);
+    memcpy(&dst36[14], &s[12], 4);
+
+    snprintf(s, sizeof(s), "%016llx", static_cast<long long>(uuid.second));
+
+    memcpy(&dst36[19], &s[0], 4);
+    memcpy(&dst36[24], &s[4], 12);
+}
+
+
 
 void writeException(const Exception & e, WriteBuffer & buf)
 {

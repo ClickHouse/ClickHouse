@@ -687,7 +687,6 @@ public:
         }
         catch (Exception & e)
         {
-            std::cout << "err" << std::endl;
             /// More convenient error message.
             if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
             {
@@ -1104,15 +1103,36 @@ struct ToStringMonotonicity
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
         IFunction::Monotonicity positive(true, true);
-        //IFunction::Monotonicity not_monotonic;
+        IFunction::Monotonicity not_monotonic;
+
+        /// `toString` function is monotonous if the argument is Date or DateTime, or non-negative numbers with the same number of symbols.
+
+        if (typeid_cast<const DataTypeDate *>(&type)
+            || typeid_cast<const DataTypeDateTime *>(&type))
+            return positive;
 
         if (left.isNull() || right.isNull())
             return {};
 
-        return positive;
+        if (left.getType() == Field::Types::UInt64
+            && right.getType() == Field::Types::UInt64)
+        {
+            return (left.get<Int64>() == 0 && right.get<Int64>() == 0)
+                || (floor(log10(left.get<UInt64>())) == floor(log10(right.get<UInt64>())))
+                ? positive : not_monotonic;
+        }
+
+        if (left.getType() == Field::Types::Int64
+            && right.getType() == Field::Types::Int64)
+        {
+            return (left.get<Int64>() == 0 && right.get<Int64>() == 0)
+                || (left.get<Int64>() > 0 && right.get<Int64>() > 0 && floor(log10(left.get<Int64>())) == floor(log10(right.get<Int64>())))
+                ? positive : not_monotonic;
+        }
+
+        return not_monotonic;
     }
 };
-
 
 struct NameToUInt8             { static constexpr auto name = "toUInt8"; };
 struct NameToUInt16         { static constexpr auto name = "toUInt16"; };

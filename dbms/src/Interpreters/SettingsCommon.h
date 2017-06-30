@@ -16,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int UNKNOWN_LOAD_BALANCING;
     extern const int UNKNOWN_OVERFLOW_MODE;
     extern const int ILLEGAL_OVERFLOW_MODE;

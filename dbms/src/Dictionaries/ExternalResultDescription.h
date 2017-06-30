@@ -24,8 +24,7 @@ struct ExternalResultDescription
         Float64,
         String,
         Date,
-        DateTime,
-        Uuid
+        DateTime
     };
 
     Block sample_block;

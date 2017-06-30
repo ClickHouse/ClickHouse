@@ -475,12 +475,13 @@ inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
 
 void formatHex(const UInt8 * __restrict src, UInt8 * __restrict dst, const size_t num_bytes);
 void formatUUID(const UInt8 * src16, UInt8 * dst36);
+void formatUUID(const Uuid & uuid, UInt8 * dst36);
 
 inline void writeUuidText(const Uuid & uuid, WriteBuffer & buf)
 {
     char s[36];
 
-    formatUUID((const UInt8 *)&uuid, (UInt8 *)s);
+    formatUUID(uuid, (UInt8 *)s);
     buf.write(s, sizeof(s));
 }
 

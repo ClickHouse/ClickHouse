@@ -25,41 +25,41 @@ struct UInt128
     UInt64 second;
 
     UInt128() = default;
-    explicit UInt128(const UInt64 rhs) : first(rhs), second(0) { }
+    explicit UInt128(const UInt64 rhs) : first(0), second(rhs) { }
 
     bool operator== (const UInt128 & rhs) const { return second == rhs.second && first == rhs.first; }
     bool operator!= (const UInt128 & rhs) const { return second != rhs.second || first != rhs.first; }
-    bool operator>= (const UInt128 & rhs) const { return (second == rhs.second) ? first >= rhs.first : second > rhs.second; }
-    bool operator>  (const UInt128 & rhs)  const { return second > rhs.second || first > rhs.first; }
-    bool operator<= (const UInt128 & rhs) const { return (second == rhs.second) ? first <= rhs.first : second < rhs.second; }
-    bool operator<  (const UInt128 & rhs)  const { return second < rhs.second || first < rhs.first; }
+    bool operator>= (const UInt128 & rhs) const { return (first == rhs.first) ? second >= rhs.second : first > rhs.first; }
+    bool operator>  (const UInt128 & rhs)  const { return (first == rhs.first) ? second > rhs.second : first > rhs.first; }
+    bool operator<= (const UInt128 & rhs) const { return (first == rhs.first) ? second <= rhs.second : first < rhs.first; }
+    bool operator<  (const UInt128 & rhs)  const { return (first == rhs.first) ? second < rhs.second : first < rhs.first; }
 
     /** Type stored in the database will contains no more than 64 bits at the moment, don't need
      *  to check the `second` element 
      */
-    template<typename T> bool operator== (const T rhs) const { return second == 0 && static_cast<T>(first) == rhs; }
-    template<typename T> bool operator!= (const T rhs) const { return second != 0 || static_cast<T>(first) != rhs; }
-    template<typename T> bool operator>= (const T rhs) const { return second != 0 && static_cast<T>(first) >= rhs; }
-    template<typename T> bool operator>  (const T rhs)  const { return second != 0 && static_cast<T>(first) >  rhs; }
-    template<typename T> bool operator<= (const T rhs) const { return second == 0 && static_cast<T>(first) <= rhs; }
-    template<typename T> bool operator<  (const T rhs)  const { return second == 0 && static_cast<T>(first) >  rhs; }
+    template<typename T> bool operator== (const T rhs) const { return first == 0 && static_cast<T>(second) == rhs; }
+    template<typename T> bool operator!= (const T rhs) const { return first != 0 || static_cast<T>(second) != rhs; }
+    template<typename T> bool operator>= (const T rhs) const { return first != 0 && static_cast<T>(second) >= rhs; }
+    template<typename T> bool operator>  (const T rhs)  const { return first != 0 && static_cast<T>(second) >  rhs; }
+    template<typename T> bool operator<= (const T rhs) const { return first == 0 && static_cast<T>(second) <= rhs; }
+    template<typename T> bool operator<  (const T rhs)  const { return first == 0 && static_cast<T>(second) >  rhs; }
 
-    template<typename T> explicit operator T() const { return static_cast<T>(first); }
+    template<typename T> explicit operator T() const { return static_cast<T>(second); }
     operator UInt128() const { return *this; }
 
 #if !__clang__
 #pragma GCC diagnostic pop
 #endif
 
-    UInt128 & operator= (const UInt64 rhs) { first = rhs; second = 0; return *this; }
+    UInt128 & operator= (const UInt64 rhs) { first = 0; second = rhs; return *this; }
 };
 
 template<typename T> bool operator== (T a, const UInt128 & b) { return b == a; }
 template<typename T> bool operator!= (T a, const UInt128 & b) { return b != a; }
-template<typename T> bool operator>= (T a, const UInt128 & b) { return b.second == 0 && a >= static_cast<T>(b.first); }
-template<typename T> bool operator>  (T a, const UInt128 & b) { return b.second == 0 && a >  static_cast<T>(b.first); }
-template<typename T> bool operator<= (T a, const UInt128 & b) { return b.second != 0 || a <= static_cast<T>(b.first); }
-template<typename T> bool operator<  (T a, const UInt128 & b) { return b.second != 0 || a <  static_cast<T>(b.first); }
+template<typename T> bool operator>= (T a, const UInt128 & b) { return b.first == 0 && a >= static_cast<T>(b.second); }
+template<typename T> bool operator>  (T a, const UInt128 & b) { return b.first == 0 && a >  static_cast<T>(b.second); }
+template<typename T> bool operator<= (T a, const UInt128 & b) { return b.first != 0 || a <= static_cast<T>(b.second); }
+template<typename T> bool operator<  (T a, const UInt128 & b) { return b.first != 0 || a <  static_cast<T>(b.second); }
 
 struct UInt128Hash
 {

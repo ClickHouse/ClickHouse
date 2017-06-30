@@ -65,7 +65,6 @@ namespace
             case ValueType::String: static_cast<ColumnString *>(column)->insert(value.convert<String>()); break;
             case ValueType::Date: static_cast<ColumnUInt16 *>(column)->insert(UInt16{LocalDate{value.convert<String>()}.getDayNum()}); break;
             case ValueType::DateTime: static_cast<ColumnUInt32 *>(column)->insert(time_t{LocalDateTime{value.convert<String>()}}); break;
-            case ValueType::Uuid: break;
         }
     }
 }

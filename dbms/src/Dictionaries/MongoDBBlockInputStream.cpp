@@ -19,7 +19,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <ext/range.h>
 #include <Core/FieldVisitors.h>
-#include <Poco/UUID.h>
 
 
 namespace DB
@@ -134,7 +133,6 @@ namespace
                 break;
             }
 
-            case ValueType::Uuid: break;
         }
     }
 }
