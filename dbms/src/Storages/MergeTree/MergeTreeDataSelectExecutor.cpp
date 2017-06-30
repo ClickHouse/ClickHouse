@@ -636,7 +636,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         for (std::size_t i = 0; i < num_streams; ++i)
         {
             res.emplace_back(std::make_shared<MergeTreeThreadBlockInputStream>(
-                i, pool, min_marks_for_concurrent_read, max_block_size, settings.preferred_block_size_bytes, data, use_uncompressed_cache,
+                i, pool, min_marks_for_concurrent_read, max_block_size, settings.preferred_block_size_bytes,
+                settings.preferred_max_column_in_block_size_bytes, data, use_uncompressed_cache,
                 prewhere_actions, prewhere_column, settings, virt_columns));
 
             if (i == 0)
@@ -707,7 +708,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                 }
 
                 BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
-                    data, part.data_part, max_block_size, settings.preferred_block_size_bytes, column_names, ranges_to_get_from_part,
+                    data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
+                    settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io,
                     settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query);
 
@@ -753,7 +755,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
         RangesInDataPart & part = parts[part_index];
 
         BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
-            data, part.data_part, max_block_size, settings.preferred_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
+            data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
+            settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
             prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
             virt_columns, part.part_index_in_query);
 

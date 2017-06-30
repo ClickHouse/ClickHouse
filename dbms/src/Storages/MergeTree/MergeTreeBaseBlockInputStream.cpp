@@ -20,6 +20,7 @@ MergeTreeBaseBlockInputStream::MergeTreeBaseBlockInputStream(
     const String & prewhere_column,
     size_t max_block_size_rows,
     size_t preferred_block_size_bytes,
+    size_t preferred_max_column_in_block_size_bytes,
     size_t min_bytes_to_use_direct_io,
     size_t max_read_buffer_size,
     bool use_uncompressed_cache,
@@ -31,6 +32,7 @@ MergeTreeBaseBlockInputStream::MergeTreeBaseBlockInputStream(
     prewhere_column(prewhere_column),
     max_block_size_rows(max_block_size_rows),
     preferred_block_size_bytes(preferred_block_size_bytes),
+    preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes),
     min_bytes_to_use_direct_io(min_bytes_to_use_direct_io),
     max_read_buffer_size(max_read_buffer_size),
     use_uncompressed_cache(use_uncompressed_cache),
@@ -71,26 +73,26 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         task->size_predictor->startBlock();
 
     const auto preferred_block_size_bytes = this->preferred_block_size_bytes;
+    const auto preferred_max_column_in_block_size_bytes =
+        this->preferred_max_column_in_block_size_bytes ? this->preferred_max_column_in_block_size_bytes : max_block_size_rows;
     const auto index_granularity = storage.index_granularity;
     const auto default_block_size = std::max(1LU, max_block_size_rows);
+    const double min_filtration_ratio = 0.00001;
 
-    auto estimateNumRows = [preferred_block_size_bytes, default_block_size, index_granularity](
+    auto estimateNumRows = [preferred_block_size_bytes, default_block_size,
+        index_granularity, preferred_max_column_in_block_size_bytes, min_filtration_ratio](
         MergeTreeReadTask & task, MergeTreeRangeReader & reader)
     {
         if (!task.size_predictor)
             return default_block_size;
-        return task.size_predictor->estimateNumRowsMax(preferred_block_size_bytes);
-        /*
-        size_t recommended_rows = task.size_predictor->estimateNumRows(preferred_block_size_bytes);
-        recommended_rows = std::min(default_block_size, recommended_rows);
-        // size_t marks_to_read = (reader.readRowsInCurrentGranule() + recommended_rows + index_granularity / 2) / index_granularity;
-        // if (!marks_to_read)
-        //    return recommended_rows;
-        // size_t rows_to_read = marks_to_read * index_granularity - reader.readRowsInCurrentGranule();
-        size_t rows_to_read = recommended_rows;
-        return rows_to_read;
-        // return 2 * recommended_rows > rows_to_read ? rows_to_read : recommended_rows;
-        */
+
+        size_t rows_to_read_for_block = task.size_predictor->estimateNumRows(preferred_block_size_bytes);
+        size_t rows_to_read_for_max_size_column
+            = task.size_predictor->estimateNumRowsForMaxSizeColumn(preferred_max_column_in_block_size_bytes);
+        double filtration_ratio = std::max(min_filtration_ratio, 1.0 - task.size_predictor->filtered_rows_ration);
+        size_t rows_to_read_for_max_size_column_with_filtration
+            = static_cast<size_t>( rows_to_read_for_max_size_column / filtration_ratio);
+        return std::min(rows_to_read_for_block, rows_to_read_for_max_size_column_with_filtration);
     };
 
     // read rows from reader and clean columns
@@ -147,11 +149,10 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 processNextRange(*task, *pre_reader);
 
             /// FIXME: size prediction model is updated by filtered rows, but it predicts size of unfiltered rows also
-            size_t space_left = std::max(1LU, max_block_size_rows);
             size_t recommended_rows = estimateNumRows(*task, *pre_range_reader);
             if (res && recommended_rows < 1)
                 break;
-            space_left = std::min(space_left, std::max(1LU, recommended_rows));
+            size_t space_left = std::max(1LU, std::min(max_block_size_rows, recommended_rows));
 
             while ((pre_range_reader || !task->mark_ranges.empty()) && space_left && !isCancelled())
             {
@@ -335,6 +336,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 if (!post_filter_pos)
                 {
+                    task->size_predictor->updateFilteredRowsRation(pre_filter.size(), pre_filter.size());
                     res.clear();
                     continue;
                 }
@@ -355,6 +357,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                         col.column->filter(task->column_name_set.count(col.name) ? post_filter : pre_filter, -1);
                     rows = col.column->size();
                 }
+                task->size_predictor->updateFilteredRowsRation(pre_filter.size(), pre_filter.size() - rows);
 
                 /// Replace column with condition value from PREWHERE to a constant.
                 if (!task->remove_prewhere_column)

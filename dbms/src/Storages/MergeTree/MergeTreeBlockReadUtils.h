@@ -80,15 +80,17 @@ struct MergeTreeBlockSizePredictor
         return block_size_bytes;
     }
 
-    /// Predicts what number of rows should be read to exhaust byte quota
-    inline size_t estimateNumRowsMax(size_t bytes_quota) const
+
+    /// Predicts what number of rows should be read to exhaust byte quota per column
+    inline size_t estimateNumRowsForMaxSizeColumn(size_t bytes_quota) const
     {
         double max_size_per_row = std::max<double>(std::max<size_t>(max_size_per_row_fixed, 1), max_size_per_row_dynamic);
         return (bytes_quota > block_size_rows * max_size_per_row)
         ? static_cast<size_t>(bytes_quota / max_size_per_row) - block_size_rows
-            : 0;
+        : 0;
     }
 
+    /// Predicts what number of rows should be read to exhaust byte quota per block
     inline size_t estimateNumRows(size_t bytes_quota) const
     {
         return (bytes_quota > block_size_bytes)
@@ -100,6 +102,14 @@ struct MergeTreeBlockSizePredictor
     inline size_t estimateNumMarks(size_t bytes_quota, size_t index_granularity) const
     {
         return (estimateNumRows(bytes_quota) + index_granularity / 2) / index_granularity;
+    }
+
+    inline void updateFilteredRowsRation(size_t rows_was_read, size_t rows_was_filtered, double decay = DECAY())
+    {
+        double alpha = std::pow(1. - decay, rows_was_read);
+        double current_ration = rows_was_filtered / std::max<double>(1, rows_was_read);
+        filtered_rows_ration = current_ration < filtered_rows_ration ? current_ration
+            : alpha * filtered_rows_ration + (1.0 - alpha) * current_ration;
     }
 
     /// Aggressiveness of bytes_per_row updates. See update() implementation.
@@ -125,6 +135,7 @@ protected:
 
     size_t max_size_per_row_fixed = 0;
     double max_size_per_row_dynamic = 0;
+
 public:
 
     size_t block_size_bytes = 0;
@@ -133,6 +144,8 @@ public:
     /// Total statistics
     double bytes_per_row_current = 0;
     double bytes_per_row_global = 0;
+
+    double filtered_rows_ration = 0;
 };
 
 }
