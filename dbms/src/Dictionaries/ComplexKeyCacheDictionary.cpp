@@ -1,11 +1,15 @@
 #include <Dictionaries/ComplexKeyCacheDictionary.h>
+#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Common/Arena.h>
 #include <Common/BitHelpers.h>
 #include <Common/randomSeed.h>
 #include <Common/Stopwatch.h>
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
+#include <ext/scope_guard.h>
+#include <ext/map.h>
 
 
 namespace ProfileEvents
@@ -265,7 +269,7 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
         /// fetch up-to-date values, decide which ones require update
         for (const auto row : ext::range(0, rows_num))
         {
-            const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+            const StringRef key = placeKeysInPool(row, key_columns, keys, *dict_struct.key, temporary_keys_pool);
             keys_array[row] = key;
             const auto find_result = findCellIdx(key, now);
             const auto & cell_idx = find_result.cell_idx;
@@ -320,11 +324,11 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
 
 void ComplexKeyCacheDictionary::createAttributes()
 {
-    const auto size = dict_struct.attributes.size();
-    attributes.reserve(size);
+    const auto attributes_size = dict_struct.attributes.size();
+    attributes.reserve(attributes_size);
 
     bytes_allocated += size * sizeof(CellMetadata);
-    bytes_allocated += size * sizeof(attributes.front());
+    bytes_allocated += attributes_size * sizeof(attributes.front());
 
     for (const auto & attribute : dict_struct.attributes)
     {
@@ -457,7 +461,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
         /// fetch up-to-date values, decide which ones require update
         for (const auto row : ext::range(0, rows_num))
         {
-            const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+            const StringRef key = placeKeysInPool(row, key_columns, keys, *dict_struct.key, temporary_keys_pool);
             keys_array[row] = key;
             const auto find_result = findCellIdx(key, now);
 
@@ -536,7 +540,7 @@ void ComplexKeyCacheDictionary::getItemsString(
         /// fetch up-to-date values, discard on fail
         for (const auto row : ext::range(0, rows_num))
         {
-            const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+            const StringRef key = placeKeysInPool(row, key_columns, keys, *dict_struct.key, temporary_keys_pool);
             SCOPE_EXIT(temporary_keys_pool.rollback(key.size));
             const auto find_result = findCellIdx(key, now);
 
@@ -581,7 +585,7 @@ void ComplexKeyCacheDictionary::getItemsString(
         const auto now = std::chrono::system_clock::now();
         for (const auto row : ext::range(0, rows_num))
         {
-            const StringRef key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+            const StringRef key = placeKeysInPool(row, key_columns, keys, *dict_struct.key, temporary_keys_pool);
             keys_array[row] = key;
             const auto find_result = findCellIdx(key, now);
 
@@ -899,7 +903,7 @@ StringRef ComplexKeyCacheDictionary::allocKey(const size_t row, const Columns & 
     if (key_size_is_fixed)
         return placeKeysInFixedSizePool(row, key_columns);
 
-    return placeKeysInPool(row, key_columns, keys, *keys_pool);
+    return placeKeysInPool(row, key_columns, keys, *dict_struct.key, *keys_pool);
 }
 
 void ComplexKeyCacheDictionary::freeKey(const StringRef key) const
@@ -910,28 +914,49 @@ void ComplexKeyCacheDictionary::freeKey(const StringRef key) const
         keys_pool->free(const_cast<char *>(key.data), key.size);
 }
 
-template <typename Arena>
+template <typename Pool>
 StringRef ComplexKeyCacheDictionary::placeKeysInPool(
-    const size_t row, const Columns & key_columns, StringRefs & keys, Arena & pool)
+    const size_t row, const Columns & key_columns, StringRefs & keys,
+    const std::vector<DictionaryAttribute> & key_attributes, Pool & pool)
 {
     const auto keys_size = key_columns.size();
     size_t sum_keys_size{};
-    for (const auto i : ext::range(0, keys_size))
-    {
-        keys[i] = key_columns[i]->getDataAtWithTerminatingZero(row);
-        sum_keys_size += keys[i].size;
-    }
-
-    const auto res = pool.alloc(sum_keys_size);
-    auto place = res;
 
     for (size_t j = 0; j < keys_size; ++j)
     {
-        memcpy(place, keys[j].data, keys[j].size);
-        place += keys[j].size;
+        keys[j] = key_columns[j]->getDataAt(row);
+        sum_keys_size += keys[j].size;
+        if (key_attributes[j].underlying_type == AttributeUnderlyingType::String)
+            sum_keys_size += sizeof(size_t) + 1;
     }
 
-    return { res, sum_keys_size };
+    auto place = pool.alloc(sum_keys_size);
+
+    auto key_start = place;
+    for (size_t j = 0; j < keys_size; ++j)
+    {
+        if (key_attributes[j].underlying_type == AttributeUnderlyingType::String)
+        {
+            auto start = key_start;
+            auto key_size = keys[j].size + 1;
+            memcpy(key_start, &key_size, sizeof(size_t));
+            key_start += sizeof(size_t);
+            memcpy(key_start, keys[j].data, keys[j].size);
+            key_start += keys[j].size;
+            *key_start = '\0';
+            ++key_start;
+            keys[j].data = start;
+            keys[j].size += sizeof(size_t) + 1;
+        }
+        else
+        {
+            memcpy(key_start, keys[j].data, keys[j].size);
+            keys[j].data = key_start;
+            key_start += keys[j].size;
+        }
+    }
+
+    return { place, sum_keys_size };
 }
 
 StringRef ComplexKeyCacheDictionary::placeKeysInFixedSizePool(
@@ -963,6 +988,28 @@ StringRef ComplexKeyCacheDictionary::copyKey(const StringRef key) const
     memcpy(res, key.data, key.size);
 
     return { res, key.size };
+}
+
+bool ComplexKeyCacheDictionary::isEmptyCell(const UInt64 idx) const
+{
+    return (cells[idx].key == StringRef{} && (idx != zero_cell_idx
+        || cells[idx].data == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t())));
+}
+
+BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+{
+    std::vector<StringRef> keys;
+    {
+        const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+
+        for (auto idx : ext::range(0, cells.size()))
+            if (!isEmptyCell(idx)
+                && !cells[idx].isDefault())
+                keys.push_back(cells[idx].key);
+    }
+
+    using BlockInputStreamType = DictionaryBlockInputStream<ComplexKeyCacheDictionary, UInt64>;
+    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, keys, column_names);
 }
 
 }

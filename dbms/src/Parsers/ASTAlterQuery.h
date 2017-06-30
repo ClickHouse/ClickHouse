@@ -1,24 +1,25 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 
 
 namespace DB
 {
 
-/** ALTER query
+/** ALTER query:
  *  ALTER TABLE [db.]name_type
  *      ADD COLUMN col_name type [AFTER col_after],
- *         DROP COLUMN col_drop [FROM PARTITION partition],
- *         MODIFY COLUMN col_name type,
- *         DROP PARTITION partition
- *        RESHARD [COPY] PARTITION partition
- *            TO '/path/to/zookeeper/table' [WEIGHT w], ...
- *             USING expression
- *            [COORDINATE WITH 'coordinator_id']
+ *      DROP COLUMN col_drop [FROM PARTITION partition],
+ *      MODIFY COLUMN col_name type,
+ *      DROP PARTITION partition,
+ *      RESHARD [COPY] PARTITION partition
+ *          TO '/path/to/zookeeper/table' [WEIGHT w], ...
+ *              USING expression
+ *              [COORDINATE WITH 'coordinator_id']
  */
 
-class ASTAlterQuery : public IAST
+class ASTAlterQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     enum ParameterType
@@ -61,11 +62,13 @@ public:
         /** In DROP PARTITION and RESHARD PARTITION queries, the name of the partition is stored here.
           */
         ASTPtr partition;
-        bool detach = false; /// true for DETACH PARTITION.
+        bool detach = false;        /// true for DETACH PARTITION
 
-        bool part = false; /// true for ATTACH PART
+        bool part = false;          /// true for ATTACH PART
 
-        bool do_copy = false; /// for RESHARD PARTITION.
+        bool do_copy = false;       /// for RESHARD PARTITION
+
+        bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
         /** For FETCH PARTITION - the path in ZK to the shard, from which to download the partition.
           */
@@ -100,6 +103,8 @@ public:
     String getID() const override;
 
     ASTPtr clone() const override;
+
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database = {}) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

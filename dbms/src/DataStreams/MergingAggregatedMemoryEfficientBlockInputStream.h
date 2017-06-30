@@ -3,7 +3,7 @@
 #include <Interpreters/Aggregator.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 #include <condition_variable>
 
 

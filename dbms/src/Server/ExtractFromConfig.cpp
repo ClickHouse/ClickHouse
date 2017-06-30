@@ -8,7 +8,7 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/XMLConfiguration.h>
 
-#include <zkutil/ZooKeeperNodeCache.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ConfigProcessor.h>
 #include <Common/Exception.h>
 

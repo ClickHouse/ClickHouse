@@ -3,16 +3,18 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
-#include <ext/range.hpp>
-#include <btrie.h>
+#include <ext/range.h>
 #include <atomic>
 #include <memory>
 #include <tuple>
+#include <common/logger_useful.h>
 
+struct btrie_s;
+typedef struct btrie_s btrie_t;
 
 namespace DB
 {
@@ -128,6 +130,8 @@ public:
 
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+
 private:
     template <typename Value> using ContainerType = std::vector<Value>;
     template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
@@ -190,6 +194,11 @@ private:
     template <typename T>
     void has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const;
 
+    template <typename Getter, typename KeyType>
+    void trieTraverse(const btrie_t * trie, Getter && getter) const;
+
+    Columns getKeyColumns() const;
+
     const std::string name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
@@ -210,6 +219,8 @@ private:
     std::chrono::time_point<std::chrono::system_clock> creation_time;
 
     std::exception_ptr creation_exception;
+
+    Logger * logger;
 };
 
 

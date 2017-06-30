@@ -1,6 +1,6 @@
 #include <Poco/DirectoryIterator.h>
 #include <Common/ClickHouseRevision.h>
-#include <ext/unlock_guard.hpp>
+#include <ext/unlock_guard.h>
 
 #include <Common/SipHash.h>
 #include <Common/ShellCommand.h>
@@ -92,25 +92,47 @@ SharedLibraryPtr Compiler::getOrCount(
     UInt32 count = ++counts[hashed_key];
 
     /// Is there a ready open library? Or, if the library is in the process of compiling, there will be nullptr.
-    Libraries::iterator it = libraries.find(hashed_key);
-    if (libraries.end() != it)
+    Libraries::iterator libraries_it = libraries.find(hashed_key);
+    if (libraries.end() != libraries_it)
     {
-        if (!it->second)
+        if (!libraries_it->second)
             LOG_INFO(log, "Library " << hashedKeyToFileName(hashed_key) << " is already compiling or compilation was failed.");
 
         /// TODO In this case, after the compilation is finished, the callback will not be called.
 
-        return it->second;
+        return libraries_it->second;
     }
 
     /// Is there a file with the library left over from the previous launch?
     std::string file_name = hashedKeyToFileName(hashed_key);
-    if (files.count(file_name))
+    Files::iterator files_it = files.find(file_name);
+    if (files.end() != files_it)
     {
         std::string so_file_path = path + '/' + file_name + ".so";
         LOG_INFO(log, "Loading existing library " << so_file_path);
 
-        SharedLibraryPtr lib(new SharedLibrary(so_file_path));
+        SharedLibraryPtr lib;
+
+        try
+        {
+            lib = std::make_shared<SharedLibrary>(so_file_path);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::CANNOT_DLOPEN)
+                throw;
+
+            /// Found broken .so file (or file cannot be dlopened by whatever reason).
+            /// This could happen when filesystem is corrupted after server restart.
+            /// We remove the file - it will be recompiled on next attempt.
+
+            tryLogCurrentException(log);
+
+            files.erase(files_it);
+            Poco::File(so_file_path).remove();
+            return nullptr;
+        }
+
         libraries[hashed_key] = lib;
         return lib;
     }

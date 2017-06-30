@@ -13,7 +13,7 @@
 
 #include <Common/Exception.h>
 
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 
 #include <stdlib.h>
@@ -139,7 +139,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
     while (blocks_sent < count || in_progress > 0)
     {
-        /// Составим запросы.
+        /// Prepare queries.
         query_cbs.clear();
         for (size_t i = 0; i < buffers_count; ++i)
         {
@@ -185,11 +185,11 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
             query_cbs.push_back(&cb);
         }
 
-        /// Отправим запросы.
+        /// Send queries.
         if  (io_submit(ctx.ctx, query_cbs.size(), &query_cbs[0]) < 0)
             throwFromErrno("io_submit failed");
 
-        /// Получим ответы. Если еще есть что отправлять, получим хотя бы один ответ (после этого пойдем отправлять), иначе дождемся всех ответов.
+        /// Receive answers. If we have something else to send, then receive at least one answer (after that send them), otherwise wait all answers.
         memset(&events[0], 0, buffers_count * sizeof(events[0]));
         int evs = io_getevents(ctx.ctx, (blocks_sent < count ? 1 : in_progress), buffers_count, &events[0], nullptr);
         if (evs < 0)

@@ -1,6 +1,9 @@
 #include <functional>
+#include <sstream>
+#include <memory>
 #include <Columns/ColumnsNumber.h>
-#include <Dictionaries/CacheDictionary.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnString.h>
 #include <Common/BitHelpers.h>
 #include <Common/randomSeed.h>
 #include <Common/HashTable/Hash.h>
@@ -8,9 +11,12 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <ext/size.hpp>
-#include <ext/range.hpp>
-#include <ext/map.hpp>
+#include <DataTypes/DataTypesNumber.h>
+#include <Dictionaries/CacheDictionary.h>
+#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <ext/size.h>
+#include <ext/range.h>
+#include <ext/map.h>
 
 
 namespace ProfileEvents
@@ -418,11 +424,11 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 
 void CacheDictionary::createAttributes()
 {
-    const auto size = dict_struct.attributes.size();
-    attributes.reserve(size);
+    const auto attributes_size = dict_struct.attributes.size();
+    attributes.reserve(attributes_size);
 
     bytes_allocated += size * sizeof(CellMetadata);
-    bytes_allocated += size * sizeof(attributes.front());
+    bytes_allocated += attributes_size * sizeof(attributes.front());
 
     for (const auto & attribute : dict_struct.attributes)
     {
@@ -956,5 +962,34 @@ CacheDictionary::Attribute & CacheDictionary::getAttribute(const std::string & a
 
     return attributes[it->second];
 }
+
+bool CacheDictionary::isEmptyCell(const UInt64 idx) const
+{
+    return (idx != zero_cell_idx && cells[idx].id == 0) || (cells[idx].data
+        == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t()));
+}
+
+PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
+{
+    const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+
+    PaddedPODArray<Key> array;
+    for (size_t idx = 0; idx < cells.size(); ++idx)
+    {
+        auto & cell = cells[idx];
+        if (!isEmptyCell(idx) && !cells[idx].isDefault())
+        {
+            array.push_back(cell.id);
+        }
+    }
+    return array;
+}
+
+BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+{
+    using BlockInputStreamType = DictionaryBlockInputStream<CacheDictionary, Key>;
+    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getCachedIds(), column_names);
+}
+
 
 }

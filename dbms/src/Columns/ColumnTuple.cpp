@@ -1,6 +1,6 @@
 #include <Columns/ColumnTuple.h>
-#include <ext/map.hpp>
-#include <ext/range.hpp>
+#include <ext/map.h>
+#include <ext/range.h>
 
 
 namespace DB

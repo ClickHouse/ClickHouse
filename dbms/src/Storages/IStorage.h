@@ -74,8 +74,8 @@ using TableFullWriteLockPtr = std::pair<TableDataWriteLockPtr, TableStructureWri
 
 /** Storage. Responsible for
   * - storage of the table data;
-  * - the definition in which file (or not the file) the data is stored;
-  * - search for data and update data;
+  * - the definition in which files (or not in files) the data is stored;
+  * - data lookups and appends;
   * - data storage structure (compression, etc.)
   * - concurrent access to data (locks, etc.)
   */
@@ -85,7 +85,7 @@ public:
     /// The main name of the table type (for example, StorageMergeTree).
     virtual std::string getName() const = 0;
 
-    /** Returns true if the store receives data from a remote server or servers. */
+    /** Returns true if the storage receives data from a remote server or servers. */
     virtual bool isRemote() const { return false; }
 
     /** Returns true if the storage supports queries with the SAMPLE section. */
@@ -97,8 +97,11 @@ public:
     /** Returns true if the storage supports queries with the PREWHERE section. */
     virtual bool supportsPrewhere() const { return false; }
 
-    /** Returns true if the storage supports multiple replicas. */
+    /** Returns true if the storage supports read from multiple replicas. Assumed isRemote. */
     virtual bool supportsParallelReplicas() const { return false; }
+
+    /** Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas. */
+    virtual bool supportsReplication() const { return false; }
 
     /** Does not allow you to change the structure or name of the table.
       * If you change the data in the table, you will need to specify will_modify_data = true.
@@ -161,8 +164,8 @@ public:
       * Usually Storage does not care about these settings, since they are used in the interpreter.
       * But, for example, for distributed query processing, the settings are passed to the remote server.
       *
-      * threads - a recommendation, how many threads to return,
-      *  if the storage can return a different number of threads.
+      * num_streams - a recommendation, how many streams to return,
+      *  if the storage can return a different number of streams.
       *
       * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
       */
@@ -171,8 +174,8 @@ public:
         const ASTPtr & query,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1)
+        size_t max_block_size,
+        unsigned num_streams)
     {
         throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -214,8 +217,8 @@ public:
         throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Execute DROP COLUMN ... FROM PARTITION query witch drops column from given partition. */
-    virtual void dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
+    /** Execute CLEAR COLUMN ... IN PARTITION query which removes column from given partition. */
+    virtual void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
     {
         throw Exception("Method dropColumnFromPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -263,14 +266,24 @@ public:
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
       */
-    virtual bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
+    virtual bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** If you have to do some complicated work when destroying an object - do it in advance.
+    /** If the table have to do some complicated work on startup,
+      *  that must be postponed after creation of table object
+      *  (like launching some background threads),
+      *  do it in this method.
+      * You should call this method after creation of object.
+      * By default, does nothing.
+      * Cannot be called simultaneously by multiple threads.
+      */
+    virtual void startup() {}
+
+    /** If the table have to do some complicated work when destroying an object - do it in advance.
       * For example, if the table contains any threads for background work - ask them to complete and wait for completion.
-      * By default, do nothing.
+      * By default, does nothing.
       * Can be called simultaneously from different threads, even after a call to drop().
       */
     virtual void shutdown() {}

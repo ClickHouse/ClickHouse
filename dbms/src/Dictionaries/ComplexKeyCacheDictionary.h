@@ -3,15 +3,12 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/SmallObjectPool.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
-#include <Core/StringRef.h>
-#include <ext/scope_guard.hpp>
-#include <ext/bit_cast.hpp>
-#include <ext/map.hpp>
+#include <common/StringRef.h>
+#include <ext/bit_cast.h>
 #include <Poco/RWLock.h>
 #include <atomic>
 #include <chrono>
@@ -147,6 +144,8 @@ public:
 
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+
 private:
     template <typename Value> using MapType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
     template <typename Value> using ContainerType = Value[];
@@ -233,7 +232,8 @@ private:
 
     template <typename Arena>
     static StringRef placeKeysInPool(
-        const std::size_t row, const Columns & key_columns, StringRefs & keys, Arena & pool);
+        const std::size_t row, const Columns & key_columns, StringRefs & keys,
+        const std::vector<DictionaryAttribute> & key_attributes, Arena & pool);
 
     StringRef placeKeysInFixedSizePool(
         const std::size_t row, const Columns & key_columns) const;
@@ -254,6 +254,8 @@ private:
         const auto hash = StringRefHash{}(key);
         return findCellIdx(key, now, hash);
     };
+
+    bool isEmptyCell(const UInt64 idx) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;

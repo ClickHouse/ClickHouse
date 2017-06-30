@@ -1,5 +1,6 @@
 #include <boost/program_options.hpp>
 
+#include <Common/hex.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -92,7 +93,7 @@ static void readPath(std::string & s, DB::ReadBuffer & buf)
                 s += c2;
             }
             else
-                s += static_cast<char>(static_cast<UInt8>(DB::unhex(c1)) * 16 + static_cast<UInt8>(DB::unhex(c2)));
+                s += static_cast<char>(static_cast<UInt8>(unhex(c1)) * 16 + static_cast<UInt8>(unhex(c2)));
         }
     }
 }

@@ -15,22 +15,22 @@ namespace DB
 class Block;
 class ReadBuffer;
 class WriteBuffer;
+class IProfilingBlockInputStream;
 
 /// Information for profiling. See IProfilingBlockInputStream.h
 struct BlockStreamProfileInfo
 {
+    /// Info about stream object this profile info refers to.
+    IProfilingBlockInputStream * parent = nullptr;
+
     bool started = false;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time
-
-    String stream_name;            /// The short name of the stream for which information is collected
 
     size_t rows = 0;
     size_t blocks = 0;
     size_t bytes = 0;
 
-    /// Information about nested threads - to calculate pure processing time.
     using BlockStreamProfileInfos = std::vector<const BlockStreamProfileInfo *>;
-    BlockStreamProfileInfos nested_infos;
 
     /// Collect BlockStreamProfileInfo for the nearest sources in the tree named `name`. Example; collect all info for PartialSorting streams.
     void collectInfosForStreamsWithName(const char * name, BlockStreamProfileInfos & res) const;

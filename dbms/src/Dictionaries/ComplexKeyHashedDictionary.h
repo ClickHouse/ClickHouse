@@ -3,11 +3,11 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <atomic>
 #include <memory>
 #include <tuple>
@@ -15,6 +15,7 @@
 
 namespace DB
 {
+
 
 class ComplexKeyHashedDictionary final : public IDictionaryBase
 {
@@ -125,6 +126,8 @@ public:
 
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+
 private:
     template <typename Value> using ContainerType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
     template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
@@ -187,6 +190,11 @@ private:
 
     template <typename T>
     void has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const;
+
+    std::vector<StringRef> getKeys() const;
+
+    template <typename T>
+    std::vector<StringRef> getKeys(const Attribute & attribute) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;

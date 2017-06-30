@@ -1,4 +1,5 @@
 #include <Core/Defines.h>
+#include <Common/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <IO/WriteHelpers.h>
@@ -377,7 +378,13 @@ template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8>
 template void readEscapedStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 
 
-template <char quote, typename Vector>
+/** If enable_sql_style_quoting == true,
+  *  strings like 'abc''def' will be parsed as abc'def.
+  * Please note, that even with SQL style quoting enabled,
+  *  backslash escape sequences are also parsed,
+  *  that could be slightly confusing.
+  */
+template <char quote, bool enable_sql_style_quoting, typename Vector>
 static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
     if (buf.eof() || *buf.position() != quote)
@@ -398,6 +405,14 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
         if (*buf.position() == quote)
         {
             ++buf.position();
+
+            if (enable_sql_style_quoting && !buf.eof() && *buf.position() == quote)
+            {
+                s.push_back(quote);
+                ++buf.position();
+                continue;
+            }
+
             return;
         }
 
@@ -409,49 +424,64 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
         ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
 }
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
-    readAnyQuotedStringInto<'\''>(s, buf);
+    readAnyQuotedStringInto<'\'', enable_sql_style_quoting>(s, buf);
 }
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readDoubleQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
-    readAnyQuotedStringInto<'"'>(s, buf);
+    readAnyQuotedStringInto<'"', enable_sql_style_quoting>(s, buf);
 }
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readBackQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
-    readAnyQuotedStringInto<'`'>(s, buf);
+    readAnyQuotedStringInto<'`', enable_sql_style_quoting>(s, buf);
 }
 
 
 void readQuotedString(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readQuotedStringInto(s, buf);
+    readQuotedStringInto<false>(s, buf);
 }
 
-template void readQuotedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readDoubleQuotedStringInto(NullSink & s, ReadBuffer & buf);
+void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readQuotedStringInto<true>(s, buf);
+}
+
+
+template void readQuotedStringInto<true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readDoubleQuotedStringInto<false>(NullSink & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readDoubleQuotedStringInto(s, buf);
+    readDoubleQuotedStringInto<false>(s, buf);
 }
 
-template void readDoubleQuotedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+void readDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readDoubleQuotedStringInto<true>(s, buf);
+}
 
 void readBackQuotedString(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readBackQuotedStringInto(s, buf);
+    readBackQuotedStringInto<false>(s, buf);
 }
 
-template void readBackQuotedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readBackQuotedStringInto<true>(s, buf);
+}
 
 
 template <typename Vector>

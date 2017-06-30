@@ -277,7 +277,7 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
     }
     else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
     {
-        /// For arrays separate threads are used for sizes.
+        /// For arrays separate files are used for sizes.
         String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
         if (!streams.count(size_name))
             streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), max_read_buffer_size)));
@@ -350,7 +350,7 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
     }
     else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
     {
-        /// For arrays separate threads are used for sizes.
+        /// For arrays separate files are used for sizes.
         String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
         if (!streams.count(size_name))
             streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size)));
@@ -464,24 +464,6 @@ StorageTinyLog::StorageTinyLog(
 }
 
 
-StoragePtr StorageTinyLog::create(
-    const std::string & path_,
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    bool attach,
-    size_t max_compress_block_size_)
-{
-    return make_shared(
-        path_, name_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_,
-        attach, max_compress_block_size_
-    );
-}
-
-
 void StorageTinyLog::addFile(const String & column_name, const IDataType & type, size_t level)
 {
     if (files.end() != files.find(column_name))
@@ -547,7 +529,7 @@ BlockInputStreams StorageTinyLog::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

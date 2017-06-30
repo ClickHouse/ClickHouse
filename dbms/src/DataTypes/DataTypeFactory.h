@@ -18,6 +18,8 @@ public:
     DataTypePtr get(const String & name) const;
 
 private:
+    DataTypePtr getImpl(const String & name, bool allow_nullable) const;
+
     using NonParametricDataTypes = std::map<String, DataTypePtr>;
     NonParametricDataTypes non_parametric_data_types;
 

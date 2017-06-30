@@ -3,6 +3,9 @@
 *\#
 .tramp_history
 
+# vim cache files
+*.swp
+
 # auto generated files
 *.logrt
 
@@ -32,6 +35,10 @@ cmake_install.cmake
 CTestTestfile.cmake
 *.a
 *.o
+
+# Python cache
+*.pyc
+__pycache__
 
 # ignore generated files
 *-metrika-yandex

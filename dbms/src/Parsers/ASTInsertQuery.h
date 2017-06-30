@@ -17,8 +17,6 @@ public:
     ASTPtr columns;
     String format;
     ASTPtr select;
-    /// INSERT query identifier. Used for replication.
-    String insert_id;
     /// Data to insert
     const char * data = nullptr;
     const char * end = nullptr;

@@ -1,7 +1,8 @@
 #pragma once
 
+#include <Common/hex.h>
+#include <Common/formatIPv6.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -17,162 +18,40 @@
 #include <Functions/IFunction.h>
 
 #include <arpa/inet.h>
-#include <ext/range.hpp>
+
+#include <ext/range.h>
 #include <array>
 
 
 namespace DB
 {
 
-/** Coding functions:
+namespace ErrorCodes
+{
+    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+}
+
+
+/** Encoding functions:
   *
   * IPv4NumToString (num) - See below.
   * IPv4StringToNum(string) - Convert, for example, '192.168.0.1' to 3232235521 and vice versa.
   *
-  * hex(x) -    Returns hex; capital letters; there are no prefixes 0x or suffixes h.
-  *             For numbers, returns a variable-length string - hex in the "human" (big endian) format, with the leading zeros being cut,
-  *             but only by whole bytes. For dates and datetimes - the same as for numbers.
-  *             For example, hex(257) = '0101'.
-  * unhex(string) -    Returns a string, hex of which is equal to `string` with regard of case and discarding one leading zero.
-  *                 If such a string does not exist, reserves the right to return any garbage.
+  * hex(x) - Returns hex; capital letters; there are no prefixes 0x or suffixes h.
+  *          For numbers, returns a variable-length string - hex in the "human" (big endian) format, with the leading zeros being cut,
+  *          but only by whole bytes. For dates and datetimes - the same as for numbers.
+  *          For example, hex(257) = '0101'.
+  * unhex(string) - Returns a string, hex of which is equal to `string` with regard of case and discarding one leading zero.
+  *                 If such a string does not exist, could return arbitary implementation specific value.
   *
   * bitmaskToArray(x) - Returns an array of powers of two in the binary form of x. For example, bitmaskToArray(50) = [2, 16, 32].
   */
 
 
-/// Including zero character at the end.
-#define MAX_UINT_HEX_LENGTH 20
-
-const auto ipv4_bytes_length = 4;
-const auto ipv6_bytes_length = 16;
-const auto uuid_bytes_length = 16;
-const auto uuid_text_length = 36;
-
-class IPv6Format
-{
-private:
-    /// integer logarithm, return ceil(log(value, base)) (the smallest integer greater or equal  than log(value, base)
-    static constexpr uint32_t int_log(const uint32_t value, const uint32_t base, const bool carry = false)
-    {
-        return value >= base ? 1 + int_log(value / base, base, value % base || carry) : value % base > 1 || carry;
-    }
-
-    /// mapping of digits up to base 16
-    static constexpr auto && digits = "0123456789abcdef";
-
-    /// print integer in desired base, faster than sprintf
-    template <uint32_t base, typename T, uint32_t buffer_size = sizeof(T) * int_log(256, base, false)>
-    static void print_integer(char *& out, T value)
-    {
-        if (value == 0)
-            *out++ = '0';
-        else
-        {
-            char buf[buffer_size];
-            auto ptr = buf;
-
-            while (value > 0)
-            {
-                *ptr++ = digits[value % base];
-                value /= base;
-            }
-
-            while (ptr != buf)
-                *out++ = *--ptr;
-        }
-    }
-
-    /// print IPv4 address as %u.%u.%u.%u
-    static void ipv4_format(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_count)
-    {
-        const auto limit = ipv4_bytes_length - zeroed_tail_bytes_count;
-
-        for (const auto i : ext::range(0, ipv4_bytes_length))
-        {
-            UInt8 byte = (i < limit) ? src[i] : 0;
-            print_integer<10, UInt8>(dst, byte);
-
-            if (i != ipv4_bytes_length - 1)
-                *dst++ = '.';
-        }
-    }
-
-public:
-    /** rewritten inet_ntop6 from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
-     *    performs significantly faster than the reference implementation due to the absence of sprintf calls,
-     *    bounds checking, unnecessary string copying and length calculation
-     */
-    static const void apply(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_count = 0)
-    {
-        struct { int base, len; } best{-1}, cur{-1};
-        std::array<uint16_t, ipv6_bytes_length / sizeof(uint16_t)> words{};
-
-        /** Preprocess:
-         *    Copy the input (bytewise) array into a wordwise array.
-         *    Find the longest run of 0x00's in src[] for :: shorthanding. */
-        for (const auto i : ext::range(0, ipv6_bytes_length - zeroed_tail_bytes_count))
-            words[i / 2] |= src[i] << ((1 - (i % 2)) << 3);
-
-        for (const auto i : ext::range(0, words.size()))
-        {
-            if (words[i] == 0) {
-                if (cur.base == -1)
-                    cur.base = i, cur.len = 1;
-                else
-                    cur.len++;
-            }
-            else
-            {
-                if (cur.base != -1)
-                {
-                    if (best.base == -1 || cur.len > best.len)
-                        best = cur;
-                    cur.base = -1;
-                }
-            }
-        }
-
-        if (cur.base != -1)
-        {
-            if (best.base == -1 || cur.len > best.len)
-                best = cur;
-        }
-
-        if (best.base != -1 && best.len < 2)
-            best.base = -1;
-
-        /// Format the result.
-        for (const int i : ext::range(0, words.size()))
-        {
-            /// Are we inside the best run of 0x00's?
-            if (best.base != -1 && i >= best.base && i < (best.base + best.len))
-            {
-                if (i == best.base)
-                    *dst++ = ':';
-                continue;
-            }
-
-            /// Are we following an initial run of 0x00s or any real hex?
-            if (i != 0)
-                *dst++ = ':';
-
-            /// Is this address an encapsulated IPv4?
-            if (i == 6 && best.base == 0 && (best.len == 6 || (best.len == 5 && words[5] == 0xffffu)))
-            {
-                ipv4_format(src + 12, dst, std::min(zeroed_tail_bytes_count, static_cast<UInt8>(ipv4_bytes_length)));
-                break;
-            }
-
-            print_integer<16>(dst, words[i]);
-        }
-
-        /// Was it a trailing run of 0x00's?
-        if (best.base != -1 && (best.base + best.len) == words.size())
-            *dst++ = ':';
-
-        *dst++ = '\0';
-    }
-};
+constexpr auto ipv4_bytes_length = 4;
+constexpr auto ipv6_bytes_length = 16;
+constexpr auto uuid_bytes_length = 16;
+constexpr auto uuid_text_length = 36;
 
 
 class FunctionIPv6NumToString : public IFunction
@@ -220,7 +99,7 @@ public:
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
-            vec_res.resize(size * INET6_ADDRSTRLEN);
+            vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
 
             auto begin = reinterpret_cast<char *>(&vec_res[0]);
@@ -228,7 +107,7 @@ public:
 
             for (size_t offset = 0, i = 0; offset < vec_in.size(); offset += ipv6_bytes_length, ++i)
             {
-                IPv6Format::apply(&vec_in[offset], pos);
+                formatIPv6(&vec_in[offset], pos);
                 offsets_res[i] = pos - begin;
             }
 
@@ -246,9 +125,9 @@ public:
 
             const auto & data_in = col_in->getData();
 
-            char buf[INET6_ADDRSTRLEN];
+            char buf[IPV6_MAX_TEXT_LENGTH + 1];
             char * dst = buf;
-            IPv6Format::apply(reinterpret_cast<const unsigned char *>(data_in.data()), dst);
+            formatIPv6(reinterpret_cast<const unsigned char *>(data_in.data()), dst);
 
             block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_in->size(), buf);
         }
@@ -343,7 +222,7 @@ public:
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
-            vec_res.resize(size * INET6_ADDRSTRLEN);
+            vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
 
             auto begin = reinterpret_cast<char *>(&vec_res[0]);
@@ -395,7 +274,7 @@ public:
 
             const auto & data_in = col_in->getData();
 
-            char buf[INET6_ADDRSTRLEN];
+            char buf[IPV6_MAX_TEXT_LENGTH + 1];
             char * dst = buf;
 
             const auto address = reinterpret_cast<const unsigned char *>(data_in.data());
@@ -419,7 +298,7 @@ private:
 
     void cutAddress(const unsigned char * address, char *& dst, UInt8 zeroed_tail_bytes_count)
     {
-        IPv6Format::apply(address, dst, zeroed_tail_bytes_count);
+        formatIPv6(address, dst, zeroed_tail_bytes_count);
     }
 };
 
@@ -709,7 +588,7 @@ public:
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(vec_in.size() * INET_ADDRSTRLEN); /// the longest value is: 255.255.255.255\0
+            vec_res.resize(vec_in.size() * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
             offsets_res.resize(vec_in.size());
             char * begin = reinterpret_cast<char *>(&vec_res[0]);
             char * pos = begin;
@@ -892,7 +771,7 @@ public:
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(vec_in.size() * INET_ADDRSTRLEN); /// the longest value is: 255.255.255.255\0
+            vec_res.resize(vec_in.size() * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
             offsets_res.resize(vec_in.size());
             char * begin = reinterpret_cast<char *>(&vec_res[0]);
             char * pos = begin;
@@ -1013,9 +892,6 @@ public:
     {
         char * begin = out;
 
-        /// mapping of digits up to base 16
-        static char digits[] = "0123456789ABCDEF";
-
         /// Write everything backwards.
         for (size_t offset = 0; offset <= 40; offset += 8)
         {
@@ -1038,7 +914,7 @@ public:
             {
                 while (value > 0)
                 {
-                    *(out++) = digits[value % 16];
+                    *(out++) = hexUppercase(value % 16);
                     value /= 16;
                 }
             }
@@ -1553,7 +1429,6 @@ public:
     template <typename T>
     void executeOneUInt(T x, char *& out)
     {
-        const char digit[17] = "0123456789ABCDEF";
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
         {
@@ -1565,8 +1440,8 @@ public:
 
             was_nonzero = true;
 
-            *(out++) = digit[byte >> 4];
-            *(out++) = digit[byte & 15];
+            *(out++) = hexUppercase(byte / 16);
+            *(out++) = hexUppercase(byte % 16);
         }
         *(out++) = '\0';
     }
@@ -1576,6 +1451,8 @@ public:
     {
         const ColumnVector<T> * col_vec = typeid_cast<const ColumnVector<T> *>(col);
         const ColumnConst<T> * col_const = typeid_cast<const ColumnConst<T> *>(col);
+
+        static constexpr size_t MAX_UINT_HEX_LENGTH = sizeof(T) * 2 + 1;    /// Including trailing zero byte.
 
         if (col_vec)
         {
@@ -1588,7 +1465,7 @@ public:
 
             size_t size = in_vec.size();
             out_offsets.resize(size);
-            out_vec.resize(size * 3 + MAX_UINT_HEX_LENGTH);
+            out_vec.resize(size * 3 + MAX_UINT_HEX_LENGTH); /// 3 is length of one byte in hex plus zero byte.
 
             size_t pos = 0;
             for (size_t i = 0; i < size; ++i)
@@ -1627,12 +1504,11 @@ public:
 
     void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
     {
-        const char digit[17] = "0123456789ABCDEF";
         while (pos < end)
         {
             UInt8 byte = *(pos++);
-            *(out++) = digit[byte >> 4];
-            *(out++) = digit[byte & 15];
+            *(out++) = hexUppercase(byte / 16);
+            *(out++) = hexUppercase(byte % 16);
         }
         *(out++) = '\0';
     }
@@ -1676,7 +1552,7 @@ public:
 
             return true;
         }
-        else if(col_const_in)
+        else if (col_const_in)
         {
             const std::string & src = col_const_in->getData();
             std::string res(src.size() * 2, '\0');
@@ -1786,28 +1662,26 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    UInt8 undigitUnsafe(char c)
-    {
-        if (c <= '9')
-            return c - '0';
-        if (c <= 'Z')
-            return c - ('A' - 10);
-        return c - ('a' - 10);
-    }
-
     void unhexOne(const char * pos, const char * end, char *& out)
     {
         if ((end - pos) & 1)
         {
-            *(out++) = undigitUnsafe(*(pos++));
+            *out = unhex(*pos);
+            ++out;
+            ++pos;
         }
         while (pos < end)
         {
-            UInt8 major = undigitUnsafe(*(pos++));
-            UInt8 minor = undigitUnsafe(*(pos++));
-            *(out++) = (major << 4) | minor;
+            UInt8 major = unhex(*pos);
+            ++pos;
+            UInt8 minor = unhex(*pos);
+            ++pos;
+
+            *out = (major << 4) | minor;
+            ++out;
         }
-        *(out++) = '\0';
+        *out = '\0';
+        ++out;
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override

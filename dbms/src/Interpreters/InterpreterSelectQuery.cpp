@@ -139,7 +139,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
         if (query_table && typeid_cast<const ASTFunction *>(query_table.get()))
         {
             /// Get the table function
-            TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(typeid_cast<const ASTFunction *>(query_table.get())->name, context);
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(typeid_cast<const ASTFunction *>(query_table.get())->name, context);
             /// Run it and remember the result
             storage = table_function_ptr->execute(query_table, context);
         }
@@ -838,24 +838,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
-        ASTPtr actual_query_ptr;
-        if (storage->isRemote())
-        {
-            /// In case of a remote query, we send only SELECT, which will be executed.
-            actual_query_ptr = query.cloneFirstSelect();
-        }
-        else
-            actual_query_ptr = query_ptr;
-
         /// PREWHERE optimization
         {
             auto optimize_prewhere = [&](auto & merge_tree)
             {
-                const ASTSelectQuery & actual_select = typeid_cast<const ASTSelectQuery &>(*actual_query_ptr);
-
                 /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-                if (settings.optimize_move_to_prewhere && actual_select.where_expression && !actual_select.prewhere_expression && !actual_select.final())
-                    MergeTreeWhereOptimizer{actual_query_ptr, context, merge_tree.getData(), required_columns, log};
+                if (settings.optimize_move_to_prewhere && query.where_expression && !query.prewhere_expression && !query.final())
+                    MergeTreeWhereOptimizer{query_ptr, context, merge_tree.getData(), required_columns, log};
             };
 
             if (const StorageMergeTree * merge_tree = typeid_cast<const StorageMergeTree *>(storage.get()))
@@ -864,8 +853,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
                 optimize_prewhere(*merge_tree);
         }
 
-        streams = storage->read(required_columns, actual_query_ptr,
-            context, from_stage, max_block_size, max_streams);
+        streams = storage->read(required_columns, query_ptr, context, from_stage, max_block_size, max_streams);
 
         if (alias_actions)
         {
@@ -1316,11 +1304,6 @@ void InterpreterSelectQuery::executeLimit()
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(SubqueriesForSets & subqueries_for_sets)
 {
-    /// If the query is not distributed, then remove the creation of temporary tables from subqueries (intended for sending to remote servers).
-    if (!(storage && storage->isRemote()))
-        for (auto & elem : subqueries_for_sets)
-            elem.second.table.reset();
-
     const Settings & settings = context.getSettingsRef();
 
     executeUnion();

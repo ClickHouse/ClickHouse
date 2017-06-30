@@ -1,7 +1,4 @@
 include_directories (include)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcctz/include)
-
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 if (APPLE)
     if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
@@ -26,10 +23,12 @@ add_library (common
     src/DateLUTImpl.cpp
     src/exp10.cpp
     src/JSON.cpp
+    src/getMemoryAmount.cpp
+    src/ThreadPool.cpp
+    src/iostream_debug_helpers.cpp
 
     include/common/ApplicationServerExt.h
     include/common/Types.h
-    include/common/MetrikaTypes.h
     include/common/DateLUT.h
     include/common/DateLUTImpl.h
     include/common/LocalDate.h
@@ -42,17 +41,20 @@ add_library (common
     include/common/singleton.h
     include/common/strong_typedef.h
     include/common/JSON.h
+    include/common/getMemoryAmount.h
+    include/common/ThreadPool.h
+    include/common/iostream_debug_helpers.h
 
-    include/ext/bit_cast.hpp
-    include/ext/collection_cast.hpp
-    include/ext/enumerate.hpp
-    include/ext/function_traits.hpp
-    include/ext/identity.hpp
-    include/ext/map.hpp
-    include/ext/range.hpp
-    include/ext/scope_guard.hpp
-    include/ext/size.hpp
-    include/ext/unlock_guard.hpp
+    include/ext/bit_cast.h
+    include/ext/collection_cast.h
+    include/ext/enumerate.h
+    include/ext/function_traits.h
+    include/ext/identity.h
+    include/ext/map.h
+    include/ext/range.h
+    include/ext/scope_guard.h
+    include/ext/size.h
+    include/ext/unlock_guard.h
 
     ${CONFIG_COMMON}
 )
@@ -76,10 +78,14 @@ endif ()
 
 find_package (Threads)
 
+target_include_directories (common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
+target_include_directories (common BEFORE PUBLIC ${CITYHASH_INCLUDE_DIR})
+target_include_directories (common BEFORE PUBLIC ${COMMON_INCLUDE_DIR})
+
 target_link_libraries (
     common
     pocoext
-    cctz
+    ${CCTZ_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
     ${Boost_FILESYSTEM_LIBRARY}
     ${MALLOC_LIBRARIES}

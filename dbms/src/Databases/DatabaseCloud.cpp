@@ -1,4 +1,4 @@
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
 #include <Common/SipHash.h>
@@ -352,7 +352,7 @@ static void modifyTwoTableSets(zkutil::ZooKeeperPtr & zookeeper, const String & 
 
 bool DatabaseCloud::isTableExist(const String & table_name) const
 {
-    /// We are looking for a local table in the local table cache or in the file system in `path`.
+    /// We are looking for a local table in the local table cache or in the filesystem in `path`.
     /// If you do not find it, look for the cloud table in ZooKeeper.
 
     {
@@ -413,6 +413,8 @@ StoragePtr DatabaseCloud::tryGetTable(const String & table_name)
             std::tie(table_name, table) = createTableFromDefinition(
                 definition, name, data_path, context, false,
                 "in zookeeper node " + zookeeper_path + "/table_definitions/" + hashToHex(table_hash));
+
+            table->startup();
 
             local_tables_cache.emplace(table_name, table);
             return table;

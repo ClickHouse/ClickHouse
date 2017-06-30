@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
+#include <Core/Names.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/PODArray.h>
 #include <memory>
@@ -19,8 +20,11 @@ struct DictionaryLifetime;
 struct DictionaryStructure;
 class ColumnString;
 
+class IBlockInputStream;
+using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
-struct IDictionaryBase
+
+struct IDictionaryBase : public std::enable_shared_from_this<IDictionaryBase>
 {
     using Key = UInt64;
 
@@ -52,6 +56,8 @@ struct IDictionaryBase
     virtual std::chrono::time_point<std::chrono::system_clock> getCreationTime() const = 0;
 
     virtual bool isInjective(const std::string & attribute_name) const = 0;
+
+    virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
 
     virtual ~IDictionaryBase() = default;
 };

@@ -11,7 +11,7 @@
 
 #include <Columns/ColumnVector.h>
 
-#include <ext/bit_cast.hpp>
+#include <ext/bit_cast.h>
 
 #if __SSE2__
     #include <emmintrin.h>

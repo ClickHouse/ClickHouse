@@ -184,12 +184,6 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         return;
     }
 
-    if (part_info.left <= RESERVED_BLOCK_NUMBERS)
-    {
-        LOG_ERROR(log, "Won't add nonincrement_block_numbers because part is one of first in partition");
-        return;
-    }
-
     const auto partition_str = part_name.substr(0, 6);
     for (auto i = part_info.left; i <= part_info.right; ++i)
     {
@@ -278,7 +272,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
         {
             /// TODO You need to make sure that the part is still checked after a while.
             /// Otherwise, it's possible that the part was not added to ZK,
-            ///  but remained in the file system and in a number of active parts.
+            ///  but remained in the filesystem and in a number of active parts.
             /// And then for a long time (before restarting), the data on the replicas will be different.
 
             LOG_TRACE(log, "Young part " << part_name

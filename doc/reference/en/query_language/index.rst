@@ -1,7 +1,0 @@
-Query language
-==========
-
-.. toctree::
-    :glob:
-
-    *

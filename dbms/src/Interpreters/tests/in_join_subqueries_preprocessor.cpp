@@ -1,4 +1,4 @@
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>
@@ -27,16 +27,11 @@ namespace DB
 
 
 /// Simplified version of the StorageDistributed class.
-class StorageDistributedFake : private ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
+class StorageDistributedFake : public ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
 {
 friend class ext::shared_ptr_helper<StorageDistributedFake>;
 
 public:
-    static DB::StoragePtr create(const std::string & remote_database_, const std::string & remote_table_, size_t shard_count_)
-    {
-        return make_shared(remote_database_, remote_table_, shard_count_);
-    }
-
     std::string getName() const override { return "DistributedFake"; }
     bool isRemote() const override { return true; }
     size_t getShardCount() const { return shard_count; }
@@ -1173,7 +1168,7 @@ TestResult check(const TestEntry & entry)
 {
     try
     {
-        DB::Context context;
+        DB::Context context = DB::Context::createGlobal();
 
         auto storage_distributed_visits = StorageDistributedFake::create("remote_db", "remote_visits", entry.shard_count);
         auto storage_distributed_hits = StorageDistributedFake::create("distant_db", "distant_hits", entry.shard_count);

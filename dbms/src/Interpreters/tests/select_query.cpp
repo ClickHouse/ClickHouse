@@ -9,8 +9,7 @@
 #include <IO/WriteBufferFromOStream.h>
 
 #include <Storages/StorageLog.h>
-#include <Storages/System/StorageSystemNumbers.h>
-#include <Storages/System/StorageSystemOne.h>
+#include <Storages/System/attachSystemTables.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
@@ -31,7 +30,7 @@ try
     /// Pre-initialize the `DateLUT` so that the first initialization does not affect the measured execution speed.
     DateLUT::instance();
 
-    Context context;
+    Context context = Context::createGlobal();
 
     context.setPath("./");
 
@@ -40,8 +39,7 @@ try
     DatabasePtr system = std::make_shared<DatabaseOrdinary>("system", "./metadata/system/");
     context.addDatabase("system", system);
     system->loadTables(context, nullptr, false);
-    system->attachTable("one",     StorageSystemOne::create("one"));
-    system->attachTable("numbers", StorageSystemNumbers::create("numbers"));
+    attachSystemTablesLocal(*context.getDatabase("system"));
     context.setCurrentDatabase("default");
 
     ReadBufferFromIStream in(std::cin);

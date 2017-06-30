@@ -16,7 +16,7 @@ static bool parseDatabaseAndTable(
     ASTRenameQuery::Table & db_and_table, IParser::Pos & pos, IParser::Pos end, IParser::Pos & max_parsed_pos, Expected & expected)
 {
     ParserIdentifier name_p;
-    ParserWhiteSpaceOrComments ws;
+    ParserWhitespaceOrComments ws;
     ParserString s_dot(".");
 
     ASTPtr database;
@@ -49,20 +49,14 @@ bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_rename("RENAME", true, true);
-    ParserString s_table("TABLE", true, true);
-    ParserString s_to("TO", true, true);
+    ParserWhitespaceOrComments ws;
+    ParserKeyword s_rename_table("RENAME TABLE");
+    ParserKeyword s_to("TO");
     ParserString s_comma(",");
 
     ws.ignore(pos, end);
 
-    if (!s_rename.ignore(pos, end, max_parsed_pos, expected))
-        return false;
-
-    ws.ignore(pos, end);
-
-    if (!s_table.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_rename_table.ignore(pos, end, max_parsed_pos, expected))
         return false;
 
     ASTRenameQuery::Elements elements;
@@ -84,7 +78,15 @@ bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             return false;
     }
 
+    String cluster_str;
+    if (ParserKeyword{"ON"}.ignore(pos, end, max_parsed_pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+            return false;
+    }
+
     auto query = std::make_shared<ASTRenameQuery>(StringRange(begin, pos));
+    query->cluster = cluster_str;
     node = query;
 
     query->elements = elements;

@@ -3,8 +3,8 @@
 #include <Core/Types.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
-#include <ext/bit_cast.hpp>
-#include <Core/StringRef.h>
+#include <ext/bit_cast.h>
+#include <common/StringRef.h>
 
 
 namespace DB

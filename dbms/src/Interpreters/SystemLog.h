@@ -18,6 +18,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Common/setThreadName.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -51,6 +52,21 @@ namespace DB
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1024
 
 class Context;
+class QueryLog;
+class PartLog;
+
+
+/// System logs should be destroyed in destructor of last Context and before tables,
+///  because SystemLog destruction makes insert query while flushing data into underlying tables
+struct SystemLogs
+{
+    ~SystemLogs();
+
+    std::unique_ptr<QueryLog> query_log;    /// Used to log queries.
+    std::unique_ptr<PartLog> part_log;      /// Used to log operations with parts
+};
+
+
 
 
 template <typename LogElement>
@@ -224,7 +240,7 @@ void SystemLog<LogElement>::flush()
         Block block = LogElement::createBlock();
         for (const LogElement & elem : data)
             elem.appendToBlock(block);
-        
+
         /// Clear queue early, because insertion to the table could lead to generation of more log entrites
         ///  and pushing them to already full queue will lead to deadlock.
         data.clear();
@@ -267,7 +283,7 @@ void SystemLog<LogElement>::prepareTable()
 
         if (!blocksHaveEqualStructure(actual, expected))
         {
-            /// Переименовываем существующую таблицу.
+            /// Rename the existing table.
             int suffix = 0;
             while (context.isTableExist(database_name, table_name + "_" + toString(suffix)))
                 ++suffix;
@@ -293,7 +309,7 @@ void SystemLog<LogElement>::prepareTable()
 
             InterpreterRenameQuery(rename, context).execute();
 
-            /// Нужная таблица будет создана.
+            /// The required table will be created.
             table = nullptr;
         }
         else
@@ -302,7 +318,7 @@ void SystemLog<LogElement>::prepareTable()
 
     if (!table)
     {
-        /// Создаём таблицу.
+        /// Create the table.
         LOG_DEBUG(log, "Creating new table " << description << " for " + LogElement::name());
 
         auto create = std::make_shared<ASTCreateQuery>();

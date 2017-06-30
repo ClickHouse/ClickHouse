@@ -52,11 +52,6 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemProcesses::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemProcesses::read(
     const Names & column_names,
@@ -64,7 +59,7 @@ BlockInputStreams StorageSystemProcesses::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

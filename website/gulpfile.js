@@ -11,32 +11,36 @@ var connect = require('gulp-connect');
 var run = require('gulp-run');
 
 var outputDir = 'public';
-var docsDir = '../doc/reference';
+var docsDir = '../docs';
 
 var paths = {
     htmls: [
         '**/*.html',
-        '!reference_ru.html',
-        '!reference_en.html',
+        '!deprecated/reference_ru.html',
+        '!deprecated/reference_en.html',
         '!node_modules/**/*.html',
+        '!presentations/**/*.html',
         '!public/**/*.html'],
-    reference: ['reference_ru.html', 'reference_en.html'],
-    docs: ['../doc/reference/build/docs/**/*'],
+    reference: ['deprecated/reference_ru.html', 'deprecated/reference_en.html'],
+    docs: [docsDir + '/build/docs/**/*'],
     scripts: [
         '**/*.js',
         '!gulpfile.js',
         '!node_modules/**/*.js',
+        '!presentations/**/*.js',
         '!public/**/*.js'],
     styles: [
         '**/*.css',
         '!node_modules/**/*.css',
+        '!presentations/**/*.css',
         '!public/**/*.css'],
     images: [
         '**/*.{jpg,jpeg,png,svg,ico}',
         '!node_modules/**/*.{jpg,jpeg,png,svg,ico}',
+        '!presentations/**/*.{jpg,jpeg,png,svg,ico}',
         '!public/**/*.{jpg,jpeg,png,svg,ico}'],
     robotstxt: ['robots.txt'],
-    presentations: ['../doc/presentations/**/*']
+    presentations: ['presentations/**/*']
 };
 
 gulp.task('clean', function () {
@@ -46,10 +50,16 @@ gulp.task('clean', function () {
 gulp.task('reference', [], function () {
     return gulp.src(paths.reference)
         .pipe(minifyInline())
-        .pipe(gulp.dest(outputDir))
+        .pipe(gulp.dest(outputDir + '/deprecated'))
 });
 
-gulp.task('docs', [], function () {
+gulp.task('docstxt', [], function () {
+    run('cd ' + docsDir + '; make');
+    return gulp.src(paths.docs)
+        .pipe(gulp.dest(outputDir + '/../docs'))
+});
+
+gulp.task('docs', ['docstxt'], function () {
     run('cd ' + docsDir + '; make');
     return gulp.src(paths.docs)
         .pipe(gulp.dest(outputDir + '/../docs'))
@@ -109,6 +119,6 @@ gulp.task('connect', function() {
     })
 });
 
-gulp.task('build', ['htmls', 'robotstxt', 'reference', 'presentations', 'scripts', 'styles', 'images']);
+gulp.task('build', ['htmls', 'robotstxt', 'reference', 'scripts', 'styles', 'images', 'presentations']);
 
 gulp.task('default', ['build', 'connect']);

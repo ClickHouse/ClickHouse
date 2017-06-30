@@ -155,7 +155,7 @@ void DataTypeFixedString::serializeTextQuoted(const IColumn & column, size_t row
 
 void DataTypeFixedString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readQuotedStringInto(data, istr); });
+    read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readQuotedStringInto<true>(data, istr); });
 }
 
 

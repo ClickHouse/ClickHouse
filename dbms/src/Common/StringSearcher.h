@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/UTF8Helpers.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
 #include <stdint.h>

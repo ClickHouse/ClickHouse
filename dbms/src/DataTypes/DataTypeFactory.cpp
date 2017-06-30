@@ -27,7 +27,7 @@
 #include <Parsers/parseQuery.h>
 #include <DataTypes/DataTypeEnum.h>
 
-#include <ext/map.hpp>
+#include <ext/map.h>
 
 
 namespace DB
@@ -41,27 +41,28 @@ namespace ErrorCodes
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
 DataTypeFactory::DataTypeFactory()
     : non_parametric_data_types
     {
-        {"UInt8",                std::make_shared<DataTypeUInt8>()},
-        {"UInt16",                std::make_shared<DataTypeUInt16>()},
-        {"UInt32",                std::make_shared<DataTypeUInt32>()},
-        {"UInt64",                std::make_shared<DataTypeUInt64>()},
-        {"Int8",                std::make_shared<DataTypeInt8>()},
-        {"Int16",                std::make_shared<DataTypeInt16>()},
-        {"Int32",                std::make_shared<DataTypeInt32>()},
-        {"Int64",                std::make_shared<DataTypeInt64>()},
-        {"Float32",                std::make_shared<DataTypeFloat32>()},
-        {"Float64",                std::make_shared<DataTypeFloat64>()},
-        {"Date",                std::make_shared<DataTypeDate>()},
-        {"DateTime",            std::make_shared<DataTypeDateTime>()},
-        {"Uuid",                std::make_shared<DataTypeUuid>()},
-        {"String",                std::make_shared<DataTypeString>()},
-        {"Null",                std::make_shared<DataTypeNull>()}
+        {"UInt8",    std::make_shared<DataTypeUInt8>()},
+        {"UInt16",   std::make_shared<DataTypeUInt16>()},
+        {"UInt32",   std::make_shared<DataTypeUInt32>()},
+        {"UInt64",   std::make_shared<DataTypeUInt64>()},
+        {"Int8",     std::make_shared<DataTypeInt8>()},
+        {"Int16",    std::make_shared<DataTypeInt16>()},
+        {"Int32",    std::make_shared<DataTypeInt32>()},
+        {"Int64",    std::make_shared<DataTypeInt64>()},
+        {"Float32",  std::make_shared<DataTypeFloat32>()},
+        {"Float64",  std::make_shared<DataTypeFloat64>()},
+        {"Date",     std::make_shared<DataTypeDate>()},
+        {"DateTime", std::make_shared<DataTypeDateTime>()},
+        {"Uuid",     std::make_shared<DataTypeUuid>()},
+        {"String",   std::make_shared<DataTypeString>()},
+        {"Null",     std::make_shared<DataTypeNull>()}
     }
 {
 }
@@ -99,6 +100,12 @@ inline DataTypePtr parseEnum(const String & name, const String & base_name, cons
 
 DataTypePtr DataTypeFactory::get(const String & name) const
 {
+    return getImpl(name, true);
+}
+
+
+DataTypePtr DataTypeFactory::getImpl(const String & name, bool allow_nullable) const
+{
     NonParametricDataTypes::const_iterator it = non_parametric_data_types.find(name);
     if (it != non_parametric_data_types.end())
         return it->second;
@@ -113,7 +120,12 @@ DataTypePtr DataTypeFactory::get(const String & name) const
         String parameters(name.data() + matches[2].offset, matches[2].length);
 
         if (base_name == "Nullable")
-            return std::make_shared<DataTypeNullable>(get(parameters));
+        {
+            if (!allow_nullable)
+                throw Exception{"A Nullable type cannot contain another Nullable type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+            return std::make_shared<DataTypeNullable>(getImpl(parameters, false));
+        }
 
         if (base_name == "Array")
         {
@@ -125,7 +137,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
                         std::make_shared<DataTypeUInt8>()));
             }
             else
-                return std::make_shared<DataTypeArray>(get(parameters));
+                return std::make_shared<DataTypeArray>(getImpl(parameters, allow_nullable));
         }
 
         if (base_name == "AggregateFunction")
@@ -176,8 +188,8 @@ DataTypePtr DataTypeFactory::get(const String & name) const
                     ErrorCodes::BAD_ARGUMENTS);
 
             for (size_t i = 1; i < args_list.children.size(); ++i)
-                argument_types.push_back(get(
-                    std::string{args_list.children[i]->range.first, args_list.children[i]->range.second}));
+                argument_types.push_back(getImpl(
+                    std::string{args_list.children[i]->range.first, args_list.children[i]->range.second}, allow_nullable));
 
             if (function_name.empty())
                 throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);
@@ -201,7 +213,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
             {
                 ASTNameTypePair & name_and_type_pair = typeid_cast<ASTNameTypePair &>(**it);
                 StringRange type_range = name_and_type_pair.type->range;
-                DataTypePtr type = get(String(type_range.first, type_range.second - type_range.first));
+                DataTypePtr type = getImpl(String(type_range.first, type_range.second - type_range.first), allow_nullable);
                 if (typeid_cast<const DataTypeNested *>(type.get()))
                     throw Exception("Nested inside Nested is not allowed", ErrorCodes::NESTED_TYPE_TOO_DEEP);
                 columns->push_back(NameAndTypePair(
@@ -218,8 +230,8 @@ DataTypePtr DataTypeFactory::get(const String & name) const
             ASTPtr columns_ast = parseQuery(columns_p, parameters.data(), parameters.data() + parameters.size(), "parameters for data type " + name);
 
             auto & columns_list = typeid_cast<ASTExpressionList &>(*columns_ast);
-            const auto elems = ext::map<DataTypes>(columns_list.children, [this] (const ASTPtr & elem_ast) {
-                return get(String(elem_ast->range.first, elem_ast->range.second));
+            const auto elems = ext::map<DataTypes>(columns_list.children, [&] (const ASTPtr & elem_ast) {
+                return getImpl(String(elem_ast->range.first, elem_ast->range.second), allow_nullable);
             });
 
             return std::make_shared<DataTypeTuple>(elems);

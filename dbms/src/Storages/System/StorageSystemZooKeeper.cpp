@@ -11,7 +11,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/Context.h>
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 
 namespace DB
@@ -21,27 +21,22 @@ namespace DB
 StorageSystemZooKeeper::StorageSystemZooKeeper(const std::string & name_)
     : name(name_)
     , columns{
-        { "name",             std::make_shared<DataTypeString>()    },
-        { "value",             std::make_shared<DataTypeString>()    },
-        { "czxid",            std::make_shared<DataTypeInt64>()    },
-        { "mzxid",            std::make_shared<DataTypeInt64>()    },
-        { "ctime",            std::make_shared<DataTypeDateTime>()},
-        { "mtime",            std::make_shared<DataTypeDateTime>()},
-        { "version",        std::make_shared<DataTypeInt32>()    },
-        { "cversion",        std::make_shared<DataTypeInt32>()    },
-        { "aversion",        std::make_shared<DataTypeInt32>()    },
-        { "ephemeralOwner",    std::make_shared<DataTypeInt64>()    },
-        { "dataLength",        std::make_shared<DataTypeInt32>()    },
-        { "numChildren",    std::make_shared<DataTypeInt32>()    },
-        { "pzxid",            std::make_shared<DataTypeInt64>()    },
-        { "path",             std::make_shared<DataTypeString>()    },
+        { "name",           std::make_shared<DataTypeString>() },
+        { "value",          std::make_shared<DataTypeString>() },
+        { "czxid",          std::make_shared<DataTypeInt64>() },
+        { "mzxid",          std::make_shared<DataTypeInt64>() },
+        { "ctime",          std::make_shared<DataTypeDateTime>() },
+        { "mtime",          std::make_shared<DataTypeDateTime>() },
+        { "version",        std::make_shared<DataTypeInt32>() },
+        { "cversion",       std::make_shared<DataTypeInt32>() },
+        { "aversion",       std::make_shared<DataTypeInt32>() },
+        { "ephemeralOwner", std::make_shared<DataTypeInt64>() },
+        { "dataLength",     std::make_shared<DataTypeInt32>() },
+        { "numChildren",    std::make_shared<DataTypeInt32>() },
+        { "pzxid",          std::make_shared<DataTypeInt64>() },
+        { "path",           std::make_shared<DataTypeString>() },
     }
 {
-}
-
-StoragePtr StorageSystemZooKeeper::create(const std::string & name_)
-{
-    return make_shared(name_);
 }
 
 
@@ -113,7 +108,7 @@ BlockInputStreams StorageSystemZooKeeper::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

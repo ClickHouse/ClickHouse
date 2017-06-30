@@ -384,13 +384,13 @@ public:
     void update(size_t from)
     {
         if (index >= size)
-            throw Exception{"Internal errror", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Logical error: index passed to NullMapBuilder is out of range of column.", ErrorCodes::LOGICAL_ERROR};
 
         bool is_null;
         if (src_nullable_col != nullptr)
             is_null = src_nullable_col->isNullAt(from);
         else
-            is_null = (*src_array)[from].isNull();
+            is_null = from < src_array->size() ? (*src_array)[from].isNull() : true;
 
         auto & null_map_data = static_cast<ColumnUInt8 &>(*sink_null_map).getData();
         null_map_data[index] = is_null ? 1 : 0;
@@ -401,7 +401,7 @@ public:
     void update()
     {
         if (index >= size)
-            throw Exception{"Internal errror", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Logical error: index passed to NullMapBuilder is out of range of column.", ErrorCodes::LOGICAL_ERROR};
 
         auto & null_map_data = static_cast<ColumnUInt8 &>(*sink_null_map).getData();
         null_map_data[index] = 0;
@@ -892,7 +892,7 @@ bool FunctionArrayElement::executeConstConst(Block & block, const ColumnNumbers 
     if (!col_array)
         return false;
 
-    const DB::Array & array = col_array->getData();
+    const Array & array = col_array->getData();
     size_t array_size = array.size();
     size_t real_index = 0;
 
@@ -903,11 +903,14 @@ bool FunctionArrayElement::executeConstConst(Block & block, const ColumnNumbers 
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
-    Field value = col_array->getData().at(real_index);
-    if (value.isNull())
-        value = DataTypeString{}.getDefault();
+    Field value;
+    if (real_index < array_size)
+        value = array.at(real_index);
 
-    block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(
+    if (value.isNull())
+        value = block.getByPosition(result).type->getDefault();
+
+    block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
         block.rows(),
         value);
 
@@ -926,7 +929,7 @@ bool FunctionArrayElement::executeConst(Block & block, const ColumnNumbers & arg
     if (!col_array)
         return false;
 
-    const DB::Array & array = col_array->getData();
+    const Array & array = col_array->getData();
     size_t array_size = array.size();
 
     block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createColumn();
@@ -1159,14 +1162,14 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
     }
     else if (!block.safeGetByPosition(arguments[1]).column->isConst())
     {
-        if (!(    executeArgument<UInt8>    (block, arguments, result, builder)
-            ||    executeArgument<UInt16>    (block, arguments, result, builder)
-            ||    executeArgument<UInt32>    (block, arguments, result, builder)
-            ||    executeArgument<UInt64>    (block, arguments, result, builder)
+        if (!(    executeArgument<UInt8>   (block, arguments, result, builder)
+            ||    executeArgument<UInt16>  (block, arguments, result, builder)
+            ||    executeArgument<UInt32>  (block, arguments, result, builder)
+            ||    executeArgument<UInt64>  (block, arguments, result, builder)
             ||    executeArgument<Int8>    (block, arguments, result, builder)
-            ||    executeArgument<Int16>    (block, arguments, result, builder)
-            ||    executeArgument<Int32>    (block, arguments, result, builder)
-            ||    executeArgument<Int64>    (block, arguments, result, builder)))
+            ||    executeArgument<Int16>   (block, arguments, result, builder)
+            ||    executeArgument<Int32>   (block, arguments, result, builder)
+            ||    executeArgument<Int64>   (block, arguments, result, builder)))
         throw Exception("Second argument for function " + getName() + " must must have UInt or Int type.",
                         ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -1180,19 +1183,19 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
         if (index == UInt64(0))
             throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
 
-        if (!(    executeNumberConst<UInt8>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<UInt16>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<UInt32>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<UInt64>    (block, arguments, result, index, builder)
+        if (!(    executeNumberConst<UInt8>   (block, arguments, result, index, builder)
+            ||    executeNumberConst<UInt16>  (block, arguments, result, index, builder)
+            ||    executeNumberConst<UInt32>  (block, arguments, result, index, builder)
+            ||    executeNumberConst<UInt64>  (block, arguments, result, index, builder)
             ||    executeNumberConst<Int8>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<Int16>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<Int32>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<Int64>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<Float32>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<Float64>    (block, arguments, result, index, builder)
-            ||    executeConstConst            (block, arguments, result, index, builder)
-            ||    executeStringConst            (block, arguments, result, index, builder)
-            ||    executeGenericConst            (block, arguments, result, index, builder)))
+            ||    executeNumberConst<Int16>   (block, arguments, result, index, builder)
+            ||    executeNumberConst<Int32>   (block, arguments, result, index, builder)
+            ||    executeNumberConst<Int64>   (block, arguments, result, index, builder)
+            ||    executeNumberConst<Float32> (block, arguments, result, index, builder)
+            ||    executeNumberConst<Float64> (block, arguments, result, index, builder)
+            ||    executeConstConst           (block, arguments, result, index, builder)
+            ||    executeStringConst          (block, arguments, result, index, builder)
+            ||    executeGenericConst         (block, arguments, result, index, builder)))
         throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
             + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
@@ -1396,8 +1399,8 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn *
     const ColumnArray::Offsets_t & offsets = array->getOffsets();
     const typename ColumnVector<T>::Container_t & values = nested->getData();
 
-    typedef ClearableHashSet<T, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(T)> > Set;
+    using Set = ClearableHashSet<T, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
 
     const PaddedPODArray<UInt8> * null_map_data = nullptr;
     if (null_map)
@@ -1442,8 +1445,8 @@ bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn *
         return false;
     const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
-    typedef ClearableHashSet<StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(StringRef)> > Set;
+    using Set = ClearableHashSet<StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
 
     const PaddedPODArray<UInt8> * null_map_data = nullptr;
     if (null_map)
@@ -1509,8 +1512,8 @@ bool FunctionArrayUniq::execute128bit(
     if (keys_bytes > 16)
         return false;
 
-    typedef ClearableHashSet<UInt128, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)> > Set;
+    using Set = ClearableHashSet<UInt128, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     /// Suppose that, for a given row, each of the N columns has an array whose length is M.
     /// Denote arr_i each of these arrays (1 <= i <= N). Then the following is performed:
@@ -1570,8 +1573,8 @@ void FunctionArrayUniq::executeHashed(
 {
     size_t count = columns.size();
 
-    typedef ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)> > Set;
+    using Set = ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     Set set;
     size_t prev_off = 0;
@@ -1722,8 +1725,8 @@ bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const 
     const ColumnArray::Offsets_t & offsets = array->getOffsets();
     const typename ColumnVector<T>::Container_t & values = nested->getData();
 
-    typedef ClearableHashMap<T, UInt32, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(T)> > ValuesToIndices;
+    using ValuesToIndices = ClearableHashMap<T, UInt32, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
 
     const PaddedPODArray<UInt8> * null_map_data = nullptr;
     if (null_map)
@@ -1767,8 +1770,8 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const 
     const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
     size_t prev_off = 0;
-    typedef ClearableHashMap<StringRef, UInt32, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(StringRef)> > ValuesToIndices;
+    using ValuesToIndices = ClearableHashMap<StringRef, UInt32, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
 
     const PaddedPODArray<UInt8> * null_map_data = nullptr;
     if (null_map)
@@ -1836,8 +1839,8 @@ bool FunctionArrayEnumerateUniq::execute128bit(
     if (keys_bytes > 16)
         return false;
 
-    typedef ClearableHashMap<UInt128, UInt32, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)> > ValuesToIndices;
+    using ValuesToIndices = ClearableHashMap<UInt128, UInt32, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     ValuesToIndices indices;
     size_t prev_off = 0;
@@ -1882,8 +1885,8 @@ void FunctionArrayEnumerateUniq::executeHashed(
 {
     size_t count = columns.size();
 
-    typedef ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)> > ValuesToIndices;
+    using ValuesToIndices = ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     ValuesToIndices indices;
     size_t prev_off = 0;
@@ -2352,11 +2355,13 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
         auto & out_offsets = out->getOffsets();
 
         IColumn::Offset_t offset{};
-        for (const auto i : ext::range(0, in->size()))
+        for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
         {
-            std::copy(ext::make_range_iterator(T{}), ext::make_range_iterator(in_data[i]), &out_data[offset]);
-            offset += in_data[i];
-            out_offsets[i] = offset;
+            for (size_t elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
+                out_data[offset + elem_idx] = elem_idx;
+
+            offset += in_data[row_idx];
+            out_offsets[row_idx] = offset;
         }
 
         return true;
@@ -2367,16 +2372,14 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
         if ((in_data != 0) && (in->size() > (std::numeric_limits<std::size_t>::max() / in_data)))
             throw Exception{
                 "A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND
-            };
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
         const std::size_t total_values = in->size() * in_data;
         if (total_values > max_elements)
             throw Exception{
                 "A call to function " + getName() + " would produce " + std::to_string(total_values) +
                     " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND
-            };
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
         const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
         const auto out = std::make_shared<ColumnArray>(
@@ -2388,11 +2391,13 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
         auto & out_offsets = out->getOffsets();
 
         IColumn::Offset_t offset{};
-        for (const auto i : ext::range(0, in->size()))
+        for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
         {
-            std::copy(ext::make_range_iterator(T{}), ext::make_range_iterator(in_data), &out_data[offset]);
+            for (size_t elem_idx = 0, elems = in_data; elem_idx < elems; ++elem_idx)
+                out_data[offset + elem_idx] = elem_idx;
+
             offset += in_data;
-            out_offsets[i] = offset;
+            out_offsets[row_idx] = offset;
         }
 
         return true;

@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 #include <unicode/ucnv.h>
 
@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_CREATE_CHARSET_CONVERTER;
     extern const int CANNOT_CONVERT_CHARSET;
+    extern const int ILLEGAL_COLUMN;
 }
 
 

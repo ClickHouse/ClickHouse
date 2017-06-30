@@ -4,7 +4,7 @@
 #include <Columns/ColumnString.h>
 
 #include <common/logger_useful.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <vector>
 
 

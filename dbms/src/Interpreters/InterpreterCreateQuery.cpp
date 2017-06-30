@@ -23,6 +23,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLog.h>
@@ -31,6 +32,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/DDLWorker.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNested.h>
@@ -39,6 +41,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
 
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB
 {
@@ -63,12 +66,15 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 }
 
 
-void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
+BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
+    if (!create.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context);
+
     String database_name = create.database;
 
     if (create.if_not_exists && context.isDatabaseExist(database_name))
-        return;
+        return {};
 
     String database_engine_name;
     if (!create.storage)
@@ -147,6 +153,8 @@ void InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         throw;
     }
+
+    return {};
 }
 
 
@@ -460,6 +468,9 @@ String InterpreterCreateQuery::setEngine(
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
+    if (!create.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context);
+
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
 
@@ -534,6 +545,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             context.getDatabase(database_name)->createTable(table_name, res, query_ptr, storage_name, context.getSettingsRef());
     }
 
+    res->startup();
+
     /// If the CREATE SELECT query is, insert the data into the table
     if (create.select && storage_name != "View" && (storage_name != "MaterializedView" || create.is_populate))
     {
@@ -570,8 +583,7 @@ BlockIO InterpreterCreateQuery::execute()
     /// CREATE|ATTACH DATABASE
     if (!create.database.empty() && create.table.empty())
     {
-        createDatabase(create);
-        return {};
+        return createDatabase(create);
     }
     else
         return createTable(create);

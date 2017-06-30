@@ -4,7 +4,7 @@
 #include <Common/NetException.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequest.h>
 
@@ -126,7 +126,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
             if (hashing_out.count() != size)
                 throw Exception("Unexpected size of file " + path, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
 
-            writeBinary(hashing_out.getHash(), out);
+            writePODBinary(hashing_out.getHash(), out);
 
             if (file_name != "checksums.txt" &&
                 file_name != "columns.txt")
@@ -250,8 +250,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
             throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
         }
 
-        uint128 expected_hash;
-        readBinary(expected_hash, in);
+        MergeTreeDataPartChecksum::uint128 expected_hash;
+        readPODBinary(expected_hash, in);
 
         if (expected_hash != hashing_out.getHash())
             throw Exception("Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path);

@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 
 #include <TableFunctions/TableFunctionRemote.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 
 namespace DB
@@ -34,7 +35,7 @@ static void append(std::vector<String> & to, const std::vector<String> & what, s
     }
 
     if (what.size() * to.size() > max_addresses)
-        throw Exception("Storage Distributed, first argument generates too many result addresses",
+        throw Exception("Table function 'remote': first argument generates too many result addresses",
                         ErrorCodes::BAD_ARGUMENTS);
     std::vector<String> res;
     for (size_t i = 0; i < to.size(); ++i)
@@ -107,29 +108,29 @@ static std::vector<String> parseDescription(const String & description, size_t l
                 if (cnt == 0) break;
             }
             if (cnt != 0)
-                throw Exception("Storage Distributed, incorrect brace sequence in first argument",
+                throw Exception("Table function 'remote': incorrect brace sequence in first argument",
                                 ErrorCodes::BAD_ARGUMENTS);
             /// The presence of a dot - numeric interval
             if (last_dot != -1)
             {
                 size_t left, right;
                 if (description[last_dot - 1] != '.')
-                    throw Exception("Storage Distributed, incorrect argument in braces (only one dot): " + description.substr(i, m - i + 1),
+                    throw Exception("Table function 'remote': incorrect argument in braces (only one dot): " + description.substr(i, m - i + 1),
                                     ErrorCodes::BAD_ARGUMENTS);
                 if (!parseNumber(description, i + 1, last_dot - 1, left))
-                    throw Exception("Storage Distributed, incorrect argument in braces (Incorrect left number): "
+                    throw Exception("Table function 'remote': incorrect argument in braces (Incorrect left number): "
                                     + description.substr(i, m - i + 1),
                                     ErrorCodes::BAD_ARGUMENTS);
                 if (!parseNumber(description, last_dot + 1, m, right))
-                    throw Exception("Storage Distributed, incorrect argument in braces (Incorrect right number): "
+                    throw Exception("Table function 'remote': incorrect argument in braces (Incorrect right number): "
                                     + description.substr(i, m - i + 1),
                                     ErrorCodes::BAD_ARGUMENTS);
                 if (left > right)
-                    throw Exception("Storage Distributed, incorrect argument in braces (left number is greater then right): "
+                    throw Exception("Table function 'remote': incorrect argument in braces (left number is greater then right): "
                                     + description.substr(i, m - i + 1),
                                     ErrorCodes::BAD_ARGUMENTS);
                 if (right - left + 1 >  max_addresses)
-                    throw Exception("Storage Distributed, first argument generates too many result addresses",
+                    throw Exception("Table function 'remote': first argument generates too many result addresses",
                         ErrorCodes::BAD_ARGUMENTS);
                 bool add_leading_zeroes = false;
                 size_t len = last_dot - 1 - (i + 1);
@@ -138,7 +139,7 @@ static std::vector<String> parseDescription(const String & description, size_t l
                     add_leading_zeroes = true;
                 for (size_t id = left; id <= right; ++id)
                 {
-                    String cur = toString<uint64>(id);
+                    String cur = toString<UInt64>(id);
                     if (add_leading_zeroes)
                     {
                         while (cur.size() < len)
@@ -172,7 +173,7 @@ static std::vector<String> parseDescription(const String & description, size_t l
 
     res.insert(res.end(), cur.begin(), cur.end());
     if (res.size() > max_addresses)
-        throw Exception("Storage Distributed, first argument generates too many result addresses",
+        throw Exception("Table function 'remote': first argument generates too many result addresses",
             ErrorCodes::BAD_ARGUMENTS);
 
     return res;
@@ -274,13 +275,21 @@ StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Conte
 
     auto cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password);
 
-    return StorageDistributed::create(
+    auto res = StorageDistributed::createWithOwnCluster(
         getName(),
         std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*cluster, remote_database, remote_table, context)),
         remote_database,
         remote_table,
         cluster,
         context);
+    res->startup();
+    return res;
+}
+
+
+void registerTableFunctionRemote(TableFunctionFactory & factory)
+{
+    TableFunctionFactory::instance().registerFunction<TableFunctionRemote>();
 }
 
 }

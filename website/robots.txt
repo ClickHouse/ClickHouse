@@ -1,3 +1,9 @@
 User-agent: *
+Disallow: /docs/en/single/
+Disallow: /docs/ru/single/
+Disallow: /docs/en/search.html
+Disallow: /docs/ru/search.html
+Disallow: /deprecated/reference_en.html
+Disallow: /deprecated/reference_ru.html
 Allow: /
 Host: https://clickhouse.yandex

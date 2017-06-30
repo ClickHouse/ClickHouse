@@ -125,16 +125,16 @@ void DataTypeArray::serializeBinaryBulk(const IColumn & column, WriteBuffer & os
 }
 
 
-void DataTypeArray::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeArray::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double) const
 {
     ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
     ColumnArray::Offsets_t & offsets = column_array.getOffsets();
     IColumn & nested_column = column_array.getData();
 
-    /// Number of values correlated with `offsets` must be read.
+    /// Number of values corresponding with `offsets` must be read.
     size_t last_offset = (offsets.empty() ? 0 : offsets.back());
     if (last_offset < nested_column.size())
-        throw Exception("Nested column longer than last offset", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Nested column is longer than last offset", ErrorCodes::LOGICAL_ERROR);
     size_t nested_limit = last_offset - nested_column.size();
     nested->deserializeBinaryBulk(nested_column, istr, nested_limit, 0);
 

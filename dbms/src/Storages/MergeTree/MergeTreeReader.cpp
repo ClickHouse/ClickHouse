@@ -433,9 +433,9 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 
 
 void MergeTreeReader::readData(
-        const String & name, const IDataType & type, IColumn & column,
-        size_t from_mark, size_t max_rows_to_read,
-        size_t level, bool read_offsets)
+    const String & name, const IDataType & type, IColumn & column,
+    size_t from_mark, size_t max_rows_to_read,
+    size_t level, bool read_offsets)
 {
     if (type.isNullable())
     {
@@ -513,15 +513,15 @@ void MergeTreeReader::readData(
             stream.seekToMark(from_mark);
         type.deserializeBinaryBulk(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
 
-        /// Calculate the average value size hint.
+        /// Update the average value size hint if amount of read rows isn't too small
         size_t column_size = column.size();
-        if (column_size)
+        if (column_size > 10)
         {
             double current_avg_value_size = static_cast<double>(column.byteSize()) / column_size;
 
             /// Heuristic is chosen so that avg_value_size_hint increases rapidly but decreases slowly.
             if (current_avg_value_size > avg_value_size_hint)
-                avg_value_size_hint = current_avg_value_size;
+                avg_value_size_hint = std::min(1024., current_avg_value_size); /// avoid overestimation
             else if (current_avg_value_size * 2 < avg_value_size_hint)
                 avg_value_size_hint = (current_avg_value_size + avg_value_size_hint * 3) / 4;
         }

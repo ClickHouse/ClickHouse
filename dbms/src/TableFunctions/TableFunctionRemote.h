@@ -15,7 +15,8 @@ namespace DB
 class TableFunctionRemote : public ITableFunction
 {
 public:
-    std::string getName() const override { return "remote"; }
+    static constexpr auto name = "remote";
+    std::string getName() const override { return name; }
     StoragePtr execute(const ASTPtr & ast_function, const Context & context) const override;
 };
 

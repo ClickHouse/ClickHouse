@@ -6,7 +6,7 @@
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/CurrentMetrics.h>
 #include <Columns/ColumnString.h>
-#include <ext/bit_cast.hpp>
+#include <ext/bit_cast.h>
 #include <Poco/RWLock.h>
 #include <cmath>
 #include <atomic>
@@ -137,6 +137,8 @@ public:
 
     void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+
 private:
     template <typename Value> using ContainerType = Value[];
     template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
@@ -207,6 +209,10 @@ private:
     void update(
         const std::vector<Key> & requested_ids, PresentIdHandler && on_cell_updated,
         AbsentIdHandler && on_id_not_found) const;
+
+    PaddedPODArray<Key> getCachedIds() const;
+
+    bool isEmptyCell(const UInt64 idx) const;
 
     UInt64 getCellIdx(const Key id) const;
 

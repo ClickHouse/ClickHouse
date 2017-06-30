@@ -18,7 +18,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace DB

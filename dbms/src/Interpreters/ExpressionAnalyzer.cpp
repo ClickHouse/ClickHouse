@@ -7,6 +7,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -52,7 +53,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <DataTypes/DataTypeFactory.h>
 
 
@@ -170,6 +171,8 @@ void ExpressionAnalyzer::init()
 
     select_query = typeid_cast<ASTSelectQuery *>(ast.get());
 
+    translateQualifiedNames();
+
     /// Depending on the user's profile, check for the execution rights
     /// distributed subqueries inside the IN or JOIN sections and process these subqueries.
     InJoinSubqueriesPreprocessor(context).process(select_query);
@@ -220,6 +223,155 @@ void ExpressionAnalyzer::init()
     /// will contain out-of-date information, which will lead to an error when the query is executed.
     analyzeAggregation();
 }
+
+
+void ExpressionAnalyzer::translateQualifiedNames()
+{
+    String database_name;
+    String table_name;
+    String alias;
+
+    if (!select_query || !select_query->tables || select_query->tables->children.empty())
+        return;
+
+    ASTTablesInSelectQueryElement & element = static_cast<ASTTablesInSelectQueryElement &>(*select_query->tables->children[0]);
+
+    if (!element.table_expression)        /// This is ARRAY JOIN without a table at the left side.
+        return;
+
+    ASTTableExpression & table_expression = static_cast<ASTTableExpression &>(*element.table_expression);
+
+    if (table_expression.database_and_table_name)
+    {
+        const ASTIdentifier & identifier = static_cast<const ASTIdentifier &>(*table_expression.database_and_table_name);
+
+        alias = identifier.tryGetAlias();
+
+        if (table_expression.database_and_table_name->children.empty())
+        {
+            database_name = context.getCurrentDatabase();
+            table_name = identifier.name;
+        }
+        else
+        {
+            if (table_expression.database_and_table_name->children.size() != 2)
+                throw Exception("Logical error: number of components in table expression not equal to two", ErrorCodes::LOGICAL_ERROR);
+
+            database_name = static_cast<const ASTIdentifier &>(*identifier.children[0]).name;
+            table_name = static_cast<const ASTIdentifier &>(*identifier.children[1]).name;
+        }
+    }
+    else if (table_expression.table_function)
+    {
+        alias = table_expression.table_function->tryGetAlias();
+    }
+    else if (table_expression.subquery)
+    {
+        alias = table_expression.subquery->tryGetAlias();
+    }
+    else
+        throw Exception("Logical error: no known elements in ASTTableExpression", ErrorCodes::LOGICAL_ERROR);
+
+    translateQualifiedNamesImpl(ast, database_name, table_name, alias);
+}
+
+
+void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const String & database_name, const String & table_name, const String & alias)
+{
+    if (ASTIdentifier * ident = typeid_cast<ASTIdentifier *>(ast.get()))
+    {
+        if (ident->kind == ASTIdentifier::Column)
+        {
+            /// It is compound identifier
+            if (!ast->children.empty())
+            {
+                size_t num_components = ast->children.size();
+                size_t num_qualifiers_to_strip = 0;
+
+                /// database.table.column
+                if (num_components >= 3
+                    && !database_name.empty()
+                    && static_cast<const ASTIdentifier &>(*ast->children[0]).name == database_name
+                    && static_cast<const ASTIdentifier &>(*ast->children[1]).name == table_name)
+                {
+                    num_qualifiers_to_strip = 2;
+                }
+
+                /// table.column or alias.column. If num_components > 2, it is like table.nested.column.
+                if (num_components >= 2
+                    && ((!table_name.empty() && static_cast<const ASTIdentifier &>(*ast->children[0]).name == table_name)
+                        || (!alias.empty() && static_cast<const ASTIdentifier &>(*ast->children[0]).name == alias)))
+                {
+                    num_qualifiers_to_strip = 1;
+                }
+
+                if (num_qualifiers_to_strip)
+                {
+                    /// plain column
+                    if (num_components - num_qualifiers_to_strip == 1)
+                    {
+                        String node_alias = ast->tryGetAlias();
+                        ast = ast->children.back();
+                        if (!node_alias.empty())
+                            ast->setAlias(node_alias);
+                    }
+                    else
+                    /// nested column
+                    {
+                        ident->children.erase(ident->children.begin(), ident->children.begin() + num_qualifiers_to_strip);
+                        String new_name;
+                        for (const auto & child : ident->children)
+                        {
+                            if (!new_name.empty())
+                                new_name += '.';
+                            new_name += static_cast<const ASTIdentifier &>(*child.get()).name;
+                        }
+                        ident->name = new_name;
+                    }
+                }
+            }
+        }
+    }
+    else if (typeid_cast<ASTQualifiedAsterisk *>(ast.get()))
+    {
+        if (ast->children.size() != 1)
+            throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
+
+        ASTIdentifier * ident = typeid_cast<ASTIdentifier *>(ast->children[0].get());
+        if (!ident)
+            throw Exception("Logical error: qualified asterisk must have identifier as its child", ErrorCodes::LOGICAL_ERROR);
+
+        size_t num_components = ident->children.size();
+        if (num_components > 2)
+            throw Exception("Qualified asterisk cannot have more than two qualifiers", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+
+        /// database.table.*, table.* or alias.*
+        if (   (num_components == 2
+                && !database_name.empty()
+                && static_cast<const ASTIdentifier &>(*ident->children[0]).name == database_name
+                && static_cast<const ASTIdentifier &>(*ident->children[1]).name == table_name)
+            || (num_components == 0
+                && ((!table_name.empty() && ident->name == table_name)
+                    || (!alias.empty() && ident->name == alias))))
+        {
+            /// Replace to plain asterisk.
+            ast = std::make_shared<ASTAsterisk>(ast->range);
+        }
+    }
+    else
+    {
+        for (auto & child : ast->children)
+        {
+            /// Do not go to FROM, JOIN, UNION.
+            if (!typeid_cast<const ASTTableExpression *>(child.get())
+                && child.get() != select_query->next_union_all.get())
+            {
+                translateQualifiedNamesImpl(child, database_name, table_name, alias);
+            }
+        }
+    }
+}
+
 
 void ExpressionAnalyzer::optimizeIfWithConstantCondition()
 {
@@ -534,6 +686,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
     NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample.getColumnsList());
 
     StoragePtr external_storage = StorageMemory::create(external_table_name, columns);
+    external_storage->startup();
 
     /** There are two ways to perform distributed GLOBAL subqueries.
       *
@@ -993,7 +1146,9 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
             if (!block)
             {
                 /// Interpret subquery with empty result as Null literal
-                ast = std::make_unique<ASTLiteral>(ast->range, Null());
+                auto ast_new = std::make_unique<ASTLiteral>(ast->range, Null());
+                ast_new->setAlias(ast->tryGetAlias());
+                ast = std::move(ast_new);
                 return;
             }
 
@@ -1754,15 +1909,24 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
                 array_join_result_to_source[node->name]    /// PP.Key1 -> ParsedParams.Key1
                     = DataTypeNested::concatenateNestedName(array_join_alias_to_name[table_name], nested_column);
             }
-            else if (array_join_name_to_alias.count(table_name))
+            else if (array_join_name_to_alias.count(node->name))
             {
-                /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams AS PP.
+                /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams.Key1 AS PP.Key1.
                   * That is, the query uses the original array, replicated by itself.
                   */
 
                 String nested_column = DataTypeNested::extractNestedColumnName(node->name);    /// Key1
                 array_join_result_to_source[    /// PP.Key1 -> ParsedParams.Key1
-                    DataTypeNested::concatenateNestedName(array_join_name_to_alias[table_name], nested_column)] = node->name;
+                    array_join_name_to_alias[node->name]] = node->name;
+            }
+            else if (array_join_name_to_alias.count(table_name))
+            {
+                /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams AS PP.
+                 */
+
+                String nested_column = DataTypeNested::extractNestedColumnName(node->name);    /// Key1
+                array_join_result_to_source[    /// PP.Key1 -> ParsedParams.Key1
+                DataTypeNested::concatenateNestedName(array_join_name_to_alias[table_name], nested_column)] = node->name;
             }
         }
     }

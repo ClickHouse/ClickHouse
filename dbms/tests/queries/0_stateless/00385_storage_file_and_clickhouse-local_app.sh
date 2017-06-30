@@ -34,3 +34,16 @@ echo
 pack_unpack_compare "SELECT name, is_aggregate FROM system.functions" "name String, is_aggregate UInt8" "TabSeparated"
 pack_unpack_compare "SELECT name, is_aggregate FROM system.functions" "name String, is_aggregate UInt8" "Native"
 pack_unpack_compare "SELECT name, is_aggregate FROM system.functions" "name String, is_aggregate UInt8" "TSKV"
+echo
+clickhouse-local -q "CREATE TABLE sophisticated_default
+(
+    a UInt8 DEFAULT
+    (
+        SELECT number FROM system.numbers LIMIT 3,1
+    ),
+    b UInt8 ALIAS
+    (
+        SELECT dummy+9 FROM system.one
+    ),
+    c UInt8
+) ENGINE = Memory; SELECT count() FROM system.tables WHERE name='sophisticated_default';" 2>/dev/null

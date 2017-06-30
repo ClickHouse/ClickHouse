@@ -25,7 +25,7 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 #include <Dictionaries/TrieDictionary.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace DB
@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int DICTIONARIES_WAS_NOT_LOADED;
     extern const int UNSUPPORTED_METHOD;
     extern const int UNKNOWN_TYPE;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /** Functions that use plug-ins (external) dictionaries.

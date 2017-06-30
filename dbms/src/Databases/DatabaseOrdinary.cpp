@@ -7,7 +7,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
 #include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -132,7 +132,7 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
     }
 
     /** Tables load faster if they are loaded in sorted (by name) order.
-      * Otherwise (for the ext4 file system), `DirectoryIterator` iterates through them in some order,
+      * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
       */
     std::sort(file_names.begin(), file_names.end());
@@ -179,6 +179,60 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
             thread_pool->schedule(task);
         else
             task();
+    }
+
+    if (thread_pool)
+        thread_pool->wait();
+
+    /// After all tables was basically initialized, startup them.
+    startupTables(thread_pool);
+}
+
+
+void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
+{
+    LOG_INFO(log, "Starting up tables.");
+
+    StopwatchWithLock watch;
+    std::atomic<size_t> tables_processed {0};
+    size_t total_tables = tables.size();
+
+    auto task_function = [&](Tables::iterator begin, Tables::iterator end)
+    {
+        for (Tables::iterator it = begin; it != end; ++it)
+        {
+            if ((++tables_processed) % PRINT_MESSAGE_EACH_N_TABLES == 0
+                || watch.lockTestAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+            {
+                LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
+                watch.restart();
+            }
+
+            it->second->startup();
+        }
+    };
+
+    const size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
+    size_t num_bunches = (total_tables + bunch_size - 1) / bunch_size;
+
+    Tables::iterator begin = tables.begin();
+    for (size_t i = 0; i < num_bunches; ++i)
+    {
+        auto end = begin;
+
+        if (i + 1 == num_bunches)
+            end = tables.end();
+        else
+            std::advance(end, bunch_size);
+
+        auto task = std::bind(task_function, begin, end);
+
+        if (thread_pool)
+            thread_pool->schedule(task);
+        else
+            task();
+
+        begin = end;
     }
 
     if (thread_pool)
@@ -288,7 +342,7 @@ void DatabaseOrdinary::renameTable(
     StoragePtr table = tryGetTable(table_name);
 
     if (!table)
-        throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try

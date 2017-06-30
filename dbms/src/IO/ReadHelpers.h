@@ -14,8 +14,8 @@
 #include <common/exp10.h>
 
 #include <Core/Types.h>
-#include <Core/StringRef.h>
 #include <Core/Uuid.h>
+#include <common/StringRef.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/Arena.h>
@@ -24,7 +24,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
-#include <city.h>
 
 #define DEFAULT_MAX_STRING_SIZE 0x00FFFFFFULL
 
@@ -38,6 +37,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int CANNOT_PARSE_NUMBER;
 }
 
 /// Helper functions for formatted input.
@@ -64,21 +64,6 @@ inline char parseEscapeSequence(char c)
             return '\0';
         default:
             return c;
-    }
-}
-
-inline char unhex(char c)
-{
-    switch (c)
-    {
-        case '0' ... '9':
-            return c - '0';
-        case 'a' ... 'f':
-            return c - 'a' + 10;
-        case 'A' ... 'F':
-            return c - 'A' + 10;
-        default:
-            return 0;
     }
 }
 
@@ -261,7 +246,12 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 if (std::is_signed<T>::value)
                     negative = true;
                 else
-                    return ReturnType(false);
+                {
+                    if (throw_exception)
+                        throw Exception("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
+                    else
+                        return ReturnType(false);
+                }
                 break;
             case '0':
             case '1':
@@ -508,12 +498,15 @@ void readString(String & s, ReadBuffer & buf);
 void readEscapedString(String & s, ReadBuffer & buf);
 
 void readQuotedString(String & s, ReadBuffer & buf);
+void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf);
+void readDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readJSONString(String & s, ReadBuffer & buf);
 
 void readBackQuotedString(String & s, ReadBuffer & buf);
+void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readStringUntilEOF(String & s, ReadBuffer & buf);
 
@@ -539,13 +532,13 @@ void readStringInto(Vector & s, ReadBuffer & buf);
 template <typename Vector>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf);
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readQuotedStringInto(Vector & s, ReadBuffer & buf);
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readDoubleQuotedStringInto(Vector & s, ReadBuffer & buf);
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readBackQuotedStringInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
@@ -687,11 +680,10 @@ template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
-inline void readBinary(String & x,     ReadBuffer & buf) { readStringBinary(x, buf); }
-inline void readBinary(uint128 & x,    ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(UInt128 & x,    ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(UInt256 & x,    ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(LocalDate & x,     ReadBuffer & buf)     { readPODBinary(x, buf); }
+inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
+inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(LocalDateTime & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 
@@ -704,9 +696,9 @@ template <typename T>
 inline typename std::enable_if<std::is_floating_point<T>::value, void>::type
 readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
-inline void readText(bool & x,         ReadBuffer & buf) { readBoolText(x, buf); }
-inline void readText(String & x,     ReadBuffer & buf) { readEscapedString(x, buf); }
-inline void readText(LocalDate & x,     ReadBuffer & buf) { readDateText(x, buf); }
+inline void readText(bool & x, ReadBuffer & buf) { readBoolText(x, buf); }
+inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
+inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 inline void readText(Uuid & x,          ReadBuffer & buf) { readUuidText(x, buf); }
 
@@ -717,7 +709,7 @@ template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
-inline void readQuoted(String & x,     ReadBuffer & buf) { readQuotedString(x, buf); }
+inline void readQuoted(String & x, ReadBuffer & buf) { readQuotedString(x, buf); }
 
 inline void readQuoted(LocalDate & x, ReadBuffer & buf)
 {
@@ -739,7 +731,7 @@ template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
-inline void readDoubleQuoted(String & x,     ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
+inline void readDoubleQuoted(String & x, ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
 
 inline void readDoubleQuoted(LocalDate & x, ReadBuffer & buf)
 {
@@ -779,7 +771,7 @@ inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 inline void readCSV(String & x, ReadBuffer & buf, const char delimiter = ',') { readCSVString(x, buf, delimiter); }
-inline void readCSV(LocalDate & x,     ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(Uuid & x,          ReadBuffer & buf) { readCSVSimple(x, buf); }
 

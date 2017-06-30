@@ -31,6 +31,7 @@
 #include <Storages/StorageSet.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFile.h>
+#include <Storages/StorageDictionary.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <unistd.h>
@@ -279,6 +280,13 @@ StoragePtr StorageFactory::get(
             materialized_columns, alias_columns, column_defaults,
             attach);
     }
+    else if (name == "Dictionary")
+    {
+
+        return StorageDictionary::create(
+            table_name, context, query, columns,
+            materialized_columns, alias_columns, column_defaults);
+    }
     else if (name == "TinyLog")
     {
         return StorageTinyLog::create(
@@ -518,7 +526,7 @@ StoragePtr StorageFactory::get(
           *
           * db, table - in which table to put data from buffer.
           * num_buckets - level of parallelism.
-          * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for pushing out from the buffer.
+          * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for flushing the buffer.
           */
 
         ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
@@ -554,7 +562,9 @@ StoragePtr StorageFactory::get(
             table_name, columns,
             materialized_columns, alias_columns, column_defaults,
             context,
-            num_buckets, {min_time, min_rows, min_bytes}, {max_time, max_rows, max_bytes},
+            num_buckets,
+            StorageBuffer::Thresholds{min_time, min_rows, min_bytes},
+            StorageBuffer::Thresholds{max_time, max_rows, max_bytes},
             destination_database, destination_table);
     }
     else if (name == "TrivialBuffer")
@@ -602,7 +612,8 @@ StoragePtr StorageFactory::get(
             table_name, columns,
             materialized_columns, alias_columns, column_defaults,
             context, num_blocks_to_deduplicate, path_in_zk_for_deduplication,
-            {min_time, min_rows, min_bytes}, {max_time, max_rows, max_bytes},
+            StorageTrivialBuffer::Thresholds{min_time, min_rows, min_bytes},
+            StorageTrivialBuffer::Thresholds{max_time, max_rows, max_bytes},
             destination_database, destination_table);
     }
     else if (endsWith(name, "MergeTree"))

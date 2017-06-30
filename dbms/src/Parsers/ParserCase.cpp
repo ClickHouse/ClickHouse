@@ -12,12 +12,12 @@ bool ParserCase::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_case{"CASE", true, true};
-    ParserString s_when{"WHEN", true, true};
-    ParserString s_then{"THEN", true, true};
-    ParserString s_else{"ELSE", true, true};
-    ParserString s_end{ "END",  true, true};
+    ParserWhitespaceOrComments ws;
+    ParserKeyword s_case{"CASE"};
+    ParserKeyword s_when{"WHEN"};
+    ParserKeyword s_then{"THEN"};
+    ParserKeyword s_else{"ELSE"};
+    ParserKeyword s_end{ "END"};
     ParserExpressionWithOptionalAlias p_expr{false};
 
     if (!s_case.parse(pos, end, node, max_parsed_pos, expected))

@@ -45,6 +45,9 @@ public:
         const NamesAndTypesList & alias_columns,
         const ColumnDefaults & column_defaults,
         const ASTModifier & engine_modifier) override;
+
+private:
+    void startupTables(ThreadPool * thread_pool);
 };
 
 }

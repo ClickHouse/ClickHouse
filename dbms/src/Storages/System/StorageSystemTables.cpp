@@ -30,11 +30,6 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemTables::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 static ColumnWithTypeAndName getFilteredDatabases(const ASTPtr & query, const Context & context)
 {
@@ -61,7 +56,7 @@ BlockInputStreams StorageSystemTables::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

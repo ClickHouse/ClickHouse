@@ -24,6 +24,7 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query);
 /** Create a table by its definition, without using InterpreterCreateQuery.
   *  (InterpreterCreateQuery has more complex functionality, and it can not be used if the database has not been created yet)
   * Returns the table name and the table itself.
+  * You must subsequently call IStorage::startup method to use the table.
   */
 std::pair<String, StoragePtr> createTableFromDefinition(
     const String & definition,
@@ -43,6 +44,9 @@ private:
 
 public:
     DatabaseSnaphotIterator(Tables & tables_)
+        : tables(tables_), it(tables.begin()) {}
+
+    DatabaseSnaphotIterator(Tables && tables_)
         : tables(tables_), it(tables.begin()) {}
 
     void next() override

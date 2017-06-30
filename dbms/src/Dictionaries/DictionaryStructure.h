@@ -5,7 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <numeric>
 #include <vector>
 #include <string>

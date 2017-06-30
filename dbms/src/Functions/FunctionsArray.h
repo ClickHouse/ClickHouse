@@ -14,11 +14,11 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Functions/IFunction.h>
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 #include <Functions/ObjectPool.h>
 #include <Common/StringUtils.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 #include <unordered_map>
 #include <numeric>
@@ -37,8 +37,8 @@ namespace ErrorCodes
 
 /** Array functions:
   *
-  * array(c1, c2, ...) - create an array of constants.
-  * arrayElement(arr, i) - get the array element by index.
+  * array(c1, c2, ...) - create an array.
+  * arrayElement(arr, i) - get the array element by index. If index is not constant and out of range - return default value of data type.
   * The index begins with 1. Also, the index can be negative - then it is counted from the end of the array.
   * has(arr, x) - whether there is an element x in the array.
   * indexOf(arr, x) - returns the index of the element x (starting with 1), if it exists in the array, or 0 if it is not.
@@ -48,8 +48,8 @@ namespace ErrorCodes
   * arrayUniq(arr1, arr2, ...) - counts the number of different tuples from the elements in the corresponding positions in several arrays.
   *
   * arrayEnumerateUniq(arr)
-  *  - outputs an array parallel to this, where for each element specified
-  *  how much times this element was encountered before among elements with the same value.
+  *  - outputs an array parallel (having same size) to this, where for each element specified
+  *  how much times this element was encountered before (including this element) among elements with the same value.
   *  For example: arrayEnumerateUniq([10, 20, 10, 30]) = [1, 1, 2, 1]
   * arrayEnumerateUniq(arr1, arr2...)
   *  - for tuples from elements in the corresponding positions in several arrays.
@@ -57,6 +57,7 @@ namespace ErrorCodes
   * emptyArrayToSingle(arr) - replace empty arrays with arrays of one element with a default value.
   *
   * arrayReduce('agg', arr1, ...) - apply the aggregate function `agg` to arrays `arr1...`
+  *  If multiple arrays passed, then elements on corresponding positions are passed as multiple arguments to the aggregate function.
   */
 
 
@@ -193,7 +194,7 @@ private:
 
     static bool hasNull(const U & value, const PaddedPODArray<UInt8> & null_map, size_t i)
     {
-        throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+        throw Exception{"Logical error: constant column cannot have null map.", ErrorCodes::LOGICAL_ERROR};
     }
 
     /// Both function arguments are ordinary.
@@ -1033,7 +1034,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         /// If one or both arguments passed to this function are nullable,
-        /// we create a new block that contains non-nullable parameters:
+        /// we create a new block that contains non-nullable arguments:
         /// - if the 1st argument is a non-constant array of nullable values,
         /// it is turned into a non-constant array of ordinary values + a null
         /// byte map;
@@ -1199,7 +1200,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
-    /// Initially allocate a piece of memory for 512 elements.
+    /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     template <typename T>
@@ -1239,7 +1240,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
-    /// Initially allocate a piece of memory for 512 elements.
+    /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     template <typename T>
@@ -1343,7 +1344,7 @@ public:
 class FunctionArrayReverse : public IFunction
 {
 public:
-    static constexpr auto name = "reverse";
+    static constexpr auto name = "arrayReverse";
     static FunctionPtr create(const Context & context);
 
     String getName() const override;
@@ -1382,7 +1383,7 @@ class IAggregateFunction;
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
 /** Applies an aggregate function to array and returns its result.
-  * If aggregate function has multiple arguments, then this function can be applied to multiple arrays with the same size.
+  * If aggregate function has multiple arguments, then this function can be applied to multiple arrays of the same size.
   */
 class FunctionArrayReduce : public IFunction
 {
@@ -1406,9 +1407,9 @@ private:
 };
 
 
-struct NameHas            { static constexpr auto name = "has"; };
-struct NameIndexOf        { static constexpr auto name = "indexOf"; };
-struct NameCountEqual    { static constexpr auto name = "countEqual"; };
+struct NameHas { static constexpr auto name = "has"; };
+struct NameIndexOf { static constexpr auto name = "indexOf"; };
+struct NameCountEqual { static constexpr auto name = "countEqual"; };
 
 using FunctionHas = FunctionArrayIndex<IndexToOne, NameHas>;
 using FunctionIndexOf = FunctionArrayIndex<IndexIdentity, NameIndexOf>;

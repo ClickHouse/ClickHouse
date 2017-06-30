@@ -175,18 +175,27 @@ struct StringComparisonImpl
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
+
         for (size_t i = 0; i < size; ++i)
         {
+            /// Trailing zero byte of the smaller string is included in the comparison.
+            size_t a_size;
+            size_t b_size;
+            int res;
             if (i == 0)
             {
-                /// The trailing zero in the smaller string is included in the comparison.
-                c[i] = Op::apply(memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0], b_offsets[0])), 0);
+                a_size = a_offsets[0];
+                b_size = b_offsets[0];
+                res = memcmp(&a_data[0], &b_data[0], std::min(a_size, b_size));
             }
             else
             {
-                c[i] = Op::apply(memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]],
-                    std::min(a_offsets[i] - a_offsets[i - 1], b_offsets[i] - b_offsets[i - 1])), 0);
+                a_size = a_offsets[i] - a_offsets[i - 1];
+                b_size = b_offsets[i] - b_offsets[i - 1];
+                res = memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]], std::min(a_size, b_size));
             }
+
+            c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_size, b_size));
         }
     }
 
@@ -218,18 +227,20 @@ struct StringComparisonImpl
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
-        ColumnString::Offset_t b_n = b.size();
+        ColumnString::Offset_t b_size = b.size() + 1;
         const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
         for (size_t i = 0; i < size; ++i)
         {
+            /// Trailing zero byte of the smaller string is included in the comparison.
             if (i == 0)
             {
-                c[i] = Op::apply(memcmp(&a_data[0], b_data, std::min(a_offsets[0], b_n + 1)), 0);
+                int res = memcmp(&a_data[0], b_data, std::min(a_offsets[0], b_size));
+                c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_offsets[0], b_size));
             }
             else
             {
-                c[i] = Op::apply(memcmp(&a_data[a_offsets[i - 1]], b_data,
-                    std::min(a_offsets[i] - a_offsets[i - 1], b_n + 1)), 0);
+                int res = memcmp(&a_data[a_offsets[i - 1]], b_data, std::min(a_offsets[i] - a_offsets[i - 1], b_size));
+                c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_offsets[i] - a_offsets[i - 1], b_size));
             }
         }
     }
@@ -332,7 +343,11 @@ struct StringComparisonImpl
         const std::string & b,
         UInt8 & c)
     {
-        c = Op::apply(memcmp(a.data(), b.data(), std::min(a.size(), b.size()) + 1), 0);
+        size_t a_n = a.size();
+        size_t b_n = b.size();
+
+        int res = memcmp(a.data(), b.data(), std::min(a_n, b_n));
+        c = Op::apply(res, 0) || (res == 0 && Op::apply(a_n, b_n));
     }
 };
 
@@ -1023,36 +1038,36 @@ public:
         const DataTypeTuple * right_tuple = nullptr;
 
         false
-            || (right_is_date         = typeid_cast<const DataTypeDate *>(arguments[1].get()))
-            || (right_is_date_time     = typeid_cast<const DataTypeDateTime *>(arguments[1].get()))
-            || (right_is_uuid          = typeid_cast<const DataTypeUuid *>(arguments[1].get()))
-            || (right_is_enum8         = typeid_cast<const DataTypeEnum8 *>(arguments[1].get()))
-            || (right_is_enum16     = typeid_cast<const DataTypeEnum16 *>(arguments[1].get()))
-            || (right_is_string     = typeid_cast<const DataTypeString *>(arguments[1].get()))
+            || (right_is_date = typeid_cast<const DataTypeDate *>(arguments[1].get()))
+            || (right_is_date_time = typeid_cast<const DataTypeDateTime *>(arguments[1].get()))
+            || (right_is_uuid = typeid_cast<const DataTypeUuid *>(arguments[1].get()))
+            || (right_is_enum8 = typeid_cast<const DataTypeEnum8 *>(arguments[1].get()))
+            || (right_is_enum16 = typeid_cast<const DataTypeEnum16 *>(arguments[1].get()))
+            || (right_is_string = typeid_cast<const DataTypeString *>(arguments[1].get()))
             || (right_is_fixed_string = typeid_cast<const DataTypeFixedString *>(arguments[1].get()))
-            || (right_tuple         = typeid_cast<const DataTypeTuple *>(arguments[1].get()));
+            || (right_tuple = typeid_cast<const DataTypeTuple *>(arguments[1].get()));
 
         const bool right_is_enum = right_is_enum8 || right_is_enum16;
 
-        if (!(    (arguments[0]->behavesAsNumber() && arguments[1]->behavesAsNumber() && !(left_is_enum ^ right_is_enum))
-            ||    ((left_is_string || left_is_fixed_string) && (right_is_string || right_is_fixed_string))
-            ||    (left_is_date && right_is_date)
-            ||    (left_is_date && right_is_string)    /// You can compare the date, datetime and an enumeration with a constant string.
-            ||    (left_is_string && right_is_date)
-            ||    (left_is_date_time && right_is_date_time)
-            ||    (left_is_date_time && right_is_string)
-            ||    (left_is_string && right_is_date_time)
-            ||    (left_is_date_time && right_is_date_time)
-            ||    (left_is_date_time && right_is_string)
-            ||    (left_is_string && right_is_date_time)
-            ||    (left_is_uuid && right_is_uuid)
-            ||    (left_is_uuid && right_is_string)
-            ||    (left_is_string && right_is_uuid)
-            ||    (left_is_enum && right_is_enum && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
-            ||    (left_is_enum && right_is_string)
-            ||    (left_is_string && right_is_enum)
-            ||    (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
-            ||  (arguments[0]->equals(*arguments[1]))))
+        if (!((arguments[0]->behavesAsNumber() && arguments[1]->behavesAsNumber() && !(left_is_enum ^ right_is_enum))
+            || ((left_is_string || left_is_fixed_string) && (right_is_string || right_is_fixed_string))
+            || (left_is_date && right_is_date)
+            || (left_is_date && right_is_string)    /// You can compare the date, datetime and an enumeration with a constant string.
+            || (left_is_string && right_is_date)
+            || (left_is_date_time && right_is_date_time)
+            || (left_is_date_time && right_is_string)
+            || (left_is_string && right_is_date_time)
+            || (left_is_date_time && right_is_date_time)
+            || (left_is_date_time && right_is_string)
+            || (left_is_string && right_is_date_time)
+            || (left_is_uuid && right_is_uuid)
+            || (left_is_uuid && right_is_string)
+            || (left_is_string && right_is_uuid)
+            || (left_is_enum && right_is_enum && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
+            || (left_is_enum && right_is_string)
+            || (left_is_string && right_is_enum)
+            || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+            || (arguments[0]->equals(*arguments[1]))))
             throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
                 " of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1078,17 +1093,17 @@ public:
 
         if (left_is_num && right_is_num)
         {
-            if (!(    executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<UInt16>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<UInt32>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<UInt64>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<UInt128>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Int8>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Int16>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Int32>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Int64>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Float32>(block, result, col_left_untyped, col_right_untyped)
-                ||    executeNumLeftType<Float64>(block, result, col_left_untyped, col_right_untyped)))
+            if (!( executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<UInt16>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<UInt32>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<UInt64>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<UInt128>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int8>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int16>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int32>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int64>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Float32>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Float64>(block, result, col_left_untyped, col_right_untyped)))
                 throw Exception("Illegal column " + col_left_untyped->getName()
                     + " of first argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
@@ -1104,15 +1119,15 @@ public:
                 block, result, col_left_untyped, col_right_untyped,
                 col_with_type_and_name_left.type, col_with_type_and_name_right.type,
                 left_is_num, right_is_num);
-}
+    }
 };
 
 
-using FunctionEquals = FunctionComparison<EqualsOp,             NameEquals>            ;
-using FunctionNotEquals = FunctionComparison<NotEqualsOp,         NameNotEquals>        ;
-using FunctionLess = FunctionComparison<LessOp,                 NameLess>            ;
-using FunctionGreater = FunctionComparison<GreaterOp,             NameGreater>        ;
-using FunctionLessOrEquals = FunctionComparison<LessOrEqualsOp,         NameLessOrEquals>    ;
-using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp,    NameGreaterOrEquals>;
+using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
+using FunctionNotEquals = FunctionComparison<NotEqualsOp, NameNotEquals>;
+using FunctionLess = FunctionComparison<LessOp, NameLess>;
+using FunctionGreater = FunctionComparison<GreaterOp, NameGreater>;
+using FunctionLessOrEquals = FunctionComparison<LessOrEqualsOp, NameLessOrEquals>;
+using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>;
 
 }

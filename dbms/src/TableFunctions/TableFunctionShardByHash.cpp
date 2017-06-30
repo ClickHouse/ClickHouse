@@ -9,6 +9,7 @@
 #include <Interpreters/getClusterName.h>
 #include <Common/SipHash.h>
 #include <TableFunctions/TableFunctionShardByHash.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 
 namespace DB
@@ -71,13 +72,21 @@ StoragePtr TableFunctionShardByHash::execute(const ASTPtr & ast_function, const 
 
     std::shared_ptr<Cluster> shard(cluster->getClusterWithSingleShard(shard_index).release());
 
-    return StorageDistributed::create(
+    auto res = StorageDistributed::createWithOwnCluster(
         getName(),
         std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*shard, remote_database, remote_table, context)),
         remote_database,
         remote_table,
         shard,
         context);
+    res->startup();
+    return res;
+}
+
+
+void registerTableFunctionShardByHash(TableFunctionFactory & factory)
+{
+    TableFunctionFactory::instance().registerFunction<TableFunctionShardByHash>();
 }
 
 }

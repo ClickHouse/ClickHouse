@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -52,44 +53,32 @@ StorageMergeTree::StorageMergeTree(
          context_, primary_expr_ast_, date_column_name_,
          sampling_expression_, index_granularity_, merging_params_,
          settings_, database_name_ + "." + table_name, false, attach),
-    reader(data), writer(data, context), merger(data, context.getBackgroundPool()),
+    reader(data), writer(data), merger(data, context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
     data.loadDataParts(has_force_restore_data_flag);
-    data.clearOldParts();
 
-    /// Temporary directories contain unfinalized results of Merges (after forced restart)
+    if (!attach)
+    {
+        if (!data.getDataParts().empty())
+            throw Exception("Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
+    }
+    else
+    {
+        data.clearOldParts();
+    }
+
+    /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
     data.clearOldTemporaryDirectories(0);
 
     increment.set(data.getMaxDataPartIndex());
 }
 
-StoragePtr StorageMergeTree::create(
-    const String & path_, const String & database_name_, const String & table_name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    bool attach,
-    Context & context_,
-    ASTPtr & primary_expr_ast_,
-    const String & date_column_name_,
-    const ASTPtr & sampling_expression_,
-    size_t index_granularity_,
-    const MergeTreeData::MergingParams & merging_params_,
-    bool has_force_restore_data_flag_,
-    const MergeTreeSettings & settings_)
-{
-    auto res = make_shared(
-        path_, database_name_, table_name_,
-        columns_, materialized_columns_, alias_columns_, column_defaults_, attach,
-        context_, primary_expr_ast_, date_column_name_,
-        sampling_expression_, index_granularity_, merging_params_, has_force_restore_data_flag_, settings_
-    );
-    res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res.get()));
 
-    return res;
+void StorageMergeTree::startup()
+{
+    merge_task_handle = background_pool.addTask([this] { return mergeTask(); });
 }
 
 
@@ -99,7 +88,8 @@ void StorageMergeTree::shutdown()
         return;
     shutdown_called = true;
     merger.cancelForever();
-    background_pool.removeTask(merge_task_handle);
+    if (merge_task_handle)
+        background_pool.removeTask(merge_task_handle);
 }
 
 
@@ -114,9 +104,9 @@ BlockInputStreams StorageMergeTree::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
-    return reader.read(column_names, query, context, processed_stage, max_block_size, threads, nullptr, 0);
+    return reader.read(column_names, query, context, processed_stage, max_block_size, num_streams, nullptr, 0);
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & query, const Settings & settings)
@@ -177,6 +167,7 @@ void StorageMergeTree::alter(
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
 
     bool primary_key_is_modified = false;
+
     ASTPtr new_primary_key_ast = data.primary_expr_ast;
 
     for (const AlterCommand & param : params)
@@ -196,8 +187,10 @@ void StorageMergeTree::alter(
 
     MergeTreeData::DataParts parts = data.getAllDataParts();
     for (const MergeTreeData::DataPartPtr & part : parts)
+    {
         if (auto transaction = data.alterDataPart(part, columns_for_parts, new_primary_key_ast, false))
             transactions.push_back(std::move(transaction));
+    }
 
     auto table_hard_lock = lockStructureForAlter();
 
@@ -346,7 +339,7 @@ bool StorageMergeTree::merge(
 
     merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
 
-    if (std::shared_ptr<PartLog> part_log = context.getPartLog())
+    if (auto part_log = context.getPartLog(database_name, table_name))
     {
         PartLogElement elem;
         elem.event_time = time(0);
@@ -402,13 +395,15 @@ bool StorageMergeTree::mergeTask()
     }
 }
 
-void StorageMergeTree::dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings &)
+
+void StorageMergeTree::clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings &)
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = merger.cancel();
-    /// Waits for completion of merge and does not start new ones.
-    auto lock = lockForAlter();
+
+    auto lock_read_structure = lockStructure(false);
+    auto lock_write_data = lockDataForAlter();
 
     DayNum_t month = MergeTreeData::getMonthDayNum(partition);
     MergeTreeData::DataParts parts = data.getDataParts();
@@ -446,7 +441,10 @@ void StorageMergeTree::dropColumnFromPartition(const ASTPtr & query, const Field
 
     for (auto & transaction : transactions)
         transaction->commit();
+
+    data.recalculateColumnSizes();
 }
+
 
 void StorageMergeTree::dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings)
 {

@@ -12,7 +12,7 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/ExternalDictionaries.h>
-#include <ext/map.hpp>
+#include <ext/map.h>
 #include <mutex>
 
 namespace DB
@@ -39,10 +39,6 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
 {
 }
 
-StoragePtr StorageSystemDictionaries::create(const std::string & name)
-{
-    return make_shared(name);
-}
 
 BlockInputStreams StorageSystemDictionaries::read(
     const Names & column_names,

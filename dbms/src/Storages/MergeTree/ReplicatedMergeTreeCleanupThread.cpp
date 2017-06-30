@@ -136,19 +136,11 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
         timed_blocks.push_back(std::make_pair(stat.czxid, block));
     }
 
-    zkutil::Ops ops;
     std::sort(timed_blocks.begin(), timed_blocks.end(), std::greater<std::pair<Int64, String>>());
     for (size_t i = storage.data.settings.replicated_deduplication_window; i < timed_blocks.size(); ++i)
     {
-        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/number", -1));
-        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/checksum", -1));
-        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second, -1));
-
-        if (ops.size() > 400 || i + 1 == timed_blocks.size())
-        {
-            zookeeper->multi(ops);
-            ops.clear();
-        }
+        /// TODO After about half a year, we could replace this to multi op, because there will be no obsolete children nodes.
+        zookeeper->removeRecursive(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second);
     }
 
     LOG_TRACE(log, "Cleared " << blocks.size() - storage.data.settings.replicated_deduplication_window << " old blocks from ZooKeeper");
