@@ -69,7 +69,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
         ws.ignore(pos, end);
     }
 
-    /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction
+    /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction()
     if (s_from.ignore(pos, end, max_parsed_pos, expected))
     {
         ws.ignore(pos, end);
@@ -217,18 +217,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
         ws.ignore(pos, end);
     }
 
-    // UNION ALL select query
-    if (ParserKeyword("UNION ALL").ignore(pos, end, max_parsed_pos, expected))
-    {
-        ParserSelectQuery select_p;
-        if (!select_p.parse(pos, end, select_query->next_union_all, max_parsed_pos, expected))
-            return false;
-        auto next_select_query = static_cast<ASTSelectQuery *>(&*select_query->next_union_all);
-        next_select_query->prev_union_all = node.get();
-
-        ws.ignore(pos, end);
-    }
-
     select_query->range = StringRange(begin, pos);
 
     select_query->children.push_back(select_query->select_expression_list);
@@ -254,9 +242,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
         select_query->children.push_back(select_query->limit_length);
     if (select_query->settings)
         select_query->children.push_back(select_query->settings);
-
-    if (select_query->next_union_all)
-        select_query->children.push_back(select_query->next_union_all);
 
     return true;
 }

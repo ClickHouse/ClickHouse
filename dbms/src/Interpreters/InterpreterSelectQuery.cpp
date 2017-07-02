@@ -647,8 +647,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
             query_table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
 
         /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
-        if (query_analyzer->hasAggregation())
-            interpreter_subquery->ignoreWithTotals();
+//        if (query_analyzer->hasAggregation())
+//            interpreter_subquery->ignoreWithTotals();
     }
 
     if (query.sample_size() && (!storage || !storage->supportsSampling()))

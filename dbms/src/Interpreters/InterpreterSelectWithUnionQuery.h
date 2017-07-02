@@ -8,6 +8,9 @@
 namespace DB
 {
 
+class InterpreterSelectQuery;
+
+
 /** Interprets one or multiple SELECT queries inside UNION ALL chain.
   */
 class InterpreterSelectWithUnionQuery : public IInterpreter
@@ -26,7 +29,12 @@ public:
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0);
 
+    ~InterpreterSelectWithUnionQuery();
+
     BlockIO execute() override;
+
+    /// Execute the query without union of streams.
+    BlockInputStreams executeWithoutUnion();
 
     DataTypes getReturnTypes();
     Block getSampleBlock();
@@ -36,11 +44,12 @@ public:
         const Context & context_);
 
 private:
-
     ASTPtr query_ptr;
     Context context;
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth;
+
+    std::vector<std::unique_ptr<InterpreterSelectQuery>> nested_interpreters;
 };
 
 }

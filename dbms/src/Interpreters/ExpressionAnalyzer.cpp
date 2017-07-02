@@ -363,8 +363,7 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const String 
         for (auto & child : ast->children)
         {
             /// Do not go to FROM, JOIN, UNION.
-            if (!typeid_cast<const ASTTableExpression *>(child.get())
-                && child.get() != select_query->next_union_all.get())
+            if (!typeid_cast<const ASTTableExpression *>(child.get()))
             {
                 translateQualifiedNamesImpl(child, database_name, table_name, alias);
             }

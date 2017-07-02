@@ -71,8 +71,7 @@ public:
      */
     BlockIO execute() override;
 
-    /** Execute the query without union of threads, if it is possible.
-     */
+    /// Execute the query without union of streams.
     const BlockInputStreams & executeWithoutUnion();
 
     DataTypes getReturnTypes();
