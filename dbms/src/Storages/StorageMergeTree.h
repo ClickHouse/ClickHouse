@@ -61,13 +61,13 @@ public:
 
     /** Perform the next step in combining the parts.
       */
-    bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override
+    bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings) override
     {
         return merge(settings.min_bytes_to_use_direct_io, true, partition, final, deduplicate);
     }
 
     void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
-    void dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
+    void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
     void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
     void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
 

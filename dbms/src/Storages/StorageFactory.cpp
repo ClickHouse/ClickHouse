@@ -282,8 +282,9 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "Dictionary")
     {
+
         return StorageDictionary::create(
-            table_name, database_name, context, query, columns,
+            table_name, context, query, columns,
             materialized_columns, alias_columns, column_defaults);
     }
     else if (name == "TinyLog")

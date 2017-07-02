@@ -144,9 +144,9 @@ void StorageMaterializedView::drop()
     }
 }
 
-bool StorageMaterializedView::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
+bool StorageMaterializedView::optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
 {
-    return getInnerTable()->optimize(partition, final, deduplicate, settings);
+    return getInnerTable()->optimize(query, partition, final, deduplicate, settings);
 }
 
 StoragePtr StorageMaterializedView::getInnerTable() const

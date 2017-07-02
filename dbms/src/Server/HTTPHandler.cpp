@@ -136,14 +136,9 @@ static std::chrono::steady_clock::duration parseSessionTimeout(const HTMLForm & 
         unsigned max_session_timeout = config.getUInt("max_session_timeout", 3600);
         std::string session_timeout_str = params.get("session_timeout");
 
-        try
-        {
-            session_timeout = parse<unsigned>(session_timeout_str);
-        }
-        catch (...)
-        {
-            throw Exception(getCurrentExceptionMessage(false) + ". Invalid session timeout", ErrorCodes::INVALID_SESSION_TIMEOUT);
-        }
+        ReadBufferFromString buf(session_timeout_str);
+        if (!tryReadIntText(session_timeout, buf) || !buf.eof())
+            throw Exception("Invalid session timeout: '" + session_timeout_str + "'", ErrorCodes::INVALID_SESSION_TIMEOUT);
 
         if (session_timeout > max_session_timeout)
             throw Exception("Session timeout '" + session_timeout_str + "' is larger than max_session_timeout: " + toString(max_session_timeout)
