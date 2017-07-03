@@ -45,17 +45,11 @@ enum ClusterOperation
 /// lacks support of them for simplicity. Date, DateTime and Strings (eg. with the
 /// Levenshtein distance) could be theoretically supported, as well as custom distance
 /// functions (eg. Hamming distance) using Clickhouse lambdas.
-template<typename CentroidsType>
+template <typename CentroidsType>
 class Centroids
 {
 public:
-    Centroids() {}
-
-    Centroids(const Centroids & c): centroids(c.centroids) {}
-
-    virtual ~Centroids() {}
-
-    bool fill (const IColumn* centroids_array_untyped)
+    bool fill(const IColumn* centroids_array_untyped)
      {
         const ColumnArray * centroids_array = typeid_cast<const ColumnArray *>(centroids_array_untyped);
 
@@ -98,9 +92,9 @@ public:
 
     template <typename InputType>
     bool findCluster(
-            const IColumn* in_untyped,
-            IColumn* out_untyped,
-            ClusterOperation operation)
+        const IColumn* in_untyped,
+        IColumn* out_untyped,
+        ClusterOperation operation)
     {
         if (operation == ClusterOperation::FindClusterIndex)
             return findClusterTyped<InputType, UInt64>(in_untyped, out_untyped, operation);
