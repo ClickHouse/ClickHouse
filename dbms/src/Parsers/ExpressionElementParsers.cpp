@@ -18,7 +18,7 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserCase.h>
 
 #include <Parsers/ExpressionElementParsers.h>
@@ -113,7 +113,7 @@ bool ParserSubquery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
     Pos begin = pos;
     ASTPtr select_node;
     ParserString open("("), close(")");
-    ParserSelectQuery select;
+    ParserSelectWithUnionQuery select;
     ParserWhitespaceOrComments ws;
 
     if (!open.ignore(pos, end, max_parsed_pos, expected))

@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public StorageView
+class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageMaterializedView>;
 
@@ -31,11 +31,11 @@ public:
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
-    bool supportsSampling() const override             { return getInnerTable()->supportsSampling(); }
-    bool supportsPrewhere() const override             { return getInnerTable()->supportsPrewhere(); }
+    bool supportsSampling() const override          { return getInnerTable()->supportsSampling(); }
+    bool supportsPrewhere() const override          { return getInnerTable()->supportsPrewhere(); }
     bool supportsFinal() const override             { return getInnerTable()->supportsFinal(); }
-    bool supportsParallelReplicas() const override     { return getInnerTable()->supportsParallelReplicas(); }
-    bool supportsIndexForIn() const override         { return getInnerTable()->supportsIndexForIn(); }
+    bool supportsParallelReplicas() const override  { return getInnerTable()->supportsParallelReplicas(); }
+    bool supportsIndexForIn() const override        { return getInnerTable()->supportsIndexForIn(); }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
     void drop() override;
@@ -50,6 +50,14 @@ public:
         unsigned num_streams) override;
 
 private:
+    String select_database_name;
+    String select_table_name;
+    String table_name;
+    String database_name;
+    ASTSelectQuery inner_query;
+    Context & context;
+    NamesAndTypesListPtr columns;
+
     StorageMaterializedView(
         const String & table_name_,
         const String & database_name_,

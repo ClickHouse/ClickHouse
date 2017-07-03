@@ -4,7 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 
 
 namespace DB
@@ -273,8 +273,9 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
                 return false;
 
             /// For engine VIEW, you also need to read AS SELECT
-            if (storage && (typeid_cast<ASTFunction &>(*storage).name == "View"
-                        || typeid_cast<ASTFunction &>(*storage).name == "MaterializedView"))
+            if (storage
+                && (typeid_cast<ASTFunction &>(*storage).name == "View"
+                    || typeid_cast<ASTFunction &>(*storage).name == "MaterializedView"))
             {
                 if (!s_as.ignore(pos, end, max_parsed_pos, expected))
                     return false;
@@ -283,7 +284,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
                 if (!s_select.ignore(pos, end, max_parsed_pos, expected))
                     return false;
                 pos = before_select;
-                ParserSelectQuery select_p;
+                ParserSelectWithUnionQuery select_p;
                 select_p.parse(pos, end, select, max_parsed_pos, expected);
             }
         }
@@ -301,7 +302,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
             if (s_select.ignore(pos, end, max_parsed_pos, expected))
             {
                 pos = before_select;
-                ParserSelectQuery select_p;
+                ParserSelectWithUnionQuery select_p;
                 select_p.parse(pos, end, select, max_parsed_pos, expected);
             }
             else
@@ -387,7 +388,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
         if (!s_select.ignore(pos, end, max_parsed_pos, expected))
             return false;
         pos = before_select;
-        ParserSelectQuery select_p;
+        ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, end, select, max_parsed_pos, expected);
     }
 

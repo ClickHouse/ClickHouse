@@ -36,8 +36,6 @@ public:
     void drop() override;
 
 protected:
-    String select_database_name;
-    String select_table_name;
     String table_name;
     String database_name;
     ASTSelectQuery inner_query;
@@ -53,10 +51,6 @@ protected:
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_);
-
-private:
-    /// extract the name of the database and the table from the most internal subquery: `select_database_name, select_table_name`.
-    void extractDependentTable(const ASTSelectQuery & query);
 };
 
 }

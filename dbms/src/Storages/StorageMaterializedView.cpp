@@ -31,8 +31,7 @@ StoragePtr StorageMaterializedView::create(
 {
     return ext::shared_ptr_helper<StorageMaterializedView>::make_shared(
         table_name_, database_name_, context_, query_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_, attach_
-    );
+        materialized_columns_, alias_columns_, column_defaults_, attach_);
 }
 
 StorageMaterializedView::StorageMaterializedView(
