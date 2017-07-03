@@ -96,7 +96,7 @@ BlockInputStreams Query::execute()
         {
             /// Add queries to localhost (they are processed in-process, without network communication).
 
-            DB::Context new_context = context;
+            Context new_context = context;
             new_context.setSettings(new_settings);
 
             for (const auto & address : shard_info.local_addresses)
