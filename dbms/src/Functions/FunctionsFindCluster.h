@@ -195,7 +195,6 @@ private:
   * findClusterValue(T, Array(T)) -> T
   *
   * T can be any numeric type.
-  *
   */
 class FunctionFindClusterIndex : public IFunction
 {
@@ -245,16 +244,16 @@ public:
         auto column_result = block.safeGetByPosition(result).type->createColumn();
         auto out_untyped = column_result.get();
 
-        if (    !executeByCentroidsType<UInt8>(in_untyped, out_untyped, centroids_array_untyped)
-            &&     !executeByCentroidsType<UInt16>(in_untyped, out_untyped, centroids_array_untyped)
-            &&     !executeByCentroidsType<UInt32>(in_untyped, out_untyped, centroids_array_untyped)
-            &&     !executeByCentroidsType<UInt64>(in_untyped, out_untyped, centroids_array_untyped)
-            &&     !executeByCentroidsType<Int8>(in_untyped, out_untyped, centroids_array_untyped)
-            &&     !executeByCentroidsType<Int16>(in_untyped, out_untyped, centroids_array_untyped)
-            &&     !executeByCentroidsType<Int32>(in_untyped, out_untyped, centroids_array_untyped)
-            &&     !executeByCentroidsType<Int64>(in_untyped, out_untyped, centroids_array_untyped)
-            &&     !executeByCentroidsType<Float32>(in_untyped, out_untyped, centroids_array_untyped)
-            &&     !executeByCentroidsType<Float64>(in_untyped, out_untyped, centroids_array_untyped)
+        if (   !executeByCentroidsType<UInt8>(in_untyped, out_untyped, centroids_array_untyped)
+            && !executeByCentroidsType<UInt16>(in_untyped, out_untyped, centroids_array_untyped)
+            && !executeByCentroidsType<UInt32>(in_untyped, out_untyped, centroids_array_untyped)
+            && !executeByCentroidsType<UInt64>(in_untyped, out_untyped, centroids_array_untyped)
+            && !executeByCentroidsType<Int8>(in_untyped, out_untyped, centroids_array_untyped)
+            && !executeByCentroidsType<Int16>(in_untyped, out_untyped, centroids_array_untyped)
+            && !executeByCentroidsType<Int32>(in_untyped, out_untyped, centroids_array_untyped)
+            && !executeByCentroidsType<Int64>(in_untyped, out_untyped, centroids_array_untyped)
+            && !executeByCentroidsType<Float32>(in_untyped, out_untyped, centroids_array_untyped)
+            && !executeByCentroidsType<Float64>(in_untyped, out_untyped, centroids_array_untyped)
             )
         {
             throw Exception{
@@ -282,17 +281,16 @@ protected:
         if (!centroids.fill(centroids_array_untyped))
             return false;
 
-        if (    !centroids.template findCluster<UInt8>(in_untyped, out_untyped, getOperation())
-            &&     !centroids.template findCluster<UInt16>(in_untyped, out_untyped, getOperation())
-            &&     !centroids.template findCluster<UInt32>(in_untyped, out_untyped, getOperation())
-            &&     !centroids.template findCluster<UInt64>(in_untyped, out_untyped, getOperation())
-            &&     !centroids.template findCluster<Int8>(in_untyped, out_untyped, getOperation())
-            &&     !centroids.template findCluster<Int16>(in_untyped, out_untyped, getOperation())
-            &&     !centroids.template findCluster<Int32>(in_untyped, out_untyped, getOperation())
-            &&     !centroids.template findCluster<Int64>(in_untyped, out_untyped, getOperation())
-            &&     !centroids.template findCluster<Float32>(in_untyped, out_untyped, getOperation())
-            &&     !centroids.template findCluster<Float64>(in_untyped, out_untyped, getOperation())
-            )
+        if (   !centroids.template findCluster<UInt8>(in_untyped, out_untyped, getOperation())
+            && !centroids.template findCluster<UInt16>(in_untyped, out_untyped, getOperation())
+            && !centroids.template findCluster<UInt32>(in_untyped, out_untyped, getOperation())
+            && !centroids.template findCluster<UInt64>(in_untyped, out_untyped, getOperation())
+            && !centroids.template findCluster<Int8>(in_untyped, out_untyped, getOperation())
+            && !centroids.template findCluster<Int16>(in_untyped, out_untyped, getOperation())
+            && !centroids.template findCluster<Int32>(in_untyped, out_untyped, getOperation())
+            && !centroids.template findCluster<Int64>(in_untyped, out_untyped, getOperation())
+            && !centroids.template findCluster<Float32>(in_untyped, out_untyped, getOperation())
+            && !centroids.template findCluster<Float64>(in_untyped, out_untyped, getOperation()))
         {
             throw Exception{
                 "Illegal column " + in_untyped->getName() + " of first argument of function " + getName(),
@@ -301,7 +299,6 @@ protected:
 
         return true;
     }
-
 };
 
 
