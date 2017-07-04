@@ -15,7 +15,7 @@
 
 #include <Core/AccurateComparison.h>
 #include <Core/FieldVisitors.h>
-#include <DataTypes/DataTypeUuid.h>
+#include <DataTypes/DataTypeUUID.h>
 
 namespace DB
 {
@@ -89,14 +89,14 @@ UInt64 stringToDateTime(const String & s)
     return UInt64(date_time);
 }
 
-Uuid stringToUuid(const String & s)
+UUID stringToUUID(const String & s)
 {
     ReadBufferFromString in(s);
-    Uuid uuid;
+    UUID uuid;
 
     readText(uuid, in);
     if (!in.eof())
-        throw Exception("String is too long for Uuid: " + s);
+        throw Exception("String is too long for UUID: " + s);
 
     return uuid;
 }
@@ -124,7 +124,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
 
         if (!is_date)
             if (!(is_datetime = typeid_cast<const DataTypeDateTime *>(&type)))
-                if (!(is_uuid = typeid_cast<const DataTypeUuid *>(&type)))
+                if (!(is_uuid = typeid_cast<const DataTypeUUID *>(&type)))
                     if (!(is_enum = dynamic_cast<const IDataTypeEnum *>(&type)))
                         throw Exception{"Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
 
@@ -146,7 +146,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
             }
             else if (is_uuid)
             {
-                return stringToUuid(src.get<const String &>());
+                return stringToUUID(src.get<const String &>());
             }
             else if (is_enum)
             {

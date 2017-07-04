@@ -6,8 +6,8 @@
 #include <functional>
 
 #include <Common/Exception.h>
+#include <Common/UInt128.h>
 #include <Core/Types.h>
-#include <Core/Uuid.h>
 #include <common/strong_typedef.h>
 
 
@@ -52,7 +52,7 @@ public:
             UInt64  = 1,
             Int64   = 2,
             Float64 = 3,
-            Uuid    = 4,
+            UInt128 = 4,
 
             /// Non-POD types.
 
@@ -74,7 +74,7 @@ public:
                 case String:  return "String";
                 case Array:   return "Array";
                 case Tuple:   return "Tuple";
-                case Uuid:    return "Uuid";
+                case UInt128: return "UInt128";
 
                 default:
                     throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -241,7 +241,7 @@ public:
             case Types::String:  return get<String>()  < rhs.get<String>();
             case Types::Array:   return get<Array>()   < rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   < rhs.get<Tuple>();
-            case Types::Uuid:    return get<Uuid>()    < rhs.get<Uuid>();
+            case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -269,7 +269,7 @@ public:
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   <= rhs.get<Tuple>();
-            case Types::Uuid:    return get<Uuid>()    <= rhs.get<Uuid>();
+            case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -291,11 +291,11 @@ public:
             case Types::Null:    return true;
             case Types::UInt64:
             case Types::Int64:
-            case Types::Float64: return get<UInt64>() == rhs.get<UInt64>();
-            case Types::String:  return get<String>() == rhs.get<String>();
-            case Types::Array:   return get<Array>()  == rhs.get<Array>();
-            case Types::Tuple:   return get<Tuple>()  == rhs.get<Tuple>();
-            case Types::Uuid:    return get<Uuid>()   == rhs.get<Uuid>();
+            case Types::Float64: return get<UInt64>()  == rhs.get<UInt64>();
+            case Types::String:  return get<String>()  == rhs.get<String>();
+            case Types::Array:   return get<Array>()   == rhs.get<Array>();
+            case Types::Tuple:   return get<Tuple>()   == rhs.get<Tuple>();
+            case Types::UInt128: return get<UInt128>() == rhs.get<UInt128>();
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -310,7 +310,7 @@ public:
 private:
     static const size_t storage_size = std::max({
         DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
-        sizeof(Null), sizeof(UInt64), sizeof(Int64), sizeof(Float64), sizeof(String), sizeof(Array), sizeof(Tuple), sizeof(Uuid)});
+        sizeof(Null), sizeof(UInt64), sizeof(UInt128), sizeof(Int64), sizeof(Float64), sizeof(String), sizeof(Array), sizeof(Tuple)});
 
     char storage[storage_size] __attribute__((aligned(8)));
     Types::Which which;
@@ -348,7 +348,7 @@ private:
             case Types::String:  f(field.template get<String>());  return;
             case Types::Array:   f(field.template get<Array>());   return;
             case Types::Tuple:   f(field.template get<Tuple>());   return;
-            case Types::Uuid:    f(field.template get<Uuid>());    return;
+            case Types::UInt128: f(field.template get<UInt128>()); return;
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -405,9 +405,6 @@ private:
             case Types::Tuple:
                 destroy<Tuple>();
                 break;
-            case Types::Uuid:
-                destroy<Uuid>();
-                break;
 
             default:
                  break;
@@ -434,7 +431,7 @@ template <> struct Field::TypeToEnum<Float64> { static const Types::Which value 
 template <> struct Field::TypeToEnum<String>  { static const Types::Which value = Types::String; };
 template <> struct Field::TypeToEnum<Array>   { static const Types::Which value = Types::Array; };
 template <> struct Field::TypeToEnum<Tuple>   { static const Types::Which value = Types::Tuple; };
-template <> struct Field::TypeToEnum<Uuid>    { static const Types::Which value = Types::Uuid; };
+template <> struct Field::TypeToEnum<UInt128> { static const Types::Which value = Types::UInt128; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
 template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
@@ -443,7 +440,7 @@ template <> struct Field::EnumToType<Field::Types::Float64> { using Type = Float
 template <> struct Field::EnumToType<Field::Types::String>  { using Type = String; };
 template <> struct Field::EnumToType<Field::Types::Array>   { using Type = Array; };
 template <> struct Field::EnumToType<Field::Types::Tuple>   { using Type = Tuple; };
-template <> struct Field::EnumToType<Field::Types::Uuid>    { using Type = Uuid; };
+template <> struct Field::EnumToType<Field::Types::UInt128> { using Type = UInt128; };
 
 
 template <typename T>
@@ -481,6 +478,7 @@ template <> struct NearestFieldType<UInt8>   { using Type = UInt64; };
 template <> struct NearestFieldType<UInt16>  { using Type = UInt64; };
 template <> struct NearestFieldType<UInt32>  { using Type = UInt64; };
 template <> struct NearestFieldType<UInt64>  { using Type = UInt64; };
+template <> struct NearestFieldType<UInt128> { using Type = UInt128; };
 template <> struct NearestFieldType<Int8>    { using Type = Int64; };
 template <> struct NearestFieldType<Int16>   { using Type = Int64; };
 template <> struct NearestFieldType<Int32>   { using Type = Int64; };
@@ -492,7 +490,6 @@ template <> struct NearestFieldType<Array>   { using Type = Array; };
 template <> struct NearestFieldType<Tuple>   { using Type = Tuple; };
 template <> struct NearestFieldType<bool>    { using Type = UInt64; };
 template <> struct NearestFieldType<Null>    { using Type = Null; };
-template <> struct NearestFieldType<Uuid>    { using Type = Uuid; };
 
 
 template <typename T>

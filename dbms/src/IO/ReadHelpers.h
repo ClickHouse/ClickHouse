@@ -14,7 +14,7 @@
 #include <common/exp10.h>
 
 #include <Core/Types.h>
-#include <Core/Uuid.h>
+#include <Core/UUID.h>
 #include <common/StringRef.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -558,7 +558,7 @@ struct NullSink
 };
 
 void parseUUID(const UInt8 * src36, UInt8 * dst16);
-void parseUUID(const UInt8 * src36, Uuid & uuid);
+void parseUUID(const UInt8 * src36, UUID & uuid);
 void formatHex(const UInt8 * __restrict src, UInt8 * __restrict dst, const size_t num_bytes);
 
 /// In YYYY-MM-DD format
@@ -594,7 +594,7 @@ inline void readDateText(LocalDate & date, ReadBuffer & buf)
     date.day((s[8] - '0') * 10 + (s[9] - '0'));
 }
 
-inline void readUuidText(Uuid & uuid, ReadBuffer & buf)
+inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
 {
     char s[36];
     size_t size = buf.read(s, 36);
@@ -700,7 +700,7 @@ inline void readText(bool & x, ReadBuffer & buf) { readBoolText(x, buf); }
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
-inline void readText(Uuid & x, ReadBuffer & buf) { readUuidText(x, buf); }
+inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 
 
 /// Generic methods to read value in text format,
@@ -773,7 +773,7 @@ readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(String & x, ReadBuffer & buf, const char delimiter = ',') { readCSVString(x, buf, delimiter); }
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(Uuid & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 
 template <typename T>

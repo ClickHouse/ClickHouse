@@ -112,7 +112,7 @@ inline bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
 // Case 3a. Comparison via conversion to double.
 template <typename TAInt, typename TAFloat>
 using bool_if_double_can_be_used = std::enable_if_t<
-                                        std::is_integral<TAInt>::value && (sizeof(TAInt) <= 4 || sizeof(DB::Uuid) == sizeof(TAInt)) && std::is_floating_point<TAFloat>::value,
+                                        std::is_integral<TAInt>::value && (sizeof(TAInt) <= 4 || sizeof(DB::UInt128) == sizeof(TAInt)) && std::is_floating_point<TAFloat>::value,
                                         bool>;
 
 template <typename TAInt, typename TAFloat>

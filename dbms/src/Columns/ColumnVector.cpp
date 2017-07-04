@@ -313,5 +313,5 @@ template class ColumnVector<Int32>;
 template class ColumnVector<Int64>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
-template class ColumnVector<Uuid>;
+template class ColumnVector<UUID>;
 }

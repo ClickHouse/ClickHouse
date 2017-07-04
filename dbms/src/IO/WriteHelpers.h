@@ -11,7 +11,7 @@
 #include <common/find_first_symbols.h>
 
 #include <Core/Types.h>
-#include <Core/Uuid.h>
+#include <Core/UUID.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/UInt128.h>
@@ -475,9 +475,9 @@ inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
 
 void formatHex(const UInt8 * __restrict src, UInt8 * __restrict dst, const size_t num_bytes);
 void formatUUID(const UInt8 * src16, UInt8 * dst36);
-void formatUUID(const Uuid & uuid, UInt8 * dst36);
+void formatUUID(const UUID & uuid, UInt8 * dst36);
 
-inline void writeUuidText(const Uuid & uuid, WriteBuffer & buf)
+inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 {
     char s[36];
 
@@ -623,7 +623,7 @@ inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEsc
 
 inline void writeText(const LocalDate & x,        WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x,    WriteBuffer & buf) { writeDateTimeText(x, buf); }
-inline void writeText(const Uuid & x, WriteBuffer & buf) { writeUuidText(x, buf); }
+inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>

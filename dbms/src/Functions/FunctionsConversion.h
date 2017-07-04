@@ -19,7 +19,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeUuid.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
@@ -740,7 +740,7 @@ private:
         else if (typeid_cast<const DataTypeFloat64 *    >(from_type)) ConvertImpl<DataTypeFloat64,     ToDataType, Name>::execute(block, arguments, result);
         else if (typeid_cast<const DataTypeDate *        >(from_type)) ConvertImpl<DataTypeDate,     ToDataType, Name>::execute(block, arguments, result);
         else if (typeid_cast<const DataTypeDateTime *    >(from_type)) ConvertImpl<DataTypeDateTime,    ToDataType, Name>::execute(block, arguments, result);
-        else if (typeid_cast<const DataTypeUuid *        >(from_type)) ConvertImpl<DataTypeUuid,        ToDataType, Name>::execute(block, arguments, result);
+        else if (typeid_cast<const DataTypeUUID *        >(from_type)) ConvertImpl<DataTypeUUID,        ToDataType, Name>::execute(block, arguments, result);
         else if (typeid_cast<const DataTypeString *        >(from_type)) ConvertImpl<DataTypeString,     ToDataType, Name>::execute(block, arguments, result);
         else if (typeid_cast<const DataTypeFixedString *>(from_type)) ConvertImpl<DataTypeFixedString, ToDataType, Name>::execute(block, arguments, result);
         else if (typeid_cast<const DataTypeEnum8 *>(from_type))          ConvertImpl<DataTypeEnum8, ToDataType, Name>::execute(block, arguments, result);
@@ -1145,7 +1145,7 @@ struct NameToInt64            { static constexpr auto name = "toInt64"; };
 struct NameToFloat32        { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64        { static constexpr auto name = "toFloat64"; };
 struct NameToDateTime        { static constexpr auto name = "toDateTime"; };
-struct NameToUuid           { static constexpr auto name = "toUuid"; };
+struct NameToUUID           { static constexpr auto name = "toUUID"; };
 
 using FunctionToUInt8         = FunctionConvert<DataTypeUInt8,    NameToUInt8,    ToIntMonotonicity<UInt8>>;
 using FunctionToUInt16         = FunctionConvert<DataTypeUInt16,    NameToUInt16,    ToIntMonotonicity<UInt16>>;
@@ -1159,7 +1159,7 @@ using FunctionToFloat32     = FunctionConvert<DataTypeFloat32,    NameToFloat32,
 using FunctionToFloat64     = FunctionConvert<DataTypeFloat64,    NameToFloat64,    PositiveMonotonicity>;
 using FunctionToDate         = FunctionConvert<DataTypeDate,        NameToDate,        ToIntMonotonicity<UInt16>>;
 using FunctionToDateTime     = FunctionConvert<DataTypeDateTime,    NameToDateTime,    ToIntMonotonicity<UInt32>>;
-using FunctionToUuid         = FunctionConvert<DataTypeUuid,      NameToUuid,          ToIntMonotonicity<UInt128>>;
+using FunctionToUUID         = FunctionConvert<DataTypeUUID,      NameToUUID,          ToIntMonotonicity<UInt128>>;
 using FunctionToString         = FunctionConvert<DataTypeString,    NameToString,     ToStringMonotonicity>;
 using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32,    NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
 
@@ -1176,7 +1176,7 @@ template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32;
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
 template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
 template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
-template <> struct FunctionTo<DataTypeUuid> { using Type = FunctionToUuid; };
+template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
 template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
 template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
 template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>

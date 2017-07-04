@@ -48,7 +48,7 @@ void formatUUID(const UInt8 * src16, UInt8 * dst36)
     formatHex(&src16[10], &dst36[24], 6);
 }
 
-void formatUUID(const Uuid & uuid, UInt8 * dst36)
+void formatUUID(const UUID & uuid, UInt8 * dst36)
 {
     char s[16+1];
 
