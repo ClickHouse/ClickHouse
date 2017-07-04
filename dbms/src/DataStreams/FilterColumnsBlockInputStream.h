@@ -19,7 +19,8 @@ public:
         children.push_back(input_);
     }
 
-    String getName() const override {
+    String getName() const override
+    {
         return "FilterColumnsBlockInputStream";
     }
 
@@ -46,7 +47,6 @@ protected:
 
         for (const auto & it : columns_to_save)
             filtered.insert(std::move(block.getByName(it)));
-
 
         return filtered;
     }
