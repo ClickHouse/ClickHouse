@@ -7,7 +7,9 @@
 namespace DB
 {
 
-/// Removes columns other than columns_to_save_ from block
+/// Removes columns other than columns_to_save_ from block,
+///  and reorders columns as in columns_to_save_.
+/// Functionality is similar to ExpressionBlockInputStream with ExpressionActions containing PROJECT action.
 class FilterColumnsBlockInputStream : public IProfilingBlockInputStream
 {
 public:
