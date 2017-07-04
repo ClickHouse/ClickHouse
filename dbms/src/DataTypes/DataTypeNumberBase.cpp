@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/NaNUtils.h>
+#include <FormatSettingsJSON.h>
 
 
 namespace DB
@@ -62,9 +63,9 @@ void DataTypeNumberBase<T>::deserializeTextQuoted(IColumn & column, ReadBuffer &
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const
+void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
 {
-    const bool need_quote = std::is_integral<T>::value && (sizeof(T) == 8) && force_quoting_64bit_integers;
+    const bool need_quote = std::is_integral<T>::value && (sizeof(T) == 8) && settings.force_quoting_64bit_integers;
 
     if (need_quote)
         writeChar('"', ostr);

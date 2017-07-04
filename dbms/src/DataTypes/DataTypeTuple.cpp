@@ -144,14 +144,14 @@ void DataTypeTuple::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) c
     deserializeText(column, istr);
 }
 
-void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const
+void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
 {
     writeChar('[', ostr);
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         if (i != 0)
             writeChar(',', ostr);
-        elems[i]->serializeTextJSON(extractElementColumn(column, i), row_num, ostr, force_quoting_64bit_integers);
+        elems[i]->serializeTextJSON(extractElementColumn(column, i), row_num, ostr, settings);
     }
     writeChar(']', ostr);
 }

@@ -304,7 +304,7 @@ void DataTypeArray::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) c
 }
 
 
-void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const
+void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
 {
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -319,7 +319,7 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
     {
         if (i != offset)
             writeChar(',', ostr);
-        nested->serializeTextJSON(nested_column, i, ostr, force_quoting_64bit_integers);
+        nested->serializeTextJSON(nested_column, i, ostr, settings);
     }
     writeChar(']', ostr);
 }
