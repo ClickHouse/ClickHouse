@@ -51,12 +51,12 @@ void parseUUID(const UInt8 * src36, UUID & uuid)
    memcpy(&s[8], &src36[9], 4);
    memcpy(&s[12], &src36[14], 4);
 
-   uuid.first = strtoull(s, nullptr, 16);
+   uuid.low = strtoull(s, nullptr, 16);
 
    memcpy(&s[0], &src36[19], 4);
    memcpy(&s[4], &src36[24], 12);
 
-   uuid.second = strtoull(s, nullptr, 16);
+   uuid.high = strtoull(s, nullptr, 16);
 }
 
 static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s, ReadBuffer & buf)

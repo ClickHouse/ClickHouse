@@ -57,13 +57,13 @@ void formatUUID(const UUID & uuid, UInt8 * dst36)
     dst36[18] = '-';
     dst36[23] = '-';
 
-    snprintf(s, sizeof(s), "%016llx", static_cast<long long>(uuid.first));
+    snprintf(s, sizeof(s), "%016llx", static_cast<long long>(uuid.low));
 
     memcpy(&dst36[0], &s, 8);
     memcpy(&dst36[9], &s[8], 4);
     memcpy(&dst36[14], &s[12], 4);
 
-    snprintf(s, sizeof(s), "%016llx", static_cast<long long>(uuid.second));
+    snprintf(s, sizeof(s), "%016llx", static_cast<long long>(uuid.high));
 
     memcpy(&dst36[19], &s[0], 4);
     memcpy(&dst36[24], &s[4], 12);

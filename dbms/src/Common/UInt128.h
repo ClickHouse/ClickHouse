@@ -15,57 +15,56 @@ namespace DB
 /// For aggregation by SipHash, UUID type or concatenation of several fields.
 struct UInt128
 {
-/// Suppress gcc7 warnings: 'prev_key.DB::UInt128::first' may be used uninitialized in this function
+/// Suppress gcc7 warnings: 'prev_key.DB::UInt128::low' may be used uninitialized in this function
 #if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
-    UInt64 first;
-    UInt64 second;
+    UInt64 low;
+    UInt64 high;
 
     UInt128() = default;
-    explicit UInt128(const UInt64 rhs) : first(0), second(rhs) { }
+    explicit UInt128(const UInt64 rhs) : low(0), high(rhs) { }
 
-    bool operator== (const UInt128 & rhs) const { return second == rhs.second && first == rhs.first; }
-    bool operator!= (const UInt128 & rhs) const { return second != rhs.second || first != rhs.first; }
-    bool operator>= (const UInt128 & rhs) const { return (first == rhs.first) ? second >= rhs.second : first > rhs.first; }
-    bool operator>  (const UInt128 & rhs)  const { return (first == rhs.first) ? second > rhs.second : first > rhs.first; }
-    bool operator<= (const UInt128 & rhs) const { return (first == rhs.first) ? second <= rhs.second : first < rhs.first; }
-    bool operator<  (const UInt128 & rhs)  const { return (first == rhs.first) ? second < rhs.second : first < rhs.first; }
+    bool operator== (const UInt128 rhs) const { return std::forward_as_tuple(low, high) == std::forward_as_tuple(rhs.low, rhs.high); }
+    bool operator!= (const UInt128 rhs) const { return std::forward_as_tuple(low, high) != std::forward_as_tuple(rhs.low, rhs.high); }
+    bool operator>= (const UInt128 rhs) const { return (low == rhs.low) ? high >= rhs.high : low > rhs.low; }
+    bool operator>  (const UInt128 rhs) const { return (low == rhs.low) ? high > rhs.high : low > rhs.low; }
+    bool operator<= (const UInt128 rhs) const { return (low == rhs.low) ? high <= rhs.high : low < rhs.low; }
+    bool operator<  (const UInt128 rhs) const { return (low == rhs.low) ? high < rhs.high : low < rhs.low; }
 
-    /** Type stored in the database will contains no more than 64 bits at the moment, don't need
+    /** Type stored in the database will contain no more than 64 bits at the moment, don't need
      *  to check the `second` element 
      */
-    template<typename T> bool operator== (const T rhs) const { return first == 0 && static_cast<T>(second) == rhs; }
-    template<typename T> bool operator!= (const T rhs) const { return first != 0 || static_cast<T>(second) != rhs; }
-    template<typename T> bool operator>= (const T rhs) const { return first != 0 && static_cast<T>(second) >= rhs; }
-    template<typename T> bool operator>  (const T rhs)  const { return first != 0 && static_cast<T>(second) >  rhs; }
-    template<typename T> bool operator<= (const T rhs) const { return first == 0 && static_cast<T>(second) <= rhs; }
-    template<typename T> bool operator<  (const T rhs)  const { return first == 0 && static_cast<T>(second) >  rhs; }
+    template<typename T> bool operator== (const T rhs) const { return low == 0 && static_cast<T>(high) == rhs; }
+    template<typename T> bool operator!= (const T rhs) const { return low != 0 || static_cast<T>(high) != rhs; }
+    template<typename T> bool operator>= (const T rhs) const { return low != 0 && static_cast<T>(high) >= rhs; }
+    template<typename T> bool operator>  (const T rhs)  const { return low != 0 && static_cast<T>(high) >  rhs; }
+    template<typename T> bool operator<= (const T rhs) const { return low == 0 && static_cast<T>(high) <= rhs; }
+    template<typename T> bool operator<  (const T rhs)  const { return low == 0 && static_cast<T>(high) >  rhs; }
 
-    template<typename T> explicit operator T() const { return static_cast<T>(second); }
-    operator UInt128() const { return *this; }
+    template<typename T> explicit operator T() const { return static_cast<T>(high); }
 
 #if !__clang__
 #pragma GCC diagnostic pop
 #endif
 
-    UInt128 & operator= (const UInt64 rhs) { first = 0; second = rhs; return *this; }
+    UInt128 & operator= (const UInt64 rhs) { low = 0; high = rhs; return *this; }
 };
 
-template<typename T> bool operator== (T a, const UInt128 & b) { return b == a; }
-template<typename T> bool operator!= (T a, const UInt128 & b) { return b != a; }
-template<typename T> bool operator>= (T a, const UInt128 & b) { return b.first == 0 && a >= static_cast<T>(b.second); }
-template<typename T> bool operator>  (T a, const UInt128 & b) { return b.first == 0 && a >  static_cast<T>(b.second); }
-template<typename T> bool operator<= (T a, const UInt128 & b) { return b.first != 0 || a <= static_cast<T>(b.second); }
-template<typename T> bool operator<  (T a, const UInt128 & b) { return b.first != 0 || a <  static_cast<T>(b.second); }
+template<typename T> bool operator== (T a, const UInt128 b) { return b == a; }
+template<typename T> bool operator!= (T a, const UInt128 b) { return b != a; }
+template<typename T> bool operator>= (T a, const UInt128 b) { return b.low == 0 && a >= static_cast<T>(b.high); }
+template<typename T> bool operator>  (T a, const UInt128 b) { return b.low == 0 && a >  static_cast<T>(b.high); }
+template<typename T> bool operator<= (T a, const UInt128 b) { return b.low != 0 || a <= static_cast<T>(b.high); }
+template<typename T> bool operator<  (T a, const UInt128 b) { return b.low != 0 || a <  static_cast<T>(b.high); }
 
 struct UInt128Hash
 {
     size_t operator()(UInt128 x) const
     {
-        return CityHash_v1_0_2::Hash128to64({x.first, x.second});
+        return CityHash_v1_0_2::Hash128to64({x.low, x.high});
     }
 };
 
@@ -76,8 +75,8 @@ struct UInt128HashCRC32
     size_t operator()(UInt128 x) const
     {
         UInt64 crc = -1ULL;
-        crc = _mm_crc32_u64(crc, x.first);
-        crc = _mm_crc32_u64(crc, x.second);
+        crc = _mm_crc32_u64(crc, x.low);
+        crc = _mm_crc32_u64(crc, x.high);
         return crc;
     }
 };
@@ -91,7 +90,7 @@ struct UInt128HashCRC32 : public UInt128Hash {};
 
 struct UInt128TrivialHash
 {
-    size_t operator()(UInt128 x) const { return x.first; }
+    size_t operator()(UInt128 x) const { return x.low; }
 };
 
 
@@ -185,7 +184,7 @@ template <> struct hash<DB::UInt128>
 {
     size_t operator()(const DB::UInt128 & u) const
     {
-        return std::hash<DB::UInt64>()(u.first) ^ std::hash<DB::UInt64>()(u.second);
+        return CityHash_v1_0_2::Hash128to64({u.low, u.high});
     }
 };
 
