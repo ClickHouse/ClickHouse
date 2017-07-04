@@ -354,7 +354,7 @@ struct AggregateFunctionGroupArrayListImpl_Data
 
 /// Implementation of groupArray(String or ComplexObject) via linked list
 /// It has poor performance in case of many small objects
-template <typename Node, bool limit_size=false>
+template <typename Node, bool limit_size=true>
 class AggregateFunctionGroupArrayStringListImpl final
     : public IUnaryAggregateFunction<AggregateFunctionGroupArrayListImpl_Data<Node>, AggregateFunctionGroupArrayStringListImpl<Node>>
 {
@@ -381,9 +381,6 @@ public:
 
         if (params.size() == 1)
         {
-            throw Exception("Incorrect number of parameters for aggregate function " + getName() + ", should be 0 or 1",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
             if (params[0].getType() == Field::Types::Int64)
             {
                 if (params[0].get<Int64>() < 0)
@@ -392,13 +389,16 @@ public:
             }
             else if (params[0].getType() == Field::Types::UInt64)
             {
-                if (params[0].get<UInt64>() == 0)
-                    throw Exception("Parameter for aggregate function " + getName() + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
+//                 if (params[0].get<UInt64>() == 0)
+//                     throw Exception("Parameter for aggregate function " + getName() + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
                 max_elems = params[0].get<UInt64>();
             }
             else
                 throw Exception("Parameter for aggregate function " + getName() + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
         }
+        else
+            throw Exception("Incorrect number of parameters for aggregate function " + getName() + ", should be 0 or 1",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
     void setArgument(const DataTypePtr & argument)
@@ -408,6 +408,9 @@ public:
 
     void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
     {
+        if (limit_size && data(place).elems >= max_elems)
+            return;
+
         Node * node = Node::allocate(column, row_num, arena);
 
         if (unlikely(!data(place).first))
@@ -431,7 +434,19 @@ public:
         if (!data(rhs).first) /// rhs state is empty
             return;
 
-        data(place).elems += data(rhs).elems;
+        UInt64 new_elems;
+        UInt64 cur_elems = data(place).elems;
+        if (limit_size)
+        {
+            if (data(place).elems >= max_elems)
+                return;
+
+            new_elems = std::min(data(place).elems + data(rhs).elems, max_elems);
+        }
+        else
+        {
+            new_elems = data(place).elems + data(rhs).elems;
+        }
 
         Node * p_rhs = data(rhs).first;
         Node * p_lhs;
@@ -441,13 +456,14 @@ public:
             p_lhs = p_rhs->clone(arena);
             data(place).first = data(place).last = p_lhs;
             p_rhs = p_rhs->next;
+            ++cur_elems;
         }
         else
         {
             p_lhs = data(place).last;
         }
 
-        while (p_rhs)
+        for (; cur_elems < new_elems; ++cur_elems)
         {
             Node * p_new = p_rhs->clone(arena);
             p_lhs->next = p_new;
@@ -457,6 +473,7 @@ public:
 
         p_lhs->next = nullptr;
         data(place).last = p_lhs;
+        data(place).elems = new_elems;
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
@@ -482,6 +499,9 @@ public:
 
         if (unlikely(elems > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
             throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+
+        if (limit_size && unlikely(elems > max_elems))
+            throw Exception("Too large array size, it should not exceed " + toString(max_elems), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         Node * prev = Node::read(buf, arena);
         data(place).first = prev;
@@ -677,7 +697,7 @@ private:
     DataTypePtr type;
 
 public:
-    String getName() const override { return "groupArray"; }
+    String getName() const override { return "groupArray4"; }
 
     DataTypePtr getReturnType() const override
     {
