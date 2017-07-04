@@ -266,7 +266,7 @@ void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) 
 }
 
 
-void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
+void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
 {
     writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }

@@ -13,6 +13,7 @@ class ReadBuffer;
 class WriteBuffer;
 
 class IDataType;
+class FormatSettingsJSON;
 
 using DataTypePtr = std::shared_ptr<IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
@@ -115,7 +116,7 @@ public:
     /** Text serialization intended for using in JSON format.
       * force_quoting_64bit_integers parameter forces to brace UInt64 and Int64 types into quotes.
       */
-    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const = 0;
+    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const = 0;
     virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const = 0;
 
     /** Text serialization for putting into the XML format.
