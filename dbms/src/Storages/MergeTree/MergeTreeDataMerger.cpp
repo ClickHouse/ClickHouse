@@ -242,7 +242,7 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
 
     while (it != parts.end())
     {
-        if ((it != parts.begin() || parts.size() == 1)    /// For the case of one part, we check that it can be measured "with itself".
+        if ((it != parts.begin() || parts.size() == 1)    /// For the case of one part, we check that it can be merged "with itself".
             && !can_merge(*prev_it, *it))
             return false;
 

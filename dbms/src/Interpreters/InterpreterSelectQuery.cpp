@@ -927,8 +927,8 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
     const Settings & settings = context.getSettingsRef();
 
     /** Two-level aggregation is useful in two cases:
-      * 1. Parallel aggregation is done, and the results should be measured in parallel.
-      * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged memory efficient.
+      * 1. Parallel aggregation is done, and the results should be merged in parallel.
+      * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
     bool allow_to_use_two_level_group_by = streams.size() > 1 || settings.limits.max_bytes_before_external_group_by != 0;
 
