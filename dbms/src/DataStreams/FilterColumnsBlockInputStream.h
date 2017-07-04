@@ -26,32 +26,10 @@ public:
         return "FilterColumnsBlockInputStream";
     }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "FilterColumnsBlockInputStream(" << children.back()->getID();
-
-        for (const auto & it : columns_to_save)
-            res << ", " << it;
-
-        res << ")";
-        return res.str();
-    }
+    String getID() const override;
 
 protected:
-    Block readImpl() override
-    {
-        Block block = children.back()->read();
-
-        if (!block)
-            return block;
-        Block filtered;
-
-        for (const auto & it : columns_to_save)
-            filtered.insert(std::move(block.getByName(it)));
-
-        return filtered;
-    }
+    Block readImpl() override;
 
 private:
     Names columns_to_save;
