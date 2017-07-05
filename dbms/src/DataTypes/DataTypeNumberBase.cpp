@@ -4,7 +4,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/NaNUtils.h>
-#include <FormatSettingsJSON.h>
+#include <DataTypes/FormatSettingsJSON.h>
 
 
 namespace DB
@@ -65,16 +65,37 @@ void DataTypeNumberBase<T>::deserializeTextQuoted(IColumn & column, ReadBuffer &
 template <typename T>
 void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
 {
-    const bool need_quote = std::is_integral<T>::value && (sizeof(T) == 8) && settings.force_quoting_64bit_integers;
+    writeCString(settings.output_format_json_quote_denormals ? "1" : "0", ostr);
+    auto x = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+    bool is_finite = isFinite(x);
+
+    const bool need_quote = (std::is_integral<T>::value && (sizeof(T) == 8) && settings.force_quoting_64bit_integers)
+        || (settings.output_format_json_quote_denormals && !is_finite);
 
     if (need_quote)
         writeChar('"', ostr);
 
-    auto x = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
-    if (isFinite(x))
+    if (is_finite)
         writeText(x, ostr);
-    else
+    else if (!settings.output_format_json_quote_denormals)
         writeCString("null", ostr);
+    else
+    {
+        if (std::signbit(x))
+        {
+            if (isNaN(x))
+                writeCString("-nan", ostr);
+            else
+                writeCString("-inf", ostr);
+        }
+        else
+        {
+            if (isNaN(x))
+                writeCString("nan", ostr);
+            else
+                writeCString("inf", ostr);
+        }
+    }
 
     if (need_quote)
         writeChar('"', ostr);
