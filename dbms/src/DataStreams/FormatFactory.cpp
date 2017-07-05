@@ -29,7 +29,7 @@
 #include <DataStreams/CSVRowOutputStream.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
 #include <DataStreams/FormatFactory.h>
-
+#include <DataTypes/FormatSettingsJSON.h>
 
 namespace DB
 {
@@ -121,6 +121,7 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
     const Block & sample, const Context & context)
 {
     const Settings & settings = context.getSettingsRef();
+    FormatSettingsJSON json_settings(settings.output_format_json_quote_64bit_integers, true);
 
     if (name == "Native")
         return std::make_shared<NativeBlockOutputStream>(buf);
@@ -163,14 +164,14 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
     else if (name == "Values")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<ValuesRowOutputStream>(buf));
     else if (name == "JSON")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONRowOutputStream>(buf, sample,
-            settings.output_format_write_statistics, settings.output_format_json_quote_64bit_integers));
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONRowOutputStream>(
+            buf, sample, settings.output_format_write_statistics, json_settings));
     else if (name == "JSONCompact")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONCompactRowOutputStream>(buf, sample,
-            settings.output_format_write_statistics, settings.output_format_json_quote_64bit_integers));
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONCompactRowOutputStream>(
+            buf, sample, settings.output_format_write_statistics, json_settings));
     else if (name == "JSONEachRow")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONEachRowRowOutputStream>(buf, sample,
-            settings.output_format_json_quote_64bit_integers));
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONEachRowRowOutputStream>(
+            buf, sample, json_settings));
     else if (name == "XML")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<XMLRowOutputStream>(buf, sample,
             settings.output_format_write_statistics));

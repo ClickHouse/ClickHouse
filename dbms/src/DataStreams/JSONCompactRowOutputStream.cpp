@@ -6,15 +6,16 @@
 namespace DB
 {
 
-JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_, bool force_quoting_64bit_integers_)
-    : JSONRowOutputStream(ostr_, sample_, write_statistics_, force_quoting_64bit_integers_)
+JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_,
+                                                       bool write_statistics_, const FormatSettingsJSON & settings_)
+    : JSONRowOutputStream(ostr_, sample_, write_statistics_, settings_)
 {
 }
 
 
 void JSONCompactRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    type.serializeTextJSON(column, row_num, *ostr, force_quoting_64bit_integers);
+    type.serializeTextJSON(column, row_num, *ostr, settings);
     ++field_number;
 }
 
@@ -56,7 +57,7 @@ void JSONCompactRowOutputStream::writeTotals()
                 writeChar(',', *ostr);
 
             const ColumnWithTypeAndName & column = totals.safeGetByPosition(i);
-            column.type->serializeTextJSON(*column.column.get(), 0, *ostr, force_quoting_64bit_integers);
+            column.type->serializeTextJSON(*column.column.get(), 0, *ostr, settings);
         }
 
         writeChar(']', *ostr);
@@ -64,7 +65,7 @@ void JSONCompactRowOutputStream::writeTotals()
 }
 
 
-static void writeExtremesElement(const char * title, const Block & extremes, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers)
+static void writeExtremesElement(const char * title, const Block & extremes, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings)
 {
     writeCString("\t\t\"", ostr);
     writeCString(title, ostr);
@@ -77,7 +78,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
             writeChar(',', ostr);
 
         const ColumnWithTypeAndName & column = extremes.safeGetByPosition(i);
-        column.type->serializeTextJSON(*column.column.get(), row_num, ostr, force_quoting_64bit_integers);
+        column.type->serializeTextJSON(*column.column.get(), row_num, ostr, settings);
     }
 
     writeChar(']', ostr);
@@ -92,9 +93,9 @@ void JSONCompactRowOutputStream::writeExtremes()
         writeCString("\t\"extremes\":\n", *ostr);
         writeCString("\t{\n", *ostr);
 
-        writeExtremesElement("min", extremes, 0, *ostr, force_quoting_64bit_integers);
+        writeExtremesElement("min", extremes, 0, *ostr, settings);
         writeCString(",\n", *ostr);
-        writeExtremesElement("max", extremes, 1, *ostr, force_quoting_64bit_integers);
+        writeExtremesElement("max", extremes, 1, *ostr, settings);
 
         writeChar('\n', *ostr);
         writeCString("\t}", *ostr);
