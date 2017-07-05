@@ -26,23 +26,25 @@ struct UInt128
 
     UInt128() = default;
     explicit UInt128(const UInt64 rhs) : low(0), high(rhs) { }
+    explicit UInt128(const UInt64 low, const UInt64 high) : low(low), high(high) { }
 
-    bool operator== (const UInt128 rhs) const { return std::forward_as_tuple(low, high) == std::forward_as_tuple(rhs.low, rhs.high); }
-    bool operator!= (const UInt128 rhs) const { return std::forward_as_tuple(low, high) != std::forward_as_tuple(rhs.low, rhs.high); }
-    bool operator>= (const UInt128 rhs) const { return (low == rhs.low) ? high >= rhs.high : low > rhs.low; }
-    bool operator>  (const UInt128 rhs) const { return (low == rhs.low) ? high > rhs.high : low > rhs.low; }
-    bool operator<= (const UInt128 rhs) const { return (low == rhs.low) ? high <= rhs.high : low < rhs.low; }
-    bool operator<  (const UInt128 rhs) const { return (low == rhs.low) ? high < rhs.high : low < rhs.low; }
+    bool inline operator== (const UInt128 rhs) const { return std::tie(low, high) == std::tie(rhs.low, rhs.high); }
+    bool inline operator!= (const UInt128 rhs) const { return !(*this == rhs); }
+
+    bool inline operator<  (const UInt128 rhs) const { return std::tie(low, high) < std::tie(rhs.low, rhs.high); }
+    bool inline operator<= (const UInt128 rhs) const { return !(rhs < *this); }
+    bool inline operator>  (const UInt128 rhs) const { return rhs < *this; }
+    bool inline operator>= (const UInt128 rhs) const { return !(*this < rhs); }
 
     /** Type stored in the database will contain no more than 64 bits at the moment, don't need
-     *  to check the `second` element 
+     *  to check the `high` element 
      */
-    template<typename T> bool operator== (const T rhs) const { return low == 0 && static_cast<T>(high) == rhs; }
-    template<typename T> bool operator!= (const T rhs) const { return low != 0 || static_cast<T>(high) != rhs; }
-    template<typename T> bool operator>= (const T rhs) const { return low != 0 && static_cast<T>(high) >= rhs; }
-    template<typename T> bool operator>  (const T rhs)  const { return low != 0 && static_cast<T>(high) >  rhs; }
-    template<typename T> bool operator<= (const T rhs) const { return low == 0 && static_cast<T>(high) <= rhs; }
-    template<typename T> bool operator<  (const T rhs)  const { return low == 0 && static_cast<T>(high) >  rhs; }
+    template<typename T> bool inline operator== (const T rhs) const { return *this == UInt128(0, rhs); }
+    template<typename T> bool inline operator!= (const T rhs) const { return *this != UInt128(0, rhs); }
+    template<typename T> bool inline operator>= (const T rhs) const { return *this >= UInt128(0, rhs); }
+    template<typename T> bool inline operator>  (const T rhs) const { return *this >  UInt128(0, rhs); }
+    template<typename T> bool inline operator<= (const T rhs) const { return *this <= UInt128(0, rhs); }
+    template<typename T> bool inline operator<  (const T rhs) const { return *this <  UInt128(0, rhs); }
 
     template<typename T> explicit operator T() const { return static_cast<T>(high); }
 
@@ -53,12 +55,12 @@ struct UInt128
     UInt128 & operator= (const UInt64 rhs) { low = 0; high = rhs; return *this; }
 };
 
-template<typename T> bool operator== (T a, const UInt128 b) { return b == a; }
-template<typename T> bool operator!= (T a, const UInt128 b) { return b != a; }
-template<typename T> bool operator>= (T a, const UInt128 b) { return b.low == 0 && a >= static_cast<T>(b.high); }
-template<typename T> bool operator>  (T a, const UInt128 b) { return b.low == 0 && a >  static_cast<T>(b.high); }
-template<typename T> bool operator<= (T a, const UInt128 b) { return b.low != 0 || a <= static_cast<T>(b.high); }
-template<typename T> bool operator<  (T a, const UInt128 b) { return b.low != 0 || a <  static_cast<T>(b.high); }
+template<typename T> bool inline operator== (T a, const UInt128 b) { return b == a; }
+template<typename T> bool inline operator!= (T a, const UInt128 b) { return b != a; }
+template<typename T> bool inline operator>= (T a, const UInt128 b) { return b.low == 0 && a >= static_cast<T>(b.high); }
+template<typename T> bool inline operator>  (T a, const UInt128 b) { return b.low == 0 && a >  static_cast<T>(b.high); }
+template<typename T> bool inline operator<= (T a, const UInt128 b) { return b.low != 0 || a <= static_cast<T>(b.high); }
+template<typename T> bool inline operator<  (T a, const UInt128 b) { return b.low != 0 || a <  static_cast<T>(b.high); }
 
 struct UInt128Hash
 {
