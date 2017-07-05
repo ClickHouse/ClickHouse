@@ -23,13 +23,13 @@ void DataTypeNumberBase<T>::serializeTextEscaped(const IColumn & column, size_t 
 
 
 template <typename T>
-static void readTextUnsafeIfIntegral(typename std::enable_if<std::is_integral<T>::value, T>::type & x, ReadBuffer & istr)
+static void readTextUnsafeIfIntegral(typename std::enable_if<std::is_integral<T>::value && std::is_arithmetic<T>::value, T>::type & x, ReadBuffer & istr)
 {
     readIntTextUnsafe(x, istr);
 }
 
 template <typename T>
-static void readTextUnsafeIfIntegral(typename std::enable_if<!std::is_integral<T>::value, T>::type & x, ReadBuffer & istr)
+static void readTextUnsafeIfIntegral(typename std::enable_if<!std::is_integral<T>::value || !std::is_arithmetic<T>::value, T>::type & x, ReadBuffer & istr)
 {
     readText(x, istr);
 }

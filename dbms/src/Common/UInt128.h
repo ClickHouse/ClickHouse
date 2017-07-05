@@ -29,15 +29,15 @@ struct UInt128
     explicit UInt128(const UInt64 low, const UInt64 high) : low(low), high(high) { }
 
     bool inline operator== (const UInt128 rhs) const { return std::tie(low, high) == std::tie(rhs.low, rhs.high); }
-    bool inline operator!= (const UInt128 rhs) const { return !(*this == rhs); }
+    bool inline operator!= (const UInt128 rhs) const { return !operator==(rhs); }
 
     bool inline operator<  (const UInt128 rhs) const { return std::tie(low, high) < std::tie(rhs.low, rhs.high); }
-    bool inline operator<= (const UInt128 rhs) const { return !(rhs < *this); }
-    bool inline operator>  (const UInt128 rhs) const { return rhs < *this; }
-    bool inline operator>= (const UInt128 rhs) const { return !(*this < rhs); }
+    bool inline operator<= (const UInt128 rhs) const { return !rhs.operator<(*this); }
+    bool inline operator>  (const UInt128 rhs) const { return rhs.operator<(*this); }
+    bool inline operator>= (const UInt128 rhs) const { return !operator<(rhs); }
 
-    /** Type stored in the database will contain no more than 64 bits at the moment, don't need
-     *  to check the `high` element 
+    /** Types who are stored at the moment in the database have no more than 64bits and can be handle
+     *  inside an unique UInt64.
      */
     template<typename T> bool inline operator== (const T rhs) const { return *this == UInt128(0, rhs); }
     template<typename T> bool inline operator!= (const T rhs) const { return *this != UInt128(0, rhs); }
@@ -61,6 +61,9 @@ template<typename T> bool inline operator>= (T a, const UInt128 b) { return b.lo
 template<typename T> bool inline operator>  (T a, const UInt128 b) { return b.low == 0 && a >  static_cast<T>(b.high); }
 template<typename T> bool inline operator<= (T a, const UInt128 b) { return b.low != 0 || a <= static_cast<T>(b.high); }
 template<typename T> bool inline operator<  (T a, const UInt128 b) { return b.low != 0 || a <  static_cast<T>(b.high); }
+
+template <> struct IsNumber<UInt128> { static constexpr bool value = true; };
+template <> struct TypeName<UInt128> { static std::string get() { return "UInt128"; } };
 
 struct UInt128Hash
 {
@@ -198,5 +201,16 @@ template <> struct is_signed<DB::UInt128>
 template <> struct is_unsigned<DB::UInt128>
 {
     static constexpr bool value = true;
+};
+
+template <> struct is_integral<DB::UInt128>
+{
+    static constexpr bool value = true;
+};
+
+// Operator +, -, /, *, % aren't implemented so it's not an arithmetic type
+template <> struct is_arithmetic<DB::UInt128>
+{
+    static constexpr bool value = false;
 };
 }

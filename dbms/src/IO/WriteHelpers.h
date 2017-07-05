@@ -481,7 +481,7 @@ inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 {
     char s[36];
 
-    formatUUID(uuid, (UInt8 *)s);
+    formatUUID(uuid, reinterpret_cast<UInt8 *>(s));
     buf.write(s, sizeof(s));
 }
 

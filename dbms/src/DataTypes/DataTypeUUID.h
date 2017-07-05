@@ -14,7 +14,8 @@ class DataTypeUUID final : public DataTypeNumberBase<UInt128>
 
 public:
     bool behavesAsNumber() const override { return false; }
-
+    
+    std::string getName() const override { return "UUID"; }
     DataTypePtr clone() const override { return std::make_shared<DataTypeUUID>(); }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;

@@ -31,7 +31,7 @@ using DB::UInt64;
 // Case 1. Is pair of floats or pair of ints or pair of uints
 template <typename A, typename B>
 using is_safe_conversion = std::integral_constant<bool, (std::is_floating_point<A>::value && std::is_floating_point<B>::value)
-    || ((std::is_integral<A>::value || std::is_same<A, DB::UInt128>::value) && (std::is_integral<B>::value || std::is_same<B, DB::UInt128>::value) && !(std::is_signed<A>::value ^ std::is_signed<B>::value))>;
+    || (std::is_integral<A>::value && std::is_integral<B>::value && !(std::is_signed<A>::value ^ std::is_signed<B>::value))>;
 template <typename A, typename B>
 using bool_if_safe_conversion = std::enable_if_t<is_safe_conversion<A, B>::value, bool>;
 template <typename A, typename B>
@@ -41,8 +41,8 @@ using bool_if_not_safe_conversion = std::enable_if_t<!is_safe_conversion<A, B>::
 /// Case 2. Are params IntXX and UIntYY ?
 template <typename TInt, typename TUInt>
 using is_any_int_vs_uint = std::integral_constant<bool,
-                            std::is_integral<TInt>::value && (std::is_integral<TUInt>::value || std::is_same<TUInt, DB::UInt128>::value) &&
-                               std::is_signed<TInt>::value && (std::is_unsigned<TUInt>::value || std::is_same<TUInt, DB::UInt128>::value)>;
+                            std::is_integral<TInt>::value && std::is_integral<TUInt>::value &&
+                               std::is_signed<TInt>::value && std::is_unsigned<TUInt>::value>;
 
 
 // Case 2a. Are params IntXX and UIntYY and sizeof(IntXX) >= sizeof(UIntYY) (in such case will use accurate compare)
@@ -112,7 +112,7 @@ inline bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
 // Case 3a. Comparison via conversion to double.
 template <typename TAInt, typename TAFloat>
 using bool_if_double_can_be_used = std::enable_if_t<
-                                        std::is_integral<TAInt>::value && (sizeof(TAInt) <= 4 || sizeof(DB::UInt128) == sizeof(TAInt)) && std::is_floating_point<TAFloat>::value,
+                                        std::is_integral<TAInt>::value && (sizeof(TAInt) <= 4) && std::is_floating_point<TAFloat>::value,
                                         bool>;
 
 template <typename TAInt, typename TAFloat>
@@ -228,13 +228,13 @@ inline bool greaterOp<DB::UInt64, DB::Float32>(DB::UInt64 u, DB::Float32 f)
 template<>
 inline bool greaterOp<DB::Float64, DB::UInt128>(DB::Float64 f, DB::UInt128 u)
 {
-    return f > u && greaterOp(f, static_cast<UInt64>(u));
+    return u.low == 0 && greaterOp(f, u.high);
 }
 
 template<>
 inline bool greaterOp<DB::UInt128, DB::Float64>(DB::UInt128 u, DB::Float64 f)
 {
-    return u > f && greaterOp(static_cast<UInt64>(u), f);
+    return u.low != 0 || greaterOp(u.high, f);
 }
 
 template<>
@@ -312,7 +312,7 @@ inline bool equalsOp<DB::Int64, DB::Float32>(DB::Int64 u, DB::Float32 f)
 template<>
 inline bool equalsOp<DB::UInt128, DB::Float64>(DB::UInt128 u, DB::Float64 f)
 {
-    return u == f && equalsOp(static_cast<UInt64>(u), f);
+    return u.low == 0 && equalsOp(static_cast<UInt64>(u.high), f);
 }
 
 template<>
@@ -324,7 +324,7 @@ inline bool equalsOp<DB::UInt128, DB::Float32>(DB::UInt128 u, DB::Float32 f)
 template<>
 inline bool equalsOp<DB::Float64, DB::UInt128>(DB::Float64 f, DB::UInt128 u)
 {
-    return f == u && equalsOp(f, static_cast<UInt64>(u));
+    return equalsOp(u, f);
 }
 
 template<>

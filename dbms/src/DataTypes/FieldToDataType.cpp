@@ -175,7 +175,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
         return wrap_into_array(std::make_shared<DataTypeString>());
 
     if (has_uint128)
-        return wrap_into_array(std::make_shared<DataTypeUUID>());
+        return wrap_into_array(std::make_shared<DataTypeUInt128>());
 
     if (has_float && max_bits == 64)
         throw Exception("Incompatible types Float64 and UInt64/Int64 of elements of array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

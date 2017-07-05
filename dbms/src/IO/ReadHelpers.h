@@ -605,7 +605,7 @@ inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
         throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
     }
 
-    parseUUID((const UInt8 *)s, uuid);
+    parseUUID(reinterpret_cast<const UInt8 *>(s), uuid);
 }
 
 

@@ -132,7 +132,6 @@ namespace
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
                 break;
             }
-
         }
     }
 }
