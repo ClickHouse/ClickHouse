@@ -121,7 +121,7 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
     const Block & sample, const Context & context)
 {
     const Settings & settings = context.getSettingsRef();
-    FormatSettingsJSON json_settings(settings.output_format_json_quote_64bit_integers, true);
+    FormatSettingsJSON json_settings(settings.output_format_json_quote_64bit_integers, settings.output_format_json_quote_denormals);
 
     if (name == "Native")
         return std::make_shared<NativeBlockOutputStream>(buf);
