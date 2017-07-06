@@ -219,8 +219,8 @@ Block PKCondition::getBlockWithConstants(
 
 
 PKCondition::PKCondition(const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns,
-                         const SortDescription & sort_descr_, const Block & pk_sample_block_)
-    : sort_descr(sort_descr_), pk_sample_block(pk_sample_block_)
+                         const SortDescription & sort_descr_, ExpressionActionsPtr pk_expr_)
+    : sort_descr(sort_descr_), pk_expr(pk_expr_)
 {
     for (size_t i = 0; i < sort_descr.size(); ++i)
     {
@@ -297,6 +297,26 @@ static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field
         return false;
 }
 
+
+static void applyFunction(
+    FunctionPtr & func,
+    const DataTypePtr & arg_type, const Field & arg_value,
+    DataTypePtr & res_type, Field & res_value)
+{
+    res_type = func->getReturnType({arg_type});
+
+    Block block
+    {
+        { arg_type->createConstColumn(1, arg_value), arg_type, "x" },
+        { nullptr, res_type, "y" }
+    };
+
+    func->execute(block, {0}, 1);
+
+    block.safeGetByPosition(1).column->get(0, res_value);
+}
+
+
 void PKCondition::traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants)
 {
     RPNElement element;
@@ -327,6 +347,68 @@ void PKCondition::traverseAST(const ASTPtr & node, const Context & context, Bloc
     }
 
     rpn.push_back(element);
+}
+
+
+bool PKCondition::canConstantBeWrappedByMonotonicFunctions(
+    const ASTPtr & node,
+    const Context & context,
+    size_t & out_primary_key_column_num,
+    DataTypePtr & out_primary_key_column_type,
+    Field & out_value,
+    DataTypePtr & out_type)
+{
+    String expr_name = node->getColumnName();
+    const auto & sample_block = pk_expr->getSampleBlock();
+    if (!sample_block.has(expr_name))
+        return false;
+
+    bool found_transformation = false;
+    for (const ExpressionAction & a : pk_expr->getActions())
+    {
+        /** The primary key functional expression constraint may be inferred from a plain column in the expression.
+          * For example, if the primary key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
+          * it can be assumed that if `toStartOfHour()` is monotonic on [now(), inf), the `toStartOfHour(Timestamp) >= toStartOfHour(now())`
+          * condition also holds, so the index may be used to select only parts satisfying this condition.
+          *
+          * To check the assumption, we'd need to assert that the inverse function to this transformation is also monotonic, however the
+          * inversion isn't exported (or even viable for not strictly monotonic functions such as `toStartOfHour()`).
+          * Instead, we can qualify only functions that do not transform the range (for example rounding),
+          * which while not strictly monotonic, are monotonic everywhere on the input range.
+          */
+        const auto & action = a.argument_names;
+        if (a.type == ExpressionAction::Type::APPLY_FUNCTION && action.size() == 1 && a.argument_names[0] == expr_name)
+        {
+            if (!a.function->hasInformationAboutMonotonicity())
+                return false;
+
+            // Range is irrelevant in this case
+            IFunction::Monotonicity monotonicity = a.function->getMonotonicityForRange(*out_type, Field(), Field());
+            if (!monotonicity.is_always_monotonic)
+                return false;
+
+            // Apply the next transformation step
+            DataTypePtr new_type;
+            applyFunction(a.function, out_type, out_value, new_type, out_value);
+            if (!new_type)
+                return false;
+
+            out_type.swap(new_type);
+            expr_name = a.result_name;
+
+            // Transformation results in a primary key expression, accept
+            auto it = pk_columns.find(expr_name);
+            if (pk_columns.end() != it)
+            {
+                out_primary_key_column_num = it->second;
+                out_primary_key_column_type = sample_block.getByName(it->first).type;
+                found_transformation = true;
+                break;
+            }
+        }
+    }
+
+    return found_transformation;
 }
 
 
@@ -368,13 +450,14 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
     /** By itself, the primary key column can be a functional expression. for example, `intHash32(UserID)`.
       * Therefore, use the full name of the expression for search.
       */
+    const auto & sample_block = pk_expr->getSampleBlock();
     String name = node->getColumnName();
 
     auto it = pk_columns.find(name);
     if (pk_columns.end() != it)
     {
         out_primary_key_column_num = it->second;
-        out_primary_key_column_type = pk_sample_block.getByName(name).type;
+        out_primary_key_column_type = sample_block.getByName(it->first).type;
         return true;
     }
 
@@ -437,16 +520,29 @@ bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Bloc
         size_t key_column_num;        /// Number of a primary key column (inside sort_descr array)
         RPNElement::MonotonicFunctionsChain chain;
         bool is_set_const = false;
+        bool is_constant_transformed = false;
 
         if (getConstant(args[1], block_with_constants, const_value, const_type)
             && isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
         {
             key_arg_pos = 0;
         }
+        else if (getConstant(args[1], block_with_constants, const_value, const_type)
+            && canConstantBeWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, const_value, const_type))
+        {
+            key_arg_pos = 0;
+            is_constant_transformed = true;
+        }
         else if (getConstant(args[0], block_with_constants, const_value, const_type)
             && isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
         {
             key_arg_pos = 1;
+        }
+        else if (getConstant(args[0], block_with_constants, const_value, const_type)
+            &&  canConstantBeWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, const_value, const_type))
+        {
+            key_arg_pos = 1;
+            is_constant_transformed = true;
         }
         else if (typeid_cast<const ASTSet *>(args[1].get())
             && isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
@@ -458,6 +554,15 @@ bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Bloc
             return false;
 
         std::string func_name = func->name;
+
+        /// Transformed constant must weaken the condition, for example "x > 5" must weaken to "round(x) >= 5"
+        if (is_constant_transformed)
+        {
+            if (func_name == "less")
+                func_name = "lessOrEquals";
+            else if (func_name == "greater")
+                func_name = "greaterOrEquals";
+        }
 
         /// Replace <const> <sign> <data> on to <data> <-sign> <const>
         if (key_arg_pos == 1)
@@ -549,25 +654,6 @@ String PKCondition::toString() const
         res += rpn[i].toString();
     }
     return res;
-}
-
-
-static void applyFunction(
-    FunctionPtr & func,
-    const DataTypePtr & arg_type, const Field & arg_value,
-    DataTypePtr & res_type, Field & res_value)
-{
-    res_type = func->getReturnType({arg_type});
-
-    Block block
-    {
-        { arg_type->createConstColumn(1, arg_value), arg_type, "x" },
-        { nullptr, res_type, "y" }
-    };
-
-    func->execute(block, {0}, 1);
-
-    block.safeGetByPosition(1).column->get(0, res_value);
 }
 
 
@@ -745,7 +831,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
         {
             const Range * key_range = &key_ranges[element.key_column];
 
-            /// The case when the column is wrapped in a chain of possibly monotone functions.
+            /// The case when the column is wrapped in a chain of possibly monotonic functions.
             Range key_range_transformed;
             bool evaluation_is_not_possible = false;
             if (!element.monotonic_functions_chain.empty())
@@ -856,7 +942,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in PkCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in PKCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
 
     return rpn_stack[0].can_be_true;
 }
