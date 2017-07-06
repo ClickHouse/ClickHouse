@@ -241,6 +241,7 @@ public:
         return this->scatterImpl<Self>(num_columns, selector);
     }
 
+    void gather(ColumnGathererStream & gatherer_stream) override;
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container_t & getData()

@@ -103,6 +103,11 @@ public:
         return res;
     }
 
+    void gather(ColumnGathererStream &) override
+    {
+        throw Exception("Method gather is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     void getExtremes(Field & min, Field & max) const override
     {
         throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);

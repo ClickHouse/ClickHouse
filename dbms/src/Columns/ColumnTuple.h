@@ -51,6 +51,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr replicate(const Offsets_t & offsets) const override;
     Columns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    void gather(ColumnGathererStream & gatherer_stream) override;
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
     void getExtremes(Field & min, Field & max) const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;

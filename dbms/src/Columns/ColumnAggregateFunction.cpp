@@ -1,5 +1,6 @@
-#include <AggregateFunctions/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <Common/SipHash.h>
 
 namespace DB
@@ -338,6 +339,11 @@ void ColumnAggregateFunction::getPermutation(bool reverse, size_t limit, int nan
     res.resize(s);
     for (size_t i = 0; i < s; ++i)
         res[i] = i;
+}
+
+void ColumnAggregateFunction::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
 }
 
 void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const

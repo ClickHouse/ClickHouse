@@ -3,6 +3,7 @@
 #include <Common/Collator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
+#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
@@ -244,6 +245,12 @@ ColumnPtr ColumnString::replicate(const Offsets_t & replicate_offsets) const
     }
 
     return res;
+}
+
+
+void ColumnString::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
 }
 
 

@@ -11,6 +11,8 @@
 
 #include <Columns/ColumnVector.h>
 
+#include <DataStreams/ColumnGathererStream.h>
+
 #include <ext/bit_cast.h>
 
 #if __SSE2__
@@ -253,6 +255,12 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets_t & offsets) const
     }
 
     return res;
+}
+
+template <typename T>
+void ColumnVector<T>::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
 }
 
 template <typename T>

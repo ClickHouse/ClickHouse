@@ -1,6 +1,7 @@
 #include <Columns/ColumnTuple.h>
 #include <ext/map.h>
 #include <ext/range.h>
+#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
@@ -229,6 +230,11 @@ void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_h
         else
             std::sort(res.begin(), res.end(), Less<true>(columns, nan_direction_hint));
     }
+}
+
+void ColumnTuple::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
 }
 
 void ColumnTuple::reserve(size_t n)
