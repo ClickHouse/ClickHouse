@@ -195,15 +195,15 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     data.check(real_column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
+    const Settings & settings = context.getSettingsRef();
     SortDescription sort_descr = data.getSortDescription();
+    ColumnsWithTypeAndName date_columns = {{DataTypeDate{}.createColumn(), std::make_shared<DataTypeDate>(), data.date_column_name}};
 
     PKCondition key_condition(query, context, available_real_and_virtual_columns, sort_descr,
-        data.getPrimaryExpression()->getSampleBlock());
+        data.getPrimaryExpression());
     PKCondition date_condition(query, context, available_real_and_virtual_columns,
         SortDescription(1, SortColumnDescription(data.date_column_name, 1, 1)),
-        Block{{DataTypeDate{}.createColumn(), std::make_shared<DataTypeDate>(), data.date_column_name}});
-
-    const Settings & settings = context.getSettingsRef();
+        std::make_shared<ExpressionActions>(date_columns, settings));
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {

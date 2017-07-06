@@ -1049,12 +1049,12 @@ struct ToIntMonotonicity
 
         /// If type is expanding, then function is monotonic.
         if (sizeof(T) > size_of_type)
-            return { true };
+            return { true, true, true };
 
         /// If type is same, too. (Enum has separate case, because it is different data type)
         if (typeid_cast<const DataTypeNumber<T> *>(&type) ||
             typeid_cast<const DataTypeEnum<T> *>(&type))
-            return { true };
+            return { true, true, true };
 
         /// In other cases, if range is unbounded, we don't know, whether function is monotonic or not.
         if (left.isNull() || right.isNull())
