@@ -69,12 +69,12 @@ public:
             {
                 case Null:    return "Null";
                 case UInt64:  return "UInt64";
+                case UInt128: return "UInt128";
                 case Int64:   return "Int64";
                 case Float64: return "Float64";
                 case String:  return "String";
                 case Array:   return "Array";
                 case Tuple:   return "Tuple";
-                case UInt128: return "UInt128";
 
                 default:
                     throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -236,12 +236,12 @@ public:
         {
             case Types::Null:    return false;
             case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
+            case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
             case Types::Int64:   return get<Int64>()   < rhs.get<Int64>();
             case Types::Float64: return get<Float64>() < rhs.get<Float64>();
             case Types::String:  return get<String>()  < rhs.get<String>();
             case Types::Array:   return get<Array>()   < rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   < rhs.get<Tuple>();
-            case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -264,12 +264,13 @@ public:
         {
             case Types::Null:    return true;
             case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
+            case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
             case Types::Int64:   return get<Int64>()   <= rhs.get<Int64>();
             case Types::Float64: return get<Float64>() <= rhs.get<Float64>();
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   <= rhs.get<Tuple>();
-            case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
+
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -343,12 +344,12 @@ private:
         {
             case Types::Null:    f(field.template get<Null>());    return;
             case Types::UInt64:  f(field.template get<UInt64>());  return;
+            case Types::UInt128: f(field.template get<UInt128>()); return;
             case Types::Int64:   f(field.template get<Int64>());   return;
             case Types::Float64: f(field.template get<Float64>()); return;
             case Types::String:  f(field.template get<String>());  return;
             case Types::Array:   f(field.template get<Array>());   return;
             case Types::Tuple:   f(field.template get<Tuple>());   return;
-            case Types::UInt128: f(field.template get<UInt128>()); return;
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -405,7 +406,6 @@ private:
             case Types::Tuple:
                 destroy<Tuple>();
                 break;
-
             default:
                  break;
         }
@@ -426,21 +426,21 @@ private:
 
 template <> struct Field::TypeToEnum<Null>    { static const Types::Which value = Types::Null; };
 template <> struct Field::TypeToEnum<UInt64>  { static const Types::Which value = Types::UInt64; };
+template <> struct Field::TypeToEnum<UInt128> { static const Types::Which value = Types::UInt128; };
 template <> struct Field::TypeToEnum<Int64>   { static const Types::Which value = Types::Int64; };
 template <> struct Field::TypeToEnum<Float64> { static const Types::Which value = Types::Float64; };
 template <> struct Field::TypeToEnum<String>  { static const Types::Which value = Types::String; };
 template <> struct Field::TypeToEnum<Array>   { static const Types::Which value = Types::Array; };
 template <> struct Field::TypeToEnum<Tuple>   { static const Types::Which value = Types::Tuple; };
-template <> struct Field::TypeToEnum<UInt128> { static const Types::Which value = Types::UInt128; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
 template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
+template <> struct Field::EnumToType<Field::Types::UInt128> { using Type = UInt128; };
 template <> struct Field::EnumToType<Field::Types::Int64>   { using Type = Int64; };
 template <> struct Field::EnumToType<Field::Types::Float64> { using Type = Float64; };
 template <> struct Field::EnumToType<Field::Types::String>  { using Type = String; };
 template <> struct Field::EnumToType<Field::Types::Array>   { using Type = Array; };
 template <> struct Field::EnumToType<Field::Types::Tuple>   { using Type = Tuple; };
-template <> struct Field::EnumToType<Field::Types::UInt128> { using Type = UInt128; };
 
 
 template <typename T>

@@ -41,7 +41,7 @@ void parseUUID(const UInt8 * src36, UInt8 * dst16)
     parseHex(&src36[24], &dst16[10], 6);
 }
 
-void parseUUID(const UInt8 * src36, UUID & uuid)
+void parseUUID(const UInt8 * src36, UInt128 & uuid)
 {
    char s[16 + 1];
 

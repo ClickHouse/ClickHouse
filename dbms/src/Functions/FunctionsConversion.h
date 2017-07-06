@@ -324,6 +324,12 @@ template <> inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType 
     x = tmp;
 }
 
+template <> inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
+{
+    UUID tmp;
+    readText(tmp, rb);
+    x = tmp;
+}
 
 /** Throw exception with verbose message when string value is not parsed completely.
   */

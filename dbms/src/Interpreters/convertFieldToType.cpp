@@ -89,7 +89,7 @@ UInt64 stringToDateTime(const String & s)
     return UInt64(date_time);
 }
 
-UUID stringToUUID(const String & s)
+UInt128 stringToUUID(const String & s)
 {
     ReadBufferFromString in(s);
     UUID uuid;
@@ -98,7 +98,7 @@ UUID stringToUUID(const String & s)
     if (!in.eof())
         throw Exception("String is too long for UUID: " + s);
 
-    return uuid;
+    return UInt128(uuid);
 }
 
 

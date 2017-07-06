@@ -5,6 +5,6 @@
 namespace DB
 {
 
-using UUID = DB::UInt128;
+STRONG_TYPEDEF(UInt128, UUID);
 
 }
