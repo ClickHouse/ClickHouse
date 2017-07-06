@@ -65,7 +65,6 @@ void DataTypeNumberBase<T>::deserializeTextQuoted(IColumn & column, ReadBuffer &
 template <typename T>
 void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
 {
-    writeCString(settings.output_format_json_quote_denormals ? "1" : "0", ostr);
     auto x = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
     bool is_finite = isFinite(x);
 
