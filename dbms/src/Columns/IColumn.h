@@ -31,7 +31,7 @@ using ColumnPlainPtrs = std::vector<IColumn *>;
 using ConstColumnPlainPtrs = std::vector<const IColumn *>;
 
 class Arena;
-
+class ColumnGathererStream;
 
 /// Declares interface to store columns in memory.
 class IColumn : private boost::noncopyable
@@ -224,6 +224,12 @@ public:
     using ColumnIndex = UInt64;
     using Selector = PaddedPODArray<ColumnIndex>;
     virtual Columns scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
+
+    /// Insert data from several other columns according to source mask (used in vertical merge).
+    /// For now it is a helper to de-virtualize calls to insert*() functions inside gather loop
+    /// (descendants should call gatherer_stream.gather(*this) to implement this function.)
+    /// TODO: interface decoupled from ColumnGathererStream that allows non-generic specializations.
+    virtual void gather(ColumnGathererStream & gatherer_stream) = 0;
 
     /** Computes minimum and maximum element of the column.
       * In addition to numeric types, the funtion is completely implemented for Date and DateTime.

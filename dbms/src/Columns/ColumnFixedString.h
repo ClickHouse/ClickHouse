@@ -120,6 +120,8 @@ public:
         return scatterImpl<ColumnFixedString>(num_columns, selector);
     }
 
+    void gather(ColumnGathererStream & gatherer_stream) override;
+
     void reserve(size_t size) override
     {
         chars.reserve(n * size);

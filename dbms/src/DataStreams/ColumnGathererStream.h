@@ -70,8 +70,11 @@ public:
 
     void readSuffixImpl() override;
 
-private:
+    /// for use in implementations of IColumn::gather()
+    template<typename Column>
+    void gather(Column & column_res);
 
+private:
     String name;
     ColumnWithTypeAndName column;
     const MergedRowSources & row_source;
@@ -105,7 +108,64 @@ private:
     size_t pos_global_start = 0;
     size_t block_preferred_size;
 
+    Block block_res;
+
     Poco::Logger * log;
 };
+
+template<typename Column>
+void ColumnGathererStream::gather(Column & column_res)
+{
+    size_t global_size = row_source.size();
+    size_t curr_block_preferred_size = std::min(global_size - pos_global_start,  block_preferred_size);
+    column_res.reserve(curr_block_preferred_size);
+
+    size_t pos_global = pos_global_start;
+    while (pos_global < global_size && column_res.size() < curr_block_preferred_size)
+    {
+        auto source_data = row_source[pos_global].getData();
+        bool source_skip = row_source[pos_global].getSkipFlag();
+        auto source_num = row_source[pos_global].getSourceNum();
+        Source & source = sources[source_num];
+
+        if (source.pos >= source.size) /// Fetch new block from source_num part
+        {
+            fetchNewBlock(source, source_num);
+        }
+
+        /// Consecutive optimization. TODO: precompute lens
+        size_t len = 1;
+        size_t max_len = std::min(global_size - pos_global, source.size - source.pos); // interval should be in the same block
+        for (; len < max_len && source_data == row_source[pos_global + len].getData(); ++len);
+
+        if (!source_skip)
+        {
+            /// Whole block could be produced via copying pointer from current block
+            if (source.pos == 0 && source.size == len)
+            {
+                /// If current block already contains data, return it. We will be here again on next read() iteration.
+                if (column_res.size() != 0)
+                    break;
+
+                block_res.getByPosition(0).column = source.block.getByName(name).column;
+                source.pos += len;
+                pos_global += len;
+                break;
+            }
+            else if (len == 1)
+            {
+                column_res.insertFrom(*source.column, source.pos);
+            }
+            else
+            {
+                column_res.insertRangeFrom(*source.column, source.pos, len);
+            }
+        }
+
+        source.pos += len;
+        pos_global += len;
+    }
+    pos_global_start = pos_global;
+}
 
 }
