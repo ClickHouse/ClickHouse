@@ -1,6 +1,6 @@
 Начало работы
 =============
-    
+
 Системные требования
 --------------------
 
@@ -29,6 +29,7 @@
     deb http://repo.yandex.ru/clickhouse/trusty stable main
 
 На других версиях Ubuntu, замените ``trusty`` на ``xenial`` или ``precise``.
+Если вы хотите использовать наиболее свежую тестовую версию, замените stable на testing.
 
 Затем выполните:
 
@@ -37,7 +38,7 @@
     sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
     sudo apt-get update
     sudo apt-get install clickhouse-client clickhouse-server-common
-    
+
 Также можно скачать и установить пакеты вручную, отсюда:
 http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/,
 http://repo.yandex.ru/clickhouse/xenial/pool/main/c/clickhouse/,
@@ -65,7 +66,7 @@ ClickHouse содержит настройки ограничения досту
 
     /opt/clickhouse/data/default/
     /opt/clickhouse/metadata/default/
-    
+
 (Настраивается в конфиге сервера.)
 Сделайте chown под нужного пользователя.
 
@@ -86,7 +87,7 @@ Gentoo overlay: https://github.com/kmeaw/clickhouse-overlay
 .. code-block:: bash
 
     sudo service clickhouse-server start
-    
+
 Смотрите логи в директории ``/var/log/clickhouse-server/``
 
 Если сервер не стартует - проверьте правильность конфигурации в файле ``/etc/clickhouse-server/config.xml``
@@ -96,7 +97,7 @@ Gentoo overlay: https://github.com/kmeaw/clickhouse-overlay
 .. code-block:: bash
 
     clickhouse-server --config-file=/etc/clickhouse-server/config.xml
-    
+
 При этом, лог будет выводиться в консоль - удобно для разработки.
 Если конфигурационный файл лежит в текущей директории, то указывать параметр --config-file не требуется - по умолчанию будет использован файл ./config.xml
 
@@ -112,7 +113,7 @@ Gentoo overlay: https://github.com/kmeaw/clickhouse-overlay
 .. code-block:: bash
 
     clickhouse-client --host=example.com
-    
+
 Подробнее смотри раздел "Клиент командной строки".
 
 Проверим работоспособность системы:
@@ -123,17 +124,17 @@ Gentoo overlay: https://github.com/kmeaw/clickhouse-overlay
     ClickHouse client version 0.0.18749.
     Connecting to localhost:9000.
     Connected to ClickHouse server version 0.0.18749.
-    
+
     :) SELECT 1
-    
+
     SELECT 1
-    
+
     ┌─1─┐
     │ 1 │
     └───┘
-    
+
     1 rows in set. Elapsed: 0.003 sec.
-    
+
     :)
 
 **Поздравляем, система работает!**
