@@ -122,28 +122,31 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         {
             /// Let's read the full block of columns needed to calculate the expression in PREWHERE.
             MarkRanges ranges_to_read;
-            std::vector<size_t> rows_was_read;
+            //std::vector<size_t> rows_was_read;
+            /// Last range may be partl read. The same number of rows we need to read after prewhere
+            size_t rows_was_read_in_last_range = 0;
             std::experimental::optional<MergeTreeRangeReader> pre_range_reader;
 
-            auto processNextRange = [& ranges_to_read, & rows_was_read, & pre_range_reader](
+            auto processNextRange = [& ranges_to_read, & rows_was_read_in_last_range, & pre_range_reader](
                 MergeTreeReadTask & task, MergeTreeReader & pre_reader)
             {
                 auto & range = task.mark_ranges.back();
                 pre_range_reader = pre_reader.readRange(range.begin, range.end);
                 ranges_to_read.push_back(range);
-                rows_was_read.push_back(0);
+                rows_was_read_in_last_range = 0;
                 task.mark_ranges.pop_back();
             };
 
             if (task->current_range_reader)
             {
+                /// Havn't finihsed reading at last step. Copy state for prewhere columns
                 pre_range_reader = task->current_range_reader->copyForReader(*pre_reader);
                 if (task->number_of_rows_to_skip)
                 {
+                    /// number_of_rows_to_skip already was read for prewhere columns. skip them.
                     pre_range_reader = pre_range_reader->getFutureState(task->number_of_rows_to_skip);
                     pre_range_reader->disableNextSeek();
                 }
-                rows_was_read.push_back(0);
             }
             else
                 processNextRange(*task, *pre_reader);
@@ -161,7 +164,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 size_t rows_to_read = std::min(pre_range_reader->unreadRows(), space_left);
                 size_t read_rows = pre_range_reader->read(res, rows_to_read);
-                rows_was_read.back() += read_rows;
+                rows_was_read_in_last_range += read_rows;
                 if (pre_range_reader->isReadingFinished())
                     pre_range_reader = std::experimental::nullopt;
 
@@ -206,10 +209,11 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 {
                     if (pre_range_reader)
                     {
-                        /// have to read rows from last partly read granula
+                        /// Have to read rows from last partly read granula.
                         auto & range = ranges_to_read.back();
                         task->current_range_reader = reader->readRange(range.begin, range.end);
-                        task->number_of_rows_to_skip = rows_was_read.back();
+                        /// But can just skip them.
+                        task->number_of_rows_to_skip = rows_was_read_in_last_range;
                     }
                     else
                         task->current_range_reader = std::experimental::nullopt;
@@ -218,19 +222,22 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                     return res;
                 }
 
-                size_t rows_was_read_idx = 0;
-
                 if (task->current_range_reader)
                 {
                     if (task->number_of_rows_to_skip)
                         skipRows(res, *task->current_range_reader, *task, task->number_of_rows_to_skip);
-                    task->current_range_reader->read(res, rows_was_read[rows_was_read_idx++]);
+                    size_t rows_to_read = ranges_to_read.empty()
+                        ? rows_was_read_in_last_range : task->current_range_reader->unreadRows();
+                    task->current_range_reader->read(res, rows_to_read);
                 }
 
-                for (const auto & range : ranges_to_read)
+                for (auto range_idx : ext::range(0, ranges_to_read.size()))
                 {
+                    const auto & range = ranges_to_read[range_idx];
                     task->current_range_reader = reader->readRange(range.begin, range.end);
-                    task->current_range_reader->read(res, rows_was_read[rows_was_read_idx++]);
+                    size_t rows_to_read = range_idx + 1 == ranges_to_read.size()
+                        ? rows_was_read_in_last_range : task->current_range_reader->unreadRows();
+                    task->current_range_reader->read(res, rows_to_read);
                 }
 
                 if (!pre_range_reader)
@@ -252,7 +259,6 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 size_t post_filter_pos = 0;
 
                 size_t next_range_idx = 0;
-                size_t rows_was_read_idx = 0;
                 while (pre_filter_pos < pre_filter.size())
                 {
                     if (!task->current_range_reader)
@@ -266,7 +272,33 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                     size_t current_range_rows_read = 0;
                     auto pre_filter_begin_pos = pre_filter_pos;
 
-                    while (current_range_rows_read + (pre_filter_pos - pre_filter_begin_pos) < rows_was_read[rows_was_read_idx])
+                    /// Now we need to read the same number of rows as in prewhere.
+                    size_t rows_to_read = next_range_idx == ranges_to_read.size()
+                        ? rows_was_read_in_last_range : task->current_range_reader->unreadRows();
+
+                    auto readRows = [&]()
+                    {
+                        if (pre_filter_pos != pre_filter_begin_pos)
+                        {
+                            /// Fulfilling the promise to read (pre_filter_pos - pre_filter_begin_pos) rows
+                            auto rows = pre_filter_pos - pre_filter_begin_pos;
+                            memcpy(&post_filter[post_filter_pos], &pre_filter[pre_filter_begin_pos], rows);
+                            post_filter_pos += rows;
+                            current_range_rows_read += rows;
+                            if (number_of_rows_to_skip)
+                            {
+                                /** Wasn't able to skip 'number_of_rows_to_skip' with false prewhere conditon
+                                 * Just read them and throw away. */
+                                skipRows(res, range_reader, *task, number_of_rows_to_skip);
+                                number_of_rows_to_skip = 0;
+                            }
+                            range_reader.read(res, rows);
+                        }
+                    };
+
+                    /** (pre_filter_pos - pre_filter_begin_pos) here is the number of rows we promies to read, but
+                        haven't read yet to merge consecutive nonempy granulas. */
+                    while (current_range_rows_read + (pre_filter_pos - pre_filter_begin_pos) < rows_to_read)
                     {
                         auto rows_should_be_copied = pre_filter_pos - pre_filter_begin_pos;
                         auto range_reader_with_skipped_rows = range_reader.getFutureState(number_of_rows_to_skip + rows_should_be_copied);
@@ -281,54 +313,32 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                         if (!nonzero)
                         {
-                            if (pre_filter_pos != pre_filter_begin_pos)
-                            {
-                                auto rows = pre_filter_pos - pre_filter_begin_pos;
-                                memcpy(&post_filter[post_filter_pos], &pre_filter[pre_filter_begin_pos], rows);
-                                post_filter_pos += rows;
-                                current_range_rows_read += rows;
-                                if (number_of_rows_to_skip)
-                                {
-                                    skipRows(res, range_reader, *task, number_of_rows_to_skip);
-                                    number_of_rows_to_skip = 0;
-                                }
-                                range_reader.read(res, rows);
-                            }
+                            /// Zero! Prewhere condition is false for all (limit - pre_filter_pos) rows.
+                            readRows();
 
                             if (will_read_until_mark)
                             {
+                                /// Can skip the rest of granule with false prewhere conditon right now.
                                 current_range_rows_read += range_reader.skipToNextMark() - number_of_rows_to_skip;
                                 number_of_rows_to_skip = 0;
                             }
                             else
                             {
+                                /// Here reading seems to be done. It's still possible to skip rows during next reading.
                                 number_of_rows_to_skip += limit - pre_filter_pos;
                                 current_range_rows_read += limit - pre_filter_pos;
                             }
 
-                            pre_filter_begin_pos = pre_filter_pos = limit;
+                            pre_filter_begin_pos = limit;
                         }
-                        else
-                            pre_filter_pos = limit;
+
+                        pre_filter_pos = limit;
                     }
 
-                    if (pre_filter_pos != pre_filter_begin_pos)
-                    {
-                        auto rows = pre_filter_pos - pre_filter_begin_pos;
-                        memcpy(&post_filter[post_filter_pos], &pre_filter[pre_filter_begin_pos], rows);
-                        post_filter_pos += rows;
-                        current_range_rows_read += rows;
-                        if (number_of_rows_to_skip)
-                        {
-                            skipRows(res, range_reader, *task, number_of_rows_to_skip);
-                            number_of_rows_to_skip = 0;
-                        }
-                        range_reader.read(res, rows);
-                    }
+                    readRows();
 
-                    if (rows_was_read_idx + 1 < rows_was_read.size())
+                    if (next_range_idx + 1 < ranges_to_read.size())
                         task->current_range_reader = std::experimental::nullopt;
-                    ++rows_was_read_idx;
                 }
 
                 if (!pre_range_reader)
