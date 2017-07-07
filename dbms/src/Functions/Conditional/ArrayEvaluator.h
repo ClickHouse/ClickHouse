@@ -400,23 +400,12 @@ private:
 
     static size_t computeResultSize(const IArraySources<TResult> & sources, size_t row_count)
     {
-        size_t max_var = 0;
-        size_t max_const = 0;
+        size_t max_size = 0;
 
         for (const auto & source : sources)
-        {
-            if (source->isConst())
-                max_const = std::max(max_const, source->getDataSize());
-            else
-                max_var = std::max(max_var, source->getDataSize());
-        }
+            max_size = std::max(max_size, source->isConst() ? source->getDataSize() * row_count : source->getDataSize());
 
-        if (max_var > 0)
-            return max_var;
-        else if (max_const > 0)
-            return max_const * row_count;
-        else
-            throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+        return max_size;
     }
 
     /// Create the result column.
