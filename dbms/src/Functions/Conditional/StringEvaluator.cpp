@@ -427,19 +427,7 @@ size_t computeResultSize(const StringSources & sources, size_t row_count)
             throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
     }
 
-    if (max_var > 0)
-    {
-        if (max_fixed > 0)
-            return std::max(max_var, max_fixed + row_count);
-        else
-            return max_var;
-    }
-    else if (max_fixed > 0)
-        return max_fixed;
-    else if (max_const > 0)
-        return (max_const + 1) * row_count;
-    else
-        throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+    return std::max(max_var, std::max(max_fixed + row_count, (max_const + 1) * row_count));
 }
 
 /// Updates a fixed or variable string sink.

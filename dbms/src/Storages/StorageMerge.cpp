@@ -12,6 +12,7 @@
 #include <Columns/ColumnString.h>
 #include <Databases/IDatabase.h>
 #include <DataStreams/CastTypeBlockInputStream.h>
+#include <DataStreams/FilterColumnsBlockInputStream.h>
 
 
 namespace DB
@@ -225,7 +226,13 @@ BlockInputStreams StorageMerge::read(
     if (processed_stage_in_source_tables)
         processed_stage = processed_stage_in_source_tables.value();
 
-    return narrowBlockInputStreams(res, num_streams);
+    res = narrowBlockInputStreams(res, num_streams);
+
+    /// Added to avoid different block structure from different sources
+    for (auto & stream : res)
+        stream = std::make_shared<FilterColumnsBlockInputStream>(stream, column_names);
+
+    return res;
 }
 
 /// Construct a block consisting only of possible values of virtual columns

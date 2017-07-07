@@ -205,6 +205,24 @@ public:
         return *ptr;
     };
 
+    template <typename T> bool tryGet(T & result)
+    {
+        const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
+        if (which != requested)
+            return false;
+        result = get<T>();
+        return true;
+    }
+
+    template <typename T> bool tryGet(T & result) const
+    {
+        const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
+        if (which != requested)
+            return false;
+        result = get<T>();
+        return true;
+    }
+
     template <typename T> T & safeGet()
     {
         const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;

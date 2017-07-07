@@ -6,6 +6,9 @@ SELECT multiIf(1, 'A', 1, 'BC', 'DEF');
 SELECT multiIf(1, toFixedString('A', 16), 1, toFixedString('BC', 16), toFixedString('DEF', 16));
 SELECT multiIf(1, [1,2], 1, [3,4], [5,6]);
 SELECT multiIf(1, ['A', 'B'], 1, ['C', 'D'], ['E', 'F']);
+SELECT multiIf(rand() % 2 = 0, emptyArrayString(), emptyArrayString());
+SELECT multiIf(rand() % 2 = 0, emptyArrayUInt8(), emptyArrayUInt8());
+SELECT multiIf(rand() % 2 = 0, '', '');
 
 /* Numeric branches */
 
