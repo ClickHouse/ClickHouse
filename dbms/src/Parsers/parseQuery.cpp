@@ -128,25 +128,25 @@ ASTPtr tryParseQuery(
     IParser::Pos max_parsed_pos = pos;
 
     ASTPtr res;
-    bool parse_res = parser.parse(pos, end, res, max_parsed_pos, expected);
+    bool parse_res = parser.parse(pos, res, expected);
 
     /// Parsed query must end with end of data or semicolon.
-    if (!parse_res || (pos != end && *pos != ';'))
+    if (!parse_res || (pos.isValid() && *pos != ';'))
     {
         if (!expected || !*expected)
             expected = "end of query";
-        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, description);
+        out_error_message = getSyntaxErrorMessage(begin, expected, hilite, description);
         return nullptr;
     }
 
     /// If multi-statements are not allowed, then after semicolon, there must be no non-space characters.
-    if (!allow_multi_statements && pos < end && *pos == ';')
+    if (!allow_multi_statements && pos.isValid() && *pos == ';')
     {
         ++pos;
-        while (pos < end && isWhitespaceASCII(*pos))
+        while (pos.isValid() && isWhitespaceASCII(*pos))
             ++pos;
 
-        if (pos < end)
+        if (pos.isValid())
         {
             out_error_message = getSyntaxErrorMessage(begin, end, pos, nullptr, hilite,
                 (description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
@@ -196,7 +196,7 @@ std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, s
 
     queries_list.clear();
 
-    while (pos < end)
+    while (pos.isValid())
     {
         begin = pos;
 

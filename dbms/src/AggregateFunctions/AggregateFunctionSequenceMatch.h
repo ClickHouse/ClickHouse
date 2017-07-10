@@ -320,7 +320,7 @@ private:
                     else
                         throw_exception("Unknown time condition");
 
-                    if (!number_p.parse(pos, end, node, max_parsed_pos, expected))
+                    if (!number_p.parse(pos, node, expected))
                         throw_exception("Could not parse number");
 
                     if (actions.back().type != PatternActionType::SpecificEvent &&
@@ -333,7 +333,7 @@ private:
 
                     actions.emplace_back(type, typeid_cast<const ASTLiteral &>(*node).value.safeGet<UInt64>());
                 }
-                else if (number_p.parse(pos, end, node, max_parsed_pos, expected))
+                else if (number_p.parse(pos, node, expected))
                 {
                     const auto event_number = typeid_cast<const ASTLiteral &>(*node).value.safeGet<UInt64>();
                     if (event_number > arg_count - 1)

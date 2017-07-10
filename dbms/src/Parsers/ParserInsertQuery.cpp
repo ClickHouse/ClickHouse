@@ -21,11 +21,10 @@ namespace ErrorCodes
 }
 
 
-bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
 
-    ParserWhitespaceOrComments ws;
     ParserKeyword s_insert_into("INSERT INTO");
     ParserKeyword s_dot(".");
     ParserKeyword s_values("VALUES");
@@ -34,7 +33,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     ParserKeyword s_lparen("(");
     ParserKeyword s_rparen(")");
     ParserIdentifier name_p;
-    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserString>(","), false);
+    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
 
     ASTPtr database;
     ASTPtr table;
@@ -44,66 +43,46 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     /// Insertion data
     const char * data = nullptr;
 
-    ws.ignore(pos, end);
-
-    if (!s_insert_into.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_insert_into.ignore(pos, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+    if (!name_p.parse(pos, table, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (s_dot.ignore(pos, end, max_parsed_pos, expected))
+    if (s_dot.ignore(pos, expected))
     {
         database = table;
-        if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+        if (!name_p.parse(pos, table, expected))
             return false;
-
-        ws.ignore(pos, end);
     }
-
-    ws.ignore(pos, end);
 
     /// Is there a list of columns
-    if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
+    if (s_lparen.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-
-        if (!columns_p.parse(pos, end, columns, max_parsed_pos, expected))
+        if (!columns_p.parse(pos, columns, expected))
             return false;
 
-        ws.ignore(pos, end);
-
-        if (!s_rparen.ignore(pos, end, max_parsed_pos, expected))
+        if (!s_rparen.ignore(pos, expected))
             return false;
     }
-
-    ws.ignore(pos, end);
 
     Pos before_select = pos;
 
     /// VALUES or FORMAT or SELECT
-    if (s_values.ignore(pos, end, max_parsed_pos, expected))
+    if (s_values.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
         data = pos;
-        pos = end;
     }
-    else if (s_format.ignore(pos, end, max_parsed_pos, expected))
+    else if (s_format.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-
-        if (!name_p.parse(pos, end, format, max_parsed_pos, expected))
+        if (!name_p.parse(pos, format, expected))
             return false;
 
         /// Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
-        ParserWhitespaceOrComments ws_without_nl(false);
+        const char * data_begin = pos->end;
 
-        ws_without_nl.ignore(pos, end);
-        if (pos != end && *pos == ';')
+        ws_without_nl.ignore(pos);
+        if (pos->type == TokenType::Semicolon)
             throw Exception("You have excessive ';' symbol before data for INSERT.\n"
                 "Example:\n\n"
                 "INSERT INTO t (x, y) FORMAT TabSeparated\n"
@@ -112,17 +91,16 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
                 "\n"
                 "Note that there is no ';' in first line.", ErrorCodes::SYNTAX_ERROR);
 
-        if (pos != end && *pos == '\n')
+        if (pos.isValid() && *pos == '\n')
             ++pos;
 
         data = pos;
-        pos = end;
     }
-    else if (s_select.ignore(pos, end, max_parsed_pos, expected))
+    else if (s_select.ignore(pos, expected))
     {
         pos = before_select;
         ParserSelectQuery select_p;
-        select_p.parse(pos, end, select, max_parsed_pos, expected);
+        select_p.parse(pos, select, expected);
     }
     else
     {

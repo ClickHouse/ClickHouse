@@ -16,24 +16,18 @@ std::string ASTQueryWithOnCluster::getRewrittenQueryWithoutOnCluster(const std::
 }
 
 
-bool ASTQueryWithOnCluster::parse(Pos & pos, Pos end, std::string & cluster_str, Pos & max_parsed_pos, Expected & expected)
+bool ASTQueryWithOnCluster::parse(Pos & pos, std::string & cluster_str, Expected & expected)
 {
-    ParserWhitespaceOrComments ws;
-
-    ws.ignore(pos, end);
-
-    if (!ParserKeyword{"CLUSTER"}.ignore(pos, end, max_parsed_pos, expected))
+    if (!ParserKeyword{"CLUSTER"}.ignore(pos, expected))
         return false;
-
-    ws.ignore(pos, end);
 
     Pos begin = pos;
     ASTPtr res;
 
-    if (!ParserIdentifier().parse(pos, end, res, max_parsed_pos, expected))
+    if (!ParserIdentifier().parse(pos, res, expected))
     {
         pos = begin;
-        if (!ParserStringLiteral().parse(pos, end, res, max_parsed_pos, expected))
+        if (!ParserStringLiteral().parse(pos, res, expected))
             return false;
         else
             cluster_str = typeid_cast<const ASTLiteral &>(*res).value.safeGet<String>();

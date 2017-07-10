@@ -74,7 +74,7 @@ BlockIO InterpreterAlterQuery::execute()
                 break;
 
             case PartitionCommand::RESHARD_PARTITION:
-                table->reshardPartitions(query_ptr, database_name, command.partition, command.last_partition,
+                table->reshardPartitions(query_ptr, database_name, command.partition,
                     command.weighted_zookeeper_paths, command.sharding_key_expr, command.do_copy,
                     command.coordinator, context);
                 break;
@@ -204,15 +204,9 @@ void InterpreterAlterQuery::parseAlter(
         }
         else if (params.type == ASTAlterQuery::RESHARD_PARTITION)
         {
-            Field first_partition;
+            Field partition;
             if (params.partition)
-                first_partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-
-            Field last_partition;
-            if (params.last_partition)
-                last_partition = dynamic_cast<const ASTLiteral &>(*params.last_partition).value;
-            else
-                last_partition = first_partition;
+                partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
 
             WeightedZooKeeperPaths weighted_zookeeper_paths;
 
@@ -228,7 +222,7 @@ void InterpreterAlterQuery::parseAlter(
                 coordinator = dynamic_cast<const ASTLiteral &>(*params.coordinator).value;
 
             out_partition_commands.emplace_back(PartitionCommand::reshardPartitions(
-                first_partition, last_partition, weighted_zookeeper_paths, params.sharding_key_expr,
+                partition, weighted_zookeeper_paths, params.sharding_key_expr,
                 params.do_copy, coordinator));
         }
         else

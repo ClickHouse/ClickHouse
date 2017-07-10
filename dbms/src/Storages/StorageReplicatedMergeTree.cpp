@@ -3375,7 +3375,7 @@ void StorageReplicatedMergeTree::freezePartition(const Field & partition, const 
 
 void StorageReplicatedMergeTree::reshardPartitions(
     const ASTPtr & query, const String & database_name,
-    const Field & first_partition, const Field & last_partition,
+    const Field & partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
     Context & context)
@@ -3455,19 +3455,9 @@ void StorageReplicatedMergeTree::reshardPartitions(
                 throw Exception{"Shard paths must be distinct", ErrorCodes::DUPLICATE_SHARD_PATHS};
         }
 
-        DayNum_t first_partition_num = !first_partition.isNull() ? MergeTreeData::getMonthDayNum(first_partition) : DayNum_t();
-        DayNum_t last_partition_num = !last_partition.isNull() ? MergeTreeData::getMonthDayNum(last_partition) : DayNum_t();
+        DayNum_t partition_num = !partition.isNull() ? MergeTreeData::getMonthDayNum(partition) : DayNum_t();
 
-        if (first_partition_num && last_partition_num)
-        {
-            if (first_partition_num > last_partition_num)
-                throw Exception{"Invalid interval of partitions", ErrorCodes::INVALID_PARTITIONS_INTERVAL};
-        }
-
-        if (!first_partition_num && last_partition_num)
-            throw Exception{"Received invalid parameters for resharding", ErrorCodes::RESHARDING_INVALID_PARAMETERS};
-
-        bool include_all = !first_partition_num;
+        bool include_all = !partition_num;
 
         /// Make a list of local partitions that need to be resharded.
         std::set<std::string> unique_partition_list;
@@ -3476,7 +3466,7 @@ void StorageReplicatedMergeTree::reshardPartitions(
         {
             const MergeTreeData::DataPartPtr & current_part = *it;
             DayNum_t month = current_part->month;
-            if (include_all || ((month >= first_partition_num) && (month <= last_partition_num)))
+            if (include_all || month == partition_num)
                 unique_partition_list.insert(MergeTreeData::getMonthName(month));
         }
 
