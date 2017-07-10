@@ -62,6 +62,30 @@ void DataTypeNumberBase<T>::deserializeTextQuoted(IColumn & column, ReadBuffer &
     deserializeText<T>(column, istr);
 }
 
+
+template <typename T>
+static inline typename std::enable_if<std::is_floating_point<T>::value, void>::type writeInfiniteNumber(T x, WriteBuffer & ostr)
+{
+    if (std::signbit(x))
+    {
+        if (isNaN(x))
+            writeCString("-nan", ostr);
+        else
+            writeCString("-inf", ostr);
+    }
+    else
+    {
+        if (isNaN(x))
+            writeCString("nan", ostr);
+        else
+            writeCString("inf", ostr);
+    }
+}
+
+template <typename T>
+static inline typename std::enable_if<!std::is_floating_point<T>::value, void>::type writeInfiniteNumber(T x, WriteBuffer & ostr) {}
+
+
 template <typename T>
 void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
 {
@@ -79,22 +103,7 @@ void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row
     else if (!settings.output_format_json_quote_denormals)
         writeCString("null", ostr);
     else
-    {
-        if (std::signbit(x))
-        {
-            if (isNaN(x))
-                writeCString("-nan", ostr);
-            else
-                writeCString("-inf", ostr);
-        }
-        else
-        {
-            if (isNaN(x))
-                writeCString("nan", ostr);
-            else
-                writeCString("inf", ostr);
-        }
-    }
+        writeInfiniteNumber(x, ostr);
 
     if (need_quote)
         writeChar('"', ostr);
