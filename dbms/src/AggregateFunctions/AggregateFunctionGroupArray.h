@@ -118,11 +118,16 @@ struct AggregateFunctionGroupArrayDataNumeric2
 };
 
 
-template <typename T>
+template <typename T, typename Tlimit_num_elems>
 class AggregateFunctionGroupArrayNumeric2 final
-    : public IUnaryAggregateFunction<AggregateFunctionGroupArrayDataNumeric2<T>, AggregateFunctionGroupArrayNumeric2<T>>
+    : public IUnaryAggregateFunction<AggregateFunctionGroupArrayDataNumeric2<T>, AggregateFunctionGroupArrayNumeric2<T, Tlimit_num_elems>>
 {
+    static constexpr bool limit_num_elems = Tlimit_num_elems::value;
+    UInt64 max_elems;
+
 public:
+    AggregateFunctionGroupArrayNumeric2(UInt64 max_elems_ = std::numeric_limits<UInt64>::max()) : max_elems(max_elems_) {}
+
     String getName() const override { return "groupArray"; }
 
     DataTypePtr getReturnType() const override
@@ -130,18 +135,36 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void setArgument(const DataTypePtr & argument) {}
+
+    void setParameters(const Array & params) override
     {
+        if (!limit_num_elems && !params.empty())
+            throw Exception("This instatintion of " + getName() + "aggregate function doesn't accept any parameters. It is a bug.", ErrorCodes::LOGICAL_ERROR);
     }
 
     void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
     {
+        if (limit_num_elems && this->data(place).value.size() >= max_elems)
+            return;
+
         this->data(place).value.push_back(static_cast<const ColumnVector<T> &>(column).getData()[row_num], arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        this->data(place).value.insert(this->data(rhs).value.begin(), this->data(rhs).value.end(), arena);
+        auto & cur_elems = this->data(place);
+        auto & rhs_elems = this->data(rhs);
+
+        if (!limit_num_elems)
+        {
+            cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
+        }
+        else
+        {
+            UInt64 elems_to_insert = std::min(max_elems - cur_elems.value.size(), rhs_elems.value.size());
+            cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
+        }
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
@@ -159,6 +182,9 @@ public:
 
         if (unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
             throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+
+        if (limit_num_elems && unlikely(size > max_elems))
+            throw Exception("Too large array size, it should not exceed " + toString(max_elems), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         auto & value = this->data(place).value;
 
@@ -354,18 +380,19 @@ struct AggregateFunctionGroupArrayListImpl_Data
 
 /// Implementation of groupArray(String or ComplexObject) via linked list
 /// It has poor performance in case of many small objects
-template <typename Node, bool limit_size=true>
+template <typename Node, bool limit_num_elems>
 class AggregateFunctionGroupArrayStringListImpl final
-    : public IUnaryAggregateFunction<AggregateFunctionGroupArrayListImpl_Data<Node>, AggregateFunctionGroupArrayStringListImpl<Node>>
+    : public IUnaryAggregateFunction<AggregateFunctionGroupArrayListImpl_Data<Node>, AggregateFunctionGroupArrayStringListImpl<Node, limit_num_elems>>
 {
     using Data = AggregateFunctionGroupArrayListImpl_Data<Node>;
     static Data & data(AggregateDataPtr place)            { return *reinterpret_cast<Data*>(place); }
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
     DataTypePtr data_type;
-    size_t max_elems = 0;
+    UInt64 max_elems;
 
 public:
+    AggregateFunctionGroupArrayStringListImpl(UInt64 max_elems_ = std::numeric_limits<UInt64>::max()) : max_elems(max_elems_) {}
 
     String getName() const override { return "groupArray2"; }
 
@@ -373,32 +400,8 @@ public:
 
     void setParameters(const Array & params) override
     {
-        if (!limit_size && !params.empty())
-            throw Exception("Incorrect initialization of " + getName() + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
-
-        if (!limit_size)
-            return;
-
-        if (params.size() == 1)
-        {
-            if (params[0].getType() == Field::Types::Int64)
-            {
-                if (params[0].get<Int64>() < 0)
-                    throw Exception("Parameter for aggregate function " + getName() + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
-                max_elems = params[0].get<Int64>();
-            }
-            else if (params[0].getType() == Field::Types::UInt64)
-            {
-//                 if (params[0].get<UInt64>() == 0)
-//                     throw Exception("Parameter for aggregate function " + getName() + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
-                max_elems = params[0].get<UInt64>();
-            }
-            else
-                throw Exception("Parameter for aggregate function " + getName() + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
-        }
-        else
-            throw Exception("Incorrect number of parameters for aggregate function " + getName() + ", should be 0 or 1",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        if (!limit_num_elems && !params.empty())
+            throw Exception("This instatintion of " + getName() + "aggregate function doesn't accept any parameters. It is a bug.", ErrorCodes::LOGICAL_ERROR);
     }
 
     void setArgument(const DataTypePtr & argument)
@@ -408,7 +411,7 @@ public:
 
     void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
     {
-        if (limit_size && data(place).elems >= max_elems)
+        if (limit_num_elems && data(place).elems >= max_elems)
             return;
 
         Node * node = Node::allocate(column, row_num, arena);
@@ -436,7 +439,7 @@ public:
 
         UInt64 new_elems;
         UInt64 cur_elems = data(place).elems;
-        if (limit_size)
+        if (limit_num_elems)
         {
             if (data(place).elems >= max_elems)
                 return;
@@ -500,7 +503,7 @@ public:
         if (unlikely(elems > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
             throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
-        if (limit_size && unlikely(elems > max_elems))
+        if (limit_num_elems && unlikely(elems > max_elems))
             throw Exception("Too large array size, it should not exceed " + toString(max_elems), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         Node * prev = Node::read(buf, arena);
