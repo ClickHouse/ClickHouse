@@ -3,7 +3,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ParserQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/queryToString.h>
 
@@ -34,7 +33,7 @@ ReshardingJob::ReshardingJob(const std::string & serialized_job)
     ParserExpressionWithOptionalAlias parser(false);
     Expected expected = "";
     if (!parser.parse(pos, end, sharding_key_expr, max_parsed_pos, expected))
-        throw Exception{"ReshardingJob: Internal error", ErrorCodes::LOGICAL_ERROR};
+        throw Exception{"ReshardingJob: cannot parse sharding expression.", ErrorCodes::LOGICAL_ERROR};
 
     readBinary(coordinator_id, buf);
     readVarUInt(block_number, buf);
