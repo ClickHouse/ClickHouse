@@ -1139,7 +1139,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        return { true };
+        return { true, true, true };
     }
 };
 

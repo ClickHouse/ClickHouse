@@ -192,7 +192,7 @@ public:
         data.push_back(value);
     }
 
-    /// This metod implemented in header because it could be possibly devirtualized.
+    /// This method implemented in header because it could be possibly devirtualized.
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
     {
         return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
@@ -241,6 +241,7 @@ public:
         return this->scatterImpl<Self>(num_columns, selector);
     }
 
+    void gather(ColumnGathererStream & gatherer_stream) override;
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container_t & getData()

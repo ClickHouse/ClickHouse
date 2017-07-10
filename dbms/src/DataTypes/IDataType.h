@@ -13,7 +13,7 @@ class ReadBuffer;
 class WriteBuffer;
 
 class IDataType;
-class FormatSettingsJSON;
+struct FormatSettingsJSON;
 
 using DataTypePtr = std::shared_ptr<IDataType>;
 using DataTypes = std::vector<DataTypePtr>;

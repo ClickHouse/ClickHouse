@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class FormatSettingsJSON;
+struct FormatSettingsJSON;
 
 /** The stream for outputting data in the JSONCompact format.
   */

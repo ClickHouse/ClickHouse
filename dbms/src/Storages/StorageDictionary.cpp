@@ -73,7 +73,7 @@ BlockInputStreams StorageDictionary::read(
     const size_t max_block_size,
     const unsigned threads)
 {
-    processed_stage = QueryProcessingStage::Complete;
+    processed_stage = QueryProcessingStage::FetchColumns;
     auto dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
     return BlockInputStreams{dictionary->getBlockInputStream(column_names, max_block_size)};
 }

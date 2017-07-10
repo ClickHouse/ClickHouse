@@ -5,6 +5,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
@@ -296,6 +297,11 @@ void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_directi
             --read_idx;
         }
     }
+}
+
+void ColumnNullable::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
 }
 
 void ColumnNullable::reserve(size_t n)

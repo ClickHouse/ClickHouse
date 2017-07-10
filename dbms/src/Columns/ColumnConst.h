@@ -207,6 +207,11 @@ public:
             res[i] = i;
     }
 
+    void gather(ColumnGathererStream &) override
+    {
+        throw Exception("Cannot gather into constant column " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     DataTypePtr & getDataType() { return data_type; }
     const DataTypePtr & getDataType() const { return data_type; }
 };

@@ -2,7 +2,7 @@
 
 #include <unordered_map>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 
 
 namespace DB
@@ -15,7 +15,7 @@ using DataTypes = std::vector<DataTypePtr>;
 
 /** Creates an aggregate function by name.
   */
-class AggregateFunctionFactory final : public Singleton<AggregateFunctionFactory>
+class AggregateFunctionFactory final : public ext::singleton<AggregateFunctionFactory>
 {
     friend class StorageSystemFunctions;
 

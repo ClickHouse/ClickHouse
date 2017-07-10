@@ -372,12 +372,7 @@ auto computeResultSize(const StringArraySources & sources, size_t row_count)
             throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
     }
 
-    if (max_var > 0)
-        return std::make_tuple(max_var, max_var_string_offsets);
-    else if (max_const > 0)
-        return std::make_tuple(max_const * row_count, max_const_string_offsets * row_count);
-    else
-        throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+    return std::make_tuple(std::max(max_var, max_const * row_count), std::max(max_var_string_offsets, max_const_string_offsets * row_count));
 }
 
 /// Create the result column.

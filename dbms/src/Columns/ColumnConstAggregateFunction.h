@@ -82,6 +82,11 @@ public:
 
     ColumnPtr replicate(const Offsets_t & offsets) const override;
 
+    void gather(ColumnGathererStream &) override
+    {
+        throw Exception("Cannot gather into constant column " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     void getExtremes(Field & min, Field & max) const override;
 
     size_t byteSize() const override;
