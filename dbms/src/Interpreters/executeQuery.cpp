@@ -120,8 +120,8 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
 
 
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
-    IParser::Pos begin,
-    IParser::Pos end,
+    const char * begin,
+    const char * end,
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage)

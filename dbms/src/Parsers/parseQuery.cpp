@@ -19,11 +19,11 @@ namespace ErrorCodes
 /** From position in (possible multiline) query, get line number and column number in line.
   * Used in syntax error message.
   */
-static std::pair<size_t, size_t> getLineAndCol(IParser::Pos begin, IParser::Pos pos)
+static std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * pos)
 {
     size_t line = 0;
 
-    IParser::Pos nl;
+    const char * nl;
     while (nullptr != (nl = reinterpret_cast<IParser::Pos>(memchr(begin, '\n', pos - begin))))
     {
         ++line;
@@ -36,9 +36,9 @@ static std::pair<size_t, size_t> getLineAndCol(IParser::Pos begin, IParser::Pos 
 
 
 static std::string getSyntaxErrorMessage(
-    IParser::Pos begin,
-    IParser::Pos end,
-    IParser::Pos max_parsed_pos,
+    const char * begin,
+    const char * end,
+    const char * max_parsed_pos,
     Expected expected,
     bool hilite,
     const std::string & description)
@@ -65,7 +65,7 @@ static std::string getSyntaxErrorMessage(
             out << ": failed at position " << (max_parsed_pos - begin + 1);
 
             /// If query is multiline.
-            IParser::Pos nl = reinterpret_cast<IParser::Pos>(memchr(begin, '\n', end - begin));
+            const char * nl = reinterpret_cast<const char *>(memchr(begin, '\n', end - begin));
             if (nullptr != nl && nl + 1 != end)
             {
                 size_t line = 0;
@@ -110,8 +110,8 @@ static std::string getSyntaxErrorMessage(
 
 ASTPtr tryParseQuery(
     IParser & parser,
-    IParser::Pos & pos,
-    IParser::Pos end,
+    const char * & pos,
+    const char * end,
     std::string & out_error_message,
     bool hilite,
     const std::string & description,
@@ -124,8 +124,8 @@ ASTPtr tryParseQuery(
     }
 
     Expected expected = "";
-    IParser::Pos begin = pos;
-    IParser::Pos max_parsed_pos = pos;
+    const char * begin = pos;
+    const char * max_parsed_pos = pos;
 
     ASTPtr res;
     bool parse_res = parser.parse(pos, res, expected);
@@ -160,8 +160,8 @@ ASTPtr tryParseQuery(
 
 ASTPtr parseQueryAndMovePosition(
     IParser & parser,
-    IParser::Pos & pos,
-    IParser::Pos end,
+    const char * & pos,
+    const char * end,
     const std::string & description,
     bool allow_multi_statements)
 {
@@ -177,13 +177,14 @@ ASTPtr parseQueryAndMovePosition(
 
 ASTPtr parseQuery(
     IParser & parser,
-    IParser::Pos begin,
-    IParser::Pos end,
+    const char * begin,
+    const char * end,
     const std::string & description)
 {
     auto pos = begin;
     return parseQueryAndMovePosition(parser, pos, end, description, false);
 }
+
 
 std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, std::vector<std::string> & queries_list)
 {
@@ -208,7 +209,7 @@ std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, s
 
         if (insert && insert->data)
         {
-            /// Inserting data is broken on new line
+            /// Data for INSERT is broken on new line
             pos = insert->data;
             while (*pos && *pos != '\n')
                 ++pos;
