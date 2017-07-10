@@ -31,7 +31,6 @@ private:
     WriteBuffer & ostr;
     size_t field_number = 0;
     Names fields;
-    bool force_quoting_64bit_integers;
 
     FormatSettingsJSON settings;
 };
