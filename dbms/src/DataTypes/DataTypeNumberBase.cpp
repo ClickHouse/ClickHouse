@@ -64,7 +64,7 @@ void DataTypeNumberBase<T>::deserializeTextQuoted(IColumn & column, ReadBuffer &
 
 
 template <typename T>
-static inline typename std::enable_if<std::is_floating_point<T>::value, void>::type writeInfiniteNumber(T x, WriteBuffer & ostr)
+static inline typename std::enable_if<std::is_floating_point<T>::value, void>::type writeDenormalNumber(T x, WriteBuffer & ostr)
 {
     if (std::signbit(x))
     {
@@ -83,7 +83,7 @@ static inline typename std::enable_if<std::is_floating_point<T>::value, void>::t
 }
 
 template <typename T>
-static inline typename std::enable_if<!std::is_floating_point<T>::value, void>::type writeInfiniteNumber(T x, WriteBuffer & ostr) {}
+static inline typename std::enable_if<!std::is_floating_point<T>::value, void>::type writeDenormalNumber(T x, WriteBuffer & ostr) {}
 
 
 template <typename T>
@@ -103,7 +103,7 @@ void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row
     else if (!settings.output_format_json_quote_denormals)
         writeCString("null", ostr);
     else
-        writeInfiniteNumber(x, ostr);
+        writeDenormalNumber(x, ostr);
 
     if (need_quote)
         writeChar('"', ostr);
