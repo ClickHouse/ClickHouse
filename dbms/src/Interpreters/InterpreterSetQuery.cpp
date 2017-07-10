@@ -1,7 +1,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
-
+#include <Core/FieldVisitors.h>
 
 namespace DB
 {
@@ -25,7 +25,6 @@ BlockIO InterpreterSetQuery::execute()
     return {};
 }
 
-
 void InterpreterSetQuery::checkAccess(const ASTSetQuery & ast)
 {
     /** The `readonly` value is understood as follows:
@@ -41,7 +40,7 @@ void InterpreterSetQuery::checkAccess(const ASTSetQuery & ast)
     {
         String value;
         /// Setting isn't checked if value wasn't changed.
-        if (!settings.tryGet(change.name, value) || change.value != value)
+        if (!settings.tryGet(change.name, value) || applyVisitor(FieldVisitorToString(), change.value) != value)
         {
             if (readonly == 1)
                 throw Exception("Cannot execute SET query in readonly mode", ErrorCodes::READONLY);
