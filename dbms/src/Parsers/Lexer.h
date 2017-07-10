@@ -55,7 +55,7 @@ enum class TokenType
     ErrorBackQuoteIsNotClosed,
     ErrorSingleExclamationMark,
     ErrorSinglePipeMark,
-    ErrorWordWithoutWhitespace,
+    ErrorWrongNumber,
 };
 
 

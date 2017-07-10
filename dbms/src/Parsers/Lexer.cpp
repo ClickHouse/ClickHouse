@@ -56,7 +56,7 @@ Token Lexer::nextToken()
 
     auto commentUntilEndOfLine = [&]() mutable
     {
-        pos = find_first_symbols('\n', end);    /// This means that newline in single-line comment cannot be escaped.
+        pos = find_first_symbols<'\n'>(pos, end);    /// This means that newline in single-line comment cannot be escaped.
         return Token(TokenType::Comment, token_begin, pos);
     };
 
@@ -79,8 +79,6 @@ Token Lexer::nextToken()
         case 'A'...'Z':
         case '_':
         {
-            if (pos > begin && isWordCharASCII(pos[-1]))
-                return Token(TokenType::ErrorWordWithoutWhitespace, pos, 1);
             ++pos;
             while (pos < end && isWordCharASCII(*pos))
                 ++pos;
@@ -117,6 +115,15 @@ Token Lexer::nextToken()
 
                 while (pos < end && isNumericASCII(*pos))
                     ++pos;
+            }
+
+            /// word character cannot go just after number (SELECT 123FROM)
+            if (pos < end && isWordCharASCII(*pos))
+            {
+                ++pos;
+                while (pos < end && isWordCharASCII(*pos))
+                    ++pos;
+                return Token(TokenType::ErrorWrongNumber, token_begin, pos);
             }
 
             return Token(TokenType::Number, token_begin, pos);
