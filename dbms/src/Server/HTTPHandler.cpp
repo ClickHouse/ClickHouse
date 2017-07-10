@@ -448,6 +448,7 @@ void HTTPHandler::processQuery(
         {
             /// All other query parameters are treated as settings.
             String value;
+            /// Setting is skipped if value wasn't changed.
             if (!settings.tryGet(it->first, value) || it->second != value)
             {
                 if (readonly_before_query == 1)

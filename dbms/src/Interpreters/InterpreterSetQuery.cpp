@@ -34,14 +34,19 @@ void InterpreterSetQuery::checkAccess(const ASTSetQuery & ast)
       * 2 - You can only do read queries and you can change the settings, except for the `readonly` setting.
       */
 
-    if (context.getSettingsRef().limits.readonly == 1)
-        throw Exception("Cannot execute SET query in readonly mode", ErrorCodes::READONLY);
+    const Settings & settings = context.getSettingsRef();
+    auto readonly = settings.limits.readonly;
 
-    if (context.getSettingsRef().limits.readonly > 1)
+    for (const auto & change : ast.changes)
     {
-        for (const auto & change : ast.changes)
+        String value;
+        /// Setting isn't checked if value wasn't changed.
+        if (!settings.tryGet(change.name, value) || change.value != value)
         {
-            if (change.name == "readonly")
+            if (readonly == 1)
+                throw Exception("Cannot execute SET query in readonly mode", ErrorCodes::READONLY);
+
+            if (readonly > 1 && change.name == "readonly")
                 throw Exception("Cannot modify 'readonly' setting in readonly mode", ErrorCodes::READONLY);
         }
     }
