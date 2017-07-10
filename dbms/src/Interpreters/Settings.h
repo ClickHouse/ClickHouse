@@ -79,6 +79,9 @@ struct Settings
     /** Sleep time for StorageDistributed DirectoryMonitors in case there is no work or exception has been thrown */ \
     M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS) \
     \
+    /** Should StorageDistributed DirectoryMonitors try to batch individual inserts into bigger ones. */ \
+    M(SettingBool, distributed_directory_monitor_batch_inserts, false) \
+    \
     /** Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree */ \
     M(SettingBool, optimize_move_to_prewhere, true) \
     \
