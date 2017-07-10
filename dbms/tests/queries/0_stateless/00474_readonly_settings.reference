@@ -1,0 +1,14 @@
+			"name": "value",
+			"value": 4611686018427387904
+			"name": "value",
+			"value": "4611686018427387904"
+value
+value
+Cannot execute SET query in readonly mode.
+			"name": "value",
+			"value": "9223372036854775808"
+			"name": "value",
+			"value": 9223372036854775808
+value
+value
+Cannot override setting
