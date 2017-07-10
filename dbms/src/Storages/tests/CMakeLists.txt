@@ -15,10 +15,6 @@ target_link_libraries (merge_tree dbms)
 add_executable (seek_speed_test seek_speed_test.cpp)
 target_link_libraries (seek_speed_test dbms)
 
-add_executable (pk_condition pk_condition.cpp)
-target_link_libraries (pk_condition dbms)
-add_check(pk_condition)
-
 add_executable (part_checker part_checker.cpp)
 target_link_libraries (part_checker dbms)
 
