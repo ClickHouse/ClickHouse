@@ -8,7 +8,7 @@ namespace DB
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionQuantileExact(const std::string & name, const DataTypes & argument_types)
+AggregateFunctionPtr createAggregateFunctionQuantileExact(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     if (argument_types.size() != 1)
         throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -34,7 +34,7 @@ AggregateFunctionPtr createAggregateFunctionQuantileExact(const std::string & na
 }
 
 
-AggregateFunctionPtr createAggregateFunctionQuantilesExact(const std::string & name, const DataTypes & argument_types)
+AggregateFunctionPtr createAggregateFunctionQuantilesExact(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     if (argument_types.size() != 1)
         throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

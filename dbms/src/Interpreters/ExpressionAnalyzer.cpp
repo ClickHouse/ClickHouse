@@ -34,6 +34,7 @@
 #include <Interpreters/Join.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMemory.h>
@@ -2250,26 +2251,11 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
             aggregate.argument_names[i] = name;
         }
 
-        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types);
+        aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters) : Array();
+        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters);
 
-        if (node->parameters)
-        {
-            const ASTs & parameters = typeid_cast<const ASTExpressionList &>(*node->parameters).children;
-            Array params_row(parameters.size());
-
-            for (size_t i = 0; i < parameters.size(); ++i)
-            {
-                const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(parameters[i].get());
-                if (!lit)
-                    throw Exception("Parameters to aggregate functions must be literals",
-                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
-
-                params_row[i] = lit->value;
-            }
-
-            aggregate.parameters = params_row;
-            aggregate.function->setParameters(params_row);
-        }
+        if (!aggregate.parameters.empty())
+            aggregate.function->setParameters(aggregate.parameters);
 
         aggregate.function->setArguments(types);
 
