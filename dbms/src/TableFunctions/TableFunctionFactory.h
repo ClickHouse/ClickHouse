@@ -1,7 +1,7 @@
 #pragma once
 
 #include <unordered_map>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <TableFunctions/ITableFunction.h>
@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 /** Lets you get a table function by its name.
   */
-class TableFunctionFactory : public Singleton<TableFunctionFactory>
+class TableFunctionFactory : public ext::singleton<TableFunctionFactory>
 {
 private:
     /// No std::function, for smaller object size and less indirection.

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <common/Types.h>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 #include <common/likely.h>
 #include <common/strong_typedef.h>
 

@@ -5,7 +5,7 @@
 #include <Poco/File.h>
 
 #include <common/logger_useful.h>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>

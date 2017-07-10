@@ -176,7 +176,7 @@ struct ContextShared
 
     ContextShared()
     {
-        /// TODO: make it Singleton (?)
+        /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
         if (++num_calls > 1)
         {
