@@ -9,7 +9,7 @@ namespace DB
 
     static void deserializeText(IColumn & column, ReadBuffer & istr)
     {
-        UUID  x;
+        UUID x;
         readText(x, istr);
         static_cast<ColumnUInt128 &>(column).getData().push_back(x);
     }
@@ -40,7 +40,7 @@ namespace DB
         static_cast<ColumnUInt128 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
     }
 
-    void DataTypeUUID::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
+    void DataTypeUUID::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
     {
         writeChar('"', ostr);
         serializeText(column, row_num, ostr);
