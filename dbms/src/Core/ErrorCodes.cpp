@@ -378,6 +378,7 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED = 373;
     extern const int INVALID_SESSION_TIMEOUT = 374;
     extern const int CANNOT_DLOPEN = 375;
+    extern const int CANNOT_PARSE_UUID = 376;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

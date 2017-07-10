@@ -34,6 +34,13 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
+                case Field::Types::UInt128:
+                {
+                    UInt128 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
                 case Field::Types::Int64:
                 {
                     Int64 value;
@@ -90,6 +97,11 @@ namespace DB
                 case Field::Types::UInt64:
                 {
                     DB::writeVarUInt(get<UInt64>(*it), buf);
+                    break;
+                }
+                case Field::Types::UInt128:
+                {
+                    DB::writeBinary(get<UInt128>(*it), buf);
                     break;
                 }
                 case Field::Types::Int64:
@@ -156,6 +168,13 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
+                case Field::Types::UInt128:
+                {
+                    UInt128 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
                 case Field::Types::Int64:
                 {
                     Int64 value;
@@ -212,6 +231,11 @@ namespace DB
                 case Field::Types::UInt64:
                 {
                     DB::writeVarUInt(get<UInt64>(*it), buf);
+                    break;
+                }
+                case Field::Types::UInt128:
+                {
+                    DB::writeBinary(get<UInt128>(*it), buf);
                     break;
                 }
                 case Field::Types::Int64:

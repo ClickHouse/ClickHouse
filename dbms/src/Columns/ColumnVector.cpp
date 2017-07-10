@@ -116,7 +116,7 @@ ColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         memcpy(&new_col.data[0], &data[0], count * sizeof(data[0]));
 
         if (size > count)
-            memset(&new_col.data[count], value_type(), size - count);
+            memset(&new_col.data[count], static_cast<int>(value_type()), size - count);
     }
 
     return new_col_holder;
@@ -310,17 +310,16 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     max = typename NearestFieldType<T>::Type(cur_max);
 }
 
-
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;
 template class ColumnVector<UInt32>;
 template class ColumnVector<UInt64>;
+template class ColumnVector<UInt128>;
 template class ColumnVector<Int8>;
 template class ColumnVector<Int16>;
 template class ColumnVector<Int32>;
 template class ColumnVector<Int64>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
-
 }

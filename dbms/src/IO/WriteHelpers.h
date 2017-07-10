@@ -11,8 +11,10 @@
 #include <common/find_first_symbols.h>
 
 #include <Core/Types.h>
+#include <Core/UUID.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/UInt128.h>
 #include <common/StringRef.h>
 
 #include <IO/WriteBuffer.h>
@@ -28,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 /// Helper functions for formatted and binary output.
@@ -471,6 +474,17 @@ inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
     writeXMLString(s.data, s.data + s.size, buf);
 }
 
+void formatHex(const UInt8 * __restrict src, UInt8 * __restrict dst, const size_t num_bytes);
+void formatUUID(const UInt8 * src16, UInt8 * dst36);
+void formatUUID(const UInt128 & uuid, UInt8 * dst36);
+
+inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
+{
+    char s[36];
+
+    formatUUID(uuid, reinterpret_cast<UInt8 *>(s));
+    buf.write(s, sizeof(s));
+}
 
 /// in YYYY-MM-DD format
 inline void writeDateText(DayNum_t date, WriteBuffer & buf)
@@ -583,6 +597,8 @@ writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
@@ -608,6 +624,14 @@ inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEsc
 
 inline void writeText(const LocalDate & x,        WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x,    WriteBuffer & buf) { writeDateTimeText(x, buf); }
+inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
+inline void writeText(const UInt128 & x, WriteBuffer & buf)
+{
+    /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
+     *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
+     */
+    throw Exception("UInt128 cannot be write as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>
@@ -652,6 +676,13 @@ inline void writeDoubleQuoted(const LocalDateTime & x,    WriteBuffer & buf)
     writeChar('"', buf);
 }
 
+inline void writeDoubleQuoted(const UUID & x, WriteBuffer & buf)
+{
+    writeChar('"', buf);
+    writeText(x, buf);
+    writeChar('"', buf);
+}
+
 
 /// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
@@ -661,7 +692,14 @@ writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 inline void writeCSV(const String & x,        WriteBuffer & buf) { writeCSVString<>(x, buf); }
 inline void writeCSV(const LocalDate & x,    WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
-
+inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
+inline void writeCSV(const UInt128, WriteBuffer & buf)
+{
+    /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
+     *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
+     */
+    throw Exception("UInt128 cannot be write as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
 
 template <typename T>
 void writeBinary(const std::vector<T> & x, WriteBuffer & buf)
