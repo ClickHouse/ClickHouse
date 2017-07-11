@@ -8,6 +8,8 @@ namespace DB
 class MergeTreeReader;
 
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
+/// Stores reading state, which can be inside granule. Can skip rows in current granule and start reading from next mark.
+/// Used generally for reading number of rows less than index granularity to decrease cache misses for fat blocks.
 class MergeTreeRangeReader
 {
 public:
