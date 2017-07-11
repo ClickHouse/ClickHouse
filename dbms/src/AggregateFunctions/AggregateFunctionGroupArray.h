@@ -113,7 +113,8 @@ struct AggregateFunctionGroupArrayDataNumeric2
     /// Memory is allocated to several elements immediately so that the state occupies 64 bytes.
     static constexpr size_t bytes_in_arena = 64 - sizeof(PODArrayArenaAllocator<T>);
 
-    using Array = PODArrayArenaAllocator<T, bytes_in_arena, ArenaAllocatorWithStackMemoty<bytes_in_arena>>;
+    //using Array = PODArrayArenaAllocator<T, bytes_in_arena, ArenaAllocatorWithStackMemoty<bytes_in_arena>>;
+    using Array = PODArrayArenaAllocator<T, bytes_in_arena, MixedArenaAllocator<4096>>;
     Array value;
 };
 
@@ -128,7 +129,7 @@ class AggregateFunctionGroupArrayNumeric2 final
 public:
     AggregateFunctionGroupArrayNumeric2(UInt64 max_elems_ = std::numeric_limits<UInt64>::max()) : max_elems(max_elems_) {}
 
-    String getName() const override { return "groupArray"; }
+    String getName() const override { return "groupArray2"; }
 
     DataTypePtr getReturnType() const override
     {
@@ -666,7 +667,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        ColumnArray & column_array = typeid_cast<ColumnArray &>(to);
+        ColumnArray & column_array = static_cast<ColumnArray &>(to);
         auto & column_data = column_array.getData();
         auto & offsets = column_array.getOffsets();
         auto & cur_state = data(place);
@@ -744,7 +745,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        ColumnArray & array_column = typeid_cast<ColumnArray &>(to);
+        ColumnArray & array_column = static_cast<ColumnArray &>(to);
         auto s = data(place).container->size();
         array_column.getOffsets().push_back(s);
         array_column.getData().insertRangeFrom(*data(place).container, 0, s);

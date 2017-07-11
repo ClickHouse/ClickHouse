@@ -22,16 +22,9 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name,
     return res;
 }
 
-namespace
-{
-
-
-}
 
 AggregateFunctionPtr createAggregateFunctionGroupArray2(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    std::cerr << "groupArray " << StackTrace().toString() << "\n";
-
     if (argument_types.size() != 1)
         throw Exception("Incorrect number of arguments for aggregate function " + name + ", should be 1",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -39,7 +32,10 @@ AggregateFunctionPtr createAggregateFunctionGroupArray2(const std::string & name
     bool limit_size = false;
     UInt64 max_elems = 0;
 
-    if (parameters.empty()) {}
+    if (parameters.empty())
+    {
+        // no limit
+    }
     else if (parameters.size() == 1)
     {
         if (parameters[0].getType() == Field::Types::Int64 || parameters[0].getType() == Field::Types::UInt64)
