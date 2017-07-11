@@ -45,8 +45,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/NetException.h>
 #include <common/readline_use.h>
-#include <Functions/registerFunctions.h>
-#include <AggregateFunctions/registerAggregateFunctions.h>
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
@@ -190,10 +188,6 @@ private:
             context.setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_LIMITS(EXTRACT_LIMIT)
 #undef EXTRACT_LIMIT
-
-        /// FIXME Why do we need this?
-        registerFunctions();
-        registerAggregateFunctions();
     }
 
 

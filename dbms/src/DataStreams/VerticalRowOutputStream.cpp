@@ -15,8 +15,8 @@ VerticalRowOutputStream::VerticalRowOutputStream(
 {
     size_t columns = sample.columns();
 
-    using Widths_t = std::vector<size_t>;
-    Widths_t name_widths(columns);
+    using Widths = std::vector<size_t>;
+    Widths name_widths(columns);
     size_t max_name_width = 0;
 
     for (size_t i = 0; i < columns; ++i)
