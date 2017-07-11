@@ -72,30 +72,30 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
     if (task->size_predictor)
         task->size_predictor->startBlock();
 
+    const auto max_block_size_rows = this->max_block_size_rows;
     const auto preferred_block_size_bytes = this->preferred_block_size_bytes;
     const auto preferred_max_column_in_block_size_bytes =
         this->preferred_max_column_in_block_size_bytes ? this->preferred_max_column_in_block_size_bytes : max_block_size_rows;
     const auto index_granularity = storage.index_granularity;
-    const auto default_block_size = std::max(1LU, max_block_size_rows);
     const double min_filtration_ratio = 0.00001;
 
-    auto estimateNumRows = [preferred_block_size_bytes, default_block_size,
+    auto estimateNumRows = [preferred_block_size_bytes, max_block_size_rows,
         index_granularity, preferred_max_column_in_block_size_bytes, min_filtration_ratio](
         MergeTreeReadTask & task, MergeTreeRangeReader & reader)
     {
         if (!task.size_predictor)
-            return default_block_size;
+            return max_block_size_rows;
 
         size_t rows_to_read_for_block = task.size_predictor->estimateNumRows(preferred_block_size_bytes);
         size_t rows_to_read_for_max_size_column
             = task.size_predictor->estimateNumRowsForMaxSizeColumn(preferred_max_column_in_block_size_bytes);
-        double filtration_ratio = std::max(min_filtration_ratio, 1.0 - task.size_predictor->filtered_rows_ration);
+        double filtration_ratio = std::max(min_filtration_ratio, 1.0 - task.size_predictor->filtered_rows_ratio);
         size_t rows_to_read_for_max_size_column_with_filtration
-            = static_cast<size_t>( rows_to_read_for_max_size_column / filtration_ratio);
+            = static_cast<size_t>(rows_to_read_for_max_size_column / filtration_ratio);
         return std::min(rows_to_read_for_block, rows_to_read_for_max_size_column_with_filtration);
     };
 
-    // read rows from reader and clean columns
+    // read rows from reader and clear columns
     auto skipRows = [& preferred_block_size_bytes, & estimateNumRows](
         Block & block, MergeTreeRangeReader & reader, MergeTreeReadTask & task, size_t rows)
     {
@@ -109,7 +109,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             reader.read(block, rows_to_skip);
             for (const auto i : ext::range(0, block.columns()))
             {
-                auto & col = block.safeGetByPosition(i);
+                auto & col = block.getByPosition(i);
                 if (task.column_name_set.count(col.name))
                     col.column = col.column->cloneEmpty();
             }
@@ -122,7 +122,6 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         {
             /// Let's read the full block of columns needed to calculate the expression in PREWHERE.
             MarkRanges ranges_to_read;
-            //std::vector<size_t> rows_was_read;
             /// Last range may be partl read. The same number of rows we need to read after prewhere
             size_t rows_was_read_in_last_range = 0;
             std::experimental::optional<MergeTreeRangeReader> pre_range_reader;
@@ -201,8 +200,8 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 observed_column = column;
 
             /** If the filter is a constant (for example, it says PREWHERE 1),
-                * then either return an empty block, or return the block unchanged.
-                */
+              * then either return an empty block, or return the block unchanged.
+              */
             if (const auto column_const = typeid_cast<const ColumnConstUInt8 *>(observed_column.get()))
             {
                 if (!column_const->getData())

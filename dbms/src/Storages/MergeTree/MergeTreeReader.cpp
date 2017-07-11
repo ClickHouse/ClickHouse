@@ -79,7 +79,7 @@ MergeTreeRangeReader MergeTreeReader::readRange(size_t from_mark, size_t to_mark
 }
 
 
-size_t MergeTreeReader::readRange(size_t from_mark, bool seek_to_from_mark, size_t max_rows_to_read, Block & res)
+size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res)
 {
     size_t read_rows = 0;
     try
@@ -144,7 +144,7 @@ size_t MergeTreeReader::readRange(size_t from_mark, bool seek_to_from_mark, size
             try
             {
                 size_t column_size_before_reading = column.column->size();
-                readData(column.name, *column.type, *column.column, from_mark, seek_to_from_mark, max_rows_to_read, 0, read_offsets);
+                readData(column.name, *column.type, *column.column, from_mark, continue_reading, max_rows_to_read, 0, read_offsets);
                 read_rows = column.column->size() - column_size_before_reading;
             }
             catch (Exception & e)
@@ -444,7 +444,7 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 
 void MergeTreeReader::readData(
     const String & name, const IDataType & type, IColumn & column,
-    size_t from_mark, bool seek_to_from_mark, size_t max_rows_to_read,
+    size_t from_mark, bool continue_reading, size_t max_rows_to_read,
     size_t level, bool read_offsets)
 {
     if (type.isNullable())
@@ -459,13 +459,13 @@ void MergeTreeReader::readData(
         std::string filename = name + NULL_MAP_EXTENSION;
 
         Stream & stream = *(streams.at(filename));
-        if (seek_to_from_mark)
+        if (!continue_reading)
             stream.seekToMark(from_mark);
         IColumn & col8 = nullable_col.getNullMapConcreteColumn();
         DataTypeUInt8{}.deserializeBinaryBulk(col8, *stream.data_buffer, max_rows_to_read, 0);
 
         /// Then read data.
-        readData(name, nested_type, nested_col, from_mark, seek_to_from_mark, max_rows_to_read, level, read_offsets);
+        readData(name, nested_type, nested_col, from_mark, continue_reading, max_rows_to_read, level, read_offsets);
     }
     else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
     {
@@ -473,7 +473,7 @@ void MergeTreeReader::readData(
         if (read_offsets)
         {
             Stream & stream = *streams[DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)];
-            if (seek_to_from_mark)
+            if (!continue_reading)
                 stream.seekToMark(from_mark);
             type_arr->deserializeOffsets(
                 column,
@@ -488,7 +488,7 @@ void MergeTreeReader::readData(
             name,
             *type_arr->getNestedType(),
             array.getData(),
-                 from_mark, seek_to_from_mark, required_internal_size - array.getData().size(),
+                 from_mark, continue_reading, required_internal_size - array.getData().size(),
             level + 1);
 
         size_t read_internal_size = array.getData().size();
@@ -519,7 +519,7 @@ void MergeTreeReader::readData(
             return;
 
         double & avg_value_size_hint = avg_value_size_hints[name];
-        if (seek_to_from_mark)
+        if (!continue_reading)
             stream.seekToMark(from_mark);
         type.deserializeBinaryBulk(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
 
