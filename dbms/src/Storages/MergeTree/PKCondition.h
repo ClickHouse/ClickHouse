@@ -188,9 +188,6 @@ public:
 };
 
 
-class ASTSet;
-
-
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,

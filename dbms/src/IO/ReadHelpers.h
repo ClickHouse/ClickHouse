@@ -616,7 +616,7 @@ inline T parse(const char * data, size_t size);
 
 void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
 
-/** In YYYY-MM-DD hh:mm:ss format, according to current time zone.
+/** In YYYY-MM-DD hh:mm:ss format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
