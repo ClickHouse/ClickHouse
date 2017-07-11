@@ -249,6 +249,7 @@ class ClickHouseInstance:
         config_d_dir = p.join(configs_dir, 'config.d')
         users_d_dir = p.join(configs_dir, 'users.d')
         os.mkdir(config_d_dir)
+        os.mkdir(users_d_dir)
 
         shutil.copy(p.join(HELPERS_DIR, 'common_instance_config.xml'), config_d_dir)
 
