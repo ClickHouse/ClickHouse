@@ -683,7 +683,7 @@ void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
         NullSink sink;
         readJSONStringInto(sink, buf);
     }
-    else if (isNumericASCII(*buf.position())) /// skip number
+    else if (isNumericASCII(*buf.position()) || *buf.position() == '-' || *buf.position() == '+') /// skip number
     {
         double v;
         if (!tryReadFloatText(v, buf))
@@ -737,7 +737,7 @@ void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
     }
     else
     {
-        throw Exception("Unexpected symbol for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        throw Exception("Unexpected symbol '" + std::string(*buf.position(), 1) + "' for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
     }
 }
 

@@ -1706,7 +1706,7 @@ static std::pair<String, DayNum_t> getMonthNameAndDayNum(const Field & partition
         ? toString(partition.get<UInt64>())
         : partition.safeGet<String>();
 
-    if (month_name.size() != 6 || !std::all_of(month_name.begin(), month_name.end(), isdigit))
+    if (month_name.size() != 6 || !std::all_of(month_name.begin(), month_name.end(), isNumericASCII))
         throw Exception("Invalid partition format: " + month_name + ". Partition should consist of 6 digits: YYYYMM",
             ErrorCodes::INVALID_PARTITION_NAME);
 
