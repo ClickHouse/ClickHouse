@@ -38,9 +38,7 @@ public:
 
     const ValueSizeMap & getAvgValueSizeHints() const;
 
-    /// If columns are not present in the block, adds them. If they are present - appends the values that have been read.
-    /// Do not adds columns, if the files are not present for them (to add them, call fillMissingColumns).
-    /// Block should contain either no columns from the columns field, or all columns for which files are present.
+    /// Create MergeTreeRangeReader iterator, which allows reading arbitrary number of rows from range.
     MergeTreeRangeReader readRange(size_t from_mark, size_t to_mark);
 
     /// Add columns from ordered_names that are not present in the block.
@@ -123,13 +121,14 @@ private:
 
     void readData(
         const String & name, const IDataType & type, IColumn & column,
-        size_t from_mark, bool seek_to_from_mark, size_t max_rows_to_read,
+        size_t from_mark, bool continue_reading, size_t max_rows_to_read,
         size_t level = 0, bool read_offsets = true);
 
     void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder);
 
-    /// return the number of rows has been read or zero if ther is no columns to read
-    size_t readRange(size_t from_mark, bool seek_to_from_mark, size_t max_rows_to_read, Block & res);
+    /// Return the number of rows has been read or zero if there is no columns to read.
+    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
+    size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res);
 
     friend class MergeTreeRangeReader;
 };

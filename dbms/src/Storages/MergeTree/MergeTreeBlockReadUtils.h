@@ -86,16 +86,16 @@ struct MergeTreeBlockSizePredictor
     {
         double max_size_per_row = std::max<double>(std::max<size_t>(max_size_per_row_fixed, 1), max_size_per_row_dynamic);
         return (bytes_quota > block_size_rows * max_size_per_row)
-        ? static_cast<size_t>(bytes_quota / max_size_per_row) - block_size_rows
-        : 0;
+            ? static_cast<size_t>(bytes_quota / max_size_per_row) - block_size_rows
+            : 0;
     }
 
     /// Predicts what number of rows should be read to exhaust byte quota per block
     inline size_t estimateNumRows(size_t bytes_quota) const
     {
         return (bytes_quota > block_size_bytes)
-        ? static_cast<size_t>((bytes_quota - block_size_bytes) / bytes_per_row_current)
-        : 0;
+            ? static_cast<size_t>((bytes_quota - block_size_bytes) / bytes_per_row_current)
+            : 0;
     }
 
     /// Predicts what number of marks should be read to exhaust byte quota
@@ -108,8 +108,9 @@ struct MergeTreeBlockSizePredictor
     {
         double alpha = std::pow(1. - decay, rows_was_read);
         double current_ration = rows_was_filtered / std::max<double>(1, rows_was_read);
-        filtered_rows_ration = current_ration < filtered_rows_ration ? current_ration
-            : alpha * filtered_rows_ration + (1.0 - alpha) * current_ration;
+        filtered_rows_ratio = current_ration < filtered_rows_ratio
+            ? current_ration
+            : alpha * filtered_rows_ratio + (1.0 - alpha) * current_ration;
     }
 
     /// Aggressiveness of bytes_per_row updates. See update() implementation.
@@ -145,7 +146,7 @@ public:
     double bytes_per_row_current = 0;
     double bytes_per_row_global = 0;
 
-    double filtered_rows_ration = 0;
+    double filtered_rows_ratio = 0;
 };
 
 }
