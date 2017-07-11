@@ -84,7 +84,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         MergeTreeReadTask & task, MergeTreeRangeReader & reader)
     {
         if (!task.size_predictor)
-            return std::max(1, max_block_size_rows);
+            return std::max<size_t>(1, max_block_size_rows);
 
         size_t rows_to_read_for_block = task.size_predictor->estimateNumRows(preferred_block_size_bytes);
         size_t rows_to_read_for_max_size_column
