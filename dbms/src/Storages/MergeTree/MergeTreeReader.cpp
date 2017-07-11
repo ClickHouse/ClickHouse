@@ -160,7 +160,6 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
 
         /// NOTE: positions for all streams must be kept in sync. In particular, even if for some streams there are no rows to be read,
         /// you must ensure that no seeks are skipped and at this point they all point to to_mark.
-        // cur_mark_idx = to_mark;
     }
     catch (Exception & e)
     {
