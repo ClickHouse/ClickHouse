@@ -1,8 +1,6 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/PrettyBlockOutputStream.h>
@@ -10,6 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Common/UTF8Helpers.h>
 
 
 namespace DB
@@ -44,56 +43,41 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
     max_widths.resize(columns);
     name_widths.resize(columns);
 
-    FunctionPtr visible_width_func = FunctionFactory::instance().get("visibleWidth", context);
-
     /// Calculate widths of all values.
+    String serialized_value;
     for (size_t i = 0; i < columns; ++i)
     {
-        ColumnWithTypeAndName column;
-        column.type = std::make_shared<DataTypeUInt64>();
-        column.name = "visibleWidth(" + block.getByPosition(i).name + ")";
+        const ColumnWithTypeAndName & elem = block.getByPosition(i);
 
-        size_t result_number = block.columns();
-        block.insert(column);
-
-        visible_width_func->execute(block, {i}, result_number);
-        column.column = block.safeGetByPosition(result_number).column;
-
-        if (const ColumnUInt64 * col = typeid_cast<const ColumnUInt64 *>(&*column.column))
+        if (!elem.column->isConst())
         {
-            const ColumnUInt64::Container_t & res = col->getData();
             for (size_t j = 0; j < rows; ++j)
             {
-                if (res[j] > max_widths[i])
-                    max_widths[i] = res[j];
+                {
+                    WriteBufferFromString out(serialized_value);
+                    elem.type->serializeTextEscaped(*elem.column, i, out);
+                }
+
+                max_widths[i] = std::max(max_widths[i],
+                    UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size()));
             }
         }
-        else if (const ColumnConstUInt64 * col = typeid_cast<const ColumnConstUInt64 *>(&*column.column))
-        {
-            UInt64 res = col->getData();
-            max_widths[i] = res;
-        }
         else
-            throw Exception("Illegal column " + column.column->getName()
-                + " of result of function " + visible_width_func->getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+        {
+            {
+                WriteBufferFromString out(serialized_value);
+                elem.type->serializeTextEscaped(*elem.column->cut(0, 1)->convertToFullColumnIfConst(), 0, out);
+
+                max_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
+            }
+        }
 
         /// And also calculate widths for names of columns.
         {
-            const String & name = block.getByPosition(i).name;
+            const String & name = elem.name;
 
-            Block block_with_name
-            {
-                { std::make_shared<ColumnConstString>(1, name), std::make_shared<DataTypeString>(), "name" },
-                { nullptr, std::make_shared<DataTypeUInt64>(), "width" }
-            };
-
-            visible_width_func->execute(block_with_name, {0}, 1);
-
-            name_widths[i] = typeid_cast<const ColumnConstUInt64 &>(*block_with_name.getByPosition(1).column).getData();
-
-            if (name_widths[i] > max_widths[i])
-                max_widths[i] = name_widths[i];
+            name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(name.data()), name.size());
+            max_widths[i] = std::max(max_widths[i], name_widths[i]);
         }
     }
 }

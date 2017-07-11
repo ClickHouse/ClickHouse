@@ -1,10 +1,9 @@
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <DataStreams/VerticalRowOutputStream.h>
+#include <Common/UTF8Helpers.h>
 
 
 namespace DB
@@ -20,21 +19,11 @@ VerticalRowOutputStream::VerticalRowOutputStream(
     Widths_t name_widths(columns);
     size_t max_name_width = 0;
 
-    FunctionPtr visible_width_func = FunctionFactory::instance().get("visibleWidth", context);
-
     for (size_t i = 0; i < columns; ++i)
     {
-        {
-            Block block_with_name
-            {
-                { std::make_shared<ColumnConstString>(1, sample.getByPosition(i).name), std::make_shared<DataTypeString>(), "name" },
-                { nullptr, std::make_shared<DataTypeUInt64>(), "width" }
-            };
-
-            visible_width_func->execute(block_with_name, {0}, 1);
-
-            name_widths[i] = (*block_with_name.getByPosition(1).column)[0].get<UInt64>();
-        }
+        /// Note that number of code points is just a rough approximation of visible string width.
+        const String & name = sample.getByPosition(i).name;
+        name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(name.data()), name.size());
 
         if (name_widths[i] > max_name_width)
             max_name_width = name_widths[i];
