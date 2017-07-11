@@ -6,6 +6,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Columns/ColumnSet.h>
 #include <Common/UnicodeBar.h>
+#include <Common/UTF8Helpers.h>
 #include <Core/FieldVisitors.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1700,15 +1701,6 @@ private:
 };
 
 
-static size_t widthOfUTF8String(const String & s)
-{
-    size_t res = 0;
-    for (auto c : s) /// Skip UTF-8 continuation bytes.
-        res += (UInt8(c) <= 0x7F || UInt8(c) >= 0xC0);
-    return res;
-}
-
-
 void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     auto & src = block.safeGetByPosition(arguments[0]);
@@ -1730,7 +1722,7 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
                 src.type->serializeTextEscaped(*src.column, i, out);
             }
 
-            res_data[i] = widthOfUTF8String(tmp);
+            res_data[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size());
         }
     }
     else
@@ -1741,7 +1733,8 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
             src.type->serializeTextEscaped(*src.column->cut(0, 1)->convertToFullColumnIfConst(), 0, out);
         }
 
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt64>(size, widthOfUTF8String(tmp));
+        block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt64>(size,
+            UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size()));
     }
 }
 
