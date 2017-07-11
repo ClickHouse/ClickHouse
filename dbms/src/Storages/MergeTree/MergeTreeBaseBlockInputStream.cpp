@@ -92,7 +92,14 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         double filtration_ratio = std::max(min_filtration_ratio, 1.0 - task.size_predictor->filtered_rows_ratio);
         size_t rows_to_read_for_max_size_column_with_filtration
             = static_cast<size_t>(rows_to_read_for_max_size_column / filtration_ratio);
-        return std::min(rows_to_read_for_block, rows_to_read_for_max_size_column_with_filtration);
+        size_t rows_to_read = std::min(rows_to_read_for_block, rows_to_read_for_max_size_column_with_filtration);
+
+        size_t unread_rows_in_current_granule = reader.unreadRowsInCurrentGranule();
+        if (unread_rows_in_current_granule >= rows_to_read)
+            return rows_to_read;
+
+        size_t granule_to_read = (rows_to_read + reader.readRowsInCurrentGranule() + index_granularity / 2) / index_granularity;
+        return index_granularity * granule_to_read - reader.readRowsInCurrentGranule();
     };
 
     // read rows from reader and clear columns
