@@ -25,7 +25,8 @@ Block FilterColumnsBlockInputStream::readImpl()
     Block filtered;
 
     for (const auto & it : columns_to_save)
-        filtered.insert(std::move(block.getByName(it)));
+        if (throw_if_column_not_found || block.has(it))
+            filtered.insert(std::move(block.getByName(it)));
 
     return filtered;
 }
