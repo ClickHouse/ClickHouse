@@ -44,7 +44,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_select_clause(true);    /// Allows aliases without AS keyword.
-    ParserExpression exp_elem(false);
+    ParserExpression exp_elem;
     ParserOrderByExpressionList order_list;
 
     /// SELECT [DISTINCT] expr list
