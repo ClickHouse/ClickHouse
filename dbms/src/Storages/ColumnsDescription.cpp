@@ -72,7 +72,7 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
     readText(count, buf);
     assertString(" columns:\n", buf);
 
-    ParserExpressionWithOptionalAlias expr_parser(false);
+    ParserExpression expr_parser;
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     ColumnsDescription<true> result{};

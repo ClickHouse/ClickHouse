@@ -30,7 +30,7 @@ ReshardingJob::ReshardingJob(const std::string & serialized_job)
     IParser::Pos max_parsed_pos = pos;
     const char * end = pos + expr.size();
 
-    ParserExpressionWithOptionalAlias parser(false);
+    ParserExpression parser;
     Expected expected = "";
     if (!parser.parse(pos, end, sharding_key_expr, max_parsed_pos, expected))
         throw Exception{"ReshardingJob: cannot parse sharding expression.", ErrorCodes::LOGICAL_ERROR};
