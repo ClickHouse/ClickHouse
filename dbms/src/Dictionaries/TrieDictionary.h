@@ -207,7 +207,7 @@ private:
     const std::string key_description{dict_struct.getKeyDescription()};
 
 
-    btrie_t *trie;
+    btrie_t * trie = nullptr;
     std::map<std::string, std::size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
 

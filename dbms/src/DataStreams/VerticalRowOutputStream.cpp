@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <DataStreams/VerticalRowOutputStream.h>
 #include <Common/UTF8Helpers.h>
 
@@ -19,11 +20,20 @@ VerticalRowOutputStream::VerticalRowOutputStream(
     Widths name_widths(columns);
     size_t max_name_width = 0;
 
+    String serialized_value;
+
     for (size_t i = 0; i < columns; ++i)
     {
         /// Note that number of code points is just a rough approximation of visible string width.
         const String & name = sample.getByPosition(i).name;
-        name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(name.data()), name.size());
+
+        {
+            /// We need to obtain length in escaped form.
+            WriteBufferFromString out(serialized_value);
+            writeEscapedString(name, out);
+        }
+
+        name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
 
         if (name_widths[i] > max_name_width)
             max_name_width = name_widths[i];
