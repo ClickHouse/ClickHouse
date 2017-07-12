@@ -71,7 +71,7 @@ DataTypeFactory::DataTypeFactory()
 template <typename DataTypeEnum>
 inline DataTypePtr parseEnum(const String & name, const String & base_name, const String & parameters)
 {
-    ParserList parser{std::make_unique<ParserEnumElement>(), std::make_unique<ParserString>(","), false};
+    ParserList parser{std::make_unique<ParserEnumElement>(), std::make_unique<ParserToken>(TokenType::Comma), false};
 
     ASTPtr elements = parseQuery(parser, parameters.data(), parameters.data() + parameters.size(), "parameters for enum type " + name);
 

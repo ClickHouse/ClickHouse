@@ -263,9 +263,9 @@ void DDLWorker::processTask(const DDLLogEntry & node, const std::string & node_n
         {
             ASTPtr query_ast;
             {
-                ParserQuery parser_query;
-                String description;
                 const char * begin = &node.query.front();
+                ParserQuery parser_query(begin + node.query.size());
+                String description;
                 query_ast = parseQuery(parser_query, begin, begin + node.query.size(), description);
             }
 

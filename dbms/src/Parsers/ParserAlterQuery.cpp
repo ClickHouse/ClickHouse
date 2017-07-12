@@ -217,7 +217,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else if (s_reshard.ignore(pos, expected))
         {
             ParserList weighted_zookeeper_paths_p(std::make_unique<ParserWeightedZooKeeperPath>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-            ParserExpressionWithOptionalAlias parser_sharding_key_expr(false);
+            ParserExpression parser_sharding_key_expr(false);
             ParserStringLiteral parser_coordinator;
 
             if (s_copy.ignore(pos, expected))
