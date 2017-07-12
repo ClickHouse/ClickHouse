@@ -27,7 +27,7 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     if (!ParserKeyword{"WHERE"}.ignore(pos, expected))
         return false;
 
-    ParserExpression p_where_expression(false);
+    ParserExpression p_where_expression;
     if (!p_where_expression.parse(pos, query->where_expression, expected))
         return false;
 
