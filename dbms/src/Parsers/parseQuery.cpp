@@ -155,7 +155,7 @@ ASTPtr tryParseQuery(
     while (token_iterator->type == TokenType::Semicolon)
         ++token_iterator;
 
-    if (!allow_multi_statements && token_iterator->type != TokenType::EndOfStream)
+    if (parse_res && !allow_multi_statements && token_iterator->type != TokenType::EndOfStream)
     {
         out_error_message = getSyntaxErrorMessage(begin, end, token_iterator->begin, nullptr, hilite,
             (description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
