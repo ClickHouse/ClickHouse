@@ -71,17 +71,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// VALUES or FORMAT or SELECT
     if (s_values.ignore(pos, expected))
     {
-        data = pos;
+        data = pos->begin;
     }
     else if (s_format.ignore(pos, expected))
     {
         if (!name_p.parse(pos, format, expected))
             return false;
 
-        /// Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
-        const char * data_begin = pos->end;
-
-        ws_without_nl.ignore(pos);
         if (pos->type == TokenType::Semicolon)
             throw Exception("You have excessive ';' symbol before data for INSERT.\n"
                 "Example:\n\n"
@@ -91,10 +87,17 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 "\n"
                 "Note that there is no ';' in first line.", ErrorCodes::SYNTAX_ERROR);
 
-        if (pos.isValid() && *pos == '\n')
-            ++pos;
+        /// Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
+        data = pos->begin;
 
-        data = pos;
+        while (data < end && (*data == ' ' || *data == '\t' || *data == '\f'))
+            ++data;
+
+        if (data < end && *data == '\r')
+            ++data;
+
+        if (data < end && *data == '\n')
+            ++data;
     }
     else if (s_select.ignore(pos, expected))
     {
@@ -108,7 +111,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
-    auto query = std::make_shared<ASTInsertQuery>(StringRange(begin, data ? data : pos));
+    auto query = std::make_shared<ASTInsertQuery>(StringRange(begin, pos));
     node = query;
 
     if (database)
@@ -121,7 +124,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->columns = columns;
     query->select = select;
-    query->data = data != end ? data : NULL;
+    query->data = data != end ? data : nullptr;
     query->end = end;
 
     if (columns)

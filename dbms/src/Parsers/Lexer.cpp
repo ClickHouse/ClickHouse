@@ -221,10 +221,10 @@ Token Lexer::nextToken()
                     return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, end);
                 }
             }
-            return Token(TokenType::Division, token_begin, pos);
+            return Token(TokenType::Slash, token_begin, pos);
         }
         case '%':
-            return Token(TokenType::Modulo, token_begin, ++pos);
+            return Token(TokenType::Percent, token_begin, ++pos);
         case '=':   /// =, ==
         {
             ++pos;

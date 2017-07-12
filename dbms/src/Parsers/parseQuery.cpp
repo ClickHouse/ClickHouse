@@ -1,6 +1,8 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/Lexer.h>
+#include <Parsers/TokenIterator.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
@@ -24,7 +26,7 @@ static std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * 
     size_t line = 0;
 
     const char * nl;
-    while (nullptr != (nl = reinterpret_cast<IParser::Pos>(memchr(begin, '\n', pos - begin))))
+    while (nullptr != (nl = reinterpret_cast<const char *>(memchr(begin, '\n', pos - begin))))
     {
         ++line;
         begin = nl + 1;
@@ -117,7 +119,11 @@ ASTPtr tryParseQuery(
     const std::string & description,
     bool allow_multi_statements)
 {
-    if (pos == end || *pos == ';')
+    Tokens tokens(pos, end);
+    TokenIterator token_iterator(tokens);
+
+    if (token_iterator->type == TokenType::EndOfStream
+        || token_iterator->type == TokenType::Semicolon)
     {
         out_error_message = "Empty query";
         return nullptr;
@@ -125,33 +131,42 @@ ASTPtr tryParseQuery(
 
     Expected expected = "";
     const char * begin = pos;
-    const char * max_parsed_pos = pos;
 
     ASTPtr res;
-    bool parse_res = parser.parse(pos, res, expected);
+    bool parse_res = parser.parse(token_iterator, res, expected);
 
-    /// Parsed query must end with end of data or semicolon.
-    if (!parse_res || (pos.isValid() && *pos != ';'))
+    /// Lexical error
+    if (!parse_res && token_iterator->type > TokenType::EndOfStream)
     {
-        if (!expected || !*expected)
-            expected = "end of query";
-        out_error_message = getSyntaxErrorMessage(begin, expected, hilite, description);
+        expected = "any valid token";
+        out_error_message = getSyntaxErrorMessage(begin, end, token_iterator->begin, expected, hilite, description);
+        return nullptr;
+    }
+
+    /// Excessive input after query. Parsed query must end with end of data or semicolon.
+    if (parse_res && token_iterator->type != TokenType::EndOfStream && token_iterator->type != TokenType::Semicolon)
+    {
+        expected = "end of query";
+        out_error_message = getSyntaxErrorMessage(begin, end, token_iterator->begin, expected, hilite, description);
         return nullptr;
     }
 
     /// If multi-statements are not allowed, then after semicolon, there must be no non-space characters.
-    if (!allow_multi_statements && pos.isValid() && *pos == ';')
-    {
-        ++pos;
-        while (pos.isValid() && isWhitespaceASCII(*pos))
-            ++pos;
+    while (token_iterator->type == TokenType::Semicolon)
+        ++token_iterator;
 
-        if (pos.isValid())
-        {
-            out_error_message = getSyntaxErrorMessage(begin, end, pos, nullptr, hilite,
-                (description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
-            return nullptr;
-        }
+    if (!allow_multi_statements && token_iterator->type != TokenType::EndOfStream)
+    {
+        out_error_message = getSyntaxErrorMessage(begin, end, token_iterator->begin, nullptr, hilite,
+            (description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
+        return nullptr;
+    }
+
+    /// Parse error.
+    if (!parse_res)
+    {
+        out_error_message = getSyntaxErrorMessage(begin, end, token_iterator->begin, expected, hilite, description);
+        return nullptr;
     }
 
     return res;
@@ -189,15 +204,16 @@ ASTPtr parseQuery(
 std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, std::vector<std::string> & queries_list)
 {
     ASTPtr ast;
-    ParserQuery parser;
 
     const char * begin = queries.data(); /// begin of current query
     const char * pos = begin; /// parser moves pos from begin to the end of current query
     const char * end = begin + queries.size();
 
+    ParserQuery parser(end);
+
     queries_list.clear();
 
-    while (pos.isValid())
+    while (pos < end)
     {
         begin = pos;
 

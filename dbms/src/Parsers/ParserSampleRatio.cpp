@@ -16,7 +16,7 @@ static bool parseDecimal(const char * pos, const char * end, ASTSampleRatio::Rat
     UInt64 num_after = 0;
     Int64 exponent = 0;
 
-    IParser::Pos pos_after_first_num = tryReadIntText(num_before, pos, end);
+    const char * pos_after_first_num = tryReadIntText(num_before, pos, end);
 
     bool has_num_before_point = pos_after_first_num > pos;
     pos = pos_after_first_num;
@@ -32,7 +32,7 @@ static bool parseDecimal(const char * pos, const char * end, ASTSampleRatio::Rat
 
     if (has_point)
     {
-        IParser::Pos pos_after_second_num = tryReadIntText(num_after, pos, end);
+        const char * pos_after_second_num = tryReadIntText(num_after, pos, end);
         number_of_digits_after_point = pos_after_second_num - pos;
         pos = pos_after_second_num;
     }
@@ -42,7 +42,7 @@ static bool parseDecimal(const char * pos, const char * end, ASTSampleRatio::Rat
     if (has_exponent)
     {
         ++pos;
-        IParser::Pos pos_after_exponent = tryReadIntText(exponent, pos, end);
+        const char * pos_after_exponent = tryReadIntText(exponent, pos, end);
 
         if (pos_after_exponent == pos)
             return false;
@@ -92,7 +92,7 @@ bool ParserSampleRatio::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parseDecimal(pos->begin, pos->end, numerator))
         return false;
 
-    bool has_slash = pos.isValid() && *pos == '/';
+    bool has_slash = pos->type == TokenType::Slash;
 
     if (has_slash)
     {
