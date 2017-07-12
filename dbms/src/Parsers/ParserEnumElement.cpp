@@ -1,7 +1,7 @@
 #include <Parsers/ParserEnumElement.h>
-
 #include <Parsers/ASTEnumElement.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 
 
 namespace DB
@@ -9,7 +9,10 @@ namespace DB
 
 bool ParserEnumElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ParserStringLiteral name_parser;
+    ParserNumber value_parser;
     ParserToken equality_sign_parser(TokenType::Equals);
+
     const auto begin = pos;
 
     ASTPtr name;

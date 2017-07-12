@@ -88,8 +88,7 @@ inline DataTypePtr parseEnum(const String & name, const String & base_name, cons
         if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
             throw Exception{
                 "Value " + applyVisitor(FieldVisitorToString{}, e.value) + " for element '" + e.name + "' exceeds range of " + base_name,
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND
-            };
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
         values.emplace_back(e.name, value);
     }

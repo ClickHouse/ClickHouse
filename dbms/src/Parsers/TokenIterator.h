@@ -11,7 +11,9 @@ namespace DB
   * It could do lookaheads of any depth.
   */
 
-/// Used as an input for parsers.
+/** Used as an input for parsers.
+  * All whitespace and comment tokens are transparently skipped.
+  */
 class Tokens
 {
 private:
@@ -55,11 +57,11 @@ public:
     const Token & operator*() { return get(); }
     const Token * operator->() { return &get(); }
 
-    TokenIterator & operator++()
-    {
-        ++index;
-        return *this;
-    }
+    TokenIterator & operator++() { ++index; return *this; }
+    TokenIterator & operator--() { --index; return *this; }
+
+    bool operator< (const TokenIterator & rhs) const { return index < rhs.index; }
+    bool operator== (const TokenIterator & rhs) const { return index == rhs.index; }
 
     bool isValid() { return get().type < TokenType::EndOfStream; }
 };
